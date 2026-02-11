@@ -25,6 +25,7 @@ import path from 'path';
 import crypto from 'crypto';
 // CircuitBreaker via createCircuitBreaker de @alice/shared-utils
 import { getDatabase, getPool, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, validateEmbeddingDimension, EMBEDDING_DIMENSIONS, withTenantContext } from '@alice/database';
+import { getSystemConfig } from '@alice/database/system-config';
 import { eq, sql, desc, and, asc } from '@alice/database';
 import { z } from 'zod';
 import {
@@ -256,12 +257,18 @@ async function collectTrainingFromDocumentChunks(params: {
   if (!params.force && !TRAINING_DOC_AUTO_COLLECT) {
     return { attempted: 0, sent: 0, failed: 0, selectedChunkIds: [] };
   }
+  const fromDb = await getSystemConfig('TRAINING_DOC_MAX_SAMPLES');
+  const defaultMaxSamples = fromDb ? (parseInt(fromDb, 10) || 50) : TRAINING_DOC_MAX_SAMPLES;
+  const selection = {
+    ...params.selection,
+    maxSamples: params.selection?.maxSamples ?? defaultMaxSamples,
+  };
   if (!TRAINING_SERVICE_URL) {
     logger.warn({ documentId: params.documentId }, 'TRAINING_SERVICE_URL ausente - coleta de documentos para treinamento desabilitada');
     return { attempted: 0, sent: 0, failed: 0, selectedChunkIds: [] };
   }
 
-  const selected = selectTrainingChunks(params.chunks, params.selection);
+  const selected = selectTrainingChunks(params.chunks, selection);
   if (selected.length === 0) {
     return { attempted: 0, sent: 0, failed: 0, selectedChunkIds: [] };
   }
@@ -925,7 +932,7 @@ const TRAINING_DOC_AUTO_COLLECT = parseEnvBool(
 );
 const TRAINING_DOC_MAX_SAMPLES = parseEnvInt(
   process.env.TRAINING_DOC_MAX_SAMPLES,
-  20,
+  50,
   'TRAINING_DOC_MAX_SAMPLES'
 );
 const TRAINING_DOC_MIN_CHARS = parseEnvInt(
@@ -1687,7 +1694,7 @@ app.get('/api/rag/documents', requireAuth(), requirePermission('rag:documents:re
 });
 
 const promoteDocumentToTrainingSchema = z.object({
-  maxSamples: z.number().int().min(3).max(50).optional(),
+  maxSamples: z.number().int().min(3).max(100).optional(),
   minChars: z.number().int().min(80).max(4000).optional(),
   scope: z.object({
     namespaceId: z.string().uuid().optional(),

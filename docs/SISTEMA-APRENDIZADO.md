@@ -1,8 +1,10 @@
 # Sistema de Aprendizado da Alice
 
 **Autor:** Fillipe Guerra  
-**Versão:** 5.5 - Ecossistema LLM (LoRA + RAG + Feedback Loop)  
-**Data:** 09 de Fevereiro de 2026
+**Versão:** 5.6 - Ecossistema LLM + Configurações editáveis via UI  
+**Data:** 11 de Fevereiro de 2026
+
+> **ATUALIZAÇÃO 11/02/2026:** Configurações do Sistema editáveis via UI (DOCUMENT_MAX_CHUNKS, TRAINING_DOC_MAX_SAMPLES, TRAINING_CONVERSATION_MAX_MESSAGES, CONVERSATION_SLICE_SIZE, MIN_ONDEMAND_DATASET_SIZE, maxSeqLen). Valores em PostgreSQL têm precedência sobre env; alterações aplicadas imediatamente.
 
 > **ATUALIZAÇÃO 05/01/2026:** Arquitetura refatorada para 5 stacks independentes com deploy/rollback modular. Sistema de aprendizado integrado ao stack ALICE, com GPU containers gerenciados pelo GPU Manager Service.
 
@@ -67,6 +69,8 @@ Com servidor GPU dedicado, os serviços de inferência rodam simultaneamente (bu
 - Cada mensagem no chat é avaliada pelo usuário (1-5 estrelas)
 - Mensagens com rating >= 4 são candidatas a treinamento
 - Admin pode aprovar/reprovar no dashboard (`/training`)
+- **Conversas longas** (>10 mensagens) são fatiadas em janelas disjuntas; cada janela vira um `training_data` com `sourceMetadata.conversationWindow`
+- **Resolver escopo**: quando não há namespace inferido, o scope-resolver sugere criação de novo namespace (ex.: trading-geral, geral); o frontend oferece opção "Criar namespace sugerido"
 - Dados aprovados entram no próximo ciclo de fine-tuning
 
 **Integração Implementada (chat-service/index.ts linha 3905):**

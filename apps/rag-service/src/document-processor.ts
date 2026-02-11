@@ -23,6 +23,7 @@
 import { createLogger } from '@alice/logger';
 import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS, requestGpu, GpuServiceType, GpuRequestPriority } from '@alice/shared-utils';
 import { validateEmbeddingDimension, EMBEDDING_DIMENSIONS } from '@alice/database';
+import { getSystemConfig } from '@alice/database/system-config';
 import type { Worksheet, Row } from 'exceljs';
 
 const logger = createLogger('document-processor');
@@ -84,6 +85,17 @@ function parseEnvInt(envValue: string | undefined, defaultValue: number, varName
 const MAX_DOCUMENT_SIZE_MB = parseEnvInt(process.env.MAX_DOCUMENT_SIZE_MB, 50, 'MAX_DOCUMENT_SIZE_MB');
 const MAX_TEXT_LENGTH = parseEnvInt(process.env.MAX_TEXT_LENGTH, 100000, 'MAX_TEXT_LENGTH'); // 100k caracteres
 const CHUNK_SIZE = parseEnvInt(process.env.DOCUMENT_CHUNK_SIZE, 8000, 'DOCUMENT_CHUNK_SIZE'); // Tamanho de cada chunk para embedding
+/** Máximo de chunks por documento (env fallback). Valor efetivo vem de getDocumentMaxChunks() (DB + env). */
+const DOCUMENT_MAX_CHUNKS_ENV = parseEnvInt(process.env.DOCUMENT_MAX_CHUNKS, 50, 'DOCUMENT_MAX_CHUNKS');
+
+async function getDocumentMaxChunks(): Promise<number> {
+  const v = await getSystemConfig('DOCUMENT_MAX_CHUNKS');
+  if (v) {
+    const n = parseInt(v, 10);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return DOCUMENT_MAX_CHUNKS_ENV;
+}
 
 export interface DocumentMetadata {
   pageCount?: number;
@@ -317,11 +329,12 @@ class DocumentProcessorService {
     options: DocumentProcessorOptions = {}
   ): Promise<ProcessedDocument> {
     const startTime = Date.now();
+    const effectiveMaxChunks = options.maxChunks ?? await getDocumentMaxChunks();
     const {
       extractMetadata = true,
       generateEmbeddings = true,
       chunkSize = CHUNK_SIZE,
-      maxChunks = 50,
+      maxChunks = effectiveMaxChunks,
     } = options;
 
     // Verificar tamanho máximo

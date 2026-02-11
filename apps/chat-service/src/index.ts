@@ -40,6 +40,7 @@ import {
 import { chatServicePaths, chatServiceSchemas } from './openapi-specs.js';
 import { createLogger } from '@alice/logger';
 import { getDatabase, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, getPool } from '@alice/database';
+import { getSystemConfig } from '@alice/database/system-config';
 import { 
   createCorrelationMiddleware, 
   createSecurityMiddleware,
@@ -3550,9 +3551,24 @@ const TRAINING_AUTO_COLLECT_CHAT = parseEnvBool(
 );
 const TRAINING_CONVERSATION_MAX_MESSAGES = parseEnvInt(
   process.env.TRAINING_CONVERSATION_MAX_MESSAGES,
-  20,
+  50,
   'TRAINING_CONVERSATION_MAX_MESSAGES'
 );
+const CONVERSATION_SLICE_SIZE = parseEnvInt(
+  process.env.CONVERSATION_SLICE_SIZE,
+  10,
+  'CONVERSATION_SLICE_SIZE'
+);
+
+async function resolveTrainingConvLimits(): Promise<{ maxMessages: number; sliceSize: number }> {
+  const [maxV, sliceV] = await Promise.all([
+    getSystemConfig('TRAINING_CONVERSATION_MAX_MESSAGES'),
+    getSystemConfig('CONVERSATION_SLICE_SIZE'),
+  ]);
+  const maxMessages = maxV ? (parseInt(maxV, 10) || 50) : TRAINING_CONVERSATION_MAX_MESSAGES;
+  const sliceSize = sliceV ? (parseInt(sliceV, 10) || 10) : CONVERSATION_SLICE_SIZE;
+  return { maxMessages, sliceSize };
+}
 const SLA_SECONDS_STREAM = parseEnvInt(process.env.SLA_SECONDS_STREAM, 12, 'SLA_SECONDS_STREAM');
 const SLA_SECONDS_SYNC = parseEnvInt(process.env.SLA_SECONDS_SYNC, 18, 'SLA_SECONDS_SYNC');
 const SLA_SECONDS_WEBSOCKET = parseEnvInt(process.env.SLA_SECONDS_WEBSOCKET, 12, 'SLA_SECONDS_WEBSOCKET');
@@ -4707,6 +4723,26 @@ function buildTrainingMessagesFromStored(
   }
 
   return { messages: trainingMessages };
+}
+
+/** Janelas disjuntas para conversas longas (TRL/SFT 2025). Cada janela → 1 training_data. */
+function sliceConversationIntoWindows<T>(
+  messages: T[],
+  sliceSize: number
+): Array<{ slice: T[]; startIndex: number; endIndex: number }> {
+  if (messages.length <= sliceSize) {
+    return [{ slice: messages, startIndex: 0, endIndex: messages.length - 1 }];
+  }
+  const windows: Array<{ slice: T[]; startIndex: number; endIndex: number }> = [];
+  for (let start = 0; start < messages.length; start += sliceSize) {
+    const end = Math.min(start + sliceSize, messages.length) - 1;
+    windows.push({
+      slice: messages.slice(start, end + 1),
+      startIndex: start,
+      endIndex: end,
+    });
+  }
+  return windows;
 }
 
 function shouldAutoCollectTraining(params: {
@@ -7479,8 +7515,9 @@ app.post('/api/chat/conversations/:id/training/collect', requireAuth(), requireS
   }
 
   const { id } = paramsResult.data;
-  const { namespaceId: requestedNamespaceId, maxMessages } = bodyResult.data;
-  const limit = maxMessages ?? TRAINING_CONVERSATION_MAX_MESSAGES;
+  const { namespaceId: requestedNamespaceId, maxMessages, messageIds, entireConversation } = bodyResult.data;
+  const limits = await resolveTrainingConvLimits();
+  const limit = maxMessages ?? limits.maxMessages;
 
   try {
     const conversation = await db.query.conversations.findFirst({
@@ -7519,53 +7556,88 @@ app.post('/api/chat/conversations/:id/training/collect', requireAuth(), requireS
       return res.status(403).json({ error: 'Namespace inválido para o tenant' });
     }
 
-    const recentMessages = await db.query.messages.findMany({
-      where: eq(schema.messages.conversationId, id),
-      orderBy: [desc(schema.messages.criadoEm)],
-      limit,
-    });
-    const ordered = [...recentMessages].reverse();
+    let ordered: Array<{ isFromUser: boolean | null; conteudo: string | null; id: string }>;
+    if (messageIds && messageIds.length > 0) {
+      const selected = await db.query.messages.findMany({
+        where: and(
+          eq(schema.messages.conversationId, id),
+          inArray(schema.messages.id, messageIds)
+        ),
+        orderBy: [asc(schema.messages.criadoEm)],
+      });
+      ordered = selected;
+    } else {
+      const recentMessages = await db.query.messages.findMany({
+        where: eq(schema.messages.conversationId, id),
+        orderBy: [desc(schema.messages.criadoEm)],
+        limit: entireConversation === true ? 9999 : limit,
+      });
+      ordered = [...recentMessages].reverse();
+    }
 
     if (ordered.length < 2) {
       return res.status(400).json({ error: 'Conversa não possui mensagens suficientes' });
     }
 
-    const trainingPayload = buildTrainingMessagesFromStored(ordered);
-    if (trainingPayload.error) {
-      return res.status(400).json({ error: trainingPayload.error });
+    const windows = sliceConversationIntoWindows(ordered, limits.sliceSize);
+    let totalMessagesSent = 0;
+    let allSent = true;
+
+    for (const win of windows) {
+      const trainingPayload = buildTrainingMessagesFromStored(win.slice);
+      if (trainingPayload.error) {
+        if (windows.length === 1) {
+          return res.status(400).json({ error: trainingPayload.error });
+        }
+        continue;
+      }
+
+      const sent = await collectTrainingSample({
+        tenantId: effectiveTenantId,
+        namespaceId,
+        conversationId: id,
+        source: 'chat-curated',
+        sourceType: 'chat',
+        sourceId: id,
+        sourceMetadata: {
+          mode: 'manual',
+          agentId: conversation.agentId ?? null,
+          ...(windows.length > 1 ? { conversationWindow: { startIndex: win.startIndex, endIndex: win.endIndex } } : {}),
+        },
+        messages: trainingPayload.messages,
+        userId,
+        role: userRole,
+      });
+
+      if (sent) {
+        totalMessagesSent += trainingPayload.messages.length;
+      } else {
+        allSent = false;
+      }
     }
 
-    const sent = await collectTrainingSample({
-      tenantId: effectiveTenantId,
-      namespaceId,
-      conversationId: id,
-      source: 'chat-curated',
-      sourceType: 'chat',
-      sourceId: id,
-      sourceMetadata: {
-        mode: 'manual',
-        agentId: conversation.agentId ?? null,
-      },
-      messages: trainingPayload.messages,
-      userId,
-      role: userRole,
-    });
-
-    if (!sent) {
+    if (!allSent && totalMessagesSent === 0) {
       return res.status(503).json({
         success: false,
         error: 'Serviço de treinamento indisponível ou não aceitou os dados.',
-        messages: trainingPayload.messages.length,
+        messages: 0,
         namespaceId,
       });
     }
 
-    await db
-      .update(schema.conversations)
-      .set({ sentToTrainingAt: new Date(), atualizadoEm: new Date() })
-      .where(eq(schema.conversations.id, id));
+    if (allSent) {
+      await db
+        .update(schema.conversations)
+        .set({ sentToTrainingAt: new Date(), atualizadoEm: new Date() })
+        .where(eq(schema.conversations.id, id));
+    }
 
-    res.json({ success: true, messages: trainingPayload.messages.length, namespaceId });
+    res.json({
+      success: allSent,
+      messages: totalMessagesSent,
+      windows: windows.length,
+      namespaceId,
+    });
   } catch (error) {
     logger.error({ error, conversationId: id }, 'Falha ao coletar treinamento da conversa');
     res.status(500).json({ error: 'Erro interno do servidor' });
@@ -7630,6 +7702,7 @@ app.post('/api/chat/training/collect-batch', requireAuth(), requireSameTenant(ge
         continue;
       }
 
+      const limitsBatch = await resolveTrainingConvLimits();
       let storedMessages: Array<{ isFromUser: boolean | null; conteudo: string | null }> = [];
       if (item.messageIds?.length) {
         storedMessages = await db.query.messages.findMany({
@@ -7640,7 +7713,7 @@ app.post('/api/chat/training/collect-batch', requireAuth(), requireSameTenant(ge
           orderBy: [asc(schema.messages.criadoEm)],
         });
       } else {
-        const limit = item.maxMessages ?? TRAINING_CONVERSATION_MAX_MESSAGES;
+        const limit = item.maxMessages ?? limitsBatch.maxMessages;
         const recentMessages = await db.query.messages.findMany({
           where: eq(schema.messages.conversationId, item.conversationId),
           orderBy: [desc(schema.messages.criadoEm)],
@@ -7649,29 +7722,47 @@ app.post('/api/chat/training/collect-batch', requireAuth(), requireSameTenant(ge
         storedMessages = [...recentMessages].reverse();
       }
 
-      const trainingPayload = buildTrainingMessagesFromStored(storedMessages);
-      if (trainingPayload.error) {
-        failures.push({ conversationId: item.conversationId, error: trainingPayload.error });
-        continue;
+      const windows = item.messageIds?.length
+        ? [{ slice: storedMessages, startIndex: 0, endIndex: storedMessages.length - 1 }]
+        : sliceConversationIntoWindows(storedMessages, limitsBatch.sliceSize);
+
+      let batchSent = true;
+      let batchMessages = 0;
+
+      for (const win of windows) {
+        const trainingPayload = buildTrainingMessagesFromStored(win.slice);
+        if (trainingPayload.error) {
+          if (windows.length === 1) {
+            failures.push({ conversationId: item.conversationId, error: trainingPayload.error });
+          }
+          continue;
+        }
+
+        const sent = await collectTrainingSample({
+          tenantId: effectiveTenantId,
+          namespaceId: resolvedNamespaceId,
+          conversationId: item.conversationId,
+          source: item.messageIds?.length ? 'chat-curated-messages' : 'chat-curated-batch',
+          sourceType: 'chat',
+          sourceId: item.conversationId,
+          sourceMetadata: {
+            mode: 'batch',
+            messageIds: item.messageIds ?? null,
+            ...(windows.length > 1 ? { conversationWindow: { startIndex: win.startIndex, endIndex: win.endIndex } } : {}),
+          },
+          messages: trainingPayload.messages,
+          userId,
+          role: userRole,
+        });
+
+        if (sent) {
+          batchMessages += trainingPayload.messages.length;
+        } else {
+          batchSent = false;
+        }
       }
 
-      const sent = await collectTrainingSample({
-        tenantId: effectiveTenantId,
-        namespaceId: resolvedNamespaceId,
-        conversationId: item.conversationId,
-        source: item.messageIds?.length ? 'chat-curated-messages' : 'chat-curated-batch',
-        sourceType: 'chat',
-        sourceId: item.conversationId,
-        sourceMetadata: {
-          mode: 'batch',
-          messageIds: item.messageIds ?? null,
-        },
-        messages: trainingPayload.messages,
-        userId,
-        role: userRole,
-      });
-
-      if (!sent) {
+      if (!batchSent && batchMessages === 0) {
         failures.push({
           conversationId: item.conversationId,
           error: 'Serviço de treinamento não aceitou os dados.',
@@ -7679,14 +7770,16 @@ app.post('/api/chat/training/collect-batch', requireAuth(), requireSameTenant(ge
         continue;
       }
 
-      await db
-        .update(schema.conversations)
-        .set({ sentToTrainingAt: new Date(), atualizadoEm: new Date() })
-        .where(eq(schema.conversations.id, item.conversationId));
+      if (batchSent) {
+        await db
+          .update(schema.conversations)
+          .set({ sentToTrainingAt: new Date(), atualizadoEm: new Date() })
+          .where(eq(schema.conversations.id, item.conversationId));
+      }
 
       results.push({
         conversationId: item.conversationId,
-        messages: trainingPayload.messages.length,
+        messages: batchMessages,
         namespaceId: resolvedNamespaceId,
       });
     } catch (error) {
@@ -7719,7 +7812,12 @@ const sendMessageSchema = z.object({
 const collectConversationTrainingSchema = z.object({
   namespaceId: z.string().uuid().optional(),
   maxMessages: z.number().int().min(2).max(100).optional(),
-});
+  messageIds: z.array(z.string().uuid()).min(1).max(200).optional(),
+  entireConversation: z.boolean().optional(),
+}).refine(
+  (data) => !(data.messageIds && data.messageIds.length > 0 && data.entireConversation === true),
+  { message: 'Não é possível usar messageIds e entireConversation simultaneamente' }
+);
 
 const collectTrainingBatchItemSchema = z.object({
   conversationId: z.string().uuid(),

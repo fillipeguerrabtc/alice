@@ -5,7 +5,7 @@ import {
   FileText,
   Brain,
   Plug,
-  Settings,
+  User,
   LogOut,
   Bot,
   Wallet,
@@ -19,6 +19,7 @@ import {
   Users,
   LineChart,
   Settings2,
+  Settings,
   FlaskConical,
 } from 'lucide-react';
 import {
@@ -45,7 +46,7 @@ const menuItems = [
   { title: 'Documentos', url: '/documents', icon: FileText },
   { title: 'Training', url: '/training', icon: Brain },
   { title: 'Integrações', url: '/integrations', icon: Plug },
-  { title: 'Configurações', url: '/settings', icon: Settings },
+  { title: 'Perfil', url: '/profile', icon: User },
 ];
 
 const operationsItems = [
@@ -74,6 +75,7 @@ const adminItems = [
   { title: 'Namespaces', url: '/namespaces', icon: FolderKanban },
   { title: 'Usuários', url: '/users', icon: Users },
   { title: 'Configuração da Alice', url: '/alice-config', icon: Settings2 },
+  { title: 'Configurações do Sistema', url: '/system-settings', icon: Settings },
   { title: 'Modo Agentic', url: '/agentic-config', icon: Shield },
 ];
 

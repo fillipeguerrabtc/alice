@@ -17,6 +17,11 @@ export interface ScopeResolverInput {
   messagesText?: string | null;
 }
 
+export interface SuggestedNewNamespace {
+  name: string;
+  theme: string;
+}
+
 export interface ScopeResolution {
   namespaceId: string | null;
   agentId: string | null;
@@ -24,6 +29,8 @@ export interface ScopeResolution {
   confidence: number;
   trace: Record<string, unknown>;
   needsHumanReview: boolean;
+  /** Sugestão para criar novo namespace quando não houver match. */
+  suggestedNewNamespace?: SuggestedNewNamespace | null;
 }
 
 interface TraceStep {
@@ -357,11 +364,24 @@ export async function resolveScope(input: ScopeResolverInput): Promise<ScopeReso
   }
 
   const needsHumanReview = !namespaceId || confidence < LOW_CONFIDENCE_THRESHOLD;
+
+  let suggestedNewNamespace: SuggestedNewNamespace | null = null;
+  if (!namespaceId && (domain || (input.messagesText ?? '').trim().length > 0)) {
+    const theme = domain === 'trading'
+      ? 'Trading e análise de mercado'
+      : domain === 'general'
+        ? 'Uso geral e assistente'
+        : 'Documentos e conversas';
+    const name = domain === 'trading' ? 'trading-geral' : domain === 'general' ? 'geral' : 'conhecimento';
+    suggestedNewNamespace = { name, theme };
+  }
+
   const trace: Record<string, unknown> = {
     steps,
     tenantId: input.tenantId,
     sourceType: input.sourceType ?? null,
     sourceId: input.sourceId ?? null,
+    suggestedNewNamespace: suggestedNewNamespace ?? undefined,
     final: {
       namespaceId,
       agentId,
@@ -380,5 +400,6 @@ export async function resolveScope(input: ScopeResolverInput): Promise<ScopeReso
     confidence,
     trace,
     needsHumanReview,
+    suggestedNewNamespace: suggestedNewNamespace ?? undefined,
   };
 }

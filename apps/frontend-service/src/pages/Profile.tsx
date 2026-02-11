@@ -1,15 +1,16 @@
 /**
- * Settings Page - Alice Enterprise Platform
- * 
- * Página de configurações do usuário e organização.
+ * Profile Page - Alice Enterprise Platform
+ *
+ * Página dedicada ao perfil do usuário e preferências pessoais.
+ * Separada das configurações de sistema (SystemSettings).
  * Internacionalização completa (Regra 13 - i18n)
- * 
+ *
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
 import { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { User, Building, Bell, Shield, Globe } from 'lucide-react';
+import { User, Bell, Shield, Globe } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -39,7 +40,7 @@ type UpdateUserPayload = {
   };
 };
 
-export default function Settings() {
+export default function Profile() {
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('profile');
@@ -124,25 +125,28 @@ export default function Settings() {
   }, [regionalForm.timezone, user?.timezone]);
 
   const handleSaveProfile = () => {
-    updateProfile.mutate({
-      firstName: profileForm.firstName.trim() || undefined,
-      lastName: profileForm.lastName.trim() || undefined,
-      preferredName: profileForm.preferredName.trim() || undefined,
-    }, {
-      onSuccess: () => {
-        toast({
-          title: 'Perfil atualizado',
-          description: 'As informações foram salvas com sucesso.',
-        });
+    updateProfile.mutate(
+      {
+        firstName: profileForm.firstName.trim() || undefined,
+        lastName: profileForm.lastName.trim() || undefined,
+        preferredName: profileForm.preferredName.trim() || undefined,
       },
-      onError: () => {
-        toast({
-          title: 'Falha ao salvar perfil',
-          description: 'Não foi possível salvar as informações. Tente novamente.',
-          variant: 'destructive',
-        });
-      },
-    });
+      {
+        onSuccess: () => {
+          toast({
+            title: 'Perfil atualizado',
+            description: 'As informações foram salvas com sucesso.',
+          });
+        },
+        onError: () => {
+          toast({
+            title: 'Falha ao salvar perfil',
+            description: 'Não foi possível salvar as informações. Tente novamente.',
+            variant: 'destructive',
+          });
+        },
+      }
+    );
   };
 
   const handleSaveRegional = () => {
@@ -152,34 +156,37 @@ export default function Settings() {
     const city = regionalForm.city.trim();
     const hasLocation = Boolean(countryName || countryCode || region || city);
 
-    updateProfile.mutate({
-      idioma: regionalForm.idioma || undefined,
-      timezone: regionalForm.timezone || undefined,
-      preferencias: hasLocation
-        ? {
-            location: {
-              countryName: countryName || undefined,
-              countryCode: countryCode || undefined,
-              region: region || undefined,
-              city: city || undefined,
-            },
-          }
-        : undefined,
-    }, {
-      onSuccess: () => {
-        toast({
-          title: 'Configurações regionais atualizadas',
-          description: 'Idioma, fuso horário e localização foram salvos.',
-        });
+    updateProfile.mutate(
+      {
+        idioma: regionalForm.idioma || undefined,
+        timezone: regionalForm.timezone || undefined,
+        preferencias: hasLocation
+          ? {
+              location: {
+                countryName: countryName || undefined,
+                countryCode: countryCode || undefined,
+                region: region || undefined,
+                city: city || undefined,
+              },
+            }
+          : undefined,
       },
-      onError: () => {
-        toast({
-          title: 'Falha ao salvar configurações regionais',
-          description: 'Não foi possível salvar. Tente novamente.',
-          variant: 'destructive',
-        });
-      },
-    });
+      {
+        onSuccess: () => {
+          toast({
+            title: 'Configurações regionais atualizadas',
+            description: 'Idioma, fuso horário e localização foram salvos.',
+          });
+        },
+        onError: () => {
+          toast({
+            title: 'Falha ao salvar configurações regionais',
+            description: 'Não foi possível salvar. Tente novamente.',
+            variant: 'destructive',
+          });
+        },
+      }
+    );
   };
 
   const handleBiometricCapture = async (imageBase64: string) => {
@@ -267,21 +274,18 @@ export default function Settings() {
 
   const tabs = [
     { id: 'profile', labelKey: 'auth.profile', icon: User },
-    { id: 'organization', labelKey: 'settings.general', icon: Building },
-    { id: 'notifications', labelKey: 'settings.notifications', icon: Bell },
-    { id: 'security', labelKey: 'settings.security', icon: Shield },
-    { id: 'language', labelKey: 'settings.language', icon: Globe },
+    { id: 'notifications', labelKey: 'profile.notifications', icon: Bell },
+    { id: 'security', labelKey: 'profile.security', icon: Shield },
+    { id: 'language', labelKey: 'profile.language', icon: Globe },
   ];
 
   return (
     <div className="p-6 space-y-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight" data-testid="text-page-title">
-          {t('settings.title')}
+          {t('profile.title')}
         </h1>
-        <p className="text-muted-foreground">
-          {t('settings.general')}
-        </p>
+        <p className="text-muted-foreground">{t('profile.description')}</p>
       </div>
 
       <div className="flex flex-col md:flex-row gap-6">
@@ -291,9 +295,7 @@ export default function Settings() {
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors ${
-                activeTab === tab.id
-                  ? 'bg-primary text-primary-foreground'
-                  : 'hover-elevate'
+                activeTab === tab.id ? 'bg-primary text-primary-foreground' : 'hover-elevate'
               }`}
               data-testid={`tab-${tab.id}`}
             >
@@ -308,9 +310,7 @@ export default function Settings() {
             <Card>
               <CardHeader>
                 <CardTitle>{t('auth.profile')}</CardTitle>
-                <CardDescription>
-                  {t('settings.profileDescription')}
-                </CardDescription>
+                <CardDescription>{t('settings.profileDescription')}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid gap-4 md:grid-cols-2">
@@ -337,9 +337,7 @@ export default function Settings() {
                 </div>
                 <div>
                   <label className="text-sm font-medium">{t('settings.preferredNameLabel')}</label>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {t('settings.preferredNameDesc')}
-                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">{t('settings.preferredNameDesc')}</p>
                   <Input
                     type="text"
                     value={profileForm.preferredName}
@@ -358,45 +356,7 @@ export default function Settings() {
                     data-testid="input-email"
                   />
                 </div>
-                <Button
-                  data-testid="button-save-profile"
-                  onClick={handleSaveProfile}
-                  disabled={updateProfile.isPending}
-                >
-                  {t('common.save')}
-                </Button>
-              </CardContent>
-            </Card>
-          )}
-
-          {activeTab === 'organization' && (
-            <Card>
-              <CardHeader>
-                <CardTitle>{t('namespaces.tenant')}</CardTitle>
-                <CardDescription>
-                  {t('settings.general')}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium">{t('namespaces.name')}</label>
-                  <Input
-                    type="text"
-                    placeholder={t('namespaces.placeholders.name')}
-                    className="mt-1"
-                    data-testid="input-org-name"
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">{t('namespaces.slug')}</label>
-                  <Input
-                    type="text"
-                    placeholder={t('namespaces.placeholders.slug')}
-                    className="mt-1"
-                    data-testid="input-org-domain"
-                  />
-                </div>
-                <Button data-testid="button-save-org">
+                <Button data-testid="button-save-profile" onClick={handleSaveProfile} disabled={updateProfile.isPending}>
                   {t('common.save')}
                 </Button>
               </CardContent>
@@ -406,10 +366,8 @@ export default function Settings() {
           {activeTab === 'notifications' && (
             <Card>
               <CardHeader>
-                <CardTitle>{t('settings.notifications')}</CardTitle>
-                <CardDescription>
-                  {t('settings.general')}
-                </CardDescription>
+                <CardTitle>{t('profile.notifications')}</CardTitle>
+                <CardDescription>{t('profile.notificationsDesc')}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 {[
@@ -420,10 +378,7 @@ export default function Settings() {
                 ].map((notification) => (
                   <div key={notification.id} className="flex items-center justify-between">
                     <span className="text-sm">{t(notification.labelKey)}</span>
-                    <Switch
-                      defaultChecked={true}
-                      data-testid={`toggle-${notification.id}`}
-                    />
+                    <Switch defaultChecked={true} data-testid={`toggle-${notification.id}`} />
                   </div>
                 ))}
               </CardContent>
@@ -433,10 +388,8 @@ export default function Settings() {
           {activeTab === 'security' && (
             <Card>
               <CardHeader>
-                <CardTitle>{t('settings.security')}</CardTitle>
-                <CardDescription>
-                  {t('settings.general')}
-                </CardDescription>
+                <CardTitle>{t('profile.security')}</CardTitle>
+                <CardDescription>{t('profile.securityDesc')}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="pt-2">
@@ -454,7 +407,11 @@ export default function Settings() {
                     <p className="text-xs text-muted-foreground">Carregando status da biometria...</p>
                   ) : biometricStatus?.enrolled ? (
                     <p className="text-xs text-emerald-600">
-                      Biometria cadastrada{biometricStatus.lastVerifiedAt ? ` (última verificação: ${new Date(biometricStatus.lastVerifiedAt).toLocaleString('pt-BR')})` : ''}.
+                      Biometria cadastrada
+                      {biometricStatus.lastVerifiedAt
+                        ? ` (última verificação: ${new Date(biometricStatus.lastVerifiedAt).toLocaleString('pt-BR')})`
+                        : ''}
+                      .
                     </p>
                   ) : (
                     <p className="text-xs text-muted-foreground">Biometria não cadastrada.</p>
@@ -476,16 +433,16 @@ export default function Settings() {
                 </div>
                 <div className="pt-4 border-t space-y-3">
                   <h4 className="font-medium">Alterar senha</h4>
-                  <p className="text-sm text-muted-foreground">
-                    Atualize sua senha local com segurança.
-                  </p>
+                  <p className="text-sm text-muted-foreground">Atualize sua senha local com segurança.</p>
                   <div className="grid gap-3 md:grid-cols-2">
                     <div>
                       <label className="text-sm font-medium">Senha atual</label>
                       <Input
                         type="password"
                         value={passwordForm.currentPassword}
-                        onChange={(event) => setPasswordForm((prev) => ({ ...prev, currentPassword: event.target.value }))}
+                        onChange={(event) =>
+                          setPasswordForm((prev) => ({ ...prev, currentPassword: event.target.value }))
+                        }
                         className="mt-1"
                       />
                     </div>
@@ -503,7 +460,9 @@ export default function Settings() {
                       <Input
                         type="password"
                         value={passwordForm.confirmPassword}
-                        onChange={(event) => setPasswordForm((prev) => ({ ...prev, confirmPassword: event.target.value }))}
+                        onChange={(event) =>
+                          setPasswordForm((prev) => ({ ...prev, confirmPassword: event.target.value }))
+                        }
                         className="mt-1"
                       />
                     </div>
@@ -514,9 +473,7 @@ export default function Settings() {
                 </div>
                 <div className="pt-4 border-t">
                   <h4 className="font-medium mb-2">{t('users.lastActive')}</h4>
-                  <p className="text-sm text-muted-foreground mb-3">
-                    {t('settings.general')}
-                  </p>
+                  <p className="text-sm text-muted-foreground mb-3">{t('profile.sessionsDesc')}</p>
                   <Button variant="outline" data-testid="button-manage-sessions">
                     {t('common.view')}
                   </Button>
@@ -528,10 +485,8 @@ export default function Settings() {
           {activeTab === 'language' && (
             <Card>
               <CardHeader>
-                <CardTitle>{t('settings.language')}</CardTitle>
-                <CardDescription>
-                  {t('settings.general')}
-                </CardDescription>
+                <CardTitle>{t('profile.language')}</CardTitle>
+                <CardDescription>{t('profile.languageDesc')}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
@@ -559,9 +514,7 @@ export default function Settings() {
                 <div className="pt-4 border-t space-y-3">
                   <div>
                     <label className="text-sm font-medium">{t('settings.aliceLanguageLabel')}</label>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {t('settings.aliceLanguageDesc')}
-                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">{t('settings.aliceLanguageDesc')}</p>
                     <Select
                       value={regionalForm.idioma}
                       onValueChange={(value) => setRegionalForm((prev) => ({ ...prev, idioma: value }))}
@@ -578,9 +531,7 @@ export default function Settings() {
                   </div>
                   <div>
                     <label className="text-sm font-medium">{t('settings.timezoneLabel')}</label>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {t('settings.timezoneDesc')}
-                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">{t('settings.timezoneDesc')}</p>
                     <Select
                       value={regionalForm.timezone}
                       onValueChange={(value) => setRegionalForm((prev) => ({ ...prev, timezone: value }))}
@@ -601,9 +552,7 @@ export default function Settings() {
                 <div className="pt-4 border-t space-y-3">
                   <div>
                     <label className="text-sm font-medium">{t('settings.locationLabel')}</label>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {t('settings.locationDesc')}
-                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">{t('settings.locationDesc')}</p>
                   </div>
                   <div className="grid gap-4 md:grid-cols-2">
                     <div>
@@ -611,7 +560,9 @@ export default function Settings() {
                       <Input
                         type="text"
                         value={regionalForm.countryName}
-                        onChange={(event) => setRegionalForm((prev) => ({ ...prev, countryName: event.target.value }))}
+                        onChange={(event) =>
+                          setRegionalForm((prev) => ({ ...prev, countryName: event.target.value }))
+                        }
                         className="mt-1"
                         data-testid="input-country-name"
                       />
@@ -621,7 +572,9 @@ export default function Settings() {
                       <Input
                         type="text"
                         value={regionalForm.countryCode}
-                        onChange={(event) => setRegionalForm((prev) => ({ ...prev, countryCode: event.target.value.toUpperCase() }))}
+                        onChange={(event) =>
+                          setRegionalForm((prev) => ({ ...prev, countryCode: event.target.value.toUpperCase() }))
+                        }
                         className="mt-1"
                         maxLength={2}
                         data-testid="input-country-code"
@@ -634,7 +587,9 @@ export default function Settings() {
                       <Input
                         type="text"
                         value={regionalForm.region}
-                        onChange={(event) => setRegionalForm((prev) => ({ ...prev, region: event.target.value }))}
+                        onChange={(event) =>
+                          setRegionalForm((prev) => ({ ...prev, region: event.target.value }))
+                        }
                         className="mt-1"
                         data-testid="input-region"
                       />
@@ -644,7 +599,9 @@ export default function Settings() {
                       <Input
                         type="text"
                         value={regionalForm.city}
-                        onChange={(event) => setRegionalForm((prev) => ({ ...prev, city: event.target.value }))}
+                        onChange={(event) =>
+                          setRegionalForm((prev) => ({ ...prev, city: event.target.value }))
+                        }
                         className="mt-1"
                         data-testid="input-city"
                       />

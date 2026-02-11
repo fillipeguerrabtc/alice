@@ -156,6 +156,20 @@ sudo /opt/alice/app/infra/scripts/prepare-production-server.sh
 | Parâmetros GPU | `docker/gpu/*` + `docker-compose.alice.yml` | Automática | vLLM/embeddings via imagem + env vars. |
 | Volume LoRA Adapters | `infra/scripts/permissions-config.sh` | Automática | `/opt/alice/data/lora-adapters` criado com 0:0:755 pelo prepare-infrastructure. |
 
+### Variáveis opcionais de treino (Alice stack)
+
+As seguintes variáveis de ambiente são opcionais e possuem defaults (documentadas em `docs/TRAINING.md` e `docs/TREINAMENTO-LIMITES-E-BOAS-PRATICAS.md`):
+
+| Variável | Container | Default | Descrição |
+| --- | --- | --- | --- |
+| `DOCUMENT_MAX_CHUNKS` | alice-rag | 50 | Máximo de chunks por documento |
+| `TRAINING_DOC_MAX_SAMPLES` | alice-rag | 50 | Máximo de chunks selecionados por doc para treino |
+| `TRAINING_CONVERSATION_MAX_MESSAGES` | alice-chat | 50 | Máximo de mensagens por conversa para treino |
+| `CONVERSATION_SLICE_SIZE` | alice-chat | 10 | Tamanho das janelas de fatiamento de conversas longas |
+| `MIN_ONDEMAND_DATASET_SIZE` | alice-training | 10 | Mínimo de exemplos para treino on-demand |
+
+Configure em `docker-compose.alice.yml` ou via `.env.prod` quando necessário (ex.: livros grandes, ajuste de fatiamento).
+
 ### LoRA Adapters — Volume e Permissões
 
 O diretório `/opt/alice/data/lora-adapters` armazena adapters LoRA treinados via QLoRA. Ele é:

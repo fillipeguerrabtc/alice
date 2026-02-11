@@ -105,6 +105,7 @@ interface TrainingData {
   inferenceConfidence?: number | null;
   needsHumanReview?: boolean | null;
   quarantineReason?: string | null;
+  inferenceTrace?: { suggestedNewNamespace?: { name: string; theme: string } } | null;
   messages: Array<{ role: string; content: string }>;
   rating: number | null;
   qualityScore?: number | null;
@@ -817,17 +818,20 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
 
   const ragDocuments = ragDocumentsData?.documents ?? [];
 
+  const [bookModePromote, setBookModePromote] = useState(false);
+
   const promoteDocumentToTraining = useMutation({
-    mutationFn: async (documentId: string) => {
-      const response = await apiRequest('POST', `/api/rag/documents/${documentId}/send-to-training`, {});
+    mutationFn: async (params: { documentId: string; maxSamples?: number }) => {
+      const body = params.maxSamples ? { maxSamples: params.maxSamples } : {};
+      const response = await apiRequest('POST', `/api/rag/documents/${params.documentId}/send-to-training`, body);
       return response.json() as Promise<{
         success: boolean;
         data?: { attempted: number; sent: number; failed: number };
         message?: string;
       }>;
     },
-    onMutate: (documentId) => {
-      setPromotingDocumentId(documentId);
+    onMutate: (params) => {
+      setPromotingDocumentId(params.documentId);
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['/api/training/data'] });
@@ -1307,12 +1311,28 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
                       </div>
                     </div>
 
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={!canPromote || isPromoting}
-                      onClick={() => promoteDocumentToTraining.mutate(doc.id)}
-                    >
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          id={`book-mode-${doc.id}`}
+                          checked={bookModePromote}
+                          onCheckedChange={setBookModePromote}
+                        />
+                        <Label htmlFor={`book-mode-${doc.id}`} className="text-xs cursor-pointer">
+                          {t('training.promoteDocument.bookMode')}
+                        </Label>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={!canPromote || isPromoting}
+                        onClick={() =>
+                          promoteDocumentToTraining.mutate({
+                            documentId: doc.id,
+                            maxSamples: bookModePromote ? 100 : undefined,
+                          })
+                        }
+                      >
                       {isPromoting ? (
                         <>
                           <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -1325,6 +1345,7 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
                         </>
                       )}
                     </Button>
+                    </div>
                   </div>
                 );
               })}
@@ -1896,6 +1917,13 @@ export default function Training() {
   const [showOnDemandRun, setShowOnDemandRun] = useState(false);
   const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
   const [reviewTarget, setReviewTarget] = useState<{ id: string; status: 'approved' | 'rejected'; entry: TrainingData } | null>(null);
+
+  const [resolveScopeDialogOpen, setResolveScopeDialogOpen] = useState(false);
+  const [resolveScopeEntry, setResolveScopeEntry] = useState<TrainingData | null>(null);
+  const [resolveScopeNamespaceId, setResolveScopeNamespaceId] = useState('');
+  const [resolveScopeReason, setResolveScopeReason] = useState('Correção manual do escopo inferido');
+  const [resolveScopeDomain, setResolveScopeDomain] = useState('');
+  const [resolveScopeAgentId, setResolveScopeAgentId] = useState('');
   const [reviewNotes, setReviewNotes] = useState('');
   const [overrideScopeEnabled, setOverrideScopeEnabled] = useState(false);
   const [overrideNamespaceId, setOverrideNamespaceId] = useState('');
@@ -2177,6 +2205,16 @@ export default function Training() {
     },
   });
 
+  const createNamespaceMutation = useMutation({
+    mutationFn: async (data: { nome: string; slug: string; descricao?: string }) => {
+      const res = await apiRequest('POST', '/api/namespaces', data);
+      return res.json() as Promise<{ id: string; nome: string; slug: string }>;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/namespaces'] });
+    },
+  });
+
   const resolveScopeMutation = useMutation({
     mutationFn: async ({
       id,
@@ -2348,30 +2386,61 @@ export default function Training() {
   ]);
 
   const handleResolveScope = useCallback((entry: TrainingData) => {
-    const namespaceHint = (namespaces ?? [])
-      .map((ns) => `${ns.nome} (${ns.id})`)
-      .slice(0, 20)
-      .join('\n');
-    const namespaceInput = window.prompt(
-      `Informe o namespaceId de destino para resolver escopo.\n\nNamespaces disponíveis:\n${namespaceHint}`,
-      entry.namespaceId ?? entry.inferredNamespaceId ?? ''
-    );
-    if (!namespaceInput) return;
-    const reasonInput = window.prompt(
-      'Informe o motivo do override de escopo (obrigatório):',
-      'Correção manual do escopo inferido'
-    );
-    if (!reasonInput) return;
-    const domainInput = window.prompt('Domínio (opcional):', entry.inferredDomain ?? '') ?? undefined;
-    const agentInput = window.prompt('AgentId (opcional):', entry.agentId ?? entry.inferredAgentId ?? '') ?? undefined;
+    setResolveScopeEntry(entry);
+    setResolveScopeNamespaceId(entry.namespaceId ?? entry.inferredNamespaceId ?? '');
+    setResolveScopeReason('Correção manual do escopo inferido');
+    setResolveScopeDomain(entry.inferredDomain ?? '');
+    setResolveScopeAgentId(entry.agentId ?? entry.inferredAgentId ?? '');
+    setResolveScopeDialogOpen(true);
+  }, []);
+
+  const confirmResolveScope = useCallback(() => {
+    if (!resolveScopeEntry) return;
+    if (!resolveScopeNamespaceId.trim()) {
+      toast({ title: 'Namespace é obrigatório', variant: 'destructive' });
+      return;
+    }
+    if (!resolveScopeReason.trim()) {
+      toast({ title: 'Motivo é obrigatório', variant: 'destructive' });
+      return;
+    }
     resolveScopeMutation.mutate({
-      id: entry.id,
-      namespaceId: namespaceInput.trim(),
-      domain: domainInput?.trim().length ? domainInput.trim() : null,
-      agentId: agentInput?.trim().length ? agentInput.trim() : null,
-      reason: reasonInput.trim(),
+      id: resolveScopeEntry.id,
+      namespaceId: resolveScopeNamespaceId.trim(),
+      domain: resolveScopeDomain.trim().length ? resolveScopeDomain.trim() : null,
+      agentId: resolveScopeAgentId.trim().length ? resolveScopeAgentId.trim() : null,
+      reason: resolveScopeReason.trim(),
     });
-  }, [namespaces, resolveScopeMutation]);
+    setResolveScopeDialogOpen(false);
+    setResolveScopeEntry(null);
+  }, [resolveScopeEntry, resolveScopeNamespaceId, resolveScopeReason, resolveScopeDomain, resolveScopeAgentId, resolveScopeMutation]);
+
+  const handleCreateAndResolveScope = useCallback(() => {
+    if (!resolveScopeEntry) return;
+    const suggested = resolveScopeEntry.inferenceTrace?.suggestedNewNamespace;
+    if (!suggested) return;
+    createNamespaceMutation.mutate(
+      {
+        nome: suggested.theme,
+        slug: suggested.name.replace(/\s+/g, '-').toLowerCase().replace(/[^a-z0-9-]/g, '') || 'novo-namespace',
+        descricao: suggested.theme,
+      },
+      {
+        onSuccess: (created) => {
+          resolveScopeMutation.mutate({
+            id: resolveScopeEntry.id,
+            namespaceId: created.id,
+            domain: resolveScopeEntry.inferredDomain?.trim().length ? resolveScopeEntry.inferredDomain : null,
+            agentId: resolveScopeEntry.agentId ?? resolveScopeEntry.inferredAgentId ?? null,
+            reason: resolveScopeReason.trim() || 'Namespace criado via sugestão de escopo',
+          });
+          setResolveScopeDialogOpen(false);
+          setResolveScopeEntry(null);
+          toast({ title: t('training.resolveScope.namespaceCreated') });
+        },
+      }
+    );
+  }, [resolveScopeEntry, resolveScopeReason, createNamespaceMutation, resolveScopeMutation, t]);
 
   const openTradingReviewDialog = useCallback((data: Record<string, unknown>, status: 'approved' | 'rejected') => {
     const meta = (data.sourceMetadata as { namespaceId?: string } | null) ?? {};
@@ -3221,6 +3290,87 @@ export default function Training() {
                 </>
               ) : (
                 t('training.reviewDialog.confirm')
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={resolveScopeDialogOpen}
+        onOpenChange={(open) => {
+          setResolveScopeDialogOpen(open);
+          if (!open) setResolveScopeEntry(null);
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t('training.resolveScope.title')}</DialogTitle>
+            <DialogDescription>{t('training.resolveScope.desc')}</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 py-2">
+            {resolveScopeEntry?.inferenceTrace?.suggestedNewNamespace && (
+              <div className="rounded-lg border border-primary/30 bg-primary/5 p-3">
+                <p className="text-sm font-medium mb-2">{t('training.resolveScope.suggestedTitle')}</p>
+                <p className="text-xs text-muted-foreground mb-2">
+                  {resolveScopeEntry.inferenceTrace.suggestedNewNamespace!.name} ({resolveScopeEntry.inferenceTrace.suggestedNewNamespace!.theme})
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleCreateAndResolveScope}
+                  disabled={createNamespaceMutation.isPending || resolveScopeMutation.isPending}
+                >
+                  {createNamespaceMutation.isPending || resolveScopeMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Folder className="h-4 w-4 mr-2" />
+                  )}
+                  {t('training.resolveScope.createSuggested')}
+                </Button>
+              </div>
+            )}
+            <div className="grid gap-2">
+              <Label>{t('training.resolveScope.namespaceSelect')}</Label>
+              <Select value={resolveScopeNamespaceId || '_none'} onValueChange={(v) => setResolveScopeNamespaceId(v === '_none' ? '' : v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder={t('training.createJob.namespacePlaceholder')} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">{t('training.filter.all')}</SelectItem>
+                  {(namespaces || []).map((ns) => (
+                    <SelectItem key={ns.id} value={ns.id}>
+                      {ns.nome}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label>{t('training.resolveScope.reason')}</Label>
+              <Input value={resolveScopeReason} onChange={(e) => setResolveScopeReason(e.target.value)} placeholder={t('training.resolveScope.reasonPlaceholder')} />
+            </div>
+            <div className="grid gap-2">
+              <Label>{t('training.resolveScope.domain')}</Label>
+              <Input value={resolveScopeDomain} onChange={(e) => setResolveScopeDomain(e.target.value)} placeholder="trading, geral..." />
+            </div>
+            <div className="grid gap-2">
+              <Label>{t('training.resolveScope.agentId')}</Label>
+              <Input value={resolveScopeAgentId} onChange={(e) => setResolveScopeAgentId(e.target.value)} placeholder="UUID do agente" />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setResolveScopeDialogOpen(false)}>
+              {t('training.createJob.cancel')}
+            </Button>
+            <Button onClick={confirmResolveScope} disabled={!resolveScopeEntry || resolveScopeMutation.isPending}>
+              {resolveScopeMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  {t('training.reviewDialog.saving')}
+                </>
+              ) : (
+                t('training.resolveScope.confirm')
               )}
             </Button>
           </DialogFooter>

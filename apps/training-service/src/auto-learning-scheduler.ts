@@ -542,7 +542,7 @@ export async function getAutoLearningStats(tenantId?: string) {
   });
 
   let lastTrainingData = lastSchedule?.dataCollected ?? 0;
-  let lastImageData = lastSchedule?.imagesCollected ?? 0;
+  const lastImageData = lastSchedule?.imagesCollected ?? 0;
   let activeModelName = 'baseline';
 
   if (lastSchedule?.loraJobId) {

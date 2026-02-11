@@ -207,6 +207,12 @@ export const PERMISSION_MAP: Record<string, Role[]> = {
   'integrations:wise_sync:reconcile': ['super_admin', 'admin'],
 
   // ============================================================================
+  // CONFIG MODULE - Configurações de sistema (RAG, Chat, Treino - editáveis via UI)
+  // ============================================================================
+  'config:system:read': ['super_admin', 'admin'],
+  'config:system:write': ['super_admin', 'admin'],
+
+  // ============================================================================
   // ADMIN MODULE - Administração do sistema
   // ============================================================================
   'admin:users:read': ['super_admin', 'admin'],

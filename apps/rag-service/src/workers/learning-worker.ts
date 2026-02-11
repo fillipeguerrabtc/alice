@@ -24,6 +24,7 @@ import type { Database } from '@alice/database';
 // CORREÇÃO 19/12/2025: Remover 'desc' não utilizado (no-unused-vars)
 import { eq, and, schema, sql, isNull, inArray } from '@alice/database';
 import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
+import { validateEmbeddingDimension, EMBEDDING_DIMENSIONS } from '@alice/database';
 
 const logger = createLogger('learning-worker');
 
@@ -114,7 +115,7 @@ async function callEmbeddingsGpuInternal(
   const timeoutId = setTimeout(() => controller.abort(), HTTP_TIMEOUT);
 
   try {
-    const response = await fetch(`${EMBEDDINGS_GPU_URL}/embed`, {
+    const response = await fetch(`${EMBEDDINGS_GPU_URL}/embed/text`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ texts }),
@@ -496,8 +497,13 @@ async function processEmbeddingGeneration(
   }
 
   try {
-    // Chamar GPU para gerar embeddings
+    // Chamar GPU para gerar embeddings (endpoint correto: /embed/text)
     const result = await embeddingsBreaker.fire(textsToProcess) as { embeddings: number[][] };
+
+    // Fail-fast: validar dimensão do primeiro embedding (SSOT TEXT)
+    if (result.embeddings.length > 0 && result.embeddings[0]) {
+      validateEmbeddingDimension(result.embeddings[0], EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
+    }
 
     return {
       success: true,

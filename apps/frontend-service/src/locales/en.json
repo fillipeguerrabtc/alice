@@ -1,6 +1,7 @@
 {
   "common": {
     "loading": "Loading...",
+    "saving": "Saving...",
     "save": "Save",
     "cancel": "Cancel",
     "delete": "Delete",
@@ -423,6 +424,8 @@
       "namespaceOptional": "If empty, use the conversation namespace.",
       "noticeTitle": "Approval required",
       "noticeDesc": "Submitted data must be approved before training starts.",
+      "longConversationTitle": "Long conversation",
+      "longConversationDesc": "The conversation will be split into multiple samples for better training quality.",
       "confirm": "Send now",
       "sending": "Sending...",
       "cancel": "Cancel",
@@ -801,6 +804,53 @@
       "testFailed": "Test failed",
       "connectionFailed": "Failed to connect to {{name}}"
     }
+  },
+  "profile": {
+    "title": "My Profile",
+    "description": "Manage your personal data, preferences, and security.",
+    "notifications": "Notifications",
+    "notificationsDesc": "Configure how you want to receive alerts and updates.",
+    "security": "Security",
+    "securityDesc": "Biometrics, password, and active sessions.",
+    "language": "Language & Region",
+    "languageDesc": "Interface language, timezone, and location.",
+    "sessionsDesc": "View and manage your active sessions."
+  },
+  "systemSettings": {
+    "title": "System Settings",
+    "description": "RAG, Chat, Training, and Embeddings parameters. Values applied via environment variables on deploy.",
+    "envNoteTitle": "Configuration via environment variables",
+    "envNoteDesc": "Displayed values are defaults. Changes require docker-compose or .env.prod and redeploy. See docs/TRAINING.md and docs/DEPLOYMENT.md.",
+    "sections": {
+      "rag": "RAG & Documents",
+      "chat": "Chat & Conversations",
+      "training": "Training & Datasets",
+      "embeddings": "Embeddings"
+    },
+    "ragDesc": "Document processing limits and chunk selection for training.",
+    "rag": {
+      "documentMaxChunks": "Max chunks per document",
+      "documentMaxChunksDesc": "Documents are split into ~8k character chunks. This value sets the maximum per document.",
+      "trainingDocMaxSamples": "Max chunks per doc for training",
+      "trainingDocMaxSamplesDesc": "When promoting a document to training, how many chunks are selected by relevance/diversity."
+    },
+    "chatDesc": "Conversation limits and slicing for training data collection.",
+    "chat": {
+      "trainingConvMaxMessages": "Max messages per conversation",
+      "trainingConvMaxMessagesDesc": "Limit of messages considered when sending conversation to training.",
+      "conversationSliceSize": "Slice window size",
+      "conversationSliceSizeDesc": "Long conversations are split into disjoint windows. This value defines each window size."
+    },
+    "trainingDesc": "On-demand training parameters and LoRA hyperparams.",
+    "training": {
+      "minOndemandDatasetSize": "Min examples (on-demand)",
+      "minOndemandDatasetSizeDesc": "Minimum approved examples required to start on-demand training.",
+      "maxSeqLen": "Max sequence length",
+      "maxSeqLenDesc": "TRL truncation. Higher values increase VRAM usage."
+    },
+    "embeddingsDesc": "Embedding model and dimensions.",
+    "embeddingsPlaceholder": "Embedding settings are defined in the backend (Qwen3-Embedding GPU). See technical documentation.",
+    "saved": "Settings saved successfully"
   },
   "settings": {
     "title": "Settings",
@@ -1744,6 +1794,23 @@
         "optionalFields": "Optional fields:",
         "ratingField": "rating: number between 1 and 5"
       }
+    },
+    "resolveScope": {
+      "title": "Resolve scope",
+      "desc": "Set the target namespace and override reason (auditable).",
+      "suggestedTitle": "Suggested namespace",
+      "createSuggested": "Create suggested namespace",
+      "namespaceSelect": "Existing namespace",
+      "reason": "Reason (required)",
+      "reasonPlaceholder": "Manual correction of inferred scope",
+      "domain": "Domain (optional)",
+      "agentId": "Agent ID (optional)",
+      "confirm": "Resolve scope",
+      "namespaceCreated": "Namespace created and scope resolved"
+    },
+    "promoteDocument": {
+      "bookMode": "Book mode",
+      "bookModeTooltip": "For large books, selects more chunks per document (up to 100)"
     },
     "multimodal": {
       "tabTitle": "Multimodal",

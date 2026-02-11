@@ -54,7 +54,8 @@ const Conversations = lazy(() => import('@/pages/Conversations'));
 const Documents = lazy(() => import('@/pages/Documents'));
 const Training = lazy(() => import('@/pages/Training'));
 const Integrations = lazy(() => import('@/pages/Integrations'));
-const Settings = lazy(() => import('@/pages/Settings'));
+const Profile = lazy(() => import('@/pages/Profile'));
+const SystemSettings = lazy(() => import('@/pages/SystemSettings'));
 const Login = lazy(() => import('@/pages/Login'));
 const Agents = lazy(() => import('@/pages/Agents'));
 const Namespaces = lazy(() => import('@/pages/Namespaces'));
@@ -152,7 +153,9 @@ function Router() {
       <Route path="/observability" component={Observability} />
       <Route path="/alice-config" component={AliceConfig} />
       <Route path="/agentic-config" component={AgenticConfig} />
-      <Route path="/settings" component={Settings} />
+      <Route path="/profile" component={Profile} />
+      <Route path="/settings" component={Profile} />
+      <Route path="/system-settings" component={SystemSettings} />
       <Route component={NotFound} />
     </Switch>
   );

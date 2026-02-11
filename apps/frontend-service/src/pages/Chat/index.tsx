@@ -40,6 +40,7 @@ import {
   MoreHorizontal,
   Info,
   Send,
+  AlertTriangle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -2436,6 +2437,13 @@ export default function Chat() {
                   {t('chat.training.namespaceOptional')}
                 </p>
               </div>
+              {trainingDialogMode === 'conversation' && messages.length > 10 && (
+                <Alert className="border-amber-500/50 bg-amber-500/5">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertTitle>{t('chat.training.longConversationTitle')}</AlertTitle>
+                  <AlertDescription>{t('chat.training.longConversationDesc')}</AlertDescription>
+                </Alert>
+              )}
               <Alert>
                 <Info className="h-4 w-4" />
                 <AlertTitle>{t('chat.training.noticeTitle')}</AlertTitle>

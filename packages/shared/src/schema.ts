@@ -3371,6 +3371,7 @@ export const TradingLoraHyperparamsSchema = z.object({
   warmupSteps: z.number().default(100),      // Warmup steps
   maxSteps: z.number().optional(),           // Max steps (override epochs)
   targetModules: z.array(z.string()).default(["q_proj", "v_proj"]), // Módulos alvo
+  maxSeqLen: z.number().int().min(256).max(32768).default(2048), // TRL truncation (default TRL 2025)
 });
 export type TradingLoraHyperparams = z.infer<typeof TradingLoraHyperparamsSchema>;
 
@@ -3519,6 +3520,7 @@ export const loraJobs = pgTable(
       epochs: 3,
       warmupSteps: 100,
       targetModules: ["q_proj", "v_proj"],
+      maxSeqLen: 2048,
     }),
     
     // Status e progresso
@@ -4166,6 +4168,17 @@ export const mediaUploads = pgTable(
 // ============================================================================
 // FEATURE FLAGS (Runtime Configuration - Enterprise)
 // ============================================================================
+
+// ============================================================================
+// SYSTEM CONFIG - Configurações editáveis via UI (RAG, Chat, Treino)
+// Valores em DB têm precedência sobre variáveis de ambiente.
+// Ref: docs/TREINAMENTO-LIMITES-E-BOAS-PRATICAS.md
+// ============================================================================
+export const systemConfig = pgTable("system_config", {
+  key: varchar("key", { length: 128 }).primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 export const featureFlags = pgTable(
   "feature_flags",

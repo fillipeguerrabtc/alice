@@ -243,6 +243,8 @@ services:
       RAG_SERVICE_URL: http://alice-rag:3003
       INTEGRATIONS_SERVICE_URL: http://alice-integrations:3005
       TRAINING_SERVICE_URL: http://alice-training:3004
+      TRAINING_CONVERSATION_MAX_MESSAGES: ${TRAINING_CONVERSATION_MAX_MESSAGES:-50}
+      CONVERSATION_SLICE_SIZE: ${CONVERSATION_SLICE_SIZE:-10}
       GPU_MANAGER_URL: ${GPU_MANAGER_URL:-http://alice-gpu-manager:3010}
       REDIS_URL: redis://:${REDIS_PASSWORD}@alice-redis:6379
     # NOTA: postgres e alice-redis estão no stack infra - verificados pelo workflow
@@ -301,8 +303,9 @@ services:
       RAG_PUBLIC_BASE_URL: ${RAG_PUBLIC_BASE_URL:?RAG_PUBLIC_BASE_URL é obrigatório}
       REDIS_URL: redis://:${REDIS_PASSWORD}@alice-redis:6379
       TRAINING_SERVICE_URL: http://alice-training:3004
+      DOCUMENT_MAX_CHUNKS: ${DOCUMENT_MAX_CHUNKS:-50}
       TRAINING_DOC_AUTO_COLLECT: ${TRAINING_DOC_AUTO_COLLECT:-false}
-      TRAINING_DOC_MAX_SAMPLES: ${TRAINING_DOC_MAX_SAMPLES:-20}
+      TRAINING_DOC_MAX_SAMPLES: ${TRAINING_DOC_MAX_SAMPLES:-50}
       TRAINING_DOC_MIN_CHARS: ${TRAINING_DOC_MIN_CHARS:-180}
       # CORREÇÃO 12/01/2026: SESSION_SECRET para validação de cookies (session-auth middleware)
       SESSION_SECRET: ${SESSION_SECRET}
@@ -355,6 +358,7 @@ services:
       QDRANT_URL: http://alice-qdrant:6333
       QDRANT_API_KEY: ${QDRANT_API_KEY}
       REDIS_URL: redis://:${REDIS_PASSWORD}@alice-redis:6379
+      MIN_ONDEMAND_DATASET_SIZE: ${MIN_ONDEMAND_DATASET_SIZE:-10}
     # NOTA: postgres, alice-qdrant, alice-redis estão no stack infra
     depends_on:
       gpu-manager:

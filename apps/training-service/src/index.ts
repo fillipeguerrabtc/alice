@@ -62,6 +62,25 @@ import {
 import { trainingServicePaths, trainingServiceSchemas } from './openapi-specs.js';
 import { eq, and, or, desc, sql, isNull, not, inArray } from '@alice/database';
 import { z } from 'zod';
+import { getAllSystemConfig, setSystemConfig, getSystemConfig } from '@alice/database/system-config';
+
+async function resolveMinOndemandDatasetSize(): Promise<number> {
+  const v = await getSystemConfig('MIN_ONDEMAND_DATASET_SIZE');
+  if (v) {
+    const n = parseInt(v, 10);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return MIN_ONDEMAND_DATASET_SIZE;
+}
+
+async function resolveDefaultMaxSeqLen(): Promise<number> {
+  const v = await getSystemConfig('maxSeqLen');
+  if (v) {
+    const n = parseInt(v, 10);
+    if (Number.isFinite(n) && n >= 256 && n <= 32768) return n;
+  }
+  return 2048;
+}
 import { processLoraJob, activateLoraAdapter, getActiveAdapter, deactivateLoraAdapter } from './lora-job-manager.js';
 import { resolveScope } from './scope-resolver.js';
 import { selectExamplesByProfile } from './dataset-selection-engine.js';
@@ -533,6 +552,52 @@ app.get('/ready', async (_req: Request, res: Response) => {
       reason: 'Erro ao verificar dependências',
       timestamp: new Date().toISOString(),
     });
+  }
+});
+
+// ============================================================================
+// SYSTEM CONFIG - Configurações editáveis via UI (RAG, Chat, Treino)
+// Ref: docs/TREINAMENTO-LIMITES-E-BOAS-PRATICAS.md
+// ============================================================================
+app.get('/api/training/system-config', requirePermission('config:system:read'), async (_req: Request, res: Response) => {
+  try {
+    const config = await getAllSystemConfig();
+    res.json(config);
+  } catch (error) {
+    logger.error({ error }, 'Erro ao obter system config');
+    res.status(500).json({ error: 'Erro ao obter configurações' });
+  }
+});
+
+const systemConfigPatchSchema = z.object({
+  configs: z.record(z.string().min(1)),
+});
+
+app.patch('/api/training/system-config', requirePermission('config:system:write'), async (req: Request, res: Response) => {
+  try {
+    const body = systemConfigPatchSchema.parse(req.body);
+    const knownKeys = [
+      'DOCUMENT_MAX_CHUNKS',
+      'TRAINING_DOC_MAX_SAMPLES',
+      'TRAINING_CONVERSATION_MAX_MESSAGES',
+      'CONVERSATION_SLICE_SIZE',
+      'MIN_ONDEMAND_DATASET_SIZE',
+      'maxSeqLen',
+    ] as const;
+    for (const [key, value] of Object.entries(body.configs)) {
+      if (knownKeys.includes(key as (typeof knownKeys)[number])) {
+        await setSystemConfig(key, String(value));
+      }
+    }
+    const config = await getAllSystemConfig();
+    res.json(config);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({ error: 'Payload inválido', details: error.flatten() });
+      return;
+    }
+    logger.error({ error }, 'Erro ao atualizar system config');
+    res.status(500).json({ error: 'Erro ao atualizar configurações' });
   }
 });
 
@@ -1063,6 +1128,11 @@ app.get('/api/training/jobs', requirePermission('training:fine_tuning_jobs:read'
 });
 
 // Gate 2: Treinamento deve usar o MESMO modelo base do LLM (texto)
+const MIN_ONDEMAND_DATASET_SIZE = Math.max(
+  1,
+  parseInt(process.env.MIN_ONDEMAND_DATASET_SIZE ?? '10', 10) || 10
+);
+
 const createJobSchema = z.object({
   tenantId: z.string().uuid().optional(),
   namespaceId: z.string().uuid(),
@@ -1074,7 +1144,9 @@ const createJobSchema = z.object({
     epochs: z.number().default(3),
     learningRate: z.number().default(0.0001),
     batchSize: z.number().default(4),
+    maxSeqLen: z.number().int().min(256).max(32768).optional(),
   }).optional(),
+  forceMinSize: z.boolean().optional(),
 });
 
 const createTradingJobSchema = z.object({
@@ -1086,7 +1158,9 @@ const createTradingJobSchema = z.object({
     epochs: z.number().default(TRADING_EPOCHS),
     learningRate: z.number().default(TRADING_LEARNING_RATE),
     batchSize: z.number().default(TRADING_BATCH_SIZE),
+    maxSeqLen: z.number().int().min(256).max(32768).optional(),
   }).optional(),
+  forceMinSize: z.boolean().optional(),
 });
 
 app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:start'), async (req: Request, res: Response) => {
@@ -1141,11 +1215,15 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
     const approvedIds = new Set(profileSelection.selected.map((item) => item.id));
     const approvedData = approvedDataRaw.filter((item) => approvedIds.has(item.id));
 
-    if (approvedData.length < 10) {
+    const minOndemand = await resolveMinOndemandDatasetSize();
+    const defaultMaxSeqLen = await resolveDefaultMaxSeqLen();
+    const minRequired = body.forceMinSize ? 1 : minOndemand;
+    if (approvedData.length < minRequired) {
       return res.status(400).json({ 
         error: 'Dados de treinamento insuficientes',
-        required: 10,
+        required: minRequired,
         available: approvedData.length,
+        hint: body.forceMinSize ? 'Poucos exemplos podem prejudicar o modelo. Use por sua conta e risco.' : undefined,
       });
     }
 
@@ -1166,14 +1244,13 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
         epochs: 3,
         learningRate: 0.0001,
         batchSize: 4,
+        maxSeqLen: defaultMaxSeqLen,
       },
     }).returning();
 
-    const jobHyperparameters = body.hyperparameters || {
-      epochs: 3,
-      learningRate: 0.0001,
-      batchSize: 4,
-    };
+    const jobHyperparameters: FineTuningJobHyperparams = body.hyperparameters
+      ? { ...body.hyperparameters, maxSeqLen: body.hyperparameters.maxSeqLen ?? defaultMaxSeqLen }
+      : { epochs: 3, learningRate: 0.0001, batchSize: 4, maxSeqLen: defaultMaxSeqLen };
     
     // Execução real (LoRA) via GPU Manager Service (prioridade baixa)
     processFineTuningJob(job.id, jobHyperparameters).catch((err: unknown) => {
@@ -1223,19 +1300,21 @@ app.post('/api/training/jobs/trading', requirePermission('training:fine_tuning_j
       where: and(...approvedConditions),
     });
 
-    if (approvedData.length < TRADING_MIN_DATA_REQUIRED) {
+    const minOndemandTrading = await resolveMinOndemandDatasetSize();
+    const defaultMaxSeqLenTrading = await resolveDefaultMaxSeqLen();
+    const minRequired = body.forceMinSize ? 1 : Math.max(TRADING_MIN_DATA_REQUIRED, minOndemandTrading);
+    if (approvedData.length < minRequired) {
       return res.status(400).json({
         error: 'Dados de treinamento insuficientes para Trading',
-        required: TRADING_MIN_DATA_REQUIRED,
+        required: minRequired,
         available: approvedData.length,
+        hint: body.forceMinSize ? 'Poucos exemplos podem prejudicar o modelo. Use por sua conta e risco.' : undefined,
       });
     }
 
-    const hyperparameters = body.hyperparameters || {
-      epochs: TRADING_EPOCHS,
-      learningRate: TRADING_LEARNING_RATE,
-      batchSize: TRADING_BATCH_SIZE,
-    };
+    const hyperparameters: FineTuningJobHyperparams = body.hyperparameters
+      ? { ...body.hyperparameters, maxSeqLen: body.hyperparameters.maxSeqLen ?? defaultMaxSeqLenTrading }
+      : { epochs: TRADING_EPOCHS, learningRate: TRADING_LEARNING_RATE, batchSize: TRADING_BATCH_SIZE, maxSeqLen: defaultMaxSeqLenTrading };
 
     const [job] = await db.insert(schema.fineTuningJobs).values({
       tenantId,
@@ -1285,7 +1364,7 @@ app.post('/api/training/jobs/trading', requirePermission('training:fine_tuning_j
  */
 const TRAINING_STORAGE_DIR = process.env.TRAINING_STORAGE_DIR || '/opt/alice/uploads/training';
 
-type FineTuningJobHyperparams = { epochs: number; learningRate: number; batchSize: number };
+type FineTuningJobHyperparams = { epochs: number; learningRate: number; batchSize: number; maxSeqLen?: number };
 
 async function ensureDir(dirPath: string): Promise<void> {
   await fs.mkdir(dirPath, { recursive: true });
@@ -1472,6 +1551,7 @@ async function processFineTuningJob(jobId: string, hyperparameters: FineTuningJo
           epochs: hyperparameters.epochs,
           learningRate: hyperparameters.learningRate,
           batchSize: hyperparameters.batchSize,
+          maxSeqLen: hyperparameters.maxSeqLen ?? 2048,
         },
       },
     });
@@ -1527,7 +1607,7 @@ async function resumePendingFineTuningJobs(): Promise<void> {
 
   for (const job of pending) {
     // Rodar em background, mas com retomada via DB. (Sem depender de polling em memória)
-    processFineTuningJob(job.id, (job.hyperparameters as FineTuningJobHyperparams) || { epochs: 3, learningRate: 0.0001, batchSize: 4 })
+    processFineTuningJob(job.id, (job.hyperparameters as FineTuningJobHyperparams) || { epochs: 3, learningRate: 0.0001, batchSize: 4, maxSeqLen: 2048 })
       .catch((err: unknown) => {
         const msg = err instanceof Error ? err.message : String(err);
         logger.error({ jobId: job.id, error: msg }, 'Falha ao retomar fine-tuning job');

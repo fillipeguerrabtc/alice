@@ -291,7 +291,23 @@ async def embed_text(request: TextEmbeddingRequest):
                 convert_to_numpy=True,
                 normalize_embeddings=True
             )
-        
+
+        # Validação enterprise: sem NaN/Inf (fail-fast)
+        if not np.isfinite(embeddings).all():
+            EMBEDDING_COUNTER.labels(type="text", status="error").inc()
+            raise HTTPException(
+                status_code=500,
+                detail="Embedding inválido: contém NaN ou Inf (fail-fast enterprise)"
+            )
+
+        # Validação de dimensão (SSOT TEXT_EMBEDDING_DIM)
+        if len(embeddings[0]) != TEXT_EMBEDDING_DIM:
+            EMBEDDING_COUNTER.labels(type="text", status="error").inc()
+            raise HTTPException(
+                status_code=500,
+                detail=f"Dimensão incorreta: {len(embeddings[0])} vs esperado {TEXT_EMBEDDING_DIM}"
+            )
+
         processing_time_ms = int((time.time() - start_time) * 1000)
         
         EMBEDDING_COUNTER.labels(type="text", status="success").inc(len(texts))

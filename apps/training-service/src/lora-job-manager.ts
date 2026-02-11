@@ -16,6 +16,7 @@
 
 import { createLogger } from '@alice/logger';
 import { getDatabase, schema, eq, and, desc, sql, inArray, isNull, or } from '@alice/database';
+import { getSystemConfig } from '@alice/database/system-config';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { requestGpu, GpuServiceType, GpuRequestPriority, GPU_MANAGER_CONFIG } from '@alice/shared-utils';
@@ -47,13 +48,29 @@ const DEFAULT_HYPERPARAMS: TradingLoraHyperparams = {
   epochs: 3,
   warmupSteps: 100,
   targetModules: ['q_proj', 'v_proj', 'k_proj', 'o_proj'],
+  maxSeqLen: 2048,
 };
 
-// Mínimo de exemplos para treinar (trading_dataset)
-const MIN_DATASET_SIZE = 100;
+/** Mínimo de exemplos para jobs LoRA (trading_dataset). Reservado para validação futura. */
+const _MIN_DATASET_SIZE = 100;
 
 /** Mínimo de exemplos para runs agendados (training_data + opcional trading). */
 const MIN_CHAT_DATASET_SIZE = 50;
+
+/** Mínimo para jobs on-demand (criados via API/UI). Configurável por DB/env. */
+const MIN_ONDEMAND_DATASET_SIZE_DEFAULT = Math.max(
+  1,
+  parseInt(process.env.MIN_ONDEMAND_DATASET_SIZE ?? '10', 10) || 10
+);
+
+async function resolveMinOndemandDatasetSize(): Promise<number> {
+  const v = await getSystemConfig('MIN_ONDEMAND_DATASET_SIZE');
+  if (v) {
+    const n = parseInt(v, 10);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return MIN_ONDEMAND_DATASET_SIZE_DEFAULT;
+}
 
 // ============================================================================
 // UTILITÁRIOS
@@ -105,6 +122,8 @@ interface CreateJobParams {
     fromDate?: Date;
     toDate?: Date;
   };
+  /** Se true, ignora mínimo de exemplos (permite 1). Aviso explícito no frontend. */
+  forceMinSize?: boolean;
 }
 
 interface JobProgress {
@@ -340,7 +359,7 @@ export async function prepareDatasetFromChatAndTrading(
     return JSON.stringify({ text });
   };
 
-  let combined: Array<{ id: string; type: 'chat' | 'trading'; line: string }> = chatRows.map((r) => ({
+  const combined: Array<{ id: string; type: 'chat' | 'trading'; line: string }> = chatRows.map((r) => ({
     id: r.id,
     type: 'chat',
     line: formatChatToJsonl(r),
@@ -416,12 +435,15 @@ export async function prepareDatasetFromChatAndTrading(
 export async function createLoraJob(params: CreateJobParams): Promise<LoraJob> {
   const db = getDatabase();
 
+  const minOndemand = await resolveMinOndemandDatasetSize();
+
   // Preparar dataset para obter contagens
   const dataset = await prepareDataset(params.tenantId, params.namespaceId, params.agentId, params.datasetFilter);
 
-  if (dataset.stats.total < MIN_DATASET_SIZE) {
+  const minRequired = params.forceMinSize ? 1 : minOndemand;
+  if (dataset.stats.total < minRequired) {
     throw new Error(
-      `Dataset insuficiente: ${dataset.stats.total} exemplos. Mínimo necessário: ${MIN_DATASET_SIZE}`
+      `Dataset insuficiente: ${dataset.stats.total} exemplos. Mínimo necessário: ${minRequired}${params.forceMinSize ? ' (forçar com poucos exemplos pode prejudicar o modelo)' : ''}`
     );
   }
 
@@ -785,6 +807,12 @@ export async function processLoraJob(jobId: string): Promise<void> {
           epochs: (fresh.hyperparameters as TradingLoraHyperparams).epochs,
           learningRate: (fresh.hyperparameters as TradingLoraHyperparams).learningRate,
           batchSize: (fresh.hyperparameters as TradingLoraHyperparams).batchSize,
+          maxSeqLen: (fresh.hyperparameters as TradingLoraHyperparams).maxSeqLen ?? 2048,
+          loraRank: (fresh.hyperparameters as TradingLoraHyperparams).loraRank,
+          loraAlpha: (fresh.hyperparameters as TradingLoraHyperparams).loraAlpha,
+          warmupSteps: (fresh.hyperparameters as TradingLoraHyperparams).warmupSteps ?? 100,
+          gradientAccumulationSteps: 1,
+          loraDropout: 0.05,
         },
       },
     });

@@ -1,6 +1,7 @@
 {
   "common": {
     "loading": "Carregando...",
+    "saving": "Salvando...",
     "save": "Salvar",
     "cancel": "Cancelar",
     "delete": "Excluir",
@@ -448,6 +449,8 @@
       "namespaceOptional": "Se vazio, usa o namespace da conversa.",
       "noticeTitle": "Aprovação obrigatória",
       "noticeDesc": "Os dados enviados precisam ser aprovados antes de iniciar o treinamento.",
+      "longConversationTitle": "Conversa longa",
+      "longConversationDesc": "A conversa será fatiada em várias amostras para melhor qualidade de treino.",
       "confirm": "Enviar agora",
       "sending": "Enviando...",
       "cancel": "Cancelar",
@@ -826,6 +829,53 @@
       "testFailed": "Teste falhou",
       "connectionFailed": "Falha na conexão com {{name}}"
     }
+  },
+  "profile": {
+    "title": "Meu Perfil",
+    "description": "Gerencie seus dados pessoais, preferências e segurança.",
+    "notifications": "Notificações",
+    "notificationsDesc": "Configure como deseja receber alertas e novidades.",
+    "security": "Segurança",
+    "securityDesc": "Biometria, senha e sessões ativas.",
+    "language": "Idioma e Região",
+    "languageDesc": "Idioma da interface, fuso horário e localização.",
+    "sessionsDesc": "Visualize e gerencie suas sessões ativas."
+  },
+  "systemSettings": {
+    "title": "Configurações do Sistema",
+    "description": "Parâmetros de RAG, Chat, Treino e Embeddings. Valores aplicados via variáveis de ambiente no deploy.",
+    "envNoteTitle": "Configuração via variáveis de ambiente",
+    "envNoteDesc": "Os valores exibidos correspondem aos defaults. Alterações são feitas via docker-compose ou .env.prod e exigem redeploy. Consulte docs/TRAINING.md e docs/DEPLOYMENT.md.",
+    "sections": {
+      "rag": "RAG & Documentos",
+      "chat": "Chat & Conversas",
+      "training": "Treino & Datasets",
+      "embeddings": "Embeddings"
+    },
+    "ragDesc": "Limites de processamento de documentos e seleção de chunks para treino.",
+    "rag": {
+      "documentMaxChunks": "Máximo de chunks por documento",
+      "documentMaxChunksDesc": "Documentos são fatiados em chunks de ~8k caracteres. Este valor define o limite máximo por documento.",
+      "trainingDocMaxSamples": "Máximo de chunks por doc para treino",
+      "trainingDocMaxSamplesDesc": "Na promoção de documento para treino, quantos chunks são selecionados por relevância/diversidade."
+    },
+    "chatDesc": "Limites de conversas e fatiamento para coleta de dados de treino.",
+    "chat": {
+      "trainingConvMaxMessages": "Máximo de mensagens por conversa",
+      "trainingConvMaxMessagesDesc": "Limite de mensagens consideradas ao enviar conversa para treino.",
+      "conversationSliceSize": "Tamanho das janelas de fatiamento",
+      "conversationSliceSizeDesc": "Conversas longas são fatiadas em janelas disjuntas. Este valor define o tamanho de cada janela."
+    },
+    "trainingDesc": "Parâmetros de treino on-demand e hyperparams LoRA.",
+    "training": {
+      "minOndemandDatasetSize": "Mínimo de exemplos (on-demand)",
+      "minOndemandDatasetSizeDesc": "Mínimo de exemplos aprovados necessários para iniciar treino on-demand.",
+      "maxSeqLen": "Comprimento máximo de sequência",
+      "maxSeqLenDesc": "Truncation do TRL. Valores maiores aumentam uso de VRAM."
+    },
+    "embeddingsDesc": "Modelo e dimensões de embeddings.",
+    "embeddingsPlaceholder": "Configurações de embeddings são definidas no backend (Qwen3-Embedding GPU). Consulte documentação técnica.",
+    "saved": "Configurações salvas com sucesso"
   },
   "settings": {
     "title": "Configurações",
@@ -1801,6 +1851,23 @@
         "optionalFields": "Campos opcionais:",
         "ratingField": "rating: número entre 1 e 5"
       }
+    },
+    "resolveScope": {
+      "title": "Resolver escopo",
+      "desc": "Defina o namespace de destino e o motivo do override (auditável).",
+      "suggestedTitle": "Namespace sugerido",
+      "createSuggested": "Criar namespace sugerido",
+      "namespaceSelect": "Namespace existente",
+      "reason": "Motivo (obrigatório)",
+      "reasonPlaceholder": "Correção manual do escopo inferido",
+      "domain": "Domínio (opcional)",
+      "agentId": "Agent ID (opcional)",
+      "confirm": "Resolver escopo",
+      "namespaceCreated": "Namespace criado e escopo resolvido"
+    },
+    "promoteDocument": {
+      "bookMode": "Modo livro",
+      "bookModeTooltip": "Para livros grandes, seleciona mais chunks por documento (até 100)"
     },
     "multimodal": {
       "tabTitle": "Multimodal",

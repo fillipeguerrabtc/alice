@@ -1,8 +1,25 @@
 # Sistema de Treinamento - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra  
-**Data:** 09 de Fevereiro de 2026  
-**Versão:** 4.3.0 - Gate 2 + Ecossistema LLM (LoRA + RAG + Feedback Loop)
+**Data:** 11 de Fevereiro de 2026  
+**Versão:** 4.4.0 - Gate 2 + Configurações editáveis via UI
+
+---
+
+## Configurações do Sistema (editáveis via UI)
+
+A página **Configurações do Sistema** (menu lateral) permite alterar limites de treinamento em tempo real, sem reiniciar serviços. Valores gravados no PostgreSQL têm precedência sobre variáveis de ambiente. Chaves disponíveis:
+
+| Chave | Descrição | Default |
+|-------|-----------|---------|
+| `DOCUMENT_MAX_CHUNKS` | Máximo de chunks por documento (RAG) | 50 |
+| `TRAINING_DOC_MAX_SAMPLES` | Máximo de chunks selecionados por documento para treino | 50 |
+| `TRAINING_CONVERSATION_MAX_MESSAGES` | Máximo de mensagens por conversa na coleta | 50 |
+| `CONVERSATION_SLICE_SIZE` | Tamanho da janela para fatiamento de conversas longas | 10 |
+| `MIN_ONDEMAND_DATASET_SIZE` | Mínimo de exemplos para treino on-demand | 10 |
+| `maxSeqLen` | Comprimento máximo de sequência no treino LoRA | 2048 |
+
+Alterações são aplicadas imediatamente (cache invalidado no save). Ver `docs/TREINAMENTO-LIMITES-E-BOAS-PRATICAS.md` para detalhes técnicos.
 
 ---
 
@@ -386,7 +403,11 @@ A coleta automática envia pares **usuário → assistente** para o Training Ser
 
 **Variáveis de ambiente:**
 - `TRAINING_AUTO_COLLECT_CHAT=true` (habilita a coleta automática)
-- `TRAINING_CONVERSATION_MAX_MESSAGES=20` (limite para curadoria manual)
+- `TRAINING_CONVERSATION_MAX_MESSAGES=50` (limite para curadoria manual; default 50)
+- `CONVERSATION_SLICE_SIZE=10` (janela para fatiamento de conversas longas em amostras disjuntas)
+- `DOCUMENT_MAX_CHUNKS=50` (document-processor; máximo de chunks por documento)
+- `TRAINING_DOC_MAX_SAMPLES=50` (rag-service; máximo de chunks selecionados por doc para treino)
+- `MIN_ONDEMAND_DATASET_SIZE=10` (training-service; mínimo de exemplos para treino on-demand)
 
 ### Curadoria manual (Enviar conversa ao namespace)
 
