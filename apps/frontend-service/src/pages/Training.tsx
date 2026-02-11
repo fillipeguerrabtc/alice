@@ -2126,6 +2126,23 @@ export default function Training() {
     refetchInterval: 1000 * 60,
   });
 
+  /** Contagens por status (todos os trading datasets) — usado nos cards de totais; independente do filtro da aba. */
+  const { data: tradingDatasetStatsFromApi } = useQuery<{
+    success: boolean;
+    pending: number;
+    approved: number;
+    rejected: number;
+    used: number;
+  }>({
+    queryKey: ['/api/integrations/trading/datasets/stats'],
+    queryFn: async () => {
+      const res = await apiRequest('GET', '/api/integrations/trading/datasets/stats');
+      return res.json();
+    },
+    staleTime: 1000 * 30,
+    refetchInterval: 1000 * 60,
+  });
+
   const { data: jobs, isLoading: jobsLoading } = useQuery<JobsResponse>({
     queryKey: ['/api/training/jobs'],
     staleTime: 1000 * 30,
@@ -2196,6 +2213,7 @@ export default function Training() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/datasets'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/datasets/stats'] });
       toast({ title: t('training.tradingDataset.success.reviewed') });
     },
     onError: () => {
@@ -2227,15 +2245,29 @@ export default function Training() {
     used: allData.filter(d => d.status === 'used').length,
   };
 
-  const tradingDatasetStats = {
-    total: tradingDatasets?.total ?? tradingDatasetRows.length,
-    pending: tradingDatasetRows.filter((d) => (d as { status?: string }).status === 'pending').length,
-    approved: tradingDatasetRows.filter((d) => (d as { status?: string }).status === 'approved').length,
-    rejected: tradingDatasetRows.filter((d) => (d as { status?: string }).status === 'rejected').length,
-    used: tradingDatasetRows.filter((d) => (d as { status?: string }).status === 'used').length,
-  };
+  /** Contagens de trading datasets: usar API de stats (correto por status); fallback nos rows quando filtro ativo para total da aba. */
+  const tradingDatasetStats = (() => {
+    const fromApi = tradingDatasetStatsFromApi?.success === true ? tradingDatasetStatsFromApi : null;
+    if (fromApi) {
+      const total = fromApi.pending + fromApi.approved + fromApi.rejected + fromApi.used;
+      return {
+        total,
+        pending: fromApi.pending,
+        approved: fromApi.approved,
+        rejected: fromApi.rejected,
+        used: fromApi.used,
+      };
+    }
+    return {
+      total: tradingDatasets?.total ?? tradingDatasetRows.length,
+      pending: tradingDatasetRows.filter((d) => (d as { status?: string }).status === 'pending').length,
+      approved: tradingDatasetRows.filter((d) => (d as { status?: string }).status === 'approved').length,
+      rejected: tradingDatasetRows.filter((d) => (d as { status?: string }).status === 'rejected').length,
+      used: tradingDatasetRows.filter((d) => (d as { status?: string }).status === 'used').length,
+    };
+  })();
 
-  /** Stats combinados para os cards (Training Data + Trading Datasets) */
+  /** Stats combinados para os cards (Training Data + Trading Datasets); trading totals vêm do endpoint /stats. */
   const displayStats = {
     pending: stats.pending + tradingDatasetStats.pending,
     approved: stats.approved + tradingDatasetStats.approved,

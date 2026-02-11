@@ -2451,9 +2451,16 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
       });
     }
 
-    // Avaliar qualidade dos dados antes de iniciar (com escopo namespace quando informado)
+    // Avaliar qualidade dos dados antes de iniciar (com escopo namespace quando informado).
+    // Alinhar critério ao job: se includeTradingDataset=false, threshold só em chat (evita "proceed" + "Dataset insuficiente").
     const scheduleType = trainingType === 'full' ? 'complete_fine_tuning' : 'incremental_fine_tuning';
-    const evaluation = await evaluateDataQuality(scheduleType, tenantId, undefined, namespaceId);
+    const evaluation = await evaluateDataQuality(
+      scheduleType,
+      tenantId,
+      undefined,
+      namespaceId,
+      !includeTradingDataset
+    );
 
     if (!evaluation.isReady) {
       return res.status(400).json({
@@ -2489,11 +2496,27 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
       })
       .where(eq(schema.fineTuningJobs.id, job.id));
 
-    // Executar treino LoRA em background (processLoraJob)
+    // Executar treino LoRA em background (processLoraJob); ao terminar, sincronizar fine_tuning_jobs
+    const fineTuningJobId = job.id;
+    const loraJobId = loraResult.loraJobId;
     const { processLoraJob } = await import('./lora-job-manager.js');
-    processLoraJob(loraResult.loraJobId).catch((err) => {
-      logger.error({ err, loraJobId: loraResult.loraJobId }, 'Falha ao executar job LoRA on-demand');
-    });
+    processLoraJob(loraJobId)
+      .then(async () => {
+        await db.update(schema.fineTuningJobs)
+          .set({ status: 'completed', completadoEm: new Date() })
+          .where(eq(schema.fineTuningJobs.id, fineTuningJobId));
+        logger.info({ fineTuningJobId, loraJobId }, 'Treinamento on-demand concluído; fine_tuning_jobs atualizado');
+      })
+      .catch(async (err) => {
+        logger.error({ err, loraJobId }, 'Falha ao executar job LoRA on-demand');
+        await db.update(schema.fineTuningJobs)
+          .set({
+            status: 'failed',
+            completadoEm: new Date(),
+            errorMessage: err instanceof Error ? err.message : 'processLoraJob falhou',
+          })
+          .where(eq(schema.fineTuningJobs.id, fineTuningJobId));
+      });
 
     logger.info({
       jobId: job.id,

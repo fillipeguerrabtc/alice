@@ -97,8 +97,10 @@ interface CollectedData {
 export async function collectTrainingData(tenantId?: string, namespaceId?: string): Promise<CollectedData> {
   logger.info({ tenantId, namespaceId }, 'Iniciando coleta automática de dados de treinamento');
 
+  // Alinhado a prepareDatasetFromChatAndTrading: só contar exemplos ainda não usados em job (usedInJobId IS NULL).
   const trainingDataWhere = and(
     eq(schema.trainingData.status, 'approved'),
+    isNull(schema.trainingData.usedInJobId),
     tenantId ? eq(schema.trainingData.tenantId, tenantId) : undefined,
     namespaceId
       ? or(
@@ -121,6 +123,8 @@ export async function collectTrainingData(tenantId?: string, namespaceId?: strin
   });
 
   // trading_dataset aprovados: contagem para coleta/contagem do treino (fonte explícita documentada).
+  // Alinhado a prepareDatasetFromChatAndTrading: trading só é incluído quando namespaceId é informado;
+  // sem namespace, contar trading faria avaliação "proceed" mas o job usaria só chat → "Dataset insuficiente".
   const tradingWhere = and(
     eq(schema.tradingDataset.status, 'approved'),
     eq(schema.tradingDataset.isDuplicate, false),
@@ -129,10 +133,12 @@ export async function collectTrainingData(tenantId?: string, namespaceId?: strin
       ? sql`(${schema.tradingDataset.sourceMetadata} ->> 'namespaceId') = ${namespaceId}`
       : undefined
   );
-  const tradingApproved = await db.query.tradingDataset.findMany({
-    where: tradingWhere,
-    columns: { id: true },
-  });
+  const tradingApproved = namespaceId
+    ? await db.query.tradingDataset.findMany({
+        where: tradingWhere,
+        columns: { id: true },
+      })
+    : [];
   const tradingDatasetApprovedCount = tradingApproved.length;
 
   const highRatedData = approvedData.filter((d: typeof schema.trainingData.$inferSelect) =>

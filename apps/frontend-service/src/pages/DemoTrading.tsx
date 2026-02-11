@@ -539,6 +539,7 @@ export default function DemoTrading() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/datasets'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/datasets/stats'] });
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/postmortem', 'demo'] });
       toast({
         title: 'Post-mortem enviado para treinamento',

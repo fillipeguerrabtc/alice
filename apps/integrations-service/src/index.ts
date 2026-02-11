@@ -13953,6 +13953,40 @@ app.post('/api/integrations/trading/signals/generate', requirePermission('integr
   }
 });
 
+// GET /api/integrations/trading/datasets/stats - Contagens por status (para cards de totais sem depender do filtro da listagem)
+app.get('/api/integrations/trading/datasets/stats', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    const db = getDatabase();
+    const rows = await db
+      .select({
+        status: schema.tradingDataset.status,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(schema.tradingDataset)
+      .where(eq(schema.tradingDataset.tenantId, authContext.tenantId))
+      .groupBy(schema.tradingDataset.status);
+
+    const stats = { pending: 0, approved: 0, rejected: 0, used: 0 };
+    for (const row of rows) {
+      if (row.status && row.status in stats) {
+        (stats as Record<string, number>)[row.status] = Number(row.count ?? 0);
+      }
+    }
+
+    res.json({ success: true, ...stats });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter stats de datasets de trading');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
 // GET /api/integrations/trading/datasets - Lista datasets de trading
 app.get('/api/integrations/trading/datasets', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
   try {

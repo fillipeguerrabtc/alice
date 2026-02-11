@@ -1207,6 +1207,7 @@ export function SignalApprovalPanel({
       queryClient.invalidateQueries({ queryKey: ['trading-signals-pending'] });
       queryClient.invalidateQueries({ queryKey: ['trading-orders'] });
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/datasets'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/datasets/stats'] });
     },
     onError: (error: Error) => {
       toast({
