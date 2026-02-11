@@ -328,6 +328,7 @@ function SignalCard({
   const [isExpanded, setIsExpanded] = useState(false);
   const [showApproveDialog, setShowApproveDialog] = useState(false);
   const [showApproveDemoDialog, setShowApproveDemoDialog] = useState(false);
+  const [showApproveTrainingDialog, setShowApproveTrainingDialog] = useState(false);
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [reason, setReason] = useState('');
   const metadata = (signal.metadata ?? {}) as TradingSignal['metadata'];
@@ -419,40 +420,62 @@ function SignalCard({
 
               {showActions ? (
                 <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="text-green-600 border-green-600 hover:bg-green-50"
-                    onClick={() => setShowApproveDialog(true)}
-                    disabled={isApproving || isApprovingDemo || isRejecting}
-                  >
-                    {isApproving ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <>
-                        <CheckCircle className="h-4 w-4 mr-1" />
-                        Aprovar
-                      </>
-                    )}
-                  </Button>
-                  {/* Aprovar Demo só para sinais de entrada — outros tipos (exit, hold, neutral, adjust_*) não geram ordens novas */}
-                  {(signal.signalType === 'entry_long' || signal.signalType === 'entry_short') && (
+                  {/* CORREÇÃO 11/02/2026: Sinais neutral/hold → aprovação simplificada para treinamento */}
+                  {signal.signalType === 'neutral' || signal.signalType === 'hold' ? (
                     <Button
                       variant="outline"
                       size="sm"
-                      className="text-amber-600 border-amber-600 hover:bg-amber-50"
-                      onClick={() => setShowApproveDemoDialog(true)}
-                      disabled={isApproving || isApprovingDemo || isRejecting}
+                      className="text-blue-600 border-blue-600 hover:bg-blue-50"
+                      onClick={() => setShowApproveTrainingDialog(true)}
+                      disabled={isApproving || isRejecting}
                     >
-                      {isApprovingDemo ? (
+                      {isApproving ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
                       ) : (
                         <>
-                          <FlaskConical className="h-4 w-4 mr-1" />
-                          Aprovar Demo
+                          <CheckCircle className="h-4 w-4 mr-1" />
+                          Aprovar (Treinamento)
                         </>
                       )}
                     </Button>
+                  ) : (
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-green-600 border-green-600 hover:bg-green-50"
+                        onClick={() => setShowApproveDialog(true)}
+                        disabled={isApproving || isApprovingDemo || isRejecting}
+                      >
+                        {isApproving ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <>
+                            <CheckCircle className="h-4 w-4 mr-1" />
+                            Aprovar
+                          </>
+                        )}
+                      </Button>
+                      {/* Aprovar Demo só para sinais de entrada — outros tipos (exit, adjust_*) não geram ordens novas */}
+                      {(signal.signalType === 'entry_long' || signal.signalType === 'entry_short') && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-amber-600 border-amber-600 hover:bg-amber-50"
+                          onClick={() => setShowApproveDemoDialog(true)}
+                          disabled={isApproving || isApprovingDemo || isRejecting}
+                        >
+                          {isApprovingDemo ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <>
+                              <FlaskConical className="h-4 w-4 mr-1" />
+                              Aprovar Demo
+                            </>
+                          )}
+                        </Button>
+                      )}
+                    </>
                   )}
                   <Button
                     variant="outline"
@@ -694,6 +717,67 @@ function SignalCard({
 
       {showActions ? (
         <>
+          {/* Dialog Aprovar para Treinamento (NEUTRAL/HOLD) — CORREÇÃO 11/02/2026 */}
+          <Dialog open={showApproveTrainingDialog} onOpenChange={setShowApproveTrainingDialog}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-blue-600">
+                  <CheckCircle className="h-5 w-5" />
+                  Aprovar Sinal para Treinamento
+                </DialogTitle>
+                <DialogDescription>
+                  Sinais {signal.signalType === 'neutral' ? 'NEUTROS' : 'HOLD'} servem exclusivamente para treinamento da IA.
+                  Nenhuma ordem será criada.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="py-4">
+                <div className="flex items-center gap-4 p-4 bg-blue-50 rounded-lg mb-4">
+                  <TypeIcon className={`h-8 w-8 ${typeInfo.color.split(' ')[0]}`} />
+                  <div>
+                    <p className="font-bold">{typeInfo.label} - {signal.symbol}</p>
+                    <p className="text-sm text-muted-foreground">Confiança: {confidencePercent}%</p>
+                  </div>
+                </div>
+                <div className="bg-muted p-3 rounded-lg mb-4 text-sm text-muted-foreground">
+                  <p className="font-medium text-foreground mb-1">Para que serve?</p>
+                  <p>
+                    Aprovando este sinal, a IA aprende que em condições semelhantes de mercado,
+                    a decisão {signal.signalType === 'neutral' ? 'de não operar (neutralidade)' : 'de manter posição (hold)'} é
+                    correta. Sinais com alta confiança são especialmente valiosos para refinamento do modelo.
+                  </p>
+                </div>
+                <Textarea
+                  placeholder="Motivo da aprovação para treinamento (opcional)..."
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  className="min-h-[80px]"
+                />
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShowApproveTrainingDialog(false)}>
+                  Cancelar
+                </Button>
+                <Button
+                  className="bg-blue-600 hover:bg-blue-700"
+                  onClick={() => {
+                    const trimmedReason = reason.trim();
+                    onApprove(
+                      signal.id,
+                      trimmedReason.length > 0 ? trimmedReason : undefined,
+                      undefined // Sem overrides de ordem para sinais de treinamento
+                    );
+                    setShowApproveTrainingDialog(false);
+                    setReason('');
+                  }}
+                >
+                  <CheckCircle className="h-4 w-4 mr-2" />
+                  Confirmar para Treinamento
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Dialog Aprovar com Ordem */}
           <Dialog open={showApproveDialog} onOpenChange={(open) => {
             setShowApproveDialog(open);
             if (open) {

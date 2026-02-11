@@ -492,12 +492,37 @@ export class KucoinUnifiedWSClient extends EventEmitter {
 
       this.loggerInstance.info({ endpoint: this.endpoint, isPrivate }, 'Conectando ao WebSocket KuCoin');
 
-      this.ws = new WebSocket(wsUrl);
+      // CORREÇÃO 11/02/2026: Aguardar WebSocket ABRIR de fato antes de resolver a Promise
+      // Antes: connect() resolvia quando token era obtido, mas WS ainda em CONNECTING
+      // Callers faziam subscribeTicker() com readyState=0 → subscribe silenciosamente falha
+      await new Promise<void>((resolve, reject) => {
+        this.ws = new WebSocket(wsUrl);
 
-      this.ws.on('open', () => this.onOpen());
-      this.ws.on('message', (data: WebSocket.Data) => this.onMessage(data));
-      this.ws.on('close', (code: number, reason: Buffer) => this.onClose(code, reason.toString()));
-      this.ws.on('error', (error: Error) => this.onError(error));
+        const onOpenHandler = () => {
+          cleanup();
+          this.onOpen();
+          resolve();
+        };
+
+        const onErrorHandler = (error: Error) => {
+          cleanup();
+          this.onError(error);
+          reject(error);
+        };
+
+        const cleanup = () => {
+          this.ws?.removeListener('open', onOpenHandler);
+          this.ws?.removeListener('error', onErrorHandler);
+        };
+
+        this.ws.once('open', onOpenHandler);
+        this.ws.once('error', onErrorHandler);
+
+        // Handlers permanentes para após a conexão estabelecida
+        this.ws.on('message', (data: WebSocket.Data) => this.onMessage(data));
+        this.ws.on('close', (code: number, reason: Buffer) => this.onClose(code, reason.toString()));
+        this.ws.on('error', (error: Error) => this.onError(error));
+      });
 
       this.scheduleTokenRefresh();
     } catch (error) {
@@ -529,14 +554,45 @@ export class KucoinUnifiedWSClient extends EventEmitter {
   private onMessage(data: WebSocket.Data): void {
     try {
       const message = JSON.parse(data.toString()) as KucoinWSMessage;
+
       if (message.type === 'pong') { this.onPong(); return; }
-      if (message.type === 'welcome') return;
-      if (message.type === 'ack') return;
+
+      if (message.type === 'welcome') {
+        this.loggerInstance.info({ connectId: message.id }, 'KuCoin welcome recebido');
+        return;
+      }
+
+      // CORREÇÃO 11/02/2026: Logar confirmações de subscribe para diagnóstico
+      // Antes: 'ack' era silenciosamente descartado, impossível verificar se subscribe funcionou
+      if (message.type === 'ack') {
+        this.loggerInstance.info({ id: message.id }, 'KuCoin subscribe confirmado (ack)');
+        return;
+      }
+
+      // CORREÇÃO 11/02/2026: Tratar respostas de erro da KuCoin explicitamente
+      // Antes: mensagens com type 'error' eram silenciosamente descartadas,
+      // impossível saber se subscribe falhou → zero dados recebidos → bug fantasma
+      if (message.type === 'error') {
+        this.loggerInstance.error(
+          { code: (message as unknown as Record<string, unknown>).code, data: (message as unknown as Record<string, unknown>).data, id: message.id },
+          'KuCoin retornou ERRO para subscribe/unsubscribe'
+        );
+        this.emit('error', new Error(`KuCoin WS error: ${JSON.stringify(message)}`));
+        return;
+      }
+
       if (message.type === 'message' && message.topic && message.data) {
         this.handleDataMessage(message);
+        return;
       }
+
+      // CORREÇÃO 11/02/2026: Logar tipos de mensagem não reconhecidos para diagnóstico
+      this.loggerInstance.warn(
+        { type: message.type, topic: message.topic, id: message.id },
+        'Mensagem KuCoin com tipo não tratado'
+      );
     } catch (error) {
-      this.loggerInstance.error({ error: (error as Error).message }, 'Erro ao processar mensagem');
+      this.loggerInstance.error({ error: (error as Error).message }, 'Erro ao processar mensagem WS');
     }
   }
 
@@ -564,10 +620,23 @@ export class KucoinUnifiedWSClient extends EventEmitter {
   // Processamento de mensagens de dados — roteamento por tópico
   // --------------------------------------------------------------------------
 
+  /** Contador de mensagens para logging periódico (evita flood) */
+  private dataMessageCount = 0;
+
   private handleDataMessage(message: KucoinWSMessage): void {
     const topic = message.topic ?? '';
     const subject = message.subject ?? '';
     const data = message.data;
+
+    // CORREÇÃO 11/02/2026: Log periódico de mensagens de dados recebidas
+    // A cada 100 mensagens, logar contagem para confirmar fluxo de dados ativo
+    this.dataMessageCount++;
+    if (this.dataMessageCount === 1 || this.dataMessageCount % 100 === 0) {
+      this.loggerInstance.info(
+        { topic, subject, totalReceived: this.dataMessageCount },
+        'Dados recebidos do KuCoin WS'
+      );
+    }
 
     if (this.market === 'futures') {
       this.handleFuturesData(topic, subject, data);
@@ -851,14 +920,17 @@ export class KucoinUnifiedWSClient extends EventEmitter {
     }
 
     const isPrivateChannel = this.isPrivate && this.isPrivateTopic(topic);
+    const subId = `sub-${Date.now()}`;
     this.ws.send(JSON.stringify({
-      id: `sub-${Date.now()}`,
+      id: subId,
       type: 'subscribe',
       topic,
       privateChannel: isPrivateChannel,
       response: true,
     }));
-    this.loggerInstance.debug({ topic }, 'Subscribe enviado');
+    // CORREÇÃO 11/02/2026: Logar em INFO (antes era DEBUG, invisível em produção)
+    // Essencial para diagnosticar se subscribes são realmente enviados
+    this.loggerInstance.info({ topic, subId, isResubscribe }, 'Subscribe enviado ao KuCoin');
   }
 
   private sendUnsubscribeRaw(topic: string): void {

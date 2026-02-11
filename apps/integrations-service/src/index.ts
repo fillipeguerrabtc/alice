@@ -12995,7 +12995,7 @@ app.delete('/api/integrations/trading/signals/:id', requirePermission('integrati
   }
 });
 
-// POST /api/integrations/trading/signals/:id/approve - Aprovar sinal (cria ordem pendente)
+// POST /api/integrations/trading/signals/:id/approve - Aprovar sinal (cria ordem pendente ou marca para treinamento)
 app.post('/api/integrations/trading/signals/:id/approve', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
   try {
     const authContext = extractAuthContext(req);
@@ -13025,6 +13025,58 @@ app.post('/api/integrations/trading/signals/:id/approve', requirePermission('int
       return;
     }
 
+    // CORREÇÃO 11/02/2026: Sinais NEUTRAL e HOLD não geram ordens — servem apenas para treinamento
+    // Verificar tipo do sinal ANTES de tentar criar ordem
+    const db = getDatabase();
+    const [signal] = await db
+      .select()
+      .from(schema.tradingSignals)
+      .where(and(eq(schema.tradingSignals.id, paramResult.data.id), eq(schema.tradingSignals.tenantId, authContext.tenantId)))
+      .limit(1);
+
+    if (!signal) {
+      res.status(404).json({ error: 'Sinal não encontrado.' });
+      return;
+    }
+
+    // Sinais neutral/hold: aprovar apenas para treinamento (sem criar ordem)
+    const trainingOnlyTypes = ['neutral', 'hold'];
+    if (trainingOnlyTypes.includes(signal.signalType)) {
+      // Atualizar metadata do sinal com status de aprovação para treinamento
+      const existingMetadata = (signal.metadata ?? {}) as Record<string, unknown>;
+      const updatedMetadata = {
+        ...existingMetadata,
+        approvalStatus: 'approved',
+        approvedAt: new Date().toISOString(),
+        approvedBy: authContext.userId,
+        approvalReason: bodyResult.data.reason ?? undefined,
+        approvalType: 'training_only',
+      };
+      await db
+        .update(schema.tradingSignals)
+        .set({
+          metadata: updatedMetadata as typeof signal.metadata,
+        })
+        .where(eq(schema.tradingSignals.id, signal.id));
+
+      logger.info(
+        { signalId: signal.id, signalType: signal.signalType, userId: authContext.userId },
+        'Sinal neutral/hold aprovado para treinamento (sem ordem criada)'
+      );
+
+      res.status(200).json({
+        success: true,
+        data: {
+          signalId: signal.id,
+          signalType: signal.signalType,
+          approvalType: 'training_only',
+          message: `Sinal ${signal.signalType.toUpperCase()} aprovado para treinamento. Nenhuma ordem foi criada.`,
+        },
+      });
+      return;
+    }
+
+    // Sinais de entrada/saída: criar ordem pendente normalmente
     const result = await kucoinService.createPendingOrderFromSignal(
       { tenantId: authContext.tenantId, userId: authContext.userId },
       paramResult.data.id,

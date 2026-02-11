@@ -17,7 +17,7 @@
  * Regra 13 - i18n PT-BR/EN
  *
  * Autor: Fillipe Guerra
- * Data: 10 de Fevereiro de 2026
+ * Data: 11 de Fevereiro de 2026
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -36,7 +36,6 @@ import {
 } from 'lightweight-charts';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import {
   Select,
@@ -90,16 +89,17 @@ export interface CandleChartProps {
 // CONSTANTES
 // ============================================================================
 
+// Paleta enterprise inspirada em TradingView/Binance Pro
 const COLORS = {
-  bullish: '#22c55e',
-  bearish: '#ef4444',
-  volumeUp: 'rgba(34, 197, 94, 0.35)',
-  volumeDown: 'rgba(239, 68, 68, 0.35)',
-  grid: '#1f2937',
-  text: '#9ca3af',
-  background: '#0b0f17',
-  border: '#273244',
-  currentPrice: '#3b82f6',
+  bullish: '#0ecb81',      // Verde profissional (Binance green)
+  bearish: '#f6465d',      // Vermelho profissional (Binance red)
+  volumeUp: 'rgba(14, 203, 129, 0.25)',
+  volumeDown: 'rgba(246, 70, 93, 0.25)',
+  grid: '#1c2333',         // Grid sutil para não poluir visualmente
+  text: '#848e9c',         // Texto secundário
+  background: '#0b0e11',   // Background profundo (Binance dark)
+  border: '#1c2333',       // Borda sutil
+  currentPrice: '#f0b90b', // Amarelo dourado para preço atual (alta visibilidade)
 };
 
 // ============================================================================
@@ -233,25 +233,42 @@ export function CandleChart({
       layout: {
         background: { color: COLORS.background },
         textColor: COLORS.text,
-        fontFamily: 'Inter, system-ui, sans-serif',
+        fontFamily: "'JetBrains Mono', 'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
+        fontSize: 11,
       },
       grid: {
-        vertLines: { color: COLORS.grid, style: 0 },
-        horzLines: { color: COLORS.grid, style: 0 },
+        // Grid pontilhado e sutil — padrão enterprise (TradingView/Binance)
+        vertLines: { color: COLORS.grid, style: 1 }, // 1 = dashed
+        horzLines: { color: COLORS.grid, style: 1 },
       },
       crosshair: {
         mode: CrosshairMode.Normal,
+        vertLine: {
+          color: 'rgba(255, 255, 255, 0.25)',
+          width: 1,
+          style: 2, // dashed
+          labelBackgroundColor: '#2a2e39',
+        },
+        horzLine: {
+          color: 'rgba(255, 255, 255, 0.25)',
+          width: 1,
+          style: 2,
+          labelBackgroundColor: '#2a2e39',
+        },
       },
       rightPriceScale: {
         borderColor: COLORS.border,
+        scaleMargins: { top: 0.1, bottom: 0.2 }, // Margem para visualização clara
       },
       timeScale: {
         borderColor: COLORS.border,
         timeVisible: true,
         secondsVisible: false,
-        rightOffset: 4,
-        barSpacing: 10,
-        minBarSpacing: 4,
+        rightOffset: 8,     // Mais espaço à direita para preço atual
+        barSpacing: 8,
+        minBarSpacing: 3,
+        fixLeftEdge: false,
+        fixRightEdge: false,
       },
       localization: {
         locale: resolvedLocale,
@@ -262,7 +279,9 @@ export function CandleChart({
     const candleSeries = chart.addSeries(CandlestickSeries, {
       upColor: COLORS.bullish,
       downColor: COLORS.bearish,
-      borderVisible: false,
+      borderVisible: true,
+      borderUpColor: COLORS.bullish,
+      borderDownColor: COLORS.bearish,
       wickUpColor: COLORS.bullish,
       wickDownColor: COLORS.bearish,
     });
@@ -441,7 +460,7 @@ export function CandleChart({
         lineVisible: true,
         axisLabelVisible: true,
         axisLabelColor: COLORS.currentPrice,
-        axisLabelTextColor: '#0b0f17',
+        axisLabelTextColor: COLORS.background,
         title: '',
       };
       priceLineRef.current = candleSeriesRef.current.createPriceLine(lineOptions);
@@ -450,21 +469,11 @@ export function CandleChart({
 
   // ============================================================================
   // RENDER — o chart container é SEMPRE renderizado (nunca desmontado)
+  // CORREÇÃO 11/02/2026: Removido early return com skeleton que desmontava o
+  // chart container a cada troca de interval. O chart container DEVE permanecer
+  // no DOM para que o useEffect de criação do chart não precise recriá-lo.
+  // Loading e empty states agora são overlays sobre o chart container.
   // ============================================================================
-
-  // Loading state (apenas skeleton, sem desmontar chart)
-  if (isLoading && candleData.length === 0) {
-    return (
-      <Card>
-        <CardHeader className="pb-2">
-          <Skeleton className="h-6 w-48" />
-        </CardHeader>
-        <CardContent>
-          <Skeleton className="h-[400px] w-full" />
-        </CardContent>
-      </Card>
-    );
-  }
 
   return (
     <Card>
@@ -538,10 +547,10 @@ export function CandleChart({
 
       <CardContent>
         <div style={{ height }} className="relative overflow-hidden">
-          {/* Container do chart — SEMPRE montado */}
+          {/* Container do chart — SEMPRE montado, NUNCA removido do DOM */}
           <div ref={containerRef} className="h-full w-full" />
 
-          {/* Overlay de loading — exibido sobre o chart quando está carregando */}
+          {/* Overlay de loading — exibido sobre o chart enquanto carrega dados */}
           {isLoading && (
             <div className="absolute inset-0 flex items-center justify-center bg-background/60 backdrop-blur-[1px] z-10">
               <div className="flex items-center gap-2 text-muted-foreground">
@@ -551,9 +560,9 @@ export function CandleChart({
             </div>
           )}
 
-          {/* Overlay de "sem dados" — exibido sobre o chart quando não há dados e não está carregando */}
+          {/* Overlay de "sem dados" — exibido quando não há dados e não está carregando */}
           {!isLoading && candleData.length === 0 && (
-            <div className="absolute inset-0 flex items-center justify-center z-10">
+            <div className="absolute inset-0 flex items-center justify-center bg-background/80 z-10">
               <p className="text-muted-foreground text-sm">{t('trading.chart.noData')}</p>
             </div>
           )}

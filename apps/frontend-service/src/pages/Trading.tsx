@@ -2254,10 +2254,15 @@ export default function Trading() {
   const [lastKlines, setLastKlines] = useState<KlineData[]>([]);
   const lastKlinesSignatureRef = useRef<string>('');
 
+  // CORREÇÃO 11/02/2026: NÃO limpar lastKlines ao mudar wsInterval.
+  // Ao trocar interval, os dados antigos permanecem visíveis enquanto novos
+  // são carregados (padrão UX de exchanges). O useEffect abaixo naturalmente
+  // sobrescreve lastKlines quando os novos dados chegam. Limpar apenas quando
+  // symbol ou marketType muda (dados antigos seriam incorretos nesse caso).
   useEffect(() => {
     setLastKlines([]);
     lastKlinesSignatureRef.current = '';
-  }, [normalizedSymbol, wsInterval, selectedMarketType, selectedMarginMode]);
+  }, [normalizedSymbol, selectedMarketType, selectedMarginMode]);
 
   useEffect(() => {
     const source = wsKlinesForChart.length > 0

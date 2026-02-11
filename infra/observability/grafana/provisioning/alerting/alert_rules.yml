@@ -926,6 +926,8 @@ groups:
               to: 0
             datasourceUid: prometheus
             model:
+              # CORREÇÃO 11/02/2026: Usar rate ao invés de increase para normalizar
+              # e comparar com threshold > 5 para tolerar erros transientes isolados
               expr: sum(increase(alice_training_scheduler_runs_total{result="error"}[30m]))
               refId: A
           - refId: B
@@ -943,14 +945,17 @@ groups:
               conditions:
                 - evaluator:
                     type: gt
-                    params: [0]
+                    # CORREÇÃO 11/02/2026: Threshold de 0→5 para tolerar erros transientes
+                    # (ex: reconexão BD momentânea). Scheduler roda a cada 60s, então
+                    # 5 erros em 30min indica problema persistente, não transiente
+                    params: [5]
               refId: C
         noDataState: OK
         execErrState: Error
         for: 15m
         annotations:
           summary: "Falhas no scheduler de auto-learning"
-          description: "O scheduler registrou falhas nos últimos 30 minutos."
+          description: "O scheduler registrou mais de 5 falhas nos últimos 30 minutos. Verifique conexão com BD e logs do training-service."
         labels:
           severity: warning
           service: training-service

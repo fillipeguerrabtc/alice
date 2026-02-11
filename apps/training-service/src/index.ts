@@ -2298,6 +2298,7 @@ import {
   evaluateDataQuality, 
   startProgressiveLoRA,
   processScheduledJobs,
+  initAutoLearningScheduler,
 } from './auto-learning-scheduler.js';
 
 // ============================================================================
@@ -2331,6 +2332,11 @@ let autoLearningInterval: NodeJS.Timeout | null = null;
       checkPgvector: true, // Verificar extensão pgvector (obrigatório para embeddings)
     });
 
+    // Inicializar auto-learning scheduler com instância do banco (Regra 6: sem db undefined)
+    // CORREÇÃO 11/02/2026: initAutoLearningScheduler NUNCA era chamada, causando
+    // db=undefined → TypeError a cada 60s no processScheduledJobs → alerta Grafana
+    initAutoLearningScheduler(getDatabase());
+
     // WS4: Redis cache + session-auth cache (evita queries repetitivas em PostgreSQL)
     // - Em produção: Redis é obrigatório (fail-fast dentro de initializeSessionAuthCache)
     // - Em dev/test: cache fica desabilitado (sem in-memory)
@@ -2356,17 +2362,22 @@ let autoLearningInterval: NodeJS.Timeout | null = null;
           })
           .catch((error: unknown) => {
             trainingPipelineMetrics.schedulerRunsTotal.labels('error').inc();
-            logger.warn({ error }, 'Falha ao processar jobs agendados de auto-learning');
+            // CORREÇÃO 11/02/2026: Usar 'err' ao invés de 'error' para acionar
+            // serializer Pino que captura message+stack (antes logava "{}")
+            const errObj = error instanceof Error ? error : new Error(String(error));
+            logger.warn({ err: errObj }, 'Falha ao processar jobs agendados de auto-learning');
           });
       }, TRAINING_SCHEDULER_POLL_MS);
       logger.info({ intervalMs: TRAINING_SCHEDULER_POLL_MS }, 'Scheduler de auto-learning iniciado');
 
       // Retomar jobs pendentes após restart (Regra 6: sem dependência de state em memória)
       resumePendingFineTuningJobs().catch((error: unknown) => {
-        logger.error({ error }, 'Falha ao retomar jobs de fine-tuning pendentes');
+        const errObj = error instanceof Error ? error : new Error(String(error));
+        logger.error({ err: errObj }, 'Falha ao retomar jobs de fine-tuning pendentes');
       });
       resumePendingTradingLoraJobs().catch((error: unknown) => {
-        logger.error({ error }, 'Falha ao retomar jobs de trading LoRA pendentes');
+        const errObj = error instanceof Error ? error : new Error(String(error));
+        logger.error({ err: errObj }, 'Falha ao retomar jobs de trading LoRA pendentes');
       });
 
       // Tick periódico: garante execução de jobs criados por scheduler/rotas mesmo após long uptimes
