@@ -1616,6 +1616,12 @@
       "confirm": "Confirm",
       "saving": "Saving..."
     },
+    "optionsHelp": {
+      "title": "Difference between training options",
+      "onDemand": "On-demand training: runs immediately an incremental or complete training using chat data (Data tab). Uses the same base LLM model (Qwen2.5 7B).",
+      "pipelineTrading": "Pipeline Trading: creates a fine-tuning job using only approved trading data (Trading Datasets tab). Requires selected trading namespace. Ideal for post-mortems and trading signals.",
+      "newJob": "New Job: configures a custom job with epochs, batch size and learning rate. Uses chat data (Data tab). Minimum 10 approved data points."
+    },
     "trading": {
       "button": "Trading Pipeline",
       "title": "Trading Training",

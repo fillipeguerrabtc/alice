@@ -2172,6 +2172,12 @@ export default function Training() {
     used: allData.filter(d => d.status === 'used').length,
   };
 
+  /** Stats combinados para os cards (Training Data + Trading Datasets) */
+  const displayStats = {
+    pending: stats.pending + tradingDatasetStats.pending,
+    approved: stats.approved + tradingDatasetStats.approved,
+  };
+
   const jobStats = {
     total: allJobs.length,
     running: allJobs.filter(j => j.status === 'running' || j.status === 'preparing').length,
@@ -2323,6 +2329,16 @@ export default function Training() {
           </div>
         </div>
 
+        <Alert className="mb-4 bg-muted/50">
+          <Info className="h-4 w-4" />
+          <AlertTitle>{t('training.optionsHelp.title')}</AlertTitle>
+          <AlertDescription className="space-y-1">
+            <p><strong>{t('training.autoLearning.onDemand')}:</strong> {t('training.optionsHelp.onDemand')}</p>
+            <p><strong>{t('training.trading.button')}:</strong> {t('training.optionsHelp.pipelineTrading')}</p>
+            <p><strong>{t('training.newJob')}:</strong> {t('training.optionsHelp.newJob')}</p>
+          </AlertDescription>
+        </Alert>
+
         {!tenantId && (
           <Alert className="mb-4" variant="destructive">
             <AlertTriangle className="h-4 w-4" />
@@ -2337,7 +2353,7 @@ export default function Training() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs text-muted-foreground">{t('training.stats.pending')}</p>
-                  <p className="text-2xl font-bold" data-testid="stat-pending">{stats.pending}</p>
+                  <p className="text-2xl font-bold" data-testid="stat-pending">{displayStats.pending}</p>
                 </div>
                 <Clock className="h-8 w-8 text-amber-500/50" />
               </div>
@@ -2348,7 +2364,7 @@ export default function Training() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs text-muted-foreground">{t('training.stats.approved')}</p>
-                  <p className="text-2xl font-bold" data-testid="stat-approved">{stats.approved}</p>
+                  <p className="text-2xl font-bold" data-testid="stat-approved">{displayStats.approved}</p>
                 </div>
                 <CheckCircle2 className="h-8 w-8 text-green-500/50" />
               </div>

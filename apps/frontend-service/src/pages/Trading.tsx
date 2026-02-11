@@ -1475,6 +1475,27 @@ export default function Trading() {
 
   const postmortems = postmortemsData?.data ?? [];
 
+  /** IDs de post-mortems já enviados para treinamento (têm dataset em trading_dataset) */
+  const { data: tradingDatasetsForSentCheck } = useQuery({
+    queryKey: ['/api/integrations/trading/datasets', 'postmortem-ids'],
+    queryFn: async () => {
+      const res = await apiRequest('GET', '/api/integrations/trading/datasets?limit=200');
+      const json = await res.json() as { data: Array<{ sourceType?: string; sourceId?: string }> };
+      return json.data ?? [];
+    },
+    staleTime: 1000 * 30,
+    enabled: statusData?.data?.isConfigured && !statusData?.data?.requiresTenant,
+  });
+
+  const postmortemIdsSentToTraining = useMemo(() => {
+    const data = tradingDatasetsForSentCheck ?? [];
+    return new Set(
+      data
+        .filter((d) => d.sourceType === 'postmortem' && d.sourceId)
+        .map((d) => d.sourceId as string)
+    );
+  }, [tradingDatasetsForSentCheck]);
+
   const {
     data: riskConfigData,
     error: riskConfigError,
@@ -1998,7 +2019,7 @@ export default function Trading() {
   const sendPostMortemToTrainingMutation = useMutation({
     mutationFn: async (postmortemId: string) => {
       const response = await apiRequest('POST', '/api/integrations/postmortem/send-to-training', { postmortemId });
-      return response.json();
+      return (await response.json()) as { success: boolean; data?: { datasetId: string } };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/datasets'] });
@@ -4752,13 +4773,22 @@ export default function Trading() {
                           <Button
                             variant="outline"
                             size="sm"
-                            disabled={!canSendToTraining || sendPostMortemToTrainingMutation.isPending}
+                            disabled={
+                              !canSendToTraining ||
+                              postmortemIdsSentToTraining.has(pm.id) ||
+                              sendPostMortemToTrainingMutation.isPending
+                            }
                             onClick={() => sendPostMortemToTrainingMutation.mutate(pm.id)}
                           >
                             {sendPostMortemToTrainingMutation.isPending ? (
                               <>
                                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                                 Enviando...
+                              </>
+                            ) : postmortemIdsSentToTraining.has(pm.id) ? (
+                              <>
+                                <CheckCircle className="h-4 w-4 mr-2" />
+                                Enviado para Treinamento
                               </>
                             ) : (
                               <>

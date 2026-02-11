@@ -512,11 +512,11 @@ export default function Documents() {
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full min-h-0">
       <motion.div 
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="p-4 border-b bg-background/95 backdrop-blur"
+        className="p-4 border-b bg-background/95 backdrop-blur shrink-0"
       >
         <div className="flex items-center justify-between gap-4 mb-4 flex-wrap">
           <div>
@@ -644,7 +644,7 @@ export default function Documents() {
         </div>
       </motion.div>
 
-      <ScrollArea className="flex-1 p-4">
+      <ScrollArea className="flex-1 min-h-0 p-4">
         {isLoading ? (
           <div className={cn(
             'gap-4',

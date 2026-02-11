@@ -398,6 +398,26 @@ export default function DemoTrading() {
     refetchInterval: 15_000,
   });
 
+  /** IDs de post-mortems já enviados para treinamento (têm dataset em trading_dataset) */
+  const { data: tradingDatasetsForSentCheck } = useQuery({
+    queryKey: ['/api/integrations/trading/datasets', 'postmortem-ids'],
+    queryFn: async () => {
+      const res = await apiRequest('GET', '/api/integrations/trading/datasets?limit=200');
+      const json = await res.json() as { data: Array<{ sourceType?: string; sourceId?: string }> };
+      return json.data ?? [];
+    },
+    staleTime: 1000 * 30,
+  });
+
+  const postmortemIdsSentToTraining = useMemo(() => {
+    const data = tradingDatasetsForSentCheck ?? [];
+    return new Set(
+      data
+        .filter((d) => d.sourceType === 'postmortem' && d.sourceId)
+        .map((d) => d.sourceId as string)
+    );
+  }, [tradingDatasetsForSentCheck]);
+
   const queueStatsQuery = useQuery({
     queryKey: ['/api/integrations/postmortem/queue/stats'],
     queryFn: async () => {
@@ -515,7 +535,7 @@ export default function DemoTrading() {
   const sendPostMortemToTrainingMutation = useMutation({
     mutationFn: async (postmortemId: string) => {
       const res = await apiRequest('POST', '/api/integrations/postmortem/send-to-training', { postmortemId });
-      return res.json();
+      return (await res.json()) as { success: boolean; data?: { datasetId: string } };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/datasets'] });
@@ -1649,11 +1669,19 @@ export default function DemoTrading() {
                           <Button
                             variant="outline"
                             size="sm"
-                            disabled={sendPostMortemToTrainingMutation.isPending}
+                            disabled={
+                              postmortemIdsSentToTraining.has(pm.id) ||
+                              sendPostMortemToTrainingMutation.isPending
+                            }
                             onClick={() => sendPostMortemToTrainingMutation.mutate(pm.id)}
                           >
                             {sendPostMortemToTrainingMutation.isPending ? (
                               'Enviando...'
+                            ) : postmortemIdsSentToTraining.has(pm.id) ? (
+                              <>
+                                <CheckCircle className="h-4 w-4 mr-2" />
+                                Enviado para Treinamento
+                              </>
                             ) : (
                               <>
                                 <FileCheck className="h-4 w-4 mr-2" />
