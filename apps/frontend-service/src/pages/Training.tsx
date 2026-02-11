@@ -414,6 +414,7 @@ function TrainingDataCard({ data, namespaceName, onApprove, onReject, onResolveS
 
 function TradingDatasetCard({
   data,
+  namespaceName,
   onApprove,
   onReject,
   isPending,
@@ -422,6 +423,7 @@ function TradingDatasetCard({
   timeZone,
 }: {
   data: Record<string, unknown>;
+  namespaceName?: string | null;
   onApprove: () => void;
   onReject: () => void;
   isPending: boolean;
@@ -443,7 +445,7 @@ function TradingDatasetCard({
       <Card className="hover-elevate">
         <CardHeader className="pb-2">
           <div className="flex items-start justify-between gap-2">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <TrendingUp className="h-4 w-4 text-primary" />
               <span className="text-sm font-medium">
                 {(data.actionType as string) ?? 'signal'}
@@ -456,6 +458,11 @@ function TradingDatasetCard({
               <Badge variant="secondary" className="text-xs">
                 {marketContext.symbol ?? 'N/A'}
               </Badge>
+              {namespaceName && (
+                <Badge variant="secondary" className="text-xs">
+                  {namespaceName}
+                </Badge>
+              )}
             </div>
             {getStatusBadge(status, t)}
           </div>
@@ -584,10 +591,23 @@ function JobCard({
   );
 }
 
-function CreateJobDialog({ open, onClose, approvedCount, t }: { 
-  open: boolean; 
+function CreateJobDialog({
+  open,
+  onClose,
+  approvedCount,
+  namespaces,
+  namespaceId,
+  onNamespaceIdChange,
+  tenantId,
+  t,
+}: {
+  open: boolean;
   onClose: () => void;
   approvedCount: number;
+  namespaces: Array<{ id: string; nome: string }>;
+  namespaceId: string;
+  onNamespaceIdChange: (value: string) => void;
+  tenantId: string | undefined;
   t: (key: string, options?: Record<string, unknown>) => string;
 }) {
   const queryClient = useQueryClient();
@@ -598,7 +618,12 @@ function CreateJobDialog({ open, onClose, approvedCount, t }: {
 
   const createJob = useMutation({
     mutationFn: async () => {
+      if (!namespaceId || !tenantId) {
+        throw new Error(t('training.createJob.namespaceRequired'));
+      }
       return apiRequest('POST', '/api/training/jobs', {
+        tenantId,
+        namespaceId,
         name,
         hyperparameters: { epochs, batchSize, learningRate },
       });
@@ -634,6 +659,22 @@ function CreateJobDialog({ open, onClose, approvedCount, t }: {
         </DialogHeader>
 
         <div className="space-y-4 py-4">
+          <div className="space-y-2">
+            <Label>{t('training.createJob.namespaceLabel')}</Label>
+            <Select value={namespaceId} onValueChange={onNamespaceIdChange}>
+              <SelectTrigger data-testid="select-job-namespace">
+                <SelectValue placeholder={t('training.createJob.namespacePlaceholder')} />
+              </SelectTrigger>
+              <SelectContent>
+                {namespaces.map((ns) => (
+                  <SelectItem key={ns.id} value={ns.id}>
+                    {ns.nome}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">{t('training.createJob.namespaceHelp')}</p>
+          </div>
           <div className="space-y-2">
             <Label htmlFor="name">{t('training.createJob.nameLabel')}</Label>
             <Input
@@ -697,9 +738,9 @@ function CreateJobDialog({ open, onClose, approvedCount, t }: {
           <Button variant="outline" onClick={onClose} data-testid="button-cancel-job">
             {t('common.cancel')}
           </Button>
-          <Button 
+          <Button
             onClick={() => createJob.mutate()}
-            disabled={!name || approvedCount < 10 || createJob.isPending}
+            disabled={!namespaceId || !tenantId || !name || approvedCount < 10 || createJob.isPending}
             data-testid="button-create-job"
           >
             {createJob.isPending ? (
@@ -1849,6 +1890,7 @@ export default function Training() {
   const [sourceFilter, setSourceFilter] = useState<string>('all');
   const [sourceTypeFilter, setSourceTypeFilter] = useState<string>('all');
   const [showCreateJob, setShowCreateJob] = useState(false);
+  const [createJobNamespaceId, setCreateJobNamespaceId] = useState<string>('');
   const [showTradingJob, setShowTradingJob] = useState(false);
   const [tradingNamespaceId, setTradingNamespaceId] = useState<string>('');
   const [showOnDemandRun, setShowOnDemandRun] = useState(false);
@@ -1860,6 +1902,11 @@ export default function Training() {
   const [overrideAgentId, setOverrideAgentId] = useState('');
   const [overrideDomain, setOverrideDomain] = useState('');
   const [overrideReason, setOverrideReason] = useState('');
+
+  const [tradingReviewDialogOpen, setTradingReviewDialogOpen] = useState(false);
+  const [tradingReviewTarget, setTradingReviewTarget] = useState<{ id: string; status: 'approved' | 'rejected'; data: Record<string, unknown> } | null>(null);
+  const [tradingReviewNotes, setTradingReviewNotes] = useState('');
+  const [tradingReviewNamespaceId, setTradingReviewNamespaceId] = useState<string>('');
 
   // Auto-learning (status + schedules) - Gate 2
   const autoLearningQueryKey = [
@@ -1967,12 +2014,16 @@ export default function Training() {
     includeImages: z.boolean(),
     priority: z.enum(['low', 'normal', 'high']),
     description: z.string().trim().max(500).optional(),
+    namespaceId: z.string().uuid().optional(),
+    includeTradingDataset: z.boolean(),
   });
 
   const [onDemandTrainingType, setOnDemandTrainingType] = useState<'incremental' | 'full'>('incremental');
   const [onDemandIncludeImages, setOnDemandIncludeImages] = useState<boolean>(false);
   const [onDemandPriority, setOnDemandPriority] = useState<'low' | 'normal' | 'high'>('normal');
   const [onDemandDescription, setOnDemandDescription] = useState<string>('');
+  const [onDemandNamespaceId, setOnDemandNamespaceId] = useState<string>('__tenant__');
+  const [onDemandIncludeTradingDataset, setOnDemandIncludeTradingDataset] = useState<boolean>(false);
 
   const startOnDemand = useMutation({
     mutationFn: async () => {
@@ -1981,6 +2032,8 @@ export default function Training() {
         includeImages: onDemandIncludeImages,
         priority: onDemandPriority,
         description: onDemandDescription.trim().length > 0 ? onDemandDescription.trim() : undefined,
+        namespaceId: (onDemandNamespaceId && onDemandNamespaceId !== '__tenant__') ? onDemandNamespaceId : undefined,
+        includeTradingDataset: onDemandIncludeTradingDataset,
       });
 
       if (!tenantId) {
@@ -1993,6 +2046,8 @@ export default function Training() {
         includeImages: parsed.includeImages,
         priority: parsed.priority,
         description: parsed.description,
+        namespaceId: parsed.namespaceId,
+        includeTradingDataset: parsed.includeTradingDataset,
       });
       return res.json();
     },
@@ -2136,8 +2191,8 @@ export default function Training() {
   });
 
   const reviewTradingDataset = useMutation({
-    mutationFn: async ({ id, status, reviewNotes }: { id: string; status: 'approved' | 'rejected'; reviewNotes?: string }) => {
-      return apiRequest('PATCH', `/api/integrations/trading/datasets/${id}/review`, { status, reviewNotes });
+    mutationFn: async ({ id, status, reviewNotes, namespaceId }: { id: string; status: 'approved' | 'rejected'; reviewNotes?: string; namespaceId?: string | null }) => {
+      return apiRequest('PATCH', `/api/integrations/trading/datasets/${id}/review`, { status, reviewNotes, namespaceId: namespaceId ?? undefined });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/datasets'] });
@@ -2172,6 +2227,14 @@ export default function Training() {
     used: allData.filter(d => d.status === 'used').length,
   };
 
+  const tradingDatasetStats = {
+    total: tradingDatasets?.total ?? tradingDatasetRows.length,
+    pending: tradingDatasetRows.filter((d) => (d as { status?: string }).status === 'pending').length,
+    approved: tradingDatasetRows.filter((d) => (d as { status?: string }).status === 'approved').length,
+    rejected: tradingDatasetRows.filter((d) => (d as { status?: string }).status === 'rejected').length,
+    used: tradingDatasetRows.filter((d) => (d as { status?: string }).status === 'used').length,
+  };
+
   /** Stats combinados para os cards (Training Data + Trading Datasets) */
   const displayStats = {
     pending: stats.pending + tradingDatasetStats.pending,
@@ -2183,14 +2246,6 @@ export default function Training() {
     running: allJobs.filter(j => j.status === 'running' || j.status === 'preparing').length,
     completed: allJobs.filter(j => j.status === 'completed').length,
     failed: allJobs.filter(j => j.status === 'failed').length,
-  };
-
-  const tradingDatasetStats = {
-    total: tradingDatasets?.total ?? tradingDatasetRows.length,
-    pending: tradingDatasetRows.filter((d) => (d as { status?: string }).status === 'pending').length,
-    approved: tradingDatasetRows.filter((d) => (d as { status?: string }).status === 'approved').length,
-    rejected: tradingDatasetRows.filter((d) => (d as { status?: string }).status === 'rejected').length,
-    used: tradingDatasetRows.filter((d) => (d as { status?: string }).status === 'used').length,
   };
 
   const resetReviewScopeOverride = useCallback(() => {
@@ -2286,6 +2341,28 @@ export default function Training() {
     });
   }, [namespaces, resolveScopeMutation]);
 
+  const openTradingReviewDialog = useCallback((data: Record<string, unknown>, status: 'approved' | 'rejected') => {
+    const meta = (data.sourceMetadata as { namespaceId?: string } | null) ?? {};
+    setTradingReviewTarget({ id: String(data.id), status, data });
+    setTradingReviewNotes('');
+    setTradingReviewNamespaceId(meta.namespaceId ?? '');
+    setTradingReviewDialogOpen(true);
+  }, []);
+
+  const confirmTradingReview = useCallback(() => {
+    if (!tradingReviewTarget) return;
+    reviewTradingDataset.mutate({
+      id: tradingReviewTarget.id,
+      status: tradingReviewTarget.status,
+      reviewNotes: tradingReviewNotes.trim() || undefined,
+      namespaceId: tradingReviewTarget.status === 'approved' && tradingReviewNamespaceId.trim() ? tradingReviewNamespaceId.trim() : undefined,
+    });
+    setTradingReviewDialogOpen(false);
+    setTradingReviewTarget(null);
+    setTradingReviewNotes('');
+    setTradingReviewNamespaceId('');
+  }, [tradingReviewTarget, tradingReviewNotes, tradingReviewNamespaceId, reviewTradingDataset]);
+
   return (
     <div className="flex flex-col h-full">
       <motion.div
@@ -2336,6 +2413,14 @@ export default function Training() {
             <p><strong>{t('training.autoLearning.onDemand')}:</strong> {t('training.optionsHelp.onDemand')}</p>
             <p><strong>{t('training.trading.button')}:</strong> {t('training.optionsHelp.pipelineTrading')}</p>
             <p><strong>{t('training.newJob')}:</strong> {t('training.optionsHelp.newJob')}</p>
+          </AlertDescription>
+        </Alert>
+
+        <Alert className="mb-4 border-primary/30 bg-primary/5">
+          <Brain className="h-4 w-4" />
+          <AlertTitle>{t('training.universal.title')}</AlertTitle>
+          <AlertDescription>
+            {t('training.universal.desc')}
           </AlertDescription>
         </Alert>
 
@@ -2590,9 +2675,10 @@ export default function Training() {
                   <TradingDatasetCard
                     key={String(data.id)}
                     data={data}
+                    namespaceName={(data.sourceMetadata as { namespaceId?: string } | null)?.namespaceId ? namespacesById.get((data.sourceMetadata as { namespaceId: string }).namespaceId) ?? null : null}
                     isPending={reviewTradingDataset.isPending}
-                    onApprove={() => reviewTradingDataset.mutate({ id: String(data.id), status: 'approved' })}
-                    onReject={() => reviewTradingDataset.mutate({ id: String(data.id), status: 'rejected' })}
+                    onApprove={() => openTradingReviewDialog(data as Record<string, unknown>, 'approved')}
+                    onReject={() => openTradingReviewDialog(data as Record<string, unknown>, 'rejected')}
                     t={t}
                     locale={locale}
                     timeZone={timeZone}
@@ -2801,6 +2887,10 @@ export default function Training() {
         open={showCreateJob}
         onClose={() => setShowCreateJob(false)}
         approvedCount={stats.approved}
+        namespaces={namespaces || []}
+        namespaceId={createJobNamespaceId}
+        onNamespaceIdChange={setCreateJobNamespaceId}
+        tenantId={tenantId}
         t={t}
       />
 
@@ -2879,12 +2969,37 @@ export default function Training() {
               </Select>
             </div>
 
+            <div className="grid gap-2">
+              <Label>{t('training.autoLearning.namespace')}</Label>
+              <Select value={onDemandNamespaceId} onValueChange={setOnDemandNamespaceId}>
+                <SelectTrigger>
+                  <SelectValue placeholder={t('training.autoLearning.namespacePlaceholder')} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__tenant__">{t('training.autoLearning.namespaceTenantWide')}</SelectItem>
+                  {(namespaces || []).map((namespace) => (
+                    <SelectItem key={namespace.id} value={namespace.id}>
+                      {namespace.nome}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             <div className="flex items-center justify-between rounded-md border p-3">
               <div>
                 <div className="text-sm font-medium">{t('training.autoLearning.includeImages')}</div>
                 <div className="text-xs text-muted-foreground">{t('training.autoLearning.includeImagesDesc')}</div>
               </div>
               <Switch checked={onDemandIncludeImages} onCheckedChange={setOnDemandIncludeImages} />
+            </div>
+
+            <div className="flex items-center justify-between rounded-md border p-3">
+              <div>
+                <div className="text-sm font-medium">{t('training.autoLearning.includeTradingDataset')}</div>
+                <div className="text-xs text-muted-foreground">{t('training.autoLearning.includeTradingDatasetDesc')}</div>
+              </div>
+              <Switch checked={onDemandIncludeTradingDataset} onCheckedChange={setOnDemandIncludeTradingDataset} />
             </div>
 
             <div className="grid gap-2">
@@ -3014,6 +3129,66 @@ export default function Training() {
                 </>
               ) : (
                 <>{t('training.reviewDialog.confirm')}</>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={tradingReviewDialogOpen} onOpenChange={(open) => { if (!open) { setTradingReviewDialogOpen(false); setTradingReviewTarget(null); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {tradingReviewTarget?.status === 'approved' ? t('training.actions.approve') : t('training.actions.reject')} {t('training.tradingDataset.reviewTitle')}
+            </DialogTitle>
+            <DialogDescription>
+              {tradingReviewTarget?.status === 'approved'
+                ? t('training.tradingDataset.reviewDescApprove')
+                : t('training.tradingDataset.reviewDescReject')}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 py-2">
+            <div className="grid gap-2">
+              <Label htmlFor="trading-review-notes">{t('training.reviewDialog.notes')}</Label>
+              <Input
+                id="trading-review-notes"
+                value={tradingReviewNotes}
+                onChange={(e) => setTradingReviewNotes(e.target.value)}
+                placeholder={t('training.reviewDialog.notesPlaceholder')}
+              />
+            </div>
+            {tradingReviewTarget?.status === 'approved' && (
+              <div className="grid gap-2">
+                <Label>{t('training.trading.namespace')}</Label>
+                <Select value={tradingReviewNamespaceId || '_none'} onValueChange={(v) => setTradingReviewNamespaceId(v === '_none' ? '' : v)}>
+                  <SelectTrigger data-testid="select-trading-review-namespace">
+                    <SelectValue placeholder={t('training.createJob.namespacePlaceholder')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">{t('training.filter.all')}</SelectItem>
+                    {(namespaces || []).map((ns) => (
+                      <SelectItem key={ns.id} value={ns.id}>
+                        {ns.nome}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">{t('training.tradingDataset.namespaceHelp')}</p>
+              </div>
+            )}
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => { setTradingReviewDialogOpen(false); setTradingReviewTarget(null); }}>
+              {t('training.createJob.cancel')}
+            </Button>
+            <Button onClick={confirmTradingReview} disabled={!tradingReviewTarget || reviewTradingDataset.isPending}>
+              {reviewTradingDataset.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  {t('training.reviewDialog.saving')}
+                </>
+              ) : (
+                t('training.reviewDialog.confirm')
               )}
             </Button>
           </DialogFooter>

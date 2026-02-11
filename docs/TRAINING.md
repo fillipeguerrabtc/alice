@@ -100,6 +100,42 @@ O sistema de treinamento da Alice permite fine-tuning incremental do **LLM (text
 
 ---
 
+## Fontes de Dados do Treino
+
+Todas as fontes abaixo entram na **coleta e contagem** usada para avaliar qualidade e para o treino on-demand (Progressive LoRA), quando aplicável:
+
+| Fonte | Tabela | Descrição | Inclusão |
+|-------|--------|-----------|----------|
+| **Chat aprovado** | `training_data` | Conversas e mensagens aprovadas (rating >= 4, status approved). Podem ter `namespace_id` e `inferred_namespace_id`. | Sempre na coleta. Filtradas por namespace quando `namespaceId` é informado. |
+| **Trading aprovado** | `trading_dataset` | Pares prompt/response de sinais e ordens aprovados para treino. `source_metadata` pode conter `namespaceId`. | Incluídos na **contagem** (e no treino quando `includeTradingDataset=true`). Filtrados por `source_metadata->>'namespaceId'` quando `namespaceId` é informado. |
+| **Imagens geradas** | `generated_images` | Imagens aprovadas para treino (`approvedForTraining=true`, `usedInFineTuning=false`). | Incluídas quando `includeImages=true` no run. |
+
+- **Coleta** (`collectTrainingData`): retorna `approvedDataCount` (training_data), `tradingDatasetApprovedCount` (trading_dataset) e `approvedImagesCount`.
+- **Avaliação** (`evaluateDataQuality`): usa `approvedDataCount + tradingDatasetApprovedCount` para o mínimo de dados; considera `namespaceId` opcional para filtrar por namespace.
+- **Treino on-demand** (`startProgressiveLoRA`): filtra `training_data` por namespace (ou tenant-wide); opcionalmente inclui `trading_dataset` na contagem e no treino.
+
+---
+
+## LoRA por Namespace
+
+A partir de 11/02/2026, o sistema suporta **adapters LoRA por namespace** além do adapter tenant-wide.
+
+- **Schema:** `model_versions.namespace_id` (UUID, nullable). `NULL` = adapter do tenant inteiro; preenchido = adapter exclusivo daquele namespace.
+- **Treino on-demand:** O body de `POST /api/training/run/start` aceita `namespaceId` opcional. Quando informado, apenas dados do namespace (e, se `includeTradingDataset`, trading_dataset do namespace) entram no treino; o novo registro em `model_versions` é criado com `namespace_id` preenchido.
+- **Resolução do adapter ativo:** `GET /api/training/lora/active` aceita `tenantId`, `namespaceId` e `agentId`. O backend resolve na ordem: (1) adapter ativo de **trading LoRA** (tabela `trading_lora_jobs`) para o escopo tenant/namespace/agent; (2) se não houver, adapter ativo de **Progressive LoRA** (tabela `model_versions`) para tenant + namespace (ou tenant-wide quando `namespaceId` não é informado).
+- **Chat, Trading e Integrations:** Em todas as chamadas ao LLM, o contexto (tenantId, namespaceId, agentId) é repassado ao resolver de adapter, garantindo uso do adapter treinado mais recente para aquele escopo.
+
+---
+
+## Fluxo de Inferência (Resolver de Adapter)
+
+1. **Requisição ao LLM** (chat, trading, postmortem, etc.): o serviço monta o contexto (tenantId, namespaceId, agentId) a partir da conversa, agente ou configuração de trading.
+2. **Resolução do modelo:** Chama-se o resolver (ex.: `resolveModelWithAdapter(baseModel, context)` no chat-service ou integrations-service), que por sua vez consulta `GET /api/training/lora/active?tenantId=...&namespaceId=...&agentId=...`.
+3. **Backend (training-service):** `getActiveAdapter(scope)` procura primeiro em `trading_lora_jobs` (adapter ativo por escopo); se não houver, procura em `model_versions` (Progressive LoRA por tenant/namespace).
+4. **Retorno:** Nome do modelo (base ou adapter) é usado na requisição ao GPU Manager / vLLM. Assim, **em qualquer uso de LLM** (chat, Trading, postmortem), o adapter treinado mais recente para aquele namespace (e agente, quando aplicável) é usado quando disponível.
+
+---
+
 ## API Endpoints
 
 ### Configurar Schedule
@@ -141,9 +177,14 @@ Content-Type: application/json
   "trainingType": "incremental",
   "includeImages": false,
   "priority": "high",
-  "description": "Treinamento após atualização de dados de trading"
+  "description": "Treinamento após atualização de dados de trading",
+  "namespaceId": "uuid-opcional",
+  "includeTradingDataset": false
 }
 ```
+
+- **namespaceId** (opcional): quando informado, o treino é **por namespace** (LoRA por namespace): apenas `training_data` e, se `includeTradingDataset` for true, `trading_dataset` desse namespace entram no treino; o adapter gerado fica associado ao namespace em `model_versions.namespace_id`.
+- **includeTradingDataset**: inclui exemplos aprovados de `trading_dataset` na coleta/contagem e no treino (quando suportado).
 
 ### Iniciar Treinamento Trading (Pipeline Específico)
 

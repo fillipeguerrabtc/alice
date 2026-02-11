@@ -505,6 +505,11 @@ export async function createDatasetFromPostMortem(
   };
   const [dataset] = await db.insert(schema.tradingDataset).values(datasetValues).returning({ id: schema.tradingDataset.id });
 
+  await db
+    .update(schema.tradingPostmortems)
+    .set({ sentToTrainingAt: new Date() })
+    .where(eq(schema.tradingPostmortems.id, postmortemId));
+
   logger.info(
     {
       datasetId: dataset.id,

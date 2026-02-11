@@ -20,7 +20,7 @@
  */
 
 import { createLogger } from '@alice/logger';
-import { eq, and, lt, desc, isNull } from '@alice/database';
+import { eq, and, or, lt, desc, isNull, sql } from '@alice/database';
 import * as schema from '@alice/shared/schema';
 import type { Database } from '@alice/database';
 import { GPU_MANAGER_CONFIG } from '@alice/shared-utils';
@@ -83,18 +83,33 @@ export const SCHEDULE_CONFIG = {
 interface CollectedData {
   conversationCount: number;
   approvedDataCount: number;
+  /** Contagem de exemplos aprovados em trading_dataset (incluídos na coleta/contagem do treino). */
+  tradingDatasetApprovedCount: number;
   approvedImagesCount: number;
   qualityScore: number;
 }
 
-export async function collectTrainingData(tenantId?: string): Promise<CollectedData> {
-  logger.info({ tenantId }, 'Iniciando coleta automática de dados de treinamento');
+/**
+ * Coleta dados de treinamento para avaliação e treino on-demand.
+ * Quando namespaceId é informado, filtra training_data por namespace_id ou inferred_namespace_id
+ * e trading_dataset por source_metadata->>'namespaceId'.
+ */
+export async function collectTrainingData(tenantId?: string, namespaceId?: string): Promise<CollectedData> {
+  logger.info({ tenantId, namespaceId }, 'Iniciando coleta automática de dados de treinamento');
+
+  const trainingDataWhere = and(
+    eq(schema.trainingData.status, 'approved'),
+    tenantId ? eq(schema.trainingData.tenantId, tenantId) : undefined,
+    namespaceId
+      ? or(
+          eq(schema.trainingData.namespaceId, namespaceId),
+          eq(schema.trainingData.inferredNamespaceId, namespaceId)
+        )
+      : undefined
+  );
 
   const approvedData = await db.query.trainingData.findMany({
-    where: and(
-      eq(schema.trainingData.status, 'approved'),
-      tenantId ? eq(schema.trainingData.tenantId, tenantId) : undefined
-    ),
+    where: trainingDataWhere,
   });
 
   const approvedImages = await db.query.generatedImages.findMany({
@@ -105,7 +120,22 @@ export async function collectTrainingData(tenantId?: string): Promise<CollectedD
     ),
   });
 
-  const highRatedData = approvedData.filter((d: typeof schema.trainingData.$inferSelect) => 
+  // trading_dataset aprovados: contagem para coleta/contagem do treino (fonte explícita documentada).
+  const tradingWhere = and(
+    eq(schema.tradingDataset.status, 'approved'),
+    eq(schema.tradingDataset.isDuplicate, false),
+    tenantId ? eq(schema.tradingDataset.tenantId, tenantId) : undefined,
+    namespaceId
+      ? sql`(${schema.tradingDataset.sourceMetadata} ->> 'namespaceId') = ${namespaceId}`
+      : undefined
+  );
+  const tradingApproved = await db.query.tradingDataset.findMany({
+    where: tradingWhere,
+    columns: { id: true },
+  });
+  const tradingDatasetApprovedCount = tradingApproved.length;
+
+  const highRatedData = approvedData.filter((d: typeof schema.trainingData.$inferSelect) =>
     (d.rating || 0) >= 4
   );
 
@@ -113,9 +143,10 @@ export async function collectTrainingData(tenantId?: string): Promise<CollectedD
     ? highRatedData.length / approvedData.length
     : 0;
 
-  const result = {
+  const result: CollectedData = {
     conversationCount: approvedData.length,
     approvedDataCount: approvedData.length,
+    tradingDatasetApprovedCount,
     approvedImagesCount: approvedImages.length,
     qualityScore,
   };
@@ -137,35 +168,48 @@ interface QualityEvaluation {
   reason: string;
 }
 
+/**
+ * Quando true (ex.: jobs agendados), o threshold de "dados suficientes" usa apenas
+ * training_data aprovados (approvedDataCount). Trading dataset NÃO é obrigatório para rodar.
+ */
 export async function evaluateDataQuality(
   scheduleType: string,
   tenantId?: string,
-  customMinDataRequired?: number // FIX: Permitir threshold customizado configurado pelo usuário
+  customMinDataRequired?: number, // FIX: Permitir threshold customizado configurado pelo usuário
+  namespaceId?: string,
+  useOnlyTrainingDataForMinCount?: boolean
 ): Promise<QualityEvaluation> {
-  const data = await collectTrainingData(tenantId);
-  
+  const data = await collectTrainingData(tenantId, namespaceId);
+
+  // Total de exemplos considerados: training_data aprovados + trading_dataset aprovados
+  const totalDataCount = data.approvedDataCount + data.tradingDatasetApprovedCount;
+  // Para jobs agendados: threshold apenas em training_data (universal; trading não obrigatório)
+  const countForMin = useOnlyTrainingDataForMinCount ? data.approvedDataCount : totalDataCount;
+
   // FIX: Usar minDataRequired customizado se fornecido, senão usar default do SCHEDULE_CONFIG
-  const defaultMinData = scheduleType === 'incremental_fine_tuning' 
+  const defaultMinData = scheduleType === 'incremental_fine_tuning'
     ? SCHEDULE_CONFIG.incrementalFineTuning.minDataRequired
     : SCHEDULE_CONFIG.completeFineTuning.minDataRequired;
-  
+
   const minData = customMinDataRequired ?? defaultMinData;
 
-  if (data.approvedDataCount < minData) {
+  if (countForMin < minData) {
     return {
       isReady: false,
-      dataCount: data.approvedDataCount,
+      dataCount: totalDataCount,
       imageCount: data.approvedImagesCount,
       qualityScore: data.qualityScore,
       recommendation: 'wait',
-      reason: `Dados insuficientes: ${data.approvedDataCount}/${minData} necessários`,
+      reason: useOnlyTrainingDataForMinCount
+        ? `Dados de chat insuficientes: ${data.approvedDataCount}/${minData} necessários (trading_dataset não conta para jobs agendados)`
+        : `Dados insuficientes: ${totalDataCount}/${minData} necessários (training_data: ${data.approvedDataCount}, trading_dataset: ${data.tradingDatasetApprovedCount})`,
     };
   }
 
   if (data.qualityScore < 0.5) {
     return {
       isReady: false,
-      dataCount: data.approvedDataCount,
+      dataCount: totalDataCount,
       imageCount: data.approvedImagesCount,
       qualityScore: data.qualityScore,
       recommendation: 'skip',
@@ -175,7 +219,7 @@ export async function evaluateDataQuality(
 
   return {
     isReady: true,
-    dataCount: data.approvedDataCount,
+    dataCount: totalDataCount,
     imageCount: data.approvedImagesCount,
     qualityScore: data.qualityScore,
     recommendation: 'proceed',
@@ -200,28 +244,62 @@ export async function startProgressiveLoRA(
   options?: {
     includeImages?: boolean;
     baseModelVersion?: number;
+    /** Escopo namespace: quando informado, filtra training_data por namespace e grava em model_versions. */
+    namespaceId?: string;
+    /** Incluir exemplos aprovados de trading_dataset na contagem (e no treino quando suportado). */
+    includeTradingDataset?: boolean;
   }
 ): Promise<ProgressiveLoRAResult> {
   logger.info({ tenantId, options }, 'Iniciando Progressive LoRA');
 
+  const scopeWhere = and(
+    eq(schema.modelVersions.tenantId, tenantId),
+    options?.namespaceId ? eq(schema.modelVersions.namespaceId, options.namespaceId) : isNull(schema.modelVersions.namespaceId),
+    eq(schema.modelVersions.isActive, true)
+  );
+
   const latestVersion = await db.query.modelVersions.findFirst({
-    where: and(
-      eq(schema.modelVersions.tenantId, tenantId),
-      eq(schema.modelVersions.isActive, true)
-    ),
+    where: scopeWhere,
     orderBy: [desc(schema.modelVersions.version)],
   });
 
   const newVersion = (latestVersion?.version || 0) + 1;
 
+  const trainingDataWhere = and(
+    eq(schema.trainingData.status, 'approved'),
+    eq(schema.trainingData.tenantId, tenantId),
+    isNull(schema.trainingData.usedInJobId),
+    options?.namespaceId
+      ? or(
+          eq(schema.trainingData.namespaceId, options.namespaceId),
+          eq(schema.trainingData.inferredNamespaceId, options.namespaceId)
+        )
+      : undefined
+  );
+
   const approvedData = await db.query.trainingData.findMany({
-    where: and(
-      eq(schema.trainingData.status, 'approved'),
-      eq(schema.trainingData.tenantId, tenantId),
-      isNull(schema.trainingData.usedInJobId)
-    ),
+    where: trainingDataWhere,
     limit: 1000,
   });
+
+  let tradingCount = 0;
+  if (options?.includeTradingDataset) {
+    const tradingWhere = and(
+      eq(schema.tradingDataset.status, 'approved'),
+      eq(schema.tradingDataset.isDuplicate, false),
+      eq(schema.tradingDataset.tenantId, tenantId),
+      options?.namespaceId
+        ? sql`(${schema.tradingDataset.sourceMetadata} ->> 'namespaceId') = ${options.namespaceId}`
+        : undefined
+    );
+    const tradingRows = await db.query.tradingDataset.findMany({
+      where: tradingWhere,
+      columns: { id: true },
+    });
+    tradingCount = tradingRows.length;
+  }
+
+  const totalDataCount = approvedData.length + tradingCount;
 
   let approvedImages: Array<typeof schema.generatedImages.$inferSelect> = [];
   if (options?.includeImages) {
@@ -235,14 +313,15 @@ export async function startProgressiveLoRA(
     });
   }
 
-  // Gate 2: QLoRA para o MESMO modelo base do LLM
+  // Gate 2: QLoRA para o MESMO modelo base do LLM. namespaceId gravado quando treino é por namespace.
   const [modelVersion] = await db.insert(schema.modelVersions).values({
     tenantId,
-    name: `alice-qlora-v${newVersion}`,
+    namespaceId: options?.namespaceId ?? null,
+    name: options?.namespaceId ? `alice-qlora-ns-${options.namespaceId.slice(0, 8)}-v${newVersion}` : `alice-qlora-v${newVersion}`,
     version: newVersion,
     baseModel: GPU_MANAGER_CONFIG.models.llm,
     status: 'training',
-    trainingDataCount: approvedData.length,
+    trainingDataCount: totalDataCount,
     imageDataCount: approvedImages.length,
     baselineMetrics: latestVersion?.metrics || {},
   }).returning();
@@ -251,13 +330,14 @@ export async function startProgressiveLoRA(
     modelVersionId: modelVersion.id,
     version: newVersion,
     trainingData: approvedData.length,
+    tradingData: tradingCount,
     images: approvedImages.length,
   }, 'Nova versão de modelo criada para Progressive LoRA');
 
   return {
     modelVersionId: modelVersion.id,
     version: newVersion,
-    trainingDataUsed: approvedData.length,
+    trainingDataUsed: totalDataCount,
     imagesUsed: approvedImages.length,
     status: 'started',
   };
@@ -426,7 +506,13 @@ export async function processScheduledJobs(): Promise<number> {
 
       // FIX: Ler minDataRequired do metadata (se configurado pelo usuário)
       const customMinDataRequired = (job.metadata as { minDataRequired?: number } | null)?.minDataRequired;
-      const evaluation = await evaluateDataQuality(job.scheduleType, job.tenantId || undefined, customMinDataRequired);
+      const evaluation = await evaluateDataQuality(
+        job.scheduleType,
+        job.tenantId || undefined,
+        customMinDataRequired,
+        undefined,
+        true
+      );
 
       if (evaluation.recommendation === 'proceed' && job.tenantId) {
         const result = await startProgressiveLoRA(job.tenantId, {

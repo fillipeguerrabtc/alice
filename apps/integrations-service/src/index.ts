@@ -1659,6 +1659,13 @@ async function createTradingDatasetFromSignalSource(params: {
     atualizadoEm: new Date(),
   }).returning();
 
+  if (created) {
+    await db
+      .update(schema.tradingSignals)
+      .set({ sentToTrainingAt: new Date() })
+      .where(eq(schema.tradingSignals.id, params.signal.id));
+  }
+
   const sourceTypeMetric = 'signal';
   tradingDatasetMetrics.createdTotal.labels(sourceTypeMetric, status).inc();
   tradingDatasetMetrics.qualityScore.observe(qualityScore);
@@ -8820,7 +8827,8 @@ app.post('/api/integrations/twilio/webhook/whatsapp', async (req: Request, res: 
         // Coletar dados apenas se:
         // 1. Rating >= 4 (positivo) E houver resposta válida, OU
         // 2. Houve escalação (para aprendizado negativo) E houver resposta válida
-        if ((rating >= 4 || chatResult.escalated) && hasValidResponse) {
+        // 3. Conversa ainda não foi enviada para treinamento (evita duplicidade)
+        if (!conversation.sentToTrainingAt && (rating >= 4 || chatResult.escalated) && hasValidResponse) {
           // conversations não possui objeto agent; usar namespaceId já persistido na conversa
           const namespaceId = conversation.namespaceId || undefined;
           const tenantId = user.tenantId;
@@ -8879,6 +8887,10 @@ app.post('/api/integrations/twilio/webhook/whatsapp', async (req: Request, res: 
                   rating: rating,
                   source: 'whatsapp',
                 }, 'Dados de treinamento do WhatsApp coletados com sucesso');
+                await getDatabase()
+                  .update(schema.conversations)
+                  .set({ sentToTrainingAt: new Date(), atualizadoEm: new Date() })
+                  .where(eq(schema.conversations.id, conversation.id));
               }
             } finally {
               clearTimeout(trainingTimeoutId);
@@ -14059,6 +14071,7 @@ app.patch('/api/integrations/trading/datasets/:id/review', requirePermission('in
     const bodySchema = z.object({
       status: z.enum(['approved', 'rejected']),
       reviewNotes: z.string().optional(),
+      namespaceId: z.string().uuid().optional().nullable(),
     });
     const parsed = bodySchema.safeParse(req.body);
     if (!parsed.success) {
@@ -14067,6 +14080,39 @@ app.patch('/api/integrations/trading/datasets/:id/review', requirePermission('in
     }
 
     const db = getDatabase();
+    const existing = await db.query.tradingDataset.findFirst({
+      where: and(
+        eq(schema.tradingDataset.id, req.params.id),
+        eq(schema.tradingDataset.tenantId, authContext.tenantId)
+      ),
+      columns: { id: true, sourceMetadata: true },
+    });
+    if (!existing) {
+      res.status(404).json({ error: 'Dataset não encontrado' });
+      return;
+    }
+
+    let nextSourceMetadata = (existing.sourceMetadata as Record<string, unknown>) ?? {};
+    if (parsed.data.namespaceId !== undefined) {
+      if (parsed.data.namespaceId === null) {
+        const { namespaceId: _n, ...rest } = nextSourceMetadata;
+        nextSourceMetadata = rest;
+      } else {
+        const namespace = await db.query.namespaces.findFirst({
+          where: and(
+            eq(schema.namespaces.id, parsed.data.namespaceId),
+            eq(schema.namespaces.tenantId, authContext.tenantId)
+          ),
+          columns: { id: true },
+        });
+        if (!namespace) {
+          res.status(400).json({ error: 'Namespace inválido ou não pertence ao tenant' });
+          return;
+        }
+        nextSourceMetadata = { ...nextSourceMetadata, namespaceId: parsed.data.namespaceId };
+      }
+    }
+
     const [updated] = await db.update(schema.tradingDataset)
       .set({
         status: parsed.data.status,
@@ -14074,6 +14120,7 @@ app.patch('/api/integrations/trading/datasets/:id/review', requirePermission('in
         reviewedBy: authContext.userId,
         reviewedAt: new Date(),
         atualizadoEm: new Date(),
+        sourceMetadata: nextSourceMetadata,
       })
       .where(and(
         eq(schema.tradingDataset.id, req.params.id),

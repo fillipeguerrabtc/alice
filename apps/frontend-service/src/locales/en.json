@@ -1530,6 +1530,10 @@
       "count": "{{count}} items",
       "emptyTitle": "No trading datasets",
       "emptyDesc": "Send approved signals to training and review them here before using in jobs.",
+      "reviewTitle": "trading dataset",
+      "reviewDescApprove": "Set the target namespace (optional) and confirm approval.",
+      "reviewDescReject": "Optionally provide a reason for rejection and confirm.",
+      "namespaceHelp": "Namespace this dataset will be associated with for per-namespace training. Can be changed before approving.",
       "success": {
         "reviewed": "Dataset reviewed successfully"
       },
@@ -1546,6 +1550,11 @@
       "onDemandType": "Training type",
       "includeImages": "Include images",
       "includeImagesDesc": "Includes approved multimodal data when available.",
+      "namespace": "Namespace (LoRA per namespace)",
+      "namespacePlaceholder": "Select a namespace",
+      "namespaceTenantWide": "Entire tenant (default)",
+      "includeTradingDataset": "Include trading dataset",
+      "includeTradingDatasetDesc": "Include approved trading examples in collection and training.",
       "priority": "Priority",
       "priorityLow": "Low",
       "priorityNormal": "Normal",
@@ -1651,10 +1660,18 @@
       "noJobsDesc": "Create a new job to start fine-tuning the model.",
       "createFirstJob": "Create First Job"
     },
+    "universal": {
+      "title": "Universal training per namespace",
+      "desc": "The Data tab contains entries from all namespaces. New Job and Pipeline Trading train by selected namespace — the LoRA adapter is separate per namespace. Use the namespace filter on the Data tab and select the namespace when creating a job to train any domain (Trading, Sales, Support, etc.)."
+    },
     "createJob": {
       "title": "New Fine-tuning Job",
       "description": "Configure a new fine-tuning job for the LLM (Qwen2.5 7B).",
       "minDataWarning": "You only have {{count}} approved data. Minimum required: 10.",
+      "namespaceLabel": "Namespace",
+      "namespacePlaceholder": "Select namespace to train",
+      "namespaceHelp": "The job will use only approved data from this namespace. The LoRA adapter is associated with the namespace.",
+      "namespaceRequired": "Select a namespace to create the job.",
       "nameLabel": "Job Name",
       "namePlaceholder": "e.g.: Fine-tune sales Q4 2025",
       "epochs": "Epochs",
@@ -1846,6 +1863,10 @@
       "tradingDisabled": "Trading disabled",
       "tradingDisabledDesc": "Automatic trading is disabled. Enable it in risk settings to allow operations.",
       "enableNow": "Enable now"
+    },
+    "analysisVsSignals": {
+      "title": "Technical Analysis vs AI Signals",
+      "desc": "This tab shows indicators calculated by code (deterministic). The AI Signals tab uses the language model (LLM) to generate signals. They may differ for the same symbol; consistency improves with model training per namespace (LoRA)."
     },
     "market": {
       "lastPrice": "Last Price",

@@ -315,8 +315,8 @@ export default function DemoTrading() {
       const res = await apiRequest('GET', `/api/integrations/trading/market/${requestSymbol}?${marketQueryString}`);
       return res.json();
     },
-    // REST apenas para carga inicial — ticker real-time vem exclusivamente via WebSocket
     enabled: isConfigured && isSymbolValid,
+    refetchInterval: 10_000,
   });
 
   const market = marketData?.data;

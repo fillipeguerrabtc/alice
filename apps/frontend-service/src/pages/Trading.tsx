@@ -1195,8 +1195,8 @@ export default function Trading() {
   const isSymbolValidForMarket = Boolean(sanitizedSymbol && availableSymbols.includes(sanitizedSymbol));
   const requestSymbol = isSymbolValidForMarket ? sanitizedSymbol : '';
   const isFuturesMarket = selectedMarketType === 'futures';
-  const wsEnabled = isFuturesMarket
-    && isSymbolValidForMarket
+  // WebSocket habilitado para todos os mercados (Futures, Spot, Margin) — cotações em tempo real
+  const wsEnabled = isSymbolValidForMarket
     && !!statusData?.data?.isConfigured
     && !statusData?.data?.requiresTenant;
 
@@ -1324,8 +1324,9 @@ export default function Trading() {
       const res = await apiRequest('GET', `/api/integrations/trading/market/${requestSymbol}?${marketQueryString}`);
       return res.json();
     },
-    // REST apenas para carga inicial — ticker real-time vem exclusivamente via WebSocket
+    // REST para carga inicial; refetch periódico quando WS indisponível (evita dados estáticos)
     enabled: statusData?.data?.isConfigured && isSymbolValidForMarket,
+    refetchInterval: 10_000,
   });
 
   const {
@@ -4545,6 +4546,11 @@ export default function Trading() {
 
           {/* Analysis Tab - Análise Técnica Enterprise (21/12/2025) */}
           <TabsContent value="analysis" className="space-y-4 mt-6">
+            <Alert className="bg-muted/50 border-primary/20">
+              <BarChart3 className="h-4 w-4" />
+              <AlertTitle>{t('trading.analysisVsSignals.title')}</AlertTitle>
+              <AlertDescription>{t('trading.analysisVsSignals.desc')}</AlertDescription>
+            </Alert>
             <TechnicalAnalysisPanel
               symbol={selectedSymbol}
               defaultInterval={selectedInterval}

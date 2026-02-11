@@ -1060,6 +1060,8 @@ export const conversations = pgTable(
     metadata: jsonb("metadata").$type<ConversationMetadata>().default({}),
     totalMensagens: integer("total_mensagens").default(0),
     ultimaMensagemEm: timestamp("ultima_mensagem_em"),
+    /** Preenchido quando a conversa foi enviada para Training (evita envio duplo). */
+    sentToTrainingAt: timestamp("sent_to_training_at"),
     criadoEm: timestamp("criado_em").defaultNow(),
     atualizadoEm: timestamp("atualizado_em").defaultNow(),
   },
@@ -1246,6 +1248,8 @@ export const documents = pgTable(
     embedding: vector("embedding"),
     metadata: jsonb("metadata").$type<GenericMetadata>().default({}),
     processado: boolean("processado").default(false),
+    /** Preenchido quando o documento foi enviado para Training (evita envio duplo). */
+    sentToTrainingAt: timestamp("sent_to_training_at"),
     criadoEm: timestamp("criado_em").defaultNow(),
     atualizadoEm: timestamp("atualizado_em").defaultNow(),
   },
@@ -2607,6 +2611,8 @@ export const tradingSignals = pgTable(
     executedOrderId: uuid("executed_order_id"),        // ID da ordem que executou o sinal
     isActive: boolean("is_active").default(true),      // Se o sinal ainda é válido
     expiresAt: timestamp("expires_at"),                // Quando o sinal expira
+    /** Preenchido quando um trading_dataset foi criado a partir deste sinal (evita envio duplo). */
+    sentToTrainingAt: timestamp("sent_to_training_at"),
     criadoEm: timestamp("criado_em").defaultNow(),
   },
   (table) => ({
@@ -3639,6 +3645,8 @@ export const tradingPostmortems = pgTable(
     retryCount: integer("retry_count").notNull().default(0),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     completedAt: timestamp("completed_at"),
+    /** Preenchido quando um trading_dataset foi criado a partir deste post-mortem (evita envio duplo). */
+    sentToTrainingAt: timestamp("sent_to_training_at"),
   },
   (table) => ({
     idxPostmortemPosition: index("idx_drizzle_postmortem_position").on(table.positionId),
@@ -3928,6 +3936,8 @@ export const modelVersions = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     tenantId: uuid("tenant_id").references(() => tenants.id),
+    /** Escopo do adapter: null = tenant-wide; preenchido = adapter exclusivo do namespace (LoRA por namespace). */
+    namespaceId: uuid("namespace_id").references(() => namespaces.id),
     name: varchar("name", { length: 255 }).notNull(),
     version: integer("version").notNull().default(1),
     // Gate 2: modelo base do LLM (texto) para versionamento/LoRA
@@ -3949,6 +3959,7 @@ export const modelVersions = pgTable(
   },
   (table) => ({
     idxModelVersionsTenant: index("idx_model_versions_tenant").on(table.tenantId),
+    idxModelVersionsNamespace: index("idx_model_versions_namespace").on(table.namespaceId),
     idxModelVersionsStatus: index("idx_model_versions_status").on(table.status),
     idxModelVersionsActive: index("idx_model_versions_active").on(table.isActive),
     idxModelVersionsVersion: index("idx_model_versions_version").on(table.version),

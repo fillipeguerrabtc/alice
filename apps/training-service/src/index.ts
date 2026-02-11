@@ -2302,6 +2302,10 @@ const startTrainingSchema = z.object({
   includeImages: z.boolean().default(false),
   priority: z.enum(['low', 'normal', 'high']).default('normal'),
   description: z.string().max(500).optional(),
+  /** Escopo namespace: treino on-demand por namespace (LoRA por namespace). */
+  namespaceId: z.string().uuid().optional(),
+  /** Incluir exemplos aprovados de trading_dataset no treino. */
+  includeTradingDataset: z.boolean().default(false),
 });
 
 // Schema para cancelar treinamento
@@ -2425,8 +2429,8 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
     return res.status(400).json({ error: 'Input inválido', details: parseResult.error.format() });
   }
   
-  const { tenantId, trainingType, includeImages, priority: _priority, description } = parseResult.data;
-  
+  const { tenantId, trainingType, includeImages, priority: _priority, description, namespaceId, includeTradingDataset } = parseResult.data;
+
   try {
     // Verificar se já existe treinamento em andamento (status 'training' ou 'preparing')
     // FIX Bug 1: Incluir 'preparing' na verificação (fase de preparação de dados)
@@ -2441,16 +2445,16 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
     });
 
     if (runningJobs.length > 0) {
-      return res.status(409).json({ 
+      return res.status(409).json({
         error: 'Já existe treinamento em andamento',
         runningJobId: runningJobs[0].id,
       });
     }
 
-    // Avaliar qualidade dos dados antes de iniciar
+    // Avaliar qualidade dos dados antes de iniciar (com escopo namespace quando informado)
     const scheduleType = trainingType === 'full' ? 'complete_fine_tuning' : 'incremental_fine_tuning';
-    const evaluation = await evaluateDataQuality(scheduleType, tenantId);
-    
+    const evaluation = await evaluateDataQuality(scheduleType, tenantId, undefined, namespaceId);
+
     if (!evaluation.isReady) {
       return res.status(400).json({
         error: 'Dados insuficientes ou qualidade baixa',
@@ -2470,8 +2474,12 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
       trainingDataCount: evaluation.dataCount,
     }).returning();
 
-    // Iniciar Progressive LoRA
-    const loraResult = await startProgressiveLoRA(tenantId, { includeImages });
+    // Iniciar Progressive LoRA (namespaceId e includeTradingDataset repassados)
+    const loraResult = await startProgressiveLoRA(tenantId, {
+      includeImages,
+      namespaceId,
+      includeTradingDataset,
+    });
 
     // Atualizar job com status training
     await db.update(schema.fineTuningJobs)

@@ -15,7 +15,7 @@
  */
 
 import { createLogger } from '@alice/logger';
-import { getDatabase, schema, eq, and, desc, sql, inArray } from '@alice/database';
+import { getDatabase, schema, eq, and, desc, sql, inArray, isNull } from '@alice/database';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { requestGpu, GpuServiceType, GpuRequestPriority, GPU_MANAGER_CONFIG } from '@alice/shared-utils';
@@ -901,18 +901,51 @@ export async function getActiveAdapter(scope?: {
     .orderBy(desc(schema.tradingLoraJobs.criadoEm))
     .limit(1);
 
-  if (!active || !active.resultAdapterPath) {
-    return null;
+  if (active?.resultAdapterPath) {
+    return {
+      jobId: active.id,
+      adapterName: getScopedAdapterName(active),
+      adapterPath: active.resultAdapterPath,
+      activatedAt: active.approvedAt,
+      jobName: active.name,
+      metrics: (active.metrics as TradingLoraMetrics) ?? {},
+    };
   }
 
-  return {
-    jobId: active.id,
-    adapterName: getScopedAdapterName(active),
-    adapterPath: active.resultAdapterPath,
-    activatedAt: active.approvedAt,
-    jobName: active.name,
-    metrics: (active.metrics as TradingLoraMetrics) ?? {},
-  };
+  // Fallback: adapter ativo de model_versions (Progressive LoRA por tenant/namespace)
+  if (scope?.tenantId) {
+    const mvWhere = and(
+      eq(schema.modelVersions.tenantId, scope.tenantId),
+      eq(schema.modelVersions.isActive, true),
+      scope.namespaceId
+        ? eq(schema.modelVersions.namespaceId, scope.namespaceId)
+        : isNull(schema.modelVersions.namespaceId)
+    );
+    const [progressive] = await db
+      .select({
+        id: schema.modelVersions.id,
+        name: schema.modelVersions.name,
+        loraPath: schema.modelVersions.loraPath,
+        ativadoEm: schema.modelVersions.ativadoEm,
+      })
+      .from(schema.modelVersions)
+      .where(mvWhere)
+      .orderBy(desc(schema.modelVersions.version))
+      .limit(1);
+
+    if (progressive?.loraPath) {
+      return {
+        jobId: progressive.id,
+        adapterName: progressive.name,
+        adapterPath: progressive.loraPath,
+        activatedAt: progressive.ativadoEm,
+        jobName: progressive.name,
+        metrics: {},
+      };
+    }
+  }
+
+  return null;
 }
 
 /**

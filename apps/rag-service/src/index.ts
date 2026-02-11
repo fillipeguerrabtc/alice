@@ -1726,6 +1726,12 @@ app.post('/api/rag/documents/:id/send-to-training', requireAuth(), requirePermis
     if (!document || document.namespace?.tenantId !== tenantId) {
       return res.status(404).json({ error: 'Documento não encontrado para este tenant' });
     }
+    if (document.sentToTrainingAt) {
+      return res.status(409).json({
+        error: 'Documento já enviado para treinamento',
+        sentToTrainingAt: document.sentToTrainingAt,
+      });
+    }
     if (!document.namespaceId) {
       return res.status(422).json({ error: 'Documento sem namespace não pode ser promovido para treinamento' });
     }
@@ -1795,6 +1801,11 @@ app.post('/api/rag/documents/:id/send-to-training', requireAuth(), requirePermis
         data: result,
       });
     }
+
+    await db
+      .update(schema.documents)
+      .set({ sentToTrainingAt: new Date(), atualizadoEm: new Date() })
+      .where(eq(schema.documents.id, document.id));
 
     logger.info({
       tenantId,
