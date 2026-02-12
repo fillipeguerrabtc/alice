@@ -57,6 +57,7 @@ CREATE INDEX IF NOT EXISTS idx_lora_jobs_source ON lora_jobs(source);
 -- PARTE 3: RLS - política com nome alinhado à tabela
 -- ============================================================
 DROP POLICY IF EXISTS trading_lora_jobs_tenant_isolation ON lora_jobs;
+DROP POLICY IF EXISTS lora_jobs_tenant_isolation ON lora_jobs;
 CREATE POLICY lora_jobs_tenant_isolation ON lora_jobs
   FOR ALL
   USING (is_super_admin() OR tenant_id IS NULL OR tenant_id = current_tenant_id())
