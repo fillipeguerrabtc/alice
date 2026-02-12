@@ -3189,8 +3189,9 @@ jobs:
             
             # Verificação de credenciais + funções compartilhadas (CLAUDE.md Regra 2)
             export BUILT_IMAGES="${{ github.event.inputs.built_images || '' }}"
+            export GHCR_AUTH_PROBE_IMAGE="ghcr.io/${{ github.repository_owner }}/alice-auth:${{ needs.validate.outputs.version }}"
             source /opt/alice/scripts/deploy-functions.sh
-            verify_docker_credentials || exit 1
+            verify_docker_credentials "$GHCR_AUTH_PROBE_IMAGE" || exit 1
             echo ""
             
             # Salvar versão anterior (rollback safety)
@@ -4266,8 +4267,9 @@ jobs:
             
             # Verificação de credenciais + funções compartilhadas (CLAUDE.md Regra 2)
             export BUILT_IMAGES="${{ github.event.inputs.built_images || '' }}"
+            export GHCR_AUTH_PROBE_IMAGE="ghcr.io/${{ github.repository_owner }}/alice-auth:${{ needs.validate.outputs.version }}"
             source /opt/alice/scripts/deploy-functions.sh
-            verify_docker_credentials || exit 1
+            verify_docker_credentials "$GHCR_AUTH_PROBE_IMAGE" || exit 1
             echo ""
             
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -4989,8 +4991,9 @@ jobs:
             
             # Verificação de credenciais + funções compartilhadas (CLAUDE.md Regra 2)
             export BUILT_IMAGES="${{ github.event.inputs.built_images || '' }}"
+            export GHCR_AUTH_PROBE_IMAGE="ghcr.io/${{ github.repository_owner }}/alice-auth:${{ needs.validate.outputs.version }}"
             source /opt/alice/scripts/deploy-functions.sh
-            verify_docker_credentials || exit 1
+            verify_docker_credentials "$GHCR_AUTH_PROBE_IMAGE" || exit 1
             echo ""
             
             echo "══════════════════════════════════════════════════════════════════"
@@ -5627,8 +5630,9 @@ jobs:
             
             # Verificação de credenciais + funções compartilhadas (CLAUDE.md Regra 2)
             export BUILT_IMAGES="${{ github.event.inputs.built_images || '' }}"
+            export GHCR_AUTH_PROBE_IMAGE="ghcr.io/${{ github.repository_owner }}/alice-auth:${{ needs.validate.outputs.version }}"
             source /opt/alice/scripts/deploy-functions.sh
-            verify_docker_credentials || exit 1
+            verify_docker_credentials "$GHCR_AUTH_PROBE_IMAGE" || exit 1
             echo ""
             
             echo "══════════════════════════════════════════════════════════════════"
@@ -6213,8 +6217,9 @@ jobs:
             
             # Verificação de credenciais + funções compartilhadas (CLAUDE.md Regra 2)
             export BUILT_IMAGES="${{ github.event.inputs.built_images || '' }}"
+            export GHCR_AUTH_PROBE_IMAGE="ghcr.io/${{ github.repository_owner }}/alice-auth:${{ needs.validate.outputs.version }}"
             source /opt/alice/scripts/deploy-functions.sh
-            verify_docker_credentials || exit 1
+            verify_docker_credentials "$GHCR_AUTH_PROBE_IMAGE" || exit 1
             echo ""
             
             echo "══════════════════════════════════════════════════════════════════"

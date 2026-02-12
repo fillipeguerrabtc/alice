@@ -24,12 +24,16 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 fi
 
 # ═══════════════════════════════════════════════════════════════════════
-# verify_docker_credentials() - Valida presença de config.json
+# verify_docker_credentials() - Valida config + auth GHCR
 # ═══════════════════════════════════════════════════════════════════════
-# Verifica que ~/.docker/config.json existe com pelo menos 1 registry.
+# Verifica que ~/.docker/config.json existe, contém auth para GHCR
+# e testa autenticação ativa via docker manifest inspect.
+# Diferencia erro de credencial (401/403) de erro transitório de rede.
 # Credenciais são escritas pelo job 'prepare' (login único).
 # ═══════════════════════════════════════════════════════════════════════
 verify_docker_credentials() {
+  local probe_image="${1:-}"
+
   if [ ! -f ~/.docker/config.json ]; then
     echo "❌ ERRO: ~/.docker/config.json não encontrado!"
     echo "   O job 'prepare' deveria ter escrito credenciais."
@@ -44,7 +48,47 @@ verify_docker_credentials() {
     return 1
   fi
 
-  echo "✅ Docker credentials OK ($auths registries em config.json)"
+  if ! grep -q '"ghcr.io"' ~/.docker/config.json; then
+    echo "❌ ERRO: config.json sem credenciais de GHCR (ghcr.io)!"
+    return 1
+  fi
+
+  # Probe ativo opcional para validar autenticação GHCR.
+  # Se falhar por rede (timeout), segue com warning.
+  # Se falhar por auth (401/403), falha imediatamente.
+  if [ -n "$probe_image" ]; then
+    local probe_attempt=1
+    local probe_ok=false
+    while [ $probe_attempt -le 3 ]; do
+      local probe_output
+      probe_output=$(timeout 20 docker manifest inspect "$probe_image" 2>&1) && probe_ok=true || true
+
+      if [ "$probe_ok" = true ]; then
+        echo "✅ GHCR auth validada via probe: $probe_image"
+        break
+      fi
+
+      if echo "$probe_output" | grep -Eiq "unauthorized|denied|authentication required|403|401"; then
+        echo "❌ ERRO: Autenticação GHCR inválida (probe falhou)"
+        echo "   Probe image: $probe_image"
+        echo "   Detalhe: $probe_output"
+        return 1
+      fi
+
+      if [ $probe_attempt -lt 3 ]; then
+        echo "⚠️ Probe GHCR com falha transitória de rede (tentativa ${probe_attempt}/3)"
+        sleep $((probe_attempt * 5))
+      fi
+      probe_attempt=$((probe_attempt + 1))
+    done
+
+    if [ "$probe_ok" != true ]; then
+      echo "⚠️ Não foi possível validar GHCR por rede no probe, mas credenciais existem no config.json"
+      echo "   Deploy seguirá e o pull com retry decidirá por sucesso/falha."
+    fi
+  fi
+
+  echo "✅ Docker credentials OK ($auths registries em config.json, GHCR presente)"
   return 0
 }
 
