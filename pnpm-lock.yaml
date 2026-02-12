@@ -1039,19 +1039,19 @@ importers:
     dependencies:
       '@alice/config':
         specifier: workspace:*
-        version: link:../../packages/config
+        version: file:packages/config
       '@alice/database':
         specifier: workspace:*
-        version: link:../../packages/database
+        version: file:packages/database(@neondatabase/serverless@0.10.4)(drizzle-orm@0.45.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.16.0)(pg@8.16.3))
       '@alice/logger':
         specifier: workspace:*
-        version: link:../../packages/logger
+        version: file:packages/logger
       '@alice/shared':
         specifier: workspace:*
-        version: link:../../packages/shared
+        version: file:packages/shared(drizzle-orm@0.45.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.16.0)(pg@8.16.3))
       '@alice/shared-utils':
         specifier: workspace:*
-        version: link:../../packages/shared-utils
+        version: file:packages/shared-utils(drizzle-orm@0.45.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.16.0)(pg@8.16.3))(express@5.2.1)
       compression:
         specifier: 1.8.1
         version: 1.8.1
@@ -1088,6 +1088,9 @@ importers:
       redis:
         specifier: ^5.10.0
         version: 5.10.0
+      swagger-ui-express:
+        specifier: ^5.0.1
+        version: 5.0.1(express@5.2.1)
       zod:
         specifier: 3.25.67
         version: 3.25.67
@@ -1525,6 +1528,28 @@ importers:
         version: 5.9.3
 
 packages:
+
+  '@alice/config@file:packages/config':
+    resolution: {directory: packages/config, type: directory}
+
+  '@alice/database@file:packages/database':
+    resolution: {directory: packages/database, type: directory}
+    peerDependencies:
+      '@neondatabase/serverless': ^0.10.4
+      drizzle-orm: 0.45.1
+
+  '@alice/logger@file:packages/logger':
+    resolution: {directory: packages/logger, type: directory}
+
+  '@alice/shared-utils@file:packages/shared-utils':
+    resolution: {directory: packages/shared-utils, type: directory}
+    peerDependencies:
+      express: ^4.22.1 || ^5.0.0
+
+  '@alice/shared@file:packages/shared':
+    resolution: {directory: packages/shared, type: directory}
+    peerDependencies:
+      drizzle-orm: 0.45.1
 
   '@alloc/quick-lru@5.2.0':
     resolution: {integrity: sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw==}
@@ -6087,6 +6112,55 @@ packages:
     resolution: {integrity: sha512-idA2YXwpCdqUSKRCACDE6ItZD9TZzy3OZMtpfLoh6oPR47lipysRrJfjzMqFxQ3uJuUPyUeWe1r9vLH33xO/Qw==}
 
 snapshots:
+
+  '@alice/config@file:packages/config':
+    dependencies:
+      zod: 3.25.67
+
+  '@alice/database@file:packages/database(@neondatabase/serverless@0.10.4)(drizzle-orm@0.45.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.16.0)(pg@8.16.3))':
+    dependencies:
+      '@alice/logger': file:packages/logger
+      '@alice/shared': file:packages/shared(drizzle-orm@0.45.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.16.0)(pg@8.16.3))
+      '@neondatabase/serverless': 0.10.4
+      drizzle-orm: 0.45.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.16.0)(pg@8.16.3)
+      pg: 8.16.3
+      pgvector: 0.2.1
+    transitivePeerDependencies:
+      - pg-native
+
+  '@alice/logger@file:packages/logger':
+    dependencies:
+      pino: 10.1.0
+      pino-pretty: 13.1.3
+
+  '@alice/shared-utils@file:packages/shared-utils(drizzle-orm@0.45.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.16.0)(pg@8.16.3))(express@5.2.1)':
+    dependencies:
+      '@alice/database': file:packages/database(@neondatabase/serverless@0.10.4)(drizzle-orm@0.45.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.16.0)(pg@8.16.3))
+      '@alice/logger': file:packages/logger
+      '@neondatabase/serverless': 0.10.4
+      compression: 1.8.1
+      express: 5.2.1
+      express-rate-limit: 8.2.1(express@5.2.1)
+      helmet: 8.1.0
+      jose: 6.1.3
+      opossum: 9.0.0
+      pino: 10.1.0
+      pino-pretty: 13.1.3
+      prom-client: 15.1.3
+      rate-limit-redis: 4.3.1(express-rate-limit@8.2.1(express@5.2.1))
+      redis: 5.10.0
+      swagger-ui-express: 5.0.1(express@5.2.1)
+      zod: 3.25.67
+    transitivePeerDependencies:
+      - drizzle-orm
+      - pg-native
+      - supports-color
+
+  '@alice/shared@file:packages/shared(drizzle-orm@0.45.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.16.0)(pg@8.16.3))':
+    dependencies:
+      drizzle-orm: 0.45.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.16.0)(pg@8.16.3)
+      drizzle-zod: 0.7.1(drizzle-orm@0.45.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.16.0)(pg@8.16.3))(zod@3.25.67)
+      zod: 3.25.67
 
   '@alloc/quick-lru@5.2.0': {}
 
