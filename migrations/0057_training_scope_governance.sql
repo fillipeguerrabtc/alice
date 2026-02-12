@@ -106,41 +106,80 @@ CREATE POLICY training_scope_overrides_tenant_isolation ON training_scope_overri
   USING (tenant_id = current_setting('app.tenant_id', true)::uuid);
 
 -- ============================================================
--- PARTE 5: Escopo de job/adapter em trading_lora_jobs
+-- PARTE 5: Escopo de job/adapter em tabela LoRA (legada/unificada)
+-- Compatibilidade: trading_lora_jobs (legado) e lora_jobs (unificado)
 -- ============================================================
-ALTER TABLE trading_lora_jobs
-  ADD COLUMN IF NOT EXISTS scope_type training_scope_type NOT NULL DEFAULT 'namespace',
-  ADD COLUMN IF NOT EXISTS scope_namespace_id UUID REFERENCES namespaces(id),
-  ADD COLUMN IF NOT EXISTS scope_agent_id UUID REFERENCES agents(id),
-  ADD COLUMN IF NOT EXISTS profile_version INTEGER NOT NULL DEFAULT 1,
-  ADD COLUMN IF NOT EXISTS is_active_by_scope BOOLEAN NOT NULL DEFAULT false;
-
-CREATE INDEX IF NOT EXISTS idx_trading_lora_jobs_scope_type ON trading_lora_jobs(scope_type);
-CREATE INDEX IF NOT EXISTS idx_trading_lora_jobs_scope_namespace ON trading_lora_jobs(scope_namespace_id);
-CREATE INDEX IF NOT EXISTS idx_trading_lora_jobs_scope_agent ON trading_lora_jobs(scope_agent_id);
-CREATE INDEX IF NOT EXISTS idx_trading_lora_jobs_active_by_scope ON trading_lora_jobs(is_active_by_scope);
-
 DO $$
+DECLARE
+  lora_table text;
 BEGIN
-  IF NOT EXISTS (
-    SELECT 1
-    FROM pg_constraint
-    WHERE conname = 'chk_trading_lora_jobs_scope_fields'
-  ) THEN
-    ALTER TABLE trading_lora_jobs
-      ADD CONSTRAINT chk_trading_lora_jobs_scope_fields CHECK (
-        (scope_type = 'namespace' AND scope_namespace_id IS NOT NULL AND scope_agent_id IS NULL)
-        OR (scope_type = 'agent' AND scope_namespace_id IS NOT NULL AND scope_agent_id IS NOT NULL)
-      );
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'trading_lora_jobs') THEN
+    lora_table := 'trading_lora_jobs';
+  ELSIF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'lora_jobs') THEN
+    lora_table := 'lora_jobs';
+  ELSE
+    RAISE NOTICE 'Tabela LoRA não encontrada (trading_lora_jobs/lora_jobs) - pulando PARTE 5';
+    RETURN;
   END IF;
+
+  EXECUTE format(
+    'ALTER TABLE %I
+      ADD COLUMN IF NOT EXISTS scope_type training_scope_type NOT NULL DEFAULT ''namespace'',
+      ADD COLUMN IF NOT EXISTS scope_namespace_id UUID REFERENCES namespaces(id),
+      ADD COLUMN IF NOT EXISTS scope_agent_id UUID REFERENCES agents(id),
+      ADD COLUMN IF NOT EXISTS profile_version INTEGER NOT NULL DEFAULT 1,
+      ADD COLUMN IF NOT EXISTS is_active_by_scope BOOLEAN NOT NULL DEFAULT false',
+    lora_table
+  );
+
+  EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I(scope_type)',
+    CASE WHEN lora_table = 'trading_lora_jobs' THEN 'idx_trading_lora_jobs_scope_type' ELSE 'idx_lora_jobs_scope_type' END,
+    lora_table
+  );
+  EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I(scope_namespace_id)',
+    CASE WHEN lora_table = 'trading_lora_jobs' THEN 'idx_trading_lora_jobs_scope_namespace' ELSE 'idx_lora_jobs_scope_namespace' END,
+    lora_table
+  );
+  EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I(scope_agent_id)',
+    CASE WHEN lora_table = 'trading_lora_jobs' THEN 'idx_trading_lora_jobs_scope_agent' ELSE 'idx_lora_jobs_scope_agent' END,
+    lora_table
+  );
+  EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I(is_active_by_scope)',
+    CASE WHEN lora_table = 'trading_lora_jobs' THEN 'idx_trading_lora_jobs_active_by_scope' ELSE 'idx_lora_jobs_active_by_scope' END,
+    lora_table
+  );
+
+  IF lora_table = 'trading_lora_jobs' THEN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_trading_lora_jobs_scope_fields') THEN
+      EXECUTE '
+        ALTER TABLE trading_lora_jobs
+        ADD CONSTRAINT chk_trading_lora_jobs_scope_fields CHECK (
+          (scope_type = ''namespace'' AND scope_namespace_id IS NOT NULL AND scope_agent_id IS NULL)
+          OR (scope_type = ''agent'' AND scope_namespace_id IS NOT NULL AND scope_agent_id IS NOT NULL)
+        )';
+    END IF;
+  ELSE
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_lora_jobs_scope_fields') THEN
+      EXECUTE '
+        ALTER TABLE lora_jobs
+        ADD CONSTRAINT chk_lora_jobs_scope_fields CHECK (
+          (scope_type = ''namespace'' AND scope_namespace_id IS NOT NULL AND scope_agent_id IS NULL)
+          OR (scope_type = ''agent'' AND scope_namespace_id IS NOT NULL AND scope_agent_id IS NOT NULL)
+        )';
+    END IF;
+  END IF;
+
+  EXECUTE format(
+    'CREATE UNIQUE INDEX IF NOT EXISTS %I
+      ON %I (
+        tenant_id,
+        scope_type,
+        COALESCE(scope_namespace_id::text, ''''),
+        COALESCE(scope_agent_id::text, '''')
+      )
+      WHERE is_active_by_scope = true',
+    CASE WHEN lora_table = 'trading_lora_jobs' THEN 'idx_trading_lora_jobs_active_scope_unique' ELSE 'idx_lora_jobs_active_scope_unique' END,
+    lora_table
+  );
 END
 $$;
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_trading_lora_jobs_active_scope_unique
-  ON trading_lora_jobs (
-    tenant_id,
-    scope_type,
-    COALESCE(scope_namespace_id::text, ''),
-    COALESCE(scope_agent_id::text, '')
-  )
-  WHERE is_active_by_scope = true;

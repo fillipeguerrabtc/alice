@@ -5,9 +5,16 @@
 -- Ref: CLAUDE.md Regra 6 - zero workarounds; uma tabela, uma lógica de resolução de adapter ativo
 
 -- ============================================================
--- PARTE 1: Renomear tabela e índices
+-- PARTE 1: Renomear tabela e índices (idempotente)
 -- ============================================================
-ALTER TABLE trading_lora_jobs RENAME TO lora_jobs;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'trading_lora_jobs')
+     AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'lora_jobs') THEN
+    ALTER TABLE trading_lora_jobs RENAME TO lora_jobs;
+  END IF;
+END
+$$;
 
 ALTER INDEX IF EXISTS idx_trading_lora_jobs_tenant RENAME TO idx_lora_jobs_tenant;
 ALTER INDEX IF EXISTS idx_trading_lora_jobs_scope_type RENAME TO idx_lora_jobs_scope_type;
@@ -19,7 +26,16 @@ ALTER INDEX IF EXISTS idx_trading_lora_jobs_created RENAME TO idx_lora_jobs_crea
 
 ALTER INDEX IF EXISTS idx_trading_lora_jobs_active_scope_unique RENAME TO idx_lora_jobs_active_scope_unique;
 
-ALTER TABLE lora_jobs RENAME CONSTRAINT chk_trading_lora_jobs_scope_fields TO chk_lora_jobs_scope_fields;
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'chk_trading_lora_jobs_scope_fields'
+  ) THEN
+    ALTER TABLE lora_jobs RENAME CONSTRAINT chk_trading_lora_jobs_scope_fields TO chk_lora_jobs_scope_fields;
+  END IF;
+END
+$$;
 
 -- ============================================================
 -- PARTE 2: Coluna source (origem do job: explicit_job | scheduled_run)
