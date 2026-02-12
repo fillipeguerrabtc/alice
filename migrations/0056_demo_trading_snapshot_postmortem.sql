@@ -38,6 +38,7 @@ CREATE INDEX IF NOT EXISTS idx_trading_snapshots_created ON trading_snapshots(cr
 CREATE INDEX IF NOT EXISTS idx_trading_snapshots_refs ON trading_snapshots USING GIN(refs);
 
 ALTER TABLE trading_snapshots ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS trading_snapshots_tenant_isolation ON trading_snapshots;
 CREATE POLICY trading_snapshots_tenant_isolation ON trading_snapshots
     USING (tenant_id = current_setting('app.tenant_id', true)::uuid);
 
@@ -76,6 +77,7 @@ CREATE INDEX IF NOT EXISTS idx_postmortem_tenant_status ON trading_postmortems(t
 CREATE INDEX IF NOT EXISTS idx_postmortem_created ON trading_postmortems(created_at);
 
 ALTER TABLE trading_postmortems ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS trading_postmortems_tenant_isolation ON trading_postmortems;
 CREATE POLICY trading_postmortems_tenant_isolation ON trading_postmortems
     USING (tenant_id = current_setting('app.tenant_id', true)::uuid);
 
@@ -94,6 +96,7 @@ CREATE TABLE IF NOT EXISTS demo_balances (
 );
 
 ALTER TABLE demo_balances ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS demo_balances_tenant_isolation ON demo_balances;
 CREATE POLICY demo_balances_tenant_isolation ON demo_balances
     USING (tenant_id = current_setting('app.tenant_id', true)::uuid);
 
@@ -112,6 +115,7 @@ CREATE TABLE IF NOT EXISTS demo_fund_history (
 CREATE INDEX IF NOT EXISTS idx_demo_fund_history_tenant ON demo_fund_history(tenant_id);
 
 ALTER TABLE demo_fund_history ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS demo_fund_history_tenant_isolation ON demo_fund_history;
 CREATE POLICY demo_fund_history_tenant_isolation ON demo_fund_history
     USING (tenant_id = current_setting('app.tenant_id', true)::uuid);
 
@@ -146,6 +150,7 @@ CREATE INDEX IF NOT EXISTS idx_demo_orders_status ON demo_orders(tenant_id, stat
 CREATE INDEX IF NOT EXISTS idx_demo_orders_symbol ON demo_orders(symbol);
 
 ALTER TABLE demo_orders ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS demo_orders_tenant_isolation ON demo_orders;
 CREATE POLICY demo_orders_tenant_isolation ON demo_orders
     USING (tenant_id = current_setting('app.tenant_id', true)::uuid);
 
@@ -183,5 +188,6 @@ CREATE INDEX IF NOT EXISTS idx_demo_positions_status ON demo_positions(tenant_id
 CREATE INDEX IF NOT EXISTS idx_demo_positions_symbol ON demo_positions(symbol);
 
 ALTER TABLE demo_positions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS demo_positions_tenant_isolation ON demo_positions;
 CREATE POLICY demo_positions_tenant_isolation ON demo_positions
     USING (tenant_id = current_setting('app.tenant_id', true)::uuid);
