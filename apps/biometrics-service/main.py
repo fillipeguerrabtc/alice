@@ -3,6 +3,7 @@ Biometrics Service - Alice Enterprise Platform
 
 Biometria facial server-side CPU-only (sem liveness).
 Armazena embeddings no PostgreSQL (pgvector) + cópia criptografada.
+Expõe /metrics para Prometheus (observabilidade enterprise).
 
 Documentação em PT-BR (Regra 10 CLAUDE.md).
 """
@@ -14,6 +15,7 @@ import base64
 import hashlib
 import io
 import os
+import time
 import uuid
 from datetime import datetime, timedelta
 from typing import Any, Optional
@@ -22,9 +24,17 @@ import asyncpg
 import face_recognition
 import numpy as np
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from pgvector.asyncpg import register_vector
+from prometheus_client import (
+    CONTENT_TYPE_LATEST,
+    REGISTRY,
+    Counter,
+    Histogram,
+    generate_latest,
+)
 
 INTERNAL_API_SECRET = os.getenv("INTERNAL_API_SECRET", "").strip()
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
@@ -73,9 +83,49 @@ if len(ENCRYPTION_KEY) != 32:
 
 aesgcm = AESGCM(ENCRYPTION_KEY)
 
+# Métricas Prometheus (padrão alice_* - observabilidade enterprise)
+_BIOMETRICS_REQUEST_DURATION = Histogram(
+    "alice_biometrics_request_duration_seconds",
+    "Duração das requisições do Biometrics Service em segundos",
+    ["method", "route"],
+    buckets=(0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0),
+    registry=REGISTRY,
+)
+_BIOMETRICS_REQUESTS_TOTAL = Counter(
+    "alice_biometrics_requests_total",
+    "Total de requisições do Biometrics Service",
+    ["method", "route", "status_code"],
+    registry=REGISTRY,
+)
+
+def _normalize_route(path: str) -> str:
+    """Normaliza path para evitar cardinalidade alta em métricas."""
+    if path in ("/health", "/ready", "/metrics"):
+        return path
+    if path == "/status":
+        return "/api/auth/biometrics/status"
+    if path == "/enroll":
+        return "/api/auth/biometrics/enroll"
+    if path == "/verify":
+        return "/api/auth/biometrics/verify"
+    return path
+
 app = FastAPI(title="Alice Biometrics Service", version="1.0.0")
 pool: Optional[asyncpg.Pool] = None
 pool_lock = asyncio.Lock()
+
+@app.middleware("http")
+async def metrics_middleware(request: Request, call_next):
+    """Registra duração e contagem de requisições para Prometheus."""
+    start = time.perf_counter()
+    response = await call_next(request)
+    duration = time.perf_counter() - start
+    route = _normalize_route(request.scope.get("path", request.url.path))
+    method = request.method
+    status = str(response.status_code)
+    _BIOMETRICS_REQUEST_DURATION.labels(method=method, route=route).observe(duration)
+    _BIOMETRICS_REQUESTS_TOTAL.labels(method=method, route=route, status_code=status).inc()
+    return response
 
 class EnrollRequest(BaseModel):
   userId: str = Field(..., min_length=36)
@@ -217,6 +267,14 @@ async def with_rate_limit_lock(
 @app.get("/health")
 async def health() -> dict[str, str]:
   return {"status": "ok"}
+
+@app.get("/metrics")
+def metrics() -> Response:
+  """Endpoint Prometheus - scrape sem autenticação (rede interna)."""
+  return Response(
+    content=generate_latest(REGISTRY),
+    media_type=CONTENT_TYPE_LATEST,
+  )
 
 @app.get("/ready")
 async def ready() -> dict[str, str]:

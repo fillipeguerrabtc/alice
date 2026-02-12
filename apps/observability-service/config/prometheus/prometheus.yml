@@ -79,6 +79,16 @@ scrape_configs:
           service: 'gpu-manager-service'
           instance: 'alice-prod'
           environment: 'production'
+      - targets: ['alice-biometrics:3011']
+        labels:
+          service: 'biometrics-service'
+          instance: 'alice-prod'
+          environment: 'production'
+      - targets: ['alice-llm-gateway:3011']
+        labels:
+          service: 'llm-gateway-service'
+          instance: 'alice-prod'
+          environment: 'production'
     metrics_path: '/metrics'
     scrape_timeout: 10s
 

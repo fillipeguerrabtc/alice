@@ -12,12 +12,14 @@ export function sliceConversationIntoWindows<T>(
   messages: T[],
   sliceSize: number
 ): Array<{ slice: T[]; startIndex: number; endIndex: number }> {
-  if (messages.length <= sliceSize) {
+  // Guard enterprise: sliceSize negativo/zero causa loop infinito (start += sliceSize decrementa)
+  const safeSliceSize = Number.isFinite(sliceSize) && sliceSize > 0 ? sliceSize : 1;
+  if (messages.length <= safeSliceSize) {
     return [{ slice: messages, startIndex: 0, endIndex: messages.length - 1 }];
   }
   const windows: Array<{ slice: T[]; startIndex: number; endIndex: number }> = [];
-  for (let start = 0; start < messages.length; start += sliceSize) {
-    const end = Math.min(start + sliceSize, messages.length) - 1;
+  for (let start = 0; start < messages.length; start += safeSliceSize) {
+    const end = Math.min(start + safeSliceSize, messages.length) - 1;
     windows.push({
       slice: messages.slice(start, end + 1),
       startIndex: start,

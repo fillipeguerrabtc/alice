@@ -263,10 +263,12 @@ jobs:
         run: |
           set -e
           # Array unificado de todos os microsserviços Node.js (CLAUDE.md Regra 2)
-          # NOTA: gpu-manager-service incluído (era faltante)
+          # Inclui: auth, chat, rag, training, integrations, api-gateway, observability, gpu-manager, llm-gateway
+          # biometrics-service é Python (FastAPI) — não usa Express hardening
           SERVICES=(
             "apps/auth-service/src/index.ts"
             "apps/chat-service/src/index.ts"
+            "apps/llm-gateway-service/src/index.ts"
             "apps/rag-service/src/index.ts"
             "apps/training-service/src/index.ts"
             "apps/integrations-service/src/index.ts"

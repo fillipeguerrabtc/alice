@@ -7,3 +7,4 @@ setuptools==78.1.1
 cryptography==45.0.5
 asyncpg==0.30.0
 pgvector==0.3.6
+prometheus_client==0.21.0

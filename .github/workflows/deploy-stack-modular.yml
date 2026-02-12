@@ -4341,7 +4341,7 @@ jobs:
               docker ps -a --filter "name=alice-" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" || true
               echo ""
               echo "📋 Logs dos containers com erro (últimas 30 linhas cada):"
-              for c in alice-frontend alice-auth alice-biometrics alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager; do
+              for c in alice-frontend alice-auth alice-biometrics alice-chat alice-llm-gateway alice-rag alice-training alice-integrations alice-observability alice-gpu-manager; do
                 if docker ps -a --format '{{.Names}}' | grep -q "^${c}$"; then
                   echo ""
                   echo "── $c ──"
@@ -4358,7 +4358,7 @@ jobs:
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo ""
             echo "📦 Serviços Alice:"
-            docker ps -a --filter "name=alice-" --format "table {{.Names}}\t{{.Status}}" | grep -E "alice-(frontend|auth|chat|rag|training|integrations|observability|gpu-manager)" || echo "   (nenhum container encontrado)"
+            docker ps -a --filter "name=alice-" --format "table {{.Names}}\t{{.Status}}" | grep -E "alice-(frontend|auth|biometrics|chat|llm-gateway|rag|training|integrations|observability|gpu-manager)" || echo "   (nenhum container encontrado)"
             echo ""
             echo "🎮 Containers GPU (gerenciados pelo GPU Manager):"
             docker ps -a --filter "name=gpu-" --format "table {{.Names}}\t{{.Status}}" || echo "   (nenhum container GPU encontrado)"
@@ -4436,7 +4436,7 @@ jobs:
             echo "🧭 DIAGNÓSTICO RÁPIDO - ALICE (tail na tela)"
             echo "================================================"
             docker ps -a --filter "name=alice-" --filter "name=gpu-" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E "alice-|gpu-" || true
-            for c in alice-frontend alice-auth alice-biometrics alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager gpu-llm gpu-embeddings gpu-trainer; do
+            for c in alice-frontend alice-auth alice-biometrics alice-chat alice-llm-gateway alice-rag alice-training alice-integrations alice-observability alice-gpu-manager gpu-llm gpu-embeddings gpu-trainer; do
               if docker ps -a --format '{{.Names}}' | grep -q "^${c}$"; then
                 echo ""
                 echo "── $c (tail 80) ──"
@@ -4476,7 +4476,7 @@ jobs:
 
             docker ps -a --filter "name=alice-" --filter "name=gpu-" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" > "${LOG_DIR}/containers.txt" 2>&1 || true
 
-            for c in alice-frontend alice-auth alice-biometrics alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager gpu-llm gpu-embeddings gpu-trainer; do
+            for c in alice-frontend alice-auth alice-biometrics alice-chat alice-llm-gateway alice-rag alice-training alice-integrations alice-observability alice-gpu-manager gpu-llm gpu-embeddings gpu-trainer; do
               if docker ps -a --format '{{.Names}}' | grep -q "^${c}$"; then
                 docker logs "$c" --tail 500 > "${LOG_DIR}/${c}.log" 2>&1 || true
               fi
@@ -4551,7 +4551,7 @@ jobs:
             # Gate 2: containers GPU são parte do stack ALICE e DEVEM estar healthy
             # para evitar "Deploy OK" enquanto inference está em crash/restart loop.
             #
-            CONTAINERS="alice-frontend alice-auth alice-biometrics alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager gpu-llm gpu-embeddings"
+            CONTAINERS="alice-frontend alice-auth alice-biometrics alice-chat alice-llm-gateway alice-rag alice-training alice-integrations alice-observability alice-gpu-manager gpu-llm gpu-embeddings"
             # =================================================================
             # CORREÇÃO PR#100 (09/01/2026): Alinhar workflow timeout com Docker healthcheck
             # =================================================================
@@ -4939,7 +4939,10 @@ jobs:
             mkdir -p \
               "$DASH_DST/json" \
               "$DASH_DST/chat-llm" \
+              "$DASH_DST/agentic" \
+              "$DASH_DST/biometrics" \
               "$DASH_DST/trading" \
+              "$DASH_DST/demo-trading" \
               "$DASH_DST/rag-embeddings" \
               "$DASH_DST/gpu" \
               "$DASH_DST/services" \
@@ -4954,7 +4957,11 @@ jobs:
 
             # Por domínio (conforme infra/observability/grafana/provisioning/dashboards/alice-dashboards.yml)
             cp -f "$DASH_SRC/llm-metrics.json" "$DASH_DST/chat-llm/llm-metrics.json"
+            cp -f "$DASH_SRC/alice-llm-gateway.json" "$DASH_DST/chat-llm/alice-llm-gateway.json"
+            cp -f "$DASH_SRC/alice-agentic.json" "$DASH_DST/agentic/alice-agentic.json"
+            cp -f "$DASH_SRC/alice-biometrics.json" "$DASH_DST/biometrics/alice-biometrics.json"
             cp -f "$DASH_SRC/alice-trading.json" "$DASH_DST/trading/alice-trading.json"
+            cp -f "$DASH_SRC/alice-demo-trading.json" "$DASH_DST/demo-trading/alice-demo-trading.json"
             cp -f "$DASH_SRC/alice-rag.json" "$DASH_DST/rag-embeddings/alice-rag.json"
             cp -f "$DASH_SRC/alice-gpu-manager.json" "$DASH_DST/gpu/alice-gpu-manager.json"
             cp -f "$DASH_SRC/alice-services.json" "$DASH_DST/services/alice-services.json"

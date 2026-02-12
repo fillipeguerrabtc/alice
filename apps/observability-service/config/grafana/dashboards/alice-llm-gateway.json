@@ -1,0 +1,237 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "LLM Gateway Service - Ponto único de entrada para chamadas LLM. Requisições, latência, fallbacks e erros 5xx.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 2,
+  "id": null,
+  "links": [
+    {
+      "asDropdown": false,
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Home",
+      "type": "link",
+      "url": "/d/alice-home/home"
+    },
+    {
+      "asDropdown": false,
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "LLM Metrics",
+      "type": "link",
+      "url": "/d/alice-llm-metrics/alice-llm-metrics"
+    }
+  ],
+  "panels": [
+    {
+      "gridPos": { "h": 2, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "content": "# LLM Gateway Service - Observabilidade\nPonto único de entrada para chamadas LLM (complete/stream). Métricas: requisições, latência P95, fallbacks e erros 5xx.",
+        "mode": "markdown"
+      },
+      "transparent": true,
+      "type": "text"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 2 },
+      "id": 2,
+      "title": "Status e KPIs",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [{ "options": { "0": { "color": "red", "text": "DOWN" }, "1": { "color": "green", "text": "UP" } }, "type": "value" }],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 3 },
+      "id": 3,
+      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "title": "LLM Gateway UP",
+      "type": "stat",
+      "targets": [{ "expr": "up{job=\"alice-services\",service=\"llm-gateway-service\"}", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": { "mode": "palette-classic" }
+        }
+      },
+      "gridPos": { "h": 4, "w": 5, "x": 4, "y": 3 },
+      "id": 4,
+      "title": "Requisições/s (5m)",
+      "type": "stat",
+      "targets": [{ "expr": "sum(rate(alice_http_requests_total{job=\"alice-services\",service=\"llm-gateway-service\"}[5m]))", "legendFormat": "RPS", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 3 }] }
+        }
+      },
+      "gridPos": { "h": 4, "w": 5, "x": 9, "y": 3 },
+      "id": 5,
+      "title": "Latência P95",
+      "type": "stat",
+      "targets": [{ "expr": "histogram_quantile(0.95, sum(rate(alice_http_request_duration_seconds_bucket{job=\"alice-services\",service=\"llm-gateway-service\"}[5m])) by (le))", "legendFormat": "P95", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 10 }] }
+        }
+      },
+      "gridPos": { "h": 4, "w": 5, "x": 14, "y": 3 },
+      "id": 6,
+      "title": "Fallbacks (total)",
+      "type": "stat",
+      "targets": [{ "expr": "sum(alice_llm_fallbacks_total{job=\"alice-services\",service=\"llm-gateway-service\"}) or vector(0)", "legendFormat": "Fallbacks", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 0.01 }, { "color": "red", "value": 0.05 }] }
+        }
+      },
+      "gridPos": { "h": 4, "w": 5, "x": 19, "y": 3 },
+      "id": 7,
+      "title": "Taxa 5xx (5m)",
+      "type": "stat",
+      "targets": [{ "expr": "sum(rate(alice_http_requests_total{job=\"alice-services\",service=\"llm-gateway-service\",status_code=~\"5..\"}[5m])) / (sum(rate(alice_http_requests_total{job=\"alice-services\",service=\"llm-gateway-service\"}[5m])) + 0.001)", "legendFormat": "5xx", "refId": "A" }]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 7 },
+      "id": 8,
+      "title": "Séries temporais",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": { "mode": "palette-classic" }
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "id": 9,
+      "title": "Requisições por rota (5m)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(alice_http_requests_total{job=\"alice-services\",service=\"llm-gateway-service\"}[5m])) by (route, status_code)",
+          "legendFormat": "{{route}} • {{status_code}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": { "mode": "palette-classic" }
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "id": 10,
+      "title": "Latência P50 / P95 / P99 (5m)",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(alice_http_request_duration_seconds_bucket{job=\"alice-services\",service=\"llm-gateway-service\"}[5m])) by (le))", "legendFormat": "P50", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, sum(rate(alice_http_request_duration_seconds_bucket{job=\"alice-services\",service=\"llm-gateway-service\"}[5m])) by (le))", "legendFormat": "P95", "refId": "B" },
+        { "expr": "histogram_quantile(0.99, sum(rate(alice_http_request_duration_seconds_bucket{job=\"alice-services\",service=\"llm-gateway-service\"}[5m])) by (le))", "legendFormat": "P99", "refId": "C" }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "palette-classic" }
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "id": 11,
+      "title": "Fallbacks ao longo do tempo",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "increase(alice_llm_fallbacks_total{job=\"alice-services\",service=\"llm-gateway-service\"}[5m]) or vector(0)",
+          "legendFormat": "Fallbacks (5m)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "color": { "mode": "palette-classic" }
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "id": 12,
+      "title": "Taxa de erro 5xx (5m)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(alice_http_requests_total{job=\"alice-services\",service=\"llm-gateway-service\",status_code=~\"5..\"}[5m])) / (sum(rate(alice_http_requests_total{job=\"alice-services\",service=\"llm-gateway-service\"}[5m])) + 0.001)",
+          "legendFormat": "5xx Rate",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": ["alice", "llm-gateway", "chat", "llm"],
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "LLM Gateway",
+  "uid": "alice-llm-gateway",
+  "version": 1
+}

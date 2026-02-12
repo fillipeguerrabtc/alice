@@ -145,7 +145,7 @@
 ## Visão geral da plataforma
 
 - Arquitetura: Multi-Stack Modular (5 stacks independentes).
-- Total de containers: 50 (10 infra + 8 Alice + 2 GPU + 13 observability + 15 ERPNext + 2 backup) + 1 trainer sob demanda.
+- Total de containers: 50 (10 infra + 10 Alice + 2 GPU + 13 observability + 15 ERPNext + 2 backup) + 1 trainer sob demanda.
 - Servidor: Hetzner GEX44 (Intel Core i5-13500 14 Core, 64GB DDR4 RAM, 2x 1.92TB NVMe SSD RAID 1, RTX 4000 Ada 20GB).
 - SO: Ubuntu 24.04.3 LTS.
 - Docker: 29.1.3 + Compose v5.0.0.
@@ -183,7 +183,9 @@
 
 - Frontend (React + Vite).
 - Auth Service (OAuth, SAML, OIDC).
+- Biometrics Service (login/enroll/verify).
 - Chat Service (WebSocket + streaming LLM).
+- LLM Gateway Service (rota/contexto namespace/agente; opcional quando `LLM_GATEWAY_URL` configurado).
 - RAG Service (pgvector + embeddings).
 - Training Service (auto-learning + fine-tuning).
 - Integrations Service (Stripe, Wise, Twilio, Gmail SMTP, KuCoin, OpenAI Vision status).
@@ -215,7 +217,9 @@
 
 - `frontend-service`: React 19 + Vite 7.3 + i18n PT-BR/EN.
 - `auth-service`: OAuth 2.0, SAML 2.0, OIDC Provider, RBAC 6 níveis, sessões PostgreSQL.
+- `biometrics-service`: biometria (login, enroll, verify).
 - `chat-service`: WebSocket, streaming LLM, RAG client, takeover/handover, comandos de trading.
+- `llm-gateway-service`: gateway LLM (resolução rota/contexto namespace/agente; chat e integrations podem usar quando `LLM_GATEWAY_URL` configurado).
 - `rag-service`: upload multimodal, embeddings texto GPU, fila assíncrona, WebSocket de embeddings.
 - `training-service`: scheduler, fine-tuning QLoRA, SemHash.
 - `integrations-service`: Stripe/Wise/Twilio/ERPNext/KuCoin/OpenAI Vision + circuit breakers.

@@ -32,6 +32,7 @@ import {
   createErrorHandler,
   createNotFoundHandler,
   asyncHandler,
+  createAlicePrometheus,
 } from '@alice/shared-utils';
 import {
   getDatabase,
@@ -142,8 +143,16 @@ app.use(cors({ origin: true }));
 app.use(compression());
 app.use(express.json({ limit: '1mb' }));
 
+// Prometheus: /metrics exposto antes do auth (scrape sem autenticação - rede interna)
+const { metrics, metricsRouter, httpMetricsMiddleware } = createAlicePrometheus({
+  serviceName: 'llm-gateway-service',
+  collectDefaultMetrics: true,
+});
+app.use(metricsRouter);
+app.use(httpMetricsMiddleware);
+
 function requireInternalAuth(req: Request, res: Response, next: () => void): void {
-  if (req.path === '/health' || req.path === '/live' || req.path === '/ready') {
+  if (req.path === '/health' || req.path === '/live' || req.path === '/ready' || req.path === '/metrics') {
     return next();
   }
   const secret = req.headers['x-internal-api-secret'] as string;
@@ -211,6 +220,7 @@ app.post(
       agentId = resolved.agentId;
       contextoInferido = resolved.context;
       if (!namespaceId) {
+        metrics.llm.fallbacksTotal.inc();
         await logFallback({
           tenantId: context.tenantId,
           userId: context.userId,
@@ -310,6 +320,7 @@ app.post(
       agentId = resolved.agentId;
       contextoInferido = resolved.context;
       if (!namespaceId) {
+        metrics.llm.fallbacksTotal.inc();
         await logFallback({
           tenantId: context.tenantId,
           userId: context.userId,
@@ -394,6 +405,9 @@ connectWithRetry()
     const server = app.listen(PORT, () => {
       logger.info({ port: PORT }, 'LLM Gateway Service iniciado');
     });
+    server.timeout = 30000; // 30s timeout para requisições (enterprise - alinhado aos demais serviços)
+    server.keepAliveTimeout = 65000; // 65s (maior que ALB timeout padrão de 60s)
+    server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
     server.on('error', (err) => {
       logger.error({ err }, 'Erro ao iniciar servidor');
       process.exit(1);

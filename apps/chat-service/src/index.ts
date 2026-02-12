@@ -3592,8 +3592,11 @@ async function resolveTrainingConvLimits(): Promise<{ maxMessages: number; slice
     getSystemConfig('TRAINING_CONVERSATION_MAX_MESSAGES'),
     getSystemConfig('CONVERSATION_SLICE_SIZE'),
   ]);
-  const maxMessages = maxV ? (parseInt(maxV, 10) || 50) : TRAINING_CONVERSATION_MAX_MESSAGES;
-  const sliceSize = sliceV ? (parseInt(sliceV, 10) || 10) : CONVERSATION_SLICE_SIZE;
+  // Validação enterprise: valores do DB devem ser inteiros positivos (evita loop infinito em sliceConversationIntoWindows)
+  const parsedMax = maxV ? parseInt(maxV, 10) : NaN;
+  const parsedSlice = sliceV ? parseInt(sliceV, 10) : NaN;
+  const maxMessages = Number.isFinite(parsedMax) && parsedMax > 0 ? parsedMax : TRAINING_CONVERSATION_MAX_MESSAGES;
+  const sliceSize = Number.isFinite(parsedSlice) && parsedSlice > 0 ? parsedSlice : CONVERSATION_SLICE_SIZE;
   return { maxMessages, sliceSize };
 }
 const SLA_SECONDS_STREAM = parseEnvInt(process.env.SLA_SECONDS_STREAM, 12, 'SLA_SECONDS_STREAM');
@@ -7761,6 +7764,7 @@ app.post('/api/chat/conversations/:id/training/collect', requireAuth(), requireS
         if (windows.length === 1) {
           return res.status(400).json({ error: trainingPayload.error });
         }
+        allSent = false;
         continue;
       }
 
@@ -7899,17 +7903,20 @@ app.post('/api/chat/training/collect-batch', requireAuth(), requireSameTenant(ge
         : sliceConversationIntoWindows(storedMessages, limitsBatch.sliceSize);
 
       if (windows.length > 1) {
-        conversationWindowsCreatedCounter.inc({ tenant_id: requestTenantId });
+        conversationWindowsCreatedCounter.inc({ tenant_id: effectiveTenantId });
       }
 
       let batchSent = true;
       let batchMessages = 0;
+      let payloadErrorPushed = false;
 
       for (const win of windows) {
         const trainingPayload = buildTrainingMessagesFromStored(win.slice);
         if (trainingPayload.error) {
+          batchSent = false;
           if (windows.length === 1) {
             failures.push({ conversationId: item.conversationId, error: trainingPayload.error });
+            payloadErrorPushed = true;
           }
           continue;
         }
@@ -7939,10 +7946,12 @@ app.post('/api/chat/training/collect-batch', requireAuth(), requireSameTenant(ge
       }
 
       if (!batchSent && batchMessages === 0) {
-        failures.push({
-          conversationId: item.conversationId,
-          error: 'Serviço de treinamento não aceitou os dados.',
-        });
+        if (!payloadErrorPushed) {
+          failures.push({
+            conversationId: item.conversationId,
+            error: 'Serviço de treinamento não aceitou os dados.',
+          });
+        }
         continue;
       }
 
@@ -8344,13 +8353,13 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
       logger.warn({ error: titleError, conversationId: id }, 'Falha ao aplicar título automático (sync)');
     }
 
-    if (!conversation.sentToTrainingAt && shouldAutoCollectTraining({
+    // Auto-coleta: envia cada par user+assistant individualmente (contínuo). sentToTrainingAt é apenas para coleta manual (conversa inteira).
+    if (shouldAutoCollectTraining({
       profile: syncProfile,
       namespaceId: activeNamespaceId || conversation.agent?.namespaceId,
       userMessage: body.conteudo,
       assistantResponse: response as string,
     })) {
-      const conversationIdForMark = id;
       void collectTrainingSample({
         tenantId,
         namespaceId: (activeNamespaceId || conversation.agent?.namespaceId) as string,
@@ -8368,14 +8377,7 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
         ],
         userId,
         role: userRole,
-      }).then((sent) => {
-        if (sent && conversationIdForMark) {
-          return db
-            .update(schema.conversations)
-            .set({ sentToTrainingAt: new Date(), atualizadoEm: new Date() })
-            .where(eq(schema.conversations.id, conversationIdForMark));
-        }
-      }).catch((err) => logger.warn({ err, conversationId: conversationIdForMark }, 'Falha ao marcar conversa como enviada para treinamento (auto)'));
+      }).catch((err) => logger.warn({ err, conversationId: id }, 'Falha na coleta automática de treinamento (sync)'));
     }
 
     logger.info({ 
@@ -9227,13 +9229,13 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                 }
 
                 const streamUserRole = req.user?.role as Role | undefined;
-                if (streamUserRole && !conversation?.sentToTrainingAt && shouldAutoCollectTraining({
+                // Auto-coleta: envia cada par user+assistant individualmente (contínuo). sentToTrainingAt é apenas para coleta manual.
+                if (streamUserRole && shouldAutoCollectTraining({
                   profile: mediaProfile,
                   namespaceId: namespaceIdForMedia,
                   userMessage: userContent,
                   assistantResponse: assistantResponse,
                 })) {
-                  const conversationIdForMark = conversationId;
                   void collectTrainingSample({
                     tenantId,
                     namespaceId: namespaceIdForMedia as string,
@@ -9252,14 +9254,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                     ],
                     userId,
                     role: streamUserRole,
-                  }).then((sent) => {
-                    if (sent && conversationIdForMark) {
-                      return db
-                        .update(schema.conversations)
-                        .set({ sentToTrainingAt: new Date(), atualizadoEm: new Date() })
-                        .where(eq(schema.conversations.id, conversationIdForMark));
-                    }
-                  }).catch((err) => logger.warn({ err, conversationId: conversationIdForMark }, 'Falha ao marcar conversa como enviada para treinamento (auto)'));
+                  }).catch((err) => logger.warn({ err, conversationId }, 'Falha na coleta automática de treinamento (stream mídia)'));
                 }
 
                 res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
@@ -9300,7 +9295,14 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           },
           scopedLlmConfig,
           getAdaptiveGpuPriority('stream', mediaProfile),
-          { route: llmContextRoute, tenantId, userId, conversationId, namespaceId: namespaceIdForMedia ?? undefined, agentId: conversation?.agentId ?? undefined }
+          { route: llmContextRoute, tenantId, userId, conversationId, namespaceId: namespaceIdForMedia ?? undefined, agentId: conversation?.agentId ?? undefined },
+          (meta) => {
+            try {
+              if (res.headersSent && !res.writableEnded && meta.usedFallback) {
+                res.write(`data: ${JSON.stringify({ type: 'llm_metadata', usedFallback: true })}\n\n`);
+              }
+            } catch { /* ignorar */ }
+          }
         );
       } catch (streamError) {
         logger.error({ error: streamError }, 'Erro no streaming de mídia (stream)');
@@ -12317,13 +12319,13 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
 
               const streamProfile = detectContextProfile(userMessageContent);
               const streamUserRole = req.user?.role as Role | undefined;
-              if (streamUserRole && !conversation?.sentToTrainingAt && shouldAutoCollectTraining({
+              // Auto-coleta: envia cada par user+assistant individualmente (contínuo). sentToTrainingAt é apenas para coleta manual.
+              if (streamUserRole && shouldAutoCollectTraining({
                 profile: streamProfile,
                 namespaceId: conversation?.namespaceId || conversation?.agent?.namespaceId,
                 userMessage: userMessageContent,
                 assistantResponse: assistantResponse,
               })) {
-                const conversationIdForMark = conversationId;
                 void collectTrainingSample({
                   tenantId,
                   namespaceId: (conversation?.namespaceId || conversation?.agent?.namespaceId) as string,
@@ -12341,14 +12343,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                   ],
                   userId,
                   role: streamUserRole,
-                }).then((sent) => {
-                  if (sent && conversationIdForMark) {
-                    return db
-                      .update(schema.conversations)
-                      .set({ sentToTrainingAt: new Date(), atualizadoEm: new Date() })
-                      .where(eq(schema.conversations.id, conversationIdForMark));
-                  }
-                }).catch((err) => logger.warn({ err, conversationId: conversationIdForMark }, 'Falha ao marcar conversa como enviada para treinamento (auto)'));
+                }).catch((err) => logger.warn({ err, conversationId }, 'Falha na coleta automática de treinamento (stream)'));
               }
 
               res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
@@ -14129,13 +14124,13 @@ wss.on('connection', (ws, req) => {
               }
 
               const websocketProfile = detectContextProfile(messageContent);
-              if (userRole && !conversation?.sentToTrainingAt && shouldAutoCollectTraining({
+              // Auto-coleta: envia cada par user+assistant individualmente (contínuo). sentToTrainingAt é apenas para coleta manual.
+              if (userRole && shouldAutoCollectTraining({
                 profile: websocketProfile,
                 namespaceId: conversation?.namespaceId || conversation?.agent?.namespaceId,
                 userMessage: messageContent,
                 assistantResponse: responseText,
               })) {
-                const conversationIdForMark = conversationId;
                 void collectTrainingSample({
                   tenantId: safeTenantId,
                   namespaceId: (conversation?.namespaceId || conversation?.agent?.namespaceId) as string,
@@ -14153,14 +14148,7 @@ wss.on('connection', (ws, req) => {
                   ],
                   userId,
                   role: userRole,
-                }).then((sent) => {
-                  if (sent && conversationIdForMark) {
-                    return db
-                      .update(schema.conversations)
-                      .set({ sentToTrainingAt: new Date(), atualizadoEm: new Date() })
-                      .where(eq(schema.conversations.id, conversationIdForMark));
-                  }
-                }).catch((err) => logger.warn({ err, conversationId: conversationIdForMark }, 'Falha ao marcar conversa como enviada para treinamento (auto)'));
+                }).catch((err) => logger.warn({ err, conversationId }, 'Falha na coleta automática de treinamento (websocket)'));
               }
 
               // BUG FIX 25/12/2025: Envolver ws.send() em try-catch para tratamento gracioso de clientes desconectados

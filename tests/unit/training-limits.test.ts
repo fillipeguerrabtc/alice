@@ -108,6 +108,17 @@ describe('sliceConversationIntoWindows', () => {
     expect(result[0].startIndex).toBe(0);
     expect(result[0].endIndex).toBe(-1);
   });
+
+  it('deve usar safeSliceSize=1 quando sliceSize <= 0 (evita loop infinito)', () => {
+    const msgs = [1, 2, 3, 4, 5];
+    const resultNeg = sliceConversationIntoWindows(msgs, -5);
+    const resultZero = sliceConversationIntoWindows(msgs, 0);
+    // Com sliceSize efetivo 1: cada mensagem = 1 janela
+    expect(resultNeg).toHaveLength(5);
+    expect(resultZero).toHaveLength(5);
+    expect(resultNeg[0].slice).toEqual([1]);
+    expect(resultNeg[4].slice).toEqual([5]);
+  });
 });
 
 // ============================================================================

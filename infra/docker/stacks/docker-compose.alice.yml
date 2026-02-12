@@ -7,11 +7,13 @@
 #
 # PROPÓSITO: Serviços core da plataforma Alice + GPU Manager + GPU containers
 #
-# CONTAINERS (8 microserviços + 2 GPU sempre ativos + 1 GPU sob demanda):
+# CONTAINERS (10 microserviços + 2 GPU sempre ativos + 1 GPU sob demanda):
 #   MICROSERVIÇOS:
 #   - alice-frontend - React SPA
 #   - alice-auth - OAuth/SAML/OIDC Provider
+#   - alice-biometrics - Biometria (login/enroll/verify)
 #   - alice-chat - WebSocket + LLM
+#   - alice-llm-gateway - Gateway LLM (rota/contexto namespace/agente)
 #   - alice-rag - Knowledge Base + Embeddings
 #   - alice-training - Fine-tuning + Learning
 #   - alice-integrations - Stripe, Twilio, Wise, KuCoin (dual-network)

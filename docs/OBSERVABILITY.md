@@ -30,9 +30,20 @@
 ### Checklist de validação (pós-deploy)
 
 - **Prometheus (`/targets`)**: `alice-services`, `alice-gpu-services`, `node-exporter`, `cadvisor`, `qdrant`, `jaeger`, `vector` em **UP**.
-- **Grafana**: dashboards Home, LLM/Chat, Agentic, GPU Manager, Trading, ERPNext provisionados.
+- **Grafana**: dashboards Home, LLM/Chat, **LLM Gateway**, Agentic, **Biometria**, GPU Manager, Trading, **Demo Trading**, ERPNext, Training, Training Pipeline provisionados.
 - **Loki/Promtail**: logs do job `docker-containers` chegando com parsing JSON.
 - **Alertas**: regras ativas para LLM, GPU, KuCoin e infraestrutura.
+
+### Atualizações pós-planos (Fev/2026)
+
+| Mudança | Observabilidade |
+|--------|------------------|
+| **TREINAMENTO-LIMITES** | Training Pipeline já expõe `alice_training_scope_*` (quarantine, override, resolved, suggested_new_namespace). Alertas training-pipeline e Grafana Alerting já cobrem scheduler e auto-rejeição. Sem alteração adicional necessária. |
+| **Biometrics Service** | Biometrics expõe `/metrics` com `alice_biometrics_requests_total` e `alice_biometrics_request_duration_seconds_bucket`. Target `alice-biometrics:3011` no job `alice-services`. Dashboard Biometria inclui painéis próprios (alice_biometrics_*) além das rotas via auth. |
+| **LLM Gateway** | LLM Gateway expõe `/metrics` (prom-client). Target `alice-llm-gateway:3011` no job `alice-services`. Dashboard dedicado `alice-llm-gateway.json` (requisições, latência P95, fallbacks, 5xx). Provisionado na pasta Chat & LLM. |
+| **Demo Trading** | Dashboard Demo Trading provisionado (pasta `demo-trading`). Home do Grafana inclui link "Demo Trading". Deploy sincroniza `alice-demo-trading.json` e `00-home.json` a partir do SSOT em `apps/observability-service/config/grafana/dashboards`. |
+| **Sync deploy** | Workflow `deploy-stack-modular.yml` (job deploy-observability) copia **Agentic**, **Biometria** e **Demo Trading** do SSOT para as pastas de provisionamento; pasta Demo Trading adicionada em `alice-dashboards.yml`. |
+| **Testes** | Limites de treinamento: `tests/unit/training-limits.test.ts`. Observability (health, backup, métricas): `tests/unit/services/observability-service.test.ts`. **Smoke dashboards**: `tests/unit/observability-dashboards-smoke.test.ts` (JSON válido, panels, uid, dashboards obrigatórios 00-home, alice-demo-trading, alice-llm-gateway, alice-biometrics). Checklist pós-deploy continua para targets/dashboards em produção. |
 
 ---
 
@@ -75,10 +86,12 @@ A plataforma Alice implementa observabilidade **enterprise-grade** baseada em **
 
 ### Métricas Biometria
 
-- **Requisições por rota**: `alice_http_requests_total{route=~"/api/auth/biometrics/(login|status|enroll|verify)"}`
-- **Latência P95**: `histogram_quantile(0.95, sum(rate(alice_http_request_duration_seconds_bucket{route=~"/api/auth/biometrics/(login|status|enroll|verify)"}[5m])) by (le, route))`
+- **Requisições por rota (auth proxy)**: `alice_http_requests_total{route=~"/api/auth/biometrics/(login|status|enroll|verify)"}`
+- **Requisições do Biometrics Service (próprias)**: `alice_biometrics_requests_total{job="alice-services",service="biometrics-service"}` (labels: method, route, status_code)
+- **Latência Biometrics (própria)**: `alice_biometrics_request_duration_seconds_bucket{job="alice-services",service="biometrics-service"}`
+- **Latência P95 (auth proxy)**: `histogram_quantile(0.95, sum(rate(alice_http_request_duration_seconds_bucket{route=~"/api/auth/biometrics/(login|status|enroll|verify)"}[5m])) by (le, route))`
 - **Taxa de erro**: `sum(rate(alice_http_requests_total{route=~"/api/auth/biometrics/(login|status|enroll|verify)",status_code=~"4..|5.."}[5m])) / sum(rate(alice_http_requests_total{route=~"/api/auth/biometrics/(login|status|enroll|verify)"}[5m]))`
-- **Dashboard**: `apps/observability-service/config/grafana/dashboards/alice-biometrics.json`
+- **Dashboard**: `apps/observability-service/config/grafana/dashboards/alice-biometrics.json` (inclui painéis para alice_biometrics_*)
 
 ### Streaming Agentic (UI)
 
@@ -458,6 +471,8 @@ Permitir que o Chat consulte e **atualize dashboards** do Grafana com RBAC, audi
 | `alice-training-service` | alice-training:3004 | 60s | Training jobs, loss, GPU utilization |
 | `alice-integrations-service` | alice-integrations:3005 | 30s | KuCoin, Stripe, Wise, circuit breakers |
 | `alice-gpu-manager-service` | alice-gpu-manager:3010 | 15s | GPU Manager, VRAM, filas, circuit breakers |
+| `alice-biometrics-service` | alice-biometrics:3011 | 15s | Requisições, latência (alice_biometrics_*) |
+| `alice-llm-gateway-service` | alice-llm-gateway:3011 | 15s | Requisições LLM gateway, fallbacks, 5xx |
 | `gpu-llm` | gpu-llm:8000 | 30s | Serviço GPU LLM (vLLM OpenAI API - texto) |
 | `gpu-embeddings` | gpu-embeddings:8000 | 30s | Serviço GPU de embeddings (FastAPI) |
 | `caddy` | alice-caddy:2019 | 15s | API Gateway, SSL, HTTP/3 |
@@ -517,6 +532,11 @@ Permitir que o Chat consulte e **atualize dashboards** do Grafana com RBAC, audi
 - `alice_circuit_breaker_successes_total{name}` - Total de sucessos
 - `alice_circuit_breaker_timeouts_total{name}` - Total de timeouts
 - `alice_circuit_breaker_rejects_total{name}` - Total de rejeições
+
+### Biometrics Service Metrics (Python prometheus_client)
+
+- `alice_biometrics_requests_total{method, route, status_code}` - Total de requisições do Biometrics Service
+- `alice_biometrics_request_duration_seconds_bucket{method, route}` - Latência das requisições (histogram)
 
 ### RBAC Metrics
 

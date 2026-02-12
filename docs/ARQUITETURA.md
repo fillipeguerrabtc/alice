@@ -99,7 +99,9 @@
 alice/
 ├── apps/                    # Microsserviços (Regra 15)
 │   ├── auth-service/        # Autenticação/Autorização
+│   ├── biometrics-service/  # Biometria (login, enroll, verify)
 │   ├── chat-service/        # Chat + LLM + Trading
+│   ├── llm-gateway-service/ # Gateway LLM (rota/contexto namespace/agente)
 │   ├── rag-service/         # Embeddings + Busca Semântica
 │   ├── training-service/    # Fine-tuning + Auto-learning
 │   ├── integrations-service/# APIs externas + Trading
@@ -114,7 +116,6 @@ alice/
 ├── infra/                   # Infraestrutura
 │   ├── docker/              # Docker Compose
 │   └── scripts/             # Automação e deploy
-│   └── scripts/             # Automação
 └── docs/                    # Documentação
 ```
 
@@ -222,17 +223,20 @@ C4Container
 
 > **NOTA 02/01/2026**: Traefik, traefik-init e dockerproxy foram substituídos por Caddy. Vantagens: SSL automático com retry inteligente, HTTP/3 nativo, footprint 40MB (vs 100MB Traefik), configuração declarativa via Caddyfile. **ACME resiliente**: ZeroSSL primário + Let's Encrypt fallback.
 
-#### Microsserviços Alice (7)
+#### Microsserviços Alice (10)
 
 | # | Container | Tecnologia | Porta | Responsabilidade |
 |---|-----------|------------|-------|------------------|
 | 8 | `alice-frontend` | React 18 + Vite 7.3 | 5000 | SPA, UI/UX |
 | 9 | `alice-auth` | Node.js | 3001 | OAuth, SAML, RBAC |
-| 10 | `alice-chat` | Node.js | 3002 | WebSocket, LLM, Trading |
-| 11 | `alice-rag` | Node.js | 3003 | RAG, Embeddings |
-| 12 | `alice-training` | Node.js | 3004 | Fine-tuning, Auto-learning |
-| 13 | `alice-integrations` | Node.js | 3005 | Stripe, KuCoin, Twilio |
-| 14 | `alice-observability` | Node.js | 3007 | Health, Backup |
+| 10 | `alice-biometrics` | Python (FastAPI) | 3011 | Biometria (login, enroll, verify), /metrics Prometheus |
+| 11 | `alice-chat` | Node.js | 3002 | WebSocket, LLM, Trading |
+| 12 | `alice-llm-gateway` | Node.js | 3011 | Gateway LLM (rota/contexto namespace/agente) |
+| 13 | `alice-rag` | Node.js | 3003 | RAG, Embeddings |
+| 14 | `alice-training` | Node.js | 3004 | Fine-tuning, Auto-learning |
+| 15 | `alice-integrations` | Node.js | 3005 | Stripe, KuCoin, Twilio |
+| 16 | `alice-observability` | Node.js | 3007 | Health, Backup |
+| 17 | `alice-gpu-manager` | Node.js | 3010 | Gerenciamento centralizado GPU |
 
 #### ERPNext Stack (15)
 

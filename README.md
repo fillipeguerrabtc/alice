@@ -242,7 +242,7 @@ Consulte [docs/SECRETS.md](docs/SECRETS.md) para a lista completa de secrets nec
 - ✅ **Retag Inteligente**: Imagens sem alterações são retagged (economiza tempo)
 - ✅ **Cache GHCR**: Registry cache por imagem (máxima eficiência BuildKit)
 - ✅ **Smoke Test**: PostgreSQL + pgvector (detecta SIGILL/AVX-512 antes do deploy)
-- ✅ **16 Imagens**: 13 microservices + 3 GPU (sequencial otimizado)
+- ✅ **17 Imagens**: 14 do job build (11 microsserviços Alice + postgres + pgbackrest + caddy) + 3 GPU
 - ✅ **Disparo Automático**: Deploy disparado automaticamente após sucesso
 
 **Características Enterprise Deploy Modular (`deploy-stack-modular.yml`):**
@@ -350,9 +350,12 @@ Consulte [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) para instruções detalhadas.
 alice/
 ├── apps/                           # Microserviços independentes
 │   ├── frontend-service/           # React 18 + Vite 7.3 SPA
-│   ├── api-gateway/                # Node.js gateway (dev only - Caddy 2.8.4 em prod)
+│   ├── api-gateway/                # Node.js gateway (dev only - Caddy 2.8 em prod)
 │   ├── auth-service/               # OAuth/SAML/Local + RBAC
+│   ├── biometrics-service/        # Biometria facial (Python FastAPI, /metrics Prometheus)
 │   ├── chat-service/               # LLM Proxy + WebSocket
+│   ├── llm-gateway-service/        # Gateway LLM único (rota/contexto namespace/agente, /metrics)
+│   ├── gpu-manager-service/        # Gerenciamento centralizado GPU (filas, VRAM, circuit breakers)
 │   ├── rag-service/                # Embeddings + pgvector
 │   ├── training-service/           # SemHash + Fine-tuning
 │   ├── integrations-service/       # Stripe, ERPNext, Twilio, KuCoin Trading

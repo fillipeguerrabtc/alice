@@ -24,7 +24,7 @@ Este guia descreve o deploy enterprise da plataforma Alice em produção (Hetzne
 | Stack | Containers | Descrição | Docker Compose |
 | --- | --- | --- | --- |
 | **INFRA** | 11 | PostgreSQL, PgBouncer, Redis, Qdrant, Caddy, MinIO, SearXNG, Tor | `infra/docker/stacks/docker-compose.infra.yml` |
-| **ALICE** | 8 + GPU | Microsserviços core + GPU Manager + serviços GPU | `infra/docker/stacks/docker-compose.alice.yml` |
+| **ALICE** | 10 + GPU | Microsserviços core (incl. Biometrics, LLM Gateway) + GPU Manager + serviços GPU | `infra/docker/stacks/docker-compose.alice.yml` |
 | **OBSERVABILITY** | 13 | Prometheus, Grafana, Loki, Jaeger, Langfuse, ClickHouse | `infra/docker/stacks/docker-compose.observability.yml` |
 | **ERPNEXT** | 15 | MariaDB, Redis Cache/Queue, Backend, Workers | `infra/docker/stacks/docker-compose.erpnext.yml` |
 | **BACKUP** | 1 | pgBackRest enterprise | `infra/docker/stacks/docker-compose.backup.yml` |

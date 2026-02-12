@@ -12,7 +12,7 @@
 #   1. Validar e criar tag semântica (vX.Y.Z)
 #   2. Gerar changelog automático (Conventional Commits)
 #   3. Criar GitHub Release com notas (APÓS build das imagens)
-#   4. Build e push de TODAS as 16 imagens Docker (12 services + 4 GPU)
+#   4. Build e push de TODAS as 17 imagens Docker (14 do job: 11 Alice + postgres + pgbackrest + caddy + 3 GPU)
 #   5. Deploy é disparado automaticamente via workflow_dispatch para `deploy-stack-modular.yml` (v3 Enterprise)
 #
 # OTIMIZAÇÃO (27/12/2025): Consolidação de builds Docker
@@ -589,7 +589,7 @@ jobs:
             echo '```'
             # Lista gerada dinamicamente a partir dos arrays SERVICES/GPU_SERVICES
             # (CLAUDE.md Regra 2 - não duplicar lista hardcoded que fica desatualizada)
-            for svc in api-gateway auth biometrics chat frontend integrations observability rag training gpu-manager pgbackrest postgres caddy llm-qwen25 embeddings-gpu qwen-trainer; do
+            for svc in api-gateway auth biometrics chat llm-gateway frontend integrations observability rag training gpu-manager pgbackrest postgres caddy llm-qwen25 embeddings-gpu qwen-trainer; do
               echo "${{ env.IMAGE_PREFIX }}-${svc}:${VERSION}"
             done
             echo '```'

@@ -117,6 +117,53 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 19 },
+      "id": 20,
+      "title": "Métricas do Biometrics Service (alice_biometrics_*)",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "color": { "mode": "palette-classic" }
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "id": 21,
+      "title": "Requisições Biometrics por rota (5m)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(increase(alice_biometrics_requests_total{job=\"alice-services\",service=\"biometrics-service\"}[5m])) by (method, route, status_code)",
+          "legendFormat": "{{method}} {{route}} • {{status_code}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": { "mode": "palette-classic" }
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "id": 22,
+      "title": "Latência Biometrics P95 por rota (5m)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(alice_biometrics_request_duration_seconds_bucket{job=\"alice-services\",service=\"biometrics-service\"}[5m])) by (le, route))",
+          "legendFormat": "{{route}}",
+          "refId": "A"
+        }
+      ]
     }
   ],
   "refresh": "30s",
