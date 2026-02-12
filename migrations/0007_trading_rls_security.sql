@@ -39,9 +39,11 @@ BEGIN
     CREATE INDEX IF NOT EXISTS idx_trading_dataset_tenant_status ON trading_dataset(tenant_id, status);
   END IF;
 
-  -- Trading LoRA Jobs
+  -- Trading LoRA Jobs (compatibilidade: tabela legada e tabela unificada)
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'trading_lora_jobs') THEN
     CREATE INDEX IF NOT EXISTS idx_trading_lora_jobs_tenant_status ON trading_lora_jobs(tenant_id, status);
+  ELSIF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'lora_jobs') THEN
+    CREATE INDEX IF NOT EXISTS idx_lora_jobs_tenant_status ON lora_jobs(tenant_id, status);
   END IF;
 END $$;
 
@@ -121,7 +123,7 @@ BEGIN
     RAISE NOTICE 'RLS aplicado em trading_dataset';
   END IF;
 
-  -- TABELA: trading_lora_jobs
+  -- TABELA: trading_lora_jobs (legada) / lora_jobs (unificada)
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'trading_lora_jobs') THEN
     ALTER TABLE trading_lora_jobs ENABLE ROW LEVEL SECURITY;
     DROP POLICY IF EXISTS trading_lora_jobs_tenant_isolation ON trading_lora_jobs;
@@ -130,6 +132,14 @@ BEGIN
       USING (is_super_admin() OR tenant_id IS NULL OR tenant_id = current_tenant_id())
       WITH CHECK (is_super_admin() OR tenant_id IS NULL OR tenant_id = current_tenant_id());
     RAISE NOTICE 'RLS aplicado em trading_lora_jobs';
+  ELSIF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'lora_jobs') THEN
+    ALTER TABLE lora_jobs ENABLE ROW LEVEL SECURITY;
+    DROP POLICY IF EXISTS lora_jobs_tenant_isolation ON lora_jobs;
+    CREATE POLICY lora_jobs_tenant_isolation ON lora_jobs
+      FOR ALL
+      USING (is_super_admin() OR tenant_id IS NULL OR tenant_id = current_tenant_id())
+      WITH CHECK (is_super_admin() OR tenant_id IS NULL OR tenant_id = current_tenant_id());
+    RAISE NOTICE 'RLS aplicado em lora_jobs';
   END IF;
 END $$;
 
@@ -137,14 +147,42 @@ END $$;
 -- 3. COMENTÁRIOS PARA DOCUMENTAÇÃO
 -- ============================================================================
 
-COMMENT ON TABLE trading_signals IS 'Sinais de trading gerados pelo Mixtral 8x7B LLM para BTC Futures KuCoin - RLS habilitado';
-COMMENT ON TABLE trading_orders IS 'Ordens de trading (OMS) enviadas para KuCoin Futures - RLS habilitado';
-COMMENT ON TABLE trading_positions IS 'Posições abertas e fechadas (EMS) no KuCoin Futures - RLS habilitado';
-COMMENT ON TABLE trading_risk_config IS 'Configuração de gestão de risco por tenant - RLS habilitado';
-COMMENT ON TABLE trading_audit_log IS 'Audit log imutável de todas operações de trading - RLS habilitado';
-COMMENT ON TABLE trading_market_data IS 'Dados históricos de mercado (candles, tickers) - Dados públicos sem RLS';
-COMMENT ON TABLE trading_dataset IS 'Dataset para fine-tuning LoRA do modelo de trading - RLS habilitado';
-COMMENT ON TABLE trading_lora_jobs IS 'Jobs de treinamento LoRA para trading - RLS habilitado';
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'trading_signals') THEN
+    COMMENT ON TABLE trading_signals IS 'Sinais de trading gerados pelo Mixtral 8x7B LLM para BTC Futures KuCoin - RLS habilitado';
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'trading_orders') THEN
+    COMMENT ON TABLE trading_orders IS 'Ordens de trading (OMS) enviadas para KuCoin Futures - RLS habilitado';
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'trading_positions') THEN
+    COMMENT ON TABLE trading_positions IS 'Posições abertas e fechadas (EMS) no KuCoin Futures - RLS habilitado';
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'trading_risk_config') THEN
+    COMMENT ON TABLE trading_risk_config IS 'Configuração de gestão de risco por tenant - RLS habilitado';
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'trading_audit_log') THEN
+    COMMENT ON TABLE trading_audit_log IS 'Audit log imutável de todas operações de trading - RLS habilitado';
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'trading_market_data') THEN
+    COMMENT ON TABLE trading_market_data IS 'Dados históricos de mercado (candles, tickers) - Dados públicos sem RLS';
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'trading_dataset') THEN
+    COMMENT ON TABLE trading_dataset IS 'Dataset para fine-tuning LoRA do modelo de trading - RLS habilitado';
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'trading_lora_jobs') THEN
+    COMMENT ON TABLE trading_lora_jobs IS 'Jobs de treinamento LoRA para trading - RLS habilitado';
+  ELSIF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'lora_jobs') THEN
+    COMMENT ON TABLE lora_jobs IS 'Jobs de treinamento LoRA (unificado) - RLS habilitado';
+  END IF;
+END $$;
 
 -- ============================================================================
 -- 4. VERIFICAÇÃO FINAL
