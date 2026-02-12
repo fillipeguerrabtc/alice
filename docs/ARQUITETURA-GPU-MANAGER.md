@@ -81,6 +81,33 @@ python3 -m vllm.entrypoints.openai.api_server \
 |---------|--------|------|--------|-------------|-------------|
 | **gpu-trainer** | QLoRA (modelo base = LLM do stack) | ~12GB | Fine-tuning (pausa outros serviços) | **pytorch-runtime** | **~11GB (-35% ✅)** |
 
+#### Políticas de Imagem gpu-trainer (11/02/2026)
+
+O **gpu-trainer** segue as **mesmas políticas** das demais imagens GPU da plataforma:
+
+| Aspecto | Detalhes |
+|---------|----------|
+| **Pipeline** | Incluído em `release.yml` como `qwen-trainer` (build com as demais) |
+| **Versionamento** | Mesmo tag semântico das releases (ex: v3.52.1) |
+| **Retag** | Lógica de retag inteligente aplicada (evita rebuild quando código não mudou) |
+| **Cache** | GHCR BuildKit cache por imagem |
+| **Pull no Deploy** | Imagem é pullada no deploy ALICE via `--profile gpu-training` (config) |
+| **Persistência** | Imagem permanece no servidor após pull (mesma retenção das outras) |
+| **On-demand** | Container **não** é iniciado em `docker compose up`; orquestrador sobe quando treino é solicitado |
+| **Imagem pronta** | Sim — pull no deploy garante que a imagem está no servidor antes de qualquer treino |
+
+**Quick check no deploy:** `gpu-trainer: NOT FOUND` é **esperado** antes do orquestrador subir o container. O workflow trata como `⏸️ gpu-trainer: on-demand (não iniciado)`.
+
+### Orquestrador GPU (11/02/2026)
+
+**Abordagem simplificada (menor latência):** troca apenas Embeddings ↔ Trainer; **LLM permanece sempre ativo**.
+
+- **Estados:** `llm_embeddings` (padrão) | `training`
+- **Fluxo:** Treino solicitado → para embeddings → sobe trainer
+- **RAG durante treino:** interrompe treino → volta embeddings
+- **Idle 10 min:** retorno automático para embeddings
+- **Endpoints:** `GET /api/gpu/orchestrator/state`, `POST /api/gpu/orchestrator/return`
+
 ### LoRA Adapters Dinâmicos (09/02/2026)
 
 O vLLM suporta carregamento dinâmico de LoRA adapters em runtime, permitindo que adapters treinados via QLoRA sejam aplicados sem reiniciar o container.

@@ -296,11 +296,13 @@ jobs:
               "alice-pgbackrest-init"
             )
             
+            # gpu-trainer EXCLUÍDO: on-demand (profile gpu-training), stack healthy sem ele
             ALICE_CONTAINERS=(
               "alice-frontend"
               "alice-auth"
               "alice-biometrics"
               "alice-chat"
+              "alice-llm-gateway"
               "alice-rag"
               "alice-training"
               "alice-integrations"
@@ -308,7 +310,6 @@ jobs:
               "alice-gpu-manager"
               "gpu-llm"
               "gpu-embeddings"
-              "gpu-trainer"
             )
             
             OBSERVABILITY_CONTAINERS=(
@@ -4274,7 +4275,8 @@ jobs:
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             
             IMAGES_MAIN=$(docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml config --images 2>/dev/null || true)
-            IMAGES_GPU=$(docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile training config --images 2>/dev/null || true)
+            # CORREÇÃO 11/02/2026: Profile correto é gpu-training (compose), não training
+            IMAGES_GPU=$(docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-training config --images 2>/dev/null || true)
             IMAGES=$(echo -e "${IMAGES_MAIN}\n${IMAGES_GPU}" | sort -u | grep -v '^$')
             TOTAL=$(echo "$IMAGES" | wc -l)
             COUNT=0
@@ -4374,9 +4376,8 @@ jobs:
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "🔍 VERIFICAÇÃO INICIAL DE SAÚDE (quick check):"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            ALICE_CONTAINERS="alice-frontend alice-auth alice-biometrics alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager gpu-llm gpu-embeddings gpu-trainer"
             ALL_RUNNING=true
-            for c in $ALICE_CONTAINERS; do
+            for c in alice-frontend alice-auth alice-biometrics alice-chat alice-llm-gateway alice-rag alice-training alice-integrations alice-observability alice-gpu-manager gpu-llm gpu-embeddings; do
               if docker ps -a --format '{{.Names}}' | grep -q "^${c}$"; then
                 STATUS=$(docker inspect --format='{{.State.Status}}' $c 2>/dev/null || echo "not_found")
                 HEALTH=$(docker inspect --format='{{.State.Health.Status}}' $c 2>/dev/null || echo "none")
@@ -4391,13 +4392,20 @@ jobs:
                 ALL_RUNNING=false
               fi
             done
-            echo ""
-            
-            if [ "$ALL_RUNNING" = "false" ]; then
-              echo "⚠️  ALERTA: Alguns containers não estão running!"
-              echo "   Health check job fará verificação completa..."
+            # gpu-trainer: on-demand (profile gpu-training) - NOT FOUND é esperado
+            if docker ps -a --format '{{.Names}}' | grep -q "^gpu-trainer$"; then
+              STATUS=$(docker inspect --format='{{.State.Status}}' gpu-trainer 2>/dev/null || echo "not_found")
+              echo "   ⏸️  gpu-trainer: $STATUS (on-demand)"
             else
-              echo "✅ Todos os containers estão running"
+              echo "   ⏸️  gpu-trainer: on-demand (não iniciado)"
+            fi
+            ALL_RUNNING="${ALL_RUNNING:-true}"
+            if [ "$ALL_RUNNING" = "false" ]; then
+              echo ""
+              echo "ALERTA: Alguns containers não estão running! Health check job fará verificação completa..."
+            else
+              echo ""
+              echo "✅ Todos os containers obrigatórios estão running"
               echo "   Aguardando health check job para verificação de saúde..."
             fi
             echo ""
@@ -4736,6 +4744,7 @@ jobs:
               "alice-auth"
               "alice-biometrics"
               "alice-chat"
+              "alice-llm-gateway"
               "alice-rag"
               "alice-training"
               "alice-integrations"

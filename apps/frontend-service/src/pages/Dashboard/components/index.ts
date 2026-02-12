@@ -15,4 +15,5 @@ export { TakeoverStatsCard } from './TakeoverStatsCard';
 export { ImageGenerationCard } from './ImageGenerationCard';
 export { SLAMonitorCard } from './SLAMonitorCard';
 export { CircuitBreakerCard } from './CircuitBreakerCard';
+export { FallbacksCard } from './FallbacksCard';
 export { ConversationsBarChart } from './ConversationsBarChart';

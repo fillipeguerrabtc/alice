@@ -398,7 +398,7 @@ export default function DemoTrading() {
     refetchInterval: 15_000,
   });
 
-  /** IDs de post-mortems já enviados para treinamento (têm dataset em trading_dataset) */
+  /** IDs de post-mortems já enviados para treinamento (têm training_data com sourceType trading_postmortem) */
   const { data: tradingDatasetsForSentCheck } = useQuery({
     queryKey: ['/api/integrations/trading/datasets', 'postmortem-ids'],
     queryFn: async () => {
@@ -413,7 +413,7 @@ export default function DemoTrading() {
     const data = tradingDatasetsForSentCheck ?? [];
     return new Set(
       data
-        .filter((d) => d.sourceType === 'postmortem' && d.sourceId)
+        .filter((d) => (d.sourceType === 'trading_postmortem' || d.sourceType === 'postmortem') && d.sourceId)
         .map((d) => d.sourceId as string)
     );
   }, [tradingDatasetsForSentCheck]);
@@ -540,6 +540,7 @@ export default function DemoTrading() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/datasets'] });
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/datasets/stats'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/training/data'] });
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/postmortem', 'demo'] });
       toast({
         title: 'Post-mortem enviado para treinamento',

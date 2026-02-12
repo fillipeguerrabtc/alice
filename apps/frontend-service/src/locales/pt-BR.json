@@ -225,6 +225,13 @@
       "closed": "Fechado",
       "open": "Aberto",
       "halfOpen": "Semi-Aberto"
+    },
+    "fallbacks": {
+      "title": "Fallbacks LLM",
+      "description": "Contextos sem namespace mapeado (últimos 7 dias)",
+      "last7d": "Fallbacks 7 dias",
+      "unmappedContexts": "Contextos não mapeados",
+      "configureInNamespaces": "Configure mapeamentos em Namespaces"
     }
   },
   "conversations": {
@@ -367,6 +374,10 @@
     "attachGallery": "Anexar imagens da galeria",
     "generating": "Gerando resposta...",
     "stopGenerating": "Parar geração",
+    "fallbackBanner": {
+      "title": "Contexto padrão",
+      "desc": "Esta resposta usou o contexto padrão pois a rota atual não está mapeada para um namespace específico."
+    },
     "streaming": {
       "thinking": "Alice está pensando",
       "steps": "Etapas:",
@@ -652,11 +663,38 @@
       "create": "Erro ao criar namespace",
       "update": "Erro ao atualizar",
       "remove": "Erro ao remover"
+    },
+    "alerts": {
+      "fallbackTitle": "Respostas usando modelo geral (fallback)",
+      "fallbackDesc": "{{last24h}} chamadas nas últimas 24h e {{last7d}} nos últimos 7 dias usaram o modelo geral porque nenhum namespace/agente especializado estava mapeado para a rota.",
+      "unmappedTitle": "Contextos sem mapeamento para namespace",
+      "unmappedDesc": "As rotas abaixo tiveram fallbacks e não possuem namespace com contextoSistema correspondente:",
+      "unmappedHint": "Configure contextoSistema (routes ou themes) nas configurações do namespace para mapear essas rotas.",
+      "fallbacks": "fallbacks"
     }
   },
   "documents": {
     "title": "Documentos RAG",
-    "subtitle": "Gerencie documentos para o sistema de recuperação aumentada",
+    "subtitle": "Gerencie documentos e mídia para o sistema de recuperação aumentada",
+    "tabs": {
+      "documents": "Documentos",
+      "media": "Mídia"
+    },
+    "media": {
+      "empty": "Nenhuma mídia encontrada",
+      "emptyDesc": "Mídias (imagens, áudio) são enviadas pela aba Multimodal no Training ou pelo Chat.",
+      "loadFailed": "Erro ao carregar mídia",
+      "statsCount": "{{count}} itens",
+      "filterType": "Tipo",
+      "filterAll": "Todos",
+      "filterImage": "Imagens",
+      "filterAudio": "Áudios",
+      "statusProcessed": "Processado",
+      "statusPending": "Pendente",
+      "statusError": "Erro",
+      "sendToTraining": "Enviar para treinamento",
+      "sentToTraining": "Enviado para treinamento"
+    },
     "upload": "Upload",
     "uploadDocument": "Upload de Documento",
     "dragDrop": "Arraste e solte arquivos aqui",
@@ -1597,6 +1635,14 @@
     "title": "Fine-tuning & Treinamento",
     "subtitle": "Aprove dados, acompanhe jobs e controle o aprendizado contínuo do LLM com segurança.",
     "newJob": "Novo Job",
+    "postTraining": {
+      "title": "Treinamento concluído",
+      "desc": "O job \"{{jobName}}\" foi finalizado. Deseja continuar treinando ou voltar ao chat?",
+      "continueTraining": "Continuar treinando",
+      "backToChat": "Voltar ao chat",
+      "autoReturn": "Sem resposta em 10 minutos, o retorno ao chat será automático.",
+      "returnError": "Erro ao retornar ao modo chat."
+    },
     "status": {
       "pending": "Pendente",
       "approved": "Aprovado",
@@ -1760,6 +1806,18 @@
       "created": "Criado: {{date}}",
       "finished": "Finalizado: {{date}}"
     },
+    "jobDetail": {
+      "loading": "Carregando...",
+      "taskPreparing": "Preparando dataset de treinamento",
+      "taskTraining": "Treinando modelo (LoRA)",
+      "taskValidating": "Validando modelo",
+      "taskQueued": "Na fila de execução",
+      "elapsed": "Tempo decorrido",
+      "elapsedValue": "{{seconds}}s",
+      "eta": "Tempo estimado restante"
+    },
+    "jobsInProgress": "Em andamento",
+    "jobHistory": "Histórico",
     "empty": {
       "noData": "Nenhum dado de treinamento",
       "noDataDesc": "Os dados são coletados automaticamente das conversas aprovadas.",
@@ -1875,6 +1933,9 @@
       "subtitle": "Faça upload de imagens e áudios para treinar a Alice. Imagens usam OpenAI Vision (descrição textual) e áudios usam GPU para gerar embeddings e enriquecer a base de conhecimento.",
       "descriptionLabel": "Descrição (opcional)",
       "descriptionPlaceholder": "Descreva o conteúdo das mídias para melhor contextualização",
+      "namespaceLabel": "Namespace (RAG e treinamento)",
+      "namespacePlaceholder": "Selecione um namespace (opcional)",
+      "namespaceHelp": "Associa a mídia a um namespace para isolamento RAG e treinamento por domínio.",
       "dragDrop": "Arraste arquivos ou clique para selecionar",
       "supportedTypes": "Imagens (JPEG, PNG, WebP, GIF) e Áudios (MP3, WAV, WebM)",
       "queueTitle": "Fila de Upload",
@@ -1905,6 +1966,24 @@
       "errors": {
         "fileTooLarge": "Arquivo muito grande",
         "unsupportedType": "Tipo de arquivo não suportado"
+      },
+      "promoteDocument": {
+        "success": "Documento enviado para treinamento",
+        "successDesc": "O documento foi adicionado aos dados pendentes de aprovação no Training."
+      },
+      "promoteMedia": {
+        "success": "Mídia enviada para treinamento",
+        "successDesc": "A mídia foi adicionada aos dados pendentes de aprovação no Training.",
+        "error": "Erro ao enviar mídia para treinamento"
+      },
+      "mediaProcessed": {
+        "title": "Mídia processada",
+        "subtitle": "Mídias prontas para envio ao treinamento (namespace obrigatório)",
+        "empty": "Nenhuma mídia processada. Faça upload na área acima.",
+        "sent": "Enviado",
+        "noNamespace": "Sem namespace",
+        "sending": "Enviando...",
+        "sendToTraining": "Enviar para treinamento"
       }
     }
   },

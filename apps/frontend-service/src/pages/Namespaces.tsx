@@ -47,9 +47,12 @@ import {
   Users,
   Bot,
   FileText,
+  AlertTriangle,
+  Lightbulb,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 interface Namespace {
   id: string;
@@ -76,6 +79,22 @@ const defaultColors = [
   "#06B6D4",
   "#84CC16",
 ];
+
+/** Resposta da API de estatísticas de fallback LLM */
+interface FallbackStats {
+  total: number;
+  last24h: number;
+  last7d: number;
+  byRoute: Array<{ rota: string; count: number }>;
+  byContext: Array<{ contexto: string; count: number }>;
+}
+
+/** Item de contexto não mapeado a namespace */
+interface UnmappedContext {
+  rota: string;
+  contexto: string;
+  fallbackCount: number;
+}
 
 /**
  * Interface explícita para dados do formulário de namespaces
@@ -162,6 +181,16 @@ export default function Namespaces() {
 
   const { data: namespaces, isLoading } = useQuery<Namespace[]>({
     queryKey: ["/api/namespaces"],
+    enabled: !!user,
+  });
+
+  const { data: fallbackStats } = useQuery<FallbackStats>({
+    queryKey: ["/api/llm/fallback-stats"],
+    enabled: !!user,
+  });
+
+  const { data: unmappedData } = useQuery<{ items: UnmappedContext[] }>({
+    queryKey: ["/api/namespaces/unmapped-contexts"],
     enabled: !!user,
   });
 
@@ -523,6 +552,52 @@ export default function Namespaces() {
           </DialogContent>
         </Dialog>
       </div>
+
+      {/* Seção de avisos e sugestões (fallbacks e contextos não mapeados) */}
+      {(fallbackStats?.last7d ? fallbackStats.last7d > 0 : false) ||
+      (unmappedData?.items?.length ? unmappedData.items.length > 0 : false) ? (
+        <div className="space-y-4">
+          {fallbackStats && fallbackStats.last7d > 0 && (
+            <Alert variant={fallbackStats.last24h > 0 ? "destructive" : "default"}>
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>{t("namespaces.alerts.fallbackTitle")}</AlertTitle>
+              <AlertDescription>
+                {t("namespaces.alerts.fallbackDesc", {
+                  last24h: fallbackStats.last24h,
+                  last7d: fallbackStats.last7d,
+                })}
+                {fallbackStats.byRoute.length > 0 && (
+                  <ul className="mt-2 list-disc list-inside text-sm">
+                    {fallbackStats.byRoute.slice(0, 5).map((r) => (
+                      <li key={r.rota}>
+                        {r.rota}: {r.count}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </AlertDescription>
+            </Alert>
+          )}
+          {unmappedData?.items && unmappedData.items.length > 0 && (
+            <Alert>
+              <Lightbulb className="h-4 w-4" />
+              <AlertTitle>{t("namespaces.alerts.unmappedTitle")}</AlertTitle>
+              <AlertDescription>
+                {t("namespaces.alerts.unmappedDesc")}
+                <ul className="mt-2 space-y-1 text-sm">
+                  {unmappedData.items.slice(0, 8).map((item, idx) => (
+                    <li key={`${item.rota}-${item.contexto}-${idx}`}>
+                      <code className="rounded bg-muted px-1">{item.rota}</code> → {item.contexto}{" "}
+                      ({item.fallbackCount} {t("namespaces.alerts.fallbacks")})
+                    </li>
+                  ))}
+                </ul>
+                {t("namespaces.alerts.unmappedHint")}
+              </AlertDescription>
+            </Alert>
+          )}
+        </div>
+      ) : null}
 
       {isLoading ? (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">

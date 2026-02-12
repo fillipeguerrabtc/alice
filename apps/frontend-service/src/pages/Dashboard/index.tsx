@@ -75,6 +75,7 @@ import { TakeoverStatsCard } from './components/TakeoverStatsCard';
 import { ImageGenerationCard } from './components/ImageGenerationCard';
 import { SLAMonitorCard } from './components/SLAMonitorCard';
 import { CircuitBreakerCard } from './components/CircuitBreakerCard';
+import { FallbacksCard } from './components/FallbacksCard';
 import { ConversationsBarChart } from './components/ConversationsBarChart';
 
 type ImageStatsApi = {
@@ -201,6 +202,26 @@ export default function Dashboard() {
   const { data: integrationStatsData, isLoading: integrationsLoading } = useQuery<IntegrationStats>({
     queryKey: ['/api/integrations/stats'],
     staleTime: 1000 * 60 * 5,
+  });
+
+  const { data: fallbackStats, isLoading: fallbackStatsLoading } = useQuery<{
+    total: number;
+    last24h: number;
+    last7d: number;
+    byRoute: Array<{ rota: string; count: number }>;
+    byContext: Array<{ contexto: string; count: number }>;
+  }>({
+    queryKey: ['/api/llm/fallback-stats'],
+    staleTime: 1000 * 60 * 2,
+    refetchInterval: 1000 * 60 * 2,
+    enabled: Boolean(user),
+  });
+
+  const { data: unmappedData } = useQuery<{ items: Array<{ rota: string; contexto: string; fallbackCount: number }> }>({
+    queryKey: ['/api/namespaces/unmapped-contexts'],
+    staleTime: 1000 * 60 * 2,
+    refetchInterval: 1000 * 60 * 2,
+    enabled: Boolean(user),
   });
 
   const displayImageStats = normalizeImageStats(imageStats);
@@ -427,7 +448,7 @@ export default function Dashboard() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
               <TakeoverStatsCard 
                 stats={displayTakeoverStats} 
                 isLoading={takeoverLoading} 
@@ -447,6 +468,12 @@ export default function Dashboard() {
                 breakers={displayCircuitBreakers} 
                 isLoading={circuitBreakerLoading} 
                 onClick={() => navigateTo('/observability')}
+              />
+              <FallbacksCard
+                fallbackStats={fallbackStats ?? null}
+                unmappedContexts={unmappedData?.items ?? []}
+                isLoading={fallbackStatsLoading}
+                onClick={() => navigateTo('/namespaces')}
               />
             </div>
             <div className="mt-4">

@@ -1,10 +1,10 @@
 /**
  * Gerador de Datasets de Treinamento a partir de Post-Mortems
  *
- * Cria pares prompt/response no schema exato para fine-tuning do Qwen2.5,
- * populando a tabela trading_dataset com status 'pending' para aprovação manual.
+ * Cria pares prompt/response no formato training_data (messages) para aprovação
+ * na página Training (universal). Trading é um namespace como qualquer outro.
  *
- * Fluxo: PostMortem (completed) → Dataset (pending) → Aprovação → Training
+ * Fluxo: PostMortem (completed) → training_data (pending) → Aprovação Training → LoRA
  *
  * Arquitetura:
  * - Dados de posição extraídos do classification JSONB (positionData)
@@ -352,20 +352,20 @@ export async function createDatasetFromPostMortem(
 
   const posData = classification.positionData;
 
-  // Verificar se já existe dataset para este post-mortem (idempotência)
-  const existing = await db
-    .select({ id: schema.tradingDataset.id })
-    .from(schema.tradingDataset)
+  // Verificar se já existe training_data para este post-mortem (idempotência)
+  const existingTrainingData = await db
+    .select({ id: schema.trainingData.id })
+    .from(schema.trainingData)
     .where(and(
-      eq(schema.tradingDataset.sourceType, 'postmortem'),
-      eq(schema.tradingDataset.sourceId, postmortemId),
-      eq(schema.tradingDataset.tenantId, tenantId),
+      eq(schema.trainingData.sourceType, 'trading_postmortem'),
+      eq(schema.trainingData.sourceId, postmortemId),
+      eq(schema.trainingData.tenantId, tenantId),
     ))
     .then((rows) => rows[0] ?? null);
 
-  if (existing) {
-    logger.info({ postmortemId, datasetId: existing.id }, 'Dataset já existe para este post-mortem');
-    return existing.id;
+  if (existingTrainingData) {
+    logger.info({ postmortemId, trainingDataId: existingTrainingData.id }, 'Training data já existe para este post-mortem');
+    return existingTrainingData.id;
   }
 
   // Buscar snapshots via evidence pack
@@ -481,17 +481,32 @@ export async function createDatasetFromPostMortem(
     exitReason: 'close_position',
   };
 
-  // Criar dataset com status pending
-  const datasetValues: typeof schema.tradingDataset.$inferInsert = {
+  // Resolver namespace Trading do tenant (obrigatório para training_data)
+  const tradingNamespace = await db.query.namespaces.findFirst({
+    where: and(
+      eq(schema.namespaces.tenantId, tenantId),
+      eq(schema.namespaces.slug, 'trading'),
+      eq(schema.namespaces.ativo, true)
+    ),
+    columns: { id: true },
+  });
+
+  if (!tradingNamespace) {
+    logger.warn({ tenantId }, 'Namespace Trading não encontrado — dataset não criado');
+    return null;
+  }
+
+  // Criar training_data (tabela universal) com status pending para aprovação na página Training
+  const messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }> = [
+    { role: 'user', content: fullPrompt },
+    { role: 'assistant', content: expectedResponse },
+  ];
+
+  const [trainingDataRow] = await db.insert(schema.trainingData).values({
     tenantId,
-    marketContext: marketContext as typeof schema.tradingDataset.$inferInsert.marketContext,
-    prompt: fullPrompt,
-    response: expectedResponse,
-    actionType,
-    actualOutcome: actualOutcome as typeof schema.tradingDataset.$inferInsert.actualOutcome,
-    qualityScore,
-    status: 'pending',
-    sourceType: 'postmortem',
+    namespaceId: tradingNamespace.id,
+    source: 'trading',
+    sourceType: 'trading_postmortem',
     sourceId: postmortemId,
     sourceMetadata: {
       isDemo: postmortem.isDemo,
@@ -499,11 +514,16 @@ export async function createDatasetFromPostMortem(
       fingerprint: postmortem.fingerprint,
       symbol: posData.symbol,
       marketType: posData.marketType,
+      actionType,
+      actualOutcome,
+      marketContext,
       tradeExecution,
       autoAnnotation,
     } as Record<string, unknown>,
-  };
-  const [dataset] = await db.insert(schema.tradingDataset).values(datasetValues).returning({ id: schema.tradingDataset.id });
+    messages,
+    qualityScore,
+    status: 'pending',
+  }).returning({ id: schema.trainingData.id });
 
   await db
     .update(schema.tradingPostmortems)
@@ -512,16 +532,17 @@ export async function createDatasetFromPostMortem(
 
   logger.info(
     {
-      datasetId: dataset.id,
+      trainingDataId: trainingDataRow.id,
       postmortemId,
+      namespaceId: tradingNamespace.id,
       symbol: posData.symbol,
       qualityScore,
       isDemo: postmortem.isDemo,
     },
-    'Dataset de treinamento criado a partir de post-mortem'
+    'Training data criado a partir de post-mortem (namespace Trading)'
   );
 
-  return dataset.id;
+  return trainingDataRow.id;
 }
 
 /**

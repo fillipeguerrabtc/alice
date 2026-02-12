@@ -181,6 +181,25 @@ const trainingResponse = await fetch(`${TRAINING_SERVICE_URL}/api/training/data`
 }
 ```
 
+### 6. Mídia Multimodal (RAG + Treinamento) ✅ (11/02/2026)
+
+Imagens e áudio são processados e alimentam tanto o RAG quanto o treinamento.
+
+**Mídia → RAG:**
+- Imagens: OpenAI Vision gera descrição textual → embedding (Qwen3-Embedding-0.6B) → Qdrant `type: media_image`
+- Áudio: ASR (OpenAI gpt-4o-transcribe ou Canary) gera transcrição → embedding → Qdrant `type: media_audio`
+- Busca RAG unificada retorna `document_chunk`, `media_image` e `media_audio` na mesma consulta vetorial
+- Namespace obrigatório para isolamento por domínio
+
+**Mídia → Treinamento:**
+- POST `/api/media/uploads/:id/send-to-training` (namespaceId obrigatório)
+- Usa `visionDescription` (imagens) ou `transcription` (áudio) como texto para `training_data`
+- `source: 'rag_media'` com `sourceMetadata.mediaUploadId`
+- `approvedForTraining: true` em `mediaUploads` após envio
+- Botão "Enviar para treinamento" na página Documentos RAG (aba Mídia) e na aba Multimodal (Training)
+
+**Página Documentos RAG:** Abas Documentos e Mídia em visão unificada. Filtros por namespace e tipo (imagem/áudio).
+
 ---
 
 ## Fluxo de Aprendizado Completo
@@ -188,7 +207,7 @@ const trainingResponse = await fetch(`${TRAINING_SERVICE_URL}/api/training/data`
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    COLETA (Tempo Real)                      │
-│  Chat → WhatsApp → Documentos → Dashboard → API             │
+│  Chat → WhatsApp → Documentos → Mídia (RAG) → Dashboard → API│
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐

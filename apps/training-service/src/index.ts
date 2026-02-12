@@ -43,6 +43,8 @@ import {
   TRAINING_SERVICE_TAGS,
   requirePermission,
   extractAuthContext,
+  validateNamespaceTenantConsistency,
+  validateTenantConsistency,
   setPermissionResolver,
   // Auth híbrida (WS4): Sessão (cookie) + Bearer JWT (OIDC) com validação local via JWKS
   createSessionAuthMiddleware,
@@ -621,6 +623,7 @@ const trainingSourceTypeSchema = z.enum([
   'trading_postmortem',
   'document',
   'rag_document',
+  'rag_media', // Plano RAG Multimodal Fase 4 - mídia (imagem/áudio) promovida para treinamento
   'upload',
   'external',
   'manual',
@@ -698,6 +701,19 @@ app.post('/api/training/data', requirePermission('training:training_data:write')
     const authContext = extractAuthContext(req);
     const resolvedTenantId = authContext?.tenantId || body.tenantId;
     const createdBy = authContext?.userId ?? undefined;
+
+    // SEGURANÇA: Validação cross-tenant - namespaceId/agentId do body devem pertencer ao tenant
+    if (body.namespaceId) {
+      await validateNamespaceTenantConsistency(
+        body.namespaceId,
+        resolvedTenantId,
+        async (id) => getDatabase().query.namespaces.findFirst({ where: eq(schema.namespaces.id, id), columns: { id: true, tenantId: true } })
+      );
+    }
+    if (body.agentId) {
+      const agent = await getDatabase().query.agents.findFirst({ where: eq(schema.agents.id, body.agentId), columns: { id: true, tenantId: true } });
+      validateTenantConsistency('agent', agent, resolvedTenantId, 'training_data');
+    }
 
     const messagesText = body.messages.map(m => m.content).join('\n');
     const scope = await resolveScope({
@@ -1804,6 +1820,58 @@ app.delete('/api/training/lora/active', requirePermission('training:fine_tuning_
   } catch (error) {
     logger.error({ error }, 'Falha ao desativar adapter LoRA');
     res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+// ============================================================================
+// GPU ORCHESTRATOR PROXY - Estado e retorno (Frontend usa via /api/training/*)
+// ============================================================================
+// Proxy para GPU Manager Service: frontend não tem acesso direto ao GPU Manager.
+// Training service autentica com INTERNAL_API_SECRET e repassa requisições.
+// Ref: gpu-orchestrator.ts (switchToLlmEmbeddings, getOrchestratorState)
+// ============================================================================
+
+const GPU_MANAGER_URL_ORCHESTRATOR = process.env.GPU_MANAGER_URL || 'http://alice-gpu-manager:3010';
+const INTERNAL_API_SECRET_ORCHESTRATOR = process.env.INTERNAL_API_SECRET;
+
+app.get('/api/training/gpu-orchestrator/state', requirePermission('training:fine_tuning_jobs:read'), async (_req: Request, res: Response) => {
+  if (!INTERNAL_API_SECRET_ORCHESTRATOR) {
+    return res.status(503).json({ error: 'Serviço indisponível', orchestratorAvailable: false });
+  }
+  try {
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), 5000);
+    const r = await fetch(`${GPU_MANAGER_URL_ORCHESTRATOR}/api/gpu/orchestrator/state`, {
+      signal: controller.signal,
+      headers: { 'X-Internal-Api-Secret': INTERNAL_API_SECRET_ORCHESTRATOR, Accept: 'application/json' },
+    });
+    clearTimeout(t);
+    const data = (await r.json()) as Record<string, unknown>;
+    res.status(r.status).json(data);
+  } catch (err) {
+    logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'Proxy gpu-orchestrator/state falhou');
+    res.status(503).json({ error: 'GPU Manager indisponível', orchestratorAvailable: false });
+  }
+});
+
+app.post('/api/training/gpu-orchestrator/return', requirePermission('training:fine_tuning_jobs:start'), async (_req: Request, res: Response) => {
+  if (!INTERNAL_API_SECRET_ORCHESTRATOR) {
+    return res.status(503).json({ error: 'Serviço indisponível' });
+  }
+  try {
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), 10000);
+    const r = await fetch(`${GPU_MANAGER_URL_ORCHESTRATOR}/api/gpu/orchestrator/return`, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: { 'X-Internal-Api-Secret': INTERNAL_API_SECRET_ORCHESTRATOR, 'Content-Type': 'application/json' },
+    });
+    clearTimeout(t);
+    const data = (await r.json()).catch(() => ({})) as Record<string, unknown>;
+    res.status(r.status).json(data);
+  } catch (err) {
+    logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'Proxy gpu-orchestrator/return falhou');
+    res.status(503).json({ error: 'GPU Manager indisponível' });
   }
 });
 

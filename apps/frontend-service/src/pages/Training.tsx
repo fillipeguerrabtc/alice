@@ -22,11 +22,12 @@
  * Data: 16 de Janeiro de 2026
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
 import { z } from 'zod';
+import { useLocation } from 'wouter';
 import { useAuth } from '@/hooks/use-auth';
 import { TIMEZONE } from '@/lib/i18n';
 import {
@@ -123,18 +124,19 @@ interface FineTuningJob {
   id: string;
   name: string;
   baseModel: string;
-  status: 'pending' | 'preparing' | 'running' | 'completed' | 'failed' | 'cancelled';
+  status: 'pending' | 'preparing' | 'training' | 'validating' | 'completed' | 'failed' | 'cancelled';
   trainingDataCount: number;
   hyperparameters: {
-    epochs: number;
-    learningRate: number;
-    batchSize: number;
+    epochs?: number;
+    learningRate?: number;
+    batchSize?: number;
   };
   progress: number | null;
-  metrics: Record<string, number> | null;
+  metrics: Record<string, unknown> | null;
   iniciadoEm: string | null;
-  finalizadoEm: string | null;
+  completadoEm?: string | null;
   criadoEm: string;
+  errorMessage?: string | null;
 }
 
 interface TrainingDataResponse {
@@ -250,7 +252,8 @@ function getJobStatusBadge(status: FineTuningJob['status'], t: (key: string) => 
       return <Badge variant="outline" className="bg-amber-500/10 text-amber-600"><Clock className="h-3 w-3 mr-1" />{t('training.status.queued')}</Badge>;
     case 'preparing':
       return <Badge variant="outline" className="bg-blue-500/10 text-blue-600"><RefreshCw className="h-3 w-3 mr-1 animate-spin" />{t('training.status.preparing')}</Badge>;
-    case 'running':
+    case 'training':
+    case 'validating':
       return <Badge variant="outline" className="bg-purple-500/10 text-purple-600"><Play className="h-3 w-3 mr-1" />{t('training.status.running')}</Badge>;
     case 'completed':
       return <Badge variant="outline" className="bg-green-500/10 text-green-600"><CheckCircle2 className="h-3 w-3 mr-1" />{t('training.status.completed')}</Badge>;
@@ -413,122 +416,24 @@ function TrainingDataCard({ data, namespaceName, onApprove, onReject, onResolveS
   );
 }
 
-function TradingDatasetCard({
-  data,
-  namespaceName,
-  onApprove,
-  onReject,
-  isPending,
-  t,
-  locale,
-  timeZone,
-}: {
-  data: Record<string, unknown>;
-  namespaceName?: string | null;
-  onApprove: () => void;
-  onReject: () => void;
-  isPending: boolean;
-  t: (key: string, options?: Record<string, unknown>) => string;
-  locale: string;
-  timeZone: string;
-}) {
-  const status = (data.status as TrainingData['status']) ?? 'pending';
-  const marketContext = (data.marketContext as { symbol?: string }) ?? {};
-  const sourceType = (data.sourceType as string | undefined) ?? undefined;
-  const qualityScore = (data.qualityScore as number | null | undefined) ?? null;
-  const reviewedAt = (data.reviewedAt as string | null | undefined) ?? null;
-  const reviewedBy = (data.reviewedBy as string | null | undefined) ?? null;
-  const reviewNotes = (data.reviewNotes as string | null | undefined) ?? null;
-  const isDuplicate = (data.isDuplicate as boolean | undefined) ?? false;
-  const similarityScore = (data.similarityScore as number | null | undefined) ?? null;
-  return (
-    <motion.div variants={itemVariants}>
-      <Card className="hover-elevate">
-        <CardHeader className="pb-2">
-          <div className="flex items-start justify-between gap-2">
-            <div className="flex items-center gap-2 flex-wrap">
-              <TrendingUp className="h-4 w-4 text-primary" />
-              <span className="text-sm font-medium">
-                {(data.actionType as string) ?? 'signal'}
-              </span>
-              {sourceType && (
-                <Badge variant="outline" className="text-xs">
-                  {sourceType}
-                </Badge>
-              )}
-              <Badge variant="secondary" className="text-xs">
-                {marketContext.symbol ?? 'N/A'}
-              </Badge>
-              {namespaceName && (
-                <Badge variant="secondary" className="text-xs">
-                  {namespaceName}
-                </Badge>
-              )}
-            </div>
-            {getStatusBadge(status, t)}
-          </div>
-          <CardDescription className="text-xs">
-            {formatDateTime((data.criadoEm as string) ?? new Date().toISOString(), { locale, timeZone })}
-            {qualityScore !== null && (
-              <Badge variant="secondary" className="ml-2 text-xs">
-                {t('training.data.quality', { percent: Math.round(qualityScore * 100) })}
-              </Badge>
-            )}
-            {isDuplicate && (
-              <Badge variant="secondary" className="ml-2 text-xs">
-                {t('training.data.duplicate', { percent: Math.round((similarityScore || 0) * 100) })}
-              </Badge>
-            )}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          <div className="text-xs text-muted-foreground bg-muted p-2 rounded">
-            {String(data.prompt ?? '').slice(0, 240)}
-          </div>
-          <div className="text-xs text-muted-foreground bg-muted p-2 rounded">
-            {String(data.response ?? '').slice(0, 240)}
-          </div>
-          {reviewedAt && (
-            <div className="text-xs text-muted-foreground">
-              {t('training.data.reviewedAt', { date: formatDateTime(reviewedAt, { locale, timeZone }) })}
-              {reviewedBy && <span className="ml-2">{t('training.data.reviewedBy', { userId: reviewedBy })}</span>}
-              {reviewNotes && <span className="ml-2">{t('training.data.reviewNotes', { notes: reviewNotes })}</span>}
-            </div>
-          )}
-          {status === 'pending' && (
-            <div className="flex gap-2">
-              <Button size="sm" onClick={onApprove} disabled={isPending}>
-                <CheckCircle2 className="h-4 w-4 mr-1" />
-                {t('training.actions.approve')}
-              </Button>
-              <Button size="sm" variant="outline" onClick={onReject} disabled={isPending}>
-                <XCircle className="h-4 w-4 mr-1" />
-                {t('training.actions.reject')}
-              </Button>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </motion.div>
-  );
-}
-
 function JobCard({
   job,
   t,
   locale,
   timeZone,
+  onClick,
 }: {
   job: FineTuningJob;
   t: (key: string, options?: Record<string, unknown>) => string;
   locale: string;
   timeZone: string;
+  onClick?: () => void;
 }) {
   const hyperparameters = job.hyperparameters || { epochs: 3, learningRate: 0.0001, batchSize: 4 };
   
   return (
     <motion.div variants={itemVariants}>
-      <Card className="hover-elevate">
+      <Card className="hover-elevate cursor-pointer" onClick={onClick} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick?.(); } }}>
         <CardHeader className="pb-2">
           <div className="flex items-start justify-between gap-2">
             <div className="flex items-center gap-2">
@@ -543,7 +448,7 @@ function JobCard({
         </CardHeader>
 
         <CardContent className="space-y-3">
-          {(job.status === 'running' || job.status === 'preparing') && job.progress !== null && (
+          {['preparing', 'training', 'validating'].includes(job.status) && job.progress !== null && (
             <div className="space-y-1">
               <div className="flex justify-between text-xs text-muted-foreground">
                 <span>{t('training.job.progress')}</span>
@@ -568,11 +473,11 @@ function JobCard({
             </div>
           </div>
 
-          {job.metrics && Object.keys(job.metrics).length > 0 && (
+          {job.metrics && typeof job.metrics === 'object' && Object.keys(job.metrics).length > 0 && (
             <div className="flex gap-2 flex-wrap">
               {Object.entries(job.metrics).map(([key, value]) => (
                 <Badge key={key} variant="secondary" className="text-xs">
-                  {key}: {typeof value === 'number' ? value.toFixed(4) : value}
+                  {key}: {typeof value === 'number' ? value.toFixed(4) : String(value)}
                 </Badge>
               ))}
             </div>
@@ -582,13 +487,119 @@ function JobCard({
         <CardFooter className="pt-2 text-xs text-muted-foreground">
           <div className="flex justify-between w-full">
             <span>{t('training.job.created', { date: formatDate(job.criadoEm, { locale, timeZone }) })}</span>
-            {job.finalizadoEm && (
-              <span>{t('training.job.finished', { date: formatDate(job.finalizadoEm, { locale, timeZone }) })}</span>
+            {(job.completadoEm ?? (job as unknown as Record<string, unknown>).finalizadoEm as string | undefined) && (
+              <span>{t('training.job.finished', { date: formatDate((job.completadoEm ?? (job as unknown as Record<string, unknown>).finalizadoEm) as string, { locale, timeZone }) })}</span>
             )}
           </div>
         </CardFooter>
       </Card>
     </motion.div>
+  );
+}
+
+function JobDetailModal({
+  jobId,
+  open,
+  onClose,
+  t,
+  locale,
+  timeZone,
+}: {
+  jobId: string | null;
+  open: boolean;
+  onClose: () => void;
+  t: (key: string, options?: Record<string, unknown>) => string;
+  locale: string;
+  timeZone: string;
+}) {
+  const { data, isLoading } = useQuery<{ job: FineTuningJob }>({
+    queryKey: ['/api/training/jobs', jobId],
+    queryFn: async () => {
+      const res = await apiRequest('GET', `/api/training/jobs/${jobId}`);
+      return res.json();
+    },
+    enabled: open && !!jobId,
+    refetchInterval: (query) => {
+      const job = query.state.data?.job;
+      if (!job) return false;
+      const active = ['pending', 'preparing', 'training', 'validating'].includes(job.status);
+      return active ? 2000 : false;
+    },
+  });
+
+  const job = data?.job;
+  if (!open || !jobId) return null;
+
+  const startTime = job?.iniciadoEm ? new Date(job.iniciadoEm).getTime() : null;
+  const elapsedSec = startTime ? Math.floor((Date.now() - startTime) / 1000) : 0;
+  const progress = job?.progress ?? 0;
+  const etaSec = progress > 0 && progress < 100 ? Math.round((elapsedSec / progress) * (100 - progress)) : null;
+  const currentTask = job?.status === 'preparing' ? t('training.jobDetail.taskPreparing')
+    : job?.status === 'training' ? t('training.jobDetail.taskTraining')
+    : job?.status === 'validating' ? t('training.jobDetail.taskValidating')
+    : job?.status === 'pending' ? t('training.jobDetail.taskQueued')
+    : null;
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Brain className="h-5 w-5" />
+            {job?.name ?? t('training.jobDetail.loading')}
+          </DialogTitle>
+          <DialogDescription>
+            {job && `${t('training.job.baseModel', { model: job.baseModel, count: job.trainingDataCount ?? 0 })}`}
+          </DialogDescription>
+        </DialogHeader>
+        {isLoading && !job ? (
+          <div className="flex items-center gap-2 py-4"><Loader2 className="h-5 w-5 animate-spin" />{t('training.jobDetail.loading')}</div>
+        ) : job ? (
+          <div className="space-y-4 py-2">
+            <div className="flex items-center justify-between">
+              {getJobStatusBadge(job.status, t)}
+              <span className="text-xs text-muted-foreground">{formatDateTime(job.criadoEm, { locale, timeZone })}</span>
+            </div>
+            {currentTask && (
+              <p className="text-sm text-muted-foreground">{currentTask}</p>
+            )}
+            {['preparing', 'training', 'validating'].includes(job.status) && (
+              <div className="space-y-1">
+                <div className="flex justify-between text-xs">
+                  <span>{t('training.job.progress')}</span>
+                  <span>{job.progress ?? 0}%</span>
+                </div>
+                <Progress value={job.progress ?? 0} className="h-2" />
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="rounded bg-muted/50 p-3">
+                <p className="text-xs text-muted-foreground">{t('training.jobDetail.elapsed')}</p>
+                <p className="font-medium">{t('training.jobDetail.elapsedValue', { seconds: elapsedSec })}</p>
+              </div>
+              {etaSec !== null && (
+                <div className="rounded bg-muted/50 p-3">
+                  <p className="text-xs text-muted-foreground">{t('training.jobDetail.eta')}</p>
+                  <p className="font-medium">~{Math.floor(etaSec / 60)}m {etaSec % 60}s</p>
+                </div>
+              )}
+              {job.completadoEm && (
+                <div className="rounded bg-muted/50 p-3 col-span-2">
+                  <p className="text-xs text-muted-foreground">{t('training.job.finished', { date: formatDate(job.completadoEm, { locale, timeZone }) })}</p>
+                </div>
+              )}
+            </div>
+            {job.errorMessage && (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>{t('training.status.failed')}</AlertTitle>
+                <AlertDescription>{job.errorMessage}</AlertDescription>
+              </Alert>
+            )}
+          </div>
+        ) : null}
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -802,7 +813,15 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
   const [uploads, setUploads] = useState<MediaUpload[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [description, setDescription] = useState('');
+  const [namespaceId, setNamespaceId] = useState<string>('');
   const [promotingDocumentId, setPromotingDocumentId] = useState<string | null>(null);
+  const [promotingMediaId, setPromotingMediaId] = useState<string | null>(null);
+
+  const { data: namespacesData } = useQuery<Namespace[]>({
+    queryKey: ['/api/namespaces'],
+    staleTime: 1000 * 60,
+  });
+  const namespaces = namespacesData ?? [];
 
   const {
     data: ragDocumentsData,
@@ -817,6 +836,32 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
   });
 
   const ragDocuments = ragDocumentsData?.documents ?? [];
+
+  const {
+    data: mediaUploadsData,
+    isLoading: isLoadingMediaUploads,
+    refetch: refetchMediaUploads,
+  } = useQuery<{ uploads: Array<{
+    id: string;
+    mediaType: string;
+    originalFilename: string;
+    processingStatus: string;
+    namespaceId: string | null;
+    approvedForTraining: boolean | null;
+    llmDescription?: string | null;
+    transcription?: string | null;
+    criadoEm: string;
+  }> }>({
+    queryKey: ['/api/media/uploads', { limit: 100 }],
+    queryFn: async () => {
+      const response = await apiRequest('GET', '/api/media/uploads?limit=100');
+      return response.json();
+    },
+  });
+
+  const mediaUploads = (mediaUploadsData?.uploads ?? []).filter(
+    (u) => (u.mediaType === 'image' || u.mediaType === 'audio') && u.processingStatus === 'completed'
+  );
 
   const [bookModeByDocument, setBookModeByDocument] = useState<Record<string, boolean>>({});
 
@@ -836,8 +881,8 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['/api/training/data'] });
       toast({
-        title: 'Documento promovido para treinamento',
-        description: result?.message ?? 'Datasets enviados para aprovação na página Training.',
+        title: t('training.multimodal.promoteDocument.success'),
+        description: result?.message ?? t('training.multimodal.promoteDocument.successDesc'),
       });
     },
     onError: (error: Error) => {
@@ -850,6 +895,39 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
     onSettled: () => {
       setPromotingDocumentId(null);
       refetchRagDocuments();
+    },
+  });
+
+  const promoteMediaToTraining = useMutation({
+    mutationFn: async (mediaUploadId: string) => {
+      const response = await apiRequest('POST', `/api/media/uploads/${mediaUploadId}/send-to-training`);
+      return response.json() as Promise<{
+        success: boolean;
+        data?: { mediaUploadId: string; trainingDataId?: string };
+        message?: string;
+      }>;
+    },
+    onMutate: (mediaUploadId) => {
+      setPromotingMediaId(mediaUploadId);
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/training/data'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/media/uploads'] });
+      toast({
+        title: t('training.multimodal.promoteMedia.success'),
+        description: result?.message ?? t('training.multimodal.promoteMedia.successDesc'),
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: t('training.multimodal.promoteMedia.error'),
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+    onSettled: () => {
+      setPromotingMediaId(null);
+      refetchMediaUploads();
     },
   });
 
@@ -984,6 +1062,9 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
       if (description) {
         formData.append('description', description);
       }
+      if (namespaceId) {
+        formData.append('namespaceId', namespaceId);
+      }
 
       // Simular progresso durante upload (real progress seria via XHR)
       const progressInterval = setInterval(() => {
@@ -1109,6 +1190,25 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDescription(e.target.value)}
               maxLength={200}
             />
+          </div>
+
+          {/* Namespace opcional (Plano RAG Multimodal Enterprise Fase 2 - 11/02/2026) */}
+          <div className="space-y-2">
+            <Label htmlFor="media-namespace">{t('training.multimodal.namespaceLabel')}</Label>
+            <Select value={namespaceId || '__none__'} onValueChange={(v) => setNamespaceId(v === '__none__' ? '' : v)}>
+              <SelectTrigger id="media-namespace" data-testid="multimodal-namespace-select">
+                <SelectValue placeholder={t('training.multimodal.namespacePlaceholder')} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">{t('training.multimodal.namespacePlaceholder')}</SelectItem>
+                {namespaces.map((ns) => (
+                  <SelectItem key={ns.id} value={ns.id}>
+                    {ns.nome || ns.slug || ns.id}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">{t('training.multimodal.namespaceHelp')}</p>
           </div>
 
           {/* Zona de Drop */}
@@ -1348,6 +1448,95 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
                       )}
                     </Button>
                     </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Mídia Processada - Promoção para treinamento (Plano RAG Multimodal Fase 4) */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <CardTitle className="text-base flex items-center gap-2">
+                <ImageIcon className="h-4 w-4 text-primary" />
+                {t('training.multimodal.mediaProcessed.title')}
+              </CardTitle>
+              <CardDescription>
+                {t('training.multimodal.mediaProcessed.subtitle')}
+              </CardDescription>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => refetchMediaUploads()}>
+              <RefreshCw className="h-4 w-4 mr-2" />
+              {t('common.refresh')}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {isLoadingMediaUploads ? (
+            <Skeleton className="h-24" />
+          ) : mediaUploads.length === 0 ? (
+            <p className="text-sm text-muted-foreground">{t('training.multimodal.mediaProcessed.empty')}</p>
+          ) : (
+            <div className="space-y-3">
+              {mediaUploads.map((media) => {
+                const canPromote = Boolean(media.namespaceId) && !media.approvedForTraining;
+                const hasContent = (media.mediaType === 'image' && media.llmDescription) || (media.mediaType === 'audio' && media.transcription);
+                const isPromoting = promotingMediaId === media.id && promoteMediaToTraining.isPending;
+
+                return (
+                  <div key={media.id} className="rounded-lg border p-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div className="space-y-1 min-w-0 flex items-center gap-3">
+                      <div className={cn(
+                        'p-2 rounded-lg shrink-0',
+                        media.mediaType === 'image' && 'bg-blue-500/10',
+                        media.mediaType === 'audio' && 'bg-green-500/10'
+                      )}>
+                        {media.mediaType === 'image' ? (
+                          <ImageIcon className="h-4 w-4 text-blue-500" />
+                        ) : (
+                          <FileAudio className="h-4 w-4 text-green-500" />
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium truncate">{media.originalFilename}</p>
+                        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                          <Badge variant="outline">{media.mediaType}</Badge>
+                          {media.approvedForTraining && (
+                            <Badge variant="default" className="bg-green-500/10 text-green-600">
+                              <CheckCircle2 className="h-3 w-3 mr-1" />
+                              {t('training.multimodal.mediaProcessed.sent')}
+                            </Badge>
+                          )}
+                          {!media.namespaceId && (
+                            <Badge variant="destructive">{t('training.multimodal.mediaProcessed.noNamespace')}</Badge>
+                          )}
+                          <span>{formatDate(media.criadoEm)}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={!canPromote || !hasContent || isPromoting}
+                      onClick={() => promoteMediaToTraining.mutate(media.id)}
+                    >
+                      {isPromoting ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          {t('training.multimodal.mediaProcessed.sending')}
+                        </>
+                      ) : (
+                        <>
+                          <FileCheck className="h-4 w-4 mr-2" />
+                          {t('training.multimodal.mediaProcessed.sendToTraining')}
+                        </>
+                      )}
+                    </Button>
                   </div>
                 );
               })}
@@ -1908,11 +2097,11 @@ export default function Training() {
   const tenantId = user?.tenantId;
   
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [tradingDatasetStatusFilter, setTradingDatasetStatusFilter] = useState<string>('pending');
   const [namespaceFilter, setNamespaceFilter] = useState<string>('all');
   const [sourceFilter, setSourceFilter] = useState<string>('all');
   const [sourceTypeFilter, setSourceTypeFilter] = useState<string>('all');
   const [showCreateJob, setShowCreateJob] = useState(false);
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [createJobNamespaceId, setCreateJobNamespaceId] = useState<string>('');
   const [showTradingJob, setShowTradingJob] = useState(false);
   const [tradingNamespaceId, setTradingNamespaceId] = useState<string>('');
@@ -1932,11 +2121,6 @@ export default function Training() {
   const [overrideAgentId, setOverrideAgentId] = useState('');
   const [overrideDomain, setOverrideDomain] = useState('');
   const [overrideReason, setOverrideReason] = useState('');
-
-  const [tradingReviewDialogOpen, setTradingReviewDialogOpen] = useState(false);
-  const [tradingReviewTarget, setTradingReviewTarget] = useState<{ id: string; status: 'approved' | 'rejected'; data: Record<string, unknown> } | null>(null);
-  const [tradingReviewNotes, setTradingReviewNotes] = useState('');
-  const [tradingReviewNamespaceId, setTradingReviewNamespaceId] = useState<string>('');
 
   // Auto-learning (status + schedules) - Gate 2
   const autoLearningQueryKey = [
@@ -2138,45 +2322,14 @@ export default function Training() {
     refetchInterval: 1000 * 60,
   });
 
-  const { data: tradingDatasets, isLoading: tradingDatasetsLoading } = useQuery<{
-    success: boolean;
-    data: Array<Record<string, unknown>>;
-    total: number;
-  }>({
-    queryKey: ['/api/integrations/trading/datasets', tradingDatasetStatusFilter],
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      if (tradingDatasetStatusFilter !== 'all') {
-        params.set('status', tradingDatasetStatusFilter);
-      }
-      const res = await apiRequest('GET', `/api/integrations/trading/datasets?${params.toString()}`);
-      return res.json();
-    },
-    staleTime: 1000 * 30,
-    refetchInterval: 1000 * 60,
-  });
-
-  /** Contagens por status (todos os trading datasets) — usado nos cards de totais; independente do filtro da aba. */
-  const { data: tradingDatasetStatsFromApi } = useQuery<{
-    success: boolean;
-    pending: number;
-    approved: number;
-    rejected: number;
-    used: number;
-  }>({
-    queryKey: ['/api/integrations/trading/datasets/stats'],
-    queryFn: async () => {
-      const res = await apiRequest('GET', '/api/integrations/trading/datasets/stats');
-      return res.json();
-    },
-    staleTime: 1000 * 30,
-    refetchInterval: 1000 * 60,
-  });
-
   const { data: jobs, isLoading: jobsLoading } = useQuery<JobsResponse>({
     queryKey: ['/api/training/jobs'],
-    staleTime: 1000 * 30,
-    refetchInterval: 1000 * 30,
+    staleTime: 1000 * 15,
+    refetchInterval: (query) => {
+      const jobsList = (query.state.data as JobsResponse | undefined)?.jobs ?? [];
+      const hasActive = jobsList.some((j) => ['pending', 'preparing', 'training', 'validating'].includes(j.status));
+      return hasActive ? 5000 : 30000;
+    },
   });
 
   const updateStatus = useMutation({
@@ -2200,6 +2353,8 @@ export default function Training() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/training/data'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/datasets'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/datasets/stats'] });
       toast({ title: t('training.success.statusUpdated') });
     },
     onError: () => {
@@ -2247,75 +2402,98 @@ export default function Training() {
     },
   });
 
-  const reviewTradingDataset = useMutation({
-    mutationFn: async ({ id, status, reviewNotes, namespaceId }: { id: string; status: 'approved' | 'rejected'; reviewNotes?: string; namespaceId?: string | null }) => {
-      return apiRequest('PATCH', `/api/integrations/trading/datasets/${id}/review`, { status, reviewNotes, namespaceId: namespaceId ?? undefined });
-    },
+  const allData = trainingData?.trainingData || [];
+  const allJobs = jobs?.jobs || [];
+
+  const [, navigate] = useLocation();
+  const [postTrainingDialog, setPostTrainingDialog] = useState<{ open: boolean; jobName: string }>({ open: false, jobName: '' });
+  const prevJobStatusesRef = useRef<Map<string, string>>(new Map());
+  const completedShownRef = useRef<Set<string>>(new Set());
+
+  // Detectar job que acabou de completar → mostrar diálogo pós-treino
+  useEffect(() => {
+    if (!allJobs.length) return;
+    const prev = prevJobStatusesRef.current;
+    for (const job of allJobs) {
+      const wasRunning = ['preparing', 'training', 'validating'].includes(prev.get(job.id) ?? '');
+      if (wasRunning && job.status === 'completed' && !completedShownRef.current.has(job.id)) {
+        completedShownRef.current.add(job.id);
+        setPostTrainingDialog({ open: true, jobName: job.name || job.id });
+        break;
+      }
+    }
+    prev.clear();
+    for (const j of allJobs) prev.set(j.id, j.status);
+  }, [allJobs]);
+
+  const returnOrchestrator = useMutation({
+    mutationFn: async () => apiRequest('POST', '/api/training/gpu-orchestrator/return'),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/datasets'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/datasets/stats'] });
-      toast({ title: t('training.tradingDataset.success.reviewed') });
+      setPostTrainingDialog((d) => ({ ...d, open: false }));
+      navigate('/chat');
     },
     onError: () => {
-      toast({ title: t('training.tradingDataset.errors.reviewFailed'), variant: 'destructive' });
+      toast({ title: t('training.postTraining.returnError'), variant: 'destructive' });
     },
   });
 
-  const allData = trainingData?.trainingData || [];
-  const allJobs = jobs?.jobs || [];
-  const tradingDatasetRows = tradingDatasets?.data || [];
+  // Timer 10 min: retorno automático se usuário não responder
+  useEffect(() => {
+    if (!postTrainingDialog.open) return;
+    const tid = window.setTimeout(() => {
+      returnOrchestrator.mutate();
+    }, 10 * 60 * 1000);
+    return () => window.clearTimeout(tid);
+  }, [postTrainingDialog.open, returnOrchestrator]);
 
+  const TRADING_SOURCE_TYPES = ['trading_signal', 'trading_order', 'trading_postmortem', 'trading_demo'] as const;
   const namespacesById = new Map((namespaces || []).map((ns) => [ns.id, ns.nome]));
   const sourceOptions = Array.from(new Set(allData.map((d) => d.source))).sort();
-  const sourceTypeOptions = Array.from(new Set(allData.map((d) => d.sourceType).filter(Boolean) as string[])).sort();
+  const rawSourceTypes = Array.from(new Set(allData.map((d) => d.sourceType).filter(Boolean) as string[])).sort();
+  const hasTradingData = rawSourceTypes.some((st) => TRADING_SOURCE_TYPES.includes(st as typeof TRADING_SOURCE_TYPES[number]));
+  const sourceTypeOptions = hasTradingData ? ['trading', ...rawSourceTypes] : rawSourceTypes;
 
   const filteredData = allData.filter((entry) => {
     if (statusFilter !== 'all' && entry.status !== statusFilter) return false;
     if (namespaceFilter !== 'all' && entry.namespaceId !== namespaceFilter) return false;
     if (sourceFilter !== 'all' && entry.source !== sourceFilter) return false;
-    if (sourceTypeFilter !== 'all' && entry.sourceType !== sourceTypeFilter) return false;
+    if (sourceTypeFilter !== 'all') {
+      if (sourceTypeFilter === 'trading') {
+        if (!entry.sourceType || !TRADING_SOURCE_TYPES.includes(entry.sourceType as typeof TRADING_SOURCE_TYPES[number])) return false;
+      } else if (entry.sourceType !== sourceTypeFilter) {
+        return false;
+      }
+    }
     return true;
   });
 
-  const stats = {
-    total: allData.length,
-    pending: allData.filter(d => d.status === 'pending').length,
-    approved: allData.filter(d => d.status === 'approved').length,
-    rejected: allData.filter(d => d.status === 'rejected').length,
-    used: allData.filter(d => d.status === 'used').length,
-  };
+  /** Filtros ativos na aba Data: quando true, cards devem refletir contagens filtradas (consistência UX). */
+  const filtersActive =
+    statusFilter !== 'all' ||
+    namespaceFilter !== 'all' ||
+    sourceFilter !== 'all' ||
+    sourceTypeFilter !== 'all';
 
-  /** Contagens de trading datasets: usar API de stats (correto por status); fallback nos rows quando filtro ativo para total da aba. */
-  const tradingDatasetStats = (() => {
-    const fromApi = tradingDatasetStatsFromApi?.success === true ? tradingDatasetStatsFromApi : null;
-    if (fromApi) {
-      const total = fromApi.pending + fromApi.approved + fromApi.rejected + fromApi.used;
-      return {
-        total,
-        pending: fromApi.pending,
-        approved: fromApi.approved,
-        rejected: fromApi.rejected,
-        used: fromApi.used,
+  /** Training stats: filtrados quando filtros ativos, senão totais globais. */
+  const stats = filtersActive
+    ? {
+        total: filteredData.length,
+        pending: filteredData.filter((d) => d.status === 'pending').length,
+        approved: filteredData.filter((d) => d.status === 'approved').length,
+        rejected: filteredData.filter((d) => d.status === 'rejected').length,
+        used: filteredData.filter((d) => d.status === 'used').length,
+      }
+    : {
+        total: allData.length,
+        pending: allData.filter((d) => d.status === 'pending').length,
+        approved: allData.filter((d) => d.status === 'approved').length,
+        rejected: allData.filter((d) => d.status === 'rejected').length,
+        used: allData.filter((d) => d.status === 'used').length,
       };
-    }
-    return {
-      total: tradingDatasets?.total ?? tradingDatasetRows.length,
-      pending: tradingDatasetRows.filter((d) => (d as { status?: string }).status === 'pending').length,
-      approved: tradingDatasetRows.filter((d) => (d as { status?: string }).status === 'approved').length,
-      rejected: tradingDatasetRows.filter((d) => (d as { status?: string }).status === 'rejected').length,
-      used: tradingDatasetRows.filter((d) => (d as { status?: string }).status === 'used').length,
-    };
-  })();
-
-  /** Stats combinados para os cards (Training Data + Trading Datasets); trading totals vêm do endpoint /stats. */
-  const displayStats = {
-    pending: stats.pending + tradingDatasetStats.pending,
-    approved: stats.approved + tradingDatasetStats.approved,
-  };
 
   const jobStats = {
     total: allJobs.length,
-    running: allJobs.filter(j => j.status === 'running' || j.status === 'preparing').length,
+    running: allJobs.filter(j => ['pending', 'preparing', 'training', 'validating'].includes(j.status)).length,
     completed: allJobs.filter(j => j.status === 'completed').length,
     failed: allJobs.filter(j => j.status === 'failed').length,
   };
@@ -2450,28 +2628,6 @@ export default function Training() {
     );
   }, [resolveScopeEntry, resolveScopeReason, createNamespaceMutation, resolveScopeMutation, t]);
 
-  const openTradingReviewDialog = useCallback((data: Record<string, unknown>, status: 'approved' | 'rejected') => {
-    const meta = (data.sourceMetadata as { namespaceId?: string } | null) ?? {};
-    setTradingReviewTarget({ id: String(data.id), status, data });
-    setTradingReviewNotes('');
-    setTradingReviewNamespaceId(meta.namespaceId ?? '');
-    setTradingReviewDialogOpen(true);
-  }, []);
-
-  const confirmTradingReview = useCallback(() => {
-    if (!tradingReviewTarget) return;
-    reviewTradingDataset.mutate({
-      id: tradingReviewTarget.id,
-      status: tradingReviewTarget.status,
-      reviewNotes: tradingReviewNotes.trim() || undefined,
-      namespaceId: tradingReviewTarget.status === 'approved' && tradingReviewNamespaceId.trim() ? tradingReviewNamespaceId.trim() : undefined,
-    });
-    setTradingReviewDialogOpen(false);
-    setTradingReviewTarget(null);
-    setTradingReviewNotes('');
-    setTradingReviewNamespaceId('');
-  }, [tradingReviewTarget, tradingReviewNotes, tradingReviewNamespaceId, reviewTradingDataset]);
-
   return (
     <div className="flex flex-col h-full">
       <motion.div
@@ -2547,7 +2703,7 @@ export default function Training() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs text-muted-foreground">{t('training.stats.pending')}</p>
-                  <p className="text-2xl font-bold" data-testid="stat-pending">{displayStats.pending}</p>
+                  <p className="text-2xl font-bold" data-testid="stat-pending">{stats.pending}</p>
                 </div>
                 <Clock className="h-8 w-8 text-amber-500/50" />
               </div>
@@ -2558,7 +2714,7 @@ export default function Training() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs text-muted-foreground">{t('training.stats.approved')}</p>
-                  <p className="text-2xl font-bold" data-testid="stat-approved">{displayStats.approved}</p>
+                  <p className="text-2xl font-bold" data-testid="stat-approved">{stats.approved}</p>
                 </div>
                 <CheckCircle2 className="h-8 w-8 text-green-500/50" />
               </div>
@@ -2603,10 +2759,6 @@ export default function Training() {
             <TabsTrigger value="jobs" data-testid="tab-jobs">
               <Brain className="h-4 w-4 mr-2" />
               {t('training.tabs.jobs', { count: allJobs.length })}
-            </TabsTrigger>
-            <TabsTrigger value="trading-datasets" data-testid="tab-trading-datasets">
-              <TrendingUp className="h-4 w-4 mr-2" />
-              {t('training.tabs.tradingDatasets', { count: tradingDatasetStats.total })}
             </TabsTrigger>
             <TabsTrigger value="bulk-import" data-testid="tab-bulk-import">
               <Upload className="h-4 w-4 mr-2" />
@@ -2724,70 +2876,6 @@ export default function Training() {
                     onApprove={() => openReviewDialog(data, 'approved')}
                     onReject={() => openReviewDialog(data, 'rejected')}
                     onResolveScope={() => handleResolveScope(data)}
-                    t={t}
-                    locale={locale}
-                    timeZone={timeZone}
-                  />
-                ))}
-              </motion.div>
-            )}
-          </ScrollArea>
-        </TabsContent>
-
-        <TabsContent value="trading-datasets" className="flex-1 m-0">
-          <div className="p-4 border-b flex items-center gap-2 flex-wrap">
-            <Select value={tradingDatasetStatusFilter} onValueChange={setTradingDatasetStatusFilter}>
-              <SelectTrigger className="w-[200px]" data-testid="select-trading-dataset-status">
-                <Filter className="h-4 w-4 mr-2" />
-                <SelectValue placeholder={t('training.tradingDataset.filter')} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{t('training.filter.all')}</SelectItem>
-                <SelectItem value="pending">{t('training.filter.pending')}</SelectItem>
-                <SelectItem value="approved">{t('training.filter.approved')}</SelectItem>
-                <SelectItem value="rejected">{t('training.filter.rejected')}</SelectItem>
-                <SelectItem value="used">{t('training.filter.used')}</SelectItem>
-              </SelectContent>
-            </Select>
-            <span className="text-sm text-muted-foreground">
-              {t('training.tradingDataset.count', { count: tradingDatasetStats.total })}
-            </span>
-          </div>
-
-          <ScrollArea className="flex-1 p-4">
-            {tradingDatasetsLoading ? (
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <Skeleton key={i} className="h-48" />
-                ))}
-              </div>
-            ) : tradingDatasetRows.length === 0 ? (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="flex flex-col items-center justify-center h-64 text-center"
-              >
-                <Database className="h-12 w-12 text-muted-foreground/50 mb-4" />
-                <h3 className="font-medium mb-1">{t('training.tradingDataset.emptyTitle')}</h3>
-                <p className="text-sm text-muted-foreground max-w-md">
-                  {t('training.tradingDataset.emptyDesc')}
-                </p>
-              </motion.div>
-            ) : (
-              <motion.div
-                variants={containerVariants}
-                initial="hidden"
-                animate="visible"
-                className="grid gap-4 md:grid-cols-2 lg:grid-cols-3"
-              >
-                {tradingDatasetRows.map((data) => (
-                  <TradingDatasetCard
-                    key={String(data.id)}
-                    data={data}
-                    namespaceName={(data.sourceMetadata as { namespaceId?: string } | null)?.namespaceId ? namespacesById.get((data.sourceMetadata as { namespaceId: string }).namespaceId) ?? null : null}
-                    isPending={reviewTradingDataset.isPending}
-                    onApprove={() => openTradingReviewDialog(data as Record<string, unknown>, 'approved')}
-                    onReject={() => openTradingReviewDialog(data as Record<string, unknown>, 'rejected')}
                     t={t}
                     locale={locale}
                     timeZone={timeZone}
@@ -2969,16 +3057,44 @@ export default function Training() {
                 </Button>
               </motion.div>
             ) : (
-              <motion.div
-                variants={containerVariants}
-                initial="hidden"
-                animate="visible"
-                className="grid gap-4 md:grid-cols-2"
-              >
-                {allJobs.map((job) => (
-                  <JobCard key={job.id} job={job} t={t} locale={locale} timeZone={timeZone} />
-                ))}
-              </motion.div>
+              <div className="space-y-6">
+                {jobStats.running > 0 && (
+                  <div>
+                    <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
+                      <RefreshCw className="h-4 w-4 text-primary" />
+                      {t('training.jobsInProgress')}
+                    </h3>
+                    <motion.div
+                      variants={containerVariants}
+                      initial="hidden"
+                      animate="visible"
+                      className="grid gap-4 md:grid-cols-2"
+                    >
+                      {allJobs.filter((j) => ['pending', 'preparing', 'training', 'validating'].includes(j.status)).map((job) => (
+                        <JobCard key={job.id} job={job} t={t} locale={locale} timeZone={timeZone} onClick={() => setSelectedJobId(job.id)} />
+                      ))}
+                    </motion.div>
+                  </div>
+                )}
+                {allJobs.filter((j) => ['completed', 'failed', 'cancelled'].includes(j.status)).length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
+                      <Clock className="h-4 w-4 text-muted-foreground" />
+                      {t('training.jobHistory')}
+                    </h3>
+                    <motion.div
+                      variants={containerVariants}
+                      initial="hidden"
+                      animate="visible"
+                      className="grid gap-4 md:grid-cols-2"
+                    >
+                      {allJobs.filter((j) => ['completed', 'failed', 'cancelled'].includes(j.status)).map((job) => (
+                        <JobCard key={job.id} job={job} t={t} locale={locale} timeZone={timeZone} onClick={() => setSelectedJobId(job.id)} />
+                      ))}
+                    </motion.div>
+                  </div>
+                )}
+              </div>
             )}
           </ScrollArea>
         </TabsContent>
@@ -2992,6 +3108,15 @@ export default function Training() {
         </TabsContent>
       </Tabs>
 
+      <JobDetailModal
+        jobId={selectedJobId}
+        open={!!selectedJobId}
+        onClose={() => setSelectedJobId(null)}
+        t={t}
+        locale={locale}
+        timeZone={timeZone}
+      />
+
       <CreateJobDialog
         open={showCreateJob}
         onClose={() => setShowCreateJob(false)}
@@ -3002,6 +3127,37 @@ export default function Training() {
         tenantId={tenantId}
         t={t}
       />
+
+      <Dialog open={postTrainingDialog.open} onOpenChange={(open) => !open && setPostTrainingDialog((d) => ({ ...d, open: false }))}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t('training.postTraining.title')}</DialogTitle>
+            <DialogDescription>
+              {t('training.postTraining.desc', { jobName: postTrainingDialog.jobName })}
+            </DialogDescription>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">{t('training.postTraining.autoReturn')}</p>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setPostTrainingDialog((d) => ({ ...d, open: false }))}
+            >
+              {t('training.postTraining.continueTraining')}
+            </Button>
+            <Button
+              onClick={() => returnOrchestrator.mutate()}
+              disabled={returnOrchestrator.isPending}
+            >
+              {returnOrchestrator.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <MessageSquare className="h-4 w-4 mr-2" />
+              )}
+              {t('training.postTraining.backToChat')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={showTradingJob} onOpenChange={setShowTradingJob}>
         <DialogContent className="max-w-md">
@@ -3238,66 +3394,6 @@ export default function Training() {
                 </>
               ) : (
                 <>{t('training.reviewDialog.confirm')}</>
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={tradingReviewDialogOpen} onOpenChange={(open) => { if (!open) { setTradingReviewDialogOpen(false); setTradingReviewTarget(null); } }}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>
-              {tradingReviewTarget?.status === 'approved' ? t('training.actions.approve') : t('training.actions.reject')} {t('training.tradingDataset.reviewTitle')}
-            </DialogTitle>
-            <DialogDescription>
-              {tradingReviewTarget?.status === 'approved'
-                ? t('training.tradingDataset.reviewDescApprove')
-                : t('training.tradingDataset.reviewDescReject')}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-3 py-2">
-            <div className="grid gap-2">
-              <Label htmlFor="trading-review-notes">{t('training.reviewDialog.notes')}</Label>
-              <Input
-                id="trading-review-notes"
-                value={tradingReviewNotes}
-                onChange={(e) => setTradingReviewNotes(e.target.value)}
-                placeholder={t('training.reviewDialog.notesPlaceholder')}
-              />
-            </div>
-            {tradingReviewTarget?.status === 'approved' && (
-              <div className="grid gap-2">
-                <Label>{t('training.trading.namespace')}</Label>
-                <Select value={tradingReviewNamespaceId || '_none'} onValueChange={(v) => setTradingReviewNamespaceId(v === '_none' ? '' : v)}>
-                  <SelectTrigger data-testid="select-trading-review-namespace">
-                    <SelectValue placeholder={t('training.createJob.namespacePlaceholder')} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="_none">{t('training.filter.all')}</SelectItem>
-                    {(namespaces || []).map((ns) => (
-                      <SelectItem key={ns.id} value={ns.id}>
-                        {ns.nome}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">{t('training.tradingDataset.namespaceHelp')}</p>
-              </div>
-            )}
-          </div>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => { setTradingReviewDialogOpen(false); setTradingReviewTarget(null); }}>
-              {t('training.createJob.cancel')}
-            </Button>
-            <Button onClick={confirmTradingReview} disabled={!tradingReviewTarget || reviewTradingDataset.isPending}>
-              {reviewTradingDataset.isPending ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  {t('training.reviewDialog.saving')}
-                </>
-              ) : (
-                t('training.reviewDialog.confirm')
               )}
             </Button>
           </DialogFooter>

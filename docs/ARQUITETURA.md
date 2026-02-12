@@ -324,6 +324,33 @@ C4Component
     Rel(vectorSearch, qdrant, "Query")
 ```
 
+#### 5.2.1 Fluxo RAG Multimodal (11/02/2026)
+
+O RAG multimodal integra documentos textuais, imagens e áudio em uma única busca vetorial. 
+**Tipos de pontos no Qdrant:**
+
+| Tipo | Fonte | Conteúdo indexado | Namespace |
+|------|-------|-------------------|-----------|
+| `document_chunk` | schema.documents | Chunks de texto | namespaceId |
+| `media_image` | mediaUploads | visionDescription (OpenAI Vision) | namespaceId |
+| `media_audio` | mediaUploads | transcription (ASR) | namespaceId |
+
+**Busca unificada:** `searchDocumentsInQdrant` filtra por `type: any(['document_chunk','media_image','media_audio'])`. O chat utiliza contexto de todas as fontes na recuperação RAG.
+
+**Fluxo Mídia → RAG:**
+1. Upload via Chat ou aba Multimodal (Training) com `namespaceId`
+2. Imagem → OpenAI Vision (descrição textual) → embedding → Qdrant `media_image`
+3. Áudio → ASR (transcrição) → embedding → Qdrant `media_audio`
+4. Busca RAG retorna chunks + mídia na mesma consulta vetorial
+
+**Fluxo Mídia → Treinamento:**
+1. Mídia processada com `namespaceId` obrigatório
+2. POST `/api/media/uploads/:id/send-to-training` usa visionDescription/transcription como texto
+3. `collectTrainingFromMediaUpload` → POST `/api/training/data` com `source: 'rag_media'`
+4. `approvedForTraining: true` em mediaUploads; dados no próximo ciclo LoRA
+
+**Página Documentos RAG:** Abas "Documentos" e "Mídia" em visão unificada. Botão "Enviar para treinamento" por item de mídia processada (requer namespace).
+
 ### 5.3 Auth Service - Componentes
 
 ```mermaid

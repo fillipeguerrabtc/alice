@@ -22,6 +22,7 @@ import {
   GpuRequestPriority,
   getRedisClient,
 } from '@alice/shared-utils';
+import { callGatewayComplete, isGatewayConfigured } from './llm-gateway-client.js';
 import type { TradingTechnique, TradingTechniqueScore } from '@alice/shared';
 import { TradingTechniqueSchema } from '@alice/shared';
 import { calculateTechniqueScores } from './technical-indicators.js';
@@ -508,22 +509,35 @@ export async function executePhase2(params: {
       positionId: position.id,
       model: resolvedModel,
       usingLoraAdapter: resolvedModel !== baseModel,
+      viaGateway: isGatewayConfigured(),
     }, 'Modelo resolvido para Phase 2 LLM do post-mortem');
 
-    const gpuResponse = await requestGpu({
-      serviceType: GpuServiceType.LLM,
-      endpoint: '/v1/chat/completions',
-      method: 'POST',
-      priority: GpuRequestPriority.LOW,
-      timeout: LLM_POSTMORTEM_TIMEOUT_MS,
-      body: {
-        model: resolvedModel,
-        messages,
-        max_tokens: 2048,
-        temperature: 0.7,
-        stream: false,
-      },
-    });
+    const gpuResponse = isGatewayConfigured()
+      ? await callGatewayComplete({
+          messages: messages as Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
+          config: { model: baseModel, temperature: 0.7, maxTokens: 2048 },
+          context: {
+            route: '/trading',
+            tenantId: position.tenantId,
+            userId: params.userId,
+            namespaceId: params.namespaceId ?? undefined,
+          },
+          requestOptions: { timeout: LLM_POSTMORTEM_TIMEOUT_MS, priority: 'low' },
+        })
+      : await requestGpu({
+          serviceType: GpuServiceType.LLM,
+          endpoint: '/v1/chat/completions',
+          method: 'POST',
+          priority: GpuRequestPriority.LOW,
+          timeout: LLM_POSTMORTEM_TIMEOUT_MS,
+          body: {
+            model: resolvedModel,
+            messages,
+            max_tokens: 2048,
+            temperature: 0.7,
+            stream: false,
+          },
+        });
 
     if (!gpuResponse.success || !gpuResponse.data) {
       throw new Error(gpuResponse.error || 'Falha na resposta do GPU Manager para post-mortem');

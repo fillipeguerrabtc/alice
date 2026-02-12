@@ -64,6 +64,7 @@ import {
   setPermissionResolver,
   requestGpuStream,
   validateAgentTenantConsistency,
+  validateConversationTenantConsistency,
   TRADING_CHANNEL_PREFIX,
   TRADING_CHANNELS,
   PERMISSION_MAP,
@@ -95,6 +96,7 @@ import {
   classificarConsultaAgentic,
 } from './rag-client.js';
 import type { MediaUploadResult, RAGContextResponse } from './rag-client.js';
+import { resolveNamespaceByContext, resolveNamespaceByRoute, type NamespaceContext } from '@alice/shared-utils';
 import {
   initOrchestrator,
   getOrCreateConversationState,
@@ -153,6 +155,9 @@ const OPENAI_VISION_MAX_BYTES = (() => {
   return parsed;
 })();
 const APP_VERSION = process.env.APP_VERSION?.trim() || null;
+/** Plano Enterprise: LLM Gateway para resolução de contexto namespace/agente */
+const LLM_GATEWAY_URL = process.env.LLM_GATEWAY_URL?.trim() || null;
+const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET || '';
 const WEB_IMAGE_SEARCH_MAX_RESULTS = parseEnvInt(
   process.env.WEB_IMAGE_SEARCH_MAX_RESULTS,
   3,
@@ -3307,11 +3312,23 @@ interface LlmAdapterContext {
   agentId?: string;
 }
 
+/** Contexto para LLM Gateway - resolução de namespace/agente por rota (Plano Enterprise) */
+export interface LlmGatewayContext {
+  route: string;
+  tenantId: string;
+  userId?: string;
+  conversationId?: string;
+  namespaceId?: string;
+  agentId?: string;
+}
+
 interface LLMRequest {
   messages: LLMMessage[];
   stream: boolean;
   config?: LLMConfig;
   priority?: GpuRequestPriority;
+  /** Plano Enterprise: quando presente e LLM_GATEWAY_URL setado, usa Gateway */
+  context?: LlmGatewayContext;
 }
 
 // Valores padrão centralizados (Regra 2 - Não Duplicar)
@@ -5083,6 +5100,36 @@ async function analyzeImageWithOpenAI(params: {
   return { text: content, model: payload.model };
 }
 
+/** Chama LLM Gateway (complete) quando configurado - Plano Enterprise */
+async function callGatewayComplete(
+  messages: LLMMessage[],
+  config: { temperature: number; maxTokens: number; model: string },
+  context: LlmGatewayContext
+): Promise<globalThis.Response> {
+  const url = `${LLM_GATEWAY_URL}/api/llm/complete`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Internal-Api-Secret': INTERNAL_API_SECRET,
+    },
+    body: JSON.stringify({
+      messages,
+      config: { temperature: config.temperature, maxTokens: config.maxTokens, model: config.model },
+      context,
+    }),
+    signal: AbortSignal.timeout(LLM_SYNC_TIMEOUT),
+  });
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`LLM Gateway erro ${res.status}: ${errText.slice(0, 200)}`);
+  }
+  return new Response(await res.text(), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
 async function callLlamaAPIInternal(request: LLMRequest): Promise<globalThis.Response> {
   // BUG FIX 25/12/2025: callLlamaAPIInternal NÃO suporta streaming
   // Streaming deve ser feito diretamente no endpoint/handler (ex: /api/chat/stream, WebSocket)
@@ -5101,9 +5148,25 @@ async function callLlamaAPIInternal(request: LLMRequest): Promise<globalThis.Res
   const model = config.model || DEFAULT_LLM_CONFIG.model;
   const priority = request.priority ?? GpuRequestPriority.CRITICAL;
   
+  // Plano Enterprise: usar LLM Gateway quando configurado e contexto disponível
+  if (LLM_GATEWAY_URL && request.context?.route && request.context?.tenantId) {
+    try {
+      return await callGatewayComplete(
+        request.messages,
+        { temperature, maxTokens, model },
+        request.context
+      );
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('Timeout')) {
+        logger.warn({ timeout }, 'Chamada LLM Gateway abortada por timeout');
+        throw new Error(`Timeout de ${timeout / 1000}s excedido na chamada LLM`);
+      }
+      throw error;
+    }
+  }
+  
   // Não-streaming: usar GPU Manager Service (fila priorizada, monitoramento VRAM)
   {
-    // Não-streaming: usar GPU Manager Service (fila priorizada, monitoramento VRAM)
     try {
       // Gate 2: LLM (texto) via GPU Manager
       const gpuResponse = await requestGpu({
@@ -5169,30 +5232,35 @@ const LLM_FALLBACK_MESSAGE = 'Desculpe, estou temporariamente indisponível. Por
 // Fallback agora é tratado diretamente no handler com mensagem de erro apropriada
 
 /**
- * Chama a API LLM via GPU Manager Service
- * 
+ * Chama a API LLM via GPU Manager Service ou LLM Gateway
+ *
  * @param messages - Array de mensagens no formato LLM
  * @param stream - Se true, retorna async generator (NÃO SUPORTADO - use proxy direto)
  * @param config - Configuração opcional do LLM (temperatura, maxTokens, modelo)
- * 
- * BUG FIX 02/01/2026: Agora aceita configuração do agente para temperatura e maxTokens
+ * @param priority - Prioridade na fila GPU
+ * @param context - Contexto para LLM Gateway (Plano Enterprise) - rota, tenantId, etc.
  */
 async function callLlamaAPI(
   messages: LLMMessage[],
   stream = false,
   config?: LLMConfig,
-  priority?: GpuRequestPriority
+  priority?: GpuRequestPriority,
+  context?: LlmGatewayContext
 ): Promise<string | AsyncGenerator<string>> {
   // BUG FIX 25/12/2025: callLlamaAPI NÃO suporta streaming
-  // Streaming deve ser feito diretamente no endpoint/handler usando proxy direto do GPU Manager Service
-  // porque o GPU Manager Service consome o body ao fazer proxy
   if (stream) {
     throw new Error('callLlamaAPI não suporta streaming - use proxy direto no endpoint/handler');
   }
   
   const model = config?.model || DEFAULT_LLM_CONFIG.model;
   try {
-    const response = await gpuManagerBreaker.fire({ messages, stream: false, config, priority }) as globalThis.Response;
+    const response = await gpuManagerBreaker.fire({
+      messages,
+      stream: false,
+      config,
+      priority,
+      context,
+    }) as globalThis.Response;
     const data = await response.json() as LLMResponse;
     const content = data.choices[0]?.message?.content || '';
     recordLlmTokenUsage({
@@ -5229,24 +5297,62 @@ async function callLlamaAPI(
 // Função streamResponse removida pois não é mais necessária com a arquitetura GPU Manager Service
 
 /**
- * Faz proxy do stream do GPU Manager Service para WebSocket ou HTTP SSE
+ * Chama LLM Gateway (stream) quando configurado - Plano Enterprise
+ * Retorna Response com body para leitura via reader (mesmo formato que requestGpuStream)
+ */
+async function callGatewayStream(
+  messages: LLMMessage[],
+  config: { temperature: number; maxTokens: number; model: string },
+  context: LlmGatewayContext
+): Promise<globalThis.Response> {
+  const url = `${LLM_GATEWAY_URL}/api/llm/stream`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Internal-Api-Secret': INTERNAL_API_SECRET,
+    },
+    body: JSON.stringify({
+      messages,
+      config: { temperature: config.temperature, maxTokens: config.maxTokens, model: config.model },
+      context,
+    }),
+    signal: AbortSignal.timeout(60000),
+  });
+  if (!res.ok || !res.body) {
+    const errText = await res.text();
+    throw new Error(`LLM Gateway stream erro ${res.status}: ${errText.slice(0, 200)}`);
+  }
+  return res;
+}
+
+/**
+ * Faz proxy do stream do GPU Manager Service ou LLM Gateway para WebSocket ou HTTP SSE
  * BUG FIX 25/12/2025: Função reutilizável para streaming via GPU Manager Service
  * BUG FIX 02/01/2026: Agora aceita configuração do agente para temperatura e maxTokens
- * 
+ * Plano Enterprise: Quando llmContext e LLM_GATEWAY_URL presentes, usa Gateway
+ *
  * @param llmMessages Mensagens para enviar ao LLM
  * @param onChunk Callback chamado para cada chunk de conteúdo (para WebSocket: ws.send)
  * @param onDone Callback chamado quando stream termina (para WebSocket: salvar mensagem)
- *                 BUG FIX 25/12/2025: Suporta callbacks async para operações de banco de dados
- *                 BUG FIX 25/12/2025: Recebe fullResponse como parâmetro para evitar closure sobre variável vazia
  * @param config Configuração opcional do LLM (temperatura, maxTokens, modelo)
+ * @param priority Prioridade na fila GPU
+ * @param llmContext Contexto para LLM Gateway (rota, tenantId, etc.) - Plano Enterprise
  * @returns Promise que resolve com a resposta completa (concatenada)
  */
+/** Metadata enviada pelo LLM Gateway (ex: usedFallback para banner no Chat) */
+export interface LlmStreamMetadata {
+  usedFallback?: boolean;
+}
+
 async function proxyStreamFromGpuManager(
   llmMessages: LLMMessage[],
   onChunk: (content: string) => void,
   onDone?: (fullResponse: string) => Promise<void> | void,
   config?: LLMConfig,
-  priority: GpuRequestPriority = GpuRequestPriority.CRITICAL
+  priority: GpuRequestPriority = GpuRequestPriority.CRITICAL,
+  llmContext?: LlmGatewayContext,
+  onMetadata?: (meta: LlmStreamMetadata) => void
 ): Promise<string> {
   // BUG FIX 02/01/2026: Usar configuração do agente ou valores padrão
   const temperature = config?.temperature ?? DEFAULT_LLM_CONFIG.temperature;
@@ -5263,14 +5369,20 @@ async function proxyStreamFromGpuManager(
   const promptTokens = estimateTokensFromMessages(llmMessages);
   let generatedTokensRecorded = false;
   
-  // BUG FIX 26/12/2025: Usar requestGpuStream centralizado de @alice/shared-utils
-  // Remove duplicação de GPU_MANAGER_URL e validação de INTERNAL_API_SECRET
-  // requestGpuStream já faz fail-fast da secret e usa a URL correta
-  // Gate 2: LLM (texto) via GPU Manager
-  // CRITICAL FIX 13/01/2026: Tratamento graceful de falha de GPU
-  let gpuResponse;
+  // Plano Enterprise: usar LLM Gateway quando configurado e contexto disponível
+  const useGateway = Boolean(
+    LLM_GATEWAY_URL && llmContext?.route && llmContext?.tenantId
+  );
+  let gpuResponse: globalThis.Response;
   try {
-    gpuResponse = await requestGpuStream({
+    if (useGateway && llmContext) {
+      gpuResponse = await callGatewayStream(
+        llmMessages,
+        { temperature, maxTokens, model },
+        llmContext
+      );
+    } else {
+      gpuResponse = await requestGpuStream({
       serviceType: GpuServiceType.LLM,
       priority, // Prioridade configurável por tipo de mensagem
       endpoint: '/v1/chat/completions',
@@ -5284,6 +5396,7 @@ async function proxyStreamFromGpuManager(
       },
       timeout: 60000,
     });
+    }
     recordLlmTokenUsage({ model, promptTokens });
   } catch (gpuError) {
     logger.error({ 
@@ -5338,10 +5451,27 @@ async function proxyStreamFromGpuManager(
       // BUG FIX 25/12/2025: Flag para indicar que [DONE] foi encontrado
       // Não retornar imediatamente - processar todas as linhas antes para não perder chunks
       let foundDone = false;
+      // Plano Enterprise: evento alice_metadata (usado pelo Gateway para usedFallback)
+      let pendingEventType: string | null = null;
       
       for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          pendingEventType = line.slice(7).trim();
+          continue;
+        }
         if (line.startsWith('data: ')) {
           const data = line.slice(6);
+          if (pendingEventType === 'alice_metadata' && onMetadata) {
+            try {
+              const meta = JSON.parse(data) as LlmStreamMetadata;
+              onMetadata(meta);
+            } catch {
+              // Ignorar parse inválido
+            }
+            pendingEventType = null;
+            continue;
+          }
+          pendingEventType = null;
           if (data === '[DONE]') {
             foundDone = true;
             // Não retornar imediatamente - continuar processando linhas restantes
@@ -7341,6 +7471,10 @@ const createConversationSchema = z.object({
   agentId: z.string().uuid().optional(),
   namespaceId: z.string().uuid().optional(),
   titulo: z.string().optional(),
+  /** Contexto semântico para reconhecimento automático (ex: 'trading' na rota /trading) */
+  context: z.enum(['trading', 'sales', 'support', 'cambio', 'default']).optional(),
+  /** Rota/pathname para rastreabilidade (ex: /chat, /trading) - Plano Enterprise */
+  route: z.string().min(1).max(200).optional(),
 });
 
 app.post('/api/chat/conversations', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:conversations:write'), async (req: Request, res: Response) => {
@@ -7360,11 +7494,53 @@ app.post('/api/chat/conversations', requireAuth(), requireSameTenant(getTenantId
   try {
     const body = createConversationSchema.parse(req.body);
 
+    // Reconhecimento automático: quando context é fornecido sem namespaceId/agentId
+    let agentId = body.agentId ?? undefined;
+    let namespaceId = body.namespaceId ?? undefined;
+    if ((!agentId && !namespaceId) && body.context) {
+      const resolved = await resolveNamespaceByContext(tenantId, body.context as NamespaceContext, {
+        getNamespaceBySlug: async (tId, slug) =>
+          db.query.namespaces.findFirst({
+            where: and(
+              eq(schema.namespaces.tenantId, tId),
+              eq(schema.namespaces.slug, slug),
+              eq(schema.namespaces.ativo, true)
+            ),
+            columns: { id: true, tenantId: true },
+          }),
+        getActiveAgentByNamespace: async (nsId) =>
+          db.query.agents.findFirst({
+            where: and(
+              eq(schema.agents.namespaceId, nsId),
+              eq(schema.agents.status, 'active')
+            ),
+            orderBy: [desc(schema.agents.atualizadoEm)],
+            columns: { id: true },
+          }),
+      });
+      if (resolved.namespaceId) namespaceId = resolved.namespaceId;
+      if (resolved.agentId) agentId = resolved.agentId;
+    }
+
+    // SEGURANÇA: Validação cross-tenant - namespaceId/agentId devem pertencer ao tenant
+    await validateConversationTenantConsistency(
+      { agentId, namespaceId },
+      tenantId,
+      {
+        getAgent: agentId
+          ? async (id) => db.query.agents.findFirst({ where: eq(schema.agents.id, id), columns: { id: true, tenantId: true } })
+          : undefined,
+        getNamespace: namespaceId
+          ? async (id) => db.query.namespaces.findFirst({ where: eq(schema.namespaces.id, id), columns: { id: true, tenantId: true } })
+          : undefined,
+      }
+    );
+
     const [conversation] = await db.insert(schema.conversations).values({
       tenantId,
       userId,
-      agentId: body.agentId,
-      namespaceId: body.namespaceId,
+      agentId,
+      namespaceId,
       titulo: body.titulo || 'Nova Conversa',
     }).returning();
 
@@ -7843,6 +8019,7 @@ const streamMediaAttachmentSchema = z.object({
 });
 
 // OWASP API3 - Schemas Zod para validação de input em todas as rotas
+// Plano Enterprise: route opcional para resolução de namespace via Gateway (ex: /chat, /trading)
 const streamMessageSchema = z.object({
   message: z.string().min(1).max(32000).optional(),
   messages: z.array(z.object({
@@ -7851,6 +8028,8 @@ const streamMessageSchema = z.object({
   })).min(1).max(50).optional(),
   conversationId: z.string().uuid().optional(),
   namespaceId: z.string().uuid().optional(),
+  /** Rota/pathname para resolução de contexto no LLM Gateway (ex: /chat, /trading) */
+  route: z.string().min(1).max(200).optional(),
   agentRouting: z.object({
     mode: z.enum(['auto', 'manual']),
     agentIds: z.array(z.string().uuid()).max(10).default([]),
@@ -8262,7 +8441,9 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     message,
     mediaAttachments,
     agentRouting,
+    route: clientRoute,
   } = parseResult.data;
+  const llmContextRoute = clientRoute && clientRoute.length > 0 ? clientRoute : '/chat';
   const userId = req.user?.userId;
   const tenantId = req.tenantId;
 
@@ -9118,7 +9299,8 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             }
           },
           scopedLlmConfig,
-          getAdaptiveGpuPriority('stream', mediaProfile)
+          getAdaptiveGpuPriority('stream', mediaProfile),
+          { route: llmContextRoute, tenantId, userId, conversationId, namespaceId: namespaceIdForMedia ?? undefined, agentId: conversation?.agentId ?? undefined }
         );
       } catch (streamError) {
         logger.error({ error: streamError }, 'Erro no streaming de mídia (stream)');
@@ -12234,7 +12416,15 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           }
         },
         scopedLlmConfig,
-        getAdaptiveGpuPriority('stream', streamProfile)
+        getAdaptiveGpuPriority('stream', streamProfile),
+        { route: llmContextRoute, tenantId, userId, conversationId, namespaceId: activeNamespaceId || namespaceId || undefined, agentId: conversation?.agentId ?? undefined },
+        (meta) => {
+          try {
+            if (res.headersSent && !res.writableEnded && meta.usedFallback) {
+              res.write(`data: ${JSON.stringify({ type: 'llm_metadata', usedFallback: true })}\n\n`);
+            }
+          } catch { /* ignorar */ }
+        }
       );
     } catch (streamError) {
       logger.error({ 
@@ -14044,7 +14234,15 @@ wss.on('connection', (ws, req) => {
               }
             },
             scopedLlmConfig, // BUG FIX 02/01/2026: Passar configuração do agente
-            getAdaptiveGpuPriority('websocket', websocketProfile)
+            getAdaptiveGpuPriority('websocket', websocketProfile),
+            { route: '/chat', tenantId: safeTenantId, userId, conversationId, namespaceId: (namespaceId || conversation?.namespaceId || conversation?.agent?.namespaceId) ?? undefined, agentId: conversation?.agentId ?? undefined },
+            (meta) => {
+              try {
+                if (ws.readyState === ws.OPEN && meta.usedFallback) {
+                  ws.send(JSON.stringify({ type: 'llm_metadata', usedFallback: true }));
+                }
+              } catch { /* ignorar */ }
+            }
           );
         } catch (streamError) {
           logger.error({ error: streamError }, 'Erro no streaming WebSocket');
@@ -14460,7 +14658,15 @@ wss.on('connection', (ws, req) => {
               }, 'Mensagem multimodal processada via WebSocket');
             },
             scopedMediaLlmConfig, // BUG FIX 02/01/2026: Passar configuração do agente
-            getAdaptiveGpuPriority('websocket-media', mediaProfile)
+            getAdaptiveGpuPriority('websocket-media', mediaProfile),
+            { route: '/chat', tenantId: mediaSafeTenantId, userId, conversationId: mediaMessage.conversationId, namespaceId: (conversation?.namespaceId ?? conversation?.agent?.namespaceId) ?? undefined, agentId: conversation?.agentId ?? undefined },
+            (meta) => {
+              try {
+                if (ws.readyState === ws.OPEN && meta.usedFallback) {
+                  ws.send(JSON.stringify({ type: 'llm_metadata', usedFallback: true }));
+                }
+              } catch { /* ignorar */ }
+            }
           );
         } catch (streamError) {
           logger.error({ error: streamError }, 'Erro no streaming WebSocket');
@@ -15899,6 +16105,110 @@ app.post('/api/chat/check-sla', requireAuth(), requireSameTenant(getTenantIdFrom
 
 app.get('/api/chat/escalation-config', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:escalation:read'), (_req: Request, res: Response) => {
   res.json(ESCALATION_CONFIG);
+});
+
+// ============================================================================
+// LLM Fallback Stats e Unmapped Contexts (Plano Enterprise - Agentes por Namespace)
+// ============================================================================
+
+app.get('/api/llm/fallback-stats', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:namespaces:read'), async (req: Request, res: Response) => {
+  const tenantId = req.tenantId;
+  if (!tenantId) {
+    return res.status(403).json({ error: 'Acesso negado: usuário não associado a um tenant' });
+  }
+  try {
+    const now = new Date();
+    const last24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const last7d = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const baseWhere = and(eq(schema.llmFallbackLogs.tenantId, tenantId));
+
+    const [totalRow, last24hRows, last7dRows, byRouteRows, byContextRows] = await Promise.all([
+      db.select({ total: sql<number>`count(*)` }).from(schema.llmFallbackLogs).where(baseWhere),
+      db.select({ total: sql<number>`count(*)` }).from(schema.llmFallbackLogs).where(and(baseWhere, gte(schema.llmFallbackLogs.criadoEm, last24h))),
+      db.select({ total: sql<number>`count(*)` }).from(schema.llmFallbackLogs).where(and(baseWhere, gte(schema.llmFallbackLogs.criadoEm, last7d))),
+      db.select({
+        rota: schema.llmFallbackLogs.rota,
+        count: sql<number>`count(*)`,
+      }).from(schema.llmFallbackLogs).where(and(baseWhere, gte(schema.llmFallbackLogs.criadoEm, last7d)))
+        .groupBy(schema.llmFallbackLogs.rota)
+        .orderBy(desc(sql`count(*)`)),
+      db.select({
+        contexto: schema.llmFallbackLogs.contextoInferido,
+        count: sql<number>`count(*)`,
+      }).from(schema.llmFallbackLogs).where(and(baseWhere, gte(schema.llmFallbackLogs.criadoEm, last7d)))
+        .groupBy(schema.llmFallbackLogs.contextoInferido)
+        .orderBy(desc(sql`count(*)`)),
+    ]);
+
+    res.json({
+      total: Number(totalRow[0]?.total ?? 0),
+      last24h: Number(last24hRows[0]?.total ?? 0),
+      last7d: Number(last7dRows[0]?.total ?? 0),
+      byRoute: byRouteRows.map((r) => ({ rota: r.rota, count: Number(r.count) })),
+      byContext: byContextRows.map((r) => ({ contexto: r.contexto ?? 'default', count: Number(r.count) })),
+    });
+  } catch (error) {
+    logger.error({ error, tenantId }, 'Erro ao buscar fallback stats');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+app.get('/api/namespaces/unmapped-contexts', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:namespaces:read'), async (req: Request, res: Response) => {
+  const tenantId = req.tenantId;
+  if (!tenantId) {
+    return res.status(403).json({ error: 'Acesso negado: usuário não associado a um tenant' });
+  }
+  try {
+    const last7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const fallbackGroups = await db
+      .select({
+        rota: schema.llmFallbackLogs.rota,
+        contextoInferido: schema.llmFallbackLogs.contextoInferido,
+        fallbackCount: sql<number>`count(*)`,
+      })
+      .from(schema.llmFallbackLogs)
+      .where(and(
+        eq(schema.llmFallbackLogs.tenantId, tenantId),
+        gte(schema.llmFallbackLogs.criadoEm, last7d)
+      ))
+      .groupBy(schema.llmFallbackLogs.rota, schema.llmFallbackLogs.contextoInferido);
+
+    const getters = {
+      getNamespaceBySlug: async (tId: string, slug: string) => {
+        const row = await db.query.namespaces.findFirst({
+          where: and(
+            eq(schema.namespaces.tenantId, tId),
+            eq(schema.namespaces.slug, slug),
+            eq(schema.namespaces.ativo, true)
+          ),
+          columns: { id: true, tenantId: true, contextoSistema: true },
+        });
+        return row ?? null;
+      },
+      getNamespacesByTenant: async (tId: string) => {
+        return db.query.namespaces.findMany({
+          where: and(eq(schema.namespaces.tenantId, tId), eq(schema.namespaces.ativo, true)),
+          columns: { id: true, slug: true, contextoSistema: true },
+        });
+      },
+    };
+
+    const items: Array<{ rota: string; contexto: string; fallbackCount: number }> = [];
+    for (const g of fallbackGroups) {
+      const resolved = await resolveNamespaceByRoute(tenantId, g.rota, getters);
+      if (resolved.namespaceId === null) {
+        items.push({
+          rota: g.rota,
+          contexto: g.contextoInferido ?? 'default',
+          fallbackCount: Number(g.fallbackCount),
+        });
+      }
+    }
+    res.json({ items });
+  } catch (error) {
+    logger.error({ error, tenantId }, 'Erro ao buscar contextos não mapeados');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
 });
 
 // ============================================================================

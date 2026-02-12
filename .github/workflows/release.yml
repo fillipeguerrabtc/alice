@@ -231,6 +231,7 @@ jobs:
             "auth:./apps/auth-service/Dockerfile:."
             "biometrics:./apps/biometrics-service/Dockerfile:./apps/biometrics-service"
             "chat:./apps/chat-service/Dockerfile:."
+            "llm-gateway:./apps/llm-gateway-service/Dockerfile:."
             "frontend:./apps/frontend-service/Dockerfile:."
             "integrations:./apps/integrations-service/Dockerfile:."
             "observability:./apps/observability-service/Dockerfile:."
@@ -273,6 +274,7 @@ jobs:
                 auth) SERVICE_DIR_PATTERN="^apps/auth-service/" ;;
                 biometrics) SERVICE_DIR_PATTERN="^apps/biometrics-service/" ;;
                 chat) SERVICE_DIR_PATTERN="^apps/chat-service/" ;;
+                llm-gateway) SERVICE_DIR_PATTERN="^apps/llm-gateway-service/" ;;
                 frontend) SERVICE_DIR_PATTERN="^apps/frontend-service/" ;;
                 integrations) SERVICE_DIR_PATTERN="^apps/integrations-service/" ;;
                 observability) SERVICE_DIR_PATTERN="^apps/observability-service/" ;;
@@ -282,7 +284,7 @@ jobs:
                 # NOTA: pgbackrest, postgres, caddy são tratados pelo if/elif acima (nunca chegam aqui)
                 *)
                   echo "❌ ERRO: serviço desconhecido no pipeline release: $IMAGE"
-                  echo "Serviços válidos: api-gateway, auth, biometrics, chat, frontend, integrations, observability, rag, training, gpu-manager, pgbackrest, postgres, caddy"
+                  echo "Serviços válidos: api-gateway, auth, biometrics, chat, llm-gateway, frontend, integrations, observability, rag, training, gpu-manager, pgbackrest, postgres, caddy"
                   exit 1
                   ;;
               esac

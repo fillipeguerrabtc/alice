@@ -20,7 +20,7 @@
  */
 
 import { createLogger } from '@alice/logger';
-import { eq, and, or, lt, desc, isNull, sql } from '@alice/database';
+import { eq, and, or, lt, desc, isNull, inArray, not } from '@alice/database';
 import * as schema from '@alice/shared/schema';
 import type { Database } from '@alice/database';
 import { GPU_MANAGER_CONFIG } from '@alice/shared-utils';
@@ -83,8 +83,8 @@ export const SCHEDULE_CONFIG = {
 interface CollectedData {
   conversationCount: number;
   approvedDataCount: number;
-  /** Contagem de exemplos aprovados em trading_dataset (incluídos na coleta/contagem do treino). */
-  tradingDatasetApprovedCount: number;
+  /** Contagem de exemplos aprovados de trading em training_data (incluídos na coleta/contagem do treino). */
+  tradingDataApprovedCount: number;
   approvedImagesCount: number;
   qualityScore: number;
 }
@@ -92,15 +92,18 @@ interface CollectedData {
 /**
  * Coleta dados de treinamento para avaliação e treino on-demand.
  * Quando namespaceId é informado, filtra training_data por namespace_id ou inferred_namespace_id
- * e trading_dataset por source_metadata->>'namespaceId'.
+ * e training_data (sourceType trading) por namespaceId.
  */
 export async function collectTrainingData(tenantId?: string, namespaceId?: string): Promise<CollectedData> {
   logger.info({ tenantId, namespaceId }, 'Iniciando coleta automática de dados de treinamento');
 
   // Alinhado a prepareDatasetFromChatAndTrading: só contar exemplos ainda não usados em job (usedInJobId IS NULL).
+  // Excluir sourceType trading (contado separadamente em tradingDataApprovedCount).
+  const TRADING_SOURCE_TYPES = ['trading_signal', 'trading_order', 'trading_postmortem', 'trading_demo'] as const;
   const trainingDataWhere = and(
     eq(schema.trainingData.status, 'approved'),
     isNull(schema.trainingData.usedInJobId),
+    not(inArray(schema.trainingData.sourceType, [...TRADING_SOURCE_TYPES])),
     tenantId ? eq(schema.trainingData.tenantId, tenantId) : undefined,
     namespaceId
       ? or(
@@ -122,24 +125,23 @@ export async function collectTrainingData(tenantId?: string, namespaceId?: strin
     ),
   });
 
-  // trading_dataset aprovados: contagem para coleta/contagem do treino (fonte explícita documentada).
+  // training_data (sourceType trading) aprovados: contagem para coleta/contagem do treino.
   // Alinhado a prepareDatasetFromChatAndTrading: trading só é incluído quando namespaceId é informado;
   // sem namespace, contar trading faria avaliação "proceed" mas o job usaria só chat → "Dataset insuficiente".
   const tradingWhere = and(
-    eq(schema.tradingDataset.status, 'approved'),
-    eq(schema.tradingDataset.isDuplicate, false),
-    tenantId ? eq(schema.tradingDataset.tenantId, tenantId) : undefined,
-    namespaceId
-      ? sql`(${schema.tradingDataset.sourceMetadata} ->> 'namespaceId') = ${namespaceId}`
-      : undefined
+    eq(schema.trainingData.status, 'approved'),
+    eq(schema.trainingData.isDuplicate, false),
+    inArray(schema.trainingData.sourceType, [...TRADING_SOURCE_TYPES]),
+    tenantId ? eq(schema.trainingData.tenantId, tenantId) : undefined,
+    namespaceId ? eq(schema.trainingData.namespaceId, namespaceId) : undefined
   );
   const tradingApproved = namespaceId
-    ? await db.query.tradingDataset.findMany({
+    ? await db.query.trainingData.findMany({
         where: tradingWhere,
         columns: { id: true },
       })
     : [];
-  const tradingDatasetApprovedCount = tradingApproved.length;
+  const tradingDataApprovedCount = tradingApproved.length;
 
   const highRatedData = approvedData.filter((d: typeof schema.trainingData.$inferSelect) =>
     (d.rating || 0) >= 4
@@ -152,7 +154,7 @@ export async function collectTrainingData(tenantId?: string, namespaceId?: strin
   const result: CollectedData = {
     conversationCount: approvedData.length,
     approvedDataCount: approvedData.length,
-    tradingDatasetApprovedCount,
+    tradingDataApprovedCount,
     approvedImagesCount: approvedImages.length,
     qualityScore,
   };
@@ -187,8 +189,8 @@ export async function evaluateDataQuality(
 ): Promise<QualityEvaluation> {
   const data = await collectTrainingData(tenantId, namespaceId);
 
-  // Total de exemplos considerados: training_data aprovados + trading_dataset aprovados
-  const totalDataCount = data.approvedDataCount + data.tradingDatasetApprovedCount;
+  // Total de exemplos considerados: training_data aprovados + trading (training_data sourceType) aprovados
+  const totalDataCount = data.approvedDataCount + data.tradingDataApprovedCount;
   // Para jobs agendados: threshold apenas em training_data (universal; trading não obrigatório)
   const countForMin = useOnlyTrainingDataForMinCount ? data.approvedDataCount : totalDataCount;
 
@@ -207,8 +209,8 @@ export async function evaluateDataQuality(
       qualityScore: data.qualityScore,
       recommendation: 'wait',
       reason: useOnlyTrainingDataForMinCount
-        ? `Dados de chat insuficientes: ${data.approvedDataCount}/${minData} necessários (trading_dataset não conta para jobs agendados)`
-        : `Dados insuficientes: ${totalDataCount}/${minData} necessários (training_data: ${data.approvedDataCount}, trading_dataset: ${data.tradingDatasetApprovedCount})`,
+        ? `Dados de chat insuficientes: ${data.approvedDataCount}/${minData} necessários (trading não conta para jobs agendados)`
+        : `Dados insuficientes: ${totalDataCount}/${minData} necessários (training_data: ${data.approvedDataCount}, trading: ${data.tradingDataApprovedCount})`,
     };
   }
 

@@ -225,6 +225,13 @@
       "closed": "Closed",
       "open": "Open",
       "halfOpen": "Half-Open"
+    },
+    "fallbacks": {
+      "title": "LLM Fallbacks",
+      "description": "Contexts without mapped namespace (last 7 days)",
+      "last7d": "Fallbacks 7 days",
+      "unmappedContexts": "Unmapped contexts",
+      "configureInNamespaces": "Configure mappings in Namespaces"
     }
   },
   "conversations": {
@@ -342,6 +349,10 @@
     "attachGallery": "Attach images from gallery",
     "generating": "Generating response...",
     "stopGenerating": "Stop generating",
+    "fallbackBanner": {
+      "title": "Default context",
+      "desc": "This response used the default context because the current route is not mapped to a specific namespace."
+    },
     "streaming": {
       "thinking": "Alice is thinking",
       "steps": "Steps:",
@@ -627,11 +638,38 @@
       "create": "Error creating namespace",
       "update": "Error updating",
       "remove": "Error removing"
+    },
+    "alerts": {
+      "fallbackTitle": "Responses using general model (fallback)",
+      "fallbackDesc": "{{last24h}} calls in the last 24h and {{last7d}} in the last 7 days used the general model because no specialized namespace/agent was mapped for the route.",
+      "unmappedTitle": "Contexts not mapped to namespace",
+      "unmappedDesc": "The routes below had fallbacks and do not have a namespace with matching contextoSistema:",
+      "unmappedHint": "Configure contextoSistema (routes or themes) in namespace settings to map these routes.",
+      "fallbacks": "fallbacks"
     }
   },
   "documents": {
     "title": "RAG Documents",
-    "subtitle": "Manage documents for the retrieval-augmented generation system",
+    "subtitle": "Manage documents and media for the retrieval-augmented generation system",
+    "tabs": {
+      "documents": "Documents",
+      "media": "Media"
+    },
+    "media": {
+      "empty": "No media found",
+      "emptyDesc": "Media (images, audio) are uploaded from the Multimodal tab in Training or from the Chat.",
+      "loadFailed": "Error loading media",
+      "statsCount": "{{count}} items",
+      "filterType": "Type",
+      "filterAll": "All",
+      "filterImage": "Images",
+      "filterAudio": "Audio",
+      "statusProcessed": "Processed",
+      "statusPending": "Pending",
+      "statusError": "Error",
+      "sendToTraining": "Send to training",
+      "sentToTraining": "Sent to training"
+    },
     "upload": "Upload",
     "uploadDocument": "Upload Document",
     "dragDrop": "Drag and drop files here",
@@ -1546,6 +1584,14 @@
     "title": "Fine-tuning & Training",
     "subtitle": "Approve data, track jobs, and control continuous learning with safety.",
     "newJob": "New Job",
+    "postTraining": {
+      "title": "Training completed",
+      "desc": "Job \"{{jobName}}\" has finished. Continue training or go back to chat?",
+      "continueTraining": "Continue training",
+      "backToChat": "Back to chat",
+      "autoReturn": "If you don't respond within 10 minutes, you will be automatically returned to chat.",
+      "returnError": "Error returning to chat mode."
+    },
     "status": {
       "pending": "Pending",
       "approved": "Approved",
@@ -1703,6 +1749,18 @@
       "created": "Created: {{date}}",
       "finished": "Finished: {{date}}"
     },
+    "jobDetail": {
+      "loading": "Loading...",
+      "taskPreparing": "Preparing training dataset",
+      "taskTraining": "Training model (LoRA)",
+      "taskValidating": "Validating model",
+      "taskQueued": "Queued for execution",
+      "elapsed": "Elapsed time",
+      "elapsedValue": "{{seconds}}s",
+      "eta": "Estimated time remaining"
+    },
+    "jobsInProgress": "In progress",
+    "jobHistory": "History",
     "empty": {
       "noData": "No training data",
       "noDataDesc": "Data is automatically collected from approved conversations.",
@@ -1818,6 +1876,9 @@
       "subtitle": "Upload images and audio to train Alice. Images use OpenAI Vision (text description) and audio uses GPU to generate embeddings and enrich the knowledge base.",
       "descriptionLabel": "Description (optional)",
       "descriptionPlaceholder": "Describe the media content for better contextualization",
+      "namespaceLabel": "Namespace (RAG and training)",
+      "namespacePlaceholder": "Select a namespace (optional)",
+      "namespaceHelp": "Associates media with a namespace for RAG and training isolation by domain.",
       "dragDrop": "Drag files or click to select",
       "supportedTypes": "Images (JPEG, PNG, WebP, GIF) and Audio (MP3, WAV, WebM)",
       "queueTitle": "Upload Queue",
@@ -1848,6 +1909,24 @@
       "errors": {
         "fileTooLarge": "File too large",
         "unsupportedType": "Unsupported file type"
+      },
+      "promoteDocument": {
+        "success": "Document sent to training",
+        "successDesc": "The document has been added to pending approval data in Training."
+      },
+      "promoteMedia": {
+        "success": "Media sent to training",
+        "successDesc": "The media has been added to pending approval data in Training.",
+        "error": "Error sending media to training"
+      },
+      "mediaProcessed": {
+        "title": "Processed media",
+        "subtitle": "Media ready to send to training (namespace required)",
+        "empty": "No processed media. Upload in the area above.",
+        "sent": "Sent",
+        "noNamespace": "No namespace",
+        "sending": "Sending...",
+        "sendToTraining": "Send to training"
       }
     }
   },

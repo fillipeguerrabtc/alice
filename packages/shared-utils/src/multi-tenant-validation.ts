@@ -81,6 +81,31 @@ export function validateTenantConsistency(
 }
 
 /**
+ * Valida se namespaceId pertence ao tenant (cross-tenant attack prevention)
+ *
+ * @param namespaceId - ID do namespace a validar
+ * @param tenantId - TenantId esperado
+ * @param getNamespace - Função para buscar o namespace
+ * @throws TenantConsistencyError se namespace pertencer a outro tenant
+ *
+ * @example
+ * await validateNamespaceTenantConsistency(
+ *   input.namespaceId,
+ *   req.tenantId,
+ *   async (id) => db.query.namespaces.findFirst({ where: eq(namespaces.id, id) })
+ * );
+ */
+export async function validateNamespaceTenantConsistency(
+  namespaceId: string | null | undefined,
+  tenantId: string,
+  getNamespace: (id: string) => Promise<TenantEntity | null | undefined>
+): Promise<void> {
+  if (!namespaceId) return;
+  const namespace = await getNamespace(namespaceId);
+  validateTenantConsistency('namespace', namespace, tenantId, 'request');
+}
+
+/**
  * Valida consistência de tenant para criação de Agent
  * 
  * @param namespaceId - ID do namespace onde o agent será criado

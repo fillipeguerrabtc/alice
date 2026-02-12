@@ -121,6 +121,7 @@ import * as technicalIndicators from './technical-indicators.js';
 import { extractValuesFromLLMResponse, validateAndPersist } from './llm-validation.js';
 import type { ExtractedLLMValues } from './llm-validation.js';
 import { jsonrepair } from 'jsonrepair';
+import { callGatewayComplete, isGatewayConfigured, type GatewayCompleteResult } from './llm-gateway-client.js';
 
 const logger = createLogger('integrations-service');
 const config = loadConfig(integrationsServiceConfigSchema);
@@ -1288,6 +1289,20 @@ function truncateText(input: string, maxLength: number): string {
   return `${input.slice(0, maxLength)}…`;
 }
 
+/** Resolve namespace Trading do tenant (obrigatório para training_data de trading). */
+async function resolveTradingNamespaceId(tenantId: string): Promise<string | null> {
+  const db = getDatabase();
+  const ns = await db.query.namespaces.findFirst({
+    where: and(
+      eq(schema.namespaces.tenantId, tenantId),
+      eq(schema.namespaces.slug, 'trading'),
+      eq(schema.namespaces.ativo, true)
+    ),
+    columns: { id: true },
+  });
+  return ns?.id ?? null;
+}
+
 async function fetchTradingDatasetSummary(tenantId: string): Promise<{
   totalApproved: number;
   samples: Array<{ prompt: string; response: string; actionType: string; createdAt: string }>;
@@ -1295,29 +1310,37 @@ async function fetchTradingDatasetSummary(tenantId: string): Promise<{
   const db = getDatabase();
   const [total] = await db
     .select({ count: sql<number>`count(*)` })
-    .from(schema.tradingDataset)
+    .from(schema.trainingData)
     .where(and(
-      eq(schema.tradingDataset.tenantId, tenantId),
-      eq(schema.tradingDataset.status, 'approved')
+      eq(schema.trainingData.tenantId, tenantId),
+      eq(schema.trainingData.status, 'approved'),
+      inArray(schema.trainingData.sourceType, [...TRADING_SOURCE_TYPES])
     ));
 
-  const samples = await db.query.tradingDataset.findMany({
+  const samples = await db.query.trainingData.findMany({
     where: and(
-      eq(schema.tradingDataset.tenantId, tenantId),
-      eq(schema.tradingDataset.status, 'approved')
+      eq(schema.trainingData.tenantId, tenantId),
+      eq(schema.trainingData.status, 'approved'),
+      inArray(schema.trainingData.sourceType, [...TRADING_SOURCE_TYPES])
     ),
-    orderBy: [desc(schema.tradingDataset.criadoEm)],
+    orderBy: [desc(schema.trainingData.criadoEm)],
     limit: 3,
   });
 
   return {
     totalApproved: Number(total?.count ?? 0),
-    samples: samples.map((item) => ({
-      prompt: truncateText(item.prompt, 400),
-      response: truncateText(item.response, 400),
-      actionType: item.actionType,
-      createdAt: item.criadoEm?.toISOString?.() ?? new Date().toISOString(),
-    })),
+    samples: samples.map((item) => {
+      const msgs = (item.messages ?? []) as Array<{ role: string; content: string }>;
+      const userMsg = msgs.find((m) => m.role === 'user');
+      const assistantMsg = msgs.find((m) => m.role === 'assistant');
+      const actionType = (item.sourceMetadata as Record<string, unknown>)?.actionType as string ?? 'unknown';
+      return {
+        prompt: truncateText(userMsg?.content ?? '', 400),
+        response: truncateText(assistantMsg?.content ?? '', 400),
+        actionType,
+        createdAt: item.criadoEm?.toISOString?.() ?? new Date().toISOString(),
+      };
+    }),
   };
 }
 
@@ -1418,17 +1441,21 @@ async function generateTradingDatasetEmbedding(text: string): Promise<number[]> 
   return embedding;
 }
 
+/** Source types de trading em training_data (tabela universal). */
+const TRADING_SOURCE_TYPES = ['trading_signal', 'trading_order', 'trading_postmortem', 'trading_demo'] as const;
+
 async function detectTradingDatasetDuplicate(params: {
   tenantId: string;
   semhash: string;
   embedding: number[];
 }): Promise<{ isDuplicate: boolean; duplicateOfId?: string; similarityScore?: number }> {
   const db = getDatabase();
-  const existingData = await db.query.tradingDataset.findMany({
+  const existingData = await db.query.trainingData.findMany({
     where: and(
-      eq(schema.tradingDataset.tenantId, params.tenantId),
-      inArray(schema.tradingDataset.status, ['pending', 'approved', 'used']),
-      not(isNull(schema.tradingDataset.embedding))
+      eq(schema.trainingData.tenantId, params.tenantId),
+      inArray(schema.trainingData.status, ['pending', 'approved', 'used']),
+      inArray(schema.trainingData.sourceType, [...TRADING_SOURCE_TYPES]),
+      not(isNull(schema.trainingData.embedding))
     ),
   });
 
@@ -1559,9 +1586,9 @@ async function buildTradingDatasetSeedFromSignal(params: {
 }
 
 type TradingSignalDatasetCreationResult = {
-  dataset: schema.TradingDataset;
+  dataset: schema.TrainingData;
   created: boolean;
-  status: schema.TradingDataset['status'];
+  status: schema.TrainingData['status'];
   qualityScore: number;
   duplicate: {
     isDuplicate: boolean;
@@ -1577,10 +1604,11 @@ async function createTradingDatasetFromSignalSource(params: {
 }): Promise<TradingSignalDatasetCreationResult> {
   const db = getDatabase();
 
-  const existing = await db.query.tradingDataset.findFirst({
+  const existing = await db.query.trainingData.findFirst({
     where: and(
-      eq(schema.tradingDataset.tenantId, params.authContext.tenantId),
-      eq(schema.tradingDataset.signalId, params.signal.id)
+      eq(schema.trainingData.tenantId, params.authContext.tenantId),
+      eq(schema.trainingData.sourceType, 'trading_signal'),
+      eq(schema.trainingData.sourceId, params.signal.id)
     ),
   });
 
@@ -1596,6 +1624,11 @@ async function createTradingDatasetFromSignalSource(params: {
         similarityScore: existing.similarityScore ?? undefined,
       },
     };
+  }
+
+  const namespaceId = await resolveTradingNamespaceId(params.authContext.tenantId);
+  if (!namespaceId) {
+    throw new Error('Namespace Trading não encontrado para o tenant');
   }
 
   const seed = await buildTradingDatasetSeedFromSignal({
@@ -1631,32 +1664,36 @@ async function createTradingDatasetFromSignalSource(params: {
     ? signalMetadata.agentId
     : null;
 
-  const [created] = await db.insert(schema.tradingDataset).values({
+  const messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }> = [
+    { role: 'user', content: prompt },
+    { role: 'assistant', content: responseText },
+  ];
+
+  const [created] = await db.insert(schema.trainingData).values({
     tenantId: params.authContext.tenantId,
-    marketContext: seed.marketContext,
-    prompt,
-    response: responseText,
-    actionType: params.signal.signalType,
-    status,
-    reviewNotes,
-    signalId: params.signal.id,
-    orderId: params.signal.executedOrderId ?? null,
-    sourceType: 'signal',
+    namespaceId,
+    source: 'trading',
+    sourceType: 'trading_signal',
     sourceId: params.signal.id,
     sourceMetadata: {
       interval: seed.interval,
       marketType: params.signal.marketType,
       namespaceId: metadataNamespaceId,
       agentId: metadataAgentId,
-    },
+      actionType: params.signal.signalType,
+      marketContext: seed.marketContext,
+      signalId: params.signal.id,
+      orderId: params.signal.executedOrderId ?? null,
+    } as Record<string, unknown>,
+    messages,
     qualityScore,
-    embedding,
+    status,
+    reviewNotes,
     semhash,
+    embedding,
     isDuplicate: duplicateResult.isDuplicate,
     duplicateOfId: duplicateResult.duplicateOfId ?? null,
     similarityScore: duplicateResult.similarityScore ?? null,
-    criadoEm: new Date(),
-    atualizadoEm: new Date(),
   }).returning();
 
   if (created) {
@@ -1730,17 +1767,23 @@ function buildOrderExecutionPrompt(params: {
 async function createTradingDatasetFromOrder(params: {
   authContext: { tenantId: string; userId: string };
   order: schema.TradingOrder;
-}): Promise<{ created?: schema.TradingDataset; skipped?: string }> {
+}): Promise<{ created?: schema.TrainingData; skipped?: string }> {
   const db = getDatabase();
 
-  const existing = await db.query.tradingDataset.findFirst({
+  const existing = await db.query.trainingData.findFirst({
     where: and(
-      eq(schema.tradingDataset.tenantId, params.authContext.tenantId),
-      eq(schema.tradingDataset.orderId, params.order.id)
+      eq(schema.trainingData.tenantId, params.authContext.tenantId),
+      eq(schema.trainingData.sourceType, 'trading_order'),
+      eq(schema.trainingData.sourceId, params.order.id)
     ),
   });
   if (existing) {
-    return { skipped: 'dataset já existe para a ordem' };
+    return { skipped: 'training data já existe para a ordem' };
+  }
+
+  const namespaceId = await resolveTradingNamespaceId(params.authContext.tenantId);
+  if (!namespaceId) {
+    throw new Error('Namespace Trading não encontrado para o tenant');
   }
 
   const signalId = params.order.signalId ?? (params.order.metadata as TradingOrderMetadata | undefined)?.signalId;
@@ -1793,30 +1836,32 @@ async function createTradingDatasetFromOrder(params: {
     ? `Auto-rejeitado: qualidade ${qualityScore.toFixed(2)} abaixo do mínimo (${TRADING_DATASET_MIN_QUALITY}).`
     : null;
 
-  const [created] = await db.insert(schema.tradingDataset).values({
+  const messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }> = [
+    { role: 'user', content: prompt },
+    { role: 'assistant', content: responseText },
+  ];
+
+  const [created] = await db.insert(schema.trainingData).values({
     tenantId: params.authContext.tenantId,
-    marketContext,
-    prompt,
-    response: responseText,
-    actionType,
-    status,
-    reviewNotes,
-    signalId: signal?.id ?? null,
-    orderId: params.order.id,
-    sourceType: 'order',
+    namespaceId,
+    source: 'trading',
+    sourceType: 'trading_order',
     sourceId: params.order.id,
     sourceMetadata: {
       orderId: params.order.id,
       signalId: signal?.id ?? null,
-    },
+      actionType,
+      marketContext,
+    } as Record<string, unknown>,
+    messages,
     qualityScore,
-    embedding,
+    status,
+    reviewNotes,
     semhash,
+    embedding,
     isDuplicate: duplicateResult.isDuplicate,
     duplicateOfId: duplicateResult.duplicateOfId ?? null,
     similarityScore: duplicateResult.similarityScore ?? null,
-    criadoEm: new Date(),
-    atualizadoEm: new Date(),
   }).returning();
 
   const sourceTypeMetric = 'order';
@@ -12099,6 +12144,11 @@ app.put('/api/integrations/trading/risk-config', requirePermission('integrations
 });
 
 // GET /api/integrations/trading/signals - Lista sinais de trading ativos
+/**
+ * Gera sinal IA usando Agente Trading + LoRA + RAG do namespace Trading.
+ * Fluxo: resolveTradingAgentContext → Agente Trading (namespace slug=trading ou agentId);
+ * queryTradingRAGContext → documentos do namespace; resolveModelWithAdapter → LoRA por tenant/namespace/agent.
+ */
 async function generateTradingSignalFromLlm(params: {
   tenantId: string;
   userId: string;
@@ -12373,7 +12423,7 @@ async function generateTradingSignalFromLlm(params: {
   // CORREÇÃO A3: Retry com backoff para falhas GPU (max 2 tentativas)
   const MAX_GPU_RETRIES = 2;
   const gpuRequestStartMs = Date.now();
-  let gpuResponse: Awaited<ReturnType<typeof requestGpu>> | null = null;
+  let gpuResponse: (Awaited<ReturnType<typeof requestGpu>> | GatewayCompleteResult) | null = null;
   let lastGpuError: Error | null = null;
 
   // Resolver modelo com adapter LoRA ativo (se disponível)
@@ -12398,35 +12448,58 @@ async function generateTradingSignalFromLlm(params: {
         maxCompletionTokens: tokenBudget.maxCompletionTokens,
         attempt,
         maxRetries: MAX_GPU_RETRIES,
+        viaGateway: isGatewayConfigured(),
       }, 'Iniciando requisição GPU LLM para geração de sinal trading');
 
-      gpuResponse = await requestGpu({
-        serviceType: GpuServiceType.LLM,
-        endpoint: '/v1/chat/completions',
-        method: 'POST',
-        priority: GpuRequestPriority.HIGH,
-        timeout: llmTimeoutMs,
-        // CORREÇÃO CR1 (07/02/2026): Usar APENAS response_format (padrão OpenAI, suportado pelo vLLM).
-        // Parâmetros extra_body.guided_json e extra_body.structured_outputs REMOVIDOS -
-        // coexistência causa comportamento indefinido no vLLM (ignora constrained decoding).
-        // Ref: https://docs.vllm.ai/en/latest/serving/openai_compatible_server.html#structured-outputs
-        body: {
-          model: resolvedModel,
+      if (isGatewayConfigured()) {
+        gpuResponse = await callGatewayComplete({
           messages,
-          response_format: {
-            type: 'json_schema',
-            json_schema: TRADING_LLM_SIGNAL_JSON_SCHEMA,
+          config: {
+            model: agentContext.llmConfig.model,
+            temperature: params.modelConfig?.temperature ?? agentContext.llmConfig.temperature ?? 0.7,
+            maxTokens: tokenBudget.maxCompletionTokens,
           },
-          max_tokens: tokenBudget.maxCompletionTokens,
-          temperature: params.modelConfig?.temperature ?? agentContext.llmConfig.temperature ?? 0.7,
-          stream: false,
-        },
-      });
+          context: {
+            route: '/trading',
+            tenantId: params.tenantId,
+            userId: params.userId,
+            namespaceId: agentContext.agent.namespaceId ?? agentContext.namespace?.id ?? undefined,
+            agentId: agentContext.agent.id ?? undefined,
+          },
+          extraBody: {
+            response_format: {
+              type: 'json_schema',
+              json_schema: TRADING_LLM_SIGNAL_JSON_SCHEMA,
+            },
+          },
+          requestOptions: { timeout: llmTimeoutMs, priority: 'high' },
+        });
+      } else {
+        gpuResponse = await requestGpu({
+          serviceType: GpuServiceType.LLM,
+          endpoint: '/v1/chat/completions',
+          method: 'POST',
+          priority: GpuRequestPriority.HIGH,
+          timeout: llmTimeoutMs,
+          // CORREÇÃO CR1 (07/02/2026): Usar APENAS response_format (padrão OpenAI, suportado pelo vLLM).
+          body: {
+            model: resolvedModel,
+            messages,
+            response_format: {
+              type: 'json_schema',
+              json_schema: TRADING_LLM_SIGNAL_JSON_SCHEMA,
+            },
+            max_tokens: tokenBudget.maxCompletionTokens,
+            temperature: params.modelConfig?.temperature ?? agentContext.llmConfig.temperature ?? 0.7,
+            stream: false,
+          },
+        });
+      }
 
       if (gpuResponse.success && gpuResponse.data) {
         break; // Sucesso, sair do loop de retry
       }
-      lastGpuError = new Error(gpuResponse.error || 'Falha na resposta do GPU Manager.');
+      lastGpuError = new Error(gpuResponse?.error || 'Falha na resposta do GPU Manager.');
     } catch (err) {
       lastGpuError = err instanceof Error ? err : new Error(String(err));
     }
@@ -12451,9 +12524,10 @@ async function generateTradingSignalFromLlm(params: {
     throw lastGpuError ?? new Error('Falha na resposta do GPU Manager após retries.');
   }
 
+  const response = gpuResponse;
   logger.info({ gpuLatencyMs, symbol: params.symbol }, 'Requisição GPU LLM completada com sucesso');
 
-  const responseData = gpuResponse.data as LLMResponse;
+  const responseData = response.data as LLMResponse;
   const llmContent = responseData.choices?.[0]?.message?.content?.trim() || '';
   if (!llmContent) {
     throw new Error('Resposta do LLM vazia ou inválida.');
@@ -13953,7 +14027,38 @@ app.post('/api/integrations/trading/signals/generate', requirePermission('integr
   }
 });
 
+/** Mapeia training_data para formato de trading dataset (retrocompatível com frontend). */
+function mapTrainingDataToTradingDatasetRow(row: typeof schema.trainingData.$inferSelect): Record<string, unknown> {
+  const msgs = (row.messages ?? []) as Array<{ role: string; content: string }>;
+  const userMsg = msgs.find((m) => m.role === 'user');
+  const assistantMsg = msgs.find((m) => m.role === 'assistant');
+  const meta = (row.sourceMetadata ?? {}) as Record<string, unknown>;
+  const marketContext = meta.marketContext as Record<string, unknown> | undefined;
+  const actionType = (meta.actionType as string) ?? 'signal';
+  return {
+    id: row.id,
+    tenantId: row.tenantId,
+    status: row.status,
+    prompt: userMsg?.content ?? '',
+    response: assistantMsg?.content ?? '',
+    actionType,
+    marketContext: marketContext ?? { symbol: 'N/A' },
+    sourceType: row.sourceType,
+    sourceId: row.sourceId,
+    qualityScore: row.qualityScore,
+    reviewNotes: row.reviewNotes,
+    reviewedBy: row.reviewedBy,
+    reviewedAt: row.reviewedAt,
+    isDuplicate: row.isDuplicate ?? false,
+    similarityScore: row.similarityScore,
+    sourceMetadata: meta,
+    criadoEm: row.criadoEm,
+    usedInJobId: row.usedInJobId,
+  };
+}
+
 // GET /api/integrations/trading/datasets/stats - Contagens por status (para cards de totais sem depender do filtro da listagem)
+// Usa training_data com sourceType em TRADING_SOURCE_TYPES (tabela universal)
 app.get('/api/integrations/trading/datasets/stats', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
   try {
     const authContext = extractAuthContext(req);
@@ -13965,12 +14070,15 @@ app.get('/api/integrations/trading/datasets/stats', requirePermission('integrati
     const db = getDatabase();
     const rows = await db
       .select({
-        status: schema.tradingDataset.status,
+        status: schema.trainingData.status,
         count: sql<number>`count(*)::int`,
       })
-      .from(schema.tradingDataset)
-      .where(eq(schema.tradingDataset.tenantId, authContext.tenantId))
-      .groupBy(schema.tradingDataset.status);
+      .from(schema.trainingData)
+      .where(and(
+        eq(schema.trainingData.tenantId, authContext.tenantId),
+        inArray(schema.trainingData.sourceType, [...TRADING_SOURCE_TYPES])
+      ))
+      .groupBy(schema.trainingData.status);
 
     const stats = { pending: 0, approved: 0, rejected: 0, used: 0 };
     for (const row of rows) {
@@ -13987,7 +14095,7 @@ app.get('/api/integrations/trading/datasets/stats', requirePermission('integrati
   }
 });
 
-// GET /api/integrations/trading/datasets - Lista datasets de trading
+// GET /api/integrations/trading/datasets - Lista datasets de trading (training_data com sourceType em TRADING_SOURCE_TYPES)
 app.get('/api/integrations/trading/datasets', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
   try {
     const authContext = extractAuthContext(req);
@@ -14010,26 +14118,27 @@ app.get('/api/integrations/trading/datasets', requirePermission('integrations:tr
     const limit = parsed.data.limit ?? 50;
     const offset = parsed.data.offset ?? 0;
     const whereClause = and(
-      eq(schema.tradingDataset.tenantId, authContext.tenantId),
-      parsed.data.status ? eq(schema.tradingDataset.status, parsed.data.status) : sql`1=1`
+      eq(schema.trainingData.tenantId, authContext.tenantId),
+      inArray(schema.trainingData.sourceType, [...TRADING_SOURCE_TYPES]),
+      parsed.data.status ? eq(schema.trainingData.status, parsed.data.status) : sql`1=1`
     );
 
     const db = getDatabase();
     const total = await db
       .select({ count: sql<number>`count(*)` })
-      .from(schema.tradingDataset)
+      .from(schema.trainingData)
       .where(whereClause);
 
-    const rows = await db.query.tradingDataset.findMany({
+    const rows = await db.query.trainingData.findMany({
       where: whereClause,
-      orderBy: [desc(schema.tradingDataset.criadoEm)],
+      orderBy: [desc(schema.trainingData.criadoEm)],
       limit,
       offset,
     });
 
     res.json({
       success: true,
-      data: rows,
+      data: rows.map(mapTrainingDataToTradingDatasetRow),
       total: Number(total[0]?.count ?? 0),
     });
   } catch (error) {
@@ -14093,7 +14202,7 @@ app.post('/api/integrations/trading/datasets/from-signal', requirePermission('in
   }
 });
 
-// PATCH /api/integrations/trading/datasets/:id/review - Aprovar/rejeitar dataset
+// PATCH /api/integrations/trading/datasets/:id/review - Aprovar/rejeitar dataset (training_data)
 app.patch('/api/integrations/trading/datasets/:id/review', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
   try {
     const authContext = extractAuthContext(req);
@@ -14114,10 +14223,11 @@ app.patch('/api/integrations/trading/datasets/:id/review', requirePermission('in
     }
 
     const db = getDatabase();
-    const existing = await db.query.tradingDataset.findFirst({
+    const existing = await db.query.trainingData.findFirst({
       where: and(
-        eq(schema.tradingDataset.id, req.params.id),
-        eq(schema.tradingDataset.tenantId, authContext.tenantId)
+        eq(schema.trainingData.id, req.params.id),
+        eq(schema.trainingData.tenantId, authContext.tenantId),
+        inArray(schema.trainingData.sourceType, [...TRADING_SOURCE_TYPES])
       ),
       columns: { id: true, sourceMetadata: true },
     });
@@ -14147,18 +14257,17 @@ app.patch('/api/integrations/trading/datasets/:id/review', requirePermission('in
       }
     }
 
-    const [updated] = await db.update(schema.tradingDataset)
+    const [updated] = await db.update(schema.trainingData)
       .set({
         status: parsed.data.status,
         reviewNotes: parsed.data.reviewNotes ?? null,
         reviewedBy: authContext.userId,
         reviewedAt: new Date(),
-        atualizadoEm: new Date(),
         sourceMetadata: nextSourceMetadata,
       })
       .where(and(
-        eq(schema.tradingDataset.id, req.params.id),
-        eq(schema.tradingDataset.tenantId, authContext.tenantId)
+        eq(schema.trainingData.id, req.params.id),
+        eq(schema.trainingData.tenantId, authContext.tenantId)
       ))
       .returning();
 
@@ -14167,7 +14276,7 @@ app.patch('/api/integrations/trading/datasets/:id/review', requirePermission('in
       return;
     }
 
-    res.json({ success: true, data: updated });
+    res.json({ success: true, data: mapTrainingDataToTradingDatasetRow(updated) });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao revisar dataset de trading');

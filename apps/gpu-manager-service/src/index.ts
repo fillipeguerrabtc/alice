@@ -58,6 +58,14 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
+import {
+  isOrchestratorAvailable,
+  getOrchestratorState,
+  switchToTraining,
+  switchToLlmEmbeddings,
+  reportTrainingActivity,
+  shutdownOrchestrator,
+} from './gpu-orchestrator.js';
 
 const execAsync = promisify(exec);
 const logger = createLogger('gpu-manager');
@@ -88,6 +96,9 @@ if (isNaN(GPU_SERVICE_TIMEOUT) || GPU_SERVICE_TIMEOUT < 1000) {
   process.exit(1);
 }
 logger.info({ gpuServiceTimeout: GPU_SERVICE_TIMEOUT }, 'Timeout GPU configurado');
+
+/** Orquestrador: disponibilidade verificada uma vez no startup */
+let orchestratorAvailable = false;
 
 // Middleware de autenticação interna (service-to-service)
 // BUG FIX 25/12/2025: GPU Manager Service endpoints devem aceitar X-Internal-Api-Secret, não requireAuth (OAuth/JWT)
@@ -643,7 +654,15 @@ async function processGpuRequest(request: GpuRequest): Promise<GpuResponse> {
   const protectedFetch = protectedFetchByServiceType[serviceType];
   
   try {
-    // Gate 2: Serviços sempre ativos, sem orquestração dinâmica
+    // Orquestração (se disponível): TRAINING/EMBEDDINGS trocam containers conforme demanda
+    if (orchestratorAvailable) {
+      if (serviceType === GpuServiceType.TRAINING) {
+        await switchToTraining();
+      } else if (serviceType === GpuServiceType.EMBEDDINGS && getOrchestratorState() === 'training') {
+        await switchToLlmEmbeddings();
+      }
+    }
+
     const timeoutMs = request.timeout || GPU_SERVICE_TIMEOUT;
     const requestBody = applyStructuredOutputs({
       serviceType,
@@ -801,6 +820,9 @@ async function startQueueWorker(): Promise<void> {
           const resultKey = `${REDIS_QUEUE_PREFIX}:result:${request.id}`;
           await redis.setEx(resultKey, 300, JSON.stringify(response)); // 5 min TTL
 
+          if (serviceType === GpuServiceType.TRAINING && response.success && orchestratorAvailable) {
+            reportTrainingActivity();
+          }
           logger.info({
             requestId: request.id,
             serviceType,
@@ -990,6 +1012,22 @@ app.get('/api/gpu/queue/:requestId', requireInternalAuth, asyncHandler(async (re
   // BUG FIX 26/12/2025: Type guard para garantir que é string (Redis v5 pode retornar tipos variados)
   const response: GpuResponse = JSON.parse(result);
   res.json(response);
+}));
+
+// Orquestrador: estado e retorno manual
+app.get('/api/gpu/orchestrator/state', requireInternalAuth, asyncHandler(async (_req: Request, res: Response) => {
+  res.json({
+    state: getOrchestratorState(),
+    orchestratorAvailable,
+  });
+}));
+
+app.post('/api/gpu/orchestrator/return', requireInternalAuth, asyncHandler(async (_req: Request, res: Response) => {
+  if (!orchestratorAvailable) {
+    return res.status(503).json({ error: 'Orquestrador não disponível' });
+  }
+  await switchToLlmEmbeddings();
+  res.json({ state: getOrchestratorState(), message: 'Retornado para LLM+Embeddings' });
 }));
 
 // Streaming LLM (bypass fila - proxy direto com verificação de circuit breaker e VRAM)
@@ -1281,6 +1319,14 @@ async function start(): Promise<void> {
       'Arquitetura GPU (Gate 2) - serviços always-on com budgets estimados'
     );
     
+    // Verificar disponibilidade do orquestrador (uma vez no startup)
+    orchestratorAvailable = await isOrchestratorAvailable();
+    if (orchestratorAvailable) {
+      logger.info('Orquestrador GPU disponível - troca embeddings↔trainer habilitada');
+    } else {
+      logger.info('Orquestrador GPU não disponível - modo Gate 2 (serviços fixos)');
+    }
+
     // Iniciar worker de fila
     await startQueueWorker();
     
@@ -1297,6 +1343,7 @@ async function start(): Promise<void> {
     // Graceful shutdown
     registerShutdownCallback('gpu-manager-server', async () => {
       logger.info('Encerrando GPU Manager Service...');
+      shutdownOrchestrator();
       stopQueueWorker();
       server.close();
       // CORREÇÃO 28/12/2025: Fechar conexão Redis no shutdown

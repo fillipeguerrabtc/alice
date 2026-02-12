@@ -26,10 +26,19 @@
 | `maxSeqLen` ⚙️ | lora-job-manager / training-service | **2048** | Comprimento máximo de sequência no treino LoRA (256–32768). |
 | `batchSize` (LoRA) | lora-job-manager | **4** | Batch size padrão no treino. |
 
+**Limites para mídia (imagens/áudio) — Plano RAG Multimodal (11/02/2026):**
+
+| Variável | Onde | Default | Descrição |
+|----------|------|---------|-----------|
+| Mínimo conteúdo para treino | rag-service | **50** chars | Imagens: `visionDescription` (OpenAI Vision); Áudio: `transcription` (ASR). Conteúdo menor é rejeitado. |
+| Namespace | rag-service | Obrigatório | Mídia sem namespace não pode ser promovida para treinamento. |
+| Tipos suportados | mediaUploads | image, audio | Apenas imagens e áudios processados podem ir para `training_data`. |
+
 **Comportamento resumido:**
 
 - **Documentos/livros:** Um documento é fatiado em até **50** chunks (configurável via `DOCUMENT_MAX_CHUNKS`) de ~8k caracteres; na promoção para treino, até **50** chunks são escolhidos por relevância/diversidade (âncoras início/fim + score). Modo livro (frontend) permite até 100. Cada chunk vira **um** `training_data`. Livro grande → vários datasets (até 50 ou 100 em modo livro).
 - **Conversas:** Uma conversa com até **CONVERSATION_SLICE_SIZE** (10) mensagens vira **um** `training_data`. Conversas longas são **fatiadas em janelas disjuntas** de 10 mensagens; cada janela vira um `training_data` com `sourceMetadata.conversationWindow`. Na coleta manual, até **50** mensagens por conversa; o fatiamento é aplicado automaticamente.
+- **Mídia (imagens/áudio):** Cada item de mídia processada vira **um** `training_data`. Requer namespace e conteúdo mínimo 50 caracteres (descrição ou transcrição). Fonte `rag_media` com `sourceMetadata.mediaUploadId`.
 
 ---
 
@@ -93,6 +102,7 @@ Objetivo: **coleta inteligente de todas as fontes** (chat, documentos, bulk, tra
 | Chat (manual/batch) | chat-service | 1 conversa → 1 registro, até N mensagens |
 | Chat (auto) | chat-service | 1 par user/assistant → 1 registro |
 | Documentos RAG | rag-service | 1 doc → até M chunks selecionados → M registros |
+| **Mídia (imagens/áudio)** | rag-service | 1 mídia processada → visionDescription/transcription → 1 registro (source `rag_media`) |
 | Bulk import (Training) | training-service | 1 item do arquivo → 1 registro |
 | Trading (sinais/post-mortem) | integrations-service | 1 sinal/post-mortem aprovado → trading_dataset → usado em jobs LoRA |
 

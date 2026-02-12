@@ -240,6 +240,101 @@ async function collectTrainingFromDocumentChunks(params: {
   };
 }
 
+/**
+ * Promove mídia (imagem/áudio) para training_data.
+ * Plano RAG Multimodal Enterprise Fase 4 - 11/02/2026
+ * Usa llmDescription (imagens) ou transcription (áudio) como conteúdo.
+ */
+async function collectTrainingFromMediaUpload(params: {
+  tenantId: string;
+  namespaceId: string;
+  mediaUploadId: string;
+  mediaType: 'image' | 'audio';
+  originalFilename: string;
+  content: string;
+  userId?: string;
+  role?: string;
+}): Promise<{ sent: boolean; trainingDataId?: string }> {
+  if (!TRAINING_SERVICE_URL) {
+    logger.warn({ mediaUploadId: params.mediaUploadId }, 'TRAINING_SERVICE_URL ausente - promoção de mídia para treinamento desabilitada');
+    return { sent: false };
+  }
+  if (!params.content || params.content.trim().length < 50) {
+    logger.warn({ mediaUploadId: params.mediaUploadId }, 'Conteúdo insuficiente para treinamento (mín 50 caracteres)');
+    return { sent: false };
+  }
+
+  const headers = generateInternalAuthHeaders({
+    userId: params.userId ?? 'system',
+    tenantId: params.tenantId,
+    role: (params.role as Role) || 'operator',
+  });
+
+  const promptPrefix = params.mediaType === 'image'
+    ? 'Descrição visual extraída'
+    : 'Transcrição de áudio extraída';
+
+  const payload = {
+    tenantId: params.tenantId,
+    namespaceId: params.namespaceId,
+    source: 'media-promotion',
+    sourceType: 'rag_media' as const,
+    sourceId: params.mediaUploadId,
+    sourceMetadata: {
+      mediaUploadId: params.mediaUploadId,
+      mediaType: params.mediaType,
+      originalFilename: params.originalFilename,
+    },
+    messages: [
+      {
+        role: 'system' as const,
+        content: 'Você é Alice, especialista em Trading e Finanças. Use o conteúdo a seguir como conhecimento para respostas precisas.',
+      },
+      {
+        role: 'user' as const,
+        content: `${promptPrefix} de "${params.originalFilename}". Considere este conteúdo no seu conhecimento.`,
+      },
+      {
+        role: 'assistant' as const,
+        content: params.content.trim().slice(0, 8000),
+      },
+    ],
+  };
+
+  try {
+    const response = await fetch(`${TRAINING_SERVICE_URL}/api/training/data`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...headers,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      logger.warn({
+        mediaUploadId: params.mediaUploadId,
+        status: response.status,
+        error: errorText,
+      }, 'Falha ao enviar mídia para treinamento');
+      return { sent: false };
+    }
+
+    const result = (await response.json()) as { trainingData?: { id?: string } };
+    return {
+      sent: true,
+      trainingDataId: result.trainingData?.id,
+    };
+  } catch (error) {
+    logger.warn({
+      mediaUploadId: params.mediaUploadId,
+      error: error instanceof Error ? error.message : String(error),
+    }, 'Erro ao enviar mídia para treinamento');
+    return { sent: false };
+  }
+}
+
 // ============================================================================
 // MULTIMODAL - Tipos de mídia suportados (Fase 9)
 // ============================================================================
@@ -1200,10 +1295,12 @@ async function searchDocumentsInQdrant(
     return [];
   }
 
-  // Construir filtro Qdrant (multi-tenancy + namespace opcional)
-  const mustConditions: Array<{ key: string; match: { value: string } }> = [
+  // Construir filtro Qdrant (multi-tenancy + namespace opcional + tipos RAG multimodal)
+  // Plano RAG Multimodal Enterprise (11/02/2026): incluir document_chunk, media_image e media_audio
+  // Ref: https://qdrant.tech/documentation/concepts/filtering/ - Match Any (v1.1.0+)
+  const mustConditions: Array<{ key: string; match: { value?: string; any?: string[] } }> = [
     { key: 'tenantId', match: { value: tenantId } },
-    { key: 'type', match: { value: 'document_chunk' } },
+    { key: 'type', match: { any: ['document_chunk', 'media_image', 'media_audio'] } },
   ];
 
   if (namespaceId) {
@@ -1241,16 +1338,43 @@ async function searchDocumentsInQdrant(
     }
 
     // Mapear resultados Qdrant para formato esperado pelo RAG
+    // Plano RAG Multimodal Enterprise (11/02/2026): document_chunk, media_image e media_audio
     return mappedResults
       .slice(0, effectiveParams.limit)
       .map((result: QdrantSearchResult): QdrantDocumentResult => {
         const payload = result.payload || {};
+        const type = payload.type as string | undefined;
+
+        // Document chunks: documentId, conteudo, document (nested)
+        // media_image: mediaUploadId, visionDescription
+        // media_audio: mediaUploadId, transcription
+        const documentId = String(
+          payload.documentId ?? payload.mediaUploadId ?? ''
+        );
+        const conteudo = String(
+          payload.conteudo ?? payload.visionDescription ?? payload.transcription ?? ''
+        );
+
         return {
           id: String(result.id),
-          documentId: String(payload.documentId || ''),
-          conteudo: String(payload.conteudo || ''),
-          posicao: typeof payload.posicao === 'number' ? payload.posicao : undefined,
-          metadata: typeof payload.metadata === 'object' ? payload.metadata as Record<string, unknown> : undefined,
+          documentId,
+          conteudo,
+          posicao: type === 'document_chunk' && typeof payload.posicao === 'number'
+            ? payload.posicao
+            : undefined,
+          metadata: ((): Record<string, unknown> | undefined => {
+            const base = typeof payload.metadata === 'object'
+              ? payload.metadata as Record<string, unknown>
+              : {};
+            if (type === 'media_image' || type === 'media_audio') {
+              return {
+                ...base,
+                ragSourceType: type,
+                mediaType: payload.mediaType ?? (type === 'media_image' ? 'image' : 'audio'),
+              };
+            }
+            return Object.keys(base).length > 0 ? base : undefined;
+          })(),
           criadoEm: typeof payload.criadoEm === 'string' ? payload.criadoEm : undefined,
           similarity: Math.round(result.score * 10000) / 10000,
           document: payload.document_id ? {
@@ -2916,6 +3040,7 @@ const mediaUploadSchema = z.object({
   conversationId: z.string().uuid().optional(),
   messageId: z.string().uuid().optional(),
   description: z.string().optional(),
+  namespaceId: z.string().uuid().optional(),
 });
 
 app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRequest), mediaUpload.single('file'), async (req: MulterRequest, res: Response) => {
@@ -2947,6 +3072,10 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
   try {
     const body = mediaUploadSchema.safeParse(req.body);
     const metadata = body.success ? body.data : {};
+
+    if (metadata.namespaceId) {
+      await assertNamespaceOwnership(metadata.namespaceId, tenantId);
+    }
 
     const mediaType = detectMediaType(req.file.mimetype);
     if (!mediaType) {
@@ -3013,6 +3142,7 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
       userId: userId || null,
       conversationId: metadata.conversationId || null,
       messageId: metadata.messageId || null,
+      namespaceId: metadata.namespaceId || null,
       mediaType,
       originalFilename: req.file.originalname,
       mimeType: req.file.mimetype,
@@ -3080,6 +3210,7 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
                 mediaUploadId: mediaUploadRecord.id,
                 mediaType: 'image',
                 tenantId: req.tenantId,
+                ...(mediaUploadRecord.namespaceId ? { namespaceId: mediaUploadRecord.namespaceId } : {}),
                 visionDescription: visionDescription.slice(0, 10000),
                 embeddingModel: visionModel ?? 'OpenAI-Vision',
                 criadoEm: new Date().toISOString(),
@@ -3136,6 +3267,7 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
                 mediaUploadId: mediaUploadRecord.id,
                 mediaType: 'audio',
                 tenantId: req.tenantId,
+                ...(mediaUploadRecord.namespaceId ? { namespaceId: mediaUploadRecord.namespaceId } : {}),
                 transcription: result.transcription.slice(0, 10000), // Limitar para payload
                 transcriptionLanguage: result.transcriptionLanguage,
                 embeddingModel: result.embeddingModel,
@@ -3298,8 +3430,12 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
       },
     });
   } catch (error) {
-    logger.error({ 
-      error, 
+    const errMsg = error instanceof Error ? error.message : String(error);
+    if (errMsg.includes('Namespace inválido')) {
+      return res.status(403).json({ error: errMsg });
+    }
+    logger.error({
+      error,
       tenantId,
       filename: req.file?.originalname,
     }, 'Falha no upload de mídia');
@@ -3318,6 +3454,7 @@ const jsonUploadSchema = z.object({
   conversationId: z.string().uuid().optional(),
   messageId: z.string().uuid().optional(),
   description: z.string().optional(),
+  namespaceId: z.string().uuid().optional(),
 });
 
 // ============================================================================
@@ -3331,12 +3468,14 @@ const documentsQuerySchema = z.object({
 });
 
 // Schema para query params de paginação com filtros de mídia
+// Plano RAG Multimodal Enterprise Fase 2: namespaceId para isolamento RAG/treinamento
 const mediaUploadsQuerySchema = z.object({
   limit: z.string().regex(/^\d+$/).transform(Number).refine(n => n >= 1 && n <= 100, 'limit deve ser entre 1 e 100').optional(),
   offset: z.string().regex(/^\d+$/).transform(Number).refine(n => n >= 0, 'offset deve ser >= 0').optional(),
   // ATUALIZADO 23/12/2025: Removido 'video' (muito pesado para GPU)
   mediaType: z.enum(['image', 'audio', 'document']).optional(),
   conversationId: z.string().uuid().optional(),
+  namespaceId: z.string().uuid().optional(),
 });
 
 app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
@@ -3351,7 +3490,11 @@ app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdF
 
   try {
     const body = jsonUploadSchema.parse(req.body);
-    
+
+    if (body.namespaceId) {
+      await assertNamespaceOwnership(body.namespaceId, tenantId);
+    }
+
     // Decodificar base64 para Buffer
     const fileBuffer = Buffer.from(body.file, 'base64');
     const fileSize = fileBuffer.length;
@@ -3417,6 +3560,7 @@ app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdF
       userId: userId || null,
       conversationId: body.conversationId || null,
       messageId: body.messageId || null,
+      namespaceId: body.namespaceId || null,
       mediaType,
       originalFilename: body.filename,
       mimeType: body.mimeType,
@@ -3482,6 +3626,7 @@ app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdF
                 mediaUploadId: mediaUploadRecord.id,
                 mediaType: 'image',
                 tenantId: tenantId,
+                ...(mediaUploadRecord.namespaceId ? { namespaceId: mediaUploadRecord.namespaceId } : {}),
                 visionDescription: visionDescription.slice(0, 10000),
                 embeddingModel: visionModel ?? 'OpenAI-Vision',
                 criadoEm: new Date().toISOString(),
@@ -3533,6 +3678,7 @@ app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdF
                 mediaUploadId: mediaUploadRecord.id,
                 mediaType: 'audio',
                 tenantId: tenantId,
+                ...(mediaUploadRecord.namespaceId ? { namespaceId: mediaUploadRecord.namespaceId } : {}),
                 transcription: result.transcription.slice(0, 10000), // Limitar para payload
                 transcriptionLanguage: result.transcriptionLanguage,
                 embeddingModel: result.embeddingModel,
@@ -3659,10 +3805,14 @@ app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdF
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: 'Dados inválidos',
         details: error.errors,
       });
+    }
+    const errMsg = error instanceof Error ? error.message : String(error);
+    if (errMsg.includes('Namespace inválido')) {
+      return res.status(403).json({ error: errMsg });
     }
     logger.error({ error, tenantId }, 'Falha no upload JSON de mídia');
     res.status(500).json({ error: 'Erro interno do servidor' });
@@ -3733,7 +3883,7 @@ app.get('/api/media/uploads', requireAuth(), requireSameTenant(getTenantIdFromRe
   try {
     const limit = queryResult.data.limit ?? 50;
     const offset = queryResult.data.offset ?? 0;
-    const { mediaType, conversationId } = queryResult.data;
+    const { mediaType, conversationId, namespaceId } = queryResult.data;
 
     const whereConditions = [eq(schema.mediaUploads.tenantId, tenantId)];
     
@@ -3743,6 +3893,10 @@ app.get('/api/media/uploads', requireAuth(), requireSameTenant(getTenantIdFromRe
     
     if (conversationId) {
       whereConditions.push(eq(schema.mediaUploads.conversationId, conversationId));
+    }
+
+    if (namespaceId) {
+      whereConditions.push(eq(schema.mediaUploads.namespaceId, namespaceId));
     }
 
     const uploads = await db.query.mediaUploads.findMany({
@@ -3841,6 +3995,112 @@ app.delete('/api/media/uploads/:id', requireAuth(), requireSameTenant(getTenantI
   } catch (error) {
     logger.error({ error, tenantId, uploadId: id }, 'Falha ao excluir upload');
     res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+// Plano RAG Multimodal Enterprise Fase 4 - Promoção de mídia para treinamento
+app.post('/api/media/uploads/:id/send-to-training', requireAuth(), requirePermission('training:training_data:write'), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
+  const paramsResult = z.object({ id: z.string().uuid('ID inválido') }).safeParse(req.params);
+  if (!paramsResult.success) {
+    return res.status(400).json({ error: 'ID inválido', details: paramsResult.error.format() });
+  }
+  const { id } = paramsResult.data;
+
+  const tenantId = req.tenantId;
+  if (!tenantId) {
+    return res.status(401).json({ error: 'Tenant não identificado' });
+  }
+
+  try {
+    const upload = await db.query.mediaUploads.findFirst({
+      where: and(
+        eq(schema.mediaUploads.id, id),
+        eq(schema.mediaUploads.tenantId, tenantId)
+      ),
+    });
+
+    if (!upload) {
+      return res.status(404).json({ error: 'Upload não encontrado' });
+    }
+
+    if (upload.processingStatus !== 'completed') {
+      return res.status(422).json({
+        error: 'Mídia ainda não foi processada. Aguarde o processamento completar.',
+        processingStatus: upload.processingStatus,
+      });
+    }
+
+    if (!upload.namespaceId) {
+      return res.status(422).json({ error: 'Mídia sem namespace não pode ser promovida para treinamento. Associe um namespace ao upload.' });
+    }
+
+    const content = upload.mediaType === 'image'
+      ? (upload.llmDescription ?? (upload.extractedMetadata as { visionDescription?: string } | null)?.visionDescription ?? '')
+      : (upload.transcription ?? '');
+
+    if (!content || content.trim().length < 50) {
+      return res.status(422).json({
+        error: 'Conteúdo insuficiente para treinamento. Imagens precisam de descrição (OpenAI Vision). Áudios precisam de transcrição (ASR). Mínimo 50 caracteres.',
+        hasContent: !!content,
+        length: content?.length ?? 0,
+      });
+    }
+
+    if (upload.approvedForTraining) {
+      return res.status(409).json({
+        error: 'Mídia já foi enviada para treinamento',
+        approvedForTraining: upload.approvedForTraining,
+      });
+    }
+
+    const validMediaTypes = ['image', 'audio'] as const;
+    if (!validMediaTypes.includes(upload.mediaType as 'image' | 'audio')) {
+      return res.status(422).json({ error: 'Tipo de mídia não suportado para treinamento. Apenas imagens e áudios.' });
+    }
+
+    const user = getAuthUser(req);
+    const result = await collectTrainingFromMediaUpload({
+      tenantId,
+      namespaceId: upload.namespaceId,
+      mediaUploadId: upload.id,
+      mediaType: upload.mediaType as 'image' | 'audio',
+      originalFilename: upload.originalFilename,
+      content: content.trim(),
+      userId: user.id,
+      role: user.role,
+    });
+
+    if (!result.sent) {
+      return res.status(502).json({
+        error: 'Falha ao enviar mídia para o Training Service',
+      });
+    }
+
+    await db
+      .update(schema.mediaUploads)
+      .set({
+        approvedForTraining: true,
+      })
+      .where(eq(schema.mediaUploads.id, upload.id));
+
+    logger.info({
+      tenantId,
+      mediaUploadId: upload.id,
+      mediaType: upload.mediaType,
+      trainingDataId: result.trainingDataId,
+    }, 'Mídia promovida para treinamento');
+
+    return res.json({
+      success: true,
+      data: {
+        mediaUploadId: upload.id,
+        trainingDataId: result.trainingDataId,
+      },
+      message: 'Mídia enviada para dataset de treinamento. Aprove na página Training.',
+    });
+  } catch (error) {
+    logger.error({ error, mediaUploadId: id }, 'Falha ao promover mídia para treinamento');
+    return res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
 

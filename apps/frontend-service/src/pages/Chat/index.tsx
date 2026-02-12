@@ -582,6 +582,7 @@ export default function Chat() {
   const [isRecording, setIsRecording] = useState(false);
   const [isRecordingStarting, setIsRecordingStarting] = useState(false);
   const [isTranscribingRecording, setIsTranscribingRecording] = useState(false);
+  const [lastResponseUsedFallback, setLastResponseUsedFallback] = useState(false);
   const lastSelectedMessageIndex = useRef<number | null>(null);
 
   const conversationFilter = useMemo(() => {
@@ -1042,8 +1043,13 @@ export default function Chat() {
   }, [agentOptions, routingKey]);
 
   const createConversation = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest('POST', '/api/chat/conversations', { titulo: 'Nova Conversa' });
+    mutationFn: async (payload?: { agentId?: string; namespaceId?: string; context?: 'trading' | 'sales' | 'support' | 'cambio' | 'default'; route?: string }) => {
+      const body: Record<string, unknown> = { titulo: 'Nova Conversa' };
+      if (payload?.agentId) body.agentId = payload.agentId;
+      if (payload?.namespaceId) body.namespaceId = payload.namespaceId;
+      if (payload?.context) body.context = payload.context;
+      if (payload?.route) body.route = payload.route;
+      const res = await apiRequest('POST', '/api/chat/conversations', body);
       return res.json() as Promise<{ conversation: Conversation }>;
     },
     onSuccess: () => {
@@ -1280,6 +1286,7 @@ export default function Chat() {
       setMessages((prev) => [...prev, userMessage]);
       setIsStreaming(true);
       setStreamEvents([]);
+      setLastResponseUsedFallback(false);
       pushStreamEvent(createStatusEvent('preparing'));
 
       const assistantMessage: Message = {
@@ -1291,9 +1298,29 @@ export default function Chat() {
       };
       setMessages((prev) => [...prev, assistantMessage]);
 
+      const pathname = (location as string) ?? '';
       let activeConversationId = conversationId;
       if (!activeConversationId) {
-        const created = await createConversation.mutateAsync();
+        const contextPayload: { agentId?: string; namespaceId?: string; context?: 'trading' | 'sales' | 'support' | 'cambio' | 'default'; route?: string } = {};
+        if (currentRoutingMode === 'manual' && currentRoutingAgentIds.length === 1) {
+          contextPayload.agentId = currentRoutingAgentIds[0];
+        }
+        if (pathname.includes('/trading')) {
+          contextPayload.context = 'trading';
+          contextPayload.route = '/trading';
+        } else if (pathname.includes('/sales')) {
+          contextPayload.context = 'sales';
+          contextPayload.route = '/sales';
+        } else if (pathname.includes('/support')) {
+          contextPayload.context = 'support';
+          contextPayload.route = '/support';
+        } else if (pathname.includes('/cambio')) {
+          contextPayload.context = 'cambio';
+          contextPayload.route = '/cambio';
+        } else {
+          contextPayload.route = '/chat';
+        }
+        const created = await createConversation.mutateAsync(Object.keys(contextPayload).length > 0 ? contextPayload : undefined);
         const nextConversationId = created.conversation.id;
         activeConversationId = nextConversationId;
         navigate(`/chat/${nextConversationId}`);
@@ -1347,10 +1374,13 @@ export default function Chat() {
         )
         : undefined;
 
+      const routeForContext = pathname.startsWith('/trading') ? '/trading' : pathname.startsWith('/sales') ? '/sales' : pathname.startsWith('/support') ? '/support' : pathname.startsWith('/cambio') ? '/cambio' : '/chat';
+
       const payload = {
         conversationId: activeConversationId,
         ...(content.trim().length > 0 ? { message: content } : {}),
         ...(mediaPayload && mediaPayload.length > 0 ? { mediaAttachments: mediaPayload } : {}),
+        route: routeForContext,
         agentRouting: {
           mode: currentRoutingMode,
           agentIds: currentRoutingMode === 'manual' ? currentRoutingAgentIds : [],
@@ -1398,6 +1428,11 @@ export default function Chat() {
 
                 if (parsed.type === 'agent_event' && parsed.data) {
                   pushStreamEvent(parsed.data as AgentEvent);
+                  resetTimeout();
+                }
+
+                if (parsed.type === 'llm_metadata' && parsed.usedFallback) {
+                  setLastResponseUsedFallback(true);
                   resetTimeout();
                 }
 
@@ -2363,6 +2398,13 @@ export default function Chat() {
                         onToggleSelect={(shiftKey) => toggleMessageSelection(message.id, index, shiftKey)}
                       />
                     ))}
+                    {lastResponseUsedFallback && messages.length > 0 && (
+                      <Alert variant="default" className="mt-3 border-amber-500/50 bg-amber-500/10">
+                        <AlertTriangle className="h-4 w-4 text-amber-600" />
+                        <AlertTitle>{t('chat.fallbackBanner.title')}</AlertTitle>
+                        <AlertDescription>{t('chat.fallbackBanner.desc')}</AlertDescription>
+                      </Alert>
+                    )}
                   </motion.div>
                 )}
               </AnimatePresence>

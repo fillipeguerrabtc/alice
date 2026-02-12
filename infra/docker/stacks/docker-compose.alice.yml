@@ -246,9 +246,12 @@ services:
       TRAINING_CONVERSATION_MAX_MESSAGES: ${TRAINING_CONVERSATION_MAX_MESSAGES:-50}
       CONVERSATION_SLICE_SIZE: ${CONVERSATION_SLICE_SIZE:-10}
       GPU_MANAGER_URL: ${GPU_MANAGER_URL:-http://alice-gpu-manager:3010}
+      LLM_GATEWAY_URL: http://alice-llm-gateway:3011
       REDIS_URL: redis://:${REDIS_PASSWORD}@alice-redis:6379
-    # NOTA: postgres e alice-redis estão no stack infra - verificados pelo workflow
+    # Plano Enterprise: chat -> llm-gateway -> gpu-manager
     depends_on:
+      alice-llm-gateway:
+        condition: service_healthy
       gpu-manager:
         condition: service_healthy
     networks:
@@ -267,6 +270,52 @@ services:
           cpus: '1.0'
         reservations:
           memory: 256M
+          cpus: '0.25'
+
+  # ===========================================================================
+  # LLM GATEWAY SERVICE - Resolução de contexto namespace/agente
+  # Ponto único de entrada para chamadas LLM (complete/stream)
+  # Plano Enterprise - Agentes Especializados por Namespace
+  # ===========================================================================
+  alice-llm-gateway:
+    image: ${IMAGE_PREFIX}-llm-gateway:${IMAGE_TAG:-latest}
+    platform: linux/amd64
+    container_name: alice-llm-gateway
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=64M
+    env_file:
+      - ../.env.prod
+    environment:
+      NODE_ENV: production
+      PORT: 3011
+      SERVICE_NAME: llm-gateway-service
+      DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@alice-pgbouncer:6432/${POSTGRES_DB:-alice_prod}?sslmode=disable
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
+      TRAINING_SERVICE_URL: http://alice-training:3004
+      GPU_MANAGER_URL: ${GPU_MANAGER_URL:-http://alice-gpu-manager:3010}
+      DEFAULT_LLM_MODEL: ${DEFAULT_LLM_MODEL:-Qwen2.5-7B-Instruct-AWQ}
+    depends_on:
+      gpu-manager:
+        condition: service_healthy
+    networks:
+      - alice-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "const r=require('http').get('http://localhost:3011/live',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 128M
           cpus: '0.25'
 
   # ===========================================================================
@@ -424,6 +473,8 @@ services:
       CHAT_SERVICE_URL: http://alice-chat:3002
       TRAINING_SERVICE_URL: http://alice-training:3004
       RAG_SERVICE_URL: http://alice-rag:3003
+      GPU_MANAGER_URL: ${GPU_MANAGER_URL:-http://alice-gpu-manager:3010}
+      LLM_GATEWAY_URL: http://alice-llm-gateway:3011
       QDRANT_URL: http://alice-qdrant:6333
       QDRANT_API_KEY: ${QDRANT_API_KEY}
       KUCOIN_PRO_API_KEY: ${KUCOIN_PRO_API_KEY:-}
@@ -455,7 +506,10 @@ services:
       LLM_VALIDATION_MAX_DEVIATION: ${LLM_VALIDATION_MAX_DEVIATION:-0.01}
     # NOTA: postgres, alice-qdrant, alice-redis estão no stack infra
     # alice-chat e alice-rag são do mesmo stack
+    # Plano Enterprise: sinais trading e postmortem usam LLM Gateway
     depends_on:
+      alice-llm-gateway:
+        condition: service_healthy
       alice-chat:
         condition: service_healthy
       alice-rag:
@@ -550,6 +604,12 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
+    # Orquestrador GPU (11/02/2026): socket + compose para troca embeddings↔trainer
+    group_add:
+      - "999"  # docker group (acesso ao socket)
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /opt/alice/app/infra/docker:/opt/alice/compose:ro
     env_file:
       - ../.env.prod
     environment:

@@ -1,4 +1,5 @@
 import { useLocation, Link } from 'wouter';
+import { useQuery } from '@tanstack/react-query';
 import {
   LayoutDashboard,
   MessageSquare,
@@ -37,6 +38,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
+import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/hooks/use-auth';
 
 const menuItems = [
@@ -79,9 +81,39 @@ const adminItems = [
   { title: 'Modo Agentic', url: '/agentic-config', icon: Shield },
 ];
 
+/** Estatísticas de fallback LLM para badge no sidebar */
+interface FallbackStats {
+  total: number;
+  last24h: number;
+  last7d: number;
+  byRoute: Array<{ rota: string; count: number }>;
+  byContext: Array<{ contexto: string; count: number }>;
+}
+
+/** Item de contexto não mapeado */
+interface UnmappedContext {
+  rota: string;
+  contexto: string;
+  fallbackCount: number;
+}
+
 export function AppSidebar() {
   const [location] = useLocation();
   const { user, logout } = useAuth();
+
+  const { data: fallbackStats } = useQuery<FallbackStats>({
+    queryKey: ['/api/llm/fallback-stats'],
+    enabled: !!user,
+  });
+
+  const { data: unmappedData } = useQuery<{ items: UnmappedContext[] }>({
+    queryKey: ['/api/namespaces/unmapped-contexts'],
+    enabled: !!user,
+  });
+
+  const namespaceAlertCount =
+    (fallbackStats?.last7d ?? 0) + (unmappedData?.items?.length ?? 0);
+  const showNamespacesBadge = namespaceAlertCount > 0;
 
   const userInitials = user
     ? `${user.firstName?.[0] || ''}${user.lastName?.[0] || user.email[0]}`.toUpperCase()
@@ -187,6 +219,11 @@ export function AppSidebar() {
                     <Link href={item.url} data-testid={`link-${item.title.toLowerCase().replace(' ', '-')}`}>
                       <item.icon className="h-4 w-4" />
                       <span>{item.title}</span>
+                      {item.url === '/namespaces' && showNamespacesBadge && (
+                        <Badge variant="destructive" className="ml-auto h-5 min-w-5 px-1 text-xs">
+                          {namespaceAlertCount > 99 ? '99+' : namespaceAlertCount}
+                        </Badge>
+                      )}
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>

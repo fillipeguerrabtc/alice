@@ -1031,6 +1031,29 @@ export const agents = pgTable(
 );
 
 // ============================================================================
+// LLM FALLBACK LOGS (Registro de chamadas que usaram modelo geral)
+// Plano Enterprise - Agentes Especializados por Namespace
+// ============================================================================
+
+export const llmFallbackLogs = pgTable(
+  "llm_fallback_logs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id).notNull(),
+    userId: uuid("user_id").references(() => users.id),
+    rota: varchar("rota", { length: 255 }).notNull(),
+    contextoInferido: varchar("contexto_inferido", { length: 100 }),
+    mensagemPreview: text("mensagem_preview"),
+    criadoEm: timestamp("criado_em").defaultNow().notNull(),
+  },
+  (table) => ({
+    idxLlmFallbackLogsTenant: index("idx_llm_fallback_logs_tenant").on(table.tenantId),
+    idxLlmFallbackLogsTimestamp: index("idx_llm_fallback_logs_timestamp").on(table.criadoEm),
+    idxLlmFallbackLogsContexto: index("idx_llm_fallback_logs_contexto").on(table.contextoInferido),
+  })
+);
+
+// ============================================================================
 // CONVERSAS
 // ============================================================================
 
@@ -1950,6 +1973,7 @@ export const trainingSourceTypeEnum = pgEnum("training_source_type", [
   "trading_postmortem",
   "document",
   "rag_document",
+  "rag_media", // Plano RAG Multimodal Fase 4 - mídia (imagem/áudio) promovida para treinamento
   "upload",
   "external",
   "manual",
@@ -4147,15 +4171,19 @@ export const mediaUploads = pgTable(
     sentToLlm: boolean("sent_to_llm").default(false),
     llmDescription: text("llm_description"),
     
+    // Namespace para RAG e treinamento (Plano RAG Multimodal Enterprise Fase 2 - 11/02/2026)
+    namespaceId: uuid("namespace_id").references(() => namespaces.id, { onDelete: "set null" }),
+
     // Training
     approvedForTraining: boolean("approved_for_training").default(false),
     usedInFineTuning: boolean("used_in_fine_tuning").default(false),
-    
+
     criadoEm: timestamp("criado_em").defaultNow(),
     processadoEm: timestamp("processado_em"),
   },
   (table) => ({
     idxMediaUploadsTenantConversation: index("idx_media_uploads_tenant_conversation").on(table.tenantId, table.conversationId),
+    idxMediaUploadsNamespace: index("idx_media_uploads_namespace").on(table.namespaceId),
     idxMediaUploadsTenantMessage: index("idx_media_uploads_tenant_message").on(table.tenantId, table.messageId),
     idxMediaUploadsTenantUser: index("idx_media_uploads_tenant_user").on(table.tenantId, table.userId),
     idxMediaUploadsTenantType: index("idx_media_uploads_tenant_type").on(table.tenantId, table.mediaType),
@@ -4598,6 +4626,10 @@ export const mediaUploadsRelations = relations(mediaUploads, ({ one }) => ({
   tenant: one(tenants, {
     fields: [mediaUploads.tenantId],
     references: [tenants.id],
+  }),
+  namespace: one(namespaces, {
+    fields: [mediaUploads.namespaceId],
+    references: [namespaces.id],
   }),
   conversation: one(conversations, {
     fields: [mediaUploads.conversationId],

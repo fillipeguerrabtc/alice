@@ -15,7 +15,7 @@
  */
 
 import { createLogger } from '@alice/logger';
-import { getDatabase, schema, eq, and, desc, sql, inArray, isNull, or } from '@alice/database';
+import { getDatabase, schema, eq, and, desc, sql, inArray, isNull, or, not } from '@alice/database';
 import { getSystemConfig } from '@alice/database/system-config';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -23,10 +23,12 @@ import { requestGpu, GpuServiceType, GpuRequestPriority, GPU_MANAGER_CONFIG } fr
 import type {
   LoraJob,
   InsertLoraJob,
-  TradingDataset,
   TradingLoraHyperparams,
   TradingLoraMetrics,
 } from '@alice/shared';
+
+/** Source types de trading em training_data (tabela universal). */
+const TRADING_SOURCE_TYPES = ['trading_signal', 'trading_order', 'trading_postmortem', 'trading_demo'] as const;
 
 const logger = createLogger('lora-job-manager');
 
@@ -51,7 +53,7 @@ const DEFAULT_HYPERPARAMS: TradingLoraHyperparams = {
   maxSeqLen: 2048,
 };
 
-/** Mínimo de exemplos para jobs LoRA (trading_dataset). Reservado para validação futura. */
+/** Mínimo de exemplos para jobs LoRA (training_data com sourceType trading). Reservado para validação futura. */
 const _MIN_DATASET_SIZE = 100;
 
 /** Mínimo de exemplos para runs agendados (training_data + opcional trading). */
@@ -137,7 +139,7 @@ interface JobProgress {
 interface PreparedDataset {
   trainingData: string[];    // Linhas JSONL ({text: string})
   validationData: string[];  // Linhas JSONL ({text: string})
-  datasetIds: string[];      // IDs dos datasets filtrados (trading_dataset - para marcar como usados)
+  datasetIds: string[];      // IDs de training_data filtrados (trading) - para marcar como usados
   /** IDs de training_data usados (apenas quando source=scheduled_run). Marcar usedInJobId após sucesso. */
   trainingDataIds?: string[];
   stats: {
@@ -173,38 +175,42 @@ export async function prepareDataset(
 
   logger.info({ tenantId, filter }, 'Preparando dataset para treinamento');
 
-  // Buscar datasets aprovados
-  // CORREÇÃO 19/12/2025: Usar const ao invés de let (prefer-const)
+  // Buscar datasets aprovados de trading em training_data (tabela universal)
   const datasets = await db
     .select()
-    .from(schema.tradingDataset)
+    .from(schema.trainingData)
     .where(
       and(
-        eq(schema.tradingDataset.tenantId, tenantId),
-        eq(schema.tradingDataset.status, 'approved'),
-        eq(schema.tradingDataset.isDuplicate, false),
-        // Incluir todas as fontes aprovadas (signal, order, postmortem etc.)
-        // para não reduzir artificialmente o corpus de treino.
-        // Scope por namespace/agente no metadata.
-        // Regra de segregação estrita:
-        // - namespaceId DEVE casar com o namespace alvo
-        // - sem fallback para NULL (evita contaminação cross-namespace)
-        // - para escopo de agente, agentId deve casar explicitamente
-        sql`(
-          (
-            (${schema.tradingDataset.sourceMetadata} ->> 'namespaceId') = ${namespaceId}
-          )
-          AND (
-            ${agentId ?? null} IS NULL
-            OR (${schema.tradingDataset.sourceMetadata} ->> 'agentId') = ${agentId ?? null}
-          )
-        )`,
+        eq(schema.trainingData.tenantId, tenantId),
+        eq(schema.trainingData.status, 'approved'),
+        eq(schema.trainingData.isDuplicate, false),
+        inArray(schema.trainingData.sourceType, [...TRADING_SOURCE_TYPES]),
+        eq(schema.trainingData.namespaceId, namespaceId),
+        agentId != null
+          ? eq(schema.trainingData.agentId, agentId)
+          : sql`1=1`
       )
     )
-    .orderBy(desc(schema.tradingDataset.criadoEm));
+    .orderBy(desc(schema.trainingData.criadoEm));
+
+  // Extrair actionType e prompt/response de cada row (training_data usa messages + sourceMetadata)
+  type RowWithAction = { id: string; messages: unknown; sourceMetadata: unknown; qualityScore: number | null; criadoEm: Date | null };
+  const withAction = datasets.map((d): RowWithAction & { actionType: string; prompt: string; response: string } => {
+    const msgs = (d.messages ?? []) as Array<{ role: string; content: string }>;
+    const userMsg = msgs.find((m) => m.role === 'user');
+    const assistantMsg = msgs.find((m) => m.role === 'assistant');
+    const meta = (d.sourceMetadata ?? {}) as Record<string, unknown>;
+    const actionType = (meta.actionType as string) ?? 'signal';
+    return {
+      ...d,
+      actionType,
+      prompt: userMsg?.content ?? '',
+      response: assistantMsg?.content ?? '',
+    } as RowWithAction & { actionType: string; prompt: string; response: string };
+  });
 
   // Aplicar filtros
-  let filtered = datasets;
+  let filtered = withAction;
 
   if (filter?.minQualityScore) {
     filtered = filtered.filter(
@@ -236,19 +242,17 @@ export async function prepareDataset(
 
   // Dividir em treinamento (90%) e validação (10%)
   // ENTERPRISE FIX: Usar Fisher-Yates shuffle para distribuição uniforme
-  // O sort(() => Math.random() - 0.5) é anti-pattern que produz distribuição enviesada
-  // Referência: https://en.wikipedia.org/wiki/Fisher%E2%80%93Yates_shuffle
   const shuffled = fisherYatesShuffle([...filtered]);
   const splitIndex = Math.floor(shuffled.length * 0.9);
   const training = shuffled.slice(0, splitIndex);
   const validation = shuffled.slice(splitIndex);
 
   // Converter para formato JSONL (SFT): campo `text` obrigatório (gpu-trainer valida)
-  const formatToJsonl = (dataset: TradingDataset): string => {
+  const formatToJsonl = (d: { prompt: string; response: string }): string => {
     const text = [
       'system: Você é Alice, uma assistente especializada em trading de BTC Futures. Analise o contexto de mercado e forneça sinais de trading baseados em análise técnica e dados em tempo real.',
-      `user: ${dataset.prompt}`,
-      `assistant: ${dataset.response}`,
+      `user: ${d.prompt}`,
+      `assistant: ${d.response}`,
     ].join('\n');
     return JSON.stringify({ text });
   };
@@ -313,6 +317,7 @@ export async function prepareDatasetFromChatAndTrading(
     eq(schema.trainingData.status, 'approved'),
     eq(schema.trainingData.tenantId, tenantId),
     isNull(schema.trainingData.usedInJobId),
+    not(inArray(schema.trainingData.sourceType, [...TRADING_SOURCE_TYPES])),
     namespaceId != null
       ? or(
           eq(schema.trainingData.namespaceId, namespaceId),
@@ -478,26 +483,19 @@ export async function createLoraJob(params: CreateJobParams): Promise<LoraJob> {
     .values(jobData)
     .returning();
 
-  // Bug fix: Usar os IDs dos datasets FILTRADOS (retornados por prepareDataset)
-  // Antes marcava TODOS os datasets aprovados, ignorando os filtros aplicados
+  // Usar os IDs dos datasets FILTRADOS (retornados por prepareDataset) - training_data com sourceType trading
   if (dataset.datasetIds.length > 0) {
     await db
-      .update(schema.tradingDataset)
+      .update(schema.trainingData)
       .set({
         status: 'used',
         usedInJobId: job.id,
-        atualizadoEm: new Date(),
       })
-      .where(
-        inArray(
-          schema.tradingDataset.id,
-          dataset.datasetIds
-        )
-      );
-    
+      .where(inArray(schema.trainingData.id, dataset.datasetIds));
+
     logger.info(
       { jobId: job.id, markedAsUsed: dataset.datasetIds.length },
-      'Datasets marcados como usados'
+      'training_data (trading) marcados como usados'
     );
   }
 
@@ -847,10 +845,10 @@ export async function processLoraJob(jobId: string): Promise<void> {
     }
     if (prepared.datasetIds?.length) {
       await db
-        .update(schema.tradingDataset)
-        .set({ status: 'used', usedInJobId: jobId, atualizadoEm: new Date() })
-        .where(inArray(schema.tradingDataset.id, prepared.datasetIds));
-      logger.info({ jobId, count: prepared.datasetIds.length }, 'trading_dataset marcados como usados');
+        .update(schema.trainingData)
+        .set({ status: 'used', usedInJobId: jobId })
+        .where(inArray(schema.trainingData.id, prepared.datasetIds));
+      logger.info({ jobId, count: prepared.datasetIds.length }, 'training_data (trading) marcados como usados');
     }
     try {
       await activateLoraAdapter(jobId, undefined);

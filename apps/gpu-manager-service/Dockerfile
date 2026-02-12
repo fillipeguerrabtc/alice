@@ -121,6 +121,14 @@ ENV PORT=3010
 # Apenas garantir que o sistema está atualizado com últimos patches de segurança
 RUN apk update && apk upgrade --no-cache && rm -rf /var/cache/apk/*
 
+# Orquestrador GPU (11/02/2026): Docker CLI + Compose v2 para troca embeddings↔trainer
+# NOTA: Requer volume /var/run/docker.sock e group_add: docker no compose
+# Alpine docker-cli + compose v2 (compatível com docker compose do host)
+RUN apk add --no-cache docker-cli && \
+    mkdir -p /usr/local/lib/docker/cli-plugins && \
+    wget -q "https://github.com/docker/compose/releases/download/v2.24.5/docker-compose-linux-x86_64" -O /usr/local/lib/docker/cli-plugins/docker-compose && \
+    chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+
 WORKDIR /app
 
 # Copiar dependências de produção extraídas pelo pnpm deploy
