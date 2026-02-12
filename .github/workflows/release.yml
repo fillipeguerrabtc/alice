@@ -210,10 +210,10 @@ jobs:
           set -euo pipefail
           VERSION="${{ needs.create-release.outputs.version }}"
           PREVIOUS_TAG="${{ needs.create-release.outputs.previous_tag }}"
-          
+
           # Coletar imagens que foram realmente buildadas (não retagged)
           BUILT_SERVICES=""
-          
+
           echo "Building microservices for $VERSION"
           if [ -n "$PREVIOUS_TAG" ]; then
             echo "Previous tag for retagging: $PREVIOUS_TAG"
@@ -223,6 +223,96 @@ jobs:
           # CHANGED_FILES calculado automaticamente pelo script (CLAUDE.md Regra 2)
           source scripts/release-functions.sh
           
+          # Affected build com fail-safe enterprise:
+          # - Se houver qualquer incerteza de impacto, faz rebuild (nunca retag).
+          # - Mantém rastreabilidade e evita falso-negativo de dependência.
+          FORCE_ALL_MICROS=0
+          FORCE_ALL_REASON=""
+
+          # Mudanças globais que podem impactar qualquer microservice
+          # (lockfile, resolução workspace, scripts de build, tsconfig raiz).
+          if echo "$CHANGED_FILES" | grep -qE "^(pnpm-lock\\.yaml$|package\\.json$|pnpm-workspace\\.yaml$|\\.npmrc$|scripts/|tsconfig(\\.|$))"; then
+            FORCE_ALL_MICROS=1
+            FORCE_ALL_REASON="mudança global de build/deps (lockfile/root/scripts/tsconfig)"
+          fi
+
+          # Detectar pacotes workspace alterados
+          CHANGED_PACKAGE_DIRS="$(echo "$CHANGED_FILES" | grep -oE '^packages/[^/]+' | sort -u || true)"
+          CHANGED_WORKSPACE_PACKAGES=""
+          AFFECTED_WORKSPACE_PACKAGES=""
+
+          # Resolver impacto transitivo entre packages (dependentes)
+          # Ex.: mudança em @alice/logger também impacta @alice/database e @alice/shared-utils.
+          if [ -n "$CHANGED_PACKAGE_DIRS" ] && [ "$FORCE_ALL_MICROS" -eq 0 ]; then
+            if ! command -v jq >/dev/null 2>&1; then
+              FORCE_ALL_MICROS=1
+              FORCE_ALL_REASON="jq ausente no runner para análise de impacto de packages"
+            else
+              declare -A PKG_DEPS=()
+              WORKSPACE_PACKAGES=""
+
+              while IFS= read -r pkg_dir; do
+                [ -z "$pkg_dir" ] && continue
+                pkg_json="${pkg_dir}/package.json"
+                if [ ! -f "$pkg_json" ]; then
+                  FORCE_ALL_MICROS=1
+                  FORCE_ALL_REASON="package alterado sem package.json detectável: ${pkg_dir}"
+                  break
+                fi
+                pkg_name="$(jq -r '.name // empty' "$pkg_json")"
+                if [ -z "$pkg_name" ] || [ "$pkg_name" = "null" ]; then
+                  FORCE_ALL_MICROS=1
+                  FORCE_ALL_REASON="package alterado sem campo name válido: ${pkg_dir}"
+                  break
+                fi
+                CHANGED_WORKSPACE_PACKAGES="${CHANGED_WORKSPACE_PACKAGES}${CHANGED_WORKSPACE_PACKAGES:+$'\n'}${pkg_name}"
+              done <<< "$CHANGED_PACKAGE_DIRS"
+
+              if [ "$FORCE_ALL_MICROS" -eq 0 ] && [ -n "$CHANGED_WORKSPACE_PACKAGES" ]; then
+                for pkg_json in packages/*/package.json; do
+                  [ -f "$pkg_json" ] || continue
+                  pkg_name="$(jq -r '.name // empty' "$pkg_json")"
+                  [ -n "$pkg_name" ] || continue
+                  WORKSPACE_PACKAGES="${WORKSPACE_PACKAGES}${WORKSPACE_PACKAGES:+$'\n'}${pkg_name}"
+                  deps="$(jq -r '((.dependencies // {}) + (.optionalDependencies // {})) | keys[]?' "$pkg_json" | grep '^@alice/' || true)"
+                  PKG_DEPS["$pkg_name"]="$deps"
+                done
+
+                AFFECTED_WORKSPACE_PACKAGES="$CHANGED_WORKSPACE_PACKAGES"
+                CHANGED_FLAG=1
+                while [ "$CHANGED_FLAG" -eq 1 ]; do
+                  CHANGED_FLAG=0
+                  while IFS= read -r ws_pkg; do
+                    [ -z "$ws_pkg" ] && continue
+                    current_deps="${PKG_DEPS[$ws_pkg]:-}"
+                    if [ -z "$current_deps" ]; then
+                      continue
+                    fi
+                    while IFS= read -r dep_pkg; do
+                      [ -z "$dep_pkg" ] && continue
+                      if echo "$AFFECTED_WORKSPACE_PACKAGES" | grep -qx "$dep_pkg"; then
+                        if ! echo "$AFFECTED_WORKSPACE_PACKAGES" | grep -qx "$ws_pkg"; then
+                          AFFECTED_WORKSPACE_PACKAGES="${AFFECTED_WORKSPACE_PACKAGES}"$'\n'"${ws_pkg}"
+                          CHANGED_FLAG=1
+                        fi
+                        break
+                      fi
+                    done <<< "$current_deps"
+                  done <<< "$WORKSPACE_PACKAGES"
+                done
+
+                echo "📌 Packages alterados (direto):"
+                echo "$CHANGED_WORKSPACE_PACKAGES"
+                echo "📌 Packages afetados (com dependentes transitivos):"
+                echo "$AFFECTED_WORKSPACE_PACKAGES"
+              fi
+            fi
+          fi
+
+          if [ "$FORCE_ALL_MICROS" -eq 1 ]; then
+            echo "⚠️ Fail-safe ativado: rebuild de todos microservices (${FORCE_ALL_REASON})"
+          fi
+
           # ✅ CORREÇÃO CRÍTICA: Formato IMAGE:DOCKERFILE:CONTEXT
           # - Microservices Node.js: contexto raiz (precisam de packages/ compartilhados)
           # - Infra (caddy/postgres/pgbackrest): contexto específico (não precisam packages/)
@@ -254,45 +344,108 @@ jobs:
             echo "   Dockerfile: $DOCKERFILE"
             echo "   Context: $CONTEXT"
             
-            # Build condicional por mudanças:
-            # - Microservices: rebuild se mudou o service, packages/, lockfile, scripts de build, tsconfigs
-            # - pgbackrest: rebuild se mudou infra/backup/
-            BUILD_PATTERN=""
-            if [ "$IMAGE" = "pgbackrest" ]; then
-              BUILD_PATTERN="^infra/backup/"
-            elif [ "$IMAGE" = "postgres" ]; then
-              BUILD_PATTERN="^infra/postgres/"
-            elif [ "$IMAGE" = "caddy" ]; then
-              BUILD_PATTERN="^infra/docker/"
-            else
-              # Rebuild do serviço se mudou seu diretório real, qualquer package compartilhado, lockfile ou scripts base
-              # Observação: padrão conservador para garantir correção (enterprise).
-              SERVICE_DIR_PATTERN=""
-              # CORREÇÃO 02/01/2026: Todos os 12 serviços do array SERVICES devem estar mapeados
-              case "$IMAGE" in
-                api-gateway) SERVICE_DIR_PATTERN="^apps/api-gateway/" ;;
-                auth) SERVICE_DIR_PATTERN="^apps/auth-service/" ;;
-                biometrics) SERVICE_DIR_PATTERN="^apps/biometrics-service/" ;;
-                chat) SERVICE_DIR_PATTERN="^apps/chat-service/" ;;
-                llm-gateway) SERVICE_DIR_PATTERN="^apps/llm-gateway-service/" ;;
-                frontend) SERVICE_DIR_PATTERN="^apps/frontend-service/" ;;
-                integrations) SERVICE_DIR_PATTERN="^apps/integrations-service/" ;;
-                observability) SERVICE_DIR_PATTERN="^apps/observability-service/" ;;
-                rag) SERVICE_DIR_PATTERN="^apps/rag-service/" ;;
-                training) SERVICE_DIR_PATTERN="^apps/training-service/" ;;
-                gpu-manager) SERVICE_DIR_PATTERN="^apps/gpu-manager-service/" ;;
-                # NOTA: pgbackrest, postgres, caddy são tratados pelo if/elif acima (nunca chegam aqui)
-                *)
-                  echo "❌ ERRO: serviço desconhecido no pipeline release: $IMAGE"
-                  echo "Serviços válidos: api-gateway, auth, biometrics, chat, llm-gateway, frontend, integrations, observability, rag, training, gpu-manager, pgbackrest, postgres, caddy"
-                  exit 1
-                  ;;
-              esac
+            # Build condicional por mudanças com estratégia affected + fail-safe:
+            # 1) Infra images: por diretório.
+            # 2) Microservices: por diretório do serviço + packages afetados transitivamente.
+            # 3) Em qualquer incerteza: FORCE_ALL_MICROS=1.
+            NEEDS_BUILD=1
+            if [ -n "${PREVIOUS_TAG:-}" ]; then
+              BUILD_PATTERN=""
+              if [ "$IMAGE" = "pgbackrest" ]; then
+                BUILD_PATTERN="^infra/backup/"
+                decide_build_or_retag "$IMAGE" "$BUILD_PATTERN"
+              elif [ "$IMAGE" = "postgres" ]; then
+                BUILD_PATTERN="^infra/postgres/"
+                decide_build_or_retag "$IMAGE" "$BUILD_PATTERN"
+              elif [ "$IMAGE" = "caddy" ]; then
+                BUILD_PATTERN="^infra/docker/"
+                decide_build_or_retag "$IMAGE" "$BUILD_PATTERN"
+              else
+                SERVICE_DIR_PATTERN=""
+                case "$IMAGE" in
+                  api-gateway) SERVICE_DIR_PATTERN="^apps/api-gateway/" ;;
+                  auth) SERVICE_DIR_PATTERN="^apps/auth-service/" ;;
+                  biometrics) SERVICE_DIR_PATTERN="^apps/biometrics-service/" ;;
+                  chat) SERVICE_DIR_PATTERN="^apps/chat-service/" ;;
+                  llm-gateway) SERVICE_DIR_PATTERN="^apps/llm-gateway-service/" ;;
+                  frontend) SERVICE_DIR_PATTERN="^apps/frontend-service/" ;;
+                  integrations) SERVICE_DIR_PATTERN="^apps/integrations-service/" ;;
+                  observability) SERVICE_DIR_PATTERN="^apps/observability-service/" ;;
+                  rag) SERVICE_DIR_PATTERN="^apps/rag-service/" ;;
+                  training) SERVICE_DIR_PATTERN="^apps/training-service/" ;;
+                  gpu-manager) SERVICE_DIR_PATTERN="^apps/gpu-manager-service/" ;;
+                  *)
+                    echo "❌ ERRO: serviço desconhecido no pipeline release: $IMAGE"
+                    echo "Serviços válidos: api-gateway, auth, biometrics, chat, llm-gateway, frontend, integrations, observability, rag, training, gpu-manager, pgbackrest, postgres, caddy"
+                    exit 1
+                    ;;
+                esac
 
-              BUILD_PATTERN="^(${SERVICE_DIR_PATTERN#^}|packages/|scripts/|pnpm-lock\\.yaml$|package\\.json$|tsconfig\\.|\\.npmrc$)"
+                SHOULD_BUILD=0
+
+                # Mudança direta no serviço => build
+                if should_build "$SERVICE_DIR_PATTERN"; then
+                  SHOULD_BUILD=1
+                  echo "🔎 $IMAGE: mudança direta no diretório do serviço"
+                fi
+
+                # Mudança global crítica => build de todos microservices
+                if [ "$FORCE_ALL_MICROS" -eq 1 ]; then
+                  SHOULD_BUILD=1
+                  echo "🔎 $IMAGE: impactado por fail-safe global (${FORCE_ALL_REASON})"
+                fi
+
+                # Mudança em packages => affected por dependência transitiva de workspace
+                if [ "$SHOULD_BUILD" -eq 0 ] && [ -n "$AFFECTED_WORKSPACE_PACKAGES" ]; then
+                  service_pkg_json=""
+                  case "$IMAGE" in
+                    api-gateway) service_pkg_json="apps/api-gateway/package.json" ;;
+                    auth) service_pkg_json="apps/auth-service/package.json" ;;
+                    biometrics) service_pkg_json="apps/biometrics-service/package.json" ;;
+                    chat) service_pkg_json="apps/chat-service/package.json" ;;
+                    llm-gateway) service_pkg_json="apps/llm-gateway-service/package.json" ;;
+                    frontend) service_pkg_json="apps/frontend-service/package.json" ;;
+                    integrations) service_pkg_json="apps/integrations-service/package.json" ;;
+                    observability) service_pkg_json="apps/observability-service/package.json" ;;
+                    rag) service_pkg_json="apps/rag-service/package.json" ;;
+                    training) service_pkg_json="apps/training-service/package.json" ;;
+                    gpu-manager) service_pkg_json="apps/gpu-manager-service/package.json" ;;
+                  esac
+
+                  if [ -z "$service_pkg_json" ] || [ ! -f "$service_pkg_json" ]; then
+                    SHOULD_BUILD=1
+                    echo "⚠️ $IMAGE: package.json ausente/indisponível para análise de impacto (fail-safe build)"
+                  else
+                    service_ws_deps="$(jq -r '((.dependencies // {}) + (.optionalDependencies // {})) | keys[]?' "$service_pkg_json" | grep '^@alice/' || true)"
+                    if [ -z "$service_ws_deps" ]; then
+                      SHOULD_BUILD=1
+                      echo "⚠️ $IMAGE: sem deps @alice declaradas, packages alterados (fail-safe build)"
+                    else
+                      while IFS= read -r affected_pkg; do
+                        [ -z "$affected_pkg" ] && continue
+                        if echo "$service_ws_deps" | grep -qx "$affected_pkg"; then
+                          SHOULD_BUILD=1
+                          echo "🔎 $IMAGE: impactado por package afetado (${affected_pkg})"
+                          break
+                        fi
+                      done <<< "$AFFECTED_WORKSPACE_PACKAGES"
+                    fi
+                  fi
+                fi
+
+                if [ "$SHOULD_BUILD" -eq 0 ]; then
+                  from_img="${{ env.IMAGE_PREFIX }}-${IMAGE}:${PREVIOUS_TAG}"
+                  if image_exists "$from_img"; then
+                    NEEDS_BUILD=0
+                  else
+                    NEEDS_BUILD=1
+                    echo "⚠️ $IMAGE: imagem anterior não encontrada para retag (${from_img}), forçando build"
+                  fi
+                else
+                  NEEDS_BUILD=1
+                fi
+              fi
             fi
-
-            decide_build_or_retag "$IMAGE" "$BUILD_PATTERN"
 
             if [ "$NEEDS_BUILD" -eq 0 ]; then
               retag_image "$IMAGE" "$PREVIOUS_TAG" "$VERSION"

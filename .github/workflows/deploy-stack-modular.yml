@@ -1372,7 +1372,8 @@ jobs:
       # DOCKER DAEMON - Atualização idempotente (GHCR/Docker docs oficiais)
       # =======================================================================
       # ADERÊNCIA: Docker docs (max-concurrent-downloads default 3), max-download-attempts
-      # RESILIÊNCIA: max-concurrent-downloads 3 (vs 10) reduz timeouts GHCR
+      # RESILIÊNCIA: max-concurrent-downloads 1 para reduzir fan-out de layers
+      # em pulls GHCR e mitigar "context deadline exceeded" no handshake /v2/.
       # IDEMPOTÊNCIA: Apenas escreve e reinicia quando daemon.json foi alterado
       # REF: docs.docker.com/engine/reference/commandline/dockerd/
       # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 11 (Docs oficiais)
@@ -1416,7 +1417,7 @@ jobs:
             NEW_CANONICAL=$(echo "$NEW_JSON" | jq -cS .)
             
             if [ "$CURRENT_CANONICAL" = "$NEW_CANONICAL" ]; then
-              echo "✅ daemon.json já está atualizado (max-concurrent-downloads, max-download-attempts)"
+              echo "✅ daemon.json já está atualizado (max-concurrent-downloads=1, max-download-attempts)"
               exit 0
             fi
             
@@ -1442,7 +1443,10 @@ jobs:
               echo "::error::Docker não respondeu após ${MAX_WAIT}s"
               exit 1
             fi
+            EFFECTIVE_DOWNLOADS=$(sudo docker info --format '{{.RegistryConfig.MaxConcurrentDownloads}}' 2>/dev/null || echo "unknown")
+            EFFECTIVE_ATTEMPTS=$(sudo docker info --format '{{.RegistryConfig.MaxDownloadAttempts}}' 2>/dev/null || echo "unknown")
             echo "✅ daemon.json atualizado e Docker reiniciado"
+            echo "   🔧 Effective: MaxConcurrentDownloads=${EFFECTIVE_DOWNLOADS}, MaxDownloadAttempts=${EFFECTIVE_ATTEMPTS}"
 
       # =======================================================================
       # CORREÇÃO 09/01/2026: appleboy/scp-action@v0.1.7 tem bug conhecido
