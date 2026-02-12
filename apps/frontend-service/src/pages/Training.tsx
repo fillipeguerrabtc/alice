@@ -2103,8 +2103,6 @@ export default function Training() {
   const [showCreateJob, setShowCreateJob] = useState(false);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [createJobNamespaceId, setCreateJobNamespaceId] = useState<string>('');
-  const [showTradingJob, setShowTradingJob] = useState(false);
-  const [tradingNamespaceId, setTradingNamespaceId] = useState<string>('');
   const [showOnDemandRun, setShowOnDemandRun] = useState(false);
   const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
   const [reviewTarget, setReviewTarget] = useState<{ id: string; status: 'approved' | 'rejected'; entry: TrainingData } | null>(null);
@@ -2229,7 +2227,6 @@ export default function Training() {
     priority: z.enum(['low', 'normal', 'high']),
     description: z.string().trim().max(500).optional(),
     namespaceId: z.string().uuid().optional(),
-    includeTradingDataset: z.boolean(),
   });
 
   const [onDemandTrainingType, setOnDemandTrainingType] = useState<'incremental' | 'full'>('incremental');
@@ -2237,7 +2234,6 @@ export default function Training() {
   const [onDemandPriority, setOnDemandPriority] = useState<'low' | 'normal' | 'high'>('normal');
   const [onDemandDescription, setOnDemandDescription] = useState<string>('');
   const [onDemandNamespaceId, setOnDemandNamespaceId] = useState<string>('__tenant__');
-  const [onDemandIncludeTradingDataset, setOnDemandIncludeTradingDataset] = useState<boolean>(false);
 
   const startOnDemand = useMutation({
     mutationFn: async () => {
@@ -2247,7 +2243,6 @@ export default function Training() {
         priority: onDemandPriority,
         description: onDemandDescription.trim().length > 0 ? onDemandDescription.trim() : undefined,
         namespaceId: (onDemandNamespaceId && onDemandNamespaceId !== '__tenant__') ? onDemandNamespaceId : undefined,
-        includeTradingDataset: onDemandIncludeTradingDataset,
       });
 
       if (!tenantId) {
@@ -2261,7 +2256,6 @@ export default function Training() {
         priority: parsed.priority,
         description: parsed.description,
         namespaceId: parsed.namespaceId,
-        includeTradingDataset: parsed.includeTradingDataset,
       });
       return res.json();
     },
@@ -2282,32 +2276,6 @@ export default function Training() {
         description: onDemandDescription,
       });
       toast({ title: t('training.autoLearning.onDemandError'), variant: 'destructive' });
-    },
-  });
-
-  const createTradingJob = useMutation({
-    mutationFn: async () => {
-      if (!tradingNamespaceId) {
-        throw new Error('Namespace de Trading obrigatório');
-      }
-      const res = await apiRequest('POST', '/api/training/jobs/trading', {
-        tenantId,
-        namespaceId: tradingNamespaceId,
-      });
-      return res.json();
-    },
-    onSuccess: () => {
-      setShowTradingJob(false);
-      queryClient.invalidateQueries({ queryKey: ['/api/training/jobs'] });
-      toast({ title: t('training.trading.success') });
-    },
-    onError: (error) => {
-      frontendLogger.error('Erro ao criar job Trading', {
-        error: error instanceof Error ? error.message : String(error),
-        tenantId,
-        namespaceId: tradingNamespaceId,
-      });
-      toast({ title: t('training.trading.error'), variant: 'destructive' });
     },
   });
 
@@ -2655,15 +2623,6 @@ export default function Training() {
               <Play className="h-4 w-4 mr-2" />
               {t('training.autoLearning.onDemand')}
             </Button>
-            <Button
-              variant="outline"
-              onClick={() => setShowTradingJob(true)}
-              disabled={!tenantId}
-              data-testid="button-trading-job"
-            >
-              <TrendingUp className="h-4 w-4 mr-2" />
-              {t('training.trading.button')}
-            </Button>
             <Button onClick={() => setShowCreateJob(true)} data-testid="button-new-job">
               <Brain className="h-4 w-4 mr-2" />
               {t('training.newJob')}
@@ -2676,7 +2635,6 @@ export default function Training() {
           <AlertTitle>{t('training.optionsHelp.title')}</AlertTitle>
           <AlertDescription className="space-y-1">
             <p><strong>{t('training.autoLearning.onDemand')}:</strong> {t('training.optionsHelp.onDemand')}</p>
-            <p><strong>{t('training.trading.button')}:</strong> {t('training.optionsHelp.pipelineTrading')}</p>
             <p><strong>{t('training.newJob')}:</strong> {t('training.optionsHelp.newJob')}</p>
           </AlertDescription>
         </Alert>
@@ -3159,60 +3117,6 @@ export default function Training() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showTradingJob} onOpenChange={setShowTradingJob}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>{t('training.trading.title')}</DialogTitle>
-            <DialogDescription>{t('training.trading.desc')}</DialogDescription>
-          </DialogHeader>
-
-          <div className="grid gap-4 py-2">
-            <div className="grid gap-2">
-              <Label>{t('training.trading.namespace')}</Label>
-              <Select value={tradingNamespaceId} onValueChange={setTradingNamespaceId}>
-                <SelectTrigger>
-                  <SelectValue placeholder={t('training.trading.selectNamespace')} />
-                </SelectTrigger>
-                <SelectContent>
-                  {(namespaces || []).map((namespace) => (
-                    <SelectItem key={namespace.id} value={namespace.id}>
-                      {namespace.nome}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <Alert>
-              <Info className="h-4 w-4" />
-              <AlertTitle>{t('training.trading.noticeTitle')}</AlertTitle>
-              <AlertDescription>{t('training.trading.noticeDesc')}</AlertDescription>
-            </Alert>
-          </div>
-
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setShowTradingJob(false)}>
-              {t('training.createJob.cancel')}
-            </Button>
-            <Button
-              onClick={() => createTradingJob.mutate()}
-              disabled={!tenantId || !tradingNamespaceId || createTradingJob.isPending}
-            >
-              {createTradingJob.isPending ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  {t('training.trading.starting')}
-                </>
-              ) : (
-                <>
-                  <TrendingUp className="h-4 w-4 mr-2" />
-                  {t('training.trading.start')}
-                </>
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       <Dialog open={showOnDemandRun} onOpenChange={setShowOnDemandRun}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
@@ -3257,14 +3161,6 @@ export default function Training() {
                 <div className="text-xs text-muted-foreground">{t('training.autoLearning.includeImagesDesc')}</div>
               </div>
               <Switch checked={onDemandIncludeImages} onCheckedChange={setOnDemandIncludeImages} />
-            </div>
-
-            <div className="flex items-center justify-between rounded-md border p-3">
-              <div>
-                <div className="text-sm font-medium">{t('training.autoLearning.includeTradingDataset')}</div>
-                <div className="text-xs text-muted-foreground">{t('training.autoLearning.includeTradingDatasetDesc')}</div>
-              </div>
-              <Switch checked={onDemandIncludeTradingDataset} onCheckedChange={setOnDemandIncludeTradingDataset} />
             </div>
 
             <div className="grid gap-2">

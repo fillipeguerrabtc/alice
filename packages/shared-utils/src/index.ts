@@ -35,6 +35,7 @@ export * from './gpu-client.js';
 export * from './training-dedup.js';
 export * from './session-auth.js';
 export * from './llm-models.js';
+export * from './llm-routing.js';
 export { TRADING_CHANNEL_PREFIX, TRADING_CHANNELS } from './trading-channels.js';
 
 export * as rbac from './rbac/index.js';

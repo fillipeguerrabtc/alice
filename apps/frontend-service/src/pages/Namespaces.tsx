@@ -96,6 +96,34 @@ interface UnmappedContext {
   fallbackCount: number;
 }
 
+interface FallbackEvent {
+  id: string;
+  route: string;
+  context: string;
+  reason: string;
+  service: string;
+  endpoint: string;
+  preview: string;
+  namespaceId: string | null;
+  agentId: string | null;
+  baseModel: string | null;
+  resolvedModel: string | null;
+  adapterFound: boolean;
+  createdAt: string;
+}
+
+interface FallbackCluster {
+  clusterId: string;
+  eventIds: string[];
+  size: number;
+  topRoutes: string[];
+  topContexts: string[];
+  reasonBreakdown: Record<string, number>;
+  previews: string[];
+  suggestedNamespaceName: string;
+  suggestedNamespaceSlug: string;
+}
+
 /**
  * Interface explícita para dados do formulário de namespaces
  * Definida primeiro para evitar TS2589 (melhores práticas 2025)
@@ -158,6 +186,7 @@ export default function Namespaces() {
   const [settingsNamespace, setSettingsNamespace] = useState<Namespace | null>(null);
   const [detailsNamespace, setDetailsNamespace] = useState<Namespace | null>(null);
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
+  const [clusterNamespaceSelections, setClusterNamespaceSelections] = useState<Record<string, string>>({});
 
   const form = useForm<NamespaceFormData>({
     resolver: asResolver<NamespaceFormData>(zodResolver(namespaceSchema)),
@@ -192,6 +221,34 @@ export default function Namespaces() {
   const { data: unmappedData } = useQuery<{ items: UnmappedContext[] }>({
     queryKey: ["/api/namespaces/unmapped-contexts"],
     enabled: !!user,
+  });
+
+  const { data: fallbackEventsData } = useQuery<{ items: FallbackEvent[] }>({
+    queryKey: ["/api/llm/fallback-events", { page: 1, limit: 12 }],
+    enabled: !!user,
+    queryFn: async () => {
+      const response = await fetch('/api/llm/fallback-events?page=1&limit=12', {
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        throw new Error('Falha ao carregar fallback events');
+      }
+      return response.json();
+    },
+  });
+
+  const { data: fallbackClustersData } = useQuery<{ clusters: FallbackCluster[] }>({
+    queryKey: ["/api/llm/fallback-clusters", { lookbackDays: 7, limit: 180 }],
+    enabled: !!user,
+    queryFn: async () => {
+      const response = await fetch('/api/llm/fallback-clusters?lookbackDays=7&limit=180', {
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        throw new Error('Falha ao carregar fallback clusters');
+      }
+      return response.json();
+    },
   });
 
   const createNamespaceMutation = useMutation({
@@ -237,6 +294,41 @@ export default function Namespaces() {
     },
     onError: () => {
       toast({ title: t('namespaces.errors.remove'), variant: "destructive" });
+    },
+  });
+
+  const tagClusterMutation = useMutation({
+    mutationFn: async (params: { eventIds: string[]; namespaceId: string }) => {
+      const res = await apiRequest('POST', '/api/llm/fallback-clusters/tag', params);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({ title: t('namespaces.alerts.tagSuccess', { count: data?.updated ?? 0 }) });
+      queryClient.invalidateQueries({ queryKey: ['/api/llm/fallback-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/llm/fallback-events'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/llm/fallback-clusters'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/namespaces/unmapped-contexts'] });
+    },
+    onError: () => {
+      toast({ title: t('namespaces.alerts.tagError'), variant: 'destructive' });
+    },
+  });
+
+  const createNamespaceFromClusterMutation = useMutation({
+    mutationFn: async (params: { eventIds: string[]; nome: string; slug: string }) => {
+      const res = await apiRequest('POST', '/api/llm/fallback-clusters/create-namespace', params);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({ title: t('namespaces.alerts.createFromClusterSuccess', { name: data?.namespace?.nome ?? '' }) });
+      queryClient.invalidateQueries({ queryKey: ['/api/namespaces'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/llm/fallback-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/llm/fallback-events'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/llm/fallback-clusters'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/namespaces/unmapped-contexts'] });
+    },
+    onError: () => {
+      toast({ title: t('namespaces.alerts.createFromClusterError'), variant: 'destructive' });
     },
   });
 
@@ -575,6 +667,101 @@ export default function Namespaces() {
                     ))}
                   </ul>
                 )}
+              </AlertDescription>
+            </Alert>
+          )}
+          {fallbackEventsData?.items && fallbackEventsData.items.length > 0 && (
+            <Alert>
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>{t("namespaces.alerts.eventsTitle")}</AlertTitle>
+              <AlertDescription>
+                {t("namespaces.alerts.eventsDesc")}
+                <ul className="mt-2 space-y-2 text-sm">
+                  {fallbackEventsData.items.map((item) => (
+                    <li key={item.id} className="rounded border p-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <code className="rounded bg-muted px-1">{item.route}</code>
+                        <Badge variant="outline">{item.context}</Badge>
+                        <Badge variant={item.reason === 'namespace_unmapped' ? 'destructive' : 'secondary'}>
+                          {item.reason === 'namespace_unmapped'
+                            ? t('namespaces.alerts.reasonNamespaceUnmapped')
+                            : t('namespaces.alerts.reasonAdapterMissing')}
+                        </Badge>
+                      </div>
+                      {item.preview ? (
+                        <p className="mt-1 text-muted-foreground line-clamp-2">{item.preview}</p>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </AlertDescription>
+            </Alert>
+          )}
+          {fallbackClustersData?.clusters && fallbackClustersData.clusters.length > 0 && (
+            <Alert>
+              <Lightbulb className="h-4 w-4" />
+              <AlertTitle>{t("namespaces.alerts.clustersTitle")}</AlertTitle>
+              <AlertDescription>
+                {t("namespaces.alerts.clustersDesc")}
+                <ul className="mt-2 space-y-3 text-sm">
+                  {fallbackClustersData.clusters.slice(0, 8).map((cluster) => {
+                    const selectedNamespaceId = clusterNamespaceSelections[cluster.clusterId] ?? namespaces?.[0]?.id ?? '';
+                    return (
+                      <li key={cluster.clusterId} className="rounded border p-3 space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant="outline">{cluster.size} {t("namespaces.alerts.fallbacks")}</Badge>
+                          {cluster.topRoutes.slice(0, 2).map((route) => (
+                            <code key={route} className="rounded bg-muted px-1">{route}</code>
+                          ))}
+                          {cluster.topContexts.slice(0, 2).map((ctx) => (
+                            <Badge key={ctx} variant="secondary">{ctx}</Badge>
+                          ))}
+                        </div>
+                        {cluster.previews.length > 0 ? (
+                          <p className="text-muted-foreground line-clamp-2">{cluster.previews[0]}</p>
+                        ) : null}
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={createNamespaceFromClusterMutation.isPending}
+                            onClick={() => createNamespaceFromClusterMutation.mutate({
+                              eventIds: cluster.eventIds,
+                              nome: cluster.suggestedNamespaceName,
+                              slug: cluster.suggestedNamespaceSlug,
+                            })}
+                          >
+                            {t("namespaces.alerts.createSuggestedNamespace")}
+                          </Button>
+                          <select
+                            value={selectedNamespaceId}
+                            onChange={(event) => {
+                              setClusterNamespaceSelections((prev) => ({
+                                ...prev,
+                                [cluster.clusterId]: event.target.value,
+                              }));
+                            }}
+                            className="h-9 rounded-md border bg-background px-2 text-sm"
+                          >
+                            {(namespaces ?? []).map((namespace) => (
+                              <option key={namespace.id} value={namespace.id}>{namespace.nome}</option>
+                            ))}
+                          </select>
+                          <Button
+                            size="sm"
+                            disabled={!selectedNamespaceId || tagClusterMutation.isPending}
+                            onClick={() => tagClusterMutation.mutate({
+                              eventIds: cluster.eventIds,
+                              namespaceId: selectedNamespaceId,
+                            })}
+                          >
+                            {t("namespaces.alerts.tagToNamespace")}
+                          </Button>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
               </AlertDescription>
             </Alert>
           )}

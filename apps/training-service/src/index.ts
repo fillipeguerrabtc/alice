@@ -630,14 +630,6 @@ const trainingSourceTypeSchema = z.enum([
   'system',
 ]);
 
-const TRADING_MIN_DATA_REQUIRED = parseEnvInt(
-  process.env.TRAINING_TRADING_MIN_DATA,
-  30,
-  'TRAINING_TRADING_MIN_DATA'
-);
-const TRADING_EPOCHS = parseEnvInt(process.env.TRAINING_TRADING_EPOCHS, 4, 'TRAINING_TRADING_EPOCHS');
-const TRADING_BATCH_SIZE = parseEnvInt(process.env.TRAINING_TRADING_BATCH_SIZE, 2, 'TRAINING_TRADING_BATCH_SIZE');
-
 function parseEnvFloat(envValue: string | undefined, defaultValue: number, varName: string): number {
   const raw = envValue ?? String(defaultValue);
   const trimmed = raw.trim();
@@ -662,12 +654,6 @@ function parseEnvFloat(envValue: string | undefined, defaultValue: number, varNa
   }
   return parsed;
 }
-
-const TRADING_LEARNING_RATE = parseEnvFloat(
-  process.env.TRAINING_TRADING_LEARNING_RATE,
-  0.00008,
-  'TRAINING_TRADING_LEARNING_RATE'
-);
 
 const TRAINING_DATA_MIN_QUALITY = parseEnvFloat(
   process.env.TRAINING_DATA_MIN_QUALITY,
@@ -1177,20 +1163,6 @@ const createJobSchema = z.object({
   forceMinSize: z.boolean().optional(),
 });
 
-const createTradingJobSchema = z.object({
-  tenantId: z.string().uuid().optional(),
-  namespaceId: z.string().uuid(),
-  name: z.string().min(1).optional(),
-  baseModel: z.string().default(GPU_MANAGER_CONFIG.models.llm),
-  hyperparameters: z.object({
-    epochs: z.number().default(TRADING_EPOCHS),
-    learningRate: z.number().default(TRADING_LEARNING_RATE),
-    batchSize: z.number().default(TRADING_BATCH_SIZE),
-    maxSeqLen: z.number().int().min(256).max(32768).optional(),
-  }).optional(),
-  forceMinSize: z.boolean().optional(),
-});
-
 app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:start'), async (req: Request, res: Response) => {
   try {
     const body = createJobSchema.parse(req.body);
@@ -1294,88 +1266,6 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
     res.json({ job, profileSelection: profileSelection.diagnostics });
   } catch (error) {
     logger.error({ error }, 'Falha ao criar job');
-    res.status(500).json({ error: 'Erro interno do servidor' });
-  }
-});
-
-app.post('/api/training/jobs/trading', requirePermission('training:fine_tuning_jobs:start'), async (req: Request, res: Response) => {
-  try {
-    const body = createTradingJobSchema.parse(req.body);
-
-    const namespace = await db.query.namespaces.findFirst({
-      where: eq(schema.namespaces.id, body.namespaceId),
-    });
-
-    if (!namespace) {
-      return res.status(404).json({ error: 'Namespace não encontrado' });
-    }
-
-    if (body.tenantId && namespace.tenantId && namespace.tenantId !== body.tenantId) {
-      return res.status(403).json({ error: 'Namespace não pertence ao tenant informado' });
-    }
-
-    const tenantId = body.tenantId || namespace.tenantId || undefined;
-
-    const approvedConditions = [
-      eq(schema.trainingData.status, 'approved'),
-      eq(schema.trainingData.isDuplicate, false),
-      isNull(schema.trainingData.usedInJobId),
-      eq(schema.trainingData.namespaceId, body.namespaceId),
-    ];
-    if (tenantId) approvedConditions.push(eq(schema.trainingData.tenantId, tenantId));
-
-    const approvedData = await db.query.trainingData.findMany({
-      where: and(...approvedConditions),
-    });
-
-    const minOndemandTrading = await resolveMinOndemandDatasetSize();
-    const defaultMaxSeqLenTrading = await resolveDefaultMaxSeqLen();
-    const minRequired = body.forceMinSize ? 1 : Math.max(TRADING_MIN_DATA_REQUIRED, minOndemandTrading);
-    if (approvedData.length < minRequired) {
-      return res.status(400).json({
-        error: 'Dados de treinamento insuficientes para Trading',
-        required: minRequired,
-        available: approvedData.length,
-        hint: body.forceMinSize ? 'Poucos exemplos podem prejudicar o modelo. Use por sua conta e risco.' : undefined,
-      });
-    }
-
-    const hyperparameters: FineTuningJobHyperparams = body.hyperparameters
-      ? { ...body.hyperparameters, maxSeqLen: body.hyperparameters.maxSeqLen ?? defaultMaxSeqLenTrading }
-      : { epochs: TRADING_EPOCHS, learningRate: TRADING_LEARNING_RATE, batchSize: TRADING_BATCH_SIZE, maxSeqLen: defaultMaxSeqLenTrading };
-
-    const [job] = await db.insert(schema.fineTuningJobs).values({
-      tenantId,
-      name: body.name || 'Trading Fine-Tuning',
-      baseModel: body.baseModel,
-      status: 'pending',
-      trainingDataCount: approvedData.length,
-      metrics: {
-        scope: {
-          namespaceId: body.namespaceId,
-          agentId: null,
-          domain: null,
-        },
-      },
-      hyperparameters,
-    }).returning();
-
-    processFineTuningJob(job.id, hyperparameters).catch((err: unknown) => {
-      logger.error({ error: err, jobId: job.id }, 'Job de fine-tuning Trading falhou');
-    });
-
-    logger.info(
-      {
-        jobId: job.id,
-        namespaceId: body.namespaceId,
-        dataCount: approvedData.length,
-        scope: { tenantId, namespaceId: body.namespaceId, agentId: null, domain: null },
-      },
-      'Job de fine-tuning Trading criado'
-    );
-    res.json({ job });
-  } catch (error) {
-    logger.error({ error }, 'Falha ao criar job de Trading');
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
@@ -2474,8 +2364,6 @@ const startTrainingSchema = z.object({
   description: z.string().max(500).optional(),
   /** Escopo namespace: treino on-demand por namespace (LoRA por namespace). */
   namespaceId: z.string().uuid().optional(),
-  /** Incluir exemplos aprovados de trading_dataset no treino. */
-  includeTradingDataset: z.boolean().default(false),
 });
 
 // Schema para cancelar treinamento
@@ -2599,7 +2487,7 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
     return res.status(400).json({ error: 'Input inválido', details: parseResult.error.format() });
   }
   
-  const { tenantId, trainingType, includeImages, priority: _priority, description, namespaceId, includeTradingDataset } = parseResult.data;
+  const { tenantId, trainingType, includeImages, priority: _priority, description, namespaceId } = parseResult.data;
 
   try {
     // Verificar se já existe treinamento em andamento (status 'training' ou 'preparing')
@@ -2622,14 +2510,13 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
     }
 
     // Avaliar qualidade dos dados antes de iniciar (com escopo namespace quando informado).
-    // Alinhar critério ao job: se includeTradingDataset=false, threshold só em chat (evita "proceed" + "Dataset insuficiente").
     const scheduleType = trainingType === 'full' ? 'complete_fine_tuning' : 'incremental_fine_tuning';
     const evaluation = await evaluateDataQuality(
       scheduleType,
       tenantId,
       undefined,
       namespaceId,
-      !includeTradingDataset
+      false
     );
 
     if (!evaluation.isReady) {
@@ -2655,7 +2542,6 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
     const loraResult = await startProgressiveLoRA(tenantId, {
       includeImages,
       namespaceId,
-      includeTradingDataset,
     });
 
     // Atualizar job com status training

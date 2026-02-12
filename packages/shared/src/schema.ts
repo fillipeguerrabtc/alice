@@ -1043,6 +1043,14 @@ export const llmFallbackLogs = pgTable(
     userId: uuid("user_id").references(() => users.id),
     rota: varchar("rota", { length: 255 }).notNull(),
     contextoInferido: varchar("contexto_inferido", { length: 100 }),
+    serviceOrigem: varchar("service_origem", { length: 100 }),
+    chamada: varchar("chamada", { length: 120 }),
+    motivoFallback: varchar("motivo_fallback", { length: 120 }),
+    namespaceId: uuid("namespace_id").references(() => namespaces.id),
+    agentId: uuid("agent_id").references(() => agents.id),
+    modeloBase: varchar("modelo_base", { length: 255 }),
+    modeloResolvido: varchar("modelo_resolvido", { length: 255 }),
+    adapterEncontrado: boolean("adapter_encontrado").default(false).notNull(),
     mensagemPreview: text("mensagem_preview"),
     criadoEm: timestamp("criado_em").defaultNow().notNull(),
   },
@@ -1050,6 +1058,7 @@ export const llmFallbackLogs = pgTable(
     idxLlmFallbackLogsTenant: index("idx_llm_fallback_logs_tenant").on(table.tenantId),
     idxLlmFallbackLogsTimestamp: index("idx_llm_fallback_logs_timestamp").on(table.criadoEm),
     idxLlmFallbackLogsContexto: index("idx_llm_fallback_logs_contexto").on(table.contextoInferido),
+    idxLlmFallbackLogsMotivo: index("idx_llm_fallback_logs_motivo").on(table.motivoFallback),
   })
 );
 

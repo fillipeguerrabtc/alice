@@ -75,7 +75,7 @@ import {
 } from '@alice/shared-utils';
 import type { AuthContext } from '@alice/shared-utils';
 import type { Role } from '@alice/shared-utils';
-import { eq, desc, inArray, and, or, lt, gte, lte, sql, not, asc } from '@alice/database';
+import { eq, desc, inArray, and, or, lt, gte, lte, sql, not, asc, isNull } from '@alice/database';
 import { z } from 'zod';
 import { ProxyAgent } from 'undici';
 import { createClient } from 'redis';
@@ -16099,6 +16099,148 @@ app.get('/api/chat/escalation-config', requireAuth(), requireSameTenant(getTenan
 // LLM Fallback Stats e Unmapped Contexts (Plano Enterprise - Agentes por Namespace)
 // ============================================================================
 
+interface FallbackEventClusterSource {
+  id: string;
+  route: string;
+  context: string;
+  reason: string;
+  preview: string;
+  createdAt: Date;
+}
+
+function cosineSimilarity(a: number[], b: number[]): number {
+  if (!a.length || !b.length || a.length !== b.length) return 0;
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    const av = a[i] ?? 0;
+    const bv = b[i] ?? 0;
+    dot += av * bv;
+    normA += av * av;
+    normB += bv * bv;
+  }
+  if (normA === 0 || normB === 0) return 0;
+  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+function normalizeFallbackTextForEmbedding(event: FallbackEventClusterSource): string {
+  return `${event.route} ${event.context} ${event.preview}`.trim();
+}
+
+function normalizeClusterSlug(raw: string): string {
+  return raw
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s-]/g, ' ')
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .slice(0, 50);
+}
+
+async function getEmbeddingsForFallbackTexts(texts: string[]): Promise<number[][] | null> {
+  if (texts.length === 0) return [];
+  const response = await requestGpu({
+    serviceType: GpuServiceType.EMBEDDINGS,
+    endpoint: '/embed/text',
+    method: 'POST',
+    priority: GpuRequestPriority.LOW,
+    timeout: 30000,
+    body: { texts },
+  });
+  if (!response.success) {
+    logger.warn({ error: response.error }, 'Falha ao gerar embeddings para clusterização de fallback');
+    return null;
+  }
+  const payload = response.data as { embeddings?: unknown };
+  if (!Array.isArray(payload?.embeddings)) return null;
+  const vectors = payload.embeddings.filter((row): row is number[] => (
+    Array.isArray(row) && row.every((v) => typeof v === 'number')
+  ));
+  return vectors.length === texts.length ? vectors : null;
+}
+
+function clusterFallbackEvents(events: FallbackEventClusterSource[], vectors: number[][]): Array<{
+  clusterId: string;
+  eventIds: string[];
+  size: number;
+  topRoutes: string[];
+  topContexts: string[];
+  reasonBreakdown: Record<string, number>;
+  previews: string[];
+  suggestedNamespaceName: string;
+  suggestedNamespaceSlug: string;
+}> {
+  const threshold = 0.82;
+  const used = new Set<number>();
+  const clusters: Array<{
+    clusterId: string;
+    eventIds: string[];
+    size: number;
+    topRoutes: string[];
+    topContexts: string[];
+    reasonBreakdown: Record<string, number>;
+    previews: string[];
+    suggestedNamespaceName: string;
+    suggestedNamespaceSlug: string;
+  }> = [];
+
+  for (let i = 0; i < events.length; i++) {
+    if (used.has(i)) continue;
+    used.add(i);
+    const members = [i];
+    for (let j = i + 1; j < events.length; j++) {
+      if (used.has(j)) continue;
+      const score = cosineSimilarity(vectors[i] ?? [], vectors[j] ?? []);
+      if (score >= threshold) {
+        used.add(j);
+        members.push(j);
+      }
+    }
+
+    if (members.length < 2) {
+      continue;
+    }
+
+    const routeCount = new Map<string, number>();
+    const contextCount = new Map<string, number>();
+    const reasonBreakdown: Record<string, number> = {};
+    const previews: string[] = [];
+    const eventIds: string[] = [];
+
+    for (const idx of members) {
+      const ev = events[idx];
+      eventIds.push(ev.id);
+      routeCount.set(ev.route, (routeCount.get(ev.route) ?? 0) + 1);
+      contextCount.set(ev.context, (contextCount.get(ev.context) ?? 0) + 1);
+      reasonBreakdown[ev.reason] = (reasonBreakdown[ev.reason] ?? 0) + 1;
+      if (ev.preview && previews.length < 3) previews.push(ev.preview);
+    }
+
+    const topRoute = [...routeCount.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'geral';
+    const topContext = [...contextCount.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'geral';
+    const suggestedBase = normalizeClusterSlug(`${topContext}-${topRoute.split('/').filter(Boolean).join('-')}`);
+    const suggestedSlug = suggestedBase.length >= 2 ? suggestedBase : `namespace-${Date.now().toString(36)}`;
+    const suggestedName = `${topContext}`.replace(/[-_]/g, ' ').trim() || 'Novo Namespace';
+
+    clusters.push({
+      clusterId: crypto.createHash('sha1').update(eventIds.join('|')).digest('hex').slice(0, 12),
+      eventIds,
+      size: members.length,
+      topRoutes: [...routeCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([route]) => route),
+      topContexts: [...contextCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([context]) => context),
+      reasonBreakdown,
+      previews,
+      suggestedNamespaceName: suggestedName.charAt(0).toUpperCase() + suggestedName.slice(1),
+      suggestedNamespaceSlug: suggestedSlug,
+    });
+  }
+
+  return clusters.sort((a, b) => b.size - a.size);
+}
+
 app.get('/api/llm/fallback-stats', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:namespaces:read'), async (req: Request, res: Response) => {
   const tenantId = req.tenantId;
   if (!tenantId) {
@@ -16110,7 +16252,7 @@ app.get('/api/llm/fallback-stats', requireAuth(), requireSameTenant(getTenantIdF
     const last7d = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const baseWhere = and(eq(schema.llmFallbackLogs.tenantId, tenantId));
 
-    const [totalRow, last24hRows, last7dRows, byRouteRows, byContextRows] = await Promise.all([
+    const [totalRow, last24hRows, last7dRows, byRouteRows, byContextRows, byReasonRows] = await Promise.all([
       db.select({ total: sql<number>`count(*)` }).from(schema.llmFallbackLogs).where(baseWhere),
       db.select({ total: sql<number>`count(*)` }).from(schema.llmFallbackLogs).where(and(baseWhere, gte(schema.llmFallbackLogs.criadoEm, last24h))),
       db.select({ total: sql<number>`count(*)` }).from(schema.llmFallbackLogs).where(and(baseWhere, gte(schema.llmFallbackLogs.criadoEm, last7d))),
@@ -16126,6 +16268,12 @@ app.get('/api/llm/fallback-stats', requireAuth(), requireSameTenant(getTenantIdF
       }).from(schema.llmFallbackLogs).where(and(baseWhere, gte(schema.llmFallbackLogs.criadoEm, last7d)))
         .groupBy(schema.llmFallbackLogs.contextoInferido)
         .orderBy(desc(sql`count(*)`)),
+      db.select({
+        motivo: schema.llmFallbackLogs.motivoFallback,
+        count: sql<number>`count(*)`,
+      }).from(schema.llmFallbackLogs).where(and(baseWhere, gte(schema.llmFallbackLogs.criadoEm, last7d)))
+        .groupBy(schema.llmFallbackLogs.motivoFallback)
+        .orderBy(desc(sql`count(*)`)),
     ]);
 
     res.json({
@@ -16134,6 +16282,7 @@ app.get('/api/llm/fallback-stats', requireAuth(), requireSameTenant(getTenantIdF
       last7d: Number(last7dRows[0]?.total ?? 0),
       byRoute: byRouteRows.map((r) => ({ rota: r.rota, count: Number(r.count) })),
       byContext: byContextRows.map((r) => ({ contexto: r.contexto ?? 'default', count: Number(r.count) })),
+      byReason: byReasonRows.map((r) => ({ motivo: r.motivo ?? 'unknown', count: Number(r.count) })),
     });
   } catch (error) {
     logger.error({ error, tenantId }, 'Erro ao buscar fallback stats');
@@ -16157,6 +16306,7 @@ app.get('/api/namespaces/unmapped-contexts', requireAuth(), requireSameTenant(ge
       .from(schema.llmFallbackLogs)
       .where(and(
         eq(schema.llmFallbackLogs.tenantId, tenantId),
+        eq(schema.llmFallbackLogs.motivoFallback, 'namespace_unmapped'),
         gte(schema.llmFallbackLogs.criadoEm, last7d)
       ))
       .groupBy(schema.llmFallbackLogs.rota, schema.llmFallbackLogs.contextoInferido);
@@ -16195,6 +16345,228 @@ app.get('/api/namespaces/unmapped-contexts', requireAuth(), requireSameTenant(ge
     res.json({ items });
   } catch (error) {
     logger.error({ error, tenantId }, 'Erro ao buscar contextos não mapeados');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+app.get('/api/llm/fallback-events', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:namespaces:read'), async (req: Request, res: Response) => {
+  const tenantId = req.tenantId;
+  if (!tenantId) {
+    return res.status(403).json({ error: 'Acesso negado: usuário não associado a um tenant' });
+  }
+
+  const query = z.object({
+    page: z.coerce.number().int().min(1).default(1),
+    limit: z.coerce.number().int().min(1).max(100).default(20),
+    motivo: z.enum(['namespace_unmapped', 'adapter_missing']).optional(),
+  }).safeParse(req.query);
+  if (!query.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos' });
+  }
+
+  try {
+    const { page, limit, motivo } = query.data;
+    const offset = (page - 1) * limit;
+    const where = and(
+      eq(schema.llmFallbackLogs.tenantId, tenantId),
+      motivo ? eq(schema.llmFallbackLogs.motivoFallback, motivo) : undefined,
+    );
+
+    const [rows, totalRows] = await Promise.all([
+      db.query.llmFallbackLogs.findMany({
+        where,
+        orderBy: [desc(schema.llmFallbackLogs.criadoEm)],
+        limit,
+        offset,
+      }),
+      db.select({ total: sql<number>`count(*)` }).from(schema.llmFallbackLogs).where(where),
+    ]);
+
+    res.json({
+      page,
+      limit,
+      total: Number(totalRows[0]?.total ?? 0),
+      items: rows.map((row) => ({
+        id: row.id,
+        route: row.rota,
+        context: row.contextoInferido ?? 'default',
+        reason: row.motivoFallback ?? 'unknown',
+        service: row.serviceOrigem ?? 'unknown',
+        endpoint: row.chamada ?? 'unknown',
+        preview: row.mensagemPreview ?? '',
+        namespaceId: row.namespaceId ?? null,
+        agentId: row.agentId ?? null,
+        baseModel: row.modeloBase ?? null,
+        resolvedModel: row.modeloResolvido ?? null,
+        adapterFound: row.adapterEncontrado,
+        createdAt: row.criadoEm,
+      })),
+    });
+  } catch (error) {
+    logger.error({ error, tenantId }, 'Erro ao buscar fallback events');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+app.get('/api/llm/fallback-clusters', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:namespaces:read'), async (req: Request, res: Response) => {
+  const tenantId = req.tenantId;
+  if (!tenantId) {
+    return res.status(403).json({ error: 'Acesso negado: usuário não associado a um tenant' });
+  }
+
+  const query = z.object({
+    lookbackDays: z.coerce.number().int().min(1).max(30).default(7),
+    limit: z.coerce.number().int().min(20).max(300).default(180),
+  }).safeParse(req.query);
+  if (!query.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos' });
+  }
+
+  try {
+    const { lookbackDays, limit } = query.data;
+    const cutoff = new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000);
+    const rows = await db.query.llmFallbackLogs.findMany({
+      where: and(
+        eq(schema.llmFallbackLogs.tenantId, tenantId),
+        inArray(schema.llmFallbackLogs.motivoFallback, ['namespace_unmapped', 'adapter_missing']),
+        isNull(schema.llmFallbackLogs.namespaceId),
+        gte(schema.llmFallbackLogs.criadoEm, cutoff)
+      ),
+      orderBy: [desc(schema.llmFallbackLogs.criadoEm)],
+      limit,
+    });
+
+    const events: FallbackEventClusterSource[] = rows.map((row) => ({
+      id: row.id,
+      route: row.rota,
+      context: row.contextoInferido ?? 'default',
+      reason: row.motivoFallback ?? 'unknown',
+      preview: row.mensagemPreview ?? '',
+      createdAt: row.criadoEm,
+    }));
+
+    const texts = events.map((event) => normalizeFallbackTextForEmbedding(event));
+    const vectors = await getEmbeddingsForFallbackTexts(texts);
+    if (!vectors) {
+      return res.json({ clusters: [] });
+    }
+
+    const clusters = clusterFallbackEvents(events, vectors);
+    res.json({ clusters });
+  } catch (error) {
+    logger.error({ error, tenantId }, 'Erro ao calcular clusters de fallback');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+app.post('/api/llm/fallback-clusters/tag', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:namespaces:write'), async (req: Request, res: Response) => {
+  const tenantId = req.tenantId;
+  if (!tenantId) {
+    return res.status(403).json({ error: 'Acesso negado: usuário não associado a um tenant' });
+  }
+
+  const payload = z.object({
+    eventIds: z.array(z.string().uuid()).min(1).max(300),
+    namespaceId: z.string().uuid(),
+  }).safeParse(req.body);
+  if (!payload.success) {
+    return res.status(400).json({ error: 'Payload inválido', details: payload.error.format() });
+  }
+
+  try {
+    const namespace = await db.query.namespaces.findFirst({
+      where: and(
+        eq(schema.namespaces.id, payload.data.namespaceId),
+        eq(schema.namespaces.tenantId, tenantId),
+      ),
+      columns: { id: true },
+    });
+    if (!namespace) {
+      return res.status(404).json({ error: 'Namespace não encontrado para este tenant' });
+    }
+
+    const updatedRows = await db
+      .update(schema.llmFallbackLogs)
+      .set({
+        namespaceId: payload.data.namespaceId,
+        motivoFallback: 'tagged_to_namespace',
+      })
+      .where(and(
+        eq(schema.llmFallbackLogs.tenantId, tenantId),
+        inArray(schema.llmFallbackLogs.id, payload.data.eventIds),
+      ))
+      .returning({ id: schema.llmFallbackLogs.id });
+
+    res.json({ updated: updatedRows.length });
+  } catch (error) {
+    logger.error({ error, tenantId }, 'Erro ao tagar eventos de fallback');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+app.post('/api/llm/fallback-clusters/create-namespace', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:namespaces:write'), async (req: Request, res: Response) => {
+  const tenantId = req.tenantId;
+  if (!tenantId) {
+    return res.status(403).json({ error: 'Acesso negado: usuário não associado a um tenant' });
+  }
+
+  const payload = z.object({
+    eventIds: z.array(z.string().uuid()).min(1).max(300),
+    nome: z.string().min(2).max(120),
+    slug: z.string().min(2).max(80),
+    descricao: z.string().max(500).optional(),
+  }).safeParse(req.body);
+  if (!payload.success) {
+    return res.status(400).json({ error: 'Payload inválido', details: payload.error.format() });
+  }
+
+  try {
+    const slug = normalizeNamespaceSlug(payload.data.slug);
+    if (slug.length < 2) {
+      return res.status(400).json({ error: 'Slug inválido após normalização' });
+    }
+
+    const slugConflict = await db.query.namespaces.findFirst({
+      where: and(
+        eq(schema.namespaces.tenantId, tenantId),
+        eq(schema.namespaces.slug, slug),
+      ),
+      columns: { id: true },
+    });
+    if (slugConflict) {
+      return res.status(409).json({ error: 'Slug já existente para o tenant' });
+    }
+
+    const [namespace] = await db.insert(schema.namespaces).values({
+      tenantId,
+      nome: payload.data.nome.trim(),
+      slug,
+      descricao: payload.data.descricao?.trim() || null,
+      cor: '#6366F1',
+      ativo: true,
+      ordem: 999,
+      contextoSistema: null,
+      atualizadoEm: new Date(),
+    }).returning({ id: schema.namespaces.id, slug: schema.namespaces.slug, nome: schema.namespaces.nome });
+
+    const updatedRows = await db
+      .update(schema.llmFallbackLogs)
+      .set({
+        namespaceId: namespace.id,
+        motivoFallback: 'tagged_to_namespace',
+      })
+      .where(and(
+        eq(schema.llmFallbackLogs.tenantId, tenantId),
+        inArray(schema.llmFallbackLogs.id, payload.data.eventIds),
+      ))
+      .returning({ id: schema.llmFallbackLogs.id });
+
+    res.status(201).json({
+      namespace,
+      taggedEvents: updatedRows.length,
+    });
+  } catch (error) {
+    logger.error({ error, tenantId }, 'Erro ao criar namespace a partir de cluster');
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });

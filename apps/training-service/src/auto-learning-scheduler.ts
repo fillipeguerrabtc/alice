@@ -261,7 +261,6 @@ export async function startProgressiveLoRA(
     includeImages?: boolean;
     baseModelVersion?: number;
     namespaceId?: string;
-    includeTradingDataset?: boolean;
   }
 ): Promise<ProgressiveLoRAResult> {
   logger.info({ tenantId, options }, 'Iniciando Progressive LoRA (lora_jobs)');
@@ -269,7 +268,6 @@ export async function startProgressiveLoRA(
   const { createScheduledRunLoraJob } = await import('./lora-job-manager.js');
   const job = await createScheduledRunLoraJob(tenantId, {
     namespaceId: options?.namespaceId ?? null,
-    includeTradingDataset: options?.includeTradingDataset,
     includeImages: options?.includeImages,
   });
 

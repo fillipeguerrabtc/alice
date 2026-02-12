@@ -19,6 +19,7 @@ import compression from 'compression';
 import { createLogger } from '@alice/logger';
 import {
   resolveNamespaceByRoute,
+  resolveLlmModelByScope,
   requestGpu,
   requestGpuStream,
   GpuServiceType,
@@ -50,7 +51,6 @@ import { z } from 'zod';
 const logger = createLogger('llm-gateway');
 
 const PORT = parseInt(process.env.PORT || '3011', 10);
-const TRAINING_SERVICE_URL = process.env.TRAINING_SERVICE_URL || 'http://alice-training:3004';
 const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET || '';
 const DEFAULT_MODEL = process.env.DEFAULT_LLM_MODEL || 'Qwen2.5-7B-Instruct-AWQ';
 
@@ -89,26 +89,10 @@ async function resolveModelWithAdapter(
   baseModel: string,
   ctx: { tenantId?: string; namespaceId?: string; agentId?: string }
 ): Promise<string> {
-  if (!ctx.tenantId && !ctx.namespaceId && !ctx.agentId) {
-    return baseModel;
-  }
   try {
-    const query = new URLSearchParams();
-    if (ctx.tenantId) query.set('tenantId', ctx.tenantId);
-    if (ctx.namespaceId) query.set('namespaceId', ctx.namespaceId);
-    if (ctx.agentId) query.set('agentId', ctx.agentId);
-    const url = `${TRAINING_SERVICE_URL}/api/training/lora/active${query.size > 0 ? `?${query.toString()}` : ''}`;
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Internal-Api-Secret': INTERNAL_API_SECRET,
-      },
-      signal: AbortSignal.timeout(5000),
+    return await resolveLlmModelByScope(baseModel, ctx, {
+      cachePrefix: 'alice:llm-gateway:lora:active-adapter',
     });
-    if (!res.ok) return baseModel;
-    const data = (await res.json()) as { adapter?: { adapterName?: string } | null };
-    return data?.adapter?.adapterName ?? baseModel;
   } catch (err) {
     logger.warn({ err, ctx }, 'Falha ao resolver LoRA adapter - usando modelo base');
     return baseModel;
@@ -120,6 +104,14 @@ async function logFallback(params: {
   userId?: string;
   rota: string;
   contextoInferido: string;
+  serviceOrigem: string;
+  chamada: string;
+  motivoFallback: string;
+  namespaceId?: string | null;
+  agentId?: string | null;
+  modeloBase: string;
+  modeloResolvido: string;
+  adapterEncontrado: boolean;
   mensagemPreview?: string;
 }): Promise<void> {
   try {
@@ -129,6 +121,14 @@ async function logFallback(params: {
       userId: params.userId ?? null,
       rota: params.rota,
       contextoInferido: params.contextoInferido,
+      serviceOrigem: params.serviceOrigem,
+      chamada: params.chamada,
+      motivoFallback: params.motivoFallback,
+      namespaceId: params.namespaceId ?? null,
+      agentId: params.agentId ?? null,
+      modeloBase: params.modeloBase,
+      modeloResolvido: params.modeloResolvido,
+      adapterEncontrado: params.adapterEncontrado,
       mensagemPreview: params.mensagemPreview ?? null,
     });
   } catch (err) {
@@ -182,6 +182,7 @@ app.post(
     const { messages, config, context, extraBody, requestOptions } = parsed.data;
     const temperature = config?.temperature ?? 0.7;
     const maxTokens = config?.maxTokens ?? 2048;
+    const isTradingRoute = context.route.startsWith('/trading');
     let namespaceId = context.namespaceId ?? null;
     let agentId = context.agentId ?? null;
     let contextoInferido = 'default';
@@ -219,24 +220,77 @@ app.post(
       namespaceId = resolved.namespaceId;
       agentId = resolved.agentId;
       contextoInferido = resolved.context;
-      if (!namespaceId) {
-        metrics.llm.fallbacksTotal.inc();
-        await logFallback({
-          tenantId: context.tenantId,
-          userId: context.userId,
-          rota: context.route,
-          contextoInferido,
-          mensagemPreview: messages[messages.length - 1]?.content?.slice(0, 200),
-        });
-      }
     }
 
     const baseModel = config?.model ?? DEFAULT_MODEL;
+    if (isTradingRoute && (!namespaceId || !agentId)) {
+      metrics.llm.fallbacksTotal.inc();
+      await logFallback({
+        tenantId: context.tenantId,
+        userId: context.userId,
+        rota: context.route,
+        contextoInferido,
+        serviceOrigem: 'llm-gateway-service',
+        chamada: '/api/llm/complete',
+        motivoFallback: 'namespace_unmapped',
+        namespaceId,
+        agentId,
+        modeloBase: baseModel,
+        modeloResolvido: baseModel,
+        adapterEncontrado: false,
+        mensagemPreview: messages[messages.length - 1]?.content?.slice(0, 200),
+      });
+      res.status(412).json({ error: 'TRADING_SCOPE_REQUIRED: namespace e agente de Trading ativos são obrigatórios.' });
+      return;
+    }
+
     const model = await resolveModelWithAdapter(baseModel, {
       tenantId: context.tenantId,
       namespaceId: namespaceId ?? undefined,
       agentId: agentId ?? undefined,
     });
+    if (isTradingRoute && model === baseModel) {
+      metrics.llm.fallbacksTotal.inc();
+      await logFallback({
+        tenantId: context.tenantId,
+        userId: context.userId,
+        rota: context.route,
+        contextoInferido,
+        serviceOrigem: 'llm-gateway-service',
+        chamada: '/api/llm/complete',
+        motivoFallback: 'adapter_missing',
+        namespaceId,
+        agentId,
+        modeloBase: baseModel,
+        modeloResolvido: model,
+        adapterEncontrado: false,
+        mensagemPreview: messages[messages.length - 1]?.content?.slice(0, 200),
+      });
+      res.status(412).json({ error: 'TRADING_SCOPE_REQUIRED: adapter LoRA ativo obrigatório para Trading.' });
+      return;
+    }
+    const adapterEncontrado = model !== baseModel;
+    const motivoFallback = !adapterEncontrado
+      ? (!namespaceId && !agentId ? 'namespace_unmapped' : 'adapter_missing')
+      : null;
+    if (motivoFallback) {
+      metrics.llm.fallbacksTotal.inc();
+      await logFallback({
+        tenantId: context.tenantId,
+        userId: context.userId,
+        rota: context.route,
+        contextoInferido,
+        serviceOrigem: 'llm-gateway-service',
+        chamada: '/api/llm/complete',
+        motivoFallback,
+        namespaceId,
+        agentId,
+        modeloBase: baseModel,
+        modeloResolvido: model,
+        adapterEncontrado,
+        mensagemPreview: messages[messages.length - 1]?.content?.slice(0, 200),
+      });
+    }
 
     const baseBody = {
       model,
@@ -282,6 +336,7 @@ app.post(
     const { messages, config, context } = parsed.data;
     const temperature = config?.temperature ?? 0.7;
     const maxTokens = config?.maxTokens ?? 2048;
+    const isTradingRoute = context.route.startsWith('/trading');
     let namespaceId = context.namespaceId ?? null;
     let agentId = context.agentId ?? null;
     let contextoInferido = 'default';
@@ -319,24 +374,77 @@ app.post(
       namespaceId = resolved.namespaceId;
       agentId = resolved.agentId;
       contextoInferido = resolved.context;
-      if (!namespaceId) {
-        metrics.llm.fallbacksTotal.inc();
-        await logFallback({
-          tenantId: context.tenantId,
-          userId: context.userId,
-          rota: context.route,
-          contextoInferido,
-          mensagemPreview: messages[messages.length - 1]?.content?.slice(0, 200),
-        });
-      }
     }
 
     const baseModel = config?.model ?? DEFAULT_MODEL;
+    if (isTradingRoute && (!namespaceId || !agentId)) {
+      metrics.llm.fallbacksTotal.inc();
+      await logFallback({
+        tenantId: context.tenantId,
+        userId: context.userId,
+        rota: context.route,
+        contextoInferido,
+        serviceOrigem: 'llm-gateway-service',
+        chamada: '/api/llm/stream',
+        motivoFallback: 'namespace_unmapped',
+        namespaceId,
+        agentId,
+        modeloBase: baseModel,
+        modeloResolvido: baseModel,
+        adapterEncontrado: false,
+        mensagemPreview: messages[messages.length - 1]?.content?.slice(0, 200),
+      });
+      res.status(412).json({ error: 'TRADING_SCOPE_REQUIRED: namespace e agente de Trading ativos são obrigatórios.' });
+      return;
+    }
+
     const model = await resolveModelWithAdapter(baseModel, {
       tenantId: context.tenantId,
       namespaceId: namespaceId ?? undefined,
       agentId: agentId ?? undefined,
     });
+    if (isTradingRoute && model === baseModel) {
+      metrics.llm.fallbacksTotal.inc();
+      await logFallback({
+        tenantId: context.tenantId,
+        userId: context.userId,
+        rota: context.route,
+        contextoInferido,
+        serviceOrigem: 'llm-gateway-service',
+        chamada: '/api/llm/stream',
+        motivoFallback: 'adapter_missing',
+        namespaceId,
+        agentId,
+        modeloBase: baseModel,
+        modeloResolvido: model,
+        adapterEncontrado: false,
+        mensagemPreview: messages[messages.length - 1]?.content?.slice(0, 200),
+      });
+      res.status(412).json({ error: 'TRADING_SCOPE_REQUIRED: adapter LoRA ativo obrigatório para Trading.' });
+      return;
+    }
+    const adapterEncontrado = model !== baseModel;
+    const motivoFallback = !adapterEncontrado
+      ? (!namespaceId && !agentId ? 'namespace_unmapped' : 'adapter_missing')
+      : null;
+    if (motivoFallback) {
+      metrics.llm.fallbacksTotal.inc();
+      await logFallback({
+        tenantId: context.tenantId,
+        userId: context.userId,
+        rota: context.route,
+        contextoInferido,
+        serviceOrigem: 'llm-gateway-service',
+        chamada: '/api/llm/stream',
+        motivoFallback,
+        namespaceId,
+        agentId,
+        modeloBase: baseModel,
+        modeloResolvido: model,
+        adapterEncontrado,
+        mensagemPreview: messages[messages.length - 1]?.content?.slice(0, 200),
+      });
+    }
 
     const gpuResponse = await requestGpuStream({
       serviceType: GpuServiceType.LLM,

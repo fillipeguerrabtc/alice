@@ -222,6 +222,14 @@ jobs:
           # Funções compartilhadas: should_build, image_exists, retag_image, decide_build_or_retag
           # CHANGED_FILES calculado automaticamente pelo script (CLAUDE.md Regra 2)
           source scripts/release-functions.sh
+
+          # Se não há arquivos alterados entre tags, estamos em retag do mesmo commit.
+          # Neste cenário, permitimos fallback para uma tag anterior existente no registry.
+          NO_CODE_CHANGES=0
+          if [ -z "${CHANGED_FILES//[[:space:]]/}" ]; then
+            NO_CODE_CHANGES=1
+            echo "ℹ️ Nenhuma mudança de código detectada entre tags (modo retag do mesmo commit)"
+          fi
           
           # Affected build com fail-safe enterprise:
           # - Se houver qualquer incerteza de impacto, faz rebuild (nunca retag).
@@ -343,6 +351,7 @@ jobs:
             echo "📦 Processing: $IMAGE"
             echo "   Dockerfile: $DOCKERFILE"
             echo "   Context: $CONTEXT"
+            RETAG_SOURCE_TAG="${PREVIOUS_TAG:-}"
             
             # Build condicional por mudanças com estratégia affected + fail-safe:
             # 1) Infra images: por diretório.
@@ -434,12 +443,35 @@ jobs:
                 fi
 
                 if [ "$SHOULD_BUILD" -eq 0 ]; then
-                  from_img="${{ env.IMAGE_PREFIX }}-${IMAGE}:${PREVIOUS_TAG}"
+                  from_img="${{ env.IMAGE_PREFIX }}-${IMAGE}:${RETAG_SOURCE_TAG}"
                   if image_exists "$from_img"; then
                     NEEDS_BUILD=0
                   else
-                    NEEDS_BUILD=1
-                    echo "⚠️ $IMAGE: imagem anterior não encontrada para retag (${from_img}), forçando build"
+                    # Fallback seguro: só buscar tag mais antiga se NÃO houver mudança de código.
+                    if [ "$NO_CODE_CHANGES" -eq 1 ]; then
+                      FALLBACK_TAG=""
+                      while IFS= read -r candidate_tag; do
+                        [ -z "$candidate_tag" ] && continue
+                        [ "$candidate_tag" = "$VERSION" ] && continue
+                        candidate_img="${{ env.IMAGE_PREFIX }}-${IMAGE}:${candidate_tag}"
+                        if image_exists "$candidate_img"; then
+                          FALLBACK_TAG="$candidate_tag"
+                          break
+                        fi
+                      done < <(git tag --sort=-v:refname)
+
+                      if [ -n "$FALLBACK_TAG" ]; then
+                        RETAG_SOURCE_TAG="$FALLBACK_TAG"
+                        NEEDS_BUILD=0
+                        echo "ℹ️ $IMAGE: tag anterior sem imagem (${from_img}); usando fallback seguro ${FALLBACK_TAG}"
+                      else
+                        NEEDS_BUILD=1
+                        echo "⚠️ $IMAGE: nenhuma tag anterior com imagem encontrada; forçando build"
+                      fi
+                    else
+                      NEEDS_BUILD=1
+                      echo "⚠️ $IMAGE: imagem anterior não encontrada para retag (${from_img}), forçando build"
+                    fi
                   fi
                 else
                   NEEDS_BUILD=1
@@ -448,7 +480,7 @@ jobs:
             fi
 
             if [ "$NEEDS_BUILD" -eq 0 ]; then
-              retag_image "$IMAGE" "$PREVIOUS_TAG" "$VERSION"
+              retag_image "$IMAGE" "$RETAG_SOURCE_TAG" "$VERSION"
               echo "✅ $IMAGE (retag)"
             else
               echo "Building $IMAGE..."

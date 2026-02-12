@@ -28,7 +28,10 @@
 - **Venda por Ativo (Real + Demo)**: ação direta “Vender” a partir da lista de ativos para pré-preencher ticket de ordem sem retrabalho operacional.
 - **Ecossistema LLM completo**: LoRA adapters globais (QLoRA) + RAG contextual + Feedback Loop automático para evolução contínua.
 - **Segregação enterprise de Training/LoRA por escopo**: inferência automática de `namespace/agent/domain` em todas as fontes, quarentena automática por baixa confiança e trilha de auditoria de overrides.
+- **Pipeline universal de Training (sem rota Trading separada)**: endpoint especializado `/api/training/jobs/trading` removido; criação de jobs centralizada em `/api/training/jobs` e on-demand/scheduler unificados por namespace.
 - **Binding obrigatório de adapter por contexto**: resolução contextual `agent -> namespace -> base` com política estrita (`LORA_STRICT_BINDING`) em fluxos LLM de integrações e chat.
+- **Governança de fallback expandida**: `llm_fallback_logs` enriquecida (serviço, chamada, motivo, namespace/agent, modelo base/resolvido, adapter encontrado), novos endpoints de eventos e clusters semânticos para ação em Namespace.
+- **Trading fail-closed obrigatório**: geração de sinais/análises exige `namespace=trading` ativo, agente ativo, dataset aprovado e adapter LoRA ativo; sem fallback para modelo geral em operações de Trading.
 - **Training governado por escopo**: aprovação com override controlado (motivo obrigatório), resolução manual de quarentena e seleção inteligente de exemplos por perfil semântico.
 - **Observabilidade de governança de escopo**: métricas de quarentena, overrides e resolução manual publicadas no training-service para monitoramento contínuo.
 - **Observabilidade LoRA no chat**: métricas `alice_chat_lora_*` integradas em dashboard LLM e alertas de erro/cache para detectar falhas de binding por escopo.

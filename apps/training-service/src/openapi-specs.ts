@@ -10,40 +10,6 @@ export const trainingServicePaths = {
     get: { summary: 'Listar jobs', tags: ['Training Jobs'], parameters: [{ name: 'status', in: 'query', schema: { type: 'string', enum: ['pending', 'running', 'completed', 'failed', 'cancelled'] } }, { name: 'page', in: 'query', schema: { type: 'integer' } }, { name: 'limit', in: 'query', schema: { type: 'integer' } }], responses: { 200: { description: 'Lista', content: { 'application/json': { schema: { type: 'object', properties: { jobs: { type: 'array', items: { $ref: '#/components/schemas/TrainingJob' } } } } } } } } },
     post: { summary: 'Criar job', tags: ['Training Jobs'], requestBody: { content: { 'application/json': { schema: { type: 'object', required: ['datasetId', 'type'], properties: { datasetId: { type: 'string' }, type: { type: 'string', enum: ['lora', 'full'], default: 'lora' }, hyperparameters: { type: 'object', properties: { learningRate: { type: 'number' }, epochs: { type: 'integer' }, batchSize: { type: 'integer' } } } } } } } }, responses: { 201: { description: 'Criado' }, 400: { $ref: '#/components/responses/ValidationError' } } },
   },
-  '/api/training/jobs/trading': {
-    post: {
-      summary: 'Criar job de Trading',
-      tags: ['Training Jobs'],
-      requestBody: {
-        content: {
-          'application/json': {
-            schema: {
-              type: 'object',
-              required: ['namespaceId'],
-              properties: {
-                tenantId: { type: 'string', format: 'uuid' },
-                namespaceId: { type: 'string', format: 'uuid' },
-                name: { type: 'string' },
-                baseModel: { type: 'string' },
-                hyperparameters: {
-                  type: 'object',
-                  properties: {
-                    learningRate: { type: 'number' },
-                    epochs: { type: 'integer' },
-                    batchSize: { type: 'integer' },
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-      responses: {
-        200: { description: 'Criado' },
-        400: { $ref: '#/components/responses/ValidationError' },
-      },
-    },
-  },
   '/api/training/jobs/{id}': {
     get: { summary: 'Buscar job', tags: ['Training Jobs'], parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }], responses: { 200: { description: 'Job' }, 404: { $ref: '#/components/responses/NotFound' } } },
     delete: { summary: 'Cancelar job', tags: ['Training Jobs'], parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }], responses: { 204: { description: 'Cancelado' } } },

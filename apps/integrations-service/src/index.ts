@@ -494,6 +494,8 @@ async function resolveKucoinNetworkFeesByAsset(): Promise<Record<string, number>
 // Ref: Regra 13 - PT-BR primário, EN secundário
 function mapTradingErrorToUserMessage(error: Error): { message: string; code: string } {
   const msg = error.message.toLowerCase();
+  if (msg.includes('trading_scope_required') || msg.includes('lora') || msg.includes('namespace trading obrigatório'))
+    return { message: 'Governança Trading: namespace/agente/LoRA ativo obrigatório. Revise a configuração de Training.', code: 'TRADING_SCOPE_REQUIRED' };
   if (msg.includes('timeout') || msg.includes('gpu') || msg.includes('temporariamente indisponível'))
     return { message: 'Serviço de IA temporariamente indisponível. Tente novamente em alguns segundos.', code: 'GPU_TIMEOUT' };
   if (msg.includes('símbolo inválido') || msg.includes('invalid symbol') || msg.includes('formato de símbolo'))
@@ -1303,7 +1305,7 @@ async function resolveTradingNamespaceId(tenantId: string): Promise<string | nul
   return ns?.id ?? null;
 }
 
-async function fetchTradingDatasetSummary(tenantId: string): Promise<{
+async function fetchTradingDatasetSummary(tenantId: string, namespaceId: string): Promise<{
   totalApproved: number;
   samples: Array<{ prompt: string; response: string; actionType: string; createdAt: string }>;
 }> {
@@ -1313,6 +1315,7 @@ async function fetchTradingDatasetSummary(tenantId: string): Promise<{
     .from(schema.trainingData)
     .where(and(
       eq(schema.trainingData.tenantId, tenantId),
+      eq(schema.trainingData.namespaceId, namespaceId),
       eq(schema.trainingData.status, 'approved'),
       inArray(schema.trainingData.sourceType, [...TRADING_SOURCE_TYPES])
     ));
@@ -1320,6 +1323,7 @@ async function fetchTradingDatasetSummary(tenantId: string): Promise<{
   const samples = await db.query.trainingData.findMany({
     where: and(
       eq(schema.trainingData.tenantId, tenantId),
+      eq(schema.trainingData.namespaceId, namespaceId),
       eq(schema.trainingData.status, 'approved'),
       inArray(schema.trainingData.sourceType, [...TRADING_SOURCE_TYPES])
     ),
@@ -11019,6 +11023,7 @@ async function resolveTradingAgentContext(params: {
     namespace = tradingNamespace;
     resolvedAgent = await db.query.agents.findFirst({
       where: and(
+        eq(schema.agents.tenantId, params.tenantId),
         eq(schema.agents.namespaceId, tradingNamespace.id),
         eq(schema.agents.status, 'active')
       ),
@@ -11026,12 +11031,19 @@ async function resolveTradingAgentContext(params: {
     });
   } else if (resolvedAgent.namespaceId) {
     namespace = (await db.query.namespaces.findFirst({
-      where: eq(schema.namespaces.id, resolvedAgent.namespaceId),
+      where: and(
+        eq(schema.namespaces.id, resolvedAgent.namespaceId),
+        eq(schema.namespaces.tenantId, params.tenantId)
+      ),
     })) ?? null;
   }
 
   if (!resolvedAgent) {
-    throw new Error('Agente Trading não encontrado ou inativo.');
+    throw new TradingConfigError('TRADING_SCOPE_REQUIRED: Agente Trading não encontrado ou inativo.');
+  }
+
+  if (!namespace || namespace.slug !== 'trading' || !namespace.ativo) {
+    throw new TradingConfigError('TRADING_SCOPE_REQUIRED: Namespace Trading obrigatório e ativo para operações de Trading.');
   }
 
   const modelResolution = resolveAgentLlmModel(resolvedAgent.modeloBase || 'Qwen2.5-7B-Instruct-AWQ');
@@ -12187,6 +12199,10 @@ async function generateTradingSignalFromLlm(params: {
   const timeframes = params.timeframes?.length ? params.timeframes : profile.timeframes;
   const indicators = params.indicators?.length ? params.indicators : profile.indicators;
   const dataSources = params.dataSources ?? profile.dataSources;
+  const effectiveDataSources: TradingProfileDataSources = {
+    ...dataSources,
+    trainingData: true,
+  };
   const consensusConfig = params.consensus ?? profile.consensus;
   const techniques = params.techniques?.length ? params.techniques : profile.techniques;
   const ensembleConfig = params.ensembleConfig ?? profile.ensembleConfig;
@@ -12303,10 +12319,10 @@ async function generateTradingSignalFromLlm(params: {
     namespace: agentContext.namespace,
     ragContext: ragContext?.context,
   });
-  const orderBookSnapshot = dataSources.orderBook
+  const orderBookSnapshot = effectiveDataSources.orderBook
     ? await getOrderBookSnapshot({ tenantId: params.tenantId, userId: params.userId }, params.symbol, params.marketType, params.marginMode)
     : null;
-  const newsSummary = dataSources.news
+  const newsSummary = effectiveDataSources.news
     ? await fetchNewsSummary(
       { tenantId: params.tenantId, userId: params.userId },
       params.symbol,
@@ -12314,9 +12330,14 @@ async function generateTradingSignalFromLlm(params: {
       profile.newsConfig
     )
     : null;
-  const trainingSummary = dataSources.trainingData
-    ? await fetchTradingDatasetSummary(params.tenantId)
-    : null;
+  const tradingNamespaceId = agentContext.namespace?.id ?? agentContext.agent.namespaceId;
+  if (!tradingNamespaceId) {
+    throw new TradingConfigError('TRADING_SCOPE_REQUIRED: Namespace Trading não resolvido para busca de dataset.');
+  }
+  const trainingSummary = await fetchTradingDatasetSummary(params.tenantId, tradingNamespaceId);
+  if (trainingSummary.totalApproved <= 0) {
+    throw new TradingConfigError('TRADING_SCOPE_REQUIRED: Dataset aprovado de Trading é obrigatório para gerar sinais.');
+  }
   const riskConfig = await kucoinService.getRiskConfig({ tenantId: params.tenantId, userId: params.userId });
   const tradePlan = buildTradePlanFromAnalysis({
     analysis: primaryAnalysis.analysis,
@@ -12333,7 +12354,7 @@ async function generateTradingSignalFromLlm(params: {
     matrix: analysisMatrix,
     consensus,
     indicators,
-    dataSources,
+    dataSources: effectiveDataSources,
     orderBook: orderBookSnapshot,
     news,
     trainingData: trainingSummary,
@@ -12434,6 +12455,9 @@ async function generateTradingSignalFromLlm(params: {
     namespaceId: agentContext.agent.namespaceId ?? agentContext.namespace?.id ?? undefined,
     agentId: agentContext.agent.id ?? undefined,
   });
+  if (resolvedModel === agentContext.llmConfig.model) {
+    throw new TradingConfigError('TRADING_SCOPE_REQUIRED: Adapter LoRA ativo obrigatório para Trading.');
+  }
 
   for (let attempt = 1; attempt <= MAX_GPU_RETRIES; attempt++) {
     try {
@@ -12455,7 +12479,7 @@ async function generateTradingSignalFromLlm(params: {
         gpuResponse = await callGatewayComplete({
           messages,
           config: {
-            model: agentContext.llmConfig.model,
+            model: resolvedModel,
             temperature: params.modelConfig?.temperature ?? agentContext.llmConfig.temperature ?? 0.7,
             maxTokens: tokenBudget.maxCompletionTokens,
           },
@@ -12591,7 +12615,7 @@ async function generateTradingSignalFromLlm(params: {
         createdByUserId: params.userId,
         timeframes,
         enabledIndicators: indicators,
-        dataSources,
+        dataSources: effectiveDataSources,
         news: newsSummary ?? undefined,
         consensus: {
           rule: consensusConfig.rule ?? 'majority',
@@ -16417,6 +16441,10 @@ app.get('/api/integrations/trading/analysis/:symbol', requirePermission('integra
           ? true
           : profile.dataSources.trainingData,
     };
+    const effectiveDataSources: TradingProfileDataSources = {
+      ...dataSources,
+      trainingData: true,
+    };
 
     if (marketType === 'spot' && !kucoinSpotClient.isSpotConfigured()) {
       respondKucoinNotConfigured(res);
@@ -16524,10 +16552,10 @@ app.get('/api/integrations/trading/analysis/:symbol', requirePermission('integra
       }
     }
     const ensembleResult = buildEnsembleResult(techniqueScores, ensembleConfig);
-    const orderBook = dataSources.orderBook
+    const orderBook = effectiveDataSources.orderBook
       ? await getOrderBookSnapshot({ tenantId, userId }, symbol, marketType, marginMode)
       : null;
-    const news = dataSources.news
+    const news = effectiveDataSources.news
       ? await fetchNewsSummary(
         { tenantId, userId },
         symbol,
@@ -16535,9 +16563,14 @@ app.get('/api/integrations/trading/analysis/:symbol', requirePermission('integra
         profile.newsConfig
       )
       : null;
-    const trainingData = dataSources.trainingData
-      ? await fetchTradingDatasetSummary(tenantId)
-      : null;
+    const tradingNamespaceId = await resolveTradingNamespaceId(tenantId);
+    if (!tradingNamespaceId) {
+      throw new TradingConfigError('TRADING_SCOPE_REQUIRED: Namespace Trading obrigatório e ativo para análises.');
+    }
+    const trainingData = await fetchTradingDatasetSummary(tenantId, tradingNamespaceId);
+    if (trainingData.totalApproved <= 0) {
+      throw new TradingConfigError('TRADING_SCOPE_REQUIRED: Dataset aprovado de Trading é obrigatório para análises.');
+    }
     const riskConfig = await kucoinService.getRiskConfig({ tenantId, userId });
     const tradePlan = buildTradePlanFromAnalysis({
       analysis: primaryResult.analysis,
@@ -16576,7 +16609,7 @@ app.get('/api/integrations/trading/analysis/:symbol', requirePermission('integra
         kind: profileRow.kind,
         timeframes,
         indicators,
-        dataSources,
+        dataSources: effectiveDataSources,
         newsConfig: profile.newsConfig,
         techniques,
         ensembleConfig,

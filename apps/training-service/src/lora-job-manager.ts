@@ -296,15 +296,14 @@ function buildChatMlText(messages: Array<{ role: string; content: string }>): st
 }
 
 /**
- * Prepara dataset para runs agendados/on-demand: training_data (chat aprovado) + opcional trading_dataset.
+ * Prepara dataset para runs agendados/on-demand: training_data (chat aprovado) + dados de trading do namespace.
  * Retorna mesmo formato PreparedDataset para uso no mesmo pipeline de processLoraJob.
- * Quando namespaceId é null (tenant-wide), apenas training_data é usado; trading exige namespace.
+ * Quando namespaceId é null (tenant-wide), apenas training_data é usado.
  */
 export async function prepareDatasetFromChatAndTrading(
   tenantId: string,
   namespaceId?: string | null,
   options?: {
-    includeTradingDataset?: boolean;
     /** Quando true, inclui contagem de imagens aprovadas (generated_images) em stats.imagesUsed. */
     includeImages?: boolean;
     /** Quando true, retorna apenas stats e ids (para validação/criação de job sem carregar linhas). */
@@ -370,7 +369,7 @@ export async function prepareDatasetFromChatAndTrading(
     line: formatChatToJsonl(r),
   }));
 
-  if (options?.includeTradingDataset && namespaceId) {
+  if (namespaceId) {
     const tradingPrepared = await prepareDataset(tenantId, namespaceId, undefined, undefined);
     datasetIds = tradingPrepared.datasetIds;
     for (const line of tradingPrepared.trainingData) {
@@ -521,7 +520,6 @@ export async function createScheduledRunLoraJob(
   tenantId: string,
   options?: {
     namespaceId?: string | null;
-    includeTradingDataset?: boolean;
     includeImages?: boolean;
   }
 ): Promise<LoraJob> {
@@ -532,7 +530,6 @@ export async function createScheduledRunLoraJob(
     tenantId,
     options?.namespaceId ?? undefined,
     {
-      includeTradingDataset: options?.includeTradingDataset ?? !!options?.namespaceId,
       includeImages,
       countOnly: true,
     }
@@ -542,7 +539,7 @@ export async function createScheduledRunLoraJob(
     ? `alice-qlora-ns-${options.namespaceId.slice(0, 8)}-v${Date.now().toString(36)}`
     : `alice-qlora-v${Date.now().toString(36)}`;
 
-  const includeTrading = options?.includeTradingDataset ?? !!options?.namespaceId;
+  const includeTrading = !!options?.namespaceId;
   const jobData: InsertLoraJob = {
     tenantId,
     scopeType: 'namespace',
@@ -756,10 +753,9 @@ export async function processLoraJob(jobId: string): Promise<void> {
     throw new Error('Job LoRA explícito exige scopeNamespaceId');
   }
 
-  const includeTradingDataset = job.includeTradingDataset ?? !!namespaceId;
   const includeImages = job.includeImages ?? false;
   const prepared = isScheduledRun
-    ? await prepareDatasetFromChatAndTrading(tenantId, namespaceId ?? undefined, { includeTradingDataset, includeImages })
+    ? await prepareDatasetFromChatAndTrading(tenantId, namespaceId ?? undefined, { includeImages })
     : await prepareDataset(tenantId, namespaceId!, job.scopeAgentId ?? undefined, undefined);
 
   const jobDir = path.join(TRAINING_STORAGE_DIR, 'trading-lora', tenantId, jobId);
