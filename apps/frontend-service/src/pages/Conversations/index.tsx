@@ -249,17 +249,27 @@ export default function ConversationsPage() {
 
   const sendSelectedConversations = useCallback(() => {
     if (selectedConversations.size === 0) return;
+    setTrainingNamespaceId('');
     setTrainingDialogMode('conversations');
   }, [selectedConversations]);
 
   const sendSelectedMessages = useCallback(() => {
     if (selectedMessagesCount === 0) return;
+    setTrainingNamespaceId('');
     setTrainingDialogMode('messages');
   }, [selectedMessagesCount]);
 
   const confirmTrainingSend = useCallback(() => {
     if (!trainingDialogMode) return;
-    const namespaceId = trainingNamespaceId || undefined;
+    if (!trainingNamespaceId) {
+      toast({
+        title: 'Namespace obrigatório',
+        description: 'Selecione um namespace para enviar os dados ao treinamento.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    const namespaceId = trainingNamespaceId;
     if (trainingDialogMode === 'conversations') {
       const items = Array.from(selectedConversations).map((id) => ({ conversationId: id }));
       trainingMutation.mutate({ namespaceId, items });
@@ -274,7 +284,7 @@ export default function ConversationsPage() {
     if (items.length > 0) {
       trainingMutation.mutate({ namespaceId, items });
     }
-  }, [selectedConversations, selectedMessages, trainingDialogMode, trainingNamespaceId, trainingMutation]);
+  }, [selectedConversations, selectedMessages, toast, trainingDialogMode, trainingNamespaceId, trainingMutation]);
 
   return (
     <div className="space-y-4">
@@ -461,7 +471,10 @@ export default function ConversationsPage() {
         </Card>
       </div>
 
-      <Dialog open={Boolean(trainingDialogMode)} onOpenChange={() => setTrainingDialogMode(null)}>
+      <Dialog open={Boolean(trainingDialogMode)} onOpenChange={() => {
+        setTrainingDialogMode(null);
+        setTrainingNamespaceId('');
+      }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t('conversations.training.title')}</DialogTitle>
@@ -482,7 +495,6 @@ export default function ConversationsPage() {
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">{t('conversations.training.namespaceOptional')}</p>
             </div>
             <div className="rounded-md border p-2 text-xs text-muted-foreground">
               {trainingDialogMode === 'conversations'
@@ -494,7 +506,7 @@ export default function ConversationsPage() {
             <Button variant="outline" onClick={() => setTrainingDialogMode(null)}>
               {t('common.cancel')}
             </Button>
-            <Button onClick={confirmTrainingSend} disabled={trainingMutation.isPending}>
+            <Button onClick={confirmTrainingSend} disabled={trainingMutation.isPending || !trainingNamespaceId}>
               {trainingMutation.isPending ? t('conversations.training.sending') : t('conversations.training.confirm')}
             </Button>
           </DialogFooter>

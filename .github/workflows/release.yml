@@ -210,6 +210,11 @@ jobs:
           set -euo pipefail
           VERSION="${{ needs.create-release.outputs.version }}"
           PREVIOUS_TAG="${{ needs.create-release.outputs.previous_tag }}"
+          VERSION_COMMIT="$(git rev-list -n 1 "$VERSION" 2>/dev/null || true)"
+          if [ -z "$VERSION_COMMIT" ]; then
+            echo "❌ ERRO: não foi possível resolver o commit da tag ${VERSION}"
+            exit 1
+          fi
 
           # Coletar imagens que foram realmente buildadas (não retagged)
           BUILT_SERVICES=""
@@ -453,6 +458,9 @@ jobs:
                       while IFS= read -r candidate_tag; do
                         [ -z "$candidate_tag" ] && continue
                         [ "$candidate_tag" = "$VERSION" ] && continue
+                        candidate_commit="$(git rev-list -n 1 "$candidate_tag" 2>/dev/null || true)"
+                        [ -z "$candidate_commit" ] && continue
+                        [ "$candidate_commit" != "$VERSION_COMMIT" ] && continue
                         candidate_img="${{ env.IMAGE_PREFIX }}-${IMAGE}:${candidate_tag}"
                         if image_exists "$candidate_img"; then
                           FALLBACK_TAG="$candidate_tag"
@@ -463,10 +471,10 @@ jobs:
                       if [ -n "$FALLBACK_TAG" ]; then
                         RETAG_SOURCE_TAG="$FALLBACK_TAG"
                         NEEDS_BUILD=0
-                        echo "ℹ️ $IMAGE: tag anterior sem imagem (${from_img}); usando fallback seguro ${FALLBACK_TAG}"
+                        echo "ℹ️ $IMAGE: tag anterior sem imagem (${from_img}); usando fallback seguro ${FALLBACK_TAG} (mesmo commit)"
                       else
                         NEEDS_BUILD=1
-                        echo "⚠️ $IMAGE: nenhuma tag anterior com imagem encontrada; forçando build"
+                        echo "⚠️ $IMAGE: nenhuma tag anterior do mesmo commit com imagem encontrada; forçando build"
                       fi
                     else
                       NEEDS_BUILD=1

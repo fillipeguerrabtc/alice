@@ -88,7 +88,40 @@ export function normalizeNumericInput(value: string): string {
   const sanitized = trimmed.replace(/\s+/g, '');
   const lastComma = sanitized.lastIndexOf(',');
   const lastDot = sanitized.lastIndexOf('.');
-  const decimalPos = Math.max(lastComma, lastDot);
+  const commaCount = (sanitized.match(/,/g) ?? []).length;
+  const dotCount = (sanitized.match(/\./g) ?? []).length;
+
+  const hasOnlyComma = commaCount > 0 && dotCount === 0;
+  const hasOnlyDot = dotCount > 0 && commaCount === 0;
+
+  const inferDecimalPositionForSingleSeparator = (separator: ',' | '.'): number => {
+    const parts = sanitized.split(separator);
+    if (parts.length <= 2) {
+      return sanitized.lastIndexOf(separator);
+    }
+
+    const tail = parts.slice(1);
+    const allThousands = tail.every((chunk) => chunk.length === 3);
+    if (allThousands) {
+      return -1;
+    }
+
+    const middle = tail.slice(0, -1);
+    const last = tail[tail.length - 1] ?? '';
+    const middleAreThousands = middle.every((chunk) => chunk.length === 3);
+    if (middleAreThousands && last.length > 0 && last.length !== 3) {
+      return sanitized.lastIndexOf(separator);
+    }
+
+    return sanitized.lastIndexOf(separator);
+  };
+
+  let decimalPos = Math.max(lastComma, lastDot);
+  if (hasOnlyComma && commaCount > 1) {
+    decimalPos = inferDecimalPositionForSingleSeparator(',');
+  } else if (hasOnlyDot && dotCount > 1) {
+    decimalPos = inferDecimalPositionForSingleSeparator('.');
+  }
 
   if (decimalPos < 0) {
     return sanitized.replace(/[.,]/g, '');

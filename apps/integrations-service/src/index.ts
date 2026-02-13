@@ -1605,6 +1605,7 @@ async function createTradingDatasetFromSignalSource(params: {
   authContext: { tenantId: string; userId: string };
   signal: schema.TradingSignal;
   reviewNotes?: string;
+  namespaceId?: string;
 }): Promise<TradingSignalDatasetCreationResult> {
   const db = getDatabase();
 
@@ -1630,9 +1631,9 @@ async function createTradingDatasetFromSignalSource(params: {
     };
   }
 
-  const namespaceId = await resolveTradingNamespaceId(params.authContext.tenantId);
+  const namespaceId = params.namespaceId ?? await resolveTradingNamespaceId(params.authContext.tenantId);
   if (!namespaceId) {
-    throw new Error('Namespace Trading não encontrado para o tenant');
+    throw new Error('Namespace de destino não encontrado para o tenant');
   }
 
   const seed = await buildTradingDatasetSeedFromSignal({
@@ -14183,6 +14184,7 @@ app.post('/api/integrations/trading/datasets/from-signal', requirePermission('in
 
     const bodySchema = z.object({
       signalId: z.string().uuid(),
+      namespaceId: z.string().uuid(),
       reviewNotes: z.string().optional(),
     });
     const parsed = bodySchema.safeParse(req.body);
@@ -14192,6 +14194,19 @@ app.post('/api/integrations/trading/datasets/from-signal', requirePermission('in
     }
 
     const db = getDatabase();
+    const targetNamespace = await db.query.namespaces.findFirst({
+      where: and(
+        eq(schema.namespaces.id, parsed.data.namespaceId),
+        eq(schema.namespaces.tenantId, authContext.tenantId),
+        eq(schema.namespaces.ativo, true),
+      ),
+      columns: { id: true },
+    });
+    if (!targetNamespace) {
+      res.status(403).json({ error: 'Namespace de destino não pertence ao tenant ou está inativo' });
+      return;
+    }
+
     const signal = await db.query.tradingSignals.findFirst({
       where: and(
         eq(schema.tradingSignals.id, parsed.data.signalId),
@@ -14206,6 +14221,7 @@ app.post('/api/integrations/trading/datasets/from-signal', requirePermission('in
     const result = await createTradingDatasetFromSignalSource({
       authContext: { tenantId: authContext.tenantId, userId: authContext.userId },
       signal,
+      namespaceId: targetNamespace.id,
       reviewNotes: parsed.data.reviewNotes,
     });
 
@@ -20777,15 +20793,34 @@ app.get('/api/integrations/postmortem/snapshots/:positionId', requirePermission(
 // POST /api/integrations/postmortem/send-to-training - Enviar post-mortem individual para Training
 app.post('/api/integrations/postmortem/send-to-training', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
   try {
-    const { postmortemId } = req.body as { postmortemId?: string };
-    if (!postmortemId) {
-      res.status(400).json({ error: 'postmortemId é obrigatório' });
+    const bodySchema = z.object({
+      postmortemId: z.string().uuid(),
+      namespaceId: z.string().uuid(),
+    });
+    const parsed = bodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Dados inválidos', details: parsed.error.flatten() });
       return;
     }
 
     const tenantId = req.tenantId;
     if (!tenantId) { res.status(403).json({ error: 'Tenant não identificado' }); return; }
-    const datasetId = await createDatasetFromPostMortem(postmortemId, tenantId);
+
+    const db = getDatabase();
+    const targetNamespace = await db.query.namespaces.findFirst({
+      where: and(
+        eq(schema.namespaces.id, parsed.data.namespaceId),
+        eq(schema.namespaces.tenantId, tenantId),
+        eq(schema.namespaces.ativo, true)
+      ),
+      columns: { id: true },
+    });
+    if (!targetNamespace) {
+      res.status(403).json({ error: 'Namespace de destino não pertence ao tenant ou está inativo' });
+      return;
+    }
+
+    const datasetId = await createDatasetFromPostMortem(parsed.data.postmortemId, tenantId, targetNamespace.id);
     if (!datasetId) {
       res.status(422).json({
         error: 'Não foi possível criar dataset — post-mortem não encontrado, incompleto ou já processado',
@@ -20795,7 +20830,7 @@ app.post('/api/integrations/postmortem/send-to-training', requirePermission('int
 
     res.json({
       success: true,
-      data: { datasetId, postmortemId },
+      data: { datasetId, postmortemId: parsed.data.postmortemId, namespaceId: targetNamespace.id },
       message: 'Dataset criado com status pending para aprovação',
     });
   } catch (error) {
@@ -20808,29 +20843,51 @@ app.post('/api/integrations/postmortem/send-to-training', requirePermission('int
 // POST /api/integrations/postmortem/send-to-training/batch - Enviar múltiplos post-mortems para Training
 app.post('/api/integrations/postmortem/send-to-training/batch', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
   try {
-    const { postmortemIds } = req.body as { postmortemIds?: string[] };
-    if (!postmortemIds || !Array.isArray(postmortemIds) || postmortemIds.length === 0) {
-      res.status(400).json({ error: 'postmortemIds (array não vazio) é obrigatório' });
+    const bodySchema = z.object({
+      postmortemIds: z.array(z.string().uuid()).min(1),
+      namespaceId: z.string().uuid().optional(),
+    });
+    const parsed = bodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Dados inválidos', details: parsed.error.flatten() });
       return;
     }
 
-    if (postmortemIds.length > 100) {
+    if (parsed.data.postmortemIds.length > 100) {
       res.status(400).json({ error: 'Máximo de 100 post-mortems por batch' });
       return;
     }
 
     const tenantId = req.tenantId;
     if (!tenantId) { res.status(403).json({ error: 'Tenant não identificado' }); return; }
-    const results = await createDatasetsFromPostMortemsBatch(postmortemIds, tenantId);
+    let targetNamespaceId: string | undefined;
+    if (parsed.data.namespaceId) {
+      const db = getDatabase();
+      const namespace = await db.query.namespaces.findFirst({
+        where: and(
+          eq(schema.namespaces.id, parsed.data.namespaceId),
+          eq(schema.namespaces.tenantId, tenantId),
+          eq(schema.namespaces.ativo, true)
+        ),
+        columns: { id: true },
+      });
+      if (!namespace) {
+        res.status(403).json({ error: 'Namespace de destino não pertence ao tenant ou está inativo' });
+        return;
+      }
+      targetNamespaceId = namespace.id;
+    }
+
+    const results = await createDatasetsFromPostMortemsBatch(parsed.data.postmortemIds, tenantId, targetNamespaceId);
 
     const created = Object.values(results).filter(Boolean).length;
-    const failed = postmortemIds.length - created;
+    const failed = parsed.data.postmortemIds.length - created;
 
     res.json({
       success: true,
       data: {
         results,
-        summary: { total: postmortemIds.length, created, failed },
+        summary: { total: parsed.data.postmortemIds.length, created, failed },
       },
       message: `${created} datasets criados com status pending para aprovação`,
     });

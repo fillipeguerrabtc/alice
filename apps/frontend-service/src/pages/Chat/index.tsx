@@ -1818,7 +1818,10 @@ export default function Chat() {
       if (!conversationId) {
         throw new Error('Conversa não identificada');
       }
-      const payload = trainingNamespaceId ? { namespaceId: trainingNamespaceId } : {};
+      if (!trainingNamespaceId) {
+        throw new Error('Namespace obrigatório');
+      }
+      const payload = { namespaceId: trainingNamespaceId };
       const res = await apiRequest('POST', `/api/chat/conversations/${conversationId}/training/collect`, payload);
       return res.json() as Promise<{ success: boolean; messages: number }>;
     },
@@ -1840,8 +1843,11 @@ export default function Chat() {
       if (selectedMessageIds.size === 0) {
         throw new Error('Mensagens não selecionadas');
       }
+      if (!trainingNamespaceId) {
+        throw new Error('Namespace obrigatório');
+      }
       const payload = {
-        namespaceId: trainingNamespaceId || undefined,
+        namespaceId: trainingNamespaceId,
         items: [
           {
             conversationId,
@@ -1869,6 +1875,7 @@ export default function Chat() {
   });
 
   const openConversationTrainingDialog = useCallback(() => {
+    setTrainingNamespaceId('');
     setTrainingDialogMode('conversation');
     setShowTrainingDialog(true);
   }, []);
@@ -1878,6 +1885,7 @@ export default function Chat() {
       toast({ title: t('chat.selection.empty'), variant: 'destructive' });
       return;
     }
+    setTrainingNamespaceId('');
     setTrainingDialogMode('messages');
     setShowTrainingDialog(true);
   }, [selectedMessageIds, t, toast]);
@@ -2475,9 +2483,6 @@ export default function Chat() {
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground">
-                  {t('chat.training.namespaceOptional')}
-                </p>
               </div>
               {trainingDialogMode === 'conversation' && messages.length > 10 && (
                 <Alert className="border-amber-500/50 bg-amber-500/5">
@@ -2499,6 +2504,14 @@ export default function Chat() {
               </Button>
               <Button
                 onClick={() => {
+                  if (!trainingNamespaceId) {
+                    toast({
+                      title: 'Namespace obrigatório',
+                      description: 'Selecione um namespace para enviar os dados ao treinamento.',
+                      variant: 'destructive',
+                    });
+                    return;
+                  }
                   if (trainingDialogMode === 'messages') {
                     sendSelectedMessagesToTraining.mutate();
                   } else {
@@ -2509,6 +2522,7 @@ export default function Chat() {
                   trainingDialogMode === 'messages'
                     ? sendSelectedMessagesToTraining.isPending
                     : sendConversationToTraining.isPending
+                  || !trainingNamespaceId
                 }
               >
                 {(trainingDialogMode === 'messages'

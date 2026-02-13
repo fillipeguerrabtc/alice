@@ -314,6 +314,7 @@ function generateExpectedResponse(
 export async function createDatasetFromPostMortem(
   postmortemId: string,
   tenantId: string,
+  namespaceIdOverride?: string,
 ): Promise<string | null> {
   const db = getDatabase();
 
@@ -481,18 +482,32 @@ export async function createDatasetFromPostMortem(
     exitReason: 'close_position',
   };
 
-  // Resolver namespace Trading do tenant (obrigatório para training_data)
-  const tradingNamespace = await db.query.namespaces.findFirst({
-    where: and(
-      eq(schema.namespaces.tenantId, tenantId),
-      eq(schema.namespaces.slug, 'trading'),
-      eq(schema.namespaces.ativo, true)
-    ),
-    columns: { id: true },
-  });
+  // Resolver namespace de destino (override explícito ou Trading por padrão)
+  const targetNamespace = namespaceIdOverride
+    ? await db.query.namespaces.findFirst({
+        where: and(
+          eq(schema.namespaces.id, namespaceIdOverride),
+          eq(schema.namespaces.tenantId, tenantId),
+          eq(schema.namespaces.ativo, true),
+        ),
+        columns: { id: true },
+      })
+    : await db.query.namespaces.findFirst({
+        where: and(
+          eq(schema.namespaces.tenantId, tenantId),
+          eq(schema.namespaces.slug, 'trading'),
+          eq(schema.namespaces.ativo, true),
+        ),
+        columns: { id: true },
+      });
 
-  if (!tradingNamespace) {
-    logger.warn({ tenantId }, 'Namespace Trading não encontrado — dataset não criado');
+  if (!targetNamespace) {
+    logger.warn(
+      { tenantId, namespaceIdOverride: namespaceIdOverride ?? null },
+      namespaceIdOverride
+        ? 'Namespace de destino não encontrado/inativo — dataset não criado'
+        : 'Namespace Trading não encontrado — dataset não criado'
+    );
     return null;
   }
 
@@ -504,7 +519,7 @@ export async function createDatasetFromPostMortem(
 
   const [trainingDataRow] = await db.insert(schema.trainingData).values({
     tenantId,
-    namespaceId: tradingNamespace.id,
+    namespaceId: targetNamespace.id,
     source: 'trading',
     sourceType: 'trading_postmortem',
     sourceId: postmortemId,
@@ -534,7 +549,7 @@ export async function createDatasetFromPostMortem(
     {
       trainingDataId: trainingDataRow.id,
       postmortemId,
-      namespaceId: tradingNamespace.id,
+      namespaceId: targetNamespace.id,
       symbol: posData.symbol,
       qualityScore,
       isDemo: postmortem.isDemo,
@@ -552,12 +567,13 @@ export async function createDatasetFromPostMortem(
 export async function createDatasetsFromPostMortemsBatch(
   postmortemIds: string[],
   tenantId: string,
+  namespaceIdOverride?: string,
 ): Promise<Record<string, string | null>> {
   const results: Record<string, string | null> = {};
 
   for (const pmId of postmortemIds) {
     try {
-      const datasetId = await createDatasetFromPostMortem(pmId, tenantId);
+      const datasetId = await createDatasetFromPostMortem(pmId, tenantId, namespaceIdOverride);
       results[pmId] = datasetId;
     } catch (error) {
       logger.error(

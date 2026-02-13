@@ -640,6 +640,9 @@ export default function Documents() {
   const [_selectedMedia, setSelectedMedia] = useState<MediaUpload | null>(null);
   const [deleteMedia, setDeleteMedia] = useState<MediaUpload | null>(null);
   const [selectedNamespaceId, setSelectedNamespaceId] = useState<string>('');
+  const [sendTrainingDialogOpen, setSendTrainingDialogOpen] = useState(false);
+  const [selectedMediaForTraining, setSelectedMediaForTraining] = useState<MediaUpload | null>(null);
+  const [selectedTrainingNamespaceId, setSelectedTrainingNamespaceId] = useState<string>('');
 
   const { data, isLoading, error } = useQuery<DocumentsResponse>({
     queryKey: ['/api/rag/documents'],
@@ -731,12 +734,17 @@ export default function Documents() {
   });
 
   const sendToTrainingMutation = useMutation({
-    mutationFn: async (mediaUploadId: string) => {
-      const response = await apiRequest('POST', `/api/media/uploads/${mediaUploadId}/send-to-training`);
+    mutationFn: async (params: { mediaUploadId: string; namespaceId: string }) => {
+      const response = await apiRequest('POST', `/api/media/uploads/${params.mediaUploadId}/send-to-training`, {
+        namespaceId: params.namespaceId,
+      });
       return response.json() as Promise<{ success: boolean; data?: { trainingDataId?: string } }>;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/media/uploads'] });
+      setSendTrainingDialogOpen(false);
+      setSelectedMediaForTraining(null);
+      setSelectedTrainingNamespaceId('');
       toast({ title: t('documents.media.sentToTraining') });
     },
     onError: (err: Error & { response?: { json?: () => Promise<{ error?: string }> } }) => {
@@ -777,6 +785,12 @@ export default function Documents() {
     } else {
       setSelectedMedia(media);
     }
+  }, []);
+
+  const openSendToTrainingDialog = useCallback((media: MediaUpload) => {
+    setSelectedMediaForTraining(media);
+    setSelectedTrainingNamespaceId(media.namespaceId ?? '');
+    setSendTrainingDialogOpen(true);
   }, []);
 
   if (error && activeTab === 'documents') {
@@ -1128,9 +1142,9 @@ export default function Documents() {
                         namespaceName={media.namespaceId ? namespaceMap.get(media.namespaceId) : undefined}
                         onView={() => handleViewMedia(media)}
                         onDelete={() => setDeleteMedia(media)}
-                        onSendToTraining={canPromote ? () => sendToTrainingMutation.mutate(media.id) : undefined}
+                        onSendToTraining={canPromote ? () => openSendToTrainingDialog(media) : undefined}
                         canPromote={canPromote}
-                        isSending={sendToTrainingMutation.isPending && sendToTrainingMutation.variables === media.id}
+                        isSending={sendToTrainingMutation.isPending && sendToTrainingMutation.variables?.mediaUploadId === media.id}
                         t={t}
                         locale={locale}
                         timeZone={timeZone}
@@ -1215,6 +1229,74 @@ export default function Documents() {
           </DialogContent>
         </Dialog>
       )}
+
+      <Dialog
+        open={sendTrainingDialogOpen}
+        onOpenChange={(open) => {
+          setSendTrainingDialogOpen(open);
+          if (!open) {
+            setSelectedMediaForTraining(null);
+            setSelectedTrainingNamespaceId('');
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Enviar para Treinamento</DialogTitle>
+            <DialogDescription>
+              Selecione o namespace de destino para gerar o dataset dessa mídia.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2 py-2">
+            <Select value={selectedTrainingNamespaceId} onValueChange={setSelectedTrainingNamespaceId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione um namespace" />
+              </SelectTrigger>
+              <SelectContent>
+                {activeNamespaces.map((namespace) => (
+                  <SelectItem key={namespace.id} value={namespace.id}>
+                    {namespace.nome}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setSendTrainingDialogOpen(false);
+                setSelectedMediaForTraining(null);
+                setSelectedTrainingNamespaceId('');
+              }}
+            >
+              {t('documents.actions.cancel')}
+            </Button>
+            <Button
+              disabled={!selectedMediaForTraining || !selectedTrainingNamespaceId || sendToTrainingMutation.isPending}
+              onClick={() => {
+                if (!selectedMediaForTraining || !selectedTrainingNamespaceId) {
+                  toast({ title: 'Namespace obrigatório', variant: 'destructive' });
+                  return;
+                }
+                sendToTrainingMutation.mutate({
+                  mediaUploadId: selectedMediaForTraining.id,
+                  namespaceId: selectedTrainingNamespaceId,
+                });
+              }}
+            >
+              {sendToTrainingMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Enviando...
+                </>
+              ) : (
+                'Confirmar envio'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

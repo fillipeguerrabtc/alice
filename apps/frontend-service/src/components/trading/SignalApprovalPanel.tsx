@@ -147,7 +147,15 @@ interface TradingSignal {
     analysisMatrix?: Array<{ interval?: string; analysis?: Record<string, unknown> }>;
   };
   isActive: boolean;
+  sentToTrainingAt?: string | null;
   criadoEm: string;
+}
+
+interface NamespaceOption {
+  id: string;
+  nome: string;
+  slug: string;
+  ativo?: boolean;
 }
 
 interface ValidationStats {
@@ -331,6 +339,7 @@ function SignalCard({
   const [showApproveTrainingDialog, setShowApproveTrainingDialog] = useState(false);
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [reason, setReason] = useState('');
+  const isAlreadySentToTraining = Boolean(signal.sentToTrainingAt);
   const metadata = (signal.metadata ?? {}) as TradingSignal['metadata'];
   const hasMultiTimeframeContext = Boolean(
     metadata.timeframes || metadata.enabledIndicators || metadata.consensus,
@@ -680,10 +689,15 @@ function SignalCard({
                         variant="outline"
                         size="sm"
                         onClick={() => onSendToTraining(signal.id)}
-                        disabled={isSendingToTraining}
+                        disabled={isSendingToTraining || isAlreadySentToTraining}
                       >
                         {isSendingToTraining ? (
                           <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : isAlreadySentToTraining ? (
+                          <>
+                            <CheckCircle className="h-4 w-4 mr-2" />
+                            Enviado para Treinamento
+                          </>
                         ) : (
                           <>
                             <FileCheck className="h-4 w-4 mr-2" />
@@ -1114,6 +1128,18 @@ export function SignalApprovalPanel({
   const historyLoadingRef = useRef(false);
   const [selectedHistoryIds, setSelectedHistoryIds] = useState<Set<string>>(new Set());
   const [historyDetailSignal, setHistoryDetailSignal] = useState<TradingSignal | null>(null);
+  const [sendTrainingDialogOpen, setSendTrainingDialogOpen] = useState(false);
+  const [selectedSignalForTraining, setSelectedSignalForTraining] = useState<string | null>(null);
+  const [selectedNamespaceForTraining, setSelectedNamespaceForTraining] = useState<string>('');
+
+  const { data: namespacesData } = useQuery<NamespaceOption[]>({
+    queryKey: ['/api/namespaces'],
+    staleTime: 60_000,
+  });
+  const trainingNamespaces = useMemo(
+    () => (namespacesData ?? []).filter((namespace) => namespace.ativo !== false),
+    [namespacesData]
+  );
 
   // Buscar sinais pendentes
   const { data: signalsResponse, isLoading, refetch } = useQuery<{
@@ -1304,18 +1330,25 @@ export function SignalApprovalPanel({
   });
 
   const createDatasetMutation = useMutation({
-    mutationFn: async ({ signalId }: { signalId: string }) => {
-      const response = await apiRequest('POST', '/api/integrations/trading/datasets/from-signal', { signalId });
+    mutationFn: async ({ signalId, namespaceId }: { signalId: string; namespaceId: string }) => {
+      const response = await apiRequest('POST', '/api/integrations/trading/datasets/from-signal', { signalId, namespaceId });
       return response.json();
     },
     onMutate: ({ signalId }) => {
       setCreatingDatasetSignalId(signalId);
     },
     onSuccess: () => {
+      setSendTrainingDialogOpen(false);
+      setSelectedSignalForTraining(null);
+      setSelectedNamespaceForTraining('');
       toast({
         title: 'Dataset criado',
         description: 'Item enviado para aprovação na página de Treinamento.',
       });
+      queryClient.invalidateQueries({ queryKey: ['trading-signals-pending'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/signals/history'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/datasets'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/datasets/stats'] });
     },
     onError: (error: Error) => {
       toast({
@@ -1328,6 +1361,12 @@ export function SignalApprovalPanel({
       setCreatingDatasetSignalId(null);
     },
   });
+
+  const openSendToTrainingDialog = useCallback((signalId: string) => {
+    setSelectedSignalForTraining(signalId);
+    setSelectedNamespaceForTraining('');
+    setSendTrainingDialogOpen(true);
+  }, []);
 
   const fetchSignalHistory = useCallback(async (options: { page?: number; resetSelection?: boolean } = {}) => {
     if (historyLoadingRef.current) return;
@@ -1689,7 +1728,7 @@ export function SignalApprovalPanel({
                     onApprove={(signalId, reason, overrides) => approveMutation.mutate({ signalId, reason, overrides })}
                     onApproveDemo={(signalId, sig, overrides) => approveDemoMutation.mutate({ signalId, signal: sig, overrides })}
                     onReject={(signalId, reason) => rejectMutation.mutate({ signalId, reason })}
-                    onSendToTraining={(signalId) => createDatasetMutation.mutate({ signalId })}
+                    onSendToTraining={openSendToTrainingDialog}
                     isApproving={approvingSignalId === signal.id}
                     isApprovingDemo={approvingDemoSignalId === signal.id}
                     isRejecting={rejectingSignalId === signal.id}
@@ -1983,6 +2022,78 @@ export function SignalApprovalPanel({
           <DialogFooter>
             <Button variant="outline" onClick={() => setHistoryDetailSignal(null)}>
               {t('trading.signals.history.detail.close')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={sendTrainingDialogOpen}
+        onOpenChange={(open) => {
+          setSendTrainingDialogOpen(open);
+          if (!open) {
+            setSelectedSignalForTraining(null);
+            setSelectedNamespaceForTraining('');
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Enviar para Treinamento</DialogTitle>
+            <DialogDescription>
+              Selecione o namespace de destino para gerar o dataset e enviá-lo para aprovação no Training.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2 py-2">
+            <Label>Namespace</Label>
+            <Select value={selectedNamespaceForTraining} onValueChange={setSelectedNamespaceForTraining}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione um namespace" />
+              </SelectTrigger>
+              <SelectContent>
+                {trainingNamespaces.map((namespace) => (
+                  <SelectItem key={namespace.id} value={namespace.id}>
+                    {namespace.nome}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setSendTrainingDialogOpen(false);
+                setSelectedSignalForTraining(null);
+                setSelectedNamespaceForTraining('');
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button
+              disabled={!selectedSignalForTraining || !selectedNamespaceForTraining || createDatasetMutation.isPending}
+              onClick={() => {
+                if (!selectedSignalForTraining || !selectedNamespaceForTraining) {
+                  toast({
+                    title: 'Namespace obrigatório',
+                    description: 'Selecione um namespace para enviar o sinal ao treinamento.',
+                    variant: 'destructive',
+                  });
+                  return;
+                }
+                createDatasetMutation.mutate({
+                  signalId: selectedSignalForTraining,
+                  namespaceId: selectedNamespaceForTraining,
+                });
+              }}
+            >
+              {createDatasetMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Enviando...
+                </>
+              ) : (
+                'Confirmar envio'
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

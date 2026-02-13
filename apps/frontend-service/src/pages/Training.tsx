@@ -804,6 +804,7 @@ interface RagDocumentItem {
   titulo: string;
   tipo?: string | null;
   processado: boolean;
+  sentToTrainingAt?: string | null;
   criadoEm: string;
   atualizadoEm: string;
 }
@@ -816,6 +817,12 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
   const [namespaceId, setNamespaceId] = useState<string>('');
   const [promotingDocumentId, setPromotingDocumentId] = useState<string | null>(null);
   const [promotingMediaId, setPromotingMediaId] = useState<string | null>(null);
+  const [documentTrainingDialogOpen, setDocumentTrainingDialogOpen] = useState(false);
+  const [selectedDocumentForTraining, setSelectedDocumentForTraining] = useState<{ documentId: string; maxSamples?: number } | null>(null);
+  const [documentTrainingNamespaceId, setDocumentTrainingNamespaceId] = useState<string>('');
+  const [mediaTrainingDialogOpen, setMediaTrainingDialogOpen] = useState(false);
+  const [selectedMediaForTraining, setSelectedMediaForTraining] = useState<string | null>(null);
+  const [mediaTrainingNamespaceId, setMediaTrainingNamespaceId] = useState<string>('');
 
   const { data: namespacesData } = useQuery<Namespace[]>({
     queryKey: ['/api/namespaces'],
@@ -866,8 +873,11 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
   const [bookModeByDocument, setBookModeByDocument] = useState<Record<string, boolean>>({});
 
   const promoteDocumentToTraining = useMutation({
-    mutationFn: async (params: { documentId: string; maxSamples?: number }) => {
-      const body = params.maxSamples ? { maxSamples: params.maxSamples } : {};
+    mutationFn: async (params: { documentId: string; maxSamples?: number; namespaceId: string }) => {
+      const body = {
+        ...(params.maxSamples ? { maxSamples: params.maxSamples } : {}),
+        scope: { namespaceId: params.namespaceId },
+      };
       const response = await apiRequest('POST', `/api/rag/documents/${params.documentId}/send-to-training`, body);
       return response.json() as Promise<{
         success: boolean;
@@ -880,6 +890,9 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['/api/training/data'] });
+      setDocumentTrainingDialogOpen(false);
+      setSelectedDocumentForTraining(null);
+      setDocumentTrainingNamespaceId('');
       toast({
         title: t('training.multimodal.promoteDocument.success'),
         description: result?.message ?? t('training.multimodal.promoteDocument.successDesc'),
@@ -899,20 +912,25 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
   });
 
   const promoteMediaToTraining = useMutation({
-    mutationFn: async (mediaUploadId: string) => {
-      const response = await apiRequest('POST', `/api/media/uploads/${mediaUploadId}/send-to-training`);
+    mutationFn: async (params: { mediaUploadId: string; namespaceId: string }) => {
+      const response = await apiRequest('POST', `/api/media/uploads/${params.mediaUploadId}/send-to-training`, {
+        namespaceId: params.namespaceId,
+      });
       return response.json() as Promise<{
         success: boolean;
         data?: { mediaUploadId: string; trainingDataId?: string };
         message?: string;
       }>;
     },
-    onMutate: (mediaUploadId) => {
-      setPromotingMediaId(mediaUploadId);
+    onMutate: (params) => {
+      setPromotingMediaId(params.mediaUploadId);
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['/api/training/data'] });
       queryClient.invalidateQueries({ queryKey: ['/api/media/uploads'] });
+      setMediaTrainingDialogOpen(false);
+      setSelectedMediaForTraining(null);
+      setMediaTrainingNamespaceId('');
       toast({
         title: t('training.multimodal.promoteMedia.success'),
         description: result?.message ?? t('training.multimodal.promoteMedia.successDesc'),
@@ -1392,7 +1410,7 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
           ) : (
             <div className="space-y-3">
               {ragDocuments.map((doc) => {
-                const canPromote = doc.processado && Boolean(doc.namespaceId);
+                const canPromote = doc.processado && Boolean(doc.namespaceId) && !doc.sentToTrainingAt;
                 const isPromoting = promotingDocumentId === doc.id && promoteDocumentToTraining.isPending;
 
                 return (
@@ -1406,6 +1424,12 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
                         </Badge>
                         {!doc.namespaceId && (
                           <Badge variant="destructive">sem namespace</Badge>
+                        )}
+                        {doc.sentToTrainingAt && (
+                          <Badge variant="default" className="bg-green-500/10 text-green-600">
+                            <CheckCircle2 className="h-3 w-3 mr-1" />
+                            enviado para treinamento
+                          </Badge>
                         )}
                         <span>Atualizado em {formatDate(doc.atualizadoEm)}</span>
                       </div>
@@ -1428,12 +1452,15 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
                         size="sm"
                         variant="outline"
                         disabled={!canPromote || isPromoting}
-                        onClick={() =>
-                          promoteDocumentToTraining.mutate({
+                        onClick={() => {
+                          const maxSamples = (bookModeByDocument[doc.id] ?? false) ? 100 : undefined;
+                          setSelectedDocumentForTraining({
                             documentId: doc.id,
-                            maxSamples: (bookModeByDocument[doc.id] ?? false) ? 100 : undefined,
-                          })
-                        }
+                            maxSamples,
+                          });
+                          setDocumentTrainingNamespaceId(doc.namespaceId ?? '');
+                          setDocumentTrainingDialogOpen(true);
+                        }}
                       >
                       {isPromoting ? (
                         <>
@@ -1523,7 +1550,11 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
                       size="sm"
                       variant="outline"
                       disabled={!canPromote || !hasContent || isPromoting}
-                      onClick={() => promoteMediaToTraining.mutate(media.id)}
+                      onClick={() => {
+                        setSelectedMediaForTraining(media.id);
+                        setMediaTrainingNamespaceId(media.namespaceId ?? '');
+                        setMediaTrainingDialogOpen(true);
+                      }}
                     >
                       {isPromoting ? (
                         <>
@@ -1544,6 +1575,129 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
           )}
         </CardContent>
       </Card>
+
+      <Dialog
+        open={documentTrainingDialogOpen}
+        onOpenChange={(open) => {
+          setDocumentTrainingDialogOpen(open);
+          if (!open) {
+            setSelectedDocumentForTraining(null);
+            setDocumentTrainingNamespaceId('');
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Enviar documento para treinamento</DialogTitle>
+            <DialogDescription>
+              Selecione o namespace de destino para gerar o dataset do documento.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2 py-2">
+            <Select value={documentTrainingNamespaceId} onValueChange={setDocumentTrainingNamespaceId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione um namespace" />
+              </SelectTrigger>
+              <SelectContent>
+                {namespaces.map((namespace) => (
+                  <SelectItem key={namespace.id} value={namespace.id}>
+                    {namespace.nome}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDocumentTrainingDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              disabled={!selectedDocumentForTraining || !documentTrainingNamespaceId || promoteDocumentToTraining.isPending}
+              onClick={() => {
+                if (!selectedDocumentForTraining || !documentTrainingNamespaceId) {
+                  toast({ title: 'Namespace obrigatório', variant: 'destructive' });
+                  return;
+                }
+                promoteDocumentToTraining.mutate({
+                  documentId: selectedDocumentForTraining.documentId,
+                  maxSamples: selectedDocumentForTraining.maxSamples,
+                  namespaceId: documentTrainingNamespaceId,
+                });
+              }}
+            >
+              {promoteDocumentToTraining.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Enviando...
+                </>
+              ) : (
+                'Confirmar envio'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={mediaTrainingDialogOpen}
+        onOpenChange={(open) => {
+          setMediaTrainingDialogOpen(open);
+          if (!open) {
+            setSelectedMediaForTraining(null);
+            setMediaTrainingNamespaceId('');
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Enviar mídia para treinamento</DialogTitle>
+            <DialogDescription>
+              Selecione o namespace de destino para gerar o dataset da mídia.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2 py-2">
+            <Select value={mediaTrainingNamespaceId} onValueChange={setMediaTrainingNamespaceId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione um namespace" />
+              </SelectTrigger>
+              <SelectContent>
+                {namespaces.map((namespace) => (
+                  <SelectItem key={namespace.id} value={namespace.id}>
+                    {namespace.nome}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMediaTrainingDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              disabled={!selectedMediaForTraining || !mediaTrainingNamespaceId || promoteMediaToTraining.isPending}
+              onClick={() => {
+                if (!selectedMediaForTraining || !mediaTrainingNamespaceId) {
+                  toast({ title: 'Namespace obrigatório', variant: 'destructive' });
+                  return;
+                }
+                promoteMediaToTraining.mutate({
+                  mediaUploadId: selectedMediaForTraining,
+                  namespaceId: mediaTrainingNamespaceId,
+                });
+              }}
+            >
+              {promoteMediaToTraining.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Enviando...
+                </>
+              ) : (
+                'Confirmar envio'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Informações sobre processamento */}
       <Card>

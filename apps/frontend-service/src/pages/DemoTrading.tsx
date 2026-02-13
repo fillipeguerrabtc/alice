@@ -43,7 +43,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
@@ -123,6 +123,13 @@ interface PostMortem {
   lessons: { repeat: string[]; avoid: string[] } | null;
   createdAt: string;
   completedAt: string | null;
+}
+
+interface NamespaceOption {
+  id: string;
+  nome: string;
+  slug: string;
+  ativo?: boolean;
 }
 
 interface FundHistory {
@@ -207,6 +214,9 @@ export default function DemoTrading() {
   const [orderDialogOpen, setOrderDialogOpen] = useState(false);
   const [addFundsDialogOpen, setAddFundsDialogOpen] = useState(false);
   const [positionDetailOpen, setPositionDetailOpen] = useState(false);
+  const [postmortemTrainingDialogOpen, setPostmortemTrainingDialogOpen] = useState(false);
+  const [selectedPostmortemForTraining, setSelectedPostmortemForTraining] = useState<string | null>(null);
+  const [selectedTrainingNamespaceId, setSelectedTrainingNamespaceId] = useState<string>('');
   const [selectedClosedPosition, setSelectedClosedPosition] = useState<DemoPosition | null>(null);
 
   // Seleção de mercado e símbolo (mesmo padrão Trading Real)
@@ -437,6 +447,15 @@ export default function DemoTrading() {
     refetchInterval: 15_000,
   });
 
+  const { data: namespacesData } = useQuery<NamespaceOption[]>({
+    queryKey: ['/api/namespaces'],
+    staleTime: 60_000,
+  });
+  const availableNamespaces = useMemo(
+    () => (namespacesData ?? []).filter((namespace) => namespace.ativo !== false),
+    [namespacesData]
+  );
+
   /** IDs de post-mortems já enviados para treinamento (têm training_data com sourceType trading_postmortem) */
   const { data: tradingDatasetsForSentCheck } = useQuery({
     queryKey: ['/api/integrations/trading/datasets', 'postmortem-ids'],
@@ -583,11 +602,17 @@ export default function DemoTrading() {
   });
 
   const sendPostMortemToTrainingMutation = useMutation({
-    mutationFn: async (postmortemId: string) => {
-      const res = await apiRequest('POST', '/api/integrations/postmortem/send-to-training', { postmortemId });
+    mutationFn: async (params: { postmortemId: string; namespaceId: string }) => {
+      const res = await apiRequest('POST', '/api/integrations/postmortem/send-to-training', {
+        postmortemId: params.postmortemId,
+        namespaceId: params.namespaceId,
+      });
       return (await res.json()) as { success: boolean; data?: { datasetId: string } };
     },
     onSuccess: () => {
+      setPostmortemTrainingDialogOpen(false);
+      setSelectedPostmortemForTraining(null);
+      setSelectedTrainingNamespaceId('');
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/datasets'] });
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/datasets/stats'] });
       queryClient.invalidateQueries({ queryKey: ['/api/training/data'] });
@@ -1852,7 +1877,11 @@ export default function DemoTrading() {
                               postmortemIdsSentToTraining.has(pm.id) ||
                               sendPostMortemToTrainingMutation.isPending
                             }
-                            onClick={() => sendPostMortemToTrainingMutation.mutate(pm.id)}
+                            onClick={() => {
+                              setSelectedPostmortemForTraining(pm.id);
+                              setSelectedTrainingNamespaceId('');
+                              setPostmortemTrainingDialogOpen(true);
+                            }}
                           >
                             {sendPostMortemToTrainingMutation.isPending ? (
                               'Enviando...'
@@ -1972,6 +2001,82 @@ export default function DemoTrading() {
           </div>
         </TabsContent>
       </Tabs>
+
+      <Dialog
+        open={postmortemTrainingDialogOpen}
+        onOpenChange={(open) => {
+          setPostmortemTrainingDialogOpen(open);
+          if (!open) {
+            setSelectedPostmortemForTraining(null);
+            setSelectedTrainingNamespaceId('');
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[460px]">
+          <DialogHeader>
+            <DialogTitle>Enviar post-mortem para treinamento</DialogTitle>
+            <DialogDescription>
+              Selecione um namespace de destino para criar o dataset e enviá-lo para aprovação no Training.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label>Namespace</Label>
+            <Select value={selectedTrainingNamespaceId} onValueChange={setSelectedTrainingNamespaceId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione um namespace" />
+              </SelectTrigger>
+              <SelectContent>
+                {availableNamespaces.map((namespace) => (
+                  <SelectItem key={namespace.id} value={namespace.id}>
+                    {namespace.nome}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setPostmortemTrainingDialogOpen(false);
+                setSelectedPostmortemForTraining(null);
+                setSelectedTrainingNamespaceId('');
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button
+              disabled={!selectedPostmortemForTraining || !selectedTrainingNamespaceId || sendPostMortemToTrainingMutation.isPending}
+              onClick={() => {
+                if (!selectedPostmortemForTraining || !selectedTrainingNamespaceId) {
+                  toast({
+                    title: 'Namespace obrigatório',
+                    description: 'Selecione um namespace para enviar o post-mortem ao treinamento.',
+                    variant: 'destructive',
+                  });
+                  return;
+                }
+                sendPostMortemToTrainingMutation.mutate({
+                  postmortemId: selectedPostmortemForTraining,
+                  namespaceId: selectedTrainingNamespaceId,
+                });
+              }}
+            >
+              {sendPostMortemToTrainingMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Enviando...
+                </>
+              ) : (
+                <>
+                  <FileCheck className="h-4 w-4 mr-2" />
+                  Confirmar envio
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={positionDetailOpen} onOpenChange={setPositionDetailOpen}>
         <DialogContent className="sm:max-w-[680px]">

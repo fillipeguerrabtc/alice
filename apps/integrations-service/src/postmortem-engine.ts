@@ -459,6 +459,7 @@ export async function executePhase2(params: {
   evidencePackSnapshotId: string;
   userId?: string;
   namespaceId?: string | null;
+  agentId?: string | null;
 }): Promise<{
   motivators: PostMortemMotivator[];
   successFactors: string[];
@@ -500,10 +501,17 @@ export async function executePhase2(params: {
     // Resolver modelo com adapter LoRA ativo (se disponível)
     // Post-mortem usa adapter treinado para gerar motivadores mais precisos
     const baseModel = 'Qwen/Qwen2.5-7B-Instruct-AWQ';
+    if (!params.namespaceId || !params.agentId) {
+      throw new Error('trading_scope_required: namespace/agente trading obrigatório para post-mortem');
+    }
     const resolvedModel = await resolveModelWithAdapter(baseModel, {
       tenantId: position.tenantId,
       namespaceId: params.namespaceId ?? undefined,
+      agentId: params.agentId ?? undefined,
     });
+    if (resolvedModel === baseModel) {
+      throw new Error('trading_scope_required: adaptador LoRA de Trading obrigatório para post-mortem');
+    }
 
     logger.info({
       positionId: position.id,
@@ -515,12 +523,13 @@ export async function executePhase2(params: {
     const gpuResponse = isGatewayConfigured()
       ? await callGatewayComplete({
           messages: messages as Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
-          config: { model: baseModel, temperature: 0.7, maxTokens: 2048 },
+          config: { model: resolvedModel, temperature: 0.7, maxTokens: 2048 },
           context: {
             route: '/trading',
             tenantId: position.tenantId,
             userId: params.userId,
             namespaceId: params.namespaceId ?? undefined,
+            agentId: params.agentId ?? undefined,
           },
           requestOptions: { timeout: LLM_POSTMORTEM_TIMEOUT_MS, priority: 'low' },
         })
@@ -621,6 +630,32 @@ async function resolveTradingNamespaceId(tenantId: string): Promise<string | nul
 }
 
 /**
+ * Busca o agente Trading ativo mais recente de um namespace.
+ * Retorna null quando não existe agente ativo vinculado ao namespace.
+ */
+async function resolveTradingAgentId(tenantId: string, namespaceId: string): Promise<string | null> {
+  try {
+    const db = getDatabase();
+    const agent = await db.query.agents.findFirst({
+      where: and(
+        eq(schema.agents.tenantId, tenantId),
+        eq(schema.agents.namespaceId, namespaceId),
+        eq(schema.agents.status, 'active')
+      ),
+      orderBy: [desc(schema.agents.atualizadoEm)],
+      columns: { id: true },
+    });
+    return agent?.id ?? null;
+  } catch (error) {
+    logger.warn(
+      { error: error instanceof Error ? error.message : String(error), tenantId, namespaceId },
+      'Falha ao resolver agente trading para post-mortem'
+    );
+    return null;
+  }
+}
+
+/**
  * Busca o primeiro userId disponível para o tenant.
  * Usado como fallback quando userId não é fornecido nos chamadores de post-mortem.
  */
@@ -663,6 +698,13 @@ export async function executePostMortem(params: {
   // (ex: demo-trading-engine) ainda consigam usar RAG
   const userId = params.userId ?? await resolveTenantUserId(position.tenantId);
   const namespaceId = params.namespaceId !== undefined ? params.namespaceId : await resolveTradingNamespaceId(position.tenantId);
+  if (!namespaceId) {
+    throw new Error('trading_scope_required: namespace trading obrigatório para post-mortem');
+  }
+  const agentId = await resolveTradingAgentId(position.tenantId, namespaceId);
+  if (!agentId) {
+    throw new Error('trading_scope_required: agente trading ativo obrigatório para post-mortem');
+  }
 
   // Computar fingerprint para idempotência
   const fingerprint = computeFingerprint({
@@ -773,6 +815,7 @@ export async function executePostMortem(params: {
       evidencePackSnapshotId: phase1Result.evidencePackSnapshotId,
       userId: userId ?? undefined,
       namespaceId,
+      agentId,
     });
 
     // Marcar como completo

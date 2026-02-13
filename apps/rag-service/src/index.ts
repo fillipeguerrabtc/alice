@@ -4004,6 +4004,12 @@ app.post('/api/media/uploads/:id/send-to-training', requireAuth(), requirePermis
   if (!paramsResult.success) {
     return res.status(400).json({ error: 'ID inválido', details: paramsResult.error.format() });
   }
+  const bodyResult = z.object({
+    namespaceId: z.string().uuid().optional(),
+  }).safeParse(req.body ?? {});
+  if (!bodyResult.success) {
+    return res.status(400).json({ error: 'Payload inválido', details: bodyResult.error.format() });
+  }
   const { id } = paramsResult.data;
 
   const tenantId = req.tenantId;
@@ -4030,8 +4036,12 @@ app.post('/api/media/uploads/:id/send-to-training', requireAuth(), requirePermis
       });
     }
 
-    if (!upload.namespaceId) {
+    const targetNamespaceId = bodyResult.data.namespaceId ?? upload.namespaceId;
+    if (!targetNamespaceId) {
       return res.status(422).json({ error: 'Mídia sem namespace não pode ser promovida para treinamento. Associe um namespace ao upload.' });
+    }
+    if (bodyResult.data.namespaceId) {
+      await assertNamespaceOwnership(bodyResult.data.namespaceId, tenantId);
     }
 
     const content = upload.mediaType === 'image'
@@ -4061,7 +4071,7 @@ app.post('/api/media/uploads/:id/send-to-training', requireAuth(), requirePermis
     const user = getAuthUser(req);
     const result = await collectTrainingFromMediaUpload({
       tenantId,
-      namespaceId: upload.namespaceId,
+      namespaceId: targetNamespaceId,
       mediaUploadId: upload.id,
       mediaType: upload.mediaType as 'image' | 'audio',
       originalFilename: upload.originalFilename,
