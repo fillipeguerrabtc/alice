@@ -75,3 +75,53 @@ export function truncate(str: string, length: number): string {
   if (str.length <= length) return str;
   return str.slice(0, length) + '...';
 }
+
+/**
+ * Normaliza texto numérico para formato canônico com ponto decimal.
+ * Aceita entrada com vírgula ou ponto e ignora separador de milhar.
+ * Ex.: "12.345,67" -> "12345.67", "12,345.67" -> "12345.67"
+ */
+export function normalizeNumericInput(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+
+  const sanitized = trimmed.replace(/\s+/g, '');
+  const lastComma = sanitized.lastIndexOf(',');
+  const lastDot = sanitized.lastIndexOf('.');
+  const decimalPos = Math.max(lastComma, lastDot);
+
+  if (decimalPos < 0) {
+    return sanitized.replace(/[.,]/g, '');
+  }
+
+  const integerPart = sanitized.slice(0, decimalPos).replace(/[.,]/g, '');
+  const decimalPart = sanitized.slice(decimalPos + 1).replace(/[.,]/g, '');
+  if (!decimalPart) return integerPart;
+  return `${integerPart}.${decimalPart}`;
+}
+
+export function parseLocaleNumberInput(value: string): number | null {
+  const normalized = normalizeNumericInput(value);
+  if (!normalized) return null;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+export function formatTradingNumber(
+  value: number,
+  locale?: string | null,
+  minimumFractionDigits = 2,
+  maximumFractionDigits = 8
+): string {
+  return formatNumber(value, locale, {
+    minimumFractionDigits,
+    maximumFractionDigits,
+  });
+}
+
+export function roundToStep(value: number, step: number): number {
+  if (!Number.isFinite(value) || !Number.isFinite(step) || step <= 0) return value;
+  const decimals = step.toString().includes('.') ? step.toString().split('.')[1]?.length ?? 0 : 0;
+  const rounded = Math.round(value / step) * step;
+  return Number(rounded.toFixed(Math.min(decimals + 2, 12)));
+}

@@ -86,7 +86,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { useAuth } from '@/hooks/use-auth';
 import { TIMEZONE } from '@/lib/i18n';
-import { formatDateTime, formatNumber } from '@/lib/utils';
+import { formatDateTime, formatNumber, parseLocaleNumberInput } from '@/lib/utils';
 import {
   Select,
   SelectContent,
@@ -1584,7 +1584,7 @@ export default function Trading() {
 
   const wsChannels = useMemo(() => {
     if (!wsEnabled) return [];
-    const baseChannels: Array<'ticker' | 'orderbook' | 'klines' | 'trades'> = ['ticker', 'orderbook', 'trades'];
+    const baseChannels: Array<'ticker' | 'orderbook' | 'klines' | 'trades' | 'balance' | 'positions' | 'orders'> = ['ticker', 'orderbook', 'trades', 'balance', 'positions', 'orders'];
     if (wsInterval) {
       baseChannels.push('klines');
     }
@@ -1606,6 +1606,40 @@ export default function Trading() {
     orderBookDepth: wsOrderBookDepth ?? undefined,
     onError: (error) => {
       frontendLogger.warn('WebSocket KuCoin indisponível - fallback REST ativo', { error });
+    },
+    onOrderUpdate: () => {
+      void queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/orders'] });
+      void queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/account'] });
+    },
+    onPositionUpdate: () => {
+      void queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/positions'] });
+      void queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/account'] });
+    },
+    onBalance: () => {
+      void queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/account'] });
+    },
+  });
+
+  const [positionLiveQuotes, setPositionLiveQuotes] = useState<Record<string, number>>({});
+  const {
+    state: positionQuotesWsState,
+    subscribe: subscribePositionQuotes,
+    unsubscribe: unsubscribePositionQuotes,
+  } = useKucoinWebSocket({
+    symbol: '',
+    channels: [],
+    autoConnect: isFuturesMarket && wsEnabled,
+    marketType: 'futures',
+    marginMode: 'cross',
+    onTicker: (data) => {
+      const next = Number(data.price);
+      if (!Number.isFinite(next) || next <= 0) return;
+      const symbolKey = (data.symbol ?? '').toUpperCase();
+      if (!symbolKey) return;
+      setPositionLiveQuotes((prev) => {
+        if (prev[symbolKey] === next) return prev;
+        return { ...prev, [symbolKey]: next };
+      });
     },
   });
 
@@ -1750,8 +1784,11 @@ export default function Trading() {
   const createOrderMutation = useMutation({
     mutationFn: async (data: typeof orderForm) => {
       const isFuturesOrder = selectedMarketType === 'futures';
-      const sizeValue = data.size ? Number(data.size) : NaN;
-      const fundsValue = data.funds ? Number(data.funds) : NaN;
+      const sizeValue = data.size ? parseLocaleNumberInput(data.size) ?? NaN : NaN;
+      const fundsValue = data.funds ? parseLocaleNumberInput(data.funds) ?? NaN : NaN;
+      const priceValue = data.orderType === 'limit' ? parseLocaleNumberInput(data.price) : null;
+      const stopLossValue = data.stopLoss ? parseLocaleNumberInput(data.stopLoss) : null;
+      const takeProfitValue = data.takeProfit ? parseLocaleNumberInput(data.takeProfit) : null;
       const hasSize = Number.isFinite(sizeValue) && sizeValue > 0;
       const hasFunds = Number.isFinite(fundsValue) && fundsValue > 0;
       const isMarketBuy = data.orderType === 'market' && data.side === 'buy';
@@ -1773,10 +1810,14 @@ export default function Trading() {
 
       let leverageValue: number | undefined;
       if (isFuturesOrder) {
-        leverageValue = Number(data.leverage);
+        leverageValue = parseLocaleNumberInput(data.leverage) ?? NaN;
         if (!Number.isFinite(leverageValue) || leverageValue <= 0) {
           throw new Error('Alavancagem inválida.');
         }
+      }
+
+      if (data.orderType === 'limit' && (!priceValue || !Number.isFinite(priceValue) || priceValue <= 0)) {
+        throw new Error('Preço inválido. Use um número positivo.');
       }
 
       const res = await apiRequest('POST', '/api/integrations/trading/orders', {
@@ -1785,7 +1826,7 @@ export default function Trading() {
         orderType: data.orderType,
         size: hasSize ? sizeValue : undefined,
         funds: hasFunds ? fundsValue : undefined,
-        price: data.orderType === 'limit' ? parseFloat(data.price) : undefined,
+        price: data.orderType === 'limit' ? priceValue ?? undefined : undefined,
         leverage: leverageValue,
         marketType: selectedMarketType,
         marginMode: selectedMarketType === 'margin' ? selectedMarginMode : undefined,
@@ -1806,8 +1847,8 @@ export default function Trading() {
           symbol: selectedSymbol || undefined,
           side: stopSide,
           size: sizeValue,
-          stopLoss: data.stopLoss ? parseFloat(data.stopLoss) : undefined,
-          takeProfit: data.takeProfit ? parseFloat(data.takeProfit) : undefined,
+          stopLoss: stopLossValue ?? undefined,
+          takeProfit: takeProfitValue ?? undefined,
           leverage: leverageValue,
           orderType: 'market',
           stopPriceType: 'MP',
@@ -2427,9 +2468,9 @@ export default function Trading() {
 
   const handleOrderSizeChange = useCallback((sizeValue: string) => {
     setOrderForm(prev => {
-      const sizeNum = parseFloat(sizeValue);
+      const sizeNum = parseLocaleNumberInput(sizeValue);
       if (currentPrice > 0 && Number.isFinite(sizeNum) && sizeNum > 0 && isFuturesMarket) {
-        const usdtVal = sizeNum * currentPrice * contractMultiplier;
+        const usdtVal = (sizeNum as number) * currentPrice * contractMultiplier;
         return { ...prev, size: sizeValue, usdtAmount: usdtVal.toFixed(2) };
       }
       return { ...prev, size: sizeValue, usdtAmount: '' };
@@ -2438,9 +2479,9 @@ export default function Trading() {
 
   const handleOrderUsdtChange = useCallback((usdtValue: string) => {
     setOrderForm(prev => {
-      const usdtNum = parseFloat(usdtValue);
+      const usdtNum = parseLocaleNumberInput(usdtValue);
       if (currentPrice > 0 && Number.isFinite(usdtNum) && usdtNum > 0 && isFuturesMarket) {
-        const qty = usdtNum / (currentPrice * contractMultiplier);
+        const qty = (usdtNum as number) / (currentPrice * contractMultiplier);
         return { ...prev, usdtAmount: usdtValue, size: qty.toFixed(4) };
       }
       return { ...prev, usdtAmount: usdtValue, size: '' };
@@ -2591,6 +2632,7 @@ export default function Trading() {
   const futuresPositions = selectedMarketType === 'futures' && Array.isArray(positionsPayload)
     ? (positionsPayload as Position[])
     : [];
+  const openFuturesPositions = futuresPositions.filter((position) => position.isOpen);
   const marginCrossPositions = selectedMarketType === 'margin' && isMarginCrossAccount(positionsPayload)
     ? positionsPayload
     : null;
@@ -2601,7 +2643,7 @@ export default function Trading() {
     ? (positionsPayload as SpotAccount[])
     : [];
   const openPositionsCount = isFuturesMarket
-    ? futuresPositions.filter((position) => position.isOpen).length
+    ? openFuturesPositions.length
     : isSpotMarket
       ? spotPositions.filter((entry) => Number(entry.balance) > 0).length
       : isMarginMarket
@@ -2612,8 +2654,27 @@ export default function Trading() {
             : 0
         : 0;
 
-  const orderSizeValue = orderForm.size ? Number(orderForm.size) : NaN;
-  const orderFundsValue = orderForm.funds ? Number(orderForm.funds) : NaN;
+  useEffect(() => {
+    if (!isFuturesMarket || !positionQuotesWsState.connected) return;
+    const activeSymbols = new Set(
+      openFuturesPositions
+        .map((position) => position.symbol.toUpperCase())
+        .filter((symbol) => symbol.length > 0)
+    );
+
+    activeSymbols.forEach((symbol) => {
+      subscribePositionQuotes('ticker', symbol, undefined, 'futures', 'cross');
+    });
+
+    return () => {
+      activeSymbols.forEach((symbol) => {
+        unsubscribePositionQuotes('ticker', symbol, undefined, 'futures', 'cross');
+      });
+    };
+  }, [isFuturesMarket, openFuturesPositions, positionQuotesWsState.connected, subscribePositionQuotes, unsubscribePositionQuotes]);
+
+  const orderSizeValue = orderForm.size ? parseLocaleNumberInput(orderForm.size) ?? NaN : NaN;
+  const orderFundsValue = orderForm.funds ? parseLocaleNumberInput(orderForm.funds) ?? NaN : NaN;
   const hasOrderSize = Number.isFinite(orderSizeValue) && orderSizeValue > 0;
   const hasOrderFunds = Number.isFinite(orderFundsValue) && orderFundsValue > 0;
   const isOrderMarketBuy = orderForm.orderType === 'market' && orderForm.side === 'buy';
@@ -2680,8 +2741,28 @@ export default function Trading() {
 
   // Preço efetivo para cálculos no resumo (limit usa preço da ordem, market usa preço atual)
   const orderEffectivePrice = orderForm.orderType === 'limit' && orderForm.price
-    ? parseFloat(orderForm.price)
+    ? parseLocaleNumberInput(orderForm.price) ?? currentPrice
     : currentPrice;
+  const orderLeverageValue = parseLocaleNumberInput(orderForm.leverage) ?? 1;
+  const orderStopLossValue = parseLocaleNumberInput(orderForm.stopLoss);
+  const orderTakeProfitValue = parseLocaleNumberInput(orderForm.takeProfit);
+  const orderEffectiveQuantity = hasOrderSize
+    ? (isFuturesMarket ? orderSizeValue * contractMultiplier : orderSizeValue)
+    : 0;
+  const orderDirection = orderForm.side === 'buy' ? 1 : -1;
+  const estimateOrderPnl = (targetPrice: number | null): { pnlValue: number; pnlPct: number } | null => {
+    if (!targetPrice || targetPrice <= 0 || !Number.isFinite(orderEffectivePrice) || orderEffectivePrice <= 0 || orderEffectiveQuantity <= 0) {
+      return null;
+    }
+    const pnlValue = (targetPrice - orderEffectivePrice) * orderEffectiveQuantity * orderDirection;
+    const marginBase = isFuturesMarket
+      ? (orderEffectivePrice * orderEffectiveQuantity) / Math.max(orderLeverageValue, 1)
+      : orderEffectivePrice * orderEffectiveQuantity;
+    const pnlPct = marginBase > 0 ? (pnlValue / marginBase) * 100 : 0;
+    return { pnlValue, pnlPct };
+  };
+  const orderStopLossEstimate = estimateOrderPnl(orderStopLossValue);
+  const orderTakeProfitEstimate = estimateOrderPnl(orderTakeProfitValue);
 
   // ============================================================================
   // RENDER - Main
@@ -3706,7 +3787,7 @@ export default function Trading() {
             {isLoadingPositions ? (
               <Skeleton className="h-64" />
             ) : isFuturesMarket ? (
-              futuresPositions.filter(p => p.isOpen).length === 0 ? (
+              openFuturesPositions.length === 0 ? (
                 <Card>
                   <CardContent className="flex flex-col items-center justify-center py-12">
                     <Target className="h-12 w-12 text-muted-foreground mb-4" />
@@ -3715,7 +3796,12 @@ export default function Trading() {
                 </Card>
               ) : (
                 <div className="grid gap-4">
-                  {futuresPositions.filter(p => p.isOpen).map((position) => (
+                  {openFuturesPositions.map((position) => {
+                    const liveQuote = positionLiveQuotes[position.symbol.toUpperCase()];
+                    const effectiveMarkPrice = Number.isFinite(liveQuote) && liveQuote > 0 ? liveQuote : position.markPrice;
+                    const liveUnrealizedPnl = (effectiveMarkPrice - position.avgEntryPrice) * position.currentQty;
+                    const liveUnrealizedPnlPct = position.posMargin > 0 ? (liveUnrealizedPnl / position.posMargin) : 0;
+                    return (
                     <Card key={position.id} data-testid={`card-position-${position.id}`}>
                       <CardContent className="p-4">
                         <div className="flex items-center justify-between mb-4">
@@ -3734,11 +3820,11 @@ export default function Trading() {
                             </div>
                           </div>
                           <div className="text-right">
-                            <p className={`text-lg font-bold ${position.unrealisedPnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                              {position.unrealisedPnl >= 0 ? '+' : ''}${position.unrealisedPnl.toFixed(2)}
+                            <p className={`text-lg font-bold ${liveUnrealizedPnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                              {liveUnrealizedPnl >= 0 ? '+' : ''}${liveUnrealizedPnl.toFixed(2)}
                             </p>
-                            <p className={`text-sm ${position.unrealisedPnlPcnt >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                              {position.unrealisedPnlPcnt >= 0 ? '+' : ''}{(position.unrealisedPnlPcnt * 100).toFixed(2)}%
+                            <p className={`text-sm ${liveUnrealizedPnlPct >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                              {liveUnrealizedPnlPct >= 0 ? '+' : ''}{(liveUnrealizedPnlPct * 100).toFixed(2)}%
                             </p>
                           </div>
                         </div>
@@ -3747,6 +3833,13 @@ export default function Trading() {
                           <div>
                             <p className="text-muted-foreground">{t('trading.positions.entryPrice')}</p>
                             <p className="font-medium">${formatNumber(position.avgEntryPrice, locale)}</p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">Cotação RT</p>
+                            <p className="font-medium">
+                              ${formatNumber(effectiveMarkPrice, locale)}
+                              <span className="ml-2 text-xs text-green-500">WS</span>
+                            </p>
                           </div>
                           <div>
                             <p className="text-muted-foreground">{t('trading.positions.markPrice')}</p>
@@ -3771,7 +3864,7 @@ export default function Trading() {
                         />
                       </CardContent>
                     </Card>
-                  ))}
+                  )})}
                 </div>
               )
             ) : isSpotMarket ? (
@@ -4981,8 +5074,9 @@ export default function Trading() {
                 <div className="space-y-2">
                   <Label>{t('trading.orders.form.price')}</Label>
                   <Input
-                    type="number"
-                    placeholder={currentPrice > 0 ? currentPrice.toString() : '0'}
+                    type="text"
+                    inputMode="decimal"
+                    placeholder={currentPrice > 0 ? currentPrice.toString() : 'Ex: 108.250,50'}
                     value={orderForm.price}
                     onChange={(e) => setOrderForm({ ...orderForm, price: e.target.value })}
                     data-testid="input-order-price"
@@ -4998,8 +5092,9 @@ export default function Trading() {
                     : t('trading.orders.form.sizeAmount')}
                 </Label>
                 <Input
-                  type="number"
-                  placeholder="1"
+                  type="text"
+                  inputMode="decimal"
+                  placeholder={isFuturesMarket ? 'Ex: 10' : 'Ex: 0,001'}
                   value={orderForm.size}
                   onChange={(e) => isFuturesMarket ? handleOrderSizeChange(e.target.value) : setOrderForm({ ...orderForm, size: e.target.value })}
                   data-testid="input-order-size"
@@ -5016,8 +5111,9 @@ export default function Trading() {
                 <div className="space-y-2">
                   <Label>Valor em USDT</Label>
                   <Input
-                    type="number"
-                    placeholder="100.00"
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="Ex: 100,00"
                     value={orderForm.usdtAmount}
                     onChange={(e) => handleOrderUsdtChange(e.target.value)}
                     data-testid="input-order-usdt"
@@ -5033,8 +5129,9 @@ export default function Trading() {
                 <div className="space-y-2">
                   <Label>{t('trading.orders.form.funds')}</Label>
                   <Input
-                    type="number"
-                    placeholder="100"
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="Ex: 100,00"
                     value={orderForm.funds}
                     onChange={(e) => setOrderForm({ ...orderForm, funds: e.target.value })}
                     data-testid="input-order-funds"
@@ -5072,7 +5169,8 @@ export default function Trading() {
                 <div className="space-y-2">
                   <Label>{t('trading.orders.form.stopLoss')}</Label>
                   <Input
-                    type="number"
+                    type="text"
+                    inputMode="decimal"
                     placeholder={t('trading.orders.form.optional')}
                     value={orderForm.stopLoss}
                     onChange={(e) => setOrderForm({ ...orderForm, stopLoss: e.target.value })}
@@ -5082,7 +5180,8 @@ export default function Trading() {
                 <div className="space-y-2">
                   <Label>{t('trading.orders.form.takeProfit')}</Label>
                   <Input
-                    type="number"
+                    type="text"
+                    inputMode="decimal"
                     placeholder={t('trading.orders.form.optional')}
                     value={orderForm.takeProfit}
                     onChange={(e) => setOrderForm({ ...orderForm, takeProfit: e.target.value })}
@@ -5134,7 +5233,7 @@ export default function Trading() {
                         <>
                           <span className="text-muted-foreground">Valor Estimado</span>
                           <span className="font-mono text-right font-medium">
-                            ~${formatNumber(parseFloat(orderForm.usdtAmount), locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT
+                            ~${formatNumber(parseLocaleNumberInput(orderForm.usdtAmount) ?? 0, locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT
                           </span>
                         </>
                       )}
@@ -5155,7 +5254,7 @@ export default function Trading() {
                             <>
                               <span className="text-muted-foreground">Margem Requerida</span>
                               <span className="font-mono text-right">
-                                ~${formatNumber(parseFloat(orderForm.usdtAmount) / parseInt(orderForm.leverage || '1'), locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT
+                                ~${formatNumber((parseLocaleNumberInput(orderForm.usdtAmount) ?? 0) / Math.max(orderLeverageValue, 1), locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT
                               </span>
                             </>
                           )}
@@ -5165,14 +5264,34 @@ export default function Trading() {
                       {orderForm.stopLoss && (
                         <>
                           <span className="text-muted-foreground">{t('trading.orders.form.stopLoss')}</span>
-                          <span className="font-mono text-right text-red-500">${orderForm.stopLoss}</span>
+                          <span className="font-mono text-right text-red-500">
+                            {orderStopLossValue !== null ? `$${formatNumber(orderStopLossValue, locale, { minimumFractionDigits: 2, maximumFractionDigits: 8 })}` : orderForm.stopLoss}
+                          </span>
+                          {orderStopLossEstimate && (
+                            <>
+                              <span className="text-muted-foreground">Estimativa SL</span>
+                              <span className={`font-mono text-right ${orderStopLossEstimate.pnlValue >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                {orderStopLossEstimate.pnlValue >= 0 ? '+' : ''}${formatNumber(orderStopLossEstimate.pnlValue, locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({orderStopLossEstimate.pnlPct >= 0 ? '+' : ''}{orderStopLossEstimate.pnlPct.toFixed(2)}%)
+                              </span>
+                            </>
+                          )}
                         </>
                       )}
 
                       {orderForm.takeProfit && (
                         <>
                           <span className="text-muted-foreground">{t('trading.orders.form.takeProfit')}</span>
-                          <span className="font-mono text-right text-green-500">${orderForm.takeProfit}</span>
+                          <span className="font-mono text-right text-green-500">
+                            {orderTakeProfitValue !== null ? `$${formatNumber(orderTakeProfitValue, locale, { minimumFractionDigits: 2, maximumFractionDigits: 8 })}` : orderForm.takeProfit}
+                          </span>
+                          {orderTakeProfitEstimate && (
+                            <>
+                              <span className="text-muted-foreground">Estimativa TP</span>
+                              <span className={`font-mono text-right ${orderTakeProfitEstimate.pnlValue >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                {orderTakeProfitEstimate.pnlValue >= 0 ? '+' : ''}${formatNumber(orderTakeProfitEstimate.pnlValue, locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({orderTakeProfitEstimate.pnlPct >= 0 ? '+' : ''}{orderTakeProfitEstimate.pnlPct.toFixed(2)}%)
+                              </span>
+                            </>
+                          )}
                         </>
                       )}
                     </div>

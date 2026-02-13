@@ -82,6 +82,14 @@ export interface TradingCommandResult {
   hint?: string;
 }
 
+export interface PositionUpdateData {
+  [key: string]: unknown;
+}
+
+export interface OrderUpdateData {
+  [key: string]: unknown;
+}
+
 type MarketType = 'futures' | 'spot' | 'margin';
 type MarginMode = 'cross' | 'isolated';
 
@@ -94,7 +102,7 @@ export interface WebSocketState {
 
 export interface UseKucoinWebSocketOptions {
   symbol?: string;
-  channels?: ('ticker' | 'orderbook' | 'klines' | 'trades' | 'balance')[];
+  channels?: ('ticker' | 'orderbook' | 'klines' | 'trades' | 'balance' | 'positions' | 'orders')[];
   interval?: string;
   marketType?: MarketType;
   marginMode?: MarginMode;
@@ -105,6 +113,8 @@ export interface UseKucoinWebSocketOptions {
   onKline?: (data: KlineData) => void;
   onTrade?: (data: TradeData) => void;
   onBalance?: (data: BalanceData) => void;
+  onPositionUpdate?: (data: PositionUpdateData) => void;
+  onOrderUpdate?: (data: OrderUpdateData) => void;
   onCommandResult?: (result: TradingCommandResult) => void;
   onError?: (error: string) => void;
 }
@@ -116,6 +126,8 @@ export interface UseKucoinWebSocketReturn {
   klines: KlineData[];
   lastTrade: TradeData | null;
   balance: BalanceData | null;
+  positionUpdate: PositionUpdateData | null;
+  orderUpdate: OrderUpdateData | null;
   connect: () => void;
   disconnect: () => void;
   subscribe: (channel: string, symbol?: string, interval?: string) => void;
@@ -151,6 +163,8 @@ export function useKucoinWebSocket(
     onKline,
     onTrade,
     onBalance,
+    onPositionUpdate,
+    onOrderUpdate,
     onCommandResult,
     onError,
   } = options;
@@ -167,6 +181,8 @@ export function useKucoinWebSocket(
   const [klines, setKlines] = useState<KlineData[]>([]);
   const [lastTrade, setLastTrade] = useState<TradeData | null>(null);
   const [balance, setBalance] = useState<BalanceData | null>(null);
+  const [positionUpdate, setPositionUpdate] = useState<PositionUpdateData | null>(null);
+  const [orderUpdate, setOrderUpdate] = useState<OrderUpdateData | null>(null);
 
   // Refs
   const wsRef = useRef<WebSocket | null>(null);
@@ -350,6 +366,16 @@ export function useKucoinWebSocket(
           onBalance?.(data.data);
           break;
 
+        case 'trading:positions':
+          setPositionUpdate(data.data);
+          onPositionUpdate?.(data.data);
+          break;
+
+        case 'trading:orders':
+          setOrderUpdate(data.data);
+          onOrderUpdate?.(data.data);
+          break;
+
         case 'trading:command_received':
         case 'trading:error':
         case 'trading:blocked':
@@ -365,7 +391,7 @@ export function useKucoinWebSocket(
       // CORREÇÃO AUDITORIA 17/12/2025: Usar frontendLogger ao invés de console.error (Regra 8)
       frontendLogger.error('Erro ao processar mensagem WebSocket', { error: err instanceof Error ? err.message : String(err) });
     }
-  }, [buildSubscriptionKey, interval, marketType, onTicker, onOrderBook, onKline, onTrade, onBalance, onCommandResult, onError]);
+  }, [buildSubscriptionKey, interval, marketType, onTicker, onOrderBook, onKline, onTrade, onBalance, onPositionUpdate, onOrderUpdate, onCommandResult, onError]);
 
   // Connect to WebSocket
   const connect = useCallback(() => {
@@ -679,6 +705,8 @@ export function useKucoinWebSocket(
     klines,
     lastTrade,
     balance,
+    positionUpdate,
+    orderUpdate,
     connect,
     disconnect,
     subscribe,

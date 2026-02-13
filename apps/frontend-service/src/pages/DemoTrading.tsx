@@ -50,6 +50,7 @@ import { Separator } from '@/components/ui/separator';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useKucoinWebSocket } from '@/hooks/useKucoinWebSocket';
 import { useToast } from '@/hooks/use-toast';
+import { formatTradingNumber, parseLocaleNumberInput } from '@/lib/utils';
 
 // ============================================================================
 // Tipos
@@ -91,7 +92,10 @@ interface DemoPosition {
   takeProfit: string | null;
   realizedPnl: string | null;
   totalFees: string | null;
+  marginAmount?: string | null;
+  liquidationPrice?: string | null;
   status: string;
+  metadata?: Record<string, unknown>;
   openedAt: string;
   closedAt: string | null;
 }
@@ -202,6 +206,8 @@ export default function DemoTrading() {
   const [activeTab, setActiveTab] = useState('overview');
   const [orderDialogOpen, setOrderDialogOpen] = useState(false);
   const [addFundsDialogOpen, setAddFundsDialogOpen] = useState(false);
+  const [positionDetailOpen, setPositionDetailOpen] = useState(false);
+  const [selectedClosedPosition, setSelectedClosedPosition] = useState<DemoPosition | null>(null);
 
   // Seleção de mercado e símbolo (mesmo padrão Trading Real)
   const [selectedMarketType, setSelectedMarketType] = useState<MarketType>('futures');
@@ -292,12 +298,45 @@ export default function DemoTrading() {
   const wsEnabled = isSymbolValid && isConfigured;
   const { state: wsState, ticker: wsTicker } = useKucoinWebSocket({
     symbol: wsEnabled ? requestSymbol : '',
-    channels: wsEnabled ? ['ticker'] : [],
+    channels: wsEnabled ? ['ticker', 'positions', 'orders', 'balance'] : [],
     autoConnect: wsEnabled,
     marketType: selectedMarketType,
     marginMode: selectedMarginMode,
+    onOrderUpdate: () => {
+      void queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/orders'] });
+      void queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/positions', 'all'] });
+    },
+    onPositionUpdate: () => {
+      void queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/positions', 'all'] });
+      void queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balances'] });
+    },
+    onBalance: () => {
+      void queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balances'] });
+    },
   });
   const wsHealthy = wsEnabled && wsState.connected && !wsState.error;
+  const [positionLiveQuotes, setPositionLiveQuotes] = useState<Record<string, number>>({});
+  const {
+    state: positionQuotesWsState,
+    subscribe: subscribePositionQuotes,
+    unsubscribe: unsubscribePositionQuotes,
+  } = useKucoinWebSocket({
+    symbol: '',
+    channels: [],
+    autoConnect: isConfigured,
+    marketType: selectedMarketType,
+    marginMode: selectedMarginMode,
+    onTicker: (data) => {
+      const next = Number(data.price);
+      if (!Number.isFinite(next) || next <= 0) return;
+      const symbolKey = (data.symbol ?? '').toUpperCase();
+      if (!symbolKey) return;
+      setPositionLiveQuotes((prev) => {
+        if (prev[symbolKey] === next) return prev;
+        return { ...prev, [symbolKey]: next };
+      });
+    },
+  });
 
   /** Dados de mercado REST (mesma query key da Trading Real para reusar cache) */
   const marketQueryString = useMemo(() => {
@@ -316,7 +355,7 @@ export default function DemoTrading() {
       return res.json();
     },
     enabled: isConfigured && isSymbolValid,
-    refetchInterval: 10_000,
+    refetchInterval: 3_000,
   });
 
   const market = marketData?.data;
@@ -366,7 +405,7 @@ export default function DemoTrading() {
       const json = await res.json() as { data: DemoPosition[] };
       return json.data;
     },
-    refetchInterval: 5_000,
+    refetchInterval: 2_000,
   });
 
   const ordersQuery = useQuery({
@@ -376,7 +415,7 @@ export default function DemoTrading() {
       const json = await res.json() as { data: DemoOrder[] };
       return json.data;
     },
-    refetchInterval: 10_000,
+    refetchInterval: 2_000,
   });
 
   const fundHistoryQuery = useQuery({
@@ -435,16 +474,23 @@ export default function DemoTrading() {
   const createOrderMutation = useMutation({
     mutationFn: async () => {
       const leverageValue = parseInt(orderForm.leverage);
+      const size = parseLocaleNumberInput(orderForm.size);
+      const price = orderForm.price ? parseLocaleNumberInput(orderForm.price) : null;
+      const stopLoss = orderForm.stopLoss ? parseLocaleNumberInput(orderForm.stopLoss) : null;
+      const takeProfit = orderForm.takeProfit ? parseLocaleNumberInput(orderForm.takeProfit) : null;
+      if (!size || size <= 0) {
+        throw new Error('Quantidade inválida. Use formato de exchange (ex: 1,25 ou 1.25).');
+      }
       const body = {
         symbol: requestSymbol || selectedSymbol,
         marketType: selectedMarketType,
         side: orderForm.side,
         orderType: orderForm.orderType,
-        size: parseFloat(orderForm.size),
-        price: orderForm.price ? parseFloat(orderForm.price) : undefined,
+        size,
+        price: price ?? undefined,
         leverage: Number.isFinite(leverageValue) && leverageValue >= 1 ? leverageValue : 1,
-        stopLoss: orderForm.stopLoss ? parseFloat(orderForm.stopLoss) : undefined,
-        takeProfit: orderForm.takeProfit ? parseFloat(orderForm.takeProfit) : undefined,
+        stopLoss: stopLoss ?? undefined,
+        takeProfit: takeProfit ?? undefined,
       };
       const res = await apiRequest('POST', '/api/integrations/demo-trading/orders', body);
       const json = await res.json();
@@ -461,8 +507,12 @@ export default function DemoTrading() {
 
   const addFundsMutation = useMutation({
     mutationFn: async () => {
+      const amount = parseLocaleNumberInput(fundsAmount);
+      if (!amount || amount <= 0) {
+        throw new Error('Valor de depósito inválido.');
+      }
       const res = await apiRequest('POST', '/api/integrations/demo-trading/funds', {
-        amount: parseFloat(fundsAmount),
+        amount,
         note: 'Adição manual via UI',
       });
       const json = await res.json();
@@ -578,10 +628,10 @@ export default function DemoTrading() {
 
   const handleUsdtAmountChange = useCallback((usdtValue: string) => {
     setOrderForm(prev => {
-      const usdtNum = parseFloat(usdtValue);
+      const usdtNum = parseLocaleNumberInput(usdtValue);
       if (currentPrice > 0 && Number.isFinite(usdtNum) && usdtNum > 0 && isFuturesMarket) {
         const qty = usdtNum / (currentPrice * contractMultiplier);
-        return { ...prev, usdtAmount: usdtValue, size: qty.toFixed(4) };
+        return { ...prev, usdtAmount: usdtValue, size: formatTradingNumber(qty, 'pt-BR', 0, 6) };
       }
       return { ...prev, usdtAmount: usdtValue, size: '' };
     });
@@ -589,10 +639,10 @@ export default function DemoTrading() {
 
   const handleSizeChange = useCallback((sizeValue: string) => {
     setOrderForm(prev => {
-      const sizeNum = parseFloat(sizeValue);
+      const sizeNum = parseLocaleNumberInput(sizeValue);
       if (currentPrice > 0 && Number.isFinite(sizeNum) && sizeNum > 0 && isFuturesMarket) {
         const usdtVal = sizeNum * currentPrice * contractMultiplier;
-        return { ...prev, size: sizeValue, usdtAmount: usdtVal.toFixed(2) };
+        return { ...prev, size: sizeValue, usdtAmount: formatTradingNumber(usdtVal, 'pt-BR', 2, 2) };
       }
       return { ...prev, size: sizeValue, usdtAmount: '' };
     });
@@ -661,6 +711,58 @@ export default function DemoTrading() {
     return num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
 
+  const estimatePnlForPrice = useCallback((params: {
+    side: 'buy' | 'sell';
+    entryPrice: number;
+    exitPrice: number;
+    size: number;
+    leverage: number;
+  }): { pnlValue: number; pnlPct: number } => {
+    const direction = params.side === 'buy' ? 1 : -1;
+    const pnlValue = (params.exitPrice - params.entryPrice) * params.size * direction;
+    const margin = (params.entryPrice * params.size) / Math.max(params.leverage, 1);
+    const pnlPct = margin > 0 ? (pnlValue / margin) * 100 : 0;
+    return { pnlValue, pnlPct };
+  }, []);
+
+  const getLivePositionStats = useCallback((position: DemoPosition): { markPrice: number | null; pnlValue: number | null; pnlPct: number | null } => {
+    const posSymbol = (position.symbol ?? '').toUpperCase();
+    const markPrice = positionLiveQuotes[posSymbol];
+    if (!Number.isFinite(markPrice) || (markPrice ?? 0) <= 0) {
+      return { markPrice: null, pnlValue: null, pnlPct: null };
+    }
+
+    const size = Number(position.size);
+    const entryPrice = Number(position.entryPrice);
+    const leverage = Math.max(Number(position.leverage ?? 1), 1);
+    if (!Number.isFinite(size) || !Number.isFinite(entryPrice) || size <= 0 || entryPrice <= 0) {
+      return { markPrice: null, pnlValue: null, pnlPct: null };
+    }
+
+    const isLong = position.side === 'long';
+    const direction = isLong ? 1 : -1;
+    const pnlValue = ((markPrice as number) - entryPrice) * size * direction;
+    const margin = (entryPrice * size) / leverage;
+    const pnlPct = margin > 0 ? (pnlValue / margin) * 100 : 0;
+
+    return { markPrice: markPrice as number, pnlValue, pnlPct };
+  }, [positionLiveQuotes]);
+
+  useEffect(() => {
+    if (!positionQuotesWsState.connected) return;
+    const activeSymbols = new Set(
+      openPositions.map((position) => (position.symbol ?? '').toUpperCase()).filter((symbol) => symbol.length > 0)
+    );
+    activeSymbols.forEach((symbol) => {
+      subscribePositionQuotes('ticker', symbol, undefined, selectedMarketType, selectedMarginMode);
+    });
+    return () => {
+      activeSymbols.forEach((symbol) => {
+        unsubscribePositionQuotes('ticker', symbol, undefined, selectedMarketType, selectedMarginMode);
+      });
+    };
+  }, [openPositions, positionQuotesWsState.connected, selectedMarketType, selectedMarginMode, subscribePositionQuotes, unsubscribePositionQuotes]);
+
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
   };
@@ -723,15 +825,15 @@ export default function DemoTrading() {
                   <div>
                     <Label>Quantidade (USDT)</Label>
                     <Input
-                      type="number"
+                      type="text"
                       value={fundsAmount}
                       onChange={e => setFundsAmount(e.target.value)}
-                      placeholder="10000"
+                      placeholder="Ex: 10.000,00"
                     />
                   </div>
                   <Button
                     onClick={() => addFundsMutation.mutate()}
-                    disabled={!fundsAmount || parseFloat(fundsAmount) <= 0 || addFundsMutation.isPending}
+                    disabled={!fundsAmount || (parseLocaleNumberInput(fundsAmount) ?? 0) <= 0 || addFundsMutation.isPending}
                     className="w-full"
                   >
                     {addFundsMutation.isPending ? 'Adicionando...' : 'Confirmar'}
@@ -1029,10 +1131,10 @@ export default function DemoTrading() {
                 <div className="space-y-2">
                   <Label>Preço</Label>
                   <Input
-                    type="number"
+                  type="text"
                     value={orderForm.price}
                     onChange={e => setOrderForm(prev => ({ ...prev, price: e.target.value }))}
-                    placeholder={currentPrice > 0 ? currentPrice.toString() : 'Preço alvo'}
+                  placeholder={currentPrice > 0 ? formatTradingNumber(currentPrice, 'pt-BR', 2, 8) : 'Ex: 66.250,00'}
                   />
                 </div>
               )}
@@ -1041,10 +1143,10 @@ export default function DemoTrading() {
               <div className="space-y-2">
                 <Label>{isFuturesMarket ? 'Quantidade (contratos)' : 'Quantidade'}</Label>
                 <Input
-                  type="number"
+                  type="text"
                   value={orderForm.size}
                   onChange={e => isFuturesMarket ? handleSizeChange(e.target.value) : setOrderForm(prev => ({ ...prev, size: e.target.value }))}
-                  placeholder={isFuturesMarket ? '1' : '0.001'}
+                  placeholder={isFuturesMarket ? 'Ex: 7,5' : 'Ex: 0,001'}
                 />
                 <p className="text-xs text-muted-foreground">
                   {isFuturesMarket
@@ -1058,13 +1160,13 @@ export default function DemoTrading() {
                 <div className="space-y-2">
                   <Label>Valor em USDT</Label>
                   <Input
-                    type="number"
+                    type="text"
                     value={orderForm.usdtAmount}
                     onChange={e => handleUsdtAmountChange(e.target.value)}
-                    placeholder="100.00"
+                    placeholder="Ex: 12.345,67"
                   />
                   <p className="text-xs text-muted-foreground">
-                    Preencha contratos OU valor em USDT — a conversão é automática.
+                    Preencha contratos OU valor em USDT. Exemplo cripto: 0,00123456. Exemplo fiat: 12.345,67.
                   </p>
                 </div>
               )}
@@ -1094,7 +1196,7 @@ export default function DemoTrading() {
                 <div className="space-y-2">
                   <Label>Stop Loss</Label>
                   <Input
-                    type="number"
+                    type="text"
                     value={orderForm.stopLoss}
                     onChange={e => setOrderForm(prev => ({ ...prev, stopLoss: e.target.value }))}
                     placeholder="Opcional"
@@ -1103,7 +1205,7 @@ export default function DemoTrading() {
                 <div className="space-y-2">
                   <Label>Take Profit</Label>
                   <Input
-                    type="number"
+                    type="text"
                     value={orderForm.takeProfit}
                     onChange={e => setOrderForm(prev => ({ ...prev, takeProfit: e.target.value }))}
                     placeholder="Opcional"
@@ -1147,9 +1249,9 @@ export default function DemoTrading() {
                             return `~$${formatMoney(orderForm.usdtAmount)} USDT`;
                           }
                           // Spot/Margin: valor = quantidade * preço
-                          const qty = parseFloat(orderForm.size);
+                          const qty = parseLocaleNumberInput(orderForm.size);
                           const effectivePrice = orderForm.orderType === 'limit' && orderForm.price
-                            ? parseFloat(orderForm.price)
+                            ? (parseLocaleNumberInput(orderForm.price) ?? 0)
                             : currentPrice;
                           if (Number.isFinite(qty) && qty > 0 && effectivePrice > 0) {
                             return `~$${formatMoney(qty * effectivePrice)} USDT`;
@@ -1174,6 +1276,30 @@ export default function DemoTrading() {
                         <>
                           <span className="text-muted-foreground">Stop Loss</span>
                           <span className="font-mono text-right text-red-500">${formatMoney(orderForm.stopLoss)}</span>
+                          {(() => {
+                            const qty = parseLocaleNumberInput(orderForm.size);
+                            const sl = parseLocaleNumberInput(orderForm.stopLoss);
+                            const entry = orderForm.orderType === 'limit' && orderForm.price
+                              ? parseLocaleNumberInput(orderForm.price)
+                              : currentPrice;
+                            const leverage = Number.parseInt(orderForm.leverage || '1', 10) || 1;
+                            if (!qty || !sl || !entry || qty <= 0 || sl <= 0 || entry <= 0) return null;
+                            const estimate = estimatePnlForPrice({
+                              side: orderForm.side,
+                              entryPrice: entry,
+                              exitPrice: sl,
+                              size: qty,
+                              leverage,
+                            });
+                            return (
+                              <>
+                                <span className="text-muted-foreground">Estimativa SL</span>
+                                <span className={`font-mono text-right ${estimate.pnlValue >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                  {estimate.pnlValue >= 0 ? '+' : ''}${formatMoney(estimate.pnlValue)} ({estimate.pnlPct >= 0 ? '+' : ''}{estimate.pnlPct.toFixed(2)}%)
+                                </span>
+                              </>
+                            );
+                          })()}
                         </>
                       )}
 
@@ -1181,6 +1307,30 @@ export default function DemoTrading() {
                         <>
                           <span className="text-muted-foreground">Take Profit</span>
                           <span className="font-mono text-right text-green-500">${formatMoney(orderForm.takeProfit)}</span>
+                          {(() => {
+                            const qty = parseLocaleNumberInput(orderForm.size);
+                            const tp = parseLocaleNumberInput(orderForm.takeProfit);
+                            const entry = orderForm.orderType === 'limit' && orderForm.price
+                              ? parseLocaleNumberInput(orderForm.price)
+                              : currentPrice;
+                            const leverage = Number.parseInt(orderForm.leverage || '1', 10) || 1;
+                            if (!qty || !tp || !entry || qty <= 0 || tp <= 0 || entry <= 0) return null;
+                            const estimate = estimatePnlForPrice({
+                              side: orderForm.side,
+                              entryPrice: entry,
+                              exitPrice: tp,
+                              size: qty,
+                              leverage,
+                            });
+                            return (
+                              <>
+                                <span className="text-muted-foreground">Estimativa TP</span>
+                                <span className={`font-mono text-right ${estimate.pnlValue >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                  {estimate.pnlValue >= 0 ? '+' : ''}${formatMoney(estimate.pnlValue)} ({estimate.pnlPct >= 0 ? '+' : ''}{estimate.pnlPct.toFixed(2)}%)
+                                </span>
+                              </>
+                            );
+                          })()}
                         </>
                       )}
                     </div>
@@ -1301,7 +1451,9 @@ export default function DemoTrading() {
                   <p className="text-muted-foreground text-center py-8">Nenhuma posição aberta</p>
                 ) : (
                   <div className="space-y-3">
-                    {openPositions.map(pos => (
+                    {openPositions.map(pos => {
+                      const live = getLivePositionStats(pos);
+                      return (
                       <div key={pos.id} className="flex items-center justify-between p-3 border rounded-lg">
                         <div>
                           <div className="flex items-center gap-2">
@@ -1320,6 +1472,15 @@ export default function DemoTrading() {
                               ? ` | Equiv. BTC: ${(Number(pos.size) * contractMultiplier).toFixed(6)} BTC`
                               : ''}
                           </p>
+                          {live.markPrice !== null && live.pnlValue !== null && live.pnlPct !== null && (
+                            <p className="text-sm mt-1">
+                              Cotação RT: <span className="font-mono">${formatMoney(live.markPrice)}</span>
+                              {' | '}
+                              PnL RT: <span className={`font-mono ${live.pnlValue >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                {live.pnlValue >= 0 ? '+' : ''}${formatMoney(live.pnlValue)} ({live.pnlPct >= 0 ? '+' : ''}{live.pnlPct.toFixed(2)}%)
+                              </span>
+                            </p>
+                          )}
                         </div>
                         <Button
                           variant="destructive"
@@ -1330,7 +1491,7 @@ export default function DemoTrading() {
                           Fechar
                         </Button>
                       </div>
-                    ))}
+                    )})}
                   </div>
                 )}
               </CardContent>
@@ -1409,6 +1570,7 @@ export default function DemoTrading() {
                 <div className="space-y-3">
                   {openPositions.map((pos) => {
                     const draft = getPositionDraft(pos);
+                    const live = getLivePositionStats(pos);
                     return (
                       <div key={pos.id} className="p-4 border rounded-lg space-y-3">
                         <div className="flex items-center justify-between">
@@ -1438,8 +1600,23 @@ export default function DemoTrading() {
                             <p className="font-mono">${formatMoney(pos.entryPrice)}</p>
                           </div>
                           <div>
+                            <span className="text-muted-foreground">Cotação RT</span>
+                            <p className="font-mono">
+                              {live.markPrice !== null ? `$${formatMoney(live.markPrice)}` : '-'}
+                              {live.markPrice !== null && <span className="ml-2 text-xs text-green-500">WS</span>}
+                            </p>
+                          </div>
+                          <div>
                             <span className="text-muted-foreground">Tamanho</span>
                             <p className="font-mono">{pos.size}</p>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">PnL RT</span>
+                            <p className={`font-mono ${live.pnlValue !== null && live.pnlValue >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                              {live.pnlValue !== null && live.pnlPct !== null
+                                ? `${live.pnlValue >= 0 ? '+' : ''}$${formatMoney(live.pnlValue)} (${live.pnlPct >= 0 ? '+' : ''}${live.pnlPct.toFixed(2)}%)`
+                                : '-'}
+                            </p>
                           </div>
                           <div>
                             <span className="text-muted-foreground">Stop Loss</span>
@@ -1456,7 +1633,7 @@ export default function DemoTrading() {
                             <div className="space-y-2">
                               <Label className="text-xs">Adicionar tamanho</Label>
                               <Input
-                                type="number"
+                                type="text"
                                 value={draft.addSize}
                                 onChange={(e) => updatePositionDraft(pos.id, { addSize: e.target.value })}
                                 placeholder="Ex: 10"
@@ -1466,13 +1643,13 @@ export default function DemoTrading() {
                                 className="w-full"
                                 disabled={!draft.addSize || addToPositionMutation.isPending}
                                 onClick={() => {
-                                  const size = Number(draft.addSize);
+                                  const size = parseLocaleNumberInput(draft.addSize);
                                   if (!Number.isFinite(size) || size <= 0) return;
                                   addToPositionMutation.mutate({
                                     positionId: pos.id,
                                     size,
-                                    stopLoss: draft.stopLoss ? Number(draft.stopLoss) : null,
-                                    takeProfit: draft.takeProfit ? Number(draft.takeProfit) : null,
+                                    stopLoss: draft.stopLoss ? (parseLocaleNumberInput(draft.stopLoss) ?? null) : null,
+                                    takeProfit: draft.takeProfit ? (parseLocaleNumberInput(draft.takeProfit) ?? null) : null,
                                   });
                                 }}
                               >
@@ -1483,7 +1660,7 @@ export default function DemoTrading() {
                             <div className="space-y-2">
                               <Label className="text-xs">Fechamento parcial</Label>
                               <Input
-                                type="number"
+                                type="text"
                                 value={draft.closeSize}
                                 onChange={(e) => updatePositionDraft(pos.id, { closeSize: e.target.value })}
                                 placeholder="Ex: 5"
@@ -1494,7 +1671,7 @@ export default function DemoTrading() {
                                 className="w-full"
                                 disabled={!draft.closeSize || closePositionMutation.isPending}
                                 onClick={() => {
-                                  const size = Number(draft.closeSize);
+                                  const size = parseLocaleNumberInput(draft.closeSize);
                                   if (!Number.isFinite(size) || size <= 0) return;
                                   closePositionMutation.mutate({ positionId: pos.id, size });
                                 }}
@@ -1507,13 +1684,13 @@ export default function DemoTrading() {
                               <Label className="text-xs">Ajustar SL/TP</Label>
                               <div className="grid grid-cols-2 gap-2">
                                 <Input
-                                  type="number"
+                                  type="text"
                                   value={draft.stopLoss}
                                   onChange={(e) => updatePositionDraft(pos.id, { stopLoss: e.target.value })}
                                   placeholder="SL"
                                 />
                                 <Input
-                                  type="number"
+                                  type="text"
                                   value={draft.takeProfit}
                                   onChange={(e) => updatePositionDraft(pos.id, { takeProfit: e.target.value })}
                                   placeholder="TP"
@@ -1527,8 +1704,8 @@ export default function DemoTrading() {
                                 onClick={() => {
                                   updatePositionRiskMutation.mutate({
                                     positionId: pos.id,
-                                    stopLoss: draft.stopLoss ? Number(draft.stopLoss) : null,
-                                    takeProfit: draft.takeProfit ? Number(draft.takeProfit) : null,
+                                    stopLoss: draft.stopLoss ? (parseLocaleNumberInput(draft.stopLoss) ?? null) : null,
+                                    takeProfit: draft.takeProfit ? (parseLocaleNumberInput(draft.takeProfit) ?? null) : null,
                                   });
                                 }}
                               >
@@ -1717,8 +1894,18 @@ export default function DemoTrading() {
                     <div className="space-y-2">
                       {closedPositions.map(pos => {
                         const pnl = parseFloat(pos.realizedPnl ?? '0');
+                        const closeReason = typeof pos.metadata?.closeReason === 'string'
+                          ? pos.metadata.closeReason
+                          : (pos.status === 'liquidated' ? 'liquidation' : 'manual');
                         return (
-                          <div key={pos.id} className="flex items-center justify-between p-3 border rounded-lg">
+                          <div
+                            key={pos.id}
+                            className="flex items-center justify-between p-3 border rounded-lg cursor-pointer hover:bg-muted/60"
+                            onClick={() => {
+                              setSelectedClosedPosition(pos);
+                              setPositionDetailOpen(true);
+                            }}
+                          >
                             <div>
                               <div className="flex items-center gap-2">
                                 <span className="font-medium">{pos.symbol}</span>
@@ -1730,6 +1917,7 @@ export default function DemoTrading() {
                               <p className="text-xs text-muted-foreground">
                                 {formatDate(pos.openedAt)} → {pos.closedAt ? formatDate(pos.closedAt) : '-'}
                               </p>
+                              <p className="text-xs text-muted-foreground">Motivo: {closeReason}</p>
                             </div>
                             <span className={`font-mono font-bold ${getPnlColor(pnl)}`}>
                               {pnl > 0 ? '+' : ''}{formatMoney(pnl)}
@@ -1784,6 +1972,43 @@ export default function DemoTrading() {
           </div>
         </TabsContent>
       </Tabs>
+
+      <Dialog open={positionDetailOpen} onOpenChange={setPositionDetailOpen}>
+        <DialogContent className="sm:max-w-[680px]">
+          <DialogHeader>
+            <DialogTitle>Detalhes da Posição</DialogTitle>
+            <DialogDescription>Dados completos da posição fechada no Trading Demo.</DialogDescription>
+          </DialogHeader>
+          {selectedClosedPosition ? (
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div><span className="text-muted-foreground">Símbolo</span><p className="font-mono">{selectedClosedPosition.symbol}</p></div>
+              <div><span className="text-muted-foreground">Mercado</span><p className="font-mono">{selectedClosedPosition.marketType}</p></div>
+              <div><span className="text-muted-foreground">Lado</span><p className="font-mono">{selectedClosedPosition.side.toUpperCase()}</p></div>
+              <div><span className="text-muted-foreground">Status</span><p className="font-mono">{selectedClosedPosition.status}</p></div>
+              <div><span className="text-muted-foreground">Entrada</span><p className="font-mono">{selectedClosedPosition.entryPrice}</p></div>
+              <div><span className="text-muted-foreground">Saída</span><p className="font-mono">{selectedClosedPosition.exitPrice ?? '-'}</p></div>
+              <div><span className="text-muted-foreground">Tamanho</span><p className="font-mono">{selectedClosedPosition.size}</p></div>
+              <div><span className="text-muted-foreground">Leverage</span><p className="font-mono">{selectedClosedPosition.leverage}x</p></div>
+              <div><span className="text-muted-foreground">Margem</span><p className="font-mono">{selectedClosedPosition.marginAmount ?? '-'}</p></div>
+              <div><span className="text-muted-foreground">Preço de Liquidação</span><p className="font-mono">{selectedClosedPosition.liquidationPrice ?? '-'}</p></div>
+              <div><span className="text-muted-foreground">Stop Loss</span><p className="font-mono">{selectedClosedPosition.stopLoss ?? '-'}</p></div>
+              <div><span className="text-muted-foreground">Take Profit</span><p className="font-mono">{selectedClosedPosition.takeProfit ?? '-'}</p></div>
+              <div><span className="text-muted-foreground">Fees Totais</span><p className="font-mono">{selectedClosedPosition.totalFees ?? '-'}</p></div>
+              <div><span className="text-muted-foreground">PnL Realizado</span><p className="font-mono">{selectedClosedPosition.realizedPnl ?? '-'}</p></div>
+              <div><span className="text-muted-foreground">Abertura</span><p className="font-mono">{formatDate(selectedClosedPosition.openedAt)}</p></div>
+              <div><span className="text-muted-foreground">Fechamento</span><p className="font-mono">{selectedClosedPosition.closedAt ? formatDate(selectedClosedPosition.closedAt) : '-'}</p></div>
+              <div className="col-span-2">
+                <span className="text-muted-foreground">Motivo de Fechamento</span>
+                <p className="font-mono">
+                  {(typeof selectedClosedPosition.metadata?.closeReason === 'string'
+                    ? selectedClosedPosition.metadata.closeReason
+                    : (selectedClosedPosition.status === 'liquidated' ? 'liquidation' : 'manual'))}
+                </p>
+              </div>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -285,6 +285,8 @@ export function PositionHistoryButton({ symbol }: PositionHistoryButtonProps) {
 /** Tabela de histórico de posições */
 function PositionHistoryTable({ symbol }: { symbol?: string }) {
   const { t } = useTranslation();
+  const [selectedEntry, setSelectedEntry] = useState<PositionHistoryEntry | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
 
   interface PositionHistoryEntry {
     id: string;
@@ -295,14 +297,23 @@ function PositionHistoryTable({ symbol }: { symbol?: string }) {
     closePrice: string;
     realisedPnl: string;
     closedAt: string;
+    openTime?: number | string;
+    closeTime?: number | string;
+    tradeFee?: string | number;
+    fundingFee?: string | number;
+    holdFee?: string | number;
+    margin?: string | number;
+    leverage?: string | number;
+    pnl?: string | number;
+    [key: string]: unknown;
   }
 
   const { data: history, isLoading } = useQuery<PositionHistoryEntry[]>({
-    queryKey: ['/api/integrations/trading/positions/history', symbol],
+    queryKey: ['/api/integrations/trading/futures/positions/history', symbol],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (symbol) params.set('symbol', symbol);
-      const res = await apiRequest('GET', `/api/integrations/trading/positions/history?${params.toString()}`);
+      const res = await apiRequest('GET', `/api/integrations/trading/futures/positions/history?${params.toString()}`);
       const json = await res.json();
       return json.data?.items ?? json.items ?? [];
     },
@@ -319,32 +330,66 @@ function PositionHistoryTable({ symbol }: { symbol?: string }) {
   }
 
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>{t('trading.orders.table.symbol')}</TableHead>
-          <TableHead>{t('trading.orders.table.side')}</TableHead>
-          <TableHead>{t('trading.orders.table.size')}</TableHead>
-          <TableHead>{t('trading.positions.entryPrice')}</TableHead>
-          <TableHead>{t('trading.positionActions.closePrice')}</TableHead>
-          <TableHead>{t('trading.positionActions.realisedPnl')}</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {history.map((entry) => (
-          <TableRow key={entry.id}>
-            <TableCell>{entry.symbol}</TableCell>
-            <TableCell>{entry.side?.toUpperCase()}</TableCell>
-            <TableCell>{entry.size}</TableCell>
-            <TableCell>${entry.entryPrice}</TableCell>
-            <TableCell>${entry.closePrice}</TableCell>
-            <TableCell className={Number(entry.realisedPnl) >= 0 ? 'text-green-500' : 'text-red-500'}>
-              {Number(entry.realisedPnl) >= 0 ? '+' : ''}${entry.realisedPnl}
-            </TableCell>
+    <>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>{t('trading.orders.table.symbol')}</TableHead>
+            <TableHead>{t('trading.orders.table.side')}</TableHead>
+            <TableHead>{t('trading.orders.table.size')}</TableHead>
+            <TableHead>{t('trading.positions.entryPrice')}</TableHead>
+            <TableHead>{t('trading.positionActions.closePrice')}</TableHead>
+            <TableHead>{t('trading.positionActions.realisedPnl')}</TableHead>
           </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+        </TableHeader>
+        <TableBody>
+          {history.map((entry) => (
+            <TableRow
+              key={entry.id}
+              className="cursor-pointer hover:bg-muted/60"
+              onClick={() => {
+                setSelectedEntry(entry);
+                setDetailOpen(true);
+              }}
+            >
+              <TableCell>{entry.symbol}</TableCell>
+              <TableCell>{entry.side?.toUpperCase()}</TableCell>
+              <TableCell>{entry.size}</TableCell>
+              <TableCell>${entry.entryPrice}</TableCell>
+              <TableCell>${entry.closePrice}</TableCell>
+              <TableCell className={Number(entry.realisedPnl) >= 0 ? 'text-green-500' : 'text-red-500'}>
+                {Number(entry.realisedPnl) >= 0 ? '+' : ''}${entry.realisedPnl}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+
+      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
+        <DialogContent className="sm:max-w-[640px]">
+          <DialogHeader>
+            <DialogTitle>Detalhes da Posição</DialogTitle>
+            <DialogDescription>Entrada, saída, fees, margem e métricas da posição fechada.</DialogDescription>
+          </DialogHeader>
+          {selectedEntry ? (
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div><span className="text-muted-foreground">Símbolo</span><p className="font-mono">{selectedEntry.symbol}</p></div>
+              <div><span className="text-muted-foreground">Lado</span><p className="font-mono">{selectedEntry.side?.toUpperCase()}</p></div>
+              <div><span className="text-muted-foreground">Tamanho</span><p className="font-mono">{selectedEntry.size}</p></div>
+              <div><span className="text-muted-foreground">Leverage</span><p className="font-mono">{String(selectedEntry.leverage ?? '-')}</p></div>
+              <div><span className="text-muted-foreground">Entrada</span><p className="font-mono">{String(selectedEntry.entryPrice ?? '-')}</p></div>
+              <div><span className="text-muted-foreground">Saída</span><p className="font-mono">{String(selectedEntry.closePrice ?? '-')}</p></div>
+              <div><span className="text-muted-foreground">PnL Realizado</span><p className="font-mono">{String(selectedEntry.realisedPnl ?? selectedEntry.pnl ?? '-')}</p></div>
+              <div><span className="text-muted-foreground">Margem</span><p className="font-mono">{String(selectedEntry.margin ?? '-')}</p></div>
+              <div><span className="text-muted-foreground">Trade Fee</span><p className="font-mono">{String(selectedEntry.tradeFee ?? '-')}</p></div>
+              <div><span className="text-muted-foreground">Funding Fee</span><p className="font-mono">{String(selectedEntry.fundingFee ?? '-')}</p></div>
+              <div><span className="text-muted-foreground">Hold Fee</span><p className="font-mono">{String(selectedEntry.holdFee ?? '-')}</p></div>
+              <div><span className="text-muted-foreground">Fechada em</span><p className="font-mono">{String(selectedEntry.closedAt ?? selectedEntry.closeTime ?? '-')}</p></div>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 

@@ -17322,6 +17322,24 @@ app.get('/api/integrations/trading/futures/positions/history', requirePermission
   }
 });
 
+// Alias legado para frontend antigo - mantém compatibilidade sem quebrar histórico de posições
+app.get('/api/integrations/trading/positions/history', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinClient.isKucoinConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const symbol = req.query.symbol as string | undefined;
+    const result = await kucoinClient.getPositionsHistory(symbol);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter histórico de posições (alias legado)');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
 // GET /api/integrations/trading/futures/positions/max-open - Tamanho máximo de abertura
 app.get('/api/integrations/trading/futures/positions/max-open', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
   try {
@@ -20218,6 +20236,7 @@ import {
   cancelDemoOrder,
   startDemoScheduler,
   stopDemoScheduler,
+  DemoTradingBusinessError,
 } from './demo-trading-engine.js';
 import {
   getQueueStats as getPostMortemQueueStats,
@@ -20229,6 +20248,56 @@ import { getSnapshotsByRefs } from './snapshot-store.js';
 import { createDatasetFromPostMortem, createDatasetsFromPostMortemsBatch } from './dataset-generator.js';
 import { resolveModelWithAdapter } from './lora-adapter-resolver.js';
 import { queryTradingRAGContext } from './trading-rag-client.js';
+
+function mapDemoTradingError(error: unknown): { status: 400 | 404 | 422 | 500; error: string; code?: string } {
+  if (error instanceof DemoTradingBusinessError) {
+    return {
+      status: error.statusCode,
+      error: error.message,
+      code: error.code,
+    };
+  }
+
+  const message = error instanceof Error ? error.message : 'Erro desconhecido';
+  if (message.includes('Saldo insuficiente')) {
+    return { status: 422, error: message, code: 'INSUFFICIENT_BALANCE' };
+  }
+  if (message.includes('não encontrada') || message.includes('não encontrado')) {
+    return { status: 404, error: message, code: 'NOT_FOUND' };
+  }
+  if (message.includes('deve ser') || message.includes('invál') || message.includes('obrigatório')) {
+    return { status: 422, error: message, code: 'INVALID_INPUT' };
+  }
+
+  return { status: 500, error: message };
+}
+
+const demoTradingRequestErrorsTotal = new PromCounter({
+  name: 'alice_demo_trading_request_errors_total',
+  help: 'Total de erros em rotas demo trading por status/código',
+  labelNames: ['route', 'status', 'code'] as const,
+});
+
+const demoTradingRequestDurationMs = new PromHistogram({
+  name: 'alice_demo_trading_request_duration_ms',
+  help: 'Latência de rotas demo trading (ms)',
+  labelNames: ['route', 'status_class'] as const,
+  buckets: [25, 50, 100, 250, 500, 1000, 2000, 5000],
+});
+
+function recordDemoTradingError(route: string, mapped: { status: 400 | 404 | 422 | 500; code?: string }): void {
+  demoTradingRequestErrorsTotal.inc({
+    route,
+    status: String(mapped.status),
+    code: mapped.code ?? 'UNKNOWN',
+  });
+}
+
+function recordDemoTradingLatency(route: string, startedAt: number, status: number): void {
+  const elapsedMs = Math.max(0, Date.now() - startedAt);
+  const statusClass = status >= 500 ? '5xx' : status >= 400 ? '4xx' : '2xx';
+  demoTradingRequestDurationMs.observe({ route, status_class: statusClass }, elapsedMs);
+}
 
 // GET /api/integrations/demo-trading/balance - Buscar balance demo
 app.get('/api/integrations/demo-trading/balance', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
@@ -20293,6 +20362,7 @@ app.get('/api/integrations/demo-trading/funds/history', requirePermission('integ
 
 // POST /api/integrations/demo-trading/orders - Criar ordem demo
 app.post('/api/integrations/demo-trading/orders', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  const startedAt = Date.now();
   try {
     const { symbol, marketType, side, orderType, size, price, leverage, stopLoss, takeProfit } = req.body as {
       symbol: string;
@@ -20327,20 +20397,24 @@ app.post('/api/integrations/demo-trading/orders', requirePermission('integration
       takeProfit,
     });
 
+    recordDemoTradingLatency('/api/integrations/demo-trading/orders', startedAt, 201);
     res.status(201).json({ success: true, data: result });
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
-    if (errorMessage.includes('Saldo insuficiente')) {
-      res.status(400).json({ error: errorMessage });
-      return;
+    const mapped = mapDemoTradingError(error);
+    recordDemoTradingError('/api/integrations/demo-trading/orders', mapped);
+    recordDemoTradingLatency('/api/integrations/demo-trading/orders', startedAt, mapped.status);
+    if (mapped.status >= 500) {
+      logger.error({ error: mapped.error }, 'Erro ao criar ordem demo');
+    } else {
+      logger.warn({ error: mapped.error, code: mapped.code }, 'Validação de ordem demo rejeitada');
     }
-    logger.error({ error: errorMessage }, 'Erro ao criar ordem demo');
-    res.status(500).json({ error: errorMessage });
+    res.status(mapped.status).json({ error: mapped.error, code: mapped.code });
   }
 });
 
 // POST /api/integrations/demo-trading/orders/from-signal - Criar ordem demo a partir de sinal IA
 app.post('/api/integrations/demo-trading/orders/from-signal', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  const startedAt = Date.now();
   try {
     const { signalId, symbol, marketType, side, size, leverage, stopLoss, takeProfit, entryType, price } = req.body as {
       signalId: string;
@@ -20379,15 +20453,18 @@ app.post('/api/integrations/demo-trading/orders/from-signal', requirePermission(
 
     logger.info({ signalId, orderId: result.orderId, positionId: result.positionId }, 'Ordem demo criada a partir de sinal IA');
 
+    recordDemoTradingLatency('/api/integrations/demo-trading/orders/from-signal', startedAt, 201);
     res.status(201).json({ success: true, data: { ...result, fromSignalId: signalId } });
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
-    if (errorMessage.includes('Saldo insuficiente')) {
-      res.status(400).json({ error: errorMessage });
-      return;
+    const mapped = mapDemoTradingError(error);
+    recordDemoTradingError('/api/integrations/demo-trading/orders/from-signal', mapped);
+    recordDemoTradingLatency('/api/integrations/demo-trading/orders/from-signal', startedAt, mapped.status);
+    if (mapped.status >= 500) {
+      logger.error({ error: mapped.error }, 'Erro ao criar ordem demo a partir de sinal');
+    } else {
+      logger.warn({ error: mapped.error, code: mapped.code }, 'Ordem demo por sinal rejeitada por validação');
     }
-    logger.error({ error: errorMessage }, 'Erro ao criar ordem demo a partir de sinal');
-    res.status(500).json({ error: errorMessage });
+    res.status(mapped.status).json({ error: mapped.error, code: mapped.code });
   }
 });
 
@@ -20408,6 +20485,7 @@ app.get('/api/integrations/demo-trading/orders', requirePermission('integrations
 
 // DELETE /api/integrations/demo-trading/orders/:id - Cancelar ordem demo
 app.delete('/api/integrations/demo-trading/orders/:id', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  const startedAt = Date.now();
   try {
     const tenantId = req.tenantId;
     if (!tenantId) { res.status(403).json({ error: 'Tenant não identificado' }); return; }
@@ -20415,14 +20493,22 @@ app.delete('/api/integrations/demo-trading/orders/:id', requirePermission('integ
     if (!orderId) { res.status(400).json({ error: 'ID da ordem é obrigatório' }); return; }
     const success = await cancelDemoOrder(tenantId, orderId);
     if (!success) {
+      recordDemoTradingLatency('/api/integrations/demo-trading/orders/:id', startedAt, 404);
       res.status(404).json({ error: 'Ordem não encontrada ou não pode ser cancelada' });
       return;
     }
+    recordDemoTradingLatency('/api/integrations/demo-trading/orders/:id', startedAt, 200);
     res.json({ success: true });
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
-    logger.error({ error: errorMessage }, 'Erro ao cancelar ordem demo');
-    res.status(500).json({ error: errorMessage });
+    const mapped = mapDemoTradingError(error);
+    recordDemoTradingError('/api/integrations/demo-trading/orders/:id', mapped);
+    recordDemoTradingLatency('/api/integrations/demo-trading/orders/:id', startedAt, mapped.status);
+    if (mapped.status >= 500) {
+      logger.error({ error: mapped.error }, 'Erro ao cancelar ordem demo');
+    } else {
+      logger.warn({ error: mapped.error, code: mapped.code }, 'Cancelamento de ordem demo rejeitado por validação');
+    }
+    res.status(mapped.status).json({ error: mapped.error, code: mapped.code });
   }
 });
 
@@ -20449,6 +20535,7 @@ app.get('/api/integrations/demo-trading/positions', requirePermission('integrati
 
 // POST /api/integrations/demo-trading/positions/:id/close - Fechar posição demo
 app.post('/api/integrations/demo-trading/positions/:id/close', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  const startedAt = Date.now();
   try {
     const tenantId = req.tenantId;
     if (!tenantId) { res.status(403).json({ error: 'Tenant não identificado' }); return; }
@@ -20469,20 +20556,24 @@ app.post('/api/integrations/demo-trading/positions/:id/close', requirePermission
       reason: 'manual',
       size: closeParsed.data.size,
     });
+    recordDemoTradingLatency('/api/integrations/demo-trading/positions/:id/close', startedAt, 200);
     res.json({ success: true, data: result });
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
-    if (errorMessage.includes('não encontrada')) {
-      res.status(404).json({ error: errorMessage });
-      return;
+    const mapped = mapDemoTradingError(error);
+    recordDemoTradingError('/api/integrations/demo-trading/positions/:id/close', mapped);
+    recordDemoTradingLatency('/api/integrations/demo-trading/positions/:id/close', startedAt, mapped.status);
+    if (mapped.status >= 500) {
+      logger.error({ error: mapped.error }, 'Erro ao fechar posição demo');
+    } else {
+      logger.warn({ error: mapped.error, code: mapped.code }, 'Fechamento de posição demo rejeitado por validação');
     }
-    logger.error({ error: errorMessage }, 'Erro ao fechar posição demo');
-    res.status(500).json({ error: errorMessage });
+    res.status(mapped.status).json({ error: mapped.error, code: mapped.code });
   }
 });
 
 // PATCH /api/integrations/demo-trading/positions/:id - Atualizar SL/TP de posição demo
 app.patch('/api/integrations/demo-trading/positions/:id', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  const startedAt = Date.now();
   try {
     const tenantId = req.tenantId;
     if (!tenantId) { res.status(403).json({ error: 'Tenant não identificado' }); return; }
@@ -20509,20 +20600,24 @@ app.patch('/api/integrations/demo-trading/positions/:id', requirePermission('int
       takeProfit: parsed.data.takeProfit,
     });
 
+    recordDemoTradingLatency('/api/integrations/demo-trading/positions/:id', startedAt, 200);
     res.json({ success: true, data: updated });
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
-    if (errorMessage.includes('não encontrada') || errorMessage.includes('deve ser')) {
-      res.status(400).json({ error: errorMessage });
-      return;
+    const mapped = mapDemoTradingError(error);
+    recordDemoTradingError('/api/integrations/demo-trading/positions/:id', mapped);
+    recordDemoTradingLatency('/api/integrations/demo-trading/positions/:id', startedAt, mapped.status);
+    if (mapped.status >= 500) {
+      logger.error({ error: mapped.error }, 'Erro ao atualizar SL/TP da posição demo');
+    } else {
+      logger.warn({ error: mapped.error, code: mapped.code }, 'Atualização de SL/TP demo rejeitada por validação');
     }
-    logger.error({ error: errorMessage }, 'Erro ao atualizar SL/TP da posição demo');
-    res.status(500).json({ error: errorMessage });
+    res.status(mapped.status).json({ error: mapped.error, code: mapped.code });
   }
 });
 
 // POST /api/integrations/demo-trading/positions/:id/add - Adicionar tamanho a posição demo
 app.post('/api/integrations/demo-trading/positions/:id/add', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  const startedAt = Date.now();
   try {
     const tenantId = req.tenantId;
     if (!tenantId) { res.status(403).json({ error: 'Tenant não identificado' }); return; }
@@ -20550,15 +20645,18 @@ app.post('/api/integrations/demo-trading/positions/:id/add', requirePermission('
       takeProfit: parsed.data.takeProfit,
     });
 
+    recordDemoTradingLatency('/api/integrations/demo-trading/positions/:id/add', startedAt, 200);
     res.json({ success: true, data: result });
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
-    if (errorMessage.includes('Saldo insuficiente') || errorMessage.includes('não encontrada') || errorMessage.includes('invál')) {
-      res.status(400).json({ error: errorMessage });
-      return;
+    const mapped = mapDemoTradingError(error);
+    recordDemoTradingError('/api/integrations/demo-trading/positions/:id/add', mapped);
+    recordDemoTradingLatency('/api/integrations/demo-trading/positions/:id/add', startedAt, mapped.status);
+    if (mapped.status >= 500) {
+      logger.error({ error: mapped.error }, 'Erro ao adicionar tamanho à posição demo');
+    } else {
+      logger.warn({ error: mapped.error, code: mapped.code }, 'Scale-in demo rejeitado por validação');
     }
-    logger.error({ error: errorMessage }, 'Erro ao adicionar tamanho à posição demo');
-    res.status(500).json({ error: errorMessage });
+    res.status(mapped.status).json({ error: mapped.error, code: mapped.code });
   }
 });
 

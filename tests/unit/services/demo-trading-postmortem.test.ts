@@ -101,15 +101,29 @@ describe('Demo Trading Engine - Tipos e Contratos', () => {
   it('deve calcular preço de liquidação para long', () => {
     const entryPrice = 64200;
     const leverage = 10;
-    const liquidationPrice = entryPrice * (1 - 1 / leverage);
-    expect(liquidationPrice).toBeCloseTo(57780, 0);
+    const sizeContracts = 100;
+    const multiplier = 0.001;
+    const mmr = 0.004;
+    const lfr = 0.0006;
+    const openingValue = sizeContracts * multiplier * entryPrice;
+    const positionMargin = openingValue / leverage;
+    const denominator = sizeContracts * multiplier * (1 - mmr - lfr);
+    const liquidationPrice = (openingValue - positionMargin) / denominator;
+    expect(liquidationPrice).toBeCloseTo(58047.02, 2);
   });
 
   it('deve calcular preço de liquidação para short', () => {
     const entryPrice = 64200;
     const leverage = 10;
-    const liquidationPrice = entryPrice * (1 + 1 / leverage);
-    expect(liquidationPrice).toBeCloseTo(70620, 0);
+    const sizeContracts = 100;
+    const multiplier = 0.001;
+    const mmr = 0.004;
+    const lfr = 0.0006;
+    const openingValue = sizeContracts * multiplier * entryPrice;
+    const positionMargin = openingValue / leverage;
+    const denominator = sizeContracts * multiplier * (1 + mmr + lfr);
+    const liquidationPrice = (openingValue - positionMargin) / denominator;
+    expect(liquidationPrice).toBeCloseTo(57515.43, 2);
   });
 
   it('deve calcular margem requerida corretamente', () => {

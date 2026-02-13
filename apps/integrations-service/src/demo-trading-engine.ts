@@ -23,6 +23,7 @@ import {
 import { getDatabase, schema } from '@alice/database';
 import { eq, and, desc, sql } from '@alice/database';
 import * as kucoinClient from './kucoinClient.js';
+import * as kucoinSpotClient from './kucoinSpotClient.js';
 import { captureEntrySnapshot, captureExitSnapshot } from './snapshot-store.js';
 import { enqueuePostMortem } from './postmortem-worker.js';
 import type { PostMortemPositionData } from './postmortem-engine.js';
@@ -63,8 +64,10 @@ const SIMULATED_SLIPPAGE_BPS = 3;
 /** Fee simulado em basis points (4 bps = 0.04%) - simula taker fee KuCoin */
 const SIMULATED_FEE_BPS = 4;
 
-/** Fator de manutenção margin para liquidação (5%) */
-const MAINTENANCE_MARGIN_RATE = 0.05;
+/** Fator de manutenção default (KuCoin level 1 costuma iniciar em 0.4%) */
+const DEFAULT_MAINTENANCE_MARGIN_RATE = 0.004;
+/** Taxa de liquidação default (KuCoin Futures ~0.06%) */
+const DEFAULT_LIQUIDATION_FEE_RATE = 0.0006;
 
 const KNOWN_QUOTE_CURRENCIES = ['USDT', 'USDC', 'BTC', 'ETH', 'EUR', 'USD', 'BRL'] as const;
 
@@ -105,6 +108,23 @@ type DemoAssetPair = {
   baseCurrency: string;
   quoteCurrency: string;
 };
+
+export class DemoTradingBusinessError extends Error {
+  constructor(
+    message: string,
+    public readonly code:
+      | 'INVALID_INPUT'
+      | 'INSUFFICIENT_BALANCE'
+      | 'NOT_FOUND'
+      | 'INVALID_PROTECTIVE_LEVEL'
+      | 'SPOT_NOT_CONFIGURED'
+      | 'PRICE_UNAVAILABLE',
+    public readonly statusCode: 400 | 404 | 422 = 400,
+  ) {
+    super(message);
+    this.name = 'DemoTradingBusinessError';
+  }
+}
 
 // ============================================================================
 // Balance Management
@@ -232,8 +252,9 @@ function applySlippage(price: number, side: DemoOrderSide): number {
 /**
  * Calcula fee simulado
  */
-function calculateFee(size: number, price: number): number {
-  return (size * price * SIMULATED_FEE_BPS) / 10_000;
+function calculateFee(size: number, price: number, contractMultiplier = 1): number {
+  const notional = size * price * contractMultiplier;
+  return (notional * SIMULATED_FEE_BPS) / 10_000;
 }
 
 /**
@@ -242,17 +263,54 @@ function calculateFee(size: number, price: number): number {
 function calculateLiquidationPrice(params: {
   entryPrice: number;
   side: DemoOrderSide;
-  leverage: number;
+  positionSize: number;
+  contractMultiplier: number;
+  positionMargin: number;
+  maintenanceMarginRate: number;
+  liquidationFeeRate: number;
 }): number {
-  const { entryPrice, side, leverage } = params;
-  if (leverage <= 1) return 0; // Sem liquidação para spot/leverage 1
-
-  if (side === 'buy') {
-    // Long: preço cai até margem de manutenção
-    return entryPrice * (1 - (1 / leverage) + MAINTENANCE_MARGIN_RATE);
+  const {
+    entryPrice,
+    side,
+    positionSize,
+    contractMultiplier,
+    positionMargin,
+    maintenanceMarginRate,
+    liquidationFeeRate,
+  } = params;
+  if (positionSize <= 0 || contractMultiplier <= 0 || positionMargin <= 0 || entryPrice <= 0) {
+    return 0;
   }
-  // Short: preço sobe até margem de manutenção
-  return entryPrice * (1 + (1 / leverage) - MAINTENANCE_MARGIN_RATE);
+  const openingValue = positionSize * contractMultiplier * entryPrice;
+  const sideFactor = side === 'buy' ? 1 : -1;
+  const denominator = positionSize * contractMultiplier * (
+    1 - sideFactor * maintenanceMarginRate - sideFactor * liquidationFeeRate
+  );
+  if (!Number.isFinite(denominator) || denominator <= 0) {
+    return 0;
+  }
+  const liquidationPrice = (openingValue - positionMargin) / denominator;
+  if (!Number.isFinite(liquidationPrice) || liquidationPrice <= 0) {
+    return 0;
+  }
+  return liquidationPrice;
+}
+
+function calculateFuturesNotional(size: number, price: number, contractMultiplier: number): number {
+  return size * price * contractMultiplier;
+}
+
+async function getFuturesPricingContext(symbol: string): Promise<{
+  contractMultiplier: number;
+  maintenanceMarginRate: number;
+  liquidationFeeRate: number;
+}> {
+  const contractInfo = await kucoinClient.getContractInfo(symbol);
+  return {
+    contractMultiplier: Number(contractInfo.multiplier || 1),
+    maintenanceMarginRate: Number(contractInfo.maintainMargin || DEFAULT_MAINTENANCE_MARGIN_RATE),
+    liquidationFeeRate: DEFAULT_LIQUIDATION_FEE_RATE,
+  };
 }
 
 function validateProtectiveLevels(params: {
@@ -276,14 +334,22 @@ function validateProtectiveLevels(params: {
   if (side === 'buy') {
     if (stopLoss !== null && stopLoss >= entryPrice) {
       if (context === 'order_create' || context === 'position_update') {
-        throw new Error(`Stop Loss (${stopLoss}) deve ser menor que o preço de entrada (${entryPrice}) para LONG.`);
+        throw new DemoTradingBusinessError(
+          `Stop Loss (${stopLoss}) deve ser menor que o preço de entrada (${entryPrice}) para LONG.`,
+          'INVALID_PROTECTIVE_LEVEL',
+          422
+        );
       }
       logger.warn({ stopLoss, entryPrice }, 'Stop Loss inválido em fill agendado - removendo proteção');
       stopLoss = null;
     }
     if (takeProfit !== null && takeProfit <= entryPrice) {
       if (context === 'order_create' || context === 'position_update') {
-        throw new Error(`Take Profit (${takeProfit}) deve ser maior que o preço de entrada (${entryPrice}) para LONG.`);
+        throw new DemoTradingBusinessError(
+          `Take Profit (${takeProfit}) deve ser maior que o preço de entrada (${entryPrice}) para LONG.`,
+          'INVALID_PROTECTIVE_LEVEL',
+          422
+        );
       }
       logger.warn({ takeProfit, entryPrice }, 'Take Profit inválido em fill agendado - removendo proteção');
       takeProfit = null;
@@ -291,14 +357,22 @@ function validateProtectiveLevels(params: {
   } else {
     if (stopLoss !== null && stopLoss <= entryPrice) {
       if (context === 'order_create' || context === 'position_update') {
-        throw new Error(`Stop Loss (${stopLoss}) deve ser maior que o preço de entrada (${entryPrice}) para SHORT.`);
+        throw new DemoTradingBusinessError(
+          `Stop Loss (${stopLoss}) deve ser maior que o preço de entrada (${entryPrice}) para SHORT.`,
+          'INVALID_PROTECTIVE_LEVEL',
+          422
+        );
       }
       logger.warn({ stopLoss, entryPrice }, 'Stop Loss inválido em fill agendado - removendo proteção');
       stopLoss = null;
     }
     if (takeProfit !== null && takeProfit >= entryPrice) {
       if (context === 'order_create' || context === 'position_update') {
-        throw new Error(`Take Profit (${takeProfit}) deve ser menor que o preço de entrada (${entryPrice}) para SHORT.`);
+        throw new DemoTradingBusinessError(
+          `Take Profit (${takeProfit}) deve ser menor que o preço de entrada (${entryPrice}) para SHORT.`,
+          'INVALID_PROTECTIVE_LEVEL',
+          422
+        );
       }
       logger.warn({ takeProfit, entryPrice }, 'Take Profit inválido em fill agendado - removendo proteção');
       takeProfit = null;
@@ -336,16 +410,53 @@ function resolveAssetPair(symbol: string): DemoAssetPair {
 /**
  * Busca preço atual do mercado KuCoin
  */
-async function getCurrentPrice(symbol: string): Promise<number> {
+function normalizeSpotSymbol(symbol: string): string {
+  const normalized = symbol.trim().toUpperCase();
+  if (normalized.includes('-')) {
+    return normalized;
+  }
+
+  const withoutFuturesSuffix = normalized.endsWith('M') ? normalized.slice(0, -1) : normalized;
+  for (const quote of KNOWN_QUOTE_CURRENCIES) {
+    if (withoutFuturesSuffix.endsWith(quote) && withoutFuturesSuffix.length > quote.length) {
+      const base = withoutFuturesSuffix.slice(0, withoutFuturesSuffix.length - quote.length);
+      return `${base}-${quote}`;
+    }
+  }
+  return withoutFuturesSuffix;
+}
+
+async function getCurrentPrice(symbol: string, marketType: DemoMarketType): Promise<number> {
   try {
-    const ticker = await kucoinClient.getTicker(symbol);
-    const price = Number(ticker.price);
+    const price = await (async () => {
+      if (marketType === 'futures') {
+        const ticker = await kucoinClient.getTicker(symbol);
+        return Number(ticker.price);
+      }
+
+      if (!kucoinSpotClient.isSpotConfigured()) {
+        throw new DemoTradingBusinessError(
+          'KuCoin Spot não está configurado para operar Spot/Margin no Demo.',
+          'SPOT_NOT_CONFIGURED',
+          422
+        );
+      }
+
+      const spotSymbol = normalizeSpotSymbol(symbol);
+      const ticker = await kucoinSpotClient.getSpotTicker(spotSymbol);
+      return Number(ticker.price);
+    })();
+
     if (isNaN(price) || price <= 0) {
-      throw new Error(`Preço inválido para ${symbol}: ${ticker.price}`);
+      throw new DemoTradingBusinessError(
+        `Preço inválido para ${symbol}.`,
+        'PRICE_UNAVAILABLE',
+        422
+      );
     }
     return price;
   } catch (error) {
-    logger.error({ error, symbol }, 'Falha ao buscar preço atual');
+    logger.error({ error, symbol, marketType }, 'Falha ao buscar preço atual');
     throw error;
   }
 }
@@ -354,23 +465,59 @@ async function getCurrentPrice(symbol: string): Promise<number> {
  * Cria e executa uma ordem demo
  */
 export async function createDemoOrder(params: CreateDemoOrderParams): Promise<DemoOrderResult> {
-  const db = getDatabase();
-
   // Validação defensiva: size DEVE ser positivo (defesa em profundidade - endpoint já valida)
   if (!Number.isFinite(params.size) || params.size <= 0) {
-    throw new Error(`size inválido: ${params.size}. Deve ser um número positivo.`);
+    throw new DemoTradingBusinessError(
+      `size inválido: ${params.size}. Deve ser um número positivo.`,
+      'INVALID_INPUT',
+      422,
+    );
   }
 
-  // Sanitizar leverage: NaN, null, undefined, 0 ou negativo → default 1
-  const rawLeverage = params.leverage ?? 1;
-  const leverage = Number.isFinite(rawLeverage) && rawLeverage >= 1 ? rawLeverage : 1;
+  const rawLeverage = params.leverage;
+  if (rawLeverage !== undefined && (!Number.isFinite(rawLeverage) || rawLeverage <= 0)) {
+    throw new DemoTradingBusinessError(
+      `Alavancagem inválida: ${rawLeverage}.`,
+      'INVALID_INPUT',
+      422,
+    );
+  }
+  const leverage = rawLeverage ?? 1;
+
+  if (params.marketType === 'spot' && leverage !== 1) {
+    throw new DemoTradingBusinessError(
+      'Spot demo não permite alavancagem diferente de 1x.',
+      'INVALID_INPUT',
+      422,
+    );
+  }
+  if (params.marketType === 'futures' && leverage > 125) {
+    throw new DemoTradingBusinessError(
+      'Alavancagem máxima para futures demo é 125x.',
+      'INVALID_INPUT',
+      422,
+    );
+  }
+  if (params.marketType === 'margin' && leverage > 10) {
+    throw new DemoTradingBusinessError(
+      'Alavancagem máxima para margin demo é 10x.',
+      'INVALID_INPUT',
+      422,
+    );
+  }
+
+  const db = getDatabase();
 
   const assetPair = resolveAssetPair(params.symbol);
   const quoteBalance = await getOrCreateBalance(params.tenantId, assetPair.quoteCurrency);
   const baseBalance = await getOrCreateBalance(params.tenantId, assetPair.baseCurrency);
+  const futuresContext = params.marketType === 'futures'
+    ? await getFuturesPricingContext(params.symbol)
+    : null;
+  const futuresContractMultiplier = futuresContext?.contractMultiplier ?? 1;
 
   // Buscar preço atual
-  const marketPrice = await getCurrentPrice(params.symbol);
+  const marketPrice = await getCurrentPrice(params.symbol, params.marketType);
 
   let fillPrice: number;
   let orderStatus: DemoOrderStatus;
@@ -381,7 +528,13 @@ export async function createDemoOrder(params: CreateDemoOrderParams): Promise<De
     orderStatus = 'filled';
   } else if (params.orderType === 'limit') {
     // Limit order: só executa se preço favorável
-    if (!params.price) throw new Error('Preço obrigatório para ordem limit');
+    if (!params.price) {
+      throw new DemoTradingBusinessError(
+        'Preço obrigatório para ordem limit.',
+        'INVALID_INPUT',
+        422,
+      );
+    }
     if (params.side === 'buy' && params.price >= marketPrice) {
       fillPrice = applySlippage(params.price, params.side);
       orderStatus = 'filled';
@@ -395,7 +548,13 @@ export async function createDemoOrder(params: CreateDemoOrderParams): Promise<De
     }
   } else {
     // Stop order: salvar como open (será processada pelo scheduler)
-    if (!params.price) throw new Error('Preço obrigatório para ordem stop');
+    if (!params.price) {
+      throw new DemoTradingBusinessError(
+        'Preço obrigatório para ordem stop.',
+        'INVALID_INPUT',
+        422,
+      );
+    }
     fillPrice = params.price;
     orderStatus = 'open';
   }
@@ -410,14 +569,20 @@ export async function createDemoOrder(params: CreateDemoOrderParams): Promise<De
   });
 
   // Calcular custos
-  const fee = orderStatus === 'filled' ? calculateFee(params.size, fillPrice) : 0;
-  const notionalValue = params.size * fillPrice;
+  const fee = orderStatus === 'filled'
+    ? calculateFee(params.size, fillPrice, params.marketType === 'futures' ? futuresContractMultiplier : 1)
+    : 0;
+  const notionalValue = params.marketType === 'futures'
+    ? calculateFuturesNotional(params.size, fillPrice, futuresContractMultiplier)
+    : (params.size * fillPrice);
   const requiredMargin = notionalValue / leverage;
 
   // Verificar balance E debitar atomicamente numa única operação SQL.
   // Evita race condition onde duas requests concorrentes leem o mesmo saldo,
   // ambas passam a verificação, e o last-write-wins perde uma dedução.
-  const estimatedFee = orderStatus === 'filled' ? fee : calculateFee(params.size, fillPrice);
+  const estimatedFee = orderStatus === 'filled'
+    ? fee
+    : calculateFee(params.size, fillPrice, params.marketType === 'futures' ? futuresContractMultiplier : 1);
 
   if (params.marketType === 'futures') {
     if (orderStatus === 'open') {
@@ -437,8 +602,10 @@ export async function createDemoOrder(params: CreateDemoOrderParams): Promise<De
         .returning({ id: schema.demoBalances.id });
 
       if (!balanceUpdated) {
-        throw new Error(
+        throw new DemoTradingBusinessError(
           `Saldo insuficiente. Requerido: ${totalToFreeze.toFixed(2)} ${assetPair.quoteCurrency} (margem + fee estimado)`
+          , 'INSUFFICIENT_BALANCE'
+          , 422
         );
       }
     } else {
@@ -458,8 +625,10 @@ export async function createDemoOrder(params: CreateDemoOrderParams): Promise<De
         .returning({ id: schema.demoBalances.id });
 
       if (!balanceUpdated) {
-        throw new Error(
+        throw new DemoTradingBusinessError(
           `Saldo insuficiente. Requerido: ${totalRequired.toFixed(2)} ${assetPair.quoteCurrency} (margem + fee)`
+          , 'INSUFFICIENT_BALANCE'
+          , 422
         );
       }
     }
@@ -481,7 +650,11 @@ export async function createDemoOrder(params: CreateDemoOrderParams): Promise<De
           .returning({ id: schema.demoBalances.id });
 
         if (!quoteUpdated) {
-          throw new Error(`Saldo insuficiente de ${assetPair.quoteCurrency} para ordem pendente de compra.`);
+          throw new DemoTradingBusinessError(
+            `Saldo insuficiente de ${assetPair.quoteCurrency} para ordem pendente de compra.`,
+            'INSUFFICIENT_BALANCE',
+            422,
+          );
         }
       } else {
         const [baseUpdated] = await db
@@ -498,7 +671,11 @@ export async function createDemoOrder(params: CreateDemoOrderParams): Promise<De
           .returning({ id: schema.demoBalances.id });
 
         if (!baseUpdated) {
-          throw new Error(`Saldo insuficiente de ${assetPair.baseCurrency} para ordem pendente de venda.`);
+          throw new DemoTradingBusinessError(
+            `Saldo insuficiente de ${assetPair.baseCurrency} para ordem pendente de venda.`,
+            'INSUFFICIENT_BALANCE',
+            422,
+          );
         }
       }
     } else if (params.side === 'buy') {
@@ -516,7 +693,11 @@ export async function createDemoOrder(params: CreateDemoOrderParams): Promise<De
         .returning({ id: schema.demoBalances.id });
 
       if (!quoteUpdated) {
-        throw new Error(`Saldo insuficiente de ${assetPair.quoteCurrency} para compra.`);
+        throw new DemoTradingBusinessError(
+          `Saldo insuficiente de ${assetPair.quoteCurrency} para compra.`,
+          'INSUFFICIENT_BALANCE',
+          422,
+        );
       }
 
       await db
@@ -540,7 +721,11 @@ export async function createDemoOrder(params: CreateDemoOrderParams): Promise<De
         .returning({ id: schema.demoBalances.id });
 
       if (!baseUpdated) {
-        throw new Error(`Saldo insuficiente de ${assetPair.baseCurrency} para venda.`);
+        throw new DemoTradingBusinessError(
+          `Saldo insuficiente de ${assetPair.baseCurrency} para venda.`,
+          'INSUFFICIENT_BALANCE',
+          422,
+        );
       }
 
       const quoteCredit = Math.max(0, notionalValue - fee);
@@ -584,64 +769,144 @@ export async function createDemoOrder(params: CreateDemoOrderParams): Promise<De
   // Se ordem foi preenchida em futures, criar/atualizar posição
   // NOTA: balance já foi debitado atomicamente acima (available -= margin+fee, frozen += margin)
   if (orderStatus === 'filled' && params.marketType === 'futures') {
-    // Criar posição
+    // Consolidar por símbolo+lado quando já existe posição futures aberta
     const positionSide = params.side === 'buy' ? 'long' : 'short';
-    const liquidationPrice = calculateLiquidationPrice({
-      entryPrice: fillPrice,
-      side: params.side,
-      leverage,
-    });
+    const [existingPosition] = await db
+      .select()
+      .from(schema.demoPositions)
+      .where(and(
+        eq(schema.demoPositions.tenantId, params.tenantId),
+        eq(schema.demoPositions.symbol, params.symbol),
+        eq(schema.demoPositions.marketType, 'futures'),
+        eq(schema.demoPositions.side, positionSide),
+        eq(schema.demoPositions.status, 'open'),
+      ))
+      .orderBy(desc(schema.demoPositions.openedAt))
+      .limit(1);
 
-    const [position] = await db
-      .insert(schema.demoPositions)
-      .values({
-        tenantId: params.tenantId,
-        symbol: params.symbol,
-        marketType: params.marketType,
-        side: positionSide,
-        entryPrice: String(fillPrice),
-        size: String(params.size),
-        leverage,
-        stopLoss: validatedProtectiveLevels.stopLoss !== null ? String(validatedProtectiveLevels.stopLoss) : null,
-        takeProfit: validatedProtectiveLevels.takeProfit !== null ? String(validatedProtectiveLevels.takeProfit) : null,
-        liquidationPrice: liquidationPrice > 0 ? String(liquidationPrice) : null,
-        marginAmount: String(requiredMargin),
-        // Persistir entry fee na posição — acumulado com exit fee no close para totalFees correto
-        totalFees: String(fee),
-        status: 'open',
-        metadata: { orderId: order.id },
-      })
-      .returning();
-
-    positionId = position.id;
-
-    // Capturar snapshot de entrada e armazenar ID na posição para uso no post-mortem
-    try {
-      const entrySnapshot = await captureEntrySnapshot({
-        tenantId: params.tenantId,
-        symbol: params.symbol,
-        marketType: params.marketType,
-        positionId: position.id,
+    if (existingPosition) {
+      const currentSize = Number(existingPosition.size);
+      const currentEntry = Number(existingPosition.entryPrice);
+      const nextSize = currentSize + params.size;
+      const weightedEntry = ((currentEntry * currentSize) + (fillPrice * params.size)) / nextSize;
+      const currentMargin = Number(existingPosition.marginAmount ?? '0');
+      const nextMargin = currentMargin + requiredMargin;
+      const currentFees = Number(existingPosition.totalFees ?? '0');
+      const nextFees = currentFees + fee;
+      const nextStopLoss = validatedProtectiveLevels.stopLoss ?? (existingPosition.stopLoss ? Number(existingPosition.stopLoss) : null);
+      const nextTakeProfit = validatedProtectiveLevels.takeProfit ?? (existingPosition.takeProfit ? Number(existingPosition.takeProfit) : null);
+      const validatedRisk = validateProtectiveLevels({
+        side: params.side,
+        entryPrice: weightedEntry,
+        stopLoss: nextStopLoss,
+        takeProfit: nextTakeProfit,
+        context: 'position_update',
       });
-      // Persistir entrySnapshotId na posição para que o post-mortem e dataset generator possam usar
-      await db
+      const liquidationPrice = calculateLiquidationPrice({
+        entryPrice: weightedEntry,
+        side: params.side,
+        positionSize: nextSize,
+        contractMultiplier: futuresContractMultiplier,
+        positionMargin: nextMargin,
+        maintenanceMarginRate: futuresContext?.maintenanceMarginRate ?? DEFAULT_MAINTENANCE_MARGIN_RATE,
+        liquidationFeeRate: futuresContext?.liquidationFeeRate ?? DEFAULT_LIQUIDATION_FEE_RATE,
+      });
+      const [updatedPosition] = await db
         .update(schema.demoPositions)
-        .set({ entrySnapshotId: entrySnapshot.id })
-        .where(eq(schema.demoPositions.id, position.id));
-      logger.info({ positionId: position.id, entrySnapshotId: entrySnapshot.id }, 'Entry snapshot capturado e vinculado à posição demo');
-    } catch (snapshotError) {
-      logger.warn({ error: snapshotError, positionId: position.id }, 'Falha ao capturar snapshot de entrada (não bloqueante)');
+        .set({
+          size: String(nextSize),
+          entryPrice: String(weightedEntry),
+          marginAmount: String(nextMargin),
+          totalFees: String(nextFees),
+          leverage: existingPosition.leverage ?? leverage,
+          stopLoss: validatedRisk.stopLoss !== null ? String(validatedRisk.stopLoss) : null,
+          takeProfit: validatedRisk.takeProfit !== null ? String(validatedRisk.takeProfit) : null,
+          liquidationPrice: liquidationPrice > 0 ? String(liquidationPrice) : null,
+          metadata: {
+            ...((existingPosition.metadata ?? {}) as Record<string, unknown>),
+            lastOrderId: order.id,
+            contractMultiplier: futuresContractMultiplier,
+            maintenanceMarginRate: futuresContext?.maintenanceMarginRate ?? DEFAULT_MAINTENANCE_MARGIN_RATE,
+            liquidationFeeRate: futuresContext?.liquidationFeeRate ?? DEFAULT_LIQUIDATION_FEE_RATE,
+          },
+        })
+        .where(eq(schema.demoPositions.id, existingPosition.id))
+        .returning();
+      positionId = updatedPosition?.id ?? existingPosition.id;
+      logger.info({
+        positionId,
+        orderId: order.id,
+        symbol: params.symbol,
+        side: positionSide,
+        addedSize: params.size,
+        newSize: nextSize,
+        weightedEntry,
+      }, 'Ordem demo consolidada em posição futures aberta');
+    } else {
+      const liquidationPrice = calculateLiquidationPrice({
+        entryPrice: fillPrice,
+        side: params.side,
+        positionSize: params.size,
+        contractMultiplier: futuresContractMultiplier,
+        positionMargin: requiredMargin,
+        maintenanceMarginRate: futuresContext?.maintenanceMarginRate ?? DEFAULT_MAINTENANCE_MARGIN_RATE,
+        liquidationFeeRate: futuresContext?.liquidationFeeRate ?? DEFAULT_LIQUIDATION_FEE_RATE,
+      });
+
+      const [position] = await db
+        .insert(schema.demoPositions)
+        .values({
+          tenantId: params.tenantId,
+          symbol: params.symbol,
+          marketType: params.marketType,
+          side: positionSide,
+          entryPrice: String(fillPrice),
+          size: String(params.size),
+          leverage,
+          stopLoss: validatedProtectiveLevels.stopLoss !== null ? String(validatedProtectiveLevels.stopLoss) : null,
+          takeProfit: validatedProtectiveLevels.takeProfit !== null ? String(validatedProtectiveLevels.takeProfit) : null,
+          liquidationPrice: liquidationPrice > 0 ? String(liquidationPrice) : null,
+          marginAmount: String(requiredMargin),
+          totalFees: String(fee),
+          status: 'open',
+          metadata: {
+            orderId: order.id,
+            contractMultiplier: futuresContractMultiplier,
+            maintenanceMarginRate: futuresContext?.maintenanceMarginRate ?? DEFAULT_MAINTENANCE_MARGIN_RATE,
+            liquidationFeeRate: futuresContext?.liquidationFeeRate ?? DEFAULT_LIQUIDATION_FEE_RATE,
+          },
+        })
+        .returning();
+
+      positionId = position.id;
+
+      // Capturar snapshot de entrada e armazenar ID na posição para uso no post-mortem
+      try {
+        const entrySnapshot = await captureEntrySnapshot({
+          tenantId: params.tenantId,
+          symbol: params.symbol,
+          marketType: params.marketType,
+          positionId: position.id,
+        });
+        await db
+          .update(schema.demoPositions)
+          .set({ entrySnapshotId: entrySnapshot.id })
+          .where(eq(schema.demoPositions.id, position.id));
+        logger.info({ positionId: position.id, entrySnapshotId: entrySnapshot.id }, 'Entry snapshot capturado e vinculado à posição demo');
+      } catch (snapshotError) {
+        logger.warn({ error: snapshotError, positionId: position.id }, 'Falha ao capturar snapshot de entrada (não bloqueante)');
+      }
     }
 
     // Associar posição à ordem via metadata
     await db
       .update(schema.demoOrders)
-      .set({ metadata: { ...((order.metadata ?? {}) as Record<string, unknown>), positionId: position.id } })
+      .set({ metadata: { ...((order.metadata ?? {}) as Record<string, unknown>), positionId } })
       .where(eq(schema.demoOrders.id, order.id));
 
     logger.info({
       orderId: order.id,
-      positionId: position.id,
+      positionId,
       symbol: params.symbol,
       side: positionSide,
       fillPrice,
@@ -703,37 +968,43 @@ export async function closeDemoPosition(params: {
     .limit(1);
 
   if (!position) {
-    throw new Error('Posição não encontrada ou já fechada');
+    throw new DemoTradingBusinessError('Posição não encontrada ou já fechada', 'NOT_FOUND', 404);
   }
 
   // Buscar preço atual
-  const currentPrice = await getCurrentPrice(position.symbol);
+  const currentPrice = await getCurrentPrice(position.symbol, position.marketType as DemoMarketType);
   const exitPrice = applySlippage(currentPrice, position.side === 'long' ? 'sell' : 'buy');
   const positionSize = Number(position.size);
   const closeSize = params.size !== undefined ? Number(params.size) : positionSize;
   if (!Number.isFinite(closeSize) || closeSize <= 0) {
-    throw new Error('Quantidade de fechamento inválida.');
+    throw new DemoTradingBusinessError('Quantidade de fechamento inválida.', 'INVALID_INPUT', 422);
   }
   if (closeSize > positionSize) {
-    throw new Error(`Quantidade de fechamento (${closeSize}) maior que o tamanho da posição (${positionSize}).`);
+    throw new DemoTradingBusinessError(
+      `Quantidade de fechamento (${closeSize}) maior que o tamanho da posição (${positionSize}).`,
+      'INVALID_INPUT',
+      422
+    );
   }
 
   const remainingSize = positionSize - closeSize;
   const isPartial = remainingSize > 0;
-  const fee = calculateFee(closeSize, exitPrice);
+  const futuresContext = position.marketType === 'futures' ? await getFuturesPricingContext(position.symbol) : null;
+  const contractMultiplier = futuresContext?.contractMultiplier ?? 1;
+  const fee = calculateFee(closeSize, exitPrice, position.marketType === 'futures' ? contractMultiplier : 1);
 
   // Calcular PnL
   const entryPrice = Number(position.entryPrice);
   const size = closeSize;
   const leverage = position.leverage ?? 1;
 
-  // PnL = diferença de preço × tamanho da posição - fees
-  // Leverage afeta apenas margem necessária, NÃO amplifica PnL real
+  // PnL = diferença de preço × tamanho nocional - fees
   let realizedPnl: number;
+  const pnlMultiplier = position.marketType === 'futures' ? contractMultiplier : 1;
   if (position.side === 'long') {
-    realizedPnl = (exitPrice - entryPrice) * size - fee;
+    realizedPnl = (exitPrice - entryPrice) * size * pnlMultiplier - fee;
   } else {
-    realizedPnl = (entryPrice - exitPrice) * size - fee;
+    realizedPnl = (entryPrice - exitPrice) * size * pnlMultiplier - fee;
   }
 
   const closedAt = new Date();
@@ -747,6 +1018,17 @@ export async function closeDemoPosition(params: {
   const remainingMargin = Math.max(0, currentMargin - marginToRelease);
 
   if (isPartial) {
+    const remainingLiquidation = position.marketType === 'futures'
+      ? calculateLiquidationPrice({
+          entryPrice,
+          side: position.side === 'long' ? 'buy' : 'sell',
+          positionSize: remainingSize,
+          contractMultiplier,
+          positionMargin: remainingMargin,
+          maintenanceMarginRate: futuresContext?.maintenanceMarginRate ?? DEFAULT_MAINTENANCE_MARGIN_RATE,
+          liquidationFeeRate: futuresContext?.liquidationFeeRate ?? DEFAULT_LIQUIDATION_FEE_RATE,
+        })
+      : 0;
     await db
       .update(schema.demoPositions)
       .set({
@@ -754,6 +1036,12 @@ export async function closeDemoPosition(params: {
         marginAmount: String(remainingMargin),
         realizedPnl: String(nextRealized),
         totalFees: String(nextTotalFees),
+        liquidationPrice: remainingLiquidation > 0 ? String(remainingLiquidation) : null,
+        metadata: {
+          ...((position.metadata ?? {}) as Record<string, unknown>),
+          lastCloseReason: params.reason ?? 'manual_partial',
+          contractMultiplier,
+        },
       })
       .where(eq(schema.demoPositions.id, position.id));
   } else {
@@ -765,6 +1053,11 @@ export async function closeDemoPosition(params: {
         totalFees: String(nextTotalFees),
         status: params.reason === 'liquidation' ? 'liquidated' : 'closed',
         closedAt,
+        metadata: {
+          ...((position.metadata ?? {}) as Record<string, unknown>),
+          closeReason: params.reason ?? 'manual',
+          contractMultiplier,
+        },
       })
       .where(eq(schema.demoPositions.id, position.id));
   }
@@ -773,6 +1066,7 @@ export async function closeDemoPosition(params: {
   // UPDATE atômico: aritmética SQL evita race condition em read-modify-write concorrente
   const creditAmount = marginToRelease + realizedPnl; // margem devolvida + PnL (pode ser negativo)
 
+  const quoteCurrency = resolveAssetPair(position.symbol).quoteCurrency;
   await db
     .update(schema.demoBalances)
     .set({
@@ -782,15 +1076,15 @@ export async function closeDemoPosition(params: {
     })
     .where(and(
       eq(schema.demoBalances.tenantId, params.tenantId),
-      eq(schema.demoBalances.currency, 'USDT'),
+      eq(schema.demoBalances.currency, quoteCurrency),
     ));
 
   // Registrar no histórico de fundos
   await db.insert(schema.demoFundHistory).values({
     tenantId: params.tenantId,
     amount: String(Math.abs(realizedPnl)),
-    currency: 'USDT',
-    reason: `${isPartial ? 'partial_close' : (realizedPnl >= 0 ? 'pnl_credit' : 'pnl_debit')} - PnL de ${position.symbol} ${position.side}: ${realizedPnl.toFixed(2)} USDT`,
+    currency: quoteCurrency,
+    reason: `${isPartial ? 'partial_close' : (realizedPnl >= 0 ? 'pnl_credit' : 'pnl_debit')} - PnL de ${position.symbol} ${position.side}: ${realizedPnl.toFixed(2)} ${quoteCurrency}`,
   });
 
   if (isPartial) {
@@ -953,7 +1247,7 @@ export async function updateDemoPositionRisk(params: {
     .limit(1);
 
   if (!position) {
-    throw new Error('Posição não encontrada ou já fechada');
+    throw new DemoTradingBusinessError('Posição não encontrada ou já fechada', 'NOT_FOUND', 404);
   }
 
   const hasStopLossField = Object.prototype.hasOwnProperty.call(params, 'stopLoss');
@@ -1010,7 +1304,7 @@ export async function addToDemoPosition(params: {
 }> {
   const db = getDatabase();
   if (!Number.isFinite(params.size) || params.size <= 0) {
-    throw new Error('Quantidade para adicionar à posição é inválida.');
+    throw new DemoTradingBusinessError('Quantidade para adicionar à posição é inválida.', 'INVALID_INPUT', 422);
   }
 
   const [position] = await db
@@ -1024,18 +1318,21 @@ export async function addToDemoPosition(params: {
     .limit(1);
 
   if (!position) {
-    throw new Error('Posição não encontrada ou já fechada');
+    throw new DemoTradingBusinessError('Posição não encontrada ou já fechada', 'NOT_FOUND', 404);
   }
   if (position.marketType !== 'futures') {
-    throw new Error('Adicionar tamanho à posição é suportado apenas para Futures demo.');
+    throw new DemoTradingBusinessError('Adicionar tamanho à posição é suportado apenas para Futures demo.', 'INVALID_INPUT', 422);
   }
 
-  const fillReference = params.price ?? await getCurrentPrice(position.symbol);
+  const futuresContext = await getFuturesPricingContext(position.symbol);
+  const contractMultiplier = futuresContext.contractMultiplier;
+  const fillReference = params.price ?? await getCurrentPrice(position.symbol, position.marketType as DemoMarketType);
   const sideForExecution: DemoOrderSide = position.side === 'long' ? 'buy' : 'sell';
   const fillPrice = applySlippage(fillReference, sideForExecution);
-  const fee = calculateFee(params.size, fillPrice);
+  const fee = calculateFee(params.size, fillPrice, contractMultiplier);
   const leverage = position.leverage ?? 1;
-  const addMargin = (params.size * fillPrice) / leverage;
+  const addNotional = calculateFuturesNotional(params.size, fillPrice, contractMultiplier);
+  const addMargin = addNotional / leverage;
   const totalRequired = addMargin + fee;
 
   const assetPair = resolveAssetPair(position.symbol);
@@ -1055,7 +1352,11 @@ export async function addToDemoPosition(params: {
     .returning({ id: schema.demoBalances.id });
 
   if (!balanceUpdated) {
-    throw new Error(`Saldo insuficiente para adicionar posição. Requerido: ${totalRequired.toFixed(2)} ${quoteCurrency}.`);
+    throw new DemoTradingBusinessError(
+      `Saldo insuficiente para adicionar posição. Requerido: ${totalRequired.toFixed(2)} ${quoteCurrency}.`,
+      'INSUFFICIENT_BALANCE',
+      422
+    );
   }
 
   const currentSize = Number(position.size);
@@ -1080,7 +1381,11 @@ export async function addToDemoPosition(params: {
   const nextLiquidation = calculateLiquidationPrice({
     entryPrice: weightedEntry,
     side: sideForExecution,
-    leverage,
+    positionSize: nextSize,
+    contractMultiplier,
+    positionMargin: nextMargin,
+    maintenanceMarginRate: futuresContext.maintenanceMarginRate,
+    liquidationFeeRate: futuresContext.liquidationFeeRate,
   });
 
   const [updatedPosition] = await db
@@ -1093,6 +1398,12 @@ export async function addToDemoPosition(params: {
       stopLoss: validated.stopLoss !== null ? String(validated.stopLoss) : null,
       takeProfit: validated.takeProfit !== null ? String(validated.takeProfit) : null,
       liquidationPrice: nextLiquidation > 0 ? String(nextLiquidation) : null,
+      metadata: {
+        ...((position.metadata ?? {}) as Record<string, unknown>),
+        contractMultiplier,
+        maintenanceMarginRate: futuresContext.maintenanceMarginRate,
+        liquidationFeeRate: futuresContext.liquidationFeeRate,
+      },
     })
     .where(eq(schema.demoPositions.id, position.id))
     .returning();
@@ -1180,8 +1491,10 @@ export async function cancelDemoOrder(tenantId: string, orderId: string): Promis
   if (order.marketType === 'futures') {
     // Devolver margem + fee estimado congelados ao saldo disponível
     const leverage = order.leverage ?? 1;
-    const frozenMargin = Number(order.size) * Number(order.price) / leverage;
-    const frozenFee = calculateFee(Number(order.size), Number(order.price));
+    const futuresContext = await getFuturesPricingContext(order.symbol);
+    const frozenNotional = calculateFuturesNotional(Number(order.size), Number(order.price), futuresContext.contractMultiplier);
+    const frozenMargin = frozenNotional / leverage;
+    const frozenFee = calculateFee(Number(order.size), Number(order.price), futuresContext.contractMultiplier);
     const totalFrozen = frozenMargin + frozenFee;
 
     await db
@@ -1249,7 +1562,7 @@ export async function processOpenOrdersAndPositions(): Promise<void> {
 
   for (const position of openPositions) {
     try {
-      const currentPrice = await getCurrentPrice(position.symbol);
+      const currentPrice = await getCurrentPrice(position.symbol, position.marketType as DemoMarketType);
 
       // Verificar Stop Loss
       if (position.stopLoss) {
@@ -1311,7 +1624,7 @@ export async function processOpenOrdersAndPositions(): Promise<void> {
 
   for (const order of openOrders) {
     try {
-      const currentPrice = await getCurrentPrice(order.symbol);
+      const currentPrice = await getCurrentPrice(order.symbol, order.marketType as DemoMarketType);
       const targetPrice = Number(order.price);
 
       let shouldFill = false;
@@ -1325,8 +1638,12 @@ export async function processOpenOrdersAndPositions(): Promise<void> {
       }
 
       if (shouldFill) {
+        const futuresContext = order.marketType === 'futures'
+          ? await getFuturesPricingContext(order.symbol)
+          : null;
+        const contractMultiplier = futuresContext?.contractMultiplier ?? 1;
         const fillPrice = applySlippage(targetPrice, order.side as DemoOrderSide);
-        const fee = calculateFee(Number(order.size), fillPrice);
+        const fee = calculateFee(Number(order.size), fillPrice, order.marketType === 'futures' ? contractMultiplier : 1);
 
         // Atualizar ordem — OBRIGATÓRIO filtrar por status='open' para evitar race condition
         // com cancelDemoOrder (TOCTOU: entre o SELECT e este UPDATE, o usuário pode cancelar).
@@ -1446,19 +1763,23 @@ export async function processOpenOrdersAndPositions(): Promise<void> {
         // Criar posição
         const positionSide = order.side === 'buy' ? 'long' : 'short';
         const leverage = order.leverage ?? 1;
-        const requiredMargin = Number(order.size) * fillPrice / leverage;
+        const requiredMargin = calculateFuturesNotional(Number(order.size), fillPrice, contractMultiplier) / leverage;
         const liquidationPrice = calculateLiquidationPrice({
           entryPrice: fillPrice,
           side: order.side as DemoOrderSide,
-          leverage,
+          positionSize: Number(order.size),
+          contractMultiplier,
+          positionMargin: requiredMargin,
+          maintenanceMarginRate: futuresContext?.maintenanceMarginRate ?? DEFAULT_MAINTENANCE_MARGIN_RATE,
+          liquidationFeeRate: futuresContext?.liquidationFeeRate ?? DEFAULT_LIQUIDATION_FEE_RATE,
         });
 
         // Atualizar balance: margem + fee estimado foram congelados na criação (createDemoOrder).
         // Agora substituir estimativas pelo custo real (margem real fica frozen, fee real é debitado).
         // UPDATE atômico: aritmética SQL evita race condition em read-modify-write concorrente.
         const orderBalance = await getOrCreateBalance(order.tenantId);
-        const estMargin = Number(order.size) * targetPrice / leverage;
-        const estFee = calculateFee(Number(order.size), targetPrice);
+        const estMargin = calculateFuturesNotional(Number(order.size), targetPrice, contractMultiplier) / leverage;
+        const estFee = calculateFee(Number(order.size), targetPrice, contractMultiplier);
         const totalEstimated = estMargin + estFee;
         const totalReal = requiredMargin + fee;
         // adjustment = custo real - custo estimado (positivo = precisa mais de available)
@@ -1540,26 +1861,95 @@ export async function processOpenOrdersAndPositions(): Promise<void> {
           context: 'scheduler_fill',
         });
 
-        const [position] = await db
-          .insert(schema.demoPositions)
-          .values({
-            tenantId: order.tenantId,
-            symbol: order.symbol,
-            marketType: order.marketType,
-            side: positionSide,
-            entryPrice: String(fillPrice),
-            size: order.size ?? '0',
-            leverage,
-            stopLoss: validatedProtectiveLevels.stopLoss !== null ? String(validatedProtectiveLevels.stopLoss) : null,
-            takeProfit: validatedProtectiveLevels.takeProfit !== null ? String(validatedProtectiveLevels.takeProfit) : null,
-            liquidationPrice: liquidationPrice > 0 ? String(liquidationPrice) : null,
-            marginAmount: String(requiredMargin),
-            // Persistir entry fee na posição — acumulado com exit fee no close para totalFees correto
-            totalFees: String(fee),
-            status: 'open',
-            metadata: { orderId: order.id },
-          })
-          .returning();
+        const [existingPosition] = await db
+          .select()
+          .from(schema.demoPositions)
+          .where(and(
+            eq(schema.demoPositions.tenantId, order.tenantId),
+            eq(schema.demoPositions.symbol, order.symbol),
+            eq(schema.demoPositions.marketType, 'futures'),
+            eq(schema.demoPositions.side, positionSide),
+            eq(schema.demoPositions.status, 'open'),
+          ))
+          .orderBy(desc(schema.demoPositions.openedAt))
+          .limit(1);
+
+        let position: typeof schema.demoPositions.$inferSelect;
+        if (existingPosition) {
+          const currentSize = Number(existingPosition.size);
+          const filledSize = Number(order.size ?? '0');
+          const nextSize = currentSize + filledSize;
+          const weightedEntry = ((Number(existingPosition.entryPrice) * currentSize) + (fillPrice * filledSize)) / nextSize;
+          const currentMargin = Number(existingPosition.marginAmount ?? '0');
+          const nextMargin = currentMargin + requiredMargin;
+          const currentFees = Number(existingPosition.totalFees ?? '0');
+          const nextFees = currentFees + fee;
+          const nextStopLoss = validatedProtectiveLevels.stopLoss ?? (existingPosition.stopLoss ? Number(existingPosition.stopLoss) : null);
+          const nextTakeProfit = validatedProtectiveLevels.takeProfit ?? (existingPosition.takeProfit ? Number(existingPosition.takeProfit) : null);
+          const validatedRisk = validateProtectiveLevels({
+            side: order.side as DemoOrderSide,
+            entryPrice: weightedEntry,
+            stopLoss: nextStopLoss,
+            takeProfit: nextTakeProfit,
+            context: 'position_update',
+          });
+          const nextLiquidation = calculateLiquidationPrice({
+            entryPrice: weightedEntry,
+            side: order.side as DemoOrderSide,
+            positionSize: nextSize,
+            contractMultiplier,
+            positionMargin: nextMargin,
+            maintenanceMarginRate: futuresContext?.maintenanceMarginRate ?? DEFAULT_MAINTENANCE_MARGIN_RATE,
+            liquidationFeeRate: futuresContext?.liquidationFeeRate ?? DEFAULT_LIQUIDATION_FEE_RATE,
+          });
+          const [updatedPosition] = await db
+            .update(schema.demoPositions)
+            .set({
+              size: String(nextSize),
+              entryPrice: String(weightedEntry),
+              marginAmount: String(nextMargin),
+              totalFees: String(nextFees),
+              stopLoss: validatedRisk.stopLoss !== null ? String(validatedRisk.stopLoss) : null,
+              takeProfit: validatedRisk.takeProfit !== null ? String(validatedRisk.takeProfit) : null,
+              liquidationPrice: nextLiquidation > 0 ? String(nextLiquidation) : null,
+              metadata: {
+                ...((existingPosition.metadata ?? {}) as Record<string, unknown>),
+                lastOrderId: order.id,
+                contractMultiplier,
+                maintenanceMarginRate: futuresContext?.maintenanceMarginRate ?? DEFAULT_MAINTENANCE_MARGIN_RATE,
+                liquidationFeeRate: futuresContext?.liquidationFeeRate ?? DEFAULT_LIQUIDATION_FEE_RATE,
+              },
+            })
+            .where(eq(schema.demoPositions.id, existingPosition.id))
+            .returning();
+          position = updatedPosition ?? existingPosition;
+        } else {
+          const [createdPosition] = await db
+            .insert(schema.demoPositions)
+            .values({
+              tenantId: order.tenantId,
+              symbol: order.symbol,
+              marketType: order.marketType,
+              side: positionSide,
+              entryPrice: String(fillPrice),
+              size: order.size ?? '0',
+              leverage,
+              stopLoss: validatedProtectiveLevels.stopLoss !== null ? String(validatedProtectiveLevels.stopLoss) : null,
+              takeProfit: validatedProtectiveLevels.takeProfit !== null ? String(validatedProtectiveLevels.takeProfit) : null,
+              liquidationPrice: liquidationPrice > 0 ? String(liquidationPrice) : null,
+              marginAmount: String(requiredMargin),
+              totalFees: String(fee),
+              status: 'open',
+              metadata: {
+                orderId: order.id,
+                contractMultiplier,
+                maintenanceMarginRate: futuresContext?.maintenanceMarginRate ?? DEFAULT_MAINTENANCE_MARGIN_RATE,
+                liquidationFeeRate: futuresContext?.liquidationFeeRate ?? DEFAULT_LIQUIDATION_FEE_RATE,
+              },
+            })
+            .returning();
+          position = createdPosition;
+        }
 
         // Associar posição à ordem via metadata
         await db
@@ -1567,22 +1957,23 @@ export async function processOpenOrdersAndPositions(): Promise<void> {
           .set({ metadata: { ...orderMeta, positionId: position.id } })
           .where(eq(schema.demoOrders.id, order.id));
 
-        // Capturar snapshot de entrada e armazenar ID na posição para uso no post-mortem
-        try {
-          const entrySnapshot = await captureEntrySnapshot({
-            tenantId: order.tenantId,
-            symbol: order.symbol,
-            marketType: order.marketType as 'spot' | 'futures' | 'margin',
-            positionId: position.id,
-          });
-          // Persistir entrySnapshotId na posição para que o post-mortem e dataset generator possam usar
-          await db
-            .update(schema.demoPositions)
-            .set({ entrySnapshotId: entrySnapshot.id })
-            .where(eq(schema.demoPositions.id, position.id));
-          logger.info({ positionId: position.id, entrySnapshotId: entrySnapshot.id }, 'Entry snapshot capturado e vinculado à posição demo (scheduled fill)');
-        } catch (snapshotError) {
-          logger.warn({ error: snapshotError, positionId: position.id }, 'Falha ao capturar snapshot de entrada (scheduled fill)');
+        if (!existingPosition) {
+          // Capturar snapshot somente na criação da posição
+          try {
+            const entrySnapshot = await captureEntrySnapshot({
+              tenantId: order.tenantId,
+              symbol: order.symbol,
+              marketType: order.marketType as 'spot' | 'futures' | 'margin',
+              positionId: position.id,
+            });
+            await db
+              .update(schema.demoPositions)
+              .set({ entrySnapshotId: entrySnapshot.id })
+              .where(eq(schema.demoPositions.id, position.id));
+            logger.info({ positionId: position.id, entrySnapshotId: entrySnapshot.id }, 'Entry snapshot capturado e vinculado à posição demo (scheduled fill)');
+          } catch (snapshotError) {
+            logger.warn({ error: snapshotError, positionId: position.id }, 'Falha ao capturar snapshot de entrada (scheduled fill)');
+          }
         }
 
         logger.info({
