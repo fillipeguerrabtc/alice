@@ -2756,9 +2756,13 @@ jobs:
     # =================================================================
     # PROBLEMA: PostgreSQL no primeiro boot (initdb + extensions) demora ~5-8 min
     #           Timeout de 15 min era apertado considerando pull + deploy + healthcheck
-    # CORREÇÃO PR#104: Reduzir para 10 min (mais que suficiente)
+    # CORREÇÃO 13/02/2026: 10 min era insuficiente em produção
     # =================================================================
-    timeout-minutes: 10
+    # Evidência: job "Deploy Stack INFRA" cancelado por timeout em ~10m
+    # enquanto o step principal usa command_timeout: 20m e inclui
+    # pull inteligente + compose up + wait/health custom.
+    # Ajuste cirúrgico: alinhar budget do job para evitar cancelamento falso.
+    timeout-minutes: 30
     
     steps:
       - name: Limpar containers parciais do deploy anterior (se existirem)

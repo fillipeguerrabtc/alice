@@ -1541,6 +1541,11 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
+*Versão: 5.31 - 13 de Fevereiro de 2026*
+*Deploy INFRA Timeout Cancellation Fix (13/02/2026): CORREÇÃO CIRÚRGICA para falha recorrente de deploy classificada como "conectividade". CAUSA RAIZ REAL (código do workflow): `deploy-infra` com `timeout-minutes: 10` cancelava o job antes do fim do step principal, enquanto o próprio step `Deploy stack infra via SSH` já estava configurado com `command_timeout: 20m`. Evidência coletada: annotations do GitHub Actions ("job exceeded maximum execution time of 10m") + logs do servidor (`/opt/alice/logs/deploy-infra-*.log`) interrompidos no início do fluxo, sem erro de rede/firewall. SOLUÇÃO ENTERPRISE: alinhar orçamento de execução do job para `timeout-minutes: 30`, preservando triggers/gatilhos e toda lógica de retry/pull/healthcheck existente. ARQUIVOS MODIFICADOS: `.github/workflows/deploy-stack-modular.yml`, `CLAUDE.md`. Implementação 100% enterprise-grade (Regras 6, 7, 9, 12 - sem workarounds, mudança cirúrgica, validação contínua, sem alterar triggers de workflows).*
+
+---
+*Autor: Fillipe Guerra*
 *Versão: 5.29 - 11 de Fevereiro de 2026*
 *FINALIZAÇÃO ENTERPRISE TREINAMENTO-LIMITES (11/02/2026): Testes unitários (19 testes em training-limits.test.ts), validação SSOT no startup (training + rag), GPU Manager /api/gpu/embeddings/health, collectTrainingFromDocumentChunks minChars, exclusão PLANO.*
 
