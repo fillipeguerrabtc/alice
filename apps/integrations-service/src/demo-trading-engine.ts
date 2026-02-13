@@ -1154,17 +1154,62 @@ export async function closeDemoPosition(params: {
   const remainingMargin = Math.max(0, currentMargin - marginToRelease);
 
   if (isPartial) {
-    const remainingLiquidation = position.marketType === 'futures'
-      ? calculateLiquidationPrice({
+    let remainingLiquidation = 0;
+    if (position.marketType === 'futures') {
+      // ✅ CROSS MARGIN: Buscar TODAS posições abertas para recalcular maintenance margin
+      const allOpenPositions = await db
+        .select()
+        .from(schema.demoPositions)
+        .where(and(
+          eq(schema.demoPositions.tenantId, params.tenantId),
+          eq(schema.demoPositions.status, 'open'),
+        ));
+
+      // Calcular MMR total (incluindo posição parcialmente fechada com tamanho atualizado)
+      let totalMaintenanceMargin = 0;
+      for (const pos of allOpenPositions) {
+        if (pos.id === position.id) {
+          // Usar tamanho reduzido para a posição sendo parcialmente fechada
+          const notional = remainingSize * entryPrice * contractMultiplier;
+          totalMaintenanceMargin += notional * (futuresContext?.maintenanceMarginRate ?? DEFAULT_MAINTENANCE_MARGIN_RATE);
+        } else {
+          const posSize = Number(pos.size);
+          const posEntry = Number(pos.entryPrice);
+          const posMultiplier = (pos.metadata as { contractMultiplier?: number })?.contractMultiplier ?? 1;
+          const posMmr = (pos.metadata as { maintenanceMarginRate?: number })?.maintenanceMarginRate ?? DEFAULT_MAINTENANCE_MARGIN_RATE;
+          const posNotional = posSize * posEntry * posMultiplier;
+          totalMaintenanceMargin += posNotional * posMmr;
+        }
+      }
+
+      // ✅ Saldo TOTAL da conta (cross margin) - APÓS creditar PnL
+      const quoteCurrency = resolveAssetPair(position.symbol).quoteCurrency;
+      const [balance] = await db
+        .select()
+        .from(schema.demoBalances)
+        .where(and(
+          eq(schema.demoBalances.tenantId, params.tenantId),
+          eq(schema.demoBalances.currency, quoteCurrency),
+        ))
+        .limit(1);
+
+      if (balance) {
+        // Simular saldo após close parcial (creditar PnL)
+        const totalAccountBalance = Number(balance.available) + Number(balance.frozen) + realizedPnl;
+
+        remainingLiquidation = calculateLiquidationPriceCrossMargin({
           entryPrice,
           side: position.side === 'long' ? 'buy' : 'sell',
           positionSize: remainingSize,
           contractMultiplier,
-          positionMargin: remainingMargin,
+          totalAccountBalance,
+          totalMaintenanceMargin,
           maintenanceMarginRate: futuresContext?.maintenanceMarginRate ?? DEFAULT_MAINTENANCE_MARGIN_RATE,
           liquidationFeeRate: futuresContext?.liquidationFeeRate ?? DEFAULT_LIQUIDATION_FEE_RATE,
-        })
-      : 0;
+        });
+      }
+    }
+
     await db
       .update(schema.demoPositions)
       .set({
@@ -1177,6 +1222,7 @@ export async function closeDemoPosition(params: {
           ...((position.metadata ?? {}) as Record<string, unknown>),
           lastCloseReason: params.reason ?? 'manual_partial',
           contractMultiplier,
+          marginMode: 'cross', // ✅ Flag de cross margin
         },
       })
       .where(eq(schema.demoPositions.id, position.id));
@@ -1198,16 +1244,15 @@ export async function closeDemoPosition(params: {
       .where(eq(schema.demoPositions.id, position.id));
   }
 
-  // Devolver margem + PnL ao balance
+  // ✅ CROSS MARGIN: Creditar PnL ao balance (margem não é congelada por posição)
   // UPDATE atômico: aritmética SQL evita race condition em read-modify-write concorrente
-  const creditAmount = marginToRelease + realizedPnl; // margem devolvida + PnL (pode ser negativo)
+  const creditAmount = realizedPnl; // PnL (pode ser negativo) - margem NÃO é devolvida pois não foi congelada
 
   const quoteCurrency = resolveAssetPair(position.symbol).quoteCurrency;
   await db
     .update(schema.demoBalances)
     .set({
       available: sql`${schema.demoBalances.available}::numeric + ${String(creditAmount)}::numeric`,
-      frozen: sql`GREATEST(0, ${schema.demoBalances.frozen}::numeric - ${String(marginToRelease)}::numeric)`,
       updatedAt: new Date(),
     })
     .where(and(
@@ -1234,7 +1279,8 @@ export async function closeDemoPosition(params: {
       realizedPnl: realizedPnl.toFixed(2),
       fee: fee.toFixed(4),
       reason: params.reason ?? 'manual_partial',
-    }, 'Posição demo parcialmente fechada');
+      marginMode: 'cross',
+    }, 'Posição demo parcialmente fechada COM CROSS MARGIN');
 
     return { realizedPnl, fee, exitPrice, closedSize: closeSize, remainingSize, isPartial: true };
   }
