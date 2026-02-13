@@ -2493,8 +2493,8 @@ export default function Trading() {
   const handleOrderSizeChange = useCallback((sizeValue: string) => {
     setOrderForm(prev => {
       const sizeNum = parseLocaleNumberInput(sizeValue);
-      if (currentPrice > 0 && Number.isFinite(sizeNum) && sizeNum > 0 && isFuturesMarket) {
-        const usdtVal = (sizeNum as number) * currentPrice * contractMultiplier;
+      if (currentPrice > 0 && sizeNum !== null && Number.isFinite(sizeNum) && sizeNum > 0 && isFuturesMarket) {
+        const usdtVal = sizeNum * currentPrice * contractMultiplier;
         return { ...prev, size: sizeValue, usdtAmount: usdtVal.toFixed(2) };
       }
       return { ...prev, size: sizeValue, usdtAmount: '' };
@@ -2504,8 +2504,8 @@ export default function Trading() {
   const handleOrderUsdtChange = useCallback((usdtValue: string) => {
     setOrderForm(prev => {
       const usdtNum = parseLocaleNumberInput(usdtValue);
-      if (currentPrice > 0 && Number.isFinite(usdtNum) && usdtNum > 0 && isFuturesMarket) {
-        const qty = (usdtNum as number) / (currentPrice * contractMultiplier);
+      if (currentPrice > 0 && usdtNum !== null && Number.isFinite(usdtNum) && usdtNum > 0 && isFuturesMarket) {
+        const qty = usdtNum / (currentPrice * contractMultiplier);
         return { ...prev, usdtAmount: usdtValue, size: qty.toFixed(4) };
       }
       return { ...prev, usdtAmount: usdtValue, size: '' };

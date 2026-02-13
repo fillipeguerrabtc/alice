@@ -35,6 +35,7 @@ import {
   BookOpen,
   Activity,
   FileCheck,
+  Loader2,
 } from 'lucide-react';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -654,7 +655,7 @@ export default function DemoTrading() {
   const handleUsdtAmountChange = useCallback((usdtValue: string) => {
     setOrderForm(prev => {
       const usdtNum = parseLocaleNumberInput(usdtValue);
-      if (currentPrice > 0 && Number.isFinite(usdtNum) && usdtNum > 0 && isFuturesMarket) {
+      if (currentPrice > 0 && usdtNum !== null && Number.isFinite(usdtNum) && usdtNum > 0 && isFuturesMarket) {
         const qty = usdtNum / (currentPrice * contractMultiplier);
         return { ...prev, usdtAmount: usdtValue, size: formatTradingNumber(qty, 'pt-BR', 0, 6) };
       }
@@ -665,7 +666,7 @@ export default function DemoTrading() {
   const handleSizeChange = useCallback((sizeValue: string) => {
     setOrderForm(prev => {
       const sizeNum = parseLocaleNumberInput(sizeValue);
-      if (currentPrice > 0 && Number.isFinite(sizeNum) && sizeNum > 0 && isFuturesMarket) {
+      if (currentPrice > 0 && sizeNum !== null && Number.isFinite(sizeNum) && sizeNum > 0 && isFuturesMarket) {
         const usdtVal = sizeNum * currentPrice * contractMultiplier;
         return { ...prev, size: sizeValue, usdtAmount: formatTradingNumber(usdtVal, 'pt-BR', 2, 2) };
       }
@@ -1278,7 +1279,7 @@ export default function DemoTrading() {
                           const effectivePrice = orderForm.orderType === 'limit' && orderForm.price
                             ? (parseLocaleNumberInput(orderForm.price) ?? 0)
                             : currentPrice;
-                          if (Number.isFinite(qty) && qty > 0 && effectivePrice > 0) {
+                          if (qty !== null && Number.isFinite(qty) && qty > 0 && effectivePrice > 0) {
                             return `~$${formatMoney(qty * effectivePrice)} USDT`;
                           }
                           return '---';
@@ -1669,7 +1670,7 @@ export default function DemoTrading() {
                                 disabled={!draft.addSize || addToPositionMutation.isPending}
                                 onClick={() => {
                                   const size = parseLocaleNumberInput(draft.addSize);
-                                  if (!Number.isFinite(size) || size <= 0) return;
+                                  if (size === null || !Number.isFinite(size) || size <= 0) return;
                                   addToPositionMutation.mutate({
                                     positionId: pos.id,
                                     size,
@@ -1697,7 +1698,7 @@ export default function DemoTrading() {
                                 disabled={!draft.closeSize || closePositionMutation.isPending}
                                 onClick={() => {
                                   const size = parseLocaleNumberInput(draft.closeSize);
-                                  if (!Number.isFinite(size) || size <= 0) return;
+                                  if (size === null || !Number.isFinite(size) || size <= 0) return;
                                   closePositionMutation.mutate({ positionId: pos.id, size });
                                 }}
                               >

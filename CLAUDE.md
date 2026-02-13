@@ -1536,6 +1536,11 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
+*Versão: 5.30 - 12 de Fevereiro de 2026*
+*Fix Release Frontend TypeScript Build (12/02/2026): CORREÇÃO CIRÚRGICA do build quebrado no release por erros TypeScript em Trading e DemoTrading. CAUSAS RAIZ: (1) parsing numérico com retorno `number | null` usado sem guard explícito em fluxos de cálculo de ordem (USDT, size, qty); (2) assinatura pública do hook `useKucoinWebSocket` desatualizada no tipo de retorno, divergindo da implementação com parâmetros adicionais (marketType, marginMode, orderBookDepth), causando erros "Expected 1-3 arguments, but got 5"; (3) ícone `Loader2` usado sem import em `DemoTrading.tsx`. SOLUÇÃO ENTERPRISE: guards explícitos `!== null` nos pontos de cálculo, sincronização da interface `UseKucoinWebSocketReturn` com a implementação real, e import correto do `Loader2`. VALIDAÇÃO COMPLETA (sequencial): `pnpm typecheck`, `pnpm test`, `pnpm lint`, `pnpm --filter @alice/frontend-service run build` (tudo OK, zero erros). ARQUIVOS MODIFICADOS: apps/frontend-service/src/hooks/useKucoinWebSocket.ts, apps/frontend-service/src/pages/DemoTrading.tsx, apps/frontend-service/src/pages/Trading.tsx, CLAUDE.md. Implementação 100% enterprise-grade (Regras 1, 6, 7, 8, 9 - leitura prévia, sem workarounds, mudança cirúrgica, TypeScript strict, validação contínua).*
+
+---
+*Autor: Fillipe Guerra*
 *Versão: 5.29 - 11 de Fevereiro de 2026*
 *FINALIZAÇÃO ENTERPRISE TREINAMENTO-LIMITES (11/02/2026): Testes unitários (19 testes em training-limits.test.ts), validação SSOT no startup (training + rag), GPU Manager /api/gpu/embeddings/health, collectTrainingFromDocumentChunks minChars, exclusão PLANO.*
 

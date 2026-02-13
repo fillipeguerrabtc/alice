@@ -130,8 +130,22 @@ export interface UseKucoinWebSocketReturn {
   orderUpdate: OrderUpdateData | null;
   connect: () => void;
   disconnect: () => void;
-  subscribe: (channel: string, symbol?: string, interval?: string) => void;
-  unsubscribe: (channel: string, symbol?: string) => void;
+  subscribe: (
+    channel: string,
+    symbol?: string,
+    interval?: string,
+    marketType?: MarketType,
+    marginMode?: MarginMode,
+    orderBookDepth?: 5 | 50
+  ) => void;
+  unsubscribe: (
+    channel: string,
+    symbol?: string,
+    interval?: string,
+    marketType?: MarketType,
+    marginMode?: MarginMode,
+    orderBookDepth?: 5 | 50
+  ) => void;
   sendCommand: (content: string) => void;
 }
 
