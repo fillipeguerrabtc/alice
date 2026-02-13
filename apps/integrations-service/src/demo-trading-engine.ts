@@ -402,6 +402,35 @@ function calculateTotalMaintenanceMargin(positions: Array<typeof schema.demoPosi
   return total;
 }
 
+/**
+ * Calcula PnL não-realizado de TODAS as posições (cross margin)
+ * 
+ * @author Fillipe Guerra
+ * @since 13/02/2026
+ */
+async function calculateTotalUnrealizedPnl(params: {
+  tenantId: string;
+  positions: Array<typeof schema.demoPositions.$inferSelect>;
+}): Promise<{ totalPnl: number; positionPnls: Map<string, number> }> {
+  const positionPnls = new Map<string, number>();
+  let totalPnl = 0;
+
+  for (const position of params.positions) {
+    const currentPrice = await getCurrentPrice(position.symbol, position.marketType as DemoMarketType);
+    const entryPrice = Number(position.entryPrice);
+    const size = Number(position.size);
+    const multiplier = (position.metadata as { contractMultiplier?: number })?.contractMultiplier ?? 1;
+    
+    const direction = position.side === 'long' ? 1 : -1;
+    const pnl = (currentPrice - entryPrice) * size * multiplier * direction;
+    
+    positionPnls.set(position.id, pnl);
+    totalPnl += pnl;
+  }
+
+  return { totalPnl, positionPnls };
+}
+
 function validateProtectiveLevels(params: {
   side: DemoOrderSide;
   entryPrice: number;
@@ -1736,69 +1765,131 @@ export async function cancelDemoOrder(tenantId: string, orderId: string): Promis
 export async function processOpenOrdersAndPositions(): Promise<void> {
   const db = getDatabase();
 
-  // Buscar todas as posições abertas
-  const openPositions = await db
-    .select()
+  // ✅ VERIFICAÇÃO CROSS MARGIN por tenant
+  const tenants = await db
+    .selectDistinct({ tenantId: schema.demoPositions.tenantId })
     .from(schema.demoPositions)
     .where(eq(schema.demoPositions.status, 'open'));
 
-  for (const position of openPositions) {
+  for (const { tenantId } of tenants) {
     try {
-      const currentPrice = await getCurrentPrice(position.symbol, position.marketType as DemoMarketType);
+      const openPositions = await db
+        .select()
+        .from(schema.demoPositions)
+        .where(and(
+          eq(schema.demoPositions.tenantId, tenantId),
+          eq(schema.demoPositions.status, 'open'),
+        ));
 
-      // Verificar Stop Loss
-      if (position.stopLoss) {
-        const sl = Number(position.stopLoss);
-        if (
-          (position.side === 'long' && currentPrice <= sl) ||
-          (position.side === 'short' && currentPrice >= sl)
-        ) {
-          await closeDemoPosition({
-            tenantId: position.tenantId,
-            positionId: position.id,
-            reason: 'stop_loss',
-          });
-          continue;
-        }
+      if (openPositions.length === 0) continue;
+
+      // ✅ PnL TOTAL não-realizado
+      const { totalPnl, positionPnls } = await calculateTotalUnrealizedPnl({
+        tenantId,
+        positions: openPositions,
+      });
+
+      // ✅ Maintenance margin TOTAL
+      const totalMaintenanceMargin = calculateTotalMaintenanceMargin(openPositions);
+
+      // ✅ Saldo total da conta
+      const quoteCurrency = resolveAssetPair(openPositions[0]?.symbol ?? 'XBTUSDTM').quoteCurrency;
+      const [balance] = await db
+        .select()
+        .from(schema.demoBalances)
+        .where(and(
+          eq(schema.demoBalances.tenantId, tenantId),
+          eq(schema.demoBalances.currency, quoteCurrency),
+        ))
+        .limit(1);
+
+      if (!balance) {
+        logger.warn({ tenantId }, 'Balance não encontrado para tenant com posições abertas');
+        continue;
       }
 
-      // Verificar Take Profit
-      if (position.takeProfit) {
-        const tp = Number(position.takeProfit);
-        if (
-          (position.side === 'long' && currentPrice >= tp) ||
-          (position.side === 'short' && currentPrice <= tp)
-        ) {
-          await closeDemoPosition({
-            tenantId: position.tenantId,
-            positionId: position.id,
-            reason: 'take_profit',
-          });
-          continue;
+      const totalAccountBalance = Number(balance.available) + Number(balance.frozen);
+      const accountEquity = totalAccountBalance + totalPnl;
+
+      logger.debug({
+        tenantId,
+        totalAccountBalance,
+        totalPnl,
+        accountEquity,
+        totalMaintenanceMargin,
+        openPositionsCount: openPositions.length,
+      }, 'Cross margin check');
+
+      // ✅ LIQUIDAÇÃO CROSS MARGIN: equity < maintenance → liquida TUDO
+      if (accountEquity < totalMaintenanceMargin) {
+        logger.warn({
+          tenantId,
+          accountEquity,
+          totalMaintenanceMargin,
+          deficit: totalMaintenanceMargin - accountEquity,
+        }, 'LIQUIDAÇÃO CROSS MARGIN - fechando TODAS as posições');
+
+        for (const position of openPositions) {
+          try {
+            await closeDemoPosition({
+              tenantId,
+              positionId: position.id,
+              reason: 'liquidation - Cross margin: account equity below total maintenance margin',
+            });
+          } catch (error) {
+            logger.error({ error, positionId: position.id }, 'Erro ao liquidar posição cross margin');
+          }
         }
+        continue; // Pular verificação de SL/TP se liquidou tudo
       }
 
-      // Verificar Liquidação (futures)
-      if (position.liquidationPrice && position.marketType === 'futures') {
-        const liq = Number(position.liquidationPrice);
-        if (
-          (position.side === 'long' && currentPrice <= liq) ||
-          (position.side === 'short' && currentPrice >= liq)
-        ) {
-          await closeDemoPosition({
-            tenantId: position.tenantId,
-            positionId: position.id,
-            reason: 'liquidation',
-          });
-          continue;
+      // ✅ Verificar SL/TP individualmente (apenas se NÃO liquidado)
+      for (const position of openPositions) {
+        try {
+          const currentPrice = await getCurrentPrice(position.symbol, position.marketType as DemoMarketType);
+          const stopLoss = position.stopLoss ? Number(position.stopLoss) : null;
+          const takeProfit = position.takeProfit ? Number(position.takeProfit) : null;
+
+          let shouldClose = false;
+          let reason = '';
+
+          if (stopLoss !== null) {
+            if (position.side === 'long' && currentPrice <= stopLoss) {
+              shouldClose = true;
+              reason = 'stop_loss';
+            } else if (position.side === 'short' && currentPrice >= stopLoss) {
+              shouldClose = true;
+              reason = 'stop_loss';
+            }
+          }
+
+          if (!shouldClose && takeProfit !== null) {
+            if (position.side === 'long' && currentPrice >= takeProfit) {
+              shouldClose = true;
+              reason = 'take_profit';
+            } else if (position.side === 'short' && currentPrice <= takeProfit) {
+              shouldClose = true;
+              reason = 'take_profit';
+            }
+          }
+
+          if (shouldClose) {
+            await closeDemoPosition({
+              tenantId,
+              positionId: position.id,
+              reason,
+            });
+          }
+        } catch (error) {
+          logger.warn({ error, positionId: position.id, symbol: position.symbol }, 'Erro ao verificar SL/TP de posição demo');
         }
       }
     } catch (error) {
-      logger.warn({ error, positionId: position.id, symbol: position.symbol }, 'Erro ao verificar posição demo');
+      logger.error({ error, tenantId }, 'Erro ao processar cross margin do tenant');
     }
   }
 
-  // Buscar ordens limit/stop pendentes
+  // ✅ Processar ordens limit/stop pendentes (lógica inalterada)
   const openOrders = await db
     .select()
     .from(schema.demoOrders)
