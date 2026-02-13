@@ -647,6 +647,13 @@ export default function DemoTrading() {
   const lossCount = closedPositions.filter(p => parseFloat(p.realizedPnl ?? '0') < 0).length;
   const winRate = closedPositions.length > 0 ? (winCount / closedPositions.length * 100) : 0;
 
+  // ✅ CROSS MARGIN: Calcular Equity Total (saldo + frozen + unrealized PnL)
+  const totalUnrealizedPnL = openPositions.reduce((acc, pos) => {
+    const live = getLivePositionStats(pos);
+    return acc + (live.pnlValue ?? 0);
+  }, 0);
+  const totalAccountEquity = Number(usdtBalance?.available ?? 0) + Number(usdtBalance?.frozen ?? 0) + totalUnrealizedPnL;
+
   // Conversão USDT ↔ Quantidade (usa preço atual em tempo real - apenas Futures)
   // Para Futures: qty = usdt / (preço * multiplier), onde multiplier define valor de 1 contrato
   // Para Spot/Margin: sem conversão automática (campo USDT não exibido - padrão Trading Real)
@@ -1025,6 +1032,22 @@ export default function DemoTrading() {
           </CardContent>
         </Card>
 
+        {/* ✅ CROSS MARGIN: Equity Total */}
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-2">
+              <DollarSign className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">Equity Total (Cross)</span>
+            </div>
+            <p className={`text-2xl font-bold mt-1 ${getPnlColor(totalUnrealizedPnL)}`}>
+              ${formatMoney(totalAccountEquity)}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Saldo + PnL Não Realizado
+            </p>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center gap-2">
@@ -1038,8 +1061,8 @@ export default function DemoTrading() {
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center gap-2">
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">PnL Total</span>
+              <BarChart3 className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">PnL Realizado</span>
             </div>
             <p className={`text-2xl font-bold mt-1 ${getPnlColor(totalPnl)}`}>
               ${formatMoney(totalPnl)}
@@ -1050,7 +1073,7 @@ export default function DemoTrading() {
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center gap-2">
-              <BarChart3 className="h-4 w-4 text-muted-foreground" />
+              <Activity className="h-4 w-4 text-muted-foreground" />
               <span className="text-sm text-muted-foreground">Win Rate</span>
             </div>
             <p className="text-2xl font-bold mt-1">{winRate.toFixed(1)}%</p>
