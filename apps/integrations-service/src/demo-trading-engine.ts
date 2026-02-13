@@ -258,9 +258,15 @@ function calculateFee(size: number, price: number, contractMultiplier = 1): numb
 }
 
 /**
- * Calcula preço de liquidação para futures
+ * Calcula preço de liquidação para futures COM ISOLATED MARGIN
+ * 
+ * Fórmula Isolated Margin:
+ * LiqPrice = (PositionValue - PositionMargin) / Denominator
+ * 
+ * Esta função é mantida para referência mas NÃO é mais usada.
+ * O sistema agora usa Cross Margin (calculateLiquidationPriceCrossMargin).
  */
-function calculateLiquidationPrice(params: {
+function calculateLiquidationPriceIsolated(params: {
   entryPrice: number;
   side: DemoOrderSide;
   positionSize: number;
@@ -296,6 +302,67 @@ function calculateLiquidationPrice(params: {
   return liquidationPrice;
 }
 
+/**
+ * Calcula preço de liquidação para futures COM CROSS MARGIN
+ * 
+ * Fórmula Cross Margin (conforme KuCoin):
+ * LiqPrice = (PositionValue - AccountBalance + TotalMaintenanceMargin) / Denominator
+ * 
+ * Onde:
+ * - AccountBalance = available + frozen + unrealizedPnl (TODAS posições)
+ * - TotalMaintenanceMargin = soma MMR de TODAS as posições
+ * 
+ * REF: https://www.kucoin.com/support/360015102119-Cross-Margin-Mode
+ * 
+ * @author Fillipe Guerra
+ * @since 13/02/2026
+ */
+function calculateLiquidationPriceCrossMargin(params: {
+  entryPrice: number;
+  side: DemoOrderSide;
+  positionSize: number;
+  contractMultiplier: number;
+  totalAccountBalance: number; // ✅ Saldo TOTAL (cross)
+  totalMaintenanceMargin: number; // ✅ MMR TOTAL (cross)
+  maintenanceMarginRate: number;
+  liquidationFeeRate: number;
+}): number {
+  const {
+    entryPrice,
+    side,
+    positionSize,
+    contractMultiplier,
+    totalAccountBalance,
+    totalMaintenanceMargin,
+    maintenanceMarginRate,
+    liquidationFeeRate,
+  } = params;
+
+  if (positionSize <= 0 || contractMultiplier <= 0 || totalAccountBalance <= 0 || entryPrice <= 0) {
+    return 0;
+  }
+
+  const openingValue = positionSize * contractMultiplier * entryPrice;
+  const sideFactor = side === 'buy' ? 1 : -1;
+  
+  const denominator = positionSize * contractMultiplier * (
+    1 - sideFactor * maintenanceMarginRate - sideFactor * liquidationFeeRate
+  );
+
+  if (!Number.isFinite(denominator) || Math.abs(denominator) < 1e-10) {
+    return 0;
+  }
+
+  // ✅ FÓRMULA CROSS MARGIN
+  const liquidationPrice = (openingValue - totalAccountBalance + totalMaintenanceMargin) / denominator;
+
+  if (!Number.isFinite(liquidationPrice) || liquidationPrice <= 0) {
+    return 0;
+  }
+
+  return liquidationPrice;
+}
+
 function calculateFuturesNotional(size: number, price: number, contractMultiplier: number): number {
   return size * price * contractMultiplier;
 }
@@ -311,6 +378,28 @@ async function getFuturesPricingContext(symbol: string): Promise<{
     maintenanceMarginRate: Number(contractInfo.maintainMargin || DEFAULT_MAINTENANCE_MARGIN_RATE),
     liquidationFeeRate: DEFAULT_LIQUIDATION_FEE_RATE,
   };
+}
+
+/**
+ * Calcula maintenance margin TOTAL de todas as posições (cross margin)
+ * 
+ * @author Fillipe Guerra
+ * @since 13/02/2026
+ */
+function calculateTotalMaintenanceMargin(positions: Array<typeof schema.demoPositions.$inferSelect>): number {
+  let total = 0;
+  
+  for (const position of positions) {
+    const size = Number(position.size);
+    const entryPrice = Number(position.entryPrice);
+    const multiplier = (position.metadata as { contractMultiplier?: number })?.contractMultiplier ?? 1;
+    const mmr = (position.metadata as { maintenanceMarginRate?: number })?.maintenanceMarginRate ?? DEFAULT_MAINTENANCE_MARGIN_RATE;
+    
+    const notional = size * entryPrice * multiplier;
+    total += notional * mmr;
+  }
+  
+  return total;
 }
 
 function validateProtectiveLevels(params: {
@@ -585,52 +674,43 @@ export async function createDemoOrder(params: CreateDemoOrderParams): Promise<De
     : calculateFee(params.size, fillPrice, params.marketType === 'futures' ? futuresContractMultiplier : 1);
 
   if (params.marketType === 'futures') {
+    // ✅ CROSS MARGIN: Apenas verificar e debitar FEE (margem é compartilhada, não congelada por posição)
+    const balance = await getOrCreateBalance(params.tenantId, assetPair.quoteCurrency);
+    const available = Number(balance.available);
+    
     if (orderStatus === 'open') {
-      // Ordem pendente: congelar margem + fee estimado imediatamente
-      const totalToFreeze = requiredMargin + estimatedFee;
-      const [balanceUpdated] = await db
-        .update(schema.demoBalances)
-        .set({
-          available: sql`${schema.demoBalances.available}::numeric - ${String(totalToFreeze)}::numeric`,
-          frozen: sql`${schema.demoBalances.frozen}::numeric + ${String(totalToFreeze)}::numeric`,
-          updatedAt: new Date(),
-        })
-        .where(and(
-          eq(schema.demoBalances.id, quoteBalance.id),
-          sql`${schema.demoBalances.available}::numeric >= ${String(totalToFreeze)}::numeric`,
-        ))
-        .returning({ id: schema.demoBalances.id });
-
-      if (!balanceUpdated) {
+      // Ordem pendente: apenas congelar fee estimado
+      if (available < estimatedFee) {
         throw new DemoTradingBusinessError(
-          `Saldo insuficiente. Requerido: ${totalToFreeze.toFixed(2)} ${assetPair.quoteCurrency} (margem + fee estimado)`
-          , 'INSUFFICIENT_BALANCE'
-          , 422
+          `Saldo insuficiente. Disponível: ${available.toFixed(2)} ${assetPair.quoteCurrency}, necessário (fee): ${estimatedFee.toFixed(2)}`,
+          'INSUFFICIENT_BALANCE',
+          422
         );
       }
+      await db
+        .update(schema.demoBalances)
+        .set({
+          available: sql`${schema.demoBalances.available}::numeric - ${String(estimatedFee)}::numeric`,
+          frozen: sql`${schema.demoBalances.frozen}::numeric + ${String(estimatedFee)}::numeric`,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.demoBalances.id, balance.id));
     } else {
-      // Ordem filled: debitar margem + fee do available, congelar margem como garantia da posição
-      const totalRequired = requiredMargin + fee;
-      const [balanceUpdated] = await db
-        .update(schema.demoBalances)
-        .set({
-          available: sql`${schema.demoBalances.available}::numeric - ${String(totalRequired)}::numeric`,
-          frozen: sql`${schema.demoBalances.frozen}::numeric + ${String(requiredMargin)}::numeric`,
-          updatedAt: new Date(),
-        })
-        .where(and(
-          eq(schema.demoBalances.id, quoteBalance.id),
-          sql`${schema.demoBalances.available}::numeric >= ${String(totalRequired)}::numeric`,
-        ))
-        .returning({ id: schema.demoBalances.id });
-
-      if (!balanceUpdated) {
+      // Ordem filled: debitar APENAS fee (não congelar margem)
+      if (available < fee) {
         throw new DemoTradingBusinessError(
-          `Saldo insuficiente. Requerido: ${totalRequired.toFixed(2)} ${assetPair.quoteCurrency} (margem + fee)`
-          , 'INSUFFICIENT_BALANCE'
-          , 422
+          `Saldo insuficiente. Disponível: ${available.toFixed(2)} ${assetPair.quoteCurrency}, necessário (fee): ${fee.toFixed(2)}`,
+          'INSUFFICIENT_BALANCE',
+          422
         );
       }
+      await db
+        .update(schema.demoBalances)
+        .set({
+          available: sql`${schema.demoBalances.available}::numeric - ${String(fee)}::numeric`,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.demoBalances.id, balance.id));
     }
   } else {
     if (orderStatus === 'open') {
@@ -802,12 +882,44 @@ export async function createDemoOrder(params: CreateDemoOrderParams): Promise<De
         takeProfit: nextTakeProfit,
         context: 'position_update',
       });
-      const liquidationPrice = calculateLiquidationPrice({
+      
+      // ✅ CROSS MARGIN: Buscar TODAS posições abertas para calcular maintenance margin TOTAL
+      const allOpenPositions = await db
+        .select()
+        .from(schema.demoPositions)
+        .where(and(
+          eq(schema.demoPositions.tenantId, params.tenantId),
+          eq(schema.demoPositions.status, 'open'),
+        ));
+
+      // ✅ Calcular maintenance margin TOTAL (incluindo posição atualizada)
+      let totalMaintenanceMargin = 0;
+      for (const pos of allOpenPositions) {
+        if (pos.id === existingPosition.id) {
+          // Usar valores atualizados para a posição sendo modificada
+          const notional = nextSize * weightedEntry * futuresContractMultiplier;
+          totalMaintenanceMargin += notional * (futuresContext?.maintenanceMarginRate ?? DEFAULT_MAINTENANCE_MARGIN_RATE);
+        } else {
+          const posSize = Number(pos.size);
+          const posEntry = Number(pos.entryPrice);
+          const posMultiplier = (pos.metadata as { contractMultiplier?: number })?.contractMultiplier ?? 1;
+          const posMmr = (pos.metadata as { maintenanceMarginRate?: number })?.maintenanceMarginRate ?? DEFAULT_MAINTENANCE_MARGIN_RATE;
+          const posNotional = posSize * posEntry * posMultiplier;
+          totalMaintenanceMargin += posNotional * posMmr;
+        }
+      }
+
+      // ✅ Saldo TOTAL da conta (cross margin)
+      const balance = await getOrCreateBalance(params.tenantId, assetPair.quoteCurrency);
+      const totalAccountBalance = Number(balance.available) + Number(balance.frozen);
+
+      const liquidationPrice = calculateLiquidationPriceCrossMargin({
         entryPrice: weightedEntry,
         side: params.side,
         positionSize: nextSize,
         contractMultiplier: futuresContractMultiplier,
-        positionMargin: nextMargin,
+        totalAccountBalance,
+        totalMaintenanceMargin,
         maintenanceMarginRate: futuresContext?.maintenanceMarginRate ?? DEFAULT_MAINTENANCE_MARGIN_RATE,
         liquidationFeeRate: futuresContext?.liquidationFeeRate ?? DEFAULT_LIQUIDATION_FEE_RATE,
       });
@@ -828,6 +940,7 @@ export async function createDemoOrder(params: CreateDemoOrderParams): Promise<De
             contractMultiplier: futuresContractMultiplier,
             maintenanceMarginRate: futuresContext?.maintenanceMarginRate ?? DEFAULT_MAINTENANCE_MARGIN_RATE,
             liquidationFeeRate: futuresContext?.liquidationFeeRate ?? DEFAULT_LIQUIDATION_FEE_RATE,
+            marginMode: 'cross', // ✅ Flag de cross margin
           },
         })
         .where(eq(schema.demoPositions.id, existingPosition.id))
@@ -843,12 +956,33 @@ export async function createDemoOrder(params: CreateDemoOrderParams): Promise<De
         weightedEntry,
       }, 'Ordem demo consolidada em posição futures aberta');
     } else {
-      const liquidationPrice = calculateLiquidationPrice({
+      // ✅ CROSS MARGIN: Buscar TODAS posições abertas para calcular maintenance margin TOTAL
+      const allOpenPositions = await db
+        .select()
+        .from(schema.demoPositions)
+        .where(and(
+          eq(schema.demoPositions.tenantId, params.tenantId),
+          eq(schema.demoPositions.status, 'open'),
+        ));
+
+      // Calcular MMR total de posições existentes
+      const existingTotalMaintenanceMargin = calculateTotalMaintenanceMargin(allOpenPositions);
+      
+      // Adicionar MMR da nova posição
+      const newNotional = params.size * fillPrice * futuresContractMultiplier;
+      const totalMaintenanceMargin = existingTotalMaintenanceMargin + (newNotional * (futuresContext?.maintenanceMarginRate ?? DEFAULT_MAINTENANCE_MARGIN_RATE));
+
+      // ✅ Saldo TOTAL da conta (cross margin)
+      const balance = await getOrCreateBalance(params.tenantId, assetPair.quoteCurrency);
+      const totalAccountBalance = Number(balance.available) + Number(balance.frozen);
+
+      const liquidationPrice = calculateLiquidationPriceCrossMargin({
         entryPrice: fillPrice,
         side: params.side,
         positionSize: params.size,
         contractMultiplier: futuresContractMultiplier,
-        positionMargin: requiredMargin,
+        totalAccountBalance,
+        totalMaintenanceMargin,
         maintenanceMarginRate: futuresContext?.maintenanceMarginRate ?? DEFAULT_MAINTENANCE_MARGIN_RATE,
         liquidationFeeRate: futuresContext?.liquidationFeeRate ?? DEFAULT_LIQUIDATION_FEE_RATE,
       });
@@ -874,6 +1008,7 @@ export async function createDemoOrder(params: CreateDemoOrderParams): Promise<De
             contractMultiplier: futuresContractMultiplier,
             maintenanceMarginRate: futuresContext?.maintenanceMarginRate ?? DEFAULT_MAINTENANCE_MARGIN_RATE,
             liquidationFeeRate: futuresContext?.liquidationFeeRate ?? DEFAULT_LIQUIDATION_FEE_RATE,
+            marginMode: 'cross', // ✅ Flag de cross margin
           },
         })
         .returning();
@@ -913,7 +1048,8 @@ export async function createDemoOrder(params: CreateDemoOrderParams): Promise<De
       size: params.size,
       leverage,
       fee,
-    }, 'Ordem demo executada e posição aberta');
+      marginMode: 'cross',
+    }, 'Ordem demo executada e posição aberta COM CROSS MARGIN');
   }
 
   if (orderStatus === 'filled') {
