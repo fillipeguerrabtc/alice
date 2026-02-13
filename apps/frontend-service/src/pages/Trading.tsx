@@ -117,6 +117,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { ErrorBoundary } from '@/components/error-boundary'; // ✅ CORREÇÃO: Import ErrorBoundary para graceful degradation
 import { useToast } from '@/hooks/use-toast';
 import { useKucoinWebSocket } from '@/hooks/useKucoinWebSocket';
 import { apiRequest, ApiError, queryClient } from '@/lib/queryClient';
@@ -784,6 +785,7 @@ export default function Trading() {
   const [selectedMarginMode, setSelectedMarginMode] = useState<'cross' | 'isolated'>('cross');
   const [marketDefaultsInitialized, setMarketDefaultsInitialized] = useState(false);
   const [selectedSymbol, setSelectedSymbol] = useState('');
+  const [symbolReady, setSymbolReady] = useState(false); // ✅ CORREÇÃO: Flag para evitar race condition
   const sanitizedSymbol = selectedSymbol.trim();
   const [selectedInterval, setSelectedInterval] = useState('');
   const [controlMode, setControlMode] = useState<TradingControlMode>('manual');
@@ -1335,7 +1337,7 @@ export default function Trading() {
       return res.json();
     },
     // REST para carga inicial; refetch periódico quando WS indisponível (evita dados estáticos)
-    enabled: statusData?.data?.isConfigured && isSymbolValidForMarket,
+    enabled: symbolReady && statusData?.data?.isConfigured && isSymbolValidForMarket,
     refetchInterval: 10_000,
   });
 
@@ -1351,7 +1353,7 @@ export default function Trading() {
       return res.json();
     },
     refetchInterval: ACCOUNT_REFETCH_INTERVAL,
-    enabled: statusData?.data?.isConfigured && isSymbolValidForMarket,
+    enabled: symbolReady && statusData?.data?.isConfigured && isSymbolValidForMarket,
   });
 
   const {
@@ -1540,10 +1542,18 @@ export default function Trading() {
       : (statusDefault && symbols.includes(statusDefault)) ? statusDefault
       : firstAvailable;
 
-    if (!preferred) return;
+    // ✅ CORREÇÃO: Validar que temos símbolo válido antes de marcar como ready
+    if (!preferred) {
+      setSymbolReady(false);
+      return;
+    }
+
     if (!sanitizedSymbol || !symbols.includes(sanitizedSymbol)) {
       setSelectedSymbol(preferred);
     }
+    
+    // ✅ CORREÇÃO: Marcar como ready SOMENTE se há símbolo válido
+    setSymbolReady(true);
   }, [symbolsData, statusData, sanitizedSymbol]);
 
   useEffect(() => {
@@ -1682,7 +1692,7 @@ export default function Trading() {
       return res.json();
     },
     // REST apenas para carga inicial (histórico) — updates real-time vêm exclusivamente via WebSocket
-    enabled: statusData?.data?.isConfigured && !!granularityValue && isSymbolValidForMarket,
+    enabled: symbolReady && statusData?.data?.isConfigured && !!granularityValue && isSymbolValidForMarket,
   });
 
   useEffect(() => {
@@ -1714,7 +1724,7 @@ export default function Trading() {
       return res.json();
     },
     // REST apenas para carga inicial — orderbook real-time vem exclusivamente via WebSocket
-    enabled: statusData?.data?.isConfigured && !!restOrderBookDepth && isSymbolValidForMarket,
+    enabled: symbolReady && statusData?.data?.isConfigured && !!restOrderBookDepth && isSymbolValidForMarket,
   });
 
   // Query para histórico de controle (handover/takeover)
@@ -4937,35 +4947,59 @@ export default function Trading() {
 
           {/* Chart Tab - Gráfico de Candlesticks */}
           <TabsContent value="chart" className="space-y-4 mt-6">
-            <CandleChart
-              data={klines}
-              symbol={selectedSymbol}
-              interval={selectedInterval}
-              intervalOptions={intervalOptions}
-              symbolOptions={symbolOptions}
-              onSymbolChange={setSelectedSymbol}
-              currentPrice={currentPrice}
-              isLoading={isLoadingKlines}
-              onIntervalChange={handleIntervalChange}
-              onRefresh={() => refetchKlines()}
-              height={500}
-              showVolume={true}
-              locale={locale}
-              timeZone={timeZone}
-            />
+            <ErrorBoundary
+              fallback={
+                <Alert variant="destructive">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertTitle>Erro no gráfico</AlertTitle>
+                  <AlertDescription>
+                    Não foi possível renderizar o gráfico de candles. Tente recarregar a página ou selecionar outro símbolo.
+                  </AlertDescription>
+                </Alert>
+              }
+            >
+              <CandleChart
+                data={klines}
+                symbol={selectedSymbol}
+                interval={selectedInterval}
+                intervalOptions={intervalOptions}
+                symbolOptions={symbolOptions}
+                onSymbolChange={setSelectedSymbol}
+                currentPrice={currentPrice}
+                isLoading={isLoadingKlines}
+                onIntervalChange={handleIntervalChange}
+                onRefresh={() => refetchKlines()}
+                height={500}
+                showVolume={true}
+                locale={locale}
+                timeZone={timeZone}
+              />
+            </ErrorBoundary>
           </TabsContent>
 
           {/* Order Book Tab - Profundidade de Mercado */}
           <TabsContent value="orderbook" className="space-y-4 mt-6">
-            <OrderBookViz
-              data={orderBookData}
-              symbol={selectedSymbol}
-              currentPrice={currentPrice}
-              isLoading={isLoadingOrderBook}
-              depth={orderBookDepth ?? undefined}
-              precision={orderBookPrecision ?? undefined}
-              locale={locale}
-            />
+            <ErrorBoundary
+              fallback={
+                <Alert variant="destructive">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertTitle>Erro no livro de ofertas</AlertTitle>
+                  <AlertDescription>
+                    Não foi possível carregar o orderbook. Verifique sua conexão ou tente recarregar.
+                  </AlertDescription>
+                </Alert>
+              }
+            >
+              <OrderBookViz
+                data={orderBookData}
+                symbol={selectedSymbol}
+                currentPrice={currentPrice}
+                isLoading={isLoadingOrderBook}
+                depth={orderBookDepth ?? undefined}
+                precision={orderBookPrecision ?? undefined}
+                locale={locale}
+              />
+            </ErrorBoundary>
           </TabsContent>
 
           {/* Control Tab - Handover/Takeover */}
