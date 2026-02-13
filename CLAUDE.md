@@ -1546,6 +1546,11 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
+*Versão: 5.32 - 13 de Fevereiro de 2026*
+*LLM Gateway Runtime Dependencies Hardening (13/02/2026): CORREÇÃO CIRÚRGICA para falhas recorrentes no deploy ALICE com `ERR_MODULE_NOT_FOUND` em `alice-llm-gateway` (logs reais em `/opt/alice/logs/deploy-alice-*.log`). EVIDÊNCIAS: `Cannot find package 'rate-limit-redis'`, depois `Cannot find package 'swagger-ui-express'`, depois `Cannot find package 'pg'` no `/app/dist/bundle.js`. CAUSA RAIZ: conjunto de dependências runtime do `llm-gateway-service` incompleto para módulos externalizados via build (database + middleware compartilhado). SOLUÇÃO ENTERPRISE: adição explícita de `pgvector` como dependência runtime direta do serviço para alinhar com stack de banco/pgvector e evitar nova quebra em cadeia após `pg`; lockfile sincronizado com `pnpm install --no-frozen-lockfile`; validação local concluída com `pnpm --filter @alice/llm-gateway-service run typecheck`, `pnpm --filter @alice/llm-gateway-service run build` e `pnpm --filter @alice/frontend-service run build` (tudo OK). ARQUIVOS MODIFICADOS: `apps/llm-gateway-service/package.json`, `pnpm-lock.yaml`, `CLAUDE.md`. Implementação 100% enterprise-grade (Regras 1, 6, 7, 9 - leitura prévia, sem workarounds, mudança cirúrgica, validação contínua).*
+
+---
+*Autor: Fillipe Guerra*
 *Versão: 5.29 - 11 de Fevereiro de 2026*
 *FINALIZAÇÃO ENTERPRISE TREINAMENTO-LIMITES (11/02/2026): Testes unitários (19 testes em training-limits.test.ts), validação SSOT no startup (training + rag), GPU Manager /api/gpu/embeddings/health, collectTrainingFromDocumentChunks minChars, exclusão PLANO.*
 
