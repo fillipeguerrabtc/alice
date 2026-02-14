@@ -258,51 +258,6 @@ function calculateFee(size: number, price: number, contractMultiplier = 1): numb
 }
 
 /**
- * Calcula preço de liquidação para futures COM ISOLATED MARGIN
- * 
- * Fórmula Isolated Margin:
- * LiqPrice = (PositionValue - PositionMargin) / Denominator
- * 
- * Esta função é mantida para referência mas NÃO é mais usada.
- * O sistema agora usa Cross Margin (calculateLiquidationPriceCrossMargin).
- */
-function calculateLiquidationPriceIsolated(params: {
-  entryPrice: number;
-  side: DemoOrderSide;
-  positionSize: number;
-  contractMultiplier: number;
-  positionMargin: number;
-  maintenanceMarginRate: number;
-  liquidationFeeRate: number;
-}): number {
-  const {
-    entryPrice,
-    side,
-    positionSize,
-    contractMultiplier,
-    positionMargin,
-    maintenanceMarginRate,
-    liquidationFeeRate,
-  } = params;
-  if (positionSize <= 0 || contractMultiplier <= 0 || positionMargin <= 0 || entryPrice <= 0) {
-    return 0;
-  }
-  const openingValue = positionSize * contractMultiplier * entryPrice;
-  const sideFactor = side === 'buy' ? 1 : -1;
-  const denominator = positionSize * contractMultiplier * (
-    1 - sideFactor * maintenanceMarginRate - sideFactor * liquidationFeeRate
-  );
-  if (!Number.isFinite(denominator) || denominator <= 0) {
-    return 0;
-  }
-  const liquidationPrice = (openingValue - positionMargin) / denominator;
-  if (!Number.isFinite(liquidationPrice) || liquidationPrice <= 0) {
-    return 0;
-  }
-  return liquidationPrice;
-}
-
-/**
  * Calcula preço de liquidação para futures COM CROSS MARGIN
  * 
  * Fórmula Cross Margin (conforme KuCoin):
@@ -1849,6 +1804,7 @@ export async function processOpenOrdersAndPositions(): Promise<void> {
         accountEquity,
         totalMaintenanceMargin,
         openPositionsCount: openPositions.length,
+        positionPnls: Object.fromEntries(positionPnls),
       }, 'Cross margin check');
 
       // ✅ LIQUIDAÇÃO CROSS MARGIN: equity < maintenance → liquida TUDO
