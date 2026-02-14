@@ -1357,13 +1357,48 @@ jobs:
             'mkdir -p /opt/alice/scripts' \
             'cp /tmp/scripts/deploy-functions.sh /opt/alice/scripts/' \
             'chmod +x /opt/alice/scripts/deploy-functions.sh' \
-            'echo "✅ deploy-functions.sh instalado em /opt/alice/scripts/"' \
+            '' \
+            '# =================================================================' \
+            '# VALIDAÇÃO: Verificar que deploy-functions.sh foi instalado corretamente' \
+            '# =================================================================' \
+            'if [ ! -f /opt/alice/scripts/deploy-functions.sh ]; then' \
+            '  echo "❌ ERRO: deploy-functions.sh não foi copiado para /opt/alice/scripts/"' \
+            '  exit 1' \
+            'fi' \
+            '' \
+            'if [ ! -x /opt/alice/scripts/deploy-functions.sh ]; then' \
+            '  echo "❌ ERRO: deploy-functions.sh não é executável"' \
+            '  exit 1' \
+            'fi' \
+            '' \
+            '# Verificar que funções críticas existem no script' \
+            'if ! grep -q "verify_docker_credentials()" /opt/alice/scripts/deploy-functions.sh; then' \
+            '  echo "❌ ERRO: deploy-functions.sh não contém função verify_docker_credentials()"' \
+            '  exit 1' \
+            'fi' \
+            '' \
+            'if ! grep -q "pull_if_needed()" /opt/alice/scripts/deploy-functions.sh; then' \
+            '  echo "❌ ERRO: deploy-functions.sh não contém função pull_if_needed()"' \
+            '  exit 1' \
+            'fi' \
+            '' \
+            'if ! grep -q "extract_service_name()" /opt/alice/scripts/deploy-functions.sh; then' \
+            '  echo "❌ ERRO: deploy-functions.sh não contém função extract_service_name()"' \
+            '  exit 1' \
+            'fi' \
+            '' \
+            'SCRIPT_SIZE=$(wc -c < /opt/alice/scripts/deploy-functions.sh)' \
+            'echo "✅ deploy-functions.sh instalado e validado:"' \
+            'echo "   📄 Tamanho: ${SCRIPT_SIZE} bytes"' \
+            'echo "   ✓ verify_docker_credentials() presente"' \
+            'echo "   ✓ pull_if_needed() presente"' \
+            'echo "   ✓ extract_service_name() presente"' \
           | ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
             "${{ env.HETZNER_USER }}@${{ env.HETZNER_HOST }}" \
             "CLEANUP_SERVER=${CLEANUP_SERVER} bash -s"
           
           echo ""
-          echo "✅ Scripts SSOT sincronizados para /tmp/scripts/"
+          echo "✅ Scripts SSOT sincronizados e validados"
           
           # Cleanup local
           rm -f ~/.ssh/deploy_key /tmp/alice-scripts.tar.gz
@@ -3327,6 +3362,36 @@ jobs:
             echo "🕐 Início: $(date '+%Y-%m-%d %H:%M:%S')"
             echo ""
             
+            # ================================================================= 
+            # VALIDAÇÃO PRÉ-DEPLOY: Verificar que deploy-functions.sh existe
+            # =================================================================
+            # PROBLEMA: Se script não foi sincronizado corretamente no job prepare,
+            #           o source falhará silenciosamente e funções estarão indefinidas
+            # SOLUÇÃO: Validação fail-fast antes de source (CLAUDE.md Regra 9)
+            # REF: CLAUDE.md Regra 7 (Mudanças cirúrgicas), Regra 9 (Validação contínua)
+            # =================================================================
+            if [ ! -f /opt/alice/scripts/deploy-functions.sh ]; then
+              echo "❌ ERRO CRÍTICO: /opt/alice/scripts/deploy-functions.sh não encontrado!"
+              echo "   O job 'prepare' deveria ter sincronizado este script."
+              echo "   Verifique os logs do job 'prepare' para identificar falhas."
+              exit 1
+            fi
+            
+            if [ ! -x /opt/alice/scripts/deploy-functions.sh ]; then
+              echo "❌ ERRO CRÍTICO: /opt/alice/scripts/deploy-functions.sh não é executável!"
+              chmod +x /opt/alice/scripts/deploy-functions.sh || exit 1
+            fi
+            
+            SCRIPT_SIZE=$(wc -c < /opt/alice/scripts/deploy-functions.sh)
+            if [ "$SCRIPT_SIZE" -lt 1000 ]; then
+              echo "❌ ERRO CRÍTICO: deploy-functions.sh muito pequeno (${SCRIPT_SIZE} bytes)"
+              echo "   Script provavelmente corrompido ou incompleto."
+              exit 1
+            fi
+            
+            echo "✅ deploy-functions.sh validado (${SCRIPT_SIZE} bytes)"
+            echo ""
+            
             # Verificação de credenciais + funções compartilhadas (CLAUDE.md Regra 2)
             export BUILT_IMAGES="${{ github.event.inputs.built_images || '' }}"
             export GHCR_AUTH_PROBE_IMAGE="ghcr.io/${{ github.repository_owner }}/alice-auth:${{ needs.validate.outputs.version }}"
@@ -4407,6 +4472,29 @@ jobs:
             fi
             echo ""
             
+            # ================================================================= 
+            # VALIDAÇÃO PRÉ-DEPLOY: Verificar que deploy-functions.sh existe
+            # =================================================================
+            if [ ! -f /opt/alice/scripts/deploy-functions.sh ]; then
+              echo "❌ ERRO CRÍTICO: /opt/alice/scripts/deploy-functions.sh não encontrado!"
+              echo "   O job 'prepare' deveria ter sincronizado este script."
+              exit 1
+            fi
+            
+            if [ ! -x /opt/alice/scripts/deploy-functions.sh ]; then
+              echo "❌ ERRO CRÍTICO: /opt/alice/scripts/deploy-functions.sh não é executável!"
+              chmod +x /opt/alice/scripts/deploy-functions.sh || exit 1
+            fi
+            
+            SCRIPT_SIZE=$(wc -c < /opt/alice/scripts/deploy-functions.sh)
+            if [ "$SCRIPT_SIZE" -lt 1000 ]; then
+              echo "❌ ERRO CRÍTICO: deploy-functions.sh muito pequeno (${SCRIPT_SIZE} bytes)"
+              exit 1
+            fi
+            
+            echo "✅ deploy-functions.sh validado (${SCRIPT_SIZE} bytes)"
+            echo ""
+            
             # Verificação de credenciais + funções compartilhadas (CLAUDE.md Regra 2)
             export BUILT_IMAGES="${{ github.event.inputs.built_images || '' }}"
             export GHCR_AUTH_PROBE_IMAGE="ghcr.io/${{ github.repository_owner }}/alice-auth:${{ needs.validate.outputs.version }}"
@@ -5133,6 +5221,29 @@ jobs:
             exec > >(tee -a "$LOG_FILE") 2>&1
             echo "📝 Log persistido em: $LOG_FILE"
             
+            # ================================================================= 
+            # VALIDAÇÃO PRÉ-DEPLOY: Verificar que deploy-functions.sh existe
+            # =================================================================
+            if [ ! -f /opt/alice/scripts/deploy-functions.sh ]; then
+              echo "❌ ERRO CRÍTICO: /opt/alice/scripts/deploy-functions.sh não encontrado!"
+              echo "   O job 'prepare' deveria ter sincronizado este script."
+              exit 1
+            fi
+            
+            if [ ! -x /opt/alice/scripts/deploy-functions.sh ]; then
+              echo "❌ ERRO CRÍTICO: /opt/alice/scripts/deploy-functions.sh não é executável!"
+              chmod +x /opt/alice/scripts/deploy-functions.sh || exit 1
+            fi
+            
+            SCRIPT_SIZE=$(wc -c < /opt/alice/scripts/deploy-functions.sh)
+            if [ "$SCRIPT_SIZE" -lt 1000 ]; then
+              echo "❌ ERRO CRÍTICO: deploy-functions.sh muito pequeno (${SCRIPT_SIZE} bytes)"
+              exit 1
+            fi
+            
+            echo "✅ deploy-functions.sh validado (${SCRIPT_SIZE} bytes)"
+            echo ""
+            
             # Verificação de credenciais + funções compartilhadas (CLAUDE.md Regra 2)
             export BUILT_IMAGES="${{ github.event.inputs.built_images || '' }}"
             export GHCR_AUTH_PROBE_IMAGE="ghcr.io/${{ github.repository_owner }}/alice-auth:${{ needs.validate.outputs.version }}"
@@ -5774,6 +5885,29 @@ jobs:
             exec > >(tee -a "$LOG_FILE") 2>&1
             echo "📝 Log persistido em: $LOG_FILE"
             
+            # ================================================================= 
+            # VALIDAÇÃO PRÉ-DEPLOY: Verificar que deploy-functions.sh existe
+            # =================================================================
+            if [ ! -f /opt/alice/scripts/deploy-functions.sh ]; then
+              echo "❌ ERRO CRÍTICO: /opt/alice/scripts/deploy-functions.sh não encontrado!"
+              echo "   O job 'prepare' deveria ter sincronizado este script."
+              exit 1
+            fi
+            
+            if [ ! -x /opt/alice/scripts/deploy-functions.sh ]; then
+              echo "❌ ERRO CRÍTICO: /opt/alice/scripts/deploy-functions.sh não é executável!"
+              chmod +x /opt/alice/scripts/deploy-functions.sh || exit 1
+            fi
+            
+            SCRIPT_SIZE=$(wc -c < /opt/alice/scripts/deploy-functions.sh)
+            if [ "$SCRIPT_SIZE" -lt 1000 ]; then
+              echo "❌ ERRO CRÍTICO: deploy-functions.sh muito pequeno (${SCRIPT_SIZE} bytes)"
+              exit 1
+            fi
+            
+            echo "✅ deploy-functions.sh validado (${SCRIPT_SIZE} bytes)"
+            echo ""
+            
             # Verificação de credenciais + funções compartilhadas (CLAUDE.md Regra 2)
             export BUILT_IMAGES="${{ github.event.inputs.built_images || '' }}"
             export GHCR_AUTH_PROBE_IMAGE="ghcr.io/${{ github.repository_owner }}/alice-auth:${{ needs.validate.outputs.version }}"
@@ -6362,6 +6496,29 @@ jobs:
             # Persistir todo o output do deploy no servidor
             exec > >(tee -a "$LOG_FILE") 2>&1
             echo "📝 Log persistido em: $LOG_FILE"
+            
+            # ================================================================= 
+            # VALIDAÇÃO PRÉ-DEPLOY: Verificar que deploy-functions.sh existe
+            # =================================================================
+            if [ ! -f /opt/alice/scripts/deploy-functions.sh ]; then
+              echo "❌ ERRO CRÍTICO: /opt/alice/scripts/deploy-functions.sh não encontrado!"
+              echo "   O job 'prepare' deveria ter sincronizado este script."
+              exit 1
+            fi
+            
+            if [ ! -x /opt/alice/scripts/deploy-functions.sh ]; then
+              echo "❌ ERRO CRÍTICO: /opt/alice/scripts/deploy-functions.sh não é executável!"
+              chmod +x /opt/alice/scripts/deploy-functions.sh || exit 1
+            fi
+            
+            SCRIPT_SIZE=$(wc -c < /opt/alice/scripts/deploy-functions.sh)
+            if [ "$SCRIPT_SIZE" -lt 1000 ]; then
+              echo "❌ ERRO CRÍTICO: deploy-functions.sh muito pequeno (${SCRIPT_SIZE} bytes)"
+              exit 1
+            fi
+            
+            echo "✅ deploy-functions.sh validado (${SCRIPT_SIZE} bytes)"
+            echo ""
             
             # Verificação de credenciais + funções compartilhadas (CLAUDE.md Regra 2)
             export BUILT_IMAGES="${{ github.event.inputs.built_images || '' }}"
