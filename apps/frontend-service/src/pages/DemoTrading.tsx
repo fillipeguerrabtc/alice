@@ -48,6 +48,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
+import { ErrorBoundary } from '@/components/error-boundary';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useKucoinWebSocket } from '@/hooks/useKucoinWebSocket';
 import { useToast } from '@/hooks/use-toast';
@@ -831,7 +832,8 @@ export default function DemoTrading() {
   // ============================================================================
 
   return (
-    <div className="flex flex-col gap-6 p-6">
+    <ErrorBoundary>
+      <div className="flex flex-col gap-6 p-6">
       {/* Header com seleção de mercado e símbolo */}
       <div className="flex flex-col gap-4">
         <div className="flex items-center justify-between flex-wrap gap-4">
@@ -2139,5 +2141,6 @@ export default function DemoTrading() {
         </DialogContent>
       </Dialog>
     </div>
+    </ErrorBoundary>
   );
 }

@@ -879,6 +879,10 @@ export default function Trading() {
   const autoSaveSignalLastPayloadRef = useRef<string>('');
   const autoSaveSignalContextRef = useRef(false);
   const [isManualSignalSavePending, setIsManualSignalSavePending] = useState(false);
+  
+  // ✅ CORREÇÃO React Error #310: useState declarado ANTES de early returns
+  const [lastKlines, setLastKlines] = useState<KlineData[]>([]);
+  const lastKlinesSignatureRef = useRef<string>('');
 
   const updateSignalTimeframes = (next: string[]) => {
     setSignalProfileForm((prev) => ({
@@ -2402,6 +2406,52 @@ export default function Trading() {
     }
   };
 
+  // ✅ CORREÇÃO React Error #310: useCallback declarados ANTES de early returns
+  // Handlers para conversão de tamanho/USDT em ordens (dependem de market data)
+  const handleOrderSizeChange = useCallback((sizeValue: string) => {
+    setOrderForm(prev => {
+      const sizeNum = parseLocaleNumberInput(sizeValue);
+      // Valores derivados com null-safety
+      const contractMultiplier = market?.contract?.multiplier ?? 0.001;
+      const wsTickerPrice = wsEnabled && wsTicker?.symbol?.toUpperCase() === normalizedSymbol
+        ? Number(wsTicker.price)
+        : NaN;
+      const fallbackPrice = isFuturesMarket
+        ? market?.contract?.lastTradePrice
+        : (market?.ticker?.price ? Number(market.ticker.price) : undefined);
+      const fallbackPriceValue = Number.isFinite(fallbackPrice ?? NaN) ? Number(fallbackPrice) : 0;
+      const currentPrice = Number.isFinite(wsTickerPrice) ? wsTickerPrice : fallbackPriceValue;
+      
+      if (currentPrice > 0 && sizeNum !== null && Number.isFinite(sizeNum) && sizeNum > 0 && isFuturesMarket) {
+        const usdtVal = sizeNum * currentPrice * contractMultiplier;
+        return { ...prev, size: sizeValue, usdtAmount: usdtVal.toFixed(2) };
+      }
+      return { ...prev, size: sizeValue, usdtAmount: '' };
+    });
+  }, [market, wsTicker, wsEnabled, normalizedSymbol, isFuturesMarket]);
+
+  const handleOrderUsdtChange = useCallback((usdtValue: string) => {
+    setOrderForm(prev => {
+      const usdtNum = parseLocaleNumberInput(usdtValue);
+      // Valores derivados com null-safety
+      const contractMultiplier = market?.contract?.multiplier ?? 0.001;
+      const wsTickerPrice = wsEnabled && wsTicker?.symbol?.toUpperCase() === normalizedSymbol
+        ? Number(wsTicker.price)
+        : NaN;
+      const fallbackPrice = isFuturesMarket
+        ? market?.contract?.lastTradePrice
+        : (market?.ticker?.price ? Number(market.ticker.price) : undefined);
+      const fallbackPriceValue = Number.isFinite(fallbackPrice ?? NaN) ? Number(fallbackPrice) : 0;
+      const currentPrice = Number.isFinite(wsTickerPrice) ? wsTickerPrice : fallbackPriceValue;
+      
+      if (currentPrice > 0 && usdtNum !== null && Number.isFinite(usdtNum) && usdtNum > 0 && isFuturesMarket) {
+        const qty = usdtNum / (currentPrice * contractMultiplier);
+        return { ...prev, usdtAmount: usdtValue, size: qty.toFixed(4) };
+      }
+      return { ...prev, usdtAmount: usdtValue, size: '' };
+    });
+  }, [market, wsTicker, wsEnabled, normalizedSymbol, isFuturesMarket]);
+
   const deleteOrderHistoryMutation = useMutation({
     mutationFn: async ({ ids, all, scope }: { ids?: string[]; all?: boolean; scope?: 'self' | 'tenant' }) => {
       const res = await apiRequest('POST', '/api/integrations/trading/orders/history/delete', {
@@ -2439,8 +2489,6 @@ export default function Trading() {
         turnover,
       }));
   }, [normalizedSymbol, wsEnabled, wsInterval, wsKlines]);
-  const [lastKlines, setLastKlines] = useState<KlineData[]>([]);
-  const lastKlinesSignatureRef = useRef<string>('');
 
   // CORREÇÃO 11/02/2026: NÃO limpar lastKlines ao mudar wsInterval.
   // Ao trocar interval, os dados antigos permanecem visíveis enquanto novos
@@ -2484,10 +2532,7 @@ export default function Trading() {
     : (klinesData?.data && klinesData.data.length > 0 ? klinesData.data : lastKlines);
 
   // ============================================================================
-  // HOOKS QUE DEPENDEM DE DADOS DE MERCADO
-  // CORREÇÃO React error #310: hooks DEVEM ser chamados ANTES de qualquer
-  // early return condicional para manter ordem consistente entre renders.
-  // REF: CLAUDE.md Regra 7 (Mudanças cirúrgicas), React Rules of Hooks
+  // VALORES DERIVADOS (Calculados antes de early returns para uso no JSX)
   // ============================================================================
 
   const contractMultiplier = market?.contract?.multiplier ?? 0.001;
@@ -2499,28 +2544,6 @@ export default function Trading() {
     : (market?.ticker?.price ? Number(market.ticker.price) : undefined);
   const fallbackPriceValue = Number.isFinite(fallbackPrice ?? NaN) ? Number(fallbackPrice) : 0;
   const currentPrice = Number.isFinite(wsTickerPrice) ? wsTickerPrice : fallbackPriceValue;
-
-  const handleOrderSizeChange = useCallback((sizeValue: string) => {
-    setOrderForm(prev => {
-      const sizeNum = parseLocaleNumberInput(sizeValue);
-      if (currentPrice > 0 && sizeNum !== null && Number.isFinite(sizeNum) && sizeNum > 0 && isFuturesMarket) {
-        const usdtVal = sizeNum * currentPrice * contractMultiplier;
-        return { ...prev, size: sizeValue, usdtAmount: usdtVal.toFixed(2) };
-      }
-      return { ...prev, size: sizeValue, usdtAmount: '' };
-    });
-  }, [currentPrice, contractMultiplier, isFuturesMarket]);
-
-  const handleOrderUsdtChange = useCallback((usdtValue: string) => {
-    setOrderForm(prev => {
-      const usdtNum = parseLocaleNumberInput(usdtValue);
-      if (currentPrice > 0 && usdtNum !== null && Number.isFinite(usdtNum) && usdtNum > 0 && isFuturesMarket) {
-        const qty = usdtNum / (currentPrice * contractMultiplier);
-        return { ...prev, usdtAmount: usdtValue, size: qty.toFixed(4) };
-      }
-      return { ...prev, usdtAmount: usdtValue, size: '' };
-    });
-  }, [currentPrice, contractMultiplier, isFuturesMarket]);
 
   // ============================================================================
   // RENDER - Loading State
@@ -2803,12 +2826,13 @@ export default function Trading() {
   // ============================================================================
 
   return (
-    <motion.div
-      variants={containerVariants}
-      initial="hidden"
-      animate="visible"
-      className="p-3 md:p-6 space-y-4 md:space-y-6"
-    >
+    <ErrorBoundary>
+      <motion.div
+        variants={containerVariants}
+        initial="hidden"
+        animate="visible"
+        className="p-3 md:p-6 space-y-4 md:space-y-6"
+      >
       {criticalApiError ? (
         <motion.div variants={itemVariants}>
           <Alert variant="destructive" className="mb-2">
@@ -5918,6 +5942,7 @@ export default function Trading() {
         </DialogContent>
       </Dialog>
     </motion.div>
+    </ErrorBoundary>
   );
 }
                 
