@@ -3027,6 +3027,138 @@ jobs:
       # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Mudanças cirúrgicas)
       # =================================================================
 
+      - name: Create PostgreSQL Docker volume (belt-and-suspenders)
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: ${{ env.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          command_timeout: 5m
+          script: |
+            set -euo pipefail
+            
+            POSTGRES_VOLUME="alice-postgres-data"
+            POSTGRES_DIR="/opt/alice/data/postgres"
+            
+            echo ""
+            echo "🔍 Verificando volume PostgreSQL (belt-and-suspenders)..."
+            echo "============================================="
+            
+            # Check if volume exists
+            if docker volume inspect "$POSTGRES_VOLUME" >/dev/null 2>&1; then
+              echo "✅ Volume $POSTGRES_VOLUME já existe"
+              
+              # Validate it's configured correctly
+              MOUNTPOINT=$(docker volume inspect "$POSTGRES_VOLUME" --format '{{ .Options.device }}' 2>/dev/null || echo "")
+              if [ "$MOUNTPOINT" != "$POSTGRES_DIR" ]; then
+                echo "⚠️  AVISO: Volume existe mas mountpoint incorreto"
+                echo "   Esperado: $POSTGRES_DIR"
+                echo "   Atual: $MOUNTPOINT"
+                echo "   Removendo volume para recriar..."
+                docker volume rm "$POSTGRES_VOLUME" || {
+                  echo "❌ ERRO: Falha ao remover volume com mountpoint incorreto"
+                  echo ""
+                  echo "🔍 DIAGNÓSTICO:"
+                  echo "   Containers usando o volume:"
+                  docker ps -a --filter "volume=$POSTGRES_VOLUME" --format '{{.Names}} ({{.Status}})' 2>&1 || echo "   (nenhum)"
+                  echo ""
+                  echo "🔧 AÇÃO NECESSÁRIA:"
+                  echo "   1. Pare containers que usam o volume: docker stop \$(docker ps -aq)"
+                  echo "   2. Remova o volume: docker volume rm $POSTGRES_VOLUME"
+                  echo "   3. Re-execute o deploy"
+                  exit 1
+                }
+              else
+                echo "✅ Mountpoint correto: $POSTGRES_DIR"
+                echo ""
+                echo "✅ Volume PostgreSQL pronto para uso"
+                exit 0
+              fi
+            fi
+            
+            # Volume doesn't exist - need to create it
+            echo "📦 Volume não existe - criando..."
+            
+            # Ensure directory exists with correct ownership
+            if [ ! -d "$POSTGRES_DIR" ]; then
+              echo "   📝 Criando diretório: $POSTGRES_DIR"
+              sudo mkdir -p "$POSTGRES_DIR"
+              sudo chown 70:70 "$POSTGRES_DIR"
+              sudo chmod 700 "$POSTGRES_DIR"
+              echo "   ✅ Diretório criado"
+            else
+              # Validate ownership
+              ACTUAL_OWNER=$(sudo stat -c '%u:%g' "$POSTGRES_DIR")
+              ACTUAL_PERMS=$(sudo stat -c '%a' "$POSTGRES_DIR")
+              
+              if [ "$ACTUAL_OWNER" != "70:70" ]; then
+                echo "   🔧 Corrigindo ownership: $ACTUAL_OWNER → 70:70"
+                sudo chown -R 70:70 "$POSTGRES_DIR"
+              fi
+              
+              if [ "$ACTUAL_PERMS" != "700" ]; then
+                echo "   🔧 Corrigindo permissions: $ACTUAL_PERMS → 700"
+                sudo chmod 700 "$POSTGRES_DIR"
+              fi
+              
+              echo "   ✅ Diretório OK (70:70, 700)"
+            fi
+            
+            # Create volume
+            echo "   📦 Criando volume $POSTGRES_VOLUME..."
+            if ! docker volume create \
+              --driver local \
+              --opt type=none \
+              --opt o=bind \
+              --opt device="$POSTGRES_DIR" \
+              "$POSTGRES_VOLUME" 2>&1; then
+              echo ""
+              echo "❌ ERRO: Falha ao criar volume Docker"
+              echo ""
+              echo "🔍 DIAGNÓSTICO:"
+              echo "   Diretório: $POSTGRES_DIR"
+              sudo ls -ld "$POSTGRES_DIR" 2>&1 || echo "   Diretório não existe!"
+              echo ""
+              echo "🔧 AÇÃO NECESSÁRIA:"
+              echo "   1. Verifique se o diretório existe e tem permissões corretas"
+              echo "   2. Execute: sudo chown -R 70:70 $POSTGRES_DIR"
+              echo "   3. Execute: sudo chmod 700 $POSTGRES_DIR"
+              exit 1
+            fi
+            
+            echo "   ✅ Volume $POSTGRES_VOLUME criado com sucesso"
+            
+            # Validate volume
+            echo "   🧪 Validando configuração do volume..."
+            if ! docker volume inspect "$POSTGRES_VOLUME" >/dev/null 2>&1; then
+              echo "❌ ERRO: Volume não existe após criação!"
+              exit 1
+            fi
+            
+            VOLUME_DEVICE=$(docker volume inspect "$POSTGRES_VOLUME" --format '{{.Options.device}}' 2>/dev/null || echo "")
+            if [ "$VOLUME_DEVICE" != "$POSTGRES_DIR" ]; then
+              echo "❌ ERRO: Volume criado com mountpoint incorreto!"
+              echo "   Esperado: $POSTGRES_DIR"
+              echo "   Atual: $VOLUME_DEVICE"
+              exit 1
+            fi
+            
+            # Test write access
+            echo "   🧪 Testando escrita no volume..."
+            if ! docker run --rm --user 70:70 -v "$POSTGRES_VOLUME:/data:rw" alpine:3.21 touch /data/.volume-test 2>&1; then
+              echo "❌ ERRO: UID 70 (PostgreSQL) não consegue escrever no volume!"
+              echo ""
+              docker volume inspect "$POSTGRES_VOLUME" 2>&1 || true
+              exit 1
+            fi
+            docker run --rm --user 70:70 -v "$POSTGRES_VOLUME:/data:rw" alpine:3.21 rm -f /data/.volume-test 2>/dev/null || true
+            echo "   ✅ Teste de escrita OK"
+            
+            echo ""
+            echo "✅ Volume PostgreSQL pronto para uso"
+            echo "============================================="
+
       - name: Deploy stack infra via SSH
         id: deploy
         uses: appleboy/ssh-action@v1.2.2
