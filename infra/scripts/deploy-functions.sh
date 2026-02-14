@@ -3,15 +3,15 @@
 # deploy-functions.sh - Funções compartilhadas de deploy enterprise
 # ═══════════════════════════════════════════════════════════════════════
 # Autor: Fillipe Guerra
-# Data: 10 de Fevereiro de 2026
+# Data: 14 de Fevereiro de 2026 (Atualizado)
 #
 # Contém funções reutilizadas por TODOS os 5 deploy jobs (INFRA, ALICE,
 # OBSERVABILITY, ERPNEXT, BACKUP) para eliminar duplicação (CLAUDE.md Regra 2).
 #
 # USO:
-#   export BUILT_IMAGES="auth,chat,rag"  # ou "__NONE__" ou ""
+#   BUILT_IMAGES="auth,chat,rag"  # ou "__NONE__" ou ""
 #   source /opt/alice/scripts/deploy-functions.sh
-#   pull_if_needed "ghcr.io/user/alice-chat:v1.0.0"
+#   pull_if_needed "auth" "ghcr.io/user/alice-auth:v1.0.0" "$BUILT_IMAGES"
 #
 # REF: CLAUDE.md Regra 2 (Não duplicar), Regra 6 (Enterprise-grade)
 # ═══════════════════════════════════════════════════════════════════════
@@ -174,23 +174,70 @@ try_local_retag() {
 }
 
 # ═══════════════════════════════════════════════════════════════════════
+# extract_service_name() - Extrai nome do serviço de uma imagem
+# ═══════════════════════════════════════════════════════════════════════
+# Extrai o nome do serviço de uma imagem Docker para usar na lógica de
+# pull inteligente. Suporta imagens GHCR (alice-*) e imagens externas.
+#
+# PARÂMETROS:
+#   $1 = IMAGE: Imagem completa (ex: "ghcr.io/.../alice-auth:v1.0.0")
+#
+# RETORNO:
+#   Nome do serviço (ex: "auth" para "alice-auth")
+#   ou nome completo para imagens externas (ex: "redis" para "redis:7.4.7-alpine")
+#
+# EXEMPLOS:
+#   extract_service_name "ghcr.io/fillipeguerrabtc/alice-auth:v1.0.0"  # → auth
+#   extract_service_name "ghcr.io/fillipeguerrabtc/alice-postgres:v1.0.0"  # → postgres
+#   extract_service_name "redis:7.4.7-alpine"  # → redis
+#   extract_service_name "quay.io/minio/minio:latest"  # → minio
+# ═══════════════════════════════════════════════════════════════════════
+extract_service_name() {
+  local image="$1"
+  local repo="${image%:*}"
+  
+  # Para imagens GHCR (alice-*), extrair nome após "alice-"
+  if echo "$repo" | grep -q "alice-"; then
+    echo "$repo" | sed 's/.*alice-//'
+  else
+    # Para imagens externas, usar nome do repositório
+    basename "$repo"
+  fi
+}
+
+# ═══════════════════════════════════════════════════════════════════════
 # pull_if_needed() - Pull inteligente com detecção de retag
 # ═══════════════════════════════════════════════════════════════════════
-# ARQUITETURA ENTERPRISE (10/02/2026):
-# Release informa quais imagens foram BUILD vs RETAG via variável
-# BUILT_IMAGES (deve estar exportada antes do source). Deploy usa
-# essa info para decidir pull vs retag. Retag local SEMPRE verifica
-# identidade de conteúdo via config digest (previne tag stale).
+# ARQUITETURA ENTERPRISE (14/02/2026 - Refatorado para parâmetros explícitos):
+# Release informa quais imagens foram BUILD vs RETAG via parâmetro
+# BUILT_IMAGES. Deploy passa essa info explicitamente para decidir
+# pull vs retag. Retag local SEMPRE verifica identidade de conteúdo
+# via config digest (previne tag stale).
 #
+# PARÂMETROS:
+#   $1 = SERVICE_NAME: Nome do serviço (ex: "auth", "chat", "postgres")
+#   $2 = IMAGE_FULL: Imagem completa (ex: "ghcr.io/.../alice-auth:v1.0.0")
+#   $3 = BUILT_IMAGES (opcional): Lista de serviços buildados (ex: "auth,chat")
+#                                  ou "__NONE__" (tudo retag)
+#                                  ou "" (deploy manual)
+#
+# CASOS:
 #   CASO 1: Tag exata existe localmente → SKIP (zero rede)
 #   CASO 2: Imagem Docker Hub/Quay (terceiros) → pull com retry
 #   CASO 3: Imagem GHCR com info Release → verificar + RETAG local ou pull
 #   CASO 4: Sem info de Release (manual) → pull com retry
 #
+# EXEMPLOS:
+#   pull_if_needed "auth" "ghcr.io/.../alice-auth:v1.0.0" "auth,chat,rag"
+#   pull_if_needed "auth" "ghcr.io/.../alice-auth:v1.0.0" "__NONE__"
+#   pull_if_needed "auth" "ghcr.io/.../alice-auth:v1.0.0" ""
+#
 # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Cirúrgico)
 # ═══════════════════════════════════════════════════════════════════════
 pull_if_needed() {
-  local image="$1"
+  local service_name="$1"
+  local image="$2"
+  local built_images="${3:-}"
   local repo="${image%:*}"
   local tag="${image##*:}"
 
@@ -201,26 +248,23 @@ pull_if_needed() {
   fi
 
   # ─── CASO 2: Imagem Docker Hub/Quay (terceiros) → pull com retry ───
-  # BUILT_IMAGES só se aplica a imagens GHCR (nossas custom images)
+  # built_images só se aplica a imagens GHCR (nossas custom images)
   # Docker Hub/Quay images (redis, qdrant, grafana, minio, etc.) = pull direto
   if ! echo "$repo" | grep -q "ghcr.io"; then
-    echo "   📥 PULL (imagem externa)"
+    echo "   📥 PULL (imagem externa - Docker Hub/Quay)"
     pull_with_retry "$image"
     return $?
   fi
 
-  # ─── Extrair nome do serviço GHCR (ex: ghcr.io/.../alice-chat → chat) ───
-  local svc_name=""
-  svc_name=$(echo "$repo" | sed 's/.*alice-//')
-
   # ─── CASO 3: Release informou built_images → detecção precisa ───
-  # BUILT_IMAGES="" = deploy manual (sem info) → cai no CASO 4
-  # BUILT_IMAGES="__NONE__" = Release rodou, tudo retag → tentar retag local
-  # BUILT_IMAGES="auth,chat,..." = Release buildou essas → pull seletivo
-  if [ -n "${BUILT_IMAGES:-}" ]; then
+  # built_images="" = deploy manual (sem info) → cai no CASO 4
+  # built_images="__NONE__" = Release rodou, tudo retag → tentar retag local
+  # built_images="auth,chat,..." = Release buildou essas → pull seletivo
+  if [ -n "$built_images" ]; then
     # __NONE__ = Release confirmou que NADA foi buildado (tudo retag)
-    if [ "${BUILT_IMAGES}" = "__NONE__" ]; then
+    if [ "$built_images" = "__NONE__" ]; then
       # Tentar retag local COM verificação de identidade
+      echo "   🏷️  Release fez 100% retag - tentando retag local..."
       if try_local_retag "$image"; then
         return 0
       fi
@@ -230,14 +274,16 @@ pull_if_needed() {
       return $?
     fi
 
-    # Verificar se esta imagem específica foi buildada na Release
-    if echo ",$BUILT_IMAGES," | grep -q ",$svc_name,"; then
-      # Foi buildada → pull real necessário (conteúdo novo)
-      echo "   📥 PULL (build na Release)"
+    # Verificar se este serviço específico foi buildado na Release
+    # Usar service_name passado como parâmetro ao invés de extrair do repo
+    if echo ",$built_images," | grep -q ",$service_name,"; then
+      # Foi buildado → pull real necessário (conteúdo novo)
+      echo "   🔨 $service_name foi buildado no Release - fazendo pull"
       pull_with_retry "$image"
       return $?
     else
-      # NÃO foi buildada → foi retagged → tentar retag local COM verificação
+      # NÃO foi buildado → foi retagged → tentar retag local COM verificação
+      echo "   🏷️  $service_name foi retagged - tentando retag local..."
       if try_local_retag "$image"; then
         return 0
       fi

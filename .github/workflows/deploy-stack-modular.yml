@@ -3356,7 +3356,9 @@ jobs:
               COUNT=$((COUNT + 1))
               echo ""
               echo "🔍 [$COUNT/$TOTAL] $img"
-              if ! pull_if_needed "$img"; then
+              # Extrair nome do serviço da imagem
+              SERVICE_NAME=$(extract_service_name "$img")
+              if ! pull_if_needed "$SERVICE_NAME" "$img" "$BUILT_IMAGES"; then
                 echo "   ❌ FALHOU: $img"
                 FAILED="$FAILED $img"
               fi
@@ -4428,7 +4430,9 @@ jobs:
               COUNT=$((COUNT + 1))
               echo ""
               echo "🔍 [$COUNT/$TOTAL] $img"
-              if ! pull_if_needed "$img"; then
+              # Extrair nome do serviço da imagem
+              SERVICE_NAME=$(extract_service_name "$img")
+              if ! pull_if_needed "$SERVICE_NAME" "$img" "$BUILT_IMAGES"; then
                 echo "   ❌ FALHOU: $img"
                 FAILED="$FAILED $img"
               fi
@@ -5167,7 +5171,9 @@ jobs:
               COUNT=$((COUNT + 1))
               echo ""
               echo "🔍 [$COUNT/$TOTAL] $img"
-              if ! pull_if_needed "$img"; then
+              # Extrair nome do serviço da imagem
+              SERVICE_NAME=$(extract_service_name "$img")
+              if ! pull_if_needed "$SERVICE_NAME" "$img" "$BUILT_IMAGES"; then
                 echo "   ❌ FALHOU: $img"
                 FAILED="$FAILED $img"
               fi
@@ -5806,7 +5812,9 @@ jobs:
               COUNT=$((COUNT + 1))
               echo ""
               echo "🔍 [$COUNT/$TOTAL] $img"
-              if ! pull_if_needed "$img"; then
+              # Extrair nome do serviço da imagem
+              SERVICE_NAME=$(extract_service_name "$img")
+              if ! pull_if_needed "$SERVICE_NAME" "$img" "$BUILT_IMAGES"; then
                 echo "   ❌ FALHOU: $img"
                 FAILED="$FAILED $img"
               fi
@@ -6393,7 +6401,9 @@ jobs:
               COUNT=$((COUNT + 1))
               echo ""
               echo "🔍 [$COUNT/$TOTAL] $img"
-              if ! pull_if_needed "$img"; then
+              # Extrair nome do serviço da imagem
+              SERVICE_NAME=$(extract_service_name "$img")
+              if ! pull_if_needed "$SERVICE_NAME" "$img" "$BUILT_IMAGES"; then
                 echo "   ❌ FALHOU: $img"
                 FAILED="$FAILED $img"
               fi

@@ -318,7 +318,7 @@ docker logs alice-minio-init --tail 50
 
 Configure `DOCKERHUB_USERNAME` e `DOCKERHUB_TOKEN` nos secrets do GitHub.
 
-### Smart Pull de Imagens Docker (10/02/2026)
+### Smart Pull de Imagens Docker (14/02/2026 — Atualizado)
 
 O workflow `deploy-stack-modular.yml` utiliza **pull inteligente com detecção de retag** para evitar downloads desnecessários de imagens Docker que já existem no servidor de produção.
 
@@ -329,7 +329,8 @@ As funções de deploy são centralizadas em **`infra/scripts/deploy-functions.s
 Funções disponíveis:
 - **`verify_docker_credentials()`** — Valida presença de `~/.docker/config.json` com credenciais ativas
 - **`pull_with_retry()`** — Pull com 5 tentativas e backoff progressivo (15s, 30s, 60s, 90s, 120s) — usada por TODOS os paths; tolera timeouts intermitentes do GHCR (11/02/2026)
-- **`pull_if_needed()`** — Pull inteligente com detecção de retag via `BUILT_IMAGES` da Release
+- **`extract_service_name()`** — Extrai nome do serviço de uma imagem (ex: `alice-auth` → `auth`)
+- **`pull_if_needed(SERVICE_NAME, IMAGE_FULL, BUILT_IMAGES)`** — Pull inteligente com detecção de retag via lista de imagens buildadas da Release
 
 De forma similar, o workflow `release.yml` centraliza funções de build/retag em **`scripts/release-functions.sh`**:
 - **`should_build()`** / **`image_exists()`** / **`retag_image()`** — Lógica condicional de build
@@ -339,7 +340,7 @@ De forma similar, o workflow `release.yml` centraliza funções de build/retag e
 
 **Comunicação Release → Deploy:** O `release.yml` rastreia quais imagens foram **buildadas** vs **retagged**. A lista (`built_images`) é passada como input para o `deploy-stack-modular.yml` via `workflow_dispatch`. Quando TUDO é retagged, a Release envia `__NONE__` (sentinela) para diferenciar de deploy manual (string vazia).
 
-**Função `pull_if_needed()` — 4 Casos:**
+**Função `pull_if_needed(SERVICE_NAME, IMAGE_FULL, BUILT_IMAGES)` — 4 Casos:**
 
 | Caso | Condição | Ação | Tempo |
 |------|----------|------|-------|
@@ -348,7 +349,16 @@ De forma similar, o workflow `release.yml` centraliza funções de build/retag e
 | **3** | GHCR com info Release (build ou retag) | Retag local ou `pull_with_retry()` | ~0.1s ou ~2-30s |
 | **4** | Deploy manual (sem info Release) | `pull_with_retry()` | ~2-30s |
 
+**Exemplo de uso:**
+```bash
+# Extrair nome do serviço da imagem
+SERVICE_NAME=$(extract_service_name "$img")
+# Pull inteligente passando lista de buildadas
+pull_if_needed "$SERVICE_NAME" "$img" "$BUILT_IMAGES"
+```
+
 **Benefícios:**
+- **PARÂMETROS EXPLÍCITOS** — Não depende de variável de ambiente oculta (mais testável e maintainável)
 - **ELIMINADO** `docker manifest inspect` (frágil com manifest lists, timeout 15s/imagem)
 - **ELIMINADO** fallback `docker login` nos deploy jobs (login único no prepare)
 - **ELIMINADO** retry inconsistente (todos os paths usam `pull_with_retry()` com 5 tentativas e backoff progressivo)
