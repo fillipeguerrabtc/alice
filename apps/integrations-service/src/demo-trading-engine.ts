@@ -1589,12 +1589,42 @@ export async function addToDemoPosition(params: {
     context: 'position_update',
   });
 
-  const nextLiquidation = calculateLiquidationPrice({
+  // ✅ CROSS MARGIN: Buscar TODAS posições abertas para calcular maintenance margin TOTAL
+  const allOpenPositions = await db
+    .select()
+    .from(schema.demoPositions)
+    .where(and(
+      eq(schema.demoPositions.tenantId, params.tenantId),
+      eq(schema.demoPositions.status, 'open'),
+    ));
+
+  // Calcular MMR total (incluindo posição sendo atualizada com novo tamanho)
+  let totalMaintenanceMargin = 0;
+  for (const pos of allOpenPositions) {
+    if (pos.id === position.id) {
+      // Usar valores atualizados para a posição sendo modificada
+      const notional = nextSize * weightedEntry * contractMultiplier;
+      totalMaintenanceMargin += notional * futuresContext.maintenanceMarginRate;
+    } else {
+      const posSize = Number(pos.size);
+      const posEntry = Number(pos.entryPrice);
+      const posMultiplier = (pos.metadata as { contractMultiplier?: number })?.contractMultiplier ?? 1;
+      const posMmr = (pos.metadata as { maintenanceMarginRate?: number })?.maintenanceMarginRate ?? DEFAULT_MAINTENANCE_MARGIN_RATE;
+      const posNotional = posSize * posEntry * posMultiplier;
+      totalMaintenanceMargin += posNotional * posMmr;
+    }
+  }
+
+  // ✅ Saldo TOTAL da conta (cross margin)
+  const totalAccountBalance = Number(balance.available) + Number(balance.frozen);
+
+  const nextLiquidation = calculateLiquidationPriceCrossMargin({
     entryPrice: weightedEntry,
     side: sideForExecution,
     positionSize: nextSize,
     contractMultiplier,
-    positionMargin: nextMargin,
+    totalAccountBalance,
+    totalMaintenanceMargin,
     maintenanceMarginRate: futuresContext.maintenanceMarginRate,
     liquidationFeeRate: futuresContext.liquidationFeeRate,
   });
@@ -1614,6 +1644,7 @@ export async function addToDemoPosition(params: {
         contractMultiplier,
         maintenanceMarginRate: futuresContext.maintenanceMarginRate,
         liquidationFeeRate: futuresContext.liquidationFeeRate,
+        marginMode: 'cross', // ✅ Flag de cross margin
       },
     })
     .where(eq(schema.demoPositions.id, position.id))
@@ -2033,16 +2064,38 @@ export async function processOpenOrdersAndPositions(): Promise<void> {
           continue;
         }
 
-        // Criar posição
+        // ✅ CROSS MARGIN: Criar posição COM cálculo de liquidação cross margin
         const positionSide = order.side === 'buy' ? 'long' : 'short';
         const leverage = order.leverage ?? 1;
         const requiredMargin = calculateFuturesNotional(Number(order.size), fillPrice, contractMultiplier) / leverage;
-        const liquidationPrice = calculateLiquidationPrice({
+
+        // Buscar TODAS posições abertas para calcular MMR total
+        const allOpenPositions = await db
+          .select()
+          .from(schema.demoPositions)
+          .where(and(
+            eq(schema.demoPositions.tenantId, order.tenantId),
+            eq(schema.demoPositions.status, 'open'),
+          ));
+
+        // Calcular MMR total de posições existentes
+        const existingTotalMaintenanceMargin = calculateTotalMaintenanceMargin(allOpenPositions);
+        
+        // Adicionar MMR da nova posição
+        const newNotional = Number(order.size) * fillPrice * contractMultiplier;
+        const totalMaintenanceMargin = existingTotalMaintenanceMargin + (newNotional * (futuresContext?.maintenanceMarginRate ?? DEFAULT_MAINTENANCE_MARGIN_RATE));
+
+        // Saldo TOTAL da conta (cross margin)
+        const orderBalance = await getOrCreateBalance(order.tenantId);
+        const totalAccountBalance = Number(orderBalance.available) + Number(orderBalance.frozen);
+
+        const liquidationPrice = calculateLiquidationPriceCrossMargin({
           entryPrice: fillPrice,
           side: order.side as DemoOrderSide,
           positionSize: Number(order.size),
           contractMultiplier,
-          positionMargin: requiredMargin,
+          totalAccountBalance,
+          totalMaintenanceMargin,
           maintenanceMarginRate: futuresContext?.maintenanceMarginRate ?? DEFAULT_MAINTENANCE_MARGIN_RATE,
           liquidationFeeRate: futuresContext?.liquidationFeeRate ?? DEFAULT_LIQUIDATION_FEE_RATE,
         });
@@ -2050,7 +2103,6 @@ export async function processOpenOrdersAndPositions(): Promise<void> {
         // Atualizar balance: margem + fee estimado foram congelados na criação (createDemoOrder).
         // Agora substituir estimativas pelo custo real (margem real fica frozen, fee real é debitado).
         // UPDATE atômico: aritmética SQL evita race condition em read-modify-write concorrente.
-        const orderBalance = await getOrCreateBalance(order.tenantId);
         const estMargin = calculateFuturesNotional(Number(order.size), targetPrice, contractMultiplier) / leverage;
         const estFee = calculateFee(Number(order.size), targetPrice, contractMultiplier);
         const totalEstimated = estMargin + estFee;
@@ -2166,12 +2218,44 @@ export async function processOpenOrdersAndPositions(): Promise<void> {
             takeProfit: nextTakeProfit,
             context: 'position_update',
           });
-          const nextLiquidation = calculateLiquidationPrice({
+          
+          // ✅ CROSS MARGIN: Buscar TODAS posições abertas para recalcular MMR total
+          const allOpenPositionsForUpdate = await db
+            .select()
+            .from(schema.demoPositions)
+            .where(and(
+              eq(schema.demoPositions.tenantId, order.tenantId),
+              eq(schema.demoPositions.status, 'open'),
+            ));
+
+          // Calcular MMR total (incluindo posição sendo atualizada)
+          let totalMaintenanceMarginForUpdate = 0;
+          for (const pos of allOpenPositionsForUpdate) {
+            if (pos.id === existingPosition.id) {
+              // Usar valores atualizados para a posição sendo modificada
+              const notional = nextSize * weightedEntry * contractMultiplier;
+              totalMaintenanceMarginForUpdate += notional * (futuresContext?.maintenanceMarginRate ?? DEFAULT_MAINTENANCE_MARGIN_RATE);
+            } else {
+              const posSize = Number(pos.size);
+              const posEntry = Number(pos.entryPrice);
+              const posMultiplier = (pos.metadata as { contractMultiplier?: number })?.contractMultiplier ?? 1;
+              const posMmr = (pos.metadata as { maintenanceMarginRate?: number })?.maintenanceMarginRate ?? DEFAULT_MAINTENANCE_MARGIN_RATE;
+              const posNotional = posSize * posEntry * posMultiplier;
+              totalMaintenanceMarginForUpdate += posNotional * posMmr;
+            }
+          }
+
+          // Saldo TOTAL da conta (cross margin)
+          const orderBalanceForUpdate = await getOrCreateBalance(order.tenantId);
+          const totalAccountBalanceForUpdate = Number(orderBalanceForUpdate.available) + Number(orderBalanceForUpdate.frozen);
+
+          const nextLiquidation = calculateLiquidationPriceCrossMargin({
             entryPrice: weightedEntry,
             side: order.side as DemoOrderSide,
             positionSize: nextSize,
             contractMultiplier,
-            positionMargin: nextMargin,
+            totalAccountBalance: totalAccountBalanceForUpdate,
+            totalMaintenanceMargin: totalMaintenanceMarginForUpdate,
             maintenanceMarginRate: futuresContext?.maintenanceMarginRate ?? DEFAULT_MAINTENANCE_MARGIN_RATE,
             liquidationFeeRate: futuresContext?.liquidationFeeRate ?? DEFAULT_LIQUIDATION_FEE_RATE,
           });
@@ -2191,6 +2275,7 @@ export async function processOpenOrdersAndPositions(): Promise<void> {
                 contractMultiplier,
                 maintenanceMarginRate: futuresContext?.maintenanceMarginRate ?? DEFAULT_MAINTENANCE_MARGIN_RATE,
                 liquidationFeeRate: futuresContext?.liquidationFeeRate ?? DEFAULT_LIQUIDATION_FEE_RATE,
+                marginMode: 'cross', // ✅ Flag de cross margin
               },
             })
             .where(eq(schema.demoPositions.id, existingPosition.id))
