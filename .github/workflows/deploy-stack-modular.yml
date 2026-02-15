@@ -1767,6 +1767,98 @@ jobs:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      # =================================================================
+      # TRANSFER DOCKER CONFIG FROM RUNNER TO SERVER (15/02/2026)
+      # =================================================================
+      # PROBLEMA: Runner cria config.json via docker/login-action (confiável),
+      # mas servidor tentava recriar via Python script que pode falhar.
+      # SOLUÇÃO: Transferir config.json do runner para servidor via SCP.
+      # BENEFÍCIOS: Usa credentials já validadas pelo Docker login action.
+      # REF: GitHub Issue #22019056106, CLAUDE.md Regra 6 (Enterprise-grade)
+      # =================================================================
+      - name: Transferir Docker config.json para servidor
+        run: |
+          set -euo pipefail
+          echo "📦 Transferindo Docker config.json do runner para servidor..."
+          
+          # Validação 1: Verificar que config.json existe no runner
+          if [ ! -f ~/.docker/config.json ]; then
+            echo "❌ ERRO: ~/.docker/config.json não encontrado no runner!"
+            echo "   O step 'Login to GHCR' deveria ter criado este arquivo."
+            exit 1
+          fi
+          echo "   ✅ config.json encontrado no runner"
+          
+          # Validação 2: Verificar que config.json tem conteúdo válido
+          if ! jq -e '.auths' ~/.docker/config.json >/dev/null 2>&1; then
+            echo "❌ ERRO: config.json do runner não contém campo 'auths' válido!"
+            cat ~/.docker/config.json
+            exit 1
+          fi
+          
+          AUTHS_COUNT=$(jq '.auths | length' ~/.docker/config.json)
+          echo "   ✅ config.json válido com $AUTHS_COUNT registries autenticados"
+          
+          # Configurar SSH para SCP
+          mkdir -p ~/.ssh
+          echo "${{ secrets.HETZNER_SSH_PRIVATE_KEY }}" > ~/.ssh/docker_transfer_key
+          chmod 600 ~/.ssh/docker_transfer_key
+          ssh-keyscan -H ${{ env.HETZNER_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+          
+          # Criar diretório .docker no servidor se não existir
+          ssh -i ~/.ssh/docker_transfer_key -o StrictHostKeyChecking=no \
+            ${{ env.HETZNER_USER }}@${{ env.HETZNER_HOST }} \
+            "mkdir -p ~/.docker"
+          
+          # Transferir config.json via SCP
+          scp -i ~/.ssh/docker_transfer_key -o StrictHostKeyChecking=no \
+            ~/.docker/config.json \
+            ${{ env.HETZNER_USER }}@${{ env.HETZNER_HOST }}:~/.docker/config.json
+          
+          echo "   ✅ config.json transferido via SCP"
+          
+          # Aplicar permissões 600 no arquivo remoto
+          ssh -i ~/.ssh/docker_transfer_key -o StrictHostKeyChecking=no \
+            ${{ env.HETZNER_USER }}@${{ env.HETZNER_HOST }} \
+            "chmod 600 ~/.docker/config.json"
+          
+          echo "   ✅ Permissões 600 aplicadas"
+          
+          # Validação 3: Verificar que arquivo foi copiado corretamente
+          REMOTE_SIZE=$(ssh -i ~/.ssh/docker_transfer_key -o StrictHostKeyChecking=no \
+            ${{ env.HETZNER_USER }}@${{ env.HETZNER_HOST }} \
+            "wc -c < ~/.docker/config.json")
+          
+          LOCAL_SIZE=$(wc -c < ~/.docker/config.json)
+          
+          if [ "$REMOTE_SIZE" != "$LOCAL_SIZE" ]; then
+            echo "❌ ERRO: Tamanhos não coincidem após transferência!"
+            echo "   Local:  $LOCAL_SIZE bytes"
+            echo "   Remoto: $REMOTE_SIZE bytes"
+            exit 1
+          fi
+          
+          echo "   ✅ Validação de tamanho OK ($LOCAL_SIZE bytes)"
+          
+          # Validação 4: Verificar conteúdo JSON no servidor
+          REMOTE_AUTHS=$(ssh -i ~/.ssh/docker_transfer_key -o StrictHostKeyChecking=no \
+            ${{ env.HETZNER_USER }}@${{ env.HETZNER_HOST }} \
+            "jq '.auths | length' ~/.docker/config.json")
+          
+          if [ "$REMOTE_AUTHS" != "$AUTHS_COUNT" ]; then
+            echo "❌ ERRO: Número de auths não coincide!"
+            echo "   Local:  $AUTHS_COUNT registries"
+            echo "   Remoto: $REMOTE_AUTHS registries"
+            exit 1
+          fi
+          
+          echo "   ✅ Validação de conteúdo OK ($REMOTE_AUTHS registries)"
+          
+          # Cleanup chave SSH temporária
+          rm -f ~/.ssh/docker_transfer_key
+          
+          echo "✅ Docker config.json transferido e validado com sucesso"
+
       - name: Preparar infraestrutura base (networks, volumes, permissões)
         uses: appleboy/ssh-action@v1.2.2
         with:
