@@ -647,6 +647,7 @@ export default function Documents() {
   const { data, isLoading, error } = useQuery<DocumentsResponse>({
     queryKey: ['/api/rag/documents'],
     staleTime: 1000 * 60,
+    enabled: !!user, // Só executar após autenticação
   });
 
   const { data: namespaces, isLoading: isLoadingNamespaces } = useQuery<Namespace[]>({
