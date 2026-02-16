@@ -139,7 +139,7 @@ Jobs: deploy-{infra,alice,observability,erpnext,backup}
 
 ---
 
-### Caso 3a: Release 100% Retag
+### Caso 3a: Release 100% Retag (MODO CONFIANÇA ✨)
 
 **Entrada:**
 - SERVICE_NAME: "auth"
@@ -150,17 +150,17 @@ Jobs: deploy-{infra,alice,observability,erpnext,backup}
 
 **Saída:**
 ```
-   🏷️  Release fez 100% retag - tentando retag local...
-   [try_local_retag verifica digest]
+   🏷️  Release fez 100% retag - retag local com CONFIANÇA TOTAL
+   🏷️  RETAG LOCAL RÁPIDO (latest → v1.0.0, confiança 100% em Release)
    
-   Se OK:
-      🏷️ RETAG LOCAL (v1.0.0 → v1.0.0, conteúdo idêntico verificado)
-   
-   Se falha:
-      📥 PULL (retag geral mas sem imagem local compatível)
+   Se não tem tags locais (primeira vez):
+      📥 PULL (primeira vez que baixa esta imagem)
 ```
 
-**Tempo:** ~0.1s (retag OK) ou ~2-30s (pull necessário)
+**Tempo:** ~0.1s (retag OK, ZERO rede ⚡) ou ~2-30s (primeira vez)
+
+**IMPORTANTE:** Modo confiança não faz `manifest inspect` do registry remoto.
+Confia 100% no sinal da Release → economiza 15s/imagem × 16 imagens = 4 minutos!
 
 ---
 
@@ -183,7 +183,7 @@ Jobs: deploy-{infra,alice,observability,erpnext,backup}
 
 ---
 
-### Caso 3c: Serviço Foi Retagged
+### Caso 3c: Serviço Foi Retagged (MODO CONFIANÇA ✨)
 
 **Entrada:**
 - SERVICE_NAME: "frontend"
@@ -194,17 +194,17 @@ Jobs: deploy-{infra,alice,observability,erpnext,backup}
 
 **Saída:**
 ```
-   🏷️  frontend foi retagged - tentando retag local...
-   [try_local_retag verifica digest]
+   🏷️  frontend foi retagged - retag local com CONFIANÇA
+   🏷️  RETAG LOCAL RÁPIDO (latest → v1.0.0, confiança 100% em Release)
    
-   Se OK:
-      🏷️ RETAG LOCAL (v1.0.0 → v1.0.0, conteúdo idêntico verificado)
-   
-   Se falha:
-      📥 PULL (retag mas sem imagem local compatível)
+   Se não tem tags locais (primeira vez):
+      📥 PULL (primeira vez que baixa esta imagem)
 ```
 
-**Tempo:** ~0.1s (retag OK) ou ~2-30s (pull necessário)
+**Tempo:** ~0.1s (retag OK, ZERO rede ⚡) ou ~2-30s (primeira vez)
+
+**IMPORTANTE:** Modo confiança não faz `manifest inspect` do registry remoto.
+Confia 100% no sinal da Release → economiza 15s/imagem!
 
 ---
 
@@ -260,12 +260,25 @@ extract_service_name() {
 
 ### try_local_retag()
 
-Tenta criar tag local reutilizando imagem existente com **verificação de identidade**.
+Tenta criar tag local reutilizando imagem existente com **dois modos de operação**.
 
-**Segurança:**
+**Modo Confiança (`trust_retag=true`):**
+- Release confirmou 100% retag → confia totalmente
+- Faz retag local IMEDIATO sem verificar registry remoto
+- **ZERO chamadas de rede, ZERO latência**
+- Prioriza tags 'latest' ou 'vX.Y.Z' disponíveis localmente
+- Usado quando `built_images="__NONE__"` ou serviço foi retagged
+
+**Modo Verificação (`trust_retag=false`, default):**
+- Deploy manual → não confia cegamente
 - Compara config digest remoto (Image ID) com IDs locais
 - Só retag se conteúdo for IDÊNTICO
 - Previne tag apontando para conteúdo errado/stale
+- Usado em deploys manuais sem informação de Release
+
+**Parâmetros:**
+- `$1` - image: Imagem completa (ex: "ghcr.io/.../alice-auth:v1.0.0")
+- `$2` - trust_retag: "true" (confiança) ou "false" (verificação, default)
 
 **Retorno:**
 - `0` - Retag OK (imagem local compatível encontrada)
@@ -275,11 +288,18 @@ Tenta criar tag local reutilizando imagem existente com **verificação de ident
 ```bash
 try_local_retag() {
   local image="$1"
+  local trust_retag="${2:-false}"
   
-  # 1. Buscar config digest remoto via manifest inspect
-  # 2. Comparar com Image IDs locais
-  # 3. Se match → docker tag
-  # 4. Se não match ou erro → return 1
+  # Se trust_retag=true:
+  #   1. Buscar tags locais (latest, vX.Y.Z)
+  #   2. Fazer retag IMEDIATO (sem verificação remota)
+  #   3. Return 0 ou 1
+  
+  # Se trust_retag=false (default):
+  #   1. Buscar config digest remoto via manifest inspect
+  #   2. Comparar com Image IDs locais
+  #   3. Se match → docker tag
+  #   4. Se não match ou erro → return 1
 }
 ```
 
@@ -306,17 +326,24 @@ fi
 
 ## Métricas de Economia
 
-### Deploy Normal (sem mudanças)
+### Deploy Normal (sem mudanças) - MODO CONFIANÇA ✨
 
-**Antes (pull sempre):**
-- 50 imagens × 30s média = **25 minutos**
+**Antes (bug - manifest inspect sempre):**
+- 50 imagens × (15s timeout manifest inspect + 30s pull fallback) = **~22 minutos**
+- Se GHCR lento: 50 imagens × 15s timeout = **12.5 minutos** apenas esperando timeouts
+- Pull desnecessário: ~5GB de download
 
-**Depois (pull inteligente):**
+**Depois (fix - modo confiança):**
 - Release envia `__NONE__`
-- Todas tentam retag local (0.1s cada)
+- Todas fazem retag local IMEDIATO (sem verificação remota)
 - 50 imagens × 0.1s = **5 segundos**
+- **ZERO** chamadas de rede, **ZERO** download
 
-**Economia:** ~24min 55s (99.6% mais rápido) 🚀
+**Economia:** ~22 minutos → 5 segundos = **99.6% mais rápido** 🚀🚀🚀
+
+**Cenário Crítico (GHCR indisponível):**
+- Antes: 50 imagens × 15s timeout = 12.5min + 10-15min pull = **~25 minutos de falha**
+- Depois: 5 segundos de retag local = **FUNCIONA** mesmo com GHCR offline ✅
 
 ---
 

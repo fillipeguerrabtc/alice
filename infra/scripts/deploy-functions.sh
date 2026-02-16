@@ -118,16 +118,31 @@ pull_with_retry() {
 }
 
 # ═══════════════════════════════════════════════════════════════════════
-# try_local_retag() - Retag local com verificação de identidade
+# try_local_retag() - Retag local com modo confiança ou verificação
 # ═══════════════════════════════════════════════════════════════════════
-# Compara config digest remoto (Image ID) com Image IDs locais.
-# Só retag se conteúdo for IDÊNTICO (previne tag apontando para
-# conteúdo errado quando servidor tem imagem antiga/stale).
-# Retorna 0 se retag OK, 1 se não foi possível (precisa pull).
+# MODO CONFIANÇA (trust_retag=true):
+#   Release confirmou 100% retag → faz retag local IMEDIATO sem verificar
+#   registry remoto. Usa a tag mais recente disponível localmente.
+#   ZERO chamadas de rede, ZERO latência.
+#
+# MODO VERIFICAÇÃO (trust_retag=false, default):
+#   Deploy manual → compara config digest remoto (Image ID) com IDs locais.
+#   Só retag se conteúdo for IDÊNTICO (previne tag apontando para conteúdo
+#   errado quando servidor tem imagem antiga/stale).
+#
+# PARÂMETROS:
+#   $1 = image: Imagem completa (ex: "ghcr.io/.../alice-auth:v1.0.0")
+#   $2 = trust_retag: "true" (confiança) ou "false" (verificação, default)
+#
+# RETORNO:
+#   0 = Retag OK
+#   1 = Precisa pull
+#
 # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Cirúrgico)
 # ═══════════════════════════════════════════════════════════════════════
 try_local_retag() {
   local image="$1"
+  local trust_retag="${2:-false}"
   local repo="${image%:*}"
   local tag="${image##*:}"
 
@@ -137,6 +152,32 @@ try_local_retag() {
   if [ -z "$existing_tags" ]; then
     return 1  # sem nenhuma tag local → precisa pull
   fi
+
+  # ═══ MODO CONFIANÇA (Release garantiu 100% retag) ═══
+  if [ "$trust_retag" = "true" ]; then
+    # Retag da tag mais recente local (prioriza 'latest' ou 'vX.Y.Z')
+    local source_tag
+    source_tag=$(echo "$existing_tags" | grep -E '^(latest|v[0-9])' | head -1)
+    
+    if [ -n "$source_tag" ]; then
+      echo "   🏷️  RETAG LOCAL RÁPIDO ($source_tag → $tag, confiança 100% em Release)"
+      docker tag "${repo}:${source_tag}" "$image"
+      return 0
+    fi
+    
+    # Fallback: usa primeira tag disponível
+    source_tag=$(echo "$existing_tags" | head -1)
+    if [ -n "$source_tag" ]; then
+      echo "   🏷️  RETAG LOCAL ($source_tag → $tag)"
+      docker tag "${repo}:${source_tag}" "$image"
+      return 0
+    fi
+    
+    return 1  # Sem tags locais → pull primeira vez
+  fi
+
+  # ═══ MODO VERIFICAÇÃO (deploy manual - inseguro) ═══
+  # Mantém código original: verifica digest remoto com manifest inspect
 
   # Obter config digest remoto (= Image ID) via manifest inspect
   local remote_cfg=""
@@ -263,13 +304,13 @@ pull_if_needed() {
   if [ -n "$built_images" ]; then
     # __NONE__ = Release confirmou que NADA foi buildado (tudo retag)
     if [ "$built_images" = "__NONE__" ]; then
-      # Tentar retag local COM verificação de identidade
-      echo "   🏷️  Release fez 100% retag - tentando retag local..."
-      if try_local_retag "$image"; then
+      # Retag local com CONFIANÇA TOTAL (sem verificar registry remoto)
+      echo "   🏷️  Release fez 100% retag - retag local com CONFIANÇA TOTAL"
+      if try_local_retag "$image" "true"; then
         return 0
       fi
-      # Sem tag local ou conteúdo difere → pull necessário
-      echo "   📥 PULL (retag geral mas sem imagem local compatível)"
+      # Só faz pull se não tiver NENHUMA tag local (primeira vez)
+      echo "   📥 PULL (primeira vez que baixa esta imagem)"
       pull_with_retry "$image"
       return $?
     fi
@@ -282,13 +323,13 @@ pull_if_needed() {
       pull_with_retry "$image"
       return $?
     else
-      # NÃO foi buildado → foi retagged → tentar retag local COM verificação
-      echo "   🏷️  $service_name foi retagged - tentando retag local..."
-      if try_local_retag "$image"; then
+      # NÃO foi buildado → foi retagged → retag local com CONFIANÇA
+      echo "   🏷️  $service_name foi retagged - retag local com CONFIANÇA"
+      if try_local_retag "$image" "true"; then
         return 0
       fi
-      # Sem tag local compatível → pull necessário
-      echo "   📥 PULL (retag mas sem imagem local compatível)"
+      # Só faz pull se não tiver NENHUMA tag local (primeira vez)
+      echo "   📥 PULL (primeira vez que baixa esta imagem)"
       pull_with_retry "$image"
       return $?
     fi
