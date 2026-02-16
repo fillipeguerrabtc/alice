@@ -32,6 +32,7 @@ export function useAuth() {
     queryKey: ['/api/auth/user'],
     queryFn: getQueryFn({ on401: 'returnNull' }),
     staleTime: 1000 * 60 * 5,
+    retry: false, // Não retentar infinitamente em caso de erro
   });
 
   // Armazenar CSRF token quando recebido (Regra 16 - Segurança Enterprise)
@@ -40,6 +41,7 @@ export function useAuth() {
   }
 
   const user = data?.user || null;
+  const csrfReady = !isLoading && (!!data?.csrfToken || data === null);
 
   const loginMutation = useMutation({
     mutationFn: async (credentials: { email: string; password: string }) => {
@@ -66,6 +68,7 @@ export function useAuth() {
     user,
     isLoading,
     isAuthenticated: !!user,
+    csrfReady, // Indica se CSRF token foi obtido ou confirmado ausente
     error,
     login: loginMutation.mutateAsync,
     logout: logoutMutation.mutateAsync,

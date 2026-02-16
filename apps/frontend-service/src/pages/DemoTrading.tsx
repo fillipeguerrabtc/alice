@@ -52,6 +52,7 @@ import { ErrorBoundary } from '@/components/error-boundary';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useKucoinWebSocket } from '@/hooks/useKucoinWebSocket';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/use-auth';
 import { formatTradingNumber, parseLocaleNumberInput } from '@/lib/utils';
 
 // ============================================================================
@@ -212,6 +213,45 @@ const SYMBOLS_REFETCH_INTERVAL = 300_000;
 
 export default function DemoTrading() {
   const { toast } = useToast();
+  
+  // ============================================================================
+  // Autenticação (OBRIGATÓRIO primeiro - Regra de Inicialização)
+  // ============================================================================
+  const { user, isLoading: isAuthLoading, csrfReady } = useAuth();
+  
+  // Guard: Aguardar autenticação antes de inicializar componente
+  if (isAuthLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-sm text-muted-foreground">Carregando autenticação...</p>
+        </div>
+      </div>
+    );
+  }
+  
+  // Guard: Usuário não autenticado
+  if (!user?.id) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <CardTitle>Autenticação Necessária</CardTitle>
+            <CardDescription>
+              Você precisa estar autenticado para acessar o Demo Trading.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button onClick={() => window.location.href = '/login'} className="w-full">
+              Fazer Login
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+  
   const [activeTab, setActiveTab] = useState('overview');
   const [orderDialogOpen, setOrderDialogOpen] = useState(false);
   const [addFundsDialogOpen, setAddFundsDialogOpen] = useState(false);
@@ -253,12 +293,13 @@ export default function DemoTrading() {
   // ============================================================================
 
   /** Status do trading (verifica se KuCoin está configurado) */
-  const { data: statusData } = useQuery<{ success: boolean; data: TradingStatus }>({
+  const { data: statusData, isSuccess: isStatusSuccess } = useQuery<{ success: boolean; data: TradingStatus }>({
     queryKey: ['/api/integrations/trading/status'],
     refetchInterval: 60_000,
+    enabled: !!user?.id && csrfReady, // Só executar após auth completa
   });
 
-  const isConfigured = statusData?.data?.isConfigured ?? false;
+  const isConfigured = isStatusSuccess && (statusData?.data?.isConfigured ?? false);
 
   /** Lista de símbolos disponíveis na KuCoin (mesma query key da Trading Real para reusar cache) */
   const { data: symbolsData, isLoading: isLoadingSymbols } = useQuery<{ success: boolean; data: TradingSymbolsResponse }>({
@@ -273,7 +314,7 @@ export default function DemoTrading() {
       return res.json();
     },
     refetchInterval: SYMBOLS_REFETCH_INTERVAL,
-    enabled: isConfigured,
+    enabled: !!user?.id && isConfigured, // Só executar após auth e status OK
   });
 
   const availableSymbols = symbolsData?.data?.symbols ?? [];
@@ -307,7 +348,8 @@ export default function DemoTrading() {
   const isSymbolValid = !!requestSymbol && availableSymbols.includes(selectedSymbol);
 
   // WebSocket para cotações em tempo real (reusar hook da Trading Real — 3 mercados)
-  const wsEnabled = isSymbolValid && isConfigured;
+  // CRÍTICO: Só conectar após auth completa E config OK
+  const wsEnabled = !!user?.id && isSymbolValid && isConfigured;
   const { state: wsState, ticker: wsTicker } = useKucoinWebSocket({
     symbol: wsEnabled ? requestSymbol : '',
     channels: wsEnabled ? ['ticker', 'positions', 'orders', 'balance'] : [],
@@ -320,10 +362,10 @@ export default function DemoTrading() {
     },
     onPositionUpdate: () => {
       void queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/positions', 'all'] });
-      void queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balances'] });
+      void queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balance'] });
     },
     onBalance: () => {
-      void queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balances'] });
+      void queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balance'] });
     },
   });
   const wsHealthy = wsEnabled && wsState.connected && !wsState.error;
@@ -335,7 +377,7 @@ export default function DemoTrading() {
   } = useKucoinWebSocket({
     symbol: '',
     channels: [],
-    autoConnect: isConfigured,
+    autoConnect: !!user?.id && isConfigured, // Só conectar após auth e config OK
     marketType: selectedMarketType,
     marginMode: selectedMarginMode,
     onTicker: (data) => {
@@ -366,7 +408,7 @@ export default function DemoTrading() {
       const res = await apiRequest('GET', `/api/integrations/trading/market/${requestSymbol}?${marketQueryString}`);
       return res.json();
     },
-    enabled: isConfigured && isSymbolValid,
+    enabled: !!user?.id && isConfigured && isSymbolValid, // Só executar após auth e config OK
     refetchInterval: 3_000,
   });
 
@@ -401,12 +443,13 @@ export default function DemoTrading() {
   // ============================================================================
 
   const balancesQuery = useQuery({
-    queryKey: ['/api/integrations/demo-trading/balances'],
+    queryKey: ['/api/integrations/demo-trading/balance'],
     queryFn: async () => {
-      const res = await apiRequest('GET', '/api/integrations/demo-trading/balances');
+      const res = await apiRequest('GET', '/api/integrations/demo-trading/balance');
       const json = await res.json() as { data: DemoBalance[] };
       return json.data;
     },
+    enabled: !!user?.id && isConfigured, // Só executar após auth e config OK
     refetchInterval: 10_000,
   });
 
@@ -417,6 +460,7 @@ export default function DemoTrading() {
       const json = await res.json() as { data: DemoPosition[] };
       return json.data;
     },
+    enabled: !!user?.id && isConfigured, // Só executar após auth e config OK
     refetchInterval: 2_000,
   });
 
@@ -427,6 +471,7 @@ export default function DemoTrading() {
       const json = await res.json() as { data: DemoOrder[] };
       return json.data;
     },
+    enabled: !!user?.id && isConfigured, // Só executar após auth e config OK
     refetchInterval: 2_000,
   });
 
@@ -437,6 +482,7 @@ export default function DemoTrading() {
       const json = await res.json() as { data: FundHistory[] };
       return json.data;
     },
+    enabled: !!user?.id && isConfigured, // Só executar após auth e config OK
   });
 
   const postmortemsQuery = useQuery({
@@ -446,6 +492,7 @@ export default function DemoTrading() {
       const json = await res.json() as { data: PostMortem[] };
       return json.data;
     },
+    enabled: !!user?.id && isConfigured, // Só executar após auth e config OK
     refetchInterval: 15_000,
   });
 
@@ -520,7 +567,7 @@ export default function DemoTrading() {
     onSuccess: () => {
       setOrderDialogOpen(false);
       // Ordem criada afeta: balance (margem congelada), ordens, e posições (se fill imediato)
-      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balances'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balance'] });
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/orders'] });
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/positions', 'all'] });
     },
@@ -542,7 +589,7 @@ export default function DemoTrading() {
     onSuccess: () => {
       setAddFundsDialogOpen(false);
       setFundsAmount('');
-      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balances'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balance'] });
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/funds/history'] });
     },
   });
@@ -555,7 +602,7 @@ export default function DemoTrading() {
       return json.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balances'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balance'] });
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/positions', 'all'] });
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/postmortem', 'demo'] });
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/postmortem/queue/stats'] });
@@ -589,7 +636,7 @@ export default function DemoTrading() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/positions', 'all'] });
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/orders'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balances'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balance'] });
     },
   });
 
@@ -598,7 +645,7 @@ export default function DemoTrading() {
       await apiRequest('DELETE', `/api/integrations/demo-trading/orders/${orderId}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balances'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balance'] });
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/orders'] });
     },
   });

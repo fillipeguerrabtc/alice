@@ -63,7 +63,7 @@ export async function apiRequest(
   method: string,
   url: string,
   data?: unknown,
-  options?: { signal?: AbortSignal }
+  options?: { signal?: AbortSignal; tenantId?: string }
 ): Promise<Response> {
   const headers: Record<string, string> = {};
   
@@ -74,6 +74,11 @@ export async function apiRequest(
   // Incluir CSRF token em requests mutating (Regra 16 - Segurança Enterprise)
   if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method.toUpperCase()) && csrfToken) {
     headers['X-CSRF-Token'] = csrfToken;
+  }
+  
+  // Incluir Tenant-Id se fornecido (Multi-tenancy Enterprise)
+  if (options?.tenantId) {
+    headers['X-Tenant-Id'] = options.tenantId;
   }
   
   const res = await fetch(`${API_BASE}${url}`, {
