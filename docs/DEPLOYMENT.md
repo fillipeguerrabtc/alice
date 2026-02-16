@@ -299,7 +299,7 @@ docker logs alice-minio-init --tail 50
 
 **Sintoma:** páginas abrem com HTML sem estilos/scripts e `/assets/*` retorna 404.  
 **Causa raiz:** `assets.json` desatualizado em relação aos bundles reais.  
-**Correção aplicada:** `erpnext-configurator` sincroniza `assets.json` da imagem oficial para o volume `erpnext_sites` (sem depender de Node), ajusta permissões do volume e executa `bench` com `setpriv --keep-groups` (necessário com `no-new-privileges` para evitar erro de `setgroups`).
+**Correção aplicada:** `erpnext-configurator` sincroniza `assets.json` da imagem oficial para o volume `erpnext_sites` (sem depender de Node), ajusta as permissões do volume e executa `bench` com `setpriv --keep-groups` (necessário com `no-new-privileges` para evitar erro de `setgroups`).
 
 ### Logs de falha por stack (rollback imediato)
 
