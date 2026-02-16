@@ -774,7 +774,45 @@ function CircuitBreakerStatus({ state, failures }: { state: string; failures: nu
 
 export default function Trading() {
   const { t } = useTranslation();
-  const { user } = useAuth();
+  
+  // ============================================================================
+  // Autenticação (OBRIGATÓRIO primeiro - Regra de Inicialização)
+  // ============================================================================
+  const { user, isLoading: isAuthLoading, csrfReady } = useAuth();
+  
+  // Guard: Aguardar autenticação antes de inicializar componente
+  if (isAuthLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-sm text-muted-foreground">{t('common.loading', { defaultValue: 'Carregando...' })}</p>
+        </div>
+      </div>
+    );
+  }
+  
+  // Guard: Usuário não autenticado (redundante com App.tsx mas defensivo)
+  if (!user?.id) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <CardTitle>{t('auth.required', { defaultValue: 'Autenticação Necessária' })}</CardTitle>
+            <CardDescription>
+              {t('auth.requiredMessage', { defaultValue: 'Você precisa estar autenticado para acessar o Trading.' })}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button onClick={() => window.location.href = '/login'} className="w-full">
+              {t('auth.login', { defaultValue: 'Fazer Login' })}
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+  
   const locale = user?.idioma ?? 'pt-BR';
   const timeZone = user?.timezone ?? TIMEZONE;
   const userRoles = user?.roles ?? (user?.role ? [user.role] : []);
@@ -958,6 +996,7 @@ export default function Trading() {
   } = useQuery<{ success: boolean; data: TradingStatus }>({
     queryKey: ['/api/integrations/trading/status'],
     refetchInterval: STATUS_REFETCH_INTERVAL,
+    enabled: !!user?.id && csrfReady, // Só executar após auth completa
   });
 
   const {
@@ -977,7 +1016,7 @@ export default function Trading() {
     };
   }>({
     queryKey: ['/api/integrations/trading/intervals'],
-    enabled: statusData?.data?.isConfigured && !statusData?.data?.requiresTenant,
+    enabled: !!user?.id && statusData?.data?.isConfigured && !statusData?.data?.requiresTenant,
   });
 
   const intervalOptions = useMemo(() => {
