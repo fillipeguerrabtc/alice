@@ -2804,6 +2804,236 @@ export const tradingNewsPresetsPolicies = sql`
     WITH CHECK (is_super_admin() OR tenant_id IS NULL OR tenant_id = current_tenant_id());
 `;
 
+// ============================================================================
+// TRADING V2 - INSTRUMENT REGISTRY + PORTFOLIO LAYER
+// ============================================================================
+export const tradingPortfolioRiskProfileEnum = pgEnum('trading_portfolio_risk_profile', [
+  'conservative',
+  'balanced',
+  'aggressive',
+]);
+
+export const tradingBacktestStatusEnum = pgEnum('trading_backtest_status', [
+  'queued',
+  'running',
+  'succeeded',
+  'failed',
+]);
+
+export const tradingCandidateStatusEnum = pgEnum('trading_candidate_status', [
+  'candidate',
+  'approved',
+  'rejected',
+  'expired',
+  'executed',
+]);
+
+export const tradingCalibrationMethodEnum = pgEnum('trading_calibration_method', ['platt', 'isotonic']);
+
+export const tradingRebalanceStatusEnum = pgEnum('trading_rebalance_status', [
+  'queued',
+  'running',
+  'succeeded',
+  'failed',
+]);
+
+export const tradingModelRiskScopeEnum = pgEnum('trading_model_risk_scope', ['strategy', 'portfolio', 'instrument']);
+export const tradingModelRiskEventTypeEnum = pgEnum('trading_model_risk_event_type', ['drift', 'performance_decay', 'data_quality', 'execution_anomaly', 'kill_switch']);
+export const tradingModelRiskSeverityEnum = pgEnum('trading_model_risk_severity', ['low', 'medium', 'high', 'critical']);
+
+export const tradingInstruments = pgTable('trading_instruments', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  venue: varchar('venue', { length: 32 }).notNull(),
+  assetClass: varchar('asset_class', { length: 24 }).notNull(),
+  symbol: varchar('symbol', { length: 64 }).notNull(),
+  baseAsset: varchar('base_asset', { length: 32 }),
+  quoteAsset: varchar('quote_asset', { length: 32 }),
+  tickSize: numeric('tick_size'),
+  lotSize: numeric('lot_size'),
+  minNotional: numeric('min_notional'),
+  priceDecimals: integer('price_decimals'),
+  sizeDecimals: integer('size_decimals'),
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, (table) => ({
+  idxTenant: index('idx_trading_instruments_tenant').on(table.tenantId),
+  idxAssetClass: index('idx_trading_instruments_asset_class').on(table.assetClass),
+  idxSymbol: index('idx_trading_instruments_symbol').on(table.symbol),
+  uniqTenantVenueSymbol: uniqueIndex('uniq_trading_instruments_tenant_venue_symbol').on(table.tenantId, table.venue, table.symbol),
+}));
+
+export const tradingFactorSnapshotsV2 = pgTable('trading_factor_snapshots_v2', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  instrumentId: uuid('instrument_id').notNull().references(() => tradingInstruments.id),
+  marketType: tradingMarketTypeEnum('market_type').notNull(),
+  interval: tradingIntervalEnum('interval').notNull(),
+  candleTimestamp: timestamp('candle_timestamp').notNull(),
+  asofTimestamp: timestamp('asof_timestamp').notNull(),
+  featureVersion: integer('feature_version').notNull(),
+  regimes: jsonb('regimes').$type<Record<string, unknown>>().notNull().default({}),
+  factors: jsonb('factors').$type<Record<string, unknown>>().notNull().default({}),
+  costsEstimate: jsonb('costs_estimate').$type<Record<string, unknown>>().notNull().default({}),
+  expectedReturn: numeric('expected_return'),
+  expectedVolatility: numeric('expected_volatility'),
+  sharpeProxy: numeric('sharpe_proxy'),
+  riskScore: numeric('risk_score'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, (table) => ({
+  uniqSnapshot: uniqueIndex('uniq_trading_factor_snapshots_v2').on(
+    table.tenantId,
+    table.instrumentId,
+    table.marketType,
+    table.interval,
+    table.candleTimestamp,
+    table.featureVersion,
+  ),
+}));
+
+export const tradingStrategyRegistry = pgTable('trading_strategy_registry', {
+  strategyKey: varchar('strategy_key', { length: 64 }).primaryKey(),
+  version: integer('version').notNull(),
+  applicableAssetClasses: text('applicable_asset_classes').array().notNull(),
+  applicableMarkets: tradingMarketTypeEnum('applicable_markets').array().notNull(),
+  defaultTimeframes: tradingIntervalEnum('default_timeframes').array().notNull(),
+  params: jsonb('params').$type<Record<string, unknown>>().notNull(),
+  enabled: boolean('enabled').notNull().default(true),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, (table) => ({
+  uniqVersion: uniqueIndex('uniq_trading_strategy_registry_version').on(table.strategyKey, table.version),
+}));
+
+export const tradingUniverseCandidates = pgTable('trading_universe_candidates', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  instrumentId: uuid('instrument_id').notNull().references(() => tradingInstruments.id),
+  marketType: tradingMarketTypeEnum('market_type').notNull(),
+  marginMode: tradingMarginModeEnum('margin_mode'),
+  strategyKey: varchar('strategy_key', { length: 64 }).notNull(),
+  strategyVersion: integer('strategy_version').notNull(),
+  timeframe: tradingIntervalEnum('timeframe').notNull(),
+  candleTimestamp: timestamp('candle_timestamp').notNull(),
+  side: varchar('side', { length: 16 }).notNull(),
+  entryModel: jsonb('entry_model').$type<Record<string, unknown>>().notNull().default({}),
+  expectedEdge: numeric('expected_edge'),
+  confidenceRaw: numeric('confidence_raw'),
+  confidenceCalibrated: numeric('confidence_calibrated'),
+  dsrScore: numeric('dsr_score'),
+  pboScore: numeric('pbo_score'),
+  riskFlags: jsonb('risk_flags').$type<unknown[]>().notNull().default([]),
+  status: tradingCandidateStatusEnum('status').notNull().default('candidate'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, (table) => ({
+  idxQuery: index('idx_trading_universe_candidates_query').on(table.tenantId, table.marketType, table.createdAt),
+}));
+
+export const tradingBacktestRuns = pgTable('trading_backtest_runs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  instrumentId: uuid('instrument_id').references(() => tradingInstruments.id),
+  marketType: tradingMarketTypeEnum('market_type').notNull(),
+  strategyKey: varchar('strategy_key', { length: 64 }).notNull(),
+  strategyVersion: integer('strategy_version').notNull(),
+  walkForwardConfig: jsonb('walk_forward_config').$type<Record<string, unknown>>().notNull().default({}),
+  costModel: jsonb('cost_model').$type<Record<string, unknown>>().notNull().default({}),
+  metrics: jsonb('metrics').$type<Record<string, unknown>>().notNull().default({}),
+  oosMetrics: jsonb('oos_metrics').$type<Record<string, unknown>>().notNull().default({}),
+  dsr: jsonb('dsr').$type<Record<string, unknown>>(),
+  pbo: jsonb('pbo').$type<Record<string, unknown>>(),
+  status: tradingBacktestStatusEnum('status').notNull().default('queued'),
+  error: text('error'),
+  startedAt: timestamp('started_at'),
+  finishedAt: timestamp('finished_at'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export const tradingSignalCalibration = pgTable('trading_signal_calibration', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  instrumentId: uuid('instrument_id').notNull().references(() => tradingInstruments.id),
+  marketType: tradingMarketTypeEnum('market_type').notNull(),
+  strategyKey: varchar('strategy_key', { length: 64 }).notNull(),
+  strategyVersion: integer('strategy_version').notNull(),
+  method: tradingCalibrationMethodEnum('method').notNull(),
+  payload: jsonb('payload').$type<Record<string, unknown>>().notNull(),
+  evalMetrics: jsonb('eval_metrics').$type<Record<string, unknown>>().notNull().default({}),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, (table) => ({
+  uniqCalibration: uniqueIndex('uniq_trading_signal_calibration').on(
+    table.tenantId,
+    table.instrumentId,
+    table.marketType,
+    table.strategyKey,
+    table.strategyVersion,
+    table.method,
+  ),
+}));
+
+export const tradingPortfolios = pgTable('trading_portfolios', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  name: varchar('name', { length: 120 }).notNull(),
+  baseCurrency: varchar('base_currency', { length: 16 }).notNull(),
+  riskProfile: tradingPortfolioRiskProfileEnum('risk_profile').notNull(),
+  maxGrossExposure: numeric('max_gross_exposure').notNull(),
+  maxNetExposure: numeric('max_net_exposure').notNull(),
+  maxDrawdownLimit: numeric('max_drawdown_limit').notNull(),
+  rebalancePolicy: jsonb('rebalance_policy').$type<Record<string, unknown>>().notNull().default({}),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export const tradingPortfolioAllocations = pgTable('trading_portfolio_allocations', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  portfolioId: uuid('portfolio_id').notNull().references(() => tradingPortfolios.id),
+  instrumentId: uuid('instrument_id').notNull().references(() => tradingInstruments.id),
+  targetWeight: numeric('target_weight').notNull(),
+  maxWeight: numeric('max_weight').notNull(),
+  minWeight: numeric('min_weight').notNull(),
+  leverageCap: numeric('leverage_cap'),
+  marketType: tradingMarketTypeEnum('market_type').notNull(),
+  enabled: boolean('enabled').notNull().default(true),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, (table) => ({
+  uniqAllocation: uniqueIndex('uniq_trading_portfolio_allocations').on(table.portfolioId, table.instrumentId, table.marketType),
+}));
+
+export const tradingPortfolioRebalances = pgTable('trading_portfolio_rebalances', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  portfolioId: uuid('portfolio_id').notNull().references(() => tradingPortfolios.id),
+  asofTimestamp: timestamp('asof_timestamp').notNull(),
+  inputs: jsonb('inputs').$type<Record<string, unknown>>().notNull().default({}),
+  decisions: jsonb('decisions').$type<Record<string, unknown>>().notNull().default({}),
+  status: tradingRebalanceStatusEnum('status').notNull().default('queued'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export const tradingExecutionReports = pgTable('trading_execution_reports', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  portfolioId: uuid('portfolio_id').references(() => tradingPortfolios.id),
+  instrumentId: uuid('instrument_id').notNull().references(() => tradingInstruments.id),
+  marketType: tradingMarketTypeEnum('market_type').notNull(),
+  orderPayload: jsonb('order_payload').$type<Record<string, unknown>>().notNull().default({}),
+  executionResult: jsonb('execution_result').$type<Record<string, unknown>>().notNull().default({}),
+  estimatedCosts: jsonb('estimated_costs').$type<Record<string, unknown>>().notNull().default({}),
+  realizedCosts: jsonb('realized_costs').$type<Record<string, unknown>>(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export const tradingModelRiskEvents = pgTable('trading_model_risk_events', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  scope: tradingModelRiskScopeEnum('scope').notNull(),
+  scopeKey: varchar('scope_key', { length: 128 }).notNull(),
+  eventType: tradingModelRiskEventTypeEnum('event_type').notNull(),
+  severity: tradingModelRiskSeverityEnum('severity').notNull(),
+  details: jsonb('details').$type<Record<string, unknown>>().notNull().default({}),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
 // ORDENS DE TRADING (OMS - Order Management System)
 // Registro completo de todas as ordens enviadas para a exchange
 export const tradingOrders = pgTable(
@@ -3324,6 +3554,22 @@ export type TradingTechnicalIndicators = typeof tradingTechnicalIndicators.$infe
 export type InsertTradingTechnicalIndicators = typeof tradingTechnicalIndicators.$inferInsert;
 export type TradingLlmValidation = typeof tradingLlmValidations.$inferSelect;
 export type InsertTradingLlmValidation = typeof tradingLlmValidations.$inferInsert;
+export type TradingInstrument = typeof tradingInstruments.$inferSelect;
+export type InsertTradingInstrument = typeof tradingInstruments.$inferInsert;
+export type TradingUniverseCandidate = typeof tradingUniverseCandidates.$inferSelect;
+export type InsertTradingUniverseCandidate = typeof tradingUniverseCandidates.$inferInsert;
+export type TradingBacktestRun = typeof tradingBacktestRuns.$inferSelect;
+export type InsertTradingBacktestRun = typeof tradingBacktestRuns.$inferInsert;
+export type TradingPortfolio = typeof tradingPortfolios.$inferSelect;
+export type InsertTradingPortfolio = typeof tradingPortfolios.$inferInsert;
+export type TradingPortfolioAllocation = typeof tradingPortfolioAllocations.$inferSelect;
+export type InsertTradingPortfolioAllocation = typeof tradingPortfolioAllocations.$inferInsert;
+export type TradingPortfolioRebalance = typeof tradingPortfolioRebalances.$inferSelect;
+export type InsertTradingPortfolioRebalance = typeof tradingPortfolioRebalances.$inferInsert;
+export type TradingExecutionReport = typeof tradingExecutionReports.$inferSelect;
+export type InsertTradingExecutionReport = typeof tradingExecutionReports.$inferInsert;
+export type TradingModelRiskEvent = typeof tradingModelRiskEvents.$inferSelect;
+export type InsertTradingModelRiskEvent = typeof tradingModelRiskEvents.$inferInsert;
 
 // ============================================================================
 // TRADING LORA DATASET (Gate 2 - Fine-tuning do LLM de texto)

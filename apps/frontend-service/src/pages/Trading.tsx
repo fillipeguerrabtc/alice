@@ -71,6 +71,7 @@ import {
   Link2,
   Wallet,
   BookOpen,
+  FlaskConical,
 } from 'lucide-react';
 // CORREÇÃO 19/12/2025: Remover CardFooter não utilizado (no-unused-vars)
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -818,7 +819,7 @@ export default function Trading() {
   const userRoles = user?.roles ?? (user?.role ? [user.role] : []);
   const isAdminRole = userRoles.includes('admin') || userRoles.includes('super_admin');
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState('portfolio-auto');
   const [selectedMarketType, setSelectedMarketType] = useState<'futures' | 'spot' | 'margin'>('futures');
   const [selectedMarginMode, setSelectedMarginMode] = useState<'cross' | 'isolated'>('cross');
   const [marketDefaultsInitialized, setMarketDefaultsInitialized] = useState(false);
@@ -3267,10 +3268,22 @@ export default function Trading() {
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           {/* MOBILE-FIRST 12/01/2026: Tabs com scroll horizontal para caber em mobile */}
           <div className="overflow-x-auto pb-2 -mx-2 px-2 md:overflow-visible md:mx-0 md:px-0">
-            <TabsList className="grid w-full grid-cols-3 gap-1 sm:grid-cols-6 lg:grid-cols-11">
+            <TabsList className="grid w-full grid-cols-3 gap-1 sm:grid-cols-6 lg:grid-cols-14">
               <TabsTrigger value="overview" data-testid="tab-overview" className="whitespace-nowrap">
                 <BarChart3 className="h-4 w-4 md:mr-2" />
                 <span className="hidden md:inline">{t('trading.tabs.overview')}</span>
+              </TabsTrigger>
+              <TabsTrigger value="portfolio-auto" data-testid="tab-portfolio-auto" className="whitespace-nowrap">
+                <Wallet className="h-4 w-4 md:mr-2" />
+                <span className="hidden md:inline">Portfólio (Auto)</span>
+              </TabsTrigger>
+              <TabsTrigger value="signals-auto" data-testid="tab-signals-auto" className="whitespace-nowrap">
+                <Brain className="h-4 w-4 md:mr-2" />
+                <span className="hidden md:inline">Sinais IA (Auto)</span>
+              </TabsTrigger>
+              <TabsTrigger value="lab" data-testid="tab-lab" className="whitespace-nowrap">
+                <FlaskConical className="h-4 w-4 md:mr-2" />
+                <span className="hidden md:inline">Lab/Research</span>
               </TabsTrigger>
               <TabsTrigger value="chart" data-testid="tab-chart" className="whitespace-nowrap">
                 <CandlestickChart className="h-4 w-4 md:mr-2" />
@@ -3724,6 +3737,60 @@ export default function Trading() {
                 </CardContent>
               </Card>
             </div>
+          </TabsContent>
+
+          <TabsContent value="portfolio-auto" className="space-y-4 mt-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Portfólio (Auto)</CardTitle>
+                <CardDescription>
+                  Modo institucional padrão: decisões por edge líquido, confiança calibrada e guardrails de DSR/PBO.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Alert>
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertDescription>
+                    No-trade é resultado válido quando custos/risco superam o edge esperado.
+                  </AlertDescription>
+                </Alert>
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="secondary" onClick={() => setActiveTab('signals')}>Abrir sinais recentes</Button>
+                  <Button variant="secondary" onClick={() => setActiveTab('history')}>Histórico de rebalances/execução</Button>
+                  <Button variant="outline" onClick={() => setActiveTab('lab')}>Abrir Lab assíncrono</Button>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="signals-auto" className="space-y-4 mt-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Sinais IA (Auto)</CardTitle>
+                <CardDescription>Fluxo single-asset com guardrails institucionais e sanity-check opcional de LLM.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button onClick={() => setActiveTab('signals')}>Ir para painel de sinais</Button>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="lab" className="space-y-4 mt-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Lab / Research</CardTitle>
+                <CardDescription>Parâmetros avançados e pesquisa assíncrona via jobs.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <Alert>
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertDescription>
+                    Múltiplos testes elevam risco de overfitting. Use purge/embargo e valide com DSR/PBO.
+                  </AlertDescription>
+                </Alert>
+                <Button variant="outline" onClick={() => setActiveTab('analysis')}>Abrir análise manual</Button>
+              </CardContent>
+            </Card>
           </TabsContent>
 
           {/* Orders Tab */}

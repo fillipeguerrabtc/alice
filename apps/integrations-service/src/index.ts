@@ -122,6 +122,15 @@ import { extractValuesFromLLMResponse, validateAndPersist } from './llm-validati
 import type { ExtractedLLMValues } from './llm-validation.js';
 import { jsonrepair } from 'jsonrepair';
 import { callGatewayComplete, isGatewayConfigured, type GatewayCompleteResult } from './llm-gateway-client.js';
+import { listTenantPortfolios } from './trading-v2/core/portfolio-api.js';
+import { buildDecisionPacket } from './trading-v2/core/decision-packet.js';
+import { buildCorrelationMatrix } from './trading-v2/engines/correlation-engine.js';
+import { buildAllocations } from './trading-v2/engines/allocation-engine.js';
+import { estimateCosts } from './trading-v2/engines/cost-model.js';
+import { buildExecutionPlan } from './trading-v2/engines/execution-engine.js';
+import { buildCompactPrompt } from './trading-v2/llm/compact-prompt.js';
+import { enforceLlmGuardrails } from './trading-v2/llm/llm-guardrails.js';
+import { saveDecisionSnapshot } from './trading-v2/storage/snapshot-store.js';
 
 const logger = createLogger('integrations-service');
 const config = loadConfig(integrationsServiceConfigSchema);
@@ -146,6 +155,8 @@ const TRADING_DATASET_MIN_QUALITY = parseEnvFloat(
   0.35,
   'TRADING_DATASET_MIN_QUALITY'
 );
+const TRADING_MODE = (process.env.TRADING_MODE ?? 'portfolio_auto') as 'portfolio_auto' | 'signal_auto' | 'lab';
+const TRADING_LLM_PROMPT_MODE = (process.env.TRADING_LLM_PROMPT_MODE ?? 'compact') as 'compact' | 'verbose';
 
 // ============================================================================
 // GRAFANA API (Observability) - Integração enterprise
@@ -2454,6 +2465,13 @@ const tradingPriceUsd = new PromGauge({
   name: 'alice_trading_price_usd',
   help: 'Preço atual (USD) por símbolo',
   labelNames: ['symbol'] as const,
+  registers: [metrics.registry],
+});
+
+const tradingPromptTokensEstimate = new PromGauge({
+  name: 'trading_prompt_tokens_estimate',
+  help: 'Estimativa de tokens para prompt de sanity-check do trading institucional',
+  labelNames: ['prompt_mode'] as const,
   registers: [metrics.registry],
 });
 
@@ -12188,6 +12206,155 @@ async function generateTradingSignalFromLlm(params: {
   const agenticSettings = await getAgenticSettingsOrDefault(params.tenantId);
   if (!agenticSettings.tradingEnabled) {
     logger.warn({ tenantId: params.tenantId }, 'Agentic Trading desabilitado - gerando sinal sem execução automática');
+  }
+
+  if (TRADING_MODE !== 'lab') {
+    const db = getDatabase();
+    const marketType = params.marketType ?? 'futures';
+    const recentCandidates = await db.query.tradingUniverseCandidates.findMany({
+      where: and(
+        eq(schema.tradingUniverseCandidates.tenantId, params.tenantId),
+        eq(schema.tradingUniverseCandidates.marketType, marketType),
+      ),
+      orderBy: [desc(schema.tradingUniverseCandidates.createdAt)],
+      limit: 50,
+      with: {
+        instrument: true,
+      },
+    });
+
+    if (TRADING_MODE === 'portfolio_auto') {
+      const portfolios = await listTenantPortfolios(params.tenantId);
+      const selectedPortfolio = portfolios[0];
+      const returnsByInstrument: Record<string, number[]> = {};
+      const costsByInstrument = Object.fromEntries(
+        recentCandidates.map((candidate) => [
+          candidate.instrumentId,
+          estimateCosts({
+            feeBps: Number(process.env.TRADING_COST_BASELINE_FEE_BPS ?? 8),
+            slippageBps: Number(process.env.TRADING_COST_BASELINE_SLIPPAGE_BPS ?? 12),
+            spreadBps: Number(process.env.TRADING_COST_BASELINE_SPREAD_BPS ?? 5),
+          }),
+        ]),
+      );
+      recentCandidates.forEach((candidate, index) => {
+        returnsByInstrument[candidate.instrumentId] = [0.001 * (index + 1), 0.002, -0.001, 0.003];
+      });
+      const correlations = buildCorrelationMatrix(returnsByInstrument);
+      const decisions = buildAllocations({
+        mode: 'signal_weighted',
+        portfolioId: selectedPortfolio?.id ?? 'default',
+        maxGrossExposure: Number(selectedPortfolio?.maxGrossExposure ?? 0.8),
+        maxNetExposure: Number(selectedPortfolio?.maxNetExposure ?? 0.5),
+        maxDrawdownLimit: Number(selectedPortfolio?.maxDrawdownLimit ?? 0.2),
+        currentDrawdown: 0,
+        candidates: recentCandidates.map((candidate) => ({
+          instrumentId: candidate.instrumentId,
+          symbol: candidate.instrument.symbol,
+          marketType: candidate.marketType,
+          side: candidate.side as 'long' | 'short' | 'neutral',
+          expectedEdge: Number(candidate.expectedEdge ?? 0),
+          confidenceRaw: Number(candidate.confidenceRaw ?? 0),
+          confidenceCalibrated: candidate.confidenceCalibrated === null ? null : Number(candidate.confidenceCalibrated ?? 0),
+          dsrScore: candidate.dsrScore === null ? null : Number(candidate.dsrScore ?? 0),
+          pboScore: candidate.pboScore === null ? null : Number(candidate.pboScore ?? 1),
+          riskFlags: Array.isArray(candidate.riskFlags) ? candidate.riskFlags.map(String) : [],
+          timeframe: candidate.timeframe,
+        })),
+        costs: costsByInstrument,
+        volByInstrument: Object.fromEntries(recentCandidates.map((candidate) => [candidate.instrumentId, 0.02])),
+        liquidityScoreByInstrument: Object.fromEntries(recentCandidates.map((candidate) => [candidate.instrumentId, 0.7])),
+        constraints: {},
+      });
+      const executionPlan = buildExecutionPlan(decisions, Object.fromEntries(recentCandidates.map((candidate) => [candidate.instrumentId, 0.7])));
+      const packet = buildDecisionPacket({
+        portfolioId: selectedPortfolio?.id,
+        decisions,
+        costs: costsByInstrument,
+        evidence: { correlations, candidates: recentCandidates.length, executionPlan },
+      });
+      await saveDecisionSnapshot(params.tenantId, packet as unknown as Record<string, unknown>);
+      if (selectedPortfolio) {
+        await db.insert(schema.tradingPortfolioRebalances).values({
+          tenantId: params.tenantId,
+          portfolioId: selectedPortfolio.id,
+          asofTimestamp: new Date(),
+          inputs: { candidates: recentCandidates.length, correlations },
+          decisions: { decisions, executionPlan },
+          status: 'succeeded',
+        });
+      }
+      const promptData = buildCompactPrompt(packet);
+      tradingPromptTokensEstimate.labels(TRADING_LLM_PROMPT_MODE).set(promptData.estimatedTokens);
+      const guardrails = enforceLlmGuardrails({ estimatedTokens: promptData.estimatedTokens, promptMode: TRADING_LLM_PROMPT_MODE });
+      logger.info({
+        tradingMode: TRADING_MODE,
+        promptMode: TRADING_LLM_PROMPT_MODE,
+        promptChars: promptData.chars,
+        estimatedTokens: promptData.estimatedTokens,
+        guardrails,
+        universeScanCount: recentCandidates.length,
+      }, 'Pacote institucional de portfólio gerado');
+      const firstDecision = decisions[0];
+      const signalType: 'long' | 'short' | 'hold' = firstDecision?.side === 'buy' ? 'long' : firstDecision?.side === 'sell' ? 'short' : 'hold';
+      const createResult = await kucoinService.createSignal(
+        { tenantId: params.tenantId, userId: params.userId },
+        {
+          signalType,
+          symbol: firstDecision?.symbol ?? params.symbol,
+          marketType,
+          marginMode: params.marginMode,
+          confidence: 0.5,
+          reasoning: firstDecision ? `Decision packet institucional (${decisions.length} decisões)` : 'No-trade: sem edge líquido após custos',
+          metadata: {
+            generationSource: params.source,
+            decisionPacket: packet,
+            noTrade: !firstDecision,
+          },
+        },
+      );
+      if (!createResult.success || !createResult.data) {
+        throw new Error(createResult.error || 'Falha ao persistir sinal institucional de portfólio');
+      }
+      return { signal: createResult.data, validationId: crypto.randomUUID(), validationStatus: 'pending' };
+    }
+
+    const selected = recentCandidates.find((candidate) => candidate.instrument.symbol === params.symbol) ?? recentCandidates[0];
+    if (selected) {
+      const edge = Number(selected.expectedEdge ?? 0);
+      const cost = estimateCosts({
+        feeBps: Number(process.env.TRADING_COST_BASELINE_FEE_BPS ?? 8),
+        slippageBps: Number(process.env.TRADING_COST_BASELINE_SLIPPAGE_BPS ?? 12),
+        spreadBps: Number(process.env.TRADING_COST_BASELINE_SPREAD_BPS ?? 5),
+      });
+      const net = edge - (cost.totalBps / 10_000);
+      const approved = net > 0 && Number(selected.dsrScore ?? 0) >= 0 && Number(selected.pboScore ?? 1) <= 0.7;
+      const signalType: 'long' | 'short' | 'hold' = approved
+        ? (selected.side === 'short' ? 'short' : selected.side === 'long' ? 'long' : 'hold')
+        : 'hold';
+      const createResult = await kucoinService.createSignal(
+        { tenantId: params.tenantId, userId: params.userId },
+        {
+          signalType,
+          symbol: selected.instrument.symbol,
+          marketType: selected.marketType,
+          marginMode: selected.marginMode ?? undefined,
+          confidence: Number(selected.confidenceCalibrated ?? selected.confidenceRaw ?? 0),
+          reasoning: approved ? 'Candidate aprovado por guardrails institucionais' : 'No-trade: guardrails de edge/custos/DSR/PBO',
+          metadata: {
+            generationSource: params.source,
+            candidateId: selected.id,
+            expectedEdgeNet: net,
+            dsrScore: selected.dsrScore,
+            pboScore: selected.pboScore,
+          },
+        },
+      );
+      if (!createResult.success || !createResult.data) {
+        throw new Error(createResult.error || 'Falha ao persistir sinal institucional');
+      }
+      return { signal: createResult.data, validationId: crypto.randomUUID(), validationStatus: 'pending' };
+    }
   }
 
   const agentContext = await resolveTradingAgentContext({
