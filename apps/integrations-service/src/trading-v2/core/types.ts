@@ -1,4 +1,7 @@
-import type { TradingMarketType, TradingMarginMode } from '@alice/shared/schema';
+import { tradingMarketTypeEnum, tradingMarginModeEnum } from '@alice/shared/schema';
+
+export type TradingMarketType = typeof tradingMarketTypeEnum.enumValues[number];
+export type TradingMarginMode = typeof tradingMarginModeEnum.enumValues[number];
 
 export type PortfolioMode = 'risk_parity' | 'signal_weighted';
 
