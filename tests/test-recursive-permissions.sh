@@ -223,6 +223,13 @@ test_script_structure() {
     else
         log_fail "❌ Recursive find not used consistently in both modes"
     fi
+
+    # Test 3f: Check transient file recheck guard (ClickHouse tmp files)
+    if grep -q "MAX_TRANSIENT_FILE_RECHECKS" "$script_path" && grep -q "Arquivo desapareceu durante validação. Rechecando" "$script_path"; then
+        log_pass "✅ Script includes transient file recheck guard to avoid false positives"
+    else
+        log_fail "❌ Script missing transient file recheck guard"
+    fi
 }
 
 # =============================================================================
