@@ -84,6 +84,7 @@ readonly NC='\033[0m' # No Color
 
 # Constantes de validação
 readonly MAX_WRONG_FILES_DISPLAY=5  # Máximo de arquivos incorretos a mostrar por diretório
+readonly MAX_TRANSIENT_FILE_RECHECKS=3  # Rechecagens para arquivos efêmeros (ex: tmp do ClickHouse)
 
 # Modo de operação
 MODE=""
@@ -886,11 +887,20 @@ validate_mode() {
         current_perms=$(stat -c '%a' "$path" 2>/dev/null || stat -f '%Lp' "$path" 2>/dev/null)
         
         if [[ -n "$wrong_files" ]]; then
-            # Se o arquivo sumiu durante a validação (ex: operações ativas do ClickHouse),
-            # revalidar para evitar falso positivo.
-            if [[ ! -e "$wrong_files" ]]; then
-                log_warning "  ⚠️  Arquivo desapareceu durante validação. Rechecando..."
+            # Arquivos efêmeros (ex: tmp_merge_* do ClickHouse) podem desaparecer
+            # entre o find e o stat. Rechecar algumas vezes evita falso positivo.
+            local recheck_count=0
+            while [[ -n "$wrong_files" ]] && [[ ! -e "$wrong_files" ]] && [[ "$recheck_count" -lt "$MAX_TRANSIENT_FILE_RECHECKS" ]]; do
+                ((recheck_count++))
+                log_warning "  ⚠️  Arquivo desapareceu durante validação. Rechecando (${recheck_count}/${MAX_TRANSIENT_FILE_RECHECKS})..."
                 wrong_files=$(find_wrong_files_excluding_exceptions "$path" "$uid" "$gid" 1)
+            done
+
+            # Após as rechecagens, se ainda só houver arquivo não existente,
+            # tratar como ruído transitório e não bloquear o deploy.
+            if [[ -n "$wrong_files" ]] && [[ ! -e "$wrong_files" ]]; then
+                log_warning "  ⚠️  Somente arquivos efêmeros foram encontrados em $(basename "$path"); ignorando falso positivo."
+                wrong_files=""
             fi
 
             if [[ -n "$wrong_files" ]]; then
