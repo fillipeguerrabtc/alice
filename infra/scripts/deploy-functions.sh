@@ -138,12 +138,11 @@ pull_with_retry() {
 }
 
 # ═══════════════════════════════════════════════════════════════════════
-# try_local_retag() - Retag local com verificação de identidade
+# try_local_retag() - Retag local puramente local (zero chamadas ao registry)
 # ═══════════════════════════════════════════════════════════════════════
-# Compara config digest remoto (Image ID) com Image IDs locais.
-# Só retag se conteúdo for IDÊNTICO (previne tag apontando para
-# conteúdo errado quando servidor tem imagem antiga/stale).
-# Retorna 0 se retag OK, 1 se não foi possível (precisa pull).
+# Faz retag local usando a tag mais recente disponível localmente.
+# NÃO faz chamadas ao registry (sem manifest inspect, sem pull).
+# Retorna 0 se retag OK (ou tag já existe), 1 se não há imagem local.
 # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Cirúrgico)
 # ═══════════════════════════════════════════════════════════════════════
 try_local_retag() {
@@ -151,55 +150,32 @@ try_local_retag() {
   local repo="${image%:*}"
   local tag="${image##*:}"
 
-  # Verificar se existe alguma tag local do mesmo repo
+  # Tag exata já existe localmente → nada a fazer
+  if docker image inspect "$image" >/dev/null 2>&1; then
+    echo "   ⏩ SKIP (tag $tag já existe localmente)"
+    return 0
+  fi
+
+  # Verificar se existe alguma tag local do mesmo repo (excluindo <none>)
   local existing_tags
-  existing_tags=$(docker images "$repo" --format '{{.Tag}}' 2>/dev/null)
+  existing_tags=$(docker images "$repo" --format '{{.Tag}}' 2>/dev/null | grep -v '^<none>$' || true)
   if [ -z "$existing_tags" ]; then
-    return 1  # sem nenhuma tag local → precisa pull
+    return 1  # sem nenhuma tag local → retag não é possível
   fi
 
-  # Obter config digest remoto (= Image ID) via manifest inspect
-  local remote_cfg=""
-  remote_cfg=$(timeout 15 docker manifest inspect "$image" 2>/dev/null \
-    | grep -A4 '"config"' | grep '"digest"' | head -1 \
-    | sed 's/.*"\(sha256:[a-f0-9]*\)".*/\1/') || remote_cfg=""
-
-  # Fallback: verbose mode (para manifest lists / OCI index)
-  if [ -z "$remote_cfg" ]; then
-    remote_cfg=$(timeout 15 docker manifest inspect -v "$image" 2>/dev/null \
-      | grep -A4 '"config"' | grep '"digest"' | head -1 \
-      | sed 's/.*"\(sha256:[a-f0-9]*\)".*/\1/') || remote_cfg=""
+  # Escolher melhor tag fonte: preferir semantic version (v*), fallback para qualquer tag
+  local source_tag=""
+  source_tag=$(echo "$existing_tags" | grep -E '^v[0-9]+(\.[0-9]+)*$' | sort -V | tail -1)
+  if [ -z "$source_tag" ]; then
+    source_tag=$(echo "$existing_tags" | head -1)
   fi
 
-  # Sem digest remoto = não é possível verificar → precisa pull
-  if [ -z "$remote_cfg" ]; then
-    local fallback_tag=""
-    fallback_tag=$(echo "$existing_tags" | grep -E '^v[0-9]+(\.[0-9]+)*$' | sort -V | tail -1)
-    if [ -z "$fallback_tag" ]; then
-      fallback_tag=$(echo "$existing_tags" | grep -v '^<none>$' | head -1)
-    fi
-    if [ -n "$fallback_tag" ]; then
-      echo "   🏷️ RETAG LOCAL FALLBACK ($fallback_tag → $tag, sem dependência de rede/registry)"
-      docker tag "${repo}:${fallback_tag}" "$image"
-      return 0
-    fi
-    echo "   ⚠️ manifest inspect falhou e não há tag local elegível para fallback"
-    return 1
+  if [ -n "$source_tag" ]; then
+    echo "   🏷️ RETAG LOCAL ($source_tag → $tag, puramente local, zero chamadas ao registry)"
+    docker tag "${repo}:${source_tag}" "$image"
+    return 0
   fi
 
-  # Comparar com cada tag local do mesmo repo
-  for etag in $existing_tags; do
-    local local_id
-    local_id=$(docker image inspect "${repo}:${etag}" --format '{{.Id}}' 2>/dev/null) || continue
-    if [ "$local_id" = "$remote_cfg" ]; then
-      echo "   🏷️ RETAG LOCAL ($etag → $tag, conteúdo idêntico verificado)"
-      docker tag "${repo}:${etag}" "$image"
-      return 0
-    fi
-  done
-
-  # Nenhuma tag local tem o mesmo conteúdo → precisa pull
-  echo "   ⚠️ Imagens locais existem mas conteúdo difere do remoto"
   return 1
 }
 
@@ -288,20 +264,20 @@ pull_if_needed() {
 
   # ─── CASO 3: Release informou built_images → detecção precisa ───
   # built_images="" = deploy manual (sem info) → cai no CASO 4
-  # built_images="__NONE__" = Release rodou, tudo retag → tentar retag local
+  # built_images="__NONE__" = Release rodou, tudo retag → retag local obrigatório
   # built_images="auth,chat,..." = Release buildou essas → pull seletivo
   if [ -n "$built_images" ]; then
     # __NONE__ = Release confirmou que NADA foi buildado (tudo retag)
     if [ "$built_images" = "__NONE__" ]; then
-      # Tentar retag local COM verificação de identidade
-      echo "   🏷️  Release fez 100% retag - tentando retag local..."
+      echo "   🏷️  Release 100% retag - tentando retag local (zero chamadas ao registry)..."
       if try_local_retag "$image"; then
         return 0
       fi
-      # Sem tag local ou conteúdo difere → pull necessário
-      echo "   📥 PULL (retag geral mas sem imagem local compatível)"
-      pull_with_retry "$image"
-      return $?
+      # FAIL FAST: release 100% retag mas imagem local não encontrada
+      echo "   ❌ ERRO: Imagem local não encontrada para retag: $image"
+      echo "   💡 Causa: release 100% retag mas imagem local ausente (retenção insuficiente, primeiro deploy, ou limpeza indevida)."
+      echo "   💡 Solução: execute deploy com built_images vazio (deploy manual) para forçar pull."
+      return 1
     fi
 
     # Verificar se este serviço específico foi buildado na Release
@@ -312,15 +288,16 @@ pull_if_needed() {
       pull_with_retry "$image"
       return $?
     else
-      # NÃO foi buildado → foi retagged → tentar retag local COM verificação
-      echo "   🏷️  $service_name foi retagged - tentando retag local..."
+      # NÃO foi buildado → foi retagged → retag local obrigatório (zero chamadas ao registry)
+      echo "   🏷️  $service_name foi retagged - tentando retag local (zero chamadas ao registry)..."
       if try_local_retag "$image"; then
         return 0
       fi
-      # Sem tag local compatível → pull necessário
-      echo "   📥 PULL (retag mas sem imagem local compatível)"
-      pull_with_retry "$image"
-      return $?
+      # FAIL FAST: retag-only service mas imagem local não encontrada
+      echo "   ❌ ERRO: Imagem local não encontrada para retag: $image"
+      echo "   💡 Causa: $service_name foi retagged na Release mas imagem local ausente."
+      echo "   💡 Solução: execute deploy com built_images vazio (deploy manual) para forçar pull."
+      return 1
     fi
   fi
 

@@ -882,14 +882,30 @@ jobs:
           echo "🔍 Verificando imagens no GHCR..."
           VERSION="${{ needs.validate.outputs.version }}"
           STACK="${{ needs.validate.outputs.stack }}"
+          BUILT_IMAGES="${{ github.event.inputs.built_images || '' }}"
+
+          # =================================================================
+          # OTIMIZAÇÃO: skip se Release 100% retag (nenhuma imagem buildada)
+          # built_images="__NONE__" → Release rodou mas tudo foi retag local →
+          # GHCR não foi atualizado → validação remota desnecessária.
+          # =================================================================
+          if [ "$BUILT_IMAGES" = "__NONE__" ]; then
+            echo "ℹ️ Release 100% retag (__NONE__) → skip verificação GHCR (zero imagens buildadas)"
+            echo "✅ Nenhuma validação remota necessária"
+            exit 0
+          fi
           
-          # Determinar imagens por stack usando ARRAYS (não strings)
+          # Listas de imagens custom por grupo (evitar duplicação entre alice e all)
+          INFRA_CUSTOM_IMAGES=(postgres caddy pgbackrest)
+          ALICE_CUSTOM_IMAGES=(api-gateway auth biometrics chat llm-gateway frontend integrations observability rag training gpu-manager llm-qwen25 embeddings-gpu qwen-trainer)
+
+          # Determinar imagens custom por stack
           case "$STACK" in
             infra)
-              IMAGES=(postgres caddy pgbackrest)
+              IMAGES=("${INFRA_CUSTOM_IMAGES[@]}")
               ;;
             alice)
-              IMAGES=(frontend auth chat rag training integrations observability gpu-manager)
+              IMAGES=("${ALICE_CUSTOM_IMAGES[@]}")
               ;;
             observability|erpnext)
               IMAGES=()  # Usam imagens públicas
@@ -898,7 +914,7 @@ jobs:
               IMAGES=(pgbackrest)
               ;;
             all)
-              IMAGES=(postgres caddy pgbackrest frontend auth chat rag training integrations observability gpu-manager)
+              IMAGES=("${INFRA_CUSTOM_IMAGES[@]}" "${ALICE_CUSTOM_IMAGES[@]}")
               ;;
           esac
           
@@ -908,11 +924,32 @@ jobs:
             echo "✅ Nada a verificar no GHCR"
             exit 0
           fi
-          
-          echo "📋 Verificando ${#IMAGES[@]} imagens custom..."
+
+          # =================================================================
+          # OTIMIZAÇÃO: se built_images não-vazio, verificar apenas imagens
+          # que foram realmente buildadas na Release (evita manifest inspect
+          # para serviços apenas retaggeados → zero timeouts desnecessários).
+          # =================================================================
+          if [ -n "$BUILT_IMAGES" ]; then
+            FILTERED=()
+            for img in "${IMAGES[@]}"; do
+              if echo ",$BUILT_IMAGES," | grep -q ",$img,"; then
+                FILTERED+=("$img")
+              fi
+            done
+            if [ ${#FILTERED[@]} -eq 0 ]; then
+              echo "ℹ️ Nenhuma imagem do stack $STACK foi buildada na Release → skip verificação GHCR"
+              echo "✅ Serviços foram apenas retaggeados (serão resolvidos localmente no deploy)"
+              exit 0
+            fi
+            echo "📋 Verificando apenas imagens buildadas: ${FILTERED[*]}"
+            IMAGES=("${FILTERED[@]}")
+          else
+            echo "📋 Deploy manual - verificando ${#IMAGES[@]} imagens custom do stack $STACK..."
+          fi
           echo ""
           
-          # Verificar CADA imagem com output ANTES do comando
+          # Verificar CADA imagem buildada com output ANTES do comando
           MISSING=()
           for img in "${IMAGES[@]}"; do
             FULL_IMAGE="${{ env.IMAGE_PREFIX }}-${img}:${VERSION}"
@@ -937,7 +974,7 @@ jobs:
             exit 1
           fi
           
-          echo "✅ Todas as ${#IMAGES[@]} imagens validadas com sucesso"
+          echo "✅ ${#IMAGES[@]} imagem(ns) buildada(s) validada(s) com sucesso"
 
       - name: Login Docker Hub (evitar rate limit)
         env:
@@ -1039,14 +1076,19 @@ jobs:
               ;;
           esac
           
-          # Validar cada imagem pública (com timeout de 15s por imagem)
-          # Timeout de 15s evita que uma imagem lenta trave todo o workflow.
+          # Validar cada imagem pública - LOCAL FIRST (sem chamadas ao registry se existir localmente)
+          # Timeout de 15s apenas para imagens realmente ausentes localmente.
           MISSING=""
           TIMEOUT_IMGS=""
           for img in "${IMAGES_TO_CHECK[@]}"; do
-            echo -n "   Validando: $img ... "
+            echo -n "   Verificando: $img ... "
+            # LOCAL FIRST: se imagem existe localmente, não chamar registry
+            if docker image inspect "$img" > /dev/null 2>&1; then
+              echo "⏩ SKIP (existe localmente)"
+              continue
+            fi
             if timeout 15 docker manifest inspect "$img" > /dev/null 2>&1; then
-              echo "✅ OK"
+              echo "✅ OK (remoto)"
             else
               # Verificar se é timeout ou imagem realmente não existe
               EXIT_CODE=$?
@@ -3996,10 +4038,13 @@ jobs:
               fi
             fi
 
-            if [ "$ROLLBACK_MODE" != "manual" ] && [ "${DEPLOY_RESULT}" = "failure" ]; then
-              ROLLBACK_MODE="cleanup"
-              TARGET_VERSION=""
-              echo "🧹 Deploy falhou - forçando cleanup (sem rollback automático)"
+            # CORREÇÃO: Não forçar cleanup quando DEPLOY_RESULT=failure se há versão anterior
+            # disponível para rollback (auto mode). Forçar cleanup apenas quando não há versão
+            # anterior E o deploy falhou (ou seja, quando cleanup é o único caminho).
+            if [ "$ROLLBACK_MODE" = "cleanup" ] && [ "${DEPLOY_RESULT:-}" = "failure" ]; then
+              echo "🧹 Deploy falhou sem versão anterior - usando cleanup (sem rollback automático)"
+            elif [ "$ROLLBACK_MODE" = "auto" ] && [ "${DEPLOY_RESULT:-}" = "failure" ]; then
+              echo "⚠️ Deploy falhou mas há versão anterior disponível - executando rollback para: $TARGET_VERSION"
             fi
             
             if [ "$ROLLBACK_MODE" = "cleanup" ]; then
@@ -7226,7 +7271,7 @@ jobs:
               echo "   ✅ $image_name: removidas $removed, mantidas $keep_count"
             }
             
-            # Lista COMPLETA de 15 imagens GHCR do projeto
+            # Lista COMPLETA de 17 imagens GHCR do projeto
             GHCR_IMAGES=(
               "ghcr.io/${{ github.repository_owner }}/alice-auth"
               "ghcr.io/${{ github.repository_owner }}/alice-chat"
@@ -7243,6 +7288,8 @@ jobs:
               "ghcr.io/${{ github.repository_owner }}/alice-postgres"
               "ghcr.io/${{ github.repository_owner }}/alice-pgbackrest"
               "ghcr.io/${{ github.repository_owner }}/alice-api-gateway"
+              "ghcr.io/${{ github.repository_owner }}/alice-biometrics"
+              "ghcr.io/${{ github.repository_owner }}/alice-llm-gateway"
             )
             
             TOTAL_REMOVED=0
