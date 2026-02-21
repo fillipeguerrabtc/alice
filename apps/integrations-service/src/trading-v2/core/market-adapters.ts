@@ -1,6 +1,5 @@
-import type { TradingMarketType, TradingMarginMode } from '@alice/shared/schema';
 import { createLogger } from '@alice/logger';
-import type { InstrumentConstraint } from './types.js';
+import type { InstrumentConstraint, TradingMarketType, TradingMarginMode } from './types.js';
 
 const logger = createLogger('trading-v2-market-adapters');
 

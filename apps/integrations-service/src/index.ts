@@ -12328,7 +12328,7 @@ async function generateTradingSignalFromLlm(params: {
         universeScanCount: recentCandidates.length,
       }, 'Pacote institucional de portfólio gerado');
       const firstDecision = decisions[0];
-      const signalType: 'long' | 'short' | 'hold' = firstDecision?.side === 'buy' ? 'long' : firstDecision?.side === 'sell' ? 'short' : 'hold';
+      const signalType: 'entry_long' | 'entry_short' | 'hold' = firstDecision?.side === 'buy' ? 'entry_long' : firstDecision?.side === 'sell' ? 'entry_short' : 'hold';
       const createResult = await kucoinService.createSignal(
         { tenantId: params.tenantId, userId: params.userId },
         {
@@ -12364,8 +12364,8 @@ async function generateTradingSignalFromLlm(params: {
       });
       const net = edge - (cost.totalBps / 10_000);
       const approved = net > 0 && Number(selectedBySymbol.dsrScore ?? 0) >= 0 && Number(selectedBySymbol.pboScore ?? 1) <= 0.7;
-      const signalType: 'long' | 'short' | 'hold' = approved
-        ? (selectedBySymbol.side === 'short' ? 'short' : selectedBySymbol.side === 'long' ? 'long' : 'hold')
+      const signalType: 'entry_long' | 'entry_short' | 'hold' = approved
+        ? (selectedBySymbol.side === 'short' ? 'entry_short' : selectedBySymbol.side === 'long' ? 'entry_long' : 'hold')
         : 'hold';
       const createResult = await kucoinService.createSignal(
         { tenantId: params.tenantId, userId: params.userId },

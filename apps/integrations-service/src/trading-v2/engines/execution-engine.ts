@@ -2,7 +2,7 @@ import type { AllocationDecision, ExecutionPlanItem } from '../core/types.js';
 
 export function buildExecutionPlan(decisions: AllocationDecision[], liquidityScoreByInstrument: Record<string, number>): ExecutionPlanItem[] {
   return decisions
-    .filter((decision) => decision.side !== 'hold' && decision.targetWeight > 0)
+    .filter((decision): decision is AllocationDecision & { side: 'buy' | 'sell' } => decision.side !== 'hold' && decision.targetWeight > 0)
     .map((decision) => {
       const liquidity = liquidityScoreByInstrument[decision.instrumentId] ?? 0.5;
       const twapLite = decision.targetWeight > 0.2 || liquidity < 0.35;
