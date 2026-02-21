@@ -174,7 +174,7 @@ try_local_retag() {
   # Sem digest remoto = não é possível verificar → precisa pull
   if [ -z "$remote_cfg" ]; then
     local fallback_tag=""
-    fallback_tag=$(echo "$existing_tags" | grep -E '^v[0-9]' | sort -V | tail -1)
+    fallback_tag=$(echo "$existing_tags" | grep -E '^v[0-9]+(\.[0-9]+)*$' | sort -V | tail -1)
     if [ -z "$fallback_tag" ]; then
       fallback_tag=$(echo "$existing_tags" | grep -v '^<none>$' | head -1)
     fi
