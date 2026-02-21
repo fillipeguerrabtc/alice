@@ -155,6 +155,7 @@ const TRADING_DATASET_MIN_QUALITY = parseEnvFloat(
   0.35,
   'TRADING_DATASET_MIN_QUALITY'
 );
+const RETURNS_FALLBACK_FACTORS = [1, 0.5, 0.25, 0.1] as const;
 const TRADING_MODE = (process.env.TRADING_MODE ?? 'portfolio_auto') as 'portfolio_auto' | 'signal_auto' | 'lab';
 const TRADING_LLM_PROMPT_MODE = (process.env.TRADING_LLM_PROMPT_MODE ?? 'compact') as 'compact' | 'verbose';
 
@@ -12218,15 +12219,37 @@ async function generateTradingSignalFromLlm(params: {
       ),
       orderBy: [desc(schema.tradingUniverseCandidates.createdAt)],
       limit: 50,
-      with: {
-        instrument: true,
-      },
     });
+    const instrumentIds = Array.from(new Set(recentCandidates.map((candidate) => candidate.instrumentId)));
+    const instruments = instrumentIds.length > 0
+      ? await db.query.tradingInstruments.findMany({
+        where: inArray(schema.tradingInstruments.id, instrumentIds),
+      })
+      : [];
+    const instrumentById = new Map(instruments.map((instrument) => [instrument.id, instrument]));
 
     if (TRADING_MODE === 'portfolio_auto') {
       const portfolios = await listTenantPortfolios(params.tenantId);
       const selectedPortfolio = portfolios[0];
       const returnsByInstrument: Record<string, number[]> = {};
+      const snapshotRows = instrumentIds.length > 0
+        ? await db.query.tradingFactorSnapshotsV2.findMany({
+          where: and(
+            eq(schema.tradingFactorSnapshotsV2.tenantId, params.tenantId),
+            inArray(schema.tradingFactorSnapshotsV2.instrumentId, instrumentIds),
+          ),
+          orderBy: [desc(schema.tradingFactorSnapshotsV2.candleTimestamp)],
+          limit: 500,
+        })
+        : [];
+      const snapshotsByInstrument = new Map<string, number[]>();
+      for (const row of snapshotRows) {
+        const current = snapshotsByInstrument.get(row.instrumentId) ?? [];
+        if (current.length < 50) {
+          current.push(Number(row.expectedReturn ?? 0));
+          snapshotsByInstrument.set(row.instrumentId, current);
+        }
+      }
       const costsByInstrument = Object.fromEntries(
         recentCandidates.map((candidate) => [
           candidate.instrumentId,
@@ -12237,9 +12260,30 @@ async function generateTradingSignalFromLlm(params: {
           }),
         ]),
       );
-      recentCandidates.forEach((candidate, index) => {
-        returnsByInstrument[candidate.instrumentId] = [0.001 * (index + 1), 0.002, -0.001, 0.003];
+      recentCandidates.forEach((candidate) => {
+        const edge = Number(candidate.expectedEdge ?? 0);
+        returnsByInstrument[candidate.instrumentId] = snapshotsByInstrument.get(candidate.instrumentId)
+          ?? RETURNS_FALLBACK_FACTORS.map((factor) => edge * factor);
       });
+      const candidateInputs = recentCandidates
+        .map((candidate) => {
+          const instrument = instrumentById.get(candidate.instrumentId);
+          if (!instrument) return null;
+          return {
+            instrumentId: candidate.instrumentId,
+            symbol: instrument.symbol,
+            marketType: candidate.marketType,
+            side: candidate.side as 'long' | 'short' | 'neutral',
+            expectedEdge: Number(candidate.expectedEdge ?? 0),
+            confidenceRaw: Number(candidate.confidenceRaw ?? 0),
+            confidenceCalibrated: candidate.confidenceCalibrated === null ? null : Number(candidate.confidenceCalibrated ?? 0),
+            dsrScore: candidate.dsrScore === null ? null : Number(candidate.dsrScore ?? 0),
+            pboScore: candidate.pboScore === null ? null : Number(candidate.pboScore ?? 1),
+            riskFlags: Array.isArray(candidate.riskFlags) ? candidate.riskFlags.map(String) : [],
+            timeframe: candidate.timeframe,
+          };
+        })
+        .filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== null);
       const correlations = buildCorrelationMatrix(returnsByInstrument);
       const decisions = buildAllocations({
         mode: 'signal_weighted',
@@ -12248,19 +12292,7 @@ async function generateTradingSignalFromLlm(params: {
         maxNetExposure: Number(selectedPortfolio?.maxNetExposure ?? 0.5),
         maxDrawdownLimit: Number(selectedPortfolio?.maxDrawdownLimit ?? 0.2),
         currentDrawdown: 0,
-        candidates: recentCandidates.map((candidate) => ({
-          instrumentId: candidate.instrumentId,
-          symbol: candidate.instrument.symbol,
-          marketType: candidate.marketType,
-          side: candidate.side as 'long' | 'short' | 'neutral',
-          expectedEdge: Number(candidate.expectedEdge ?? 0),
-          confidenceRaw: Number(candidate.confidenceRaw ?? 0),
-          confidenceCalibrated: candidate.confidenceCalibrated === null ? null : Number(candidate.confidenceCalibrated ?? 0),
-          dsrScore: candidate.dsrScore === null ? null : Number(candidate.dsrScore ?? 0),
-          pboScore: candidate.pboScore === null ? null : Number(candidate.pboScore ?? 1),
-          riskFlags: Array.isArray(candidate.riskFlags) ? candidate.riskFlags.map(String) : [],
-          timeframe: candidate.timeframe,
-        })),
+        candidates: candidateInputs,
         costs: costsByInstrument,
         volByInstrument: Object.fromEntries(recentCandidates.map((candidate) => [candidate.instrumentId, 0.02])),
         liquidityScoreByInstrument: Object.fromEntries(recentCandidates.map((candidate) => [candidate.instrumentId, 0.7])),
@@ -12319,34 +12351,37 @@ async function generateTradingSignalFromLlm(params: {
       return { signal: createResult.data, validationId: crypto.randomUUID(), validationStatus: 'pending' };
     }
 
-    const selected = recentCandidates.find((candidate) => candidate.instrument.symbol === params.symbol) ?? recentCandidates[0];
-    if (selected) {
-      const edge = Number(selected.expectedEdge ?? 0);
+    const selected = recentCandidates.find((candidate) => (instrumentById.get(candidate.instrumentId)?.symbol ?? '') === params.symbol) ?? recentCandidates[0];
+      const selectedInstrument = selected ? instrumentById.get(selected.instrumentId) : null;
+      const selectedSymbol = selectedInstrument?.symbol ?? params.symbol;
+      const selectedBySymbol = recentCandidates.find((candidate) => (instrumentById.get(candidate.instrumentId)?.symbol ?? '') === params.symbol) ?? selected;
+    if (selectedBySymbol) {
+      const edge = Number(selectedBySymbol.expectedEdge ?? 0);
       const cost = estimateCosts({
         feeBps: Number(process.env.TRADING_COST_BASELINE_FEE_BPS ?? 8),
         slippageBps: Number(process.env.TRADING_COST_BASELINE_SLIPPAGE_BPS ?? 12),
         spreadBps: Number(process.env.TRADING_COST_BASELINE_SPREAD_BPS ?? 5),
       });
       const net = edge - (cost.totalBps / 10_000);
-      const approved = net > 0 && Number(selected.dsrScore ?? 0) >= 0 && Number(selected.pboScore ?? 1) <= 0.7;
+      const approved = net > 0 && Number(selectedBySymbol.dsrScore ?? 0) >= 0 && Number(selectedBySymbol.pboScore ?? 1) <= 0.7;
       const signalType: 'long' | 'short' | 'hold' = approved
-        ? (selected.side === 'short' ? 'short' : selected.side === 'long' ? 'long' : 'hold')
+        ? (selectedBySymbol.side === 'short' ? 'short' : selectedBySymbol.side === 'long' ? 'long' : 'hold')
         : 'hold';
       const createResult = await kucoinService.createSignal(
         { tenantId: params.tenantId, userId: params.userId },
         {
           signalType,
-          symbol: selected.instrument.symbol,
-          marketType: selected.marketType,
-          marginMode: selected.marginMode ?? undefined,
-          confidence: Number(selected.confidenceCalibrated ?? selected.confidenceRaw ?? 0),
+          symbol: selectedSymbol,
+          marketType: selectedBySymbol.marketType,
+          marginMode: selectedBySymbol.marginMode ?? undefined,
+          confidence: Number(selectedBySymbol.confidenceCalibrated ?? selectedBySymbol.confidenceRaw ?? 0),
           reasoning: approved ? 'Candidate aprovado por guardrails institucionais' : 'No-trade: guardrails de edge/custos/DSR/PBO',
           metadata: {
             generationSource: params.source,
-            candidateId: selected.id,
+            candidateId: selectedBySymbol.id,
             expectedEdgeNet: net,
-            dsrScore: selected.dsrScore,
-            pboScore: selected.pboScore,
+            dsrScore: selectedBySymbol.dsrScore,
+            pboScore: selectedBySymbol.pboScore,
           },
         },
       );

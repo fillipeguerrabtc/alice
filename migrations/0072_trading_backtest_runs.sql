@@ -1,3 +1,10 @@
+DO $$
+BEGIN
+  CREATE TYPE trading_backtest_status AS ENUM ('queued','running','succeeded','failed');
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
 CREATE TABLE IF NOT EXISTS trading_backtest_runs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL REFERENCES tenants(id),
@@ -11,7 +18,7 @@ CREATE TABLE IF NOT EXISTS trading_backtest_runs (
   oos_metrics jsonb NOT NULL DEFAULT '{}'::jsonb,
   dsr jsonb,
   pbo jsonb,
-  status varchar(24) NOT NULL DEFAULT 'queued',
+  status trading_backtest_status NOT NULL DEFAULT 'queued',
   error text,
   started_at timestamp,
   finished_at timestamp,

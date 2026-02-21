@@ -1,9 +1,16 @@
+DO $$
+BEGIN
+  CREATE TYPE trading_portfolio_risk_profile AS ENUM ('conservative','balanced','aggressive');
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
 CREATE TABLE IF NOT EXISTS trading_portfolios (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL REFERENCES tenants(id),
   name varchar(120) NOT NULL,
   base_currency varchar(16) NOT NULL,
-  risk_profile varchar(24) NOT NULL,
+  risk_profile trading_portfolio_risk_profile NOT NULL,
   max_gross_exposure numeric NOT NULL,
   max_net_exposure numeric NOT NULL,
   max_drawdown_limit numeric NOT NULL,

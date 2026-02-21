@@ -1,3 +1,10 @@
+DO $$
+BEGIN
+  CREATE TYPE trading_calibration_method AS ENUM ('platt','isotonic');
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
 CREATE TABLE IF NOT EXISTS trading_signal_calibration (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL REFERENCES tenants(id),
@@ -5,7 +12,7 @@ CREATE TABLE IF NOT EXISTS trading_signal_calibration (
   market_type trading_market_type NOT NULL,
   strategy_key varchar(64) NOT NULL,
   strategy_version integer NOT NULL,
-  method varchar(16) NOT NULL,
+  method trading_calibration_method NOT NULL,
   payload jsonb NOT NULL,
   eval_metrics jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamp NOT NULL DEFAULT now(),

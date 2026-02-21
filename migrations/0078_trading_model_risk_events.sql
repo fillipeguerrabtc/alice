@@ -1,10 +1,31 @@
+DO $$
+BEGIN
+  CREATE TYPE trading_model_risk_scope AS ENUM ('strategy', 'portfolio', 'instrument');
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+DO $$
+BEGIN
+  CREATE TYPE trading_model_risk_event_type AS ENUM ('drift', 'performance_decay', 'data_quality', 'execution_anomaly', 'kill_switch');
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+DO $$
+BEGIN
+  CREATE TYPE trading_model_risk_severity AS ENUM ('low', 'medium', 'high', 'critical');
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
 CREATE TABLE IF NOT EXISTS trading_model_risk_events (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL REFERENCES tenants(id),
-  scope varchar(24) NOT NULL,
+  scope trading_model_risk_scope NOT NULL,
   scope_key varchar(128) NOT NULL,
-  event_type varchar(32) NOT NULL,
-  severity varchar(16) NOT NULL,
+  event_type trading_model_risk_event_type NOT NULL,
+  severity trading_model_risk_severity NOT NULL,
   details jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamp NOT NULL DEFAULT now()
 );

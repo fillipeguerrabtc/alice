@@ -1,3 +1,10 @@
+DO $$
+BEGIN
+  CREATE TYPE trading_candidate_status AS ENUM ('candidate','approved','rejected','expired','executed');
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
 CREATE TABLE IF NOT EXISTS trading_universe_candidates (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL REFERENCES tenants(id),
@@ -16,7 +23,7 @@ CREATE TABLE IF NOT EXISTS trading_universe_candidates (
   dsr_score numeric,
   pbo_score numeric,
   risk_flags jsonb NOT NULL DEFAULT '[]'::jsonb,
-  status varchar(24) NOT NULL DEFAULT 'candidate',
+  status trading_candidate_status NOT NULL DEFAULT 'candidate',
   created_at timestamp NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_trading_universe_candidates_query ON trading_universe_candidates(tenant_id, market_type, created_at DESC);

@@ -317,6 +317,12 @@ const tradingV2Metrics = {
     buckets: [0.05, 0.1, 0.5, 1, 2, 5],
     registers: [metrics.registry],
   }),
+  modelRiskSeconds: new PromHistogram({
+    name: 'trading_model_risk_seconds',
+    help: 'Duração de processamento do worker de model risk',
+    buckets: [0.05, 0.1, 0.5, 1, 2, 5],
+    registers: [metrics.registry],
+  }),
   modelRiskEventsTotal: new PromCounter({
     name: 'trading_model_risk_events_total',
     help: 'Total de eventos de model risk registrados',
@@ -428,7 +434,12 @@ async function enqueueTradingJob(queueName: string, payload: Record<string, unkn
   await redis.rPush(queueName, JSON.stringify(payload));
 }
 
-function createTradingWorker<T>(queueName: string, parser: z.ZodSchema<T>, handler: (payload: T) => Promise<void>, metric: PromHistogram): void {
+function createTradingWorker<T extends { idempotencyKey: string }>(
+  queueName: string,
+  parser: z.ZodSchema<T>,
+  handler: (payload: T) => Promise<void>,
+  metric: PromHistogram,
+): void {
   const tick = async () => {
     try {
       const redis = getRedisClient();
@@ -436,7 +447,7 @@ function createTradingWorker<T>(queueName: string, parser: z.ZodSchema<T>, handl
       const item = await redis.lPop(queueName);
       if (!item) return;
       const parsed = parser.parse(JSON.parse(item));
-      const lockKey = `${queueName}:lock:${(parsed as { idempotencyKey: string }).idempotencyKey}`;
+      const lockKey = `${queueName}:lock:${parsed.idempotencyKey}`;
       const lockAcquired = await redis.set(lockKey, '1', { NX: true, EX: 300 });
       if (!lockAcquired) return;
       const timer = metric.startTimer();
@@ -3198,7 +3209,7 @@ let autoLearningInterval: NodeJS.Timeout | null = null;
         await runModelRiskWorker(payload);
         tradingV2Metrics.modelRiskEventsTotal.inc(1);
       },
-      tradingV2Metrics.rebalanceSeconds,
+      tradingV2Metrics.modelRiskSeconds,
     );
     
     server = app.listen(PORT, '0.0.0.0', () => {

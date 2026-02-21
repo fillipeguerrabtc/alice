@@ -5,7 +5,12 @@ import { computeDeflatedSharpe, computeDsrProbability, computePboFromRanks } fro
 export async function runBacktestWorker(payload: { tenantId: string; instrumentId?: string; marketType: 'spot' | 'futures' | 'margin'; strategyKey: string; strategyVersion: number; returns: number[]; costsBps: number }) {
   const backtest = runDeterministicBacktest({ returns: payload.returns, costsBps: payload.costsBps });
   const dsr = computeDeflatedSharpe(backtest.sharpeProxy, 10, payload.returns.length || 2);
-  const pbo = computePboFromRanks([1, 2, 3], [1, 3, 2]);
+  const inSampleRanks = payload.returns
+    .map((value, index) => ({ value, rank: index + 1 }))
+    .sort((a, b) => b.value - a.value)
+    .map((entry) => entry.rank);
+  const outSampleRanks = [...inSampleRanks].reverse();
+  const pbo = computePboFromRanks(inSampleRanks, outSampleRanks);
   const db = getDatabase();
   await db.insert(schema.tradingBacktestRuns).values({
     tenantId: payload.tenantId,

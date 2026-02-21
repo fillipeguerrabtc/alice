@@ -3268,7 +3268,7 @@ export default function Trading() {
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           {/* MOBILE-FIRST 12/01/2026: Tabs com scroll horizontal para caber em mobile */}
           <div className="overflow-x-auto pb-2 -mx-2 px-2 md:overflow-visible md:mx-0 md:px-0">
-            <TabsList className="grid w-full grid-cols-3 gap-1 sm:grid-cols-6 lg:grid-cols-14">
+            <TabsList className="grid w-full grid-cols-3 gap-1 sm:grid-cols-6 lg:grid-cols-12">
               <TabsTrigger value="overview" data-testid="tab-overview" className="whitespace-nowrap">
                 <BarChart3 className="h-4 w-4 md:mr-2" />
                 <span className="hidden md:inline">{t('trading.tabs.overview')}</span>
