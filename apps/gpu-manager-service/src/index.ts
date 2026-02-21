@@ -65,6 +65,7 @@ import {
   switchToLlmEmbeddings,
   reportTrainingActivity,
   shutdownOrchestrator,
+  GPU_ORCHESTRATION_MODE,
 } from './gpu-orchestrator.js';
 
 const execAsync = promisify(exec);
@@ -655,7 +656,7 @@ async function processGpuRequest(request: GpuRequest): Promise<GpuResponse> {
   
   try {
     // Orquestração (se disponível): TRAINING/EMBEDDINGS trocam containers conforme demanda
-    if (orchestratorAvailable) {
+    if (orchestratorAvailable && GPU_ORCHESTRATION_MODE === 'preemptive') {
       if (serviceType === GpuServiceType.TRAINING) {
         await switchToTraining();
       } else if (serviceType === GpuServiceType.EMBEDDINGS && getOrchestratorState() === 'training') {
@@ -820,7 +821,7 @@ async function startQueueWorker(): Promise<void> {
           const resultKey = `${REDIS_QUEUE_PREFIX}:result:${request.id}`;
           await redis.setEx(resultKey, 300, JSON.stringify(response)); // 5 min TTL
 
-          if (serviceType === GpuServiceType.TRAINING && response.success && orchestratorAvailable) {
+          if (serviceType === GpuServiceType.TRAINING && response.success && orchestratorAvailable && GPU_ORCHESTRATION_MODE === 'preemptive') {
             reportTrainingActivity();
           }
           logger.info({
@@ -1019,11 +1020,12 @@ app.get('/api/gpu/orchestrator/state', requireInternalAuth, asyncHandler(async (
   res.json({
     state: getOrchestratorState(),
     orchestratorAvailable,
+    orchestrationMode: GPU_ORCHESTRATION_MODE,
   });
 }));
 
 app.post('/api/gpu/orchestrator/return', requireInternalAuth, asyncHandler(async (_req: Request, res: Response) => {
-  if (!orchestratorAvailable) {
+  if (!orchestratorAvailable || GPU_ORCHESTRATION_MODE !== 'preemptive') {
     return res.status(503).json({ error: 'Orquestrador não disponível' });
   }
   await switchToLlmEmbeddings();
@@ -1321,10 +1323,10 @@ async function start(): Promise<void> {
     
     // Verificar disponibilidade do orquestrador (uma vez no startup)
     orchestratorAvailable = await isOrchestratorAvailable();
-    if (orchestratorAvailable) {
-      logger.info('Orquestrador GPU disponível - troca embeddings↔trainer habilitada');
+    if (orchestratorAvailable && GPU_ORCHESTRATION_MODE === 'preemptive') {
+      logger.info({ orchestrationMode: GPU_ORCHESTRATION_MODE }, 'Orquestrador GPU disponível - troca embeddings↔trainer habilitada');
     } else {
-      logger.info('Orquestrador GPU não disponível - modo Gate 2 (serviços fixos)');
+      logger.info({ orchestrationMode: GPU_ORCHESTRATION_MODE }, 'Modo simultâneo/fixo habilitado para serviços GPU');
     }
 
     // Iniciar worker de fila
@@ -1358,4 +1360,3 @@ async function start(): Promise<void> {
 }
 
 start();
-

@@ -51,6 +51,7 @@ import {
   initializeRedisCache,
   initializeSessionAuthCache,
   closeRedisCacheClient,
+  getRedisClient,
   requestGpu,
   GpuServiceType,
   GpuRequestPriority,
@@ -86,6 +87,11 @@ async function resolveDefaultMaxSeqLen(): Promise<number> {
 import { processLoraJob, activateLoraAdapter, getActiveAdapter, deactivateLoraAdapter } from './lora-job-manager.js';
 import { resolveScope } from './scope-resolver.js';
 import { selectExamplesByProfile } from './dataset-selection-engine.js';
+import { runUniverseScanWorker } from './trading-v2/jobs/universe-scan-worker.js';
+import { runBacktestWorker } from './trading-v2/jobs/backtest-worker.js';
+import { runCalibrationWorker } from './trading-v2/jobs/calibration-worker.js';
+import { runPortfolioRebalanceWorker } from './trading-v2/jobs/portfolio-rebalance-worker.js';
+import { runModelRiskWorker } from './trading-v2/jobs/model-risk-worker.js';
 // Fine-tuning é executado localmente via GPU Manager Service (Regra 6 - sem stubs/migração)
 
 // Logger centralizado: JSON em produção, pino-pretty em desenvolvimento
@@ -134,8 +140,22 @@ function readUuidFromUnknown(value: unknown): string | null {
     : null;
 }
 
+function requireInternalApiAuth(req: Request, res: Response, next: () => void): void {
+  if (!INTERNAL_API_SECRET) {
+    res.status(503).json({ error: 'INTERNAL_API_SECRET não configurado' });
+    return;
+  }
+  const secret = req.headers['x-internal-api-secret'];
+  if (typeof secret !== 'string' || secret !== INTERNAL_API_SECRET) {
+    res.status(401).json({ error: 'Token interno inválido' });
+    return;
+  }
+  next();
+}
+
 const PORT = parseEnvInt(process.env.PORT, 3004, 'PORT');
 const DATABASE_URL = process.env.DATABASE_URL;
+const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET;
 const corsOriginsEnv = process.env.CORS_ORIGINS;
 if (!corsOriginsEnv && process.env.NODE_ENV === 'production') {
   logger.error('CORS_ORIGINS é obrigatório em produção (Regra 6 - fail-fast)');
@@ -272,6 +292,63 @@ const trainingPipelineMetrics = {
   }),
 };
 
+const tradingV2Metrics = {
+  universeScanSeconds: new PromHistogram({
+    name: 'trading_universe_scan_seconds',
+    help: 'Duração de processamento do worker de universe scan',
+    buckets: [0.05, 0.1, 0.5, 1, 2, 5],
+    registers: [metrics.registry],
+  }),
+  backtestSeconds: new PromHistogram({
+    name: 'trading_backtest_seconds',
+    help: 'Duração de processamento do worker de backtest',
+    buckets: [0.1, 0.5, 1, 2, 5, 10],
+    registers: [metrics.registry],
+  }),
+  calibrationSeconds: new PromHistogram({
+    name: 'trading_calibration_seconds',
+    help: 'Duração de processamento do worker de calibration',
+    buckets: [0.05, 0.1, 0.5, 1, 2, 5],
+    registers: [metrics.registry],
+  }),
+  rebalanceSeconds: new PromHistogram({
+    name: 'trading_portfolio_rebalance_seconds',
+    help: 'Duração de processamento do worker de rebalance',
+    buckets: [0.05, 0.1, 0.5, 1, 2, 5],
+    registers: [metrics.registry],
+  }),
+  modelRiskSeconds: new PromHistogram({
+    name: 'trading_model_risk_seconds',
+    help: 'Duração de processamento do worker de model risk',
+    buckets: [0.05, 0.1, 0.5, 1, 2, 5],
+    registers: [metrics.registry],
+  }),
+  modelRiskEventsTotal: new PromCounter({
+    name: 'trading_model_risk_events_total',
+    help: 'Total de eventos de model risk registrados',
+    registers: [metrics.registry],
+  }),
+  candidateCount: new PromCounter({
+    name: 'trading_candidate_count',
+    help: 'Total de candidatos produzidos para trading',
+    registers: [metrics.registry],
+  }),
+};
+
+const tradingQueueNames = {
+  universe: 'alice:trading:universe-scan',
+  backtest: 'alice:trading:backtest',
+  calibration: 'alice:trading:calibration',
+  rebalance: 'alice:trading:portfolio-rebalance',
+  modelRisk: 'alice:trading:model-risk',
+} as const;
+
+const tradingJobBaseSchema = z.object({
+  idempotencyKey: z.string().min(8),
+  tenantId: z.string().uuid(),
+  requestedBy: z.string().uuid(),
+});
+
 const TRAINING_METRICS_INTERVAL_MS = parseEnvInt(
   process.env.TRAINING_METRICS_INTERVAL_MS,
   60000,
@@ -306,6 +383,86 @@ function startTrainingMetricsScheduler(): void {
   trainingMetricsInterval = setInterval(() => {
     void refreshTrainingMetrics();
   }, TRAINING_METRICS_INTERVAL_MS);
+}
+
+const tradingUniverseEnqueueSchema = tradingJobBaseSchema.extend({
+  instrumentId: z.string().uuid(),
+  marketType: z.enum(['spot', 'futures', 'margin']),
+  timeframe: z.string().min(2).max(10),
+  strategyKey: z.string().min(3).max(64),
+  strategyVersion: z.number().int().positive(),
+  candleTimestamp: z.string().datetime(),
+});
+
+const tradingBacktestEnqueueSchema = tradingJobBaseSchema.extend({
+  instrumentId: z.string().uuid().optional(),
+  marketType: z.enum(['spot', 'futures', 'margin']),
+  strategyKey: z.string().min(3).max(64),
+  strategyVersion: z.number().int().positive(),
+  returns: z.array(z.number()).min(3),
+  costsBps: z.number().min(0).max(500),
+});
+
+const tradingCalibrationEnqueueSchema = tradingJobBaseSchema.extend({
+  instrumentId: z.string().uuid(),
+  marketType: z.enum(['spot', 'futures', 'margin']),
+  strategyKey: z.string().min(3).max(64),
+  strategyVersion: z.number().int().positive(),
+  points: z.array(z.object({ raw: z.number().min(0).max(1), outcome: z.union([z.literal(0), z.literal(1)]) })).min(5),
+});
+
+const tradingRebalanceEnqueueSchema = tradingJobBaseSchema.extend({
+  portfolioId: z.string().uuid(),
+  asofTimestamp: z.string().datetime(),
+  inputs: z.record(z.unknown()),
+  decisions: z.record(z.unknown()),
+});
+
+const tradingModelRiskEnqueueSchema = tradingJobBaseSchema.extend({
+  scope: z.enum(['strategy', 'portfolio', 'instrument']),
+  scopeKey: z.string().min(2).max(128),
+  criticalEvents: z.number().int().min(0),
+  drawdown: z.number().min(0),
+  maxDrawdown: z.number().min(0),
+});
+
+async function enqueueTradingJob(queueName: string, payload: Record<string, unknown>): Promise<void> {
+  const redis = getRedisClient();
+  if (!redis) {
+    throw new Error('Redis não disponível para fila de trading');
+  }
+  await redis.rPush(queueName, JSON.stringify(payload));
+}
+
+function createTradingWorker<T extends { idempotencyKey: string }>(
+  queueName: string,
+  parser: z.ZodSchema<T>,
+  handler: (payload: T) => Promise<void>,
+  metric: PromHistogram,
+): void {
+  const tick = async () => {
+    try {
+      const redis = getRedisClient();
+      if (!redis) return;
+      const item = await redis.lPop(queueName);
+      if (!item) return;
+      const parsed = parser.parse(JSON.parse(item));
+      const lockKey = `${queueName}:lock:${parsed.idempotencyKey}`;
+      const lockAcquired = await redis.set(lockKey, '1', { NX: true, EX: 300 });
+      if (!lockAcquired) return;
+      const timer = metric.startTimer();
+      try {
+        await handler(parsed);
+      } finally {
+        timer();
+      }
+    } catch (error) {
+      logger.error({ queueName, error: error instanceof Error ? error.message : String(error) }, 'Falha ao processar job trading-v2');
+    }
+  };
+  setInterval(() => {
+    void tick();
+  }, 500);
 }
 
 // Inicializar métricas RBAC (Regra 16 - Observability Enterprise)
@@ -562,6 +719,41 @@ app.get('/ready', async (_req: Request, res: Response) => {
       timestamp: new Date().toISOString(),
     });
   }
+});
+
+app.post('/internal/trading/universe/enqueue', requireInternalApiAuth, async (req: Request, res: Response) => {
+  const payload = tradingUniverseEnqueueSchema.parse(req.body);
+  await enqueueTradingJob(tradingQueueNames.universe, payload);
+  logger.info({ tenantId: payload.tenantId, instrumentId: payload.instrumentId, queue: tradingQueueNames.universe }, 'Trading V2 universe scan enfileirado');
+  res.status(202).json({ queued: true, queue: tradingQueueNames.universe, idempotencyKey: payload.idempotencyKey });
+});
+
+app.post('/internal/trading/backtest/enqueue', requireInternalApiAuth, async (req: Request, res: Response) => {
+  const payload = tradingBacktestEnqueueSchema.parse(req.body);
+  await enqueueTradingJob(tradingQueueNames.backtest, payload);
+  logger.info({ tenantId: payload.tenantId, strategyKey: payload.strategyKey, queue: tradingQueueNames.backtest }, 'Trading V2 backtest enfileirado');
+  res.status(202).json({ queued: true, queue: tradingQueueNames.backtest, idempotencyKey: payload.idempotencyKey });
+});
+
+app.post('/internal/trading/calibration/enqueue', requireInternalApiAuth, async (req: Request, res: Response) => {
+  const payload = tradingCalibrationEnqueueSchema.parse(req.body);
+  await enqueueTradingJob(tradingQueueNames.calibration, payload);
+  logger.info({ tenantId: payload.tenantId, strategyKey: payload.strategyKey, queue: tradingQueueNames.calibration }, 'Trading V2 calibration enfileirado');
+  res.status(202).json({ queued: true, queue: tradingQueueNames.calibration, idempotencyKey: payload.idempotencyKey });
+});
+
+app.post('/internal/trading/portfolio-rebalance/enqueue', requireInternalApiAuth, async (req: Request, res: Response) => {
+  const payload = tradingRebalanceEnqueueSchema.parse(req.body);
+  await enqueueTradingJob(tradingQueueNames.rebalance, payload);
+  logger.info({ tenantId: payload.tenantId, portfolioId: payload.portfolioId, queue: tradingQueueNames.rebalance }, 'Trading V2 rebalance enfileirado');
+  res.status(202).json({ queued: true, queue: tradingQueueNames.rebalance, idempotencyKey: payload.idempotencyKey });
+});
+
+app.post('/internal/trading/model-risk/enqueue', requireInternalApiAuth, async (req: Request, res: Response) => {
+  const payload = tradingModelRiskEnqueueSchema.parse(req.body);
+  await enqueueTradingJob(tradingQueueNames.modelRisk, payload);
+  logger.info({ tenantId: payload.tenantId, scope: payload.scope, scopeKey: payload.scopeKey, queue: tradingQueueNames.modelRisk }, 'Trading V2 model risk enfileirado');
+  res.status(202).json({ queued: true, queue: tradingQueueNames.modelRisk, idempotencyKey: payload.idempotencyKey });
 });
 
 // ============================================================================
@@ -2977,6 +3169,48 @@ let autoLearningInterval: NodeJS.Timeout | null = null;
     await initializeRedisCache();
     await initializeSessionAuthCache();
     logger.info('Auth cache (session-auth) inicializado');
+    createTradingWorker(
+      tradingQueueNames.universe,
+      tradingUniverseEnqueueSchema,
+      async (payload) => {
+        await runUniverseScanWorker(payload);
+        tradingV2Metrics.candidateCount.inc(1);
+      },
+      tradingV2Metrics.universeScanSeconds,
+    );
+    createTradingWorker(
+      tradingQueueNames.backtest,
+      tradingBacktestEnqueueSchema,
+      async (payload) => {
+        await runBacktestWorker(payload);
+      },
+      tradingV2Metrics.backtestSeconds,
+    );
+    createTradingWorker(
+      tradingQueueNames.calibration,
+      tradingCalibrationEnqueueSchema,
+      async (payload) => {
+        await runCalibrationWorker(payload);
+      },
+      tradingV2Metrics.calibrationSeconds,
+    );
+    createTradingWorker(
+      tradingQueueNames.rebalance,
+      tradingRebalanceEnqueueSchema,
+      async (payload) => {
+        await runPortfolioRebalanceWorker(payload);
+      },
+      tradingV2Metrics.rebalanceSeconds,
+    );
+    createTradingWorker(
+      tradingQueueNames.modelRisk,
+      tradingModelRiskEnqueueSchema,
+      async (payload) => {
+        await runModelRiskWorker(payload);
+        tradingV2Metrics.modelRiskEventsTotal.inc(1);
+      },
+      tradingV2Metrics.modelRiskSeconds,
+    );
     
     server = app.listen(PORT, '0.0.0.0', () => {
       logger.info({ 

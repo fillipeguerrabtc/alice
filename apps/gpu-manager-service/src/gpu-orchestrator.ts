@@ -38,6 +38,9 @@ const COMPOSE_ENV_FILE = process.env.GPU_ORCHESTRATOR_ENV_FILE || '/opt/alice/co
 const COMPOSE_PROJECT = process.env.GPU_ORCHESTRATOR_PROJECT || 'alice-alice';
 const DOCKER_COMPOSE_CMD = process.env.DOCKER_COMPOSE_CMD || 'docker compose';
 const IDLE_RETURN_MS = parseInt(process.env.GPU_ORCHESTRATOR_IDLE_MS || '600000', 10); // 10 min
+export const GPU_ORCHESTRATION_MODE = process.env.GPU_ORCHESTRATION_MODE === 'preemptive'
+  ? 'preemptive'
+  : 'simultaneous';
 
 /** Estado em memória (persistência opcional via Redis em versão futura) */
 let currentState: OrchestratorState = 'llm_embeddings';
@@ -96,6 +99,10 @@ export function getOrchestratorState(): OrchestratorState {
  * Troca para modo treino (para embeddings, sobe trainer)
  */
 export async function switchToTraining(): Promise<void> {
+  if (GPU_ORCHESTRATION_MODE === 'simultaneous') {
+    logger.info({ orchestrationMode: GPU_ORCHESTRATION_MODE }, 'switchToTraining em modo simultâneo: no-op seguro');
+    return;
+  }
   if (currentState === 'training') {
     _lastTrainingActivityAt = Date.now();
     return;
@@ -125,6 +132,10 @@ export async function switchToTraining(): Promise<void> {
  * Volta para modo LLM+Embeddings (para trainer, sobe embeddings)
  */
 export async function switchToLlmEmbeddings(): Promise<void> {
+  if (GPU_ORCHESTRATION_MODE === 'simultaneous') {
+    logger.info({ orchestrationMode: GPU_ORCHESTRATION_MODE }, 'switchToLlmEmbeddings em modo simultâneo: no-op seguro');
+    return;
+  }
   if (currentState === 'llm_embeddings') return;
   if (currentState === 'switching_to_training' || currentState === 'switching_to_llm') {
     throw new Error('Troca em andamento');

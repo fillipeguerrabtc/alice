@@ -24,8 +24,8 @@
 #   - gpu-llm - Qwen2.5 7B Instruct AWQ (LLM texto, contexto 6k)
 #   - gpu-embeddings - Qwen3-Embedding-0.6B INT8 (1024 dim)
 #
-#   GPU (SOB DEMANDA via profile):
-#   - gpu-trainer (profile: gpu-training) - QLoRA (12GB)
+#   GPU (SEMPRE ATIVO - modo simultâneo):
+#   - gpu-trainer - QLoRA (12GB)
 #
 # DEPENDÊNCIAS:
 #   - INFRA Stack DEVE estar healthy antes deste stack
@@ -622,6 +622,7 @@ services:
       - LLM_GPU_URL=${LLM_GPU_URL:-http://gpu-llm:8000}
       - EMBEDDINGS_GPU_URL=${EMBEDDINGS_GPU_URL:-http://gpu-embeddings:8000}
       - TRAINING_GPU_URL=${TRAINING_GPU_URL:-http://gpu-trainer:8000}
+      - GPU_ORCHESTRATION_MODE=${GPU_ORCHESTRATION_MODE:-simultaneous}
       - NODE_ENV=production
       # CORREÇÃO CR1 (07/02/2026): Aumentar timeout de 60s para 120s.
       # vLLM structured JSON output leva ~58s; circuit breaker de 60s dispara retry
@@ -658,7 +659,7 @@ services:
   # GPU local é usada SOMENTE para:
   # - gpu-llm: LLM (texto)
   # - gpu-embeddings: embeddings (texto)
-  # - gpu-trainer: QLoRA (sob demanda via profile)
+  # - gpu-trainer: QLoRA (simultâneo)
   #
   # Vision e geração de imagens são feitas via OpenAI API.
   #
@@ -684,12 +685,11 @@ services:
       - CUDA_VISIBLE_DEVICES=0
       - MODEL_NAME=${LLM_MODEL_NAME:-Qwen/Qwen2.5-7B-Instruct-AWQ}
       - QUANTIZATION=awq
-      - MAX_MODEL_LEN=${LLM_MAX_MODEL_LEN:-6144}
-      # Budget ajustado para 20GB após remoção de embeddings de imagem (mais folga de VRAM).
-      # Nota: fonte de verdade é o consumo real via métricas/nvidia-smi.
-      - GPU_MEMORY_UTILIZATION=${LLM_GPU_MEMORY_UTILIZATION:-0.42}
-      - MAX_NUM_BATCHED_TOKENS=${LLM_MAX_NUM_BATCHED_TOKENS:-1536}
-      - MAX_NUM_SEQS=${LLM_MAX_NUM_SEQS:-16}
+      # Redução de KV cache para coexistência simultânea LLM + Embeddings + Trainer em 20GB.
+      - MAX_MODEL_LEN=${LLM_MAX_MODEL_LEN:-4096}
+      - GPU_MEMORY_UTILIZATION=${LLM_GPU_MEMORY_UTILIZATION:-0.34}
+      - MAX_NUM_BATCHED_TOKENS=${LLM_MAX_NUM_BATCHED_TOKENS:-1024}
+      - MAX_NUM_SEQS=${LLM_MAX_NUM_SEQS:-8}
       - TENSOR_PARALLEL_SIZE=1
       - HOST=0.0.0.0
       - PORT=8000
@@ -775,17 +775,13 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # QLoRA Trainer - Fine-tuning (Sob Demanda)
-  # Gate 2: Usa profile pois requer pausa dos outros serviços (VRAM compartilhada)
-  # Execução: docker compose --profile gpu-training up -d gpu-trainer
+  # QLoRA Trainer - Fine-tuning (Simultâneo)
   gpu-trainer:
     image: ${IMAGE_PREFIX}-qwen-trainer:${IMAGE_TAG:-latest}
     platform: linux/amd64
     container_name: gpu-trainer
     restart: unless-stopped
     runtime: nvidia
-    profiles:
-      - gpu-training
     security_opt:
       - no-new-privileges:true
     environment:

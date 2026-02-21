@@ -18,13 +18,18 @@
 
 set -e
 
+MAX_MODEL_LEN_VALUE="${LLM_MAX_MODEL_LEN:-4096}"
+MAX_NUM_SEQS_VALUE="${LLM_MAX_NUM_SEQS:-8}"
+MAX_BATCHED_TOKENS_VALUE="${LLM_MAX_NUM_BATCHED_TOKENS:-1024}"
+GPU_MEMORY_UTILIZATION_VALUE="${LLM_GPU_MEMORY_UTILIZATION:-0.34}"
+
 echo "=== Alice LLM (Qwen2.5 7B Instruct AWQ + LoRA) ==="
 echo "Model: ${MODEL_NAME}"
 echo "Quantization: ${QUANTIZATION}"
-echo "Max Model Length: ${MAX_MODEL_LEN}"
-echo "GPU Memory Utilization: ${GPU_MEMORY_UTILIZATION}"
-echo "Max Batched Tokens: ${MAX_NUM_BATCHED_TOKENS:-auto}"
-echo "Max Num Seqs: ${MAX_NUM_SEQS:-auto}"
+echo "Max Model Length: ${MAX_MODEL_LEN_VALUE}"
+echo "GPU Memory Utilization: ${GPU_MEMORY_UTILIZATION_VALUE}"
+echo "Max Batched Tokens: ${MAX_BATCHED_TOKENS_VALUE}"
+echo "Max Num Seqs: ${MAX_NUM_SEQS_VALUE}"
 echo "LoRA Enabled: ${ENABLE_LORA:-true}"
 echo "Max LoRA Rank: ${MAX_LORA_RANK:-16}"
 echo "Max LoRAs: ${MAX_LORAS:-2}"
@@ -69,13 +74,12 @@ exec python3 -m vllm.entrypoints.openai.api_server \
   --model "${MODEL_NAME}" \
   --quantization "${QUANTIZATION}" \
   --dtype float16 \
-  --max-model-len "${MAX_MODEL_LEN}" \
-  --gpu-memory-utilization "${GPU_MEMORY_UTILIZATION}" \
-  --max-num-batched-tokens "${MAX_NUM_BATCHED_TOKENS:-1536}" \
-  --max-num-seqs "${MAX_NUM_SEQS:-16}" \
+  --max-model-len "${MAX_MODEL_LEN_VALUE}" \
+  --gpu-memory-utilization "${GPU_MEMORY_UTILIZATION_VALUE}" \
+  --max-num-batched-tokens "${MAX_BATCHED_TOKENS_VALUE}" \
+  --max-num-seqs "${MAX_NUM_SEQS_VALUE}" \
   --tensor-parallel-size "${TENSOR_PARALLEL_SIZE}" \
   --structured-outputs-config '{"backend":"outlines"}' \
   ${LORA_ARGS} \
   --host "${HOST}" \
   --port "${PORT}"
-

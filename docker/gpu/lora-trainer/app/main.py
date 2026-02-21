@@ -65,9 +65,10 @@ def _update_gpu_metrics() -> None:
 class LoraHyperparams(BaseModel):
     epochs: int = Field(3, ge=1, le=50)
     learningRate: float = Field(1e-4, gt=0, lt=1.0)
-    batchSize: int = Field(4, ge=1, le=64)
-    maxSeqLen: int = Field(2048, ge=256, le=32768)
-    gradientAccumulationSteps: int = Field(1, ge=1, le=128)
+    # Defaults reduzidos para coexistência simultânea LLM+Embeddings+Trainer em GPU 20GB
+    batchSize: int = Field(2, ge=1, le=64)
+    maxSeqLen: int = Field(1536, ge=256, le=32768)
+    gradientAccumulationSteps: int = Field(2, ge=1, le=128)
     warmupSteps: int = Field(0, ge=0, le=10000)
     loraRank: int = Field(16, ge=4, le=128)
     loraAlpha: int = Field(32, ge=8, le=256)
@@ -313,5 +314,3 @@ def purge_job(job_id: str) -> Dict[str, Any]:
             shutil.rmtree(p, ignore_errors=True)
             removed += 1
     return {"status": "ok", "jobId": job_id, "removed": removed}
-
-
