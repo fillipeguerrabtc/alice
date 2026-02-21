@@ -33,24 +33,40 @@ fi
 # ═══════════════════════════════════════════════════════════════════════
 verify_docker_credentials() {
   local probe_image="${1:-}"
+  local ghcr_required=true
+  if [ "${BUILT_IMAGES:-}" = "__NONE__" ]; then
+    ghcr_required=false
+  fi
 
   if [ ! -f ~/.docker/config.json ]; then
-    echo "❌ ERRO: ~/.docker/config.json não encontrado!"
-    echo "   O job 'prepare' deveria ter escrito credenciais."
-    echo "   Verifique se o job anterior executou corretamente."
-    return 1
+    if [ "$ghcr_required" = true ]; then
+      echo "❌ ERRO: ~/.docker/config.json não encontrado!"
+      echo "   O job 'prepare' deveria ter escrito credenciais."
+      echo "   Verifique se o job anterior executou corretamente."
+      return 1
+    fi
+    echo "⚠️ ~/.docker/config.json não encontrado, seguindo sem validação de auth (release 100% retag)"
+    return 0
   fi
 
   local auths
   auths=$(grep -c '"auth"' ~/.docker/config.json 2>/dev/null || echo "0")
   if [ "$auths" -eq 0 ]; then
-    echo "❌ ERRO: config.json existe mas sem credenciais de registry!"
-    return 1
+    if [ "$ghcr_required" = true ]; then
+      echo "❌ ERRO: config.json existe mas sem credenciais de registry!"
+      return 1
+    fi
+    echo "⚠️ config.json sem credenciais, seguindo sem validação de auth (release 100% retag)"
+    return 0
   fi
 
   if ! grep -q '"ghcr.io"' ~/.docker/config.json; then
-    echo "❌ ERRO: config.json sem credenciais de GHCR (ghcr.io)!"
-    return 1
+    if [ "$ghcr_required" = true ]; then
+      echo "❌ ERRO: config.json sem credenciais de GHCR (ghcr.io)!"
+      return 1
+    fi
+    echo "⚠️ config.json sem credenciais GHCR, seguindo sem validação de auth (release 100% retag)"
+    return 0
   fi
 
   # Probe ativo opcional para validar autenticação GHCR.
@@ -69,10 +85,14 @@ verify_docker_credentials() {
       fi
 
       if echo "$probe_output" | grep -Eiq "unauthorized|denied|authentication required|403|401"; then
-        echo "❌ ERRO: Autenticação GHCR inválida (probe falhou)"
-        echo "   Probe image: $probe_image"
-        echo "   Detalhe: $probe_output"
-        return 1
+        if [ "$ghcr_required" = true ]; then
+          echo "❌ ERRO: Autenticação GHCR inválida (probe falhou)"
+          echo "   Probe image: $probe_image"
+          echo "   Detalhe: $probe_output"
+          return 1
+        fi
+        echo "⚠️ Probe GHCR sem auth válida, mas release está em modo 100% retag local"
+        break
       fi
 
       if [ $probe_attempt -lt 3 ]; then
@@ -88,7 +108,7 @@ verify_docker_credentials() {
     fi
   fi
 
-  echo "✅ Docker credentials OK ($auths registries em config.json, GHCR presente)"
+  echo "✅ Docker credentials OK ($auths registries em config.json, GHCR presente, ghcr_required=$ghcr_required)"
   return 0
 }
 
@@ -133,7 +153,7 @@ try_local_retag() {
 
   # Verificar se existe alguma tag local do mesmo repo
   local existing_tags
-  existing_tags=$(docker images "$repo" --format '{{.Tag}}' 2>/dev/null | head -10)
+  existing_tags=$(docker images "$repo" --format '{{.Tag}}' 2>/dev/null)
   if [ -z "$existing_tags" ]; then
     return 1  # sem nenhuma tag local → precisa pull
   fi
@@ -153,7 +173,17 @@ try_local_retag() {
 
   # Sem digest remoto = não é possível verificar → precisa pull
   if [ -z "$remote_cfg" ]; then
-    echo "   ⚠️ manifest inspect falhou - não é possível verificar identidade"
+    local fallback_tag=""
+    fallback_tag=$(echo "$existing_tags" | grep -E '^v[0-9]+(\.[0-9]+)*$' | sort -V | tail -1)
+    if [ -z "$fallback_tag" ]; then
+      fallback_tag=$(echo "$existing_tags" | grep -v '^<none>$' | head -1)
+    fi
+    if [ -n "$fallback_tag" ]; then
+      echo "   🏷️ RETAG LOCAL FALLBACK ($fallback_tag → $tag, sem dependência de rede/registry)"
+      docker tag "${repo}:${fallback_tag}" "$image"
+      return 0
+    fi
+    echo "   ⚠️ manifest inspect falhou e não há tag local elegível para fallback"
     return 1
   fi
 
