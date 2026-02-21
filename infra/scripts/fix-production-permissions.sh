@@ -387,6 +387,7 @@ dry_run_mode() {
         # Verificar se há arquivos com UID/GID incorreto (excluindo exceções)
         local wrong_files
         wrong_files=$(find_wrong_files_excluding_exceptions "$path" "$uid" "$gid" 1)
+        wrong_files="${wrong_files%%$'\n'*}"
         
         if [[ -n "$wrong_files" ]]; then
             log_warning "  🔧 MUDARIA: chown (seletivo, excluindo exceções) $uid:$gid em arquivos incorretos de $path"
@@ -894,6 +895,7 @@ validate_mode() {
                 ((recheck_count++))
                 log_warning "  ⚠️  Arquivo desapareceu durante validação. Rechecando (${recheck_count}/${MAX_TRANSIENT_FILE_RECHECKS})..."
                 wrong_files=$(find_wrong_files_excluding_exceptions "$path" "$uid" "$gid" 1)
+                wrong_files="${wrong_files%%$'\n'*}"
             done
 
             # Após as rechecagens, se ainda só houver arquivo não existente,
