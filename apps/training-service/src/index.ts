@@ -362,6 +362,7 @@ const TRAINING_METRICS_INTERVAL_MS = parseEnvInt(
   60000,
   'TRAINING_METRICS_INTERVAL_MS'
 );
+const TRADING_WORKER_POLL_INTERVAL_MS = 250;
 
 let trainingMetricsInterval: NodeJS.Timeout | null = null;
 
@@ -444,7 +445,7 @@ function createTradingWorker<T extends { idempotencyKey: string }>(
   };
   setInterval(() => {
     void tick();
-  }, 250);
+  }, TRADING_WORKER_POLL_INTERVAL_MS);
 }
 
 // Inicializar métricas RBAC (Regra 16 - Observability Enterprise)

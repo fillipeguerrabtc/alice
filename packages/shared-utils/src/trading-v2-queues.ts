@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+const TRADING_V2_IDEMPOTENCY_MIN_LENGTH = 8;
+
 export const TRADING_V2_STREAMS = {
   universeScan: 'alice:trading:v2:universe-scan',
   backtest: 'alice:trading:v2:backtest',
@@ -11,7 +13,7 @@ export const TRADING_V2_STREAMS = {
 export type TradingV2StreamName = (typeof TRADING_V2_STREAMS)[keyof typeof TRADING_V2_STREAMS];
 
 const tradingV2JobBaseSchema = z.object({
-  idempotencyKey: z.string().min(8),
+  idempotencyKey: z.string().min(TRADING_V2_IDEMPOTENCY_MIN_LENGTH),
   tenantId: z.string().uuid(),
   requestedBy: z.string().uuid(),
 });
