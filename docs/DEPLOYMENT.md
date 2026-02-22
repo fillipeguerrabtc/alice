@@ -398,6 +398,100 @@ docker exec alice-pgbouncer pgbouncer -V
 docker logs alice-caddy --tail 50
 ```
 
+## Troubleshooting — 403 "Use o gateway Caddy" em endpoints `/api/*`
+
+### Sintoma
+
+Páginas do frontend (ex.: **Trading**, **Trading Demo**) exibem erros de carregamento.
+Na aba **Network** do navegador, chamadas como:
+
+```
+GET /api/trading-v2/portfolios          → 403
+GET /api/trading-v2/candidates?...      → 403
+GET /api/trading-v2/rebalances?...      → 403
+POST /internal/trading-v2/enqueue/...  → 403
+```
+
+retornam o body:
+
+```json
+{"error":"Acesso direto à API não permitido. Use o gateway Caddy.","hint":"Requisições /api devem passar pelo Caddy em produção."}
+```
+
+### Causa raiz
+
+O container `alice-frontend` (nginx) bloqueia intencionalmente qualquer requisição cujo
+path começa com `/api` ou `/ws` — esse é o comportamento correto de segurança.
+
+O problema ocorre quando o **Caddyfile não possui uma regra `handle`** para a rota em
+questão. Sem a regra, a requisição cai no bloco `handle` de fallback que roteia para
+`alice-frontend:8080`, que então responde 403 para `/api/*`.
+
+### Solução
+
+Adicionar o bloco `handle` correspondente no `infra/docker/Caddyfile` **antes** do
+fallback `handle { reverse_proxy alice-frontend:8080 }`, apontando para o serviço correto.
+
+Exemplo (já aplicado em 22/02/2026):
+
+```caddy
+handle /api/trading-v2/* {
+    reverse_proxy alice-integrations:3005 {
+        import proxy_headers
+    }
+}
+
+handle /internal/trading-v2/* {
+    reverse_proxy alice-integrations:3005 {
+        import proxy_headers
+    }
+}
+```
+
+### Validação em produção
+
+```bash
+# 1. Verificar se Caddy está escutando nas portas 80 e 443
+docker exec alice-caddy ss -tlnp | grep -E '80|443'
+
+# 2. Testar roteamento de um endpoint (substituir <HOST> e <COOKIE>)
+curl -si -H "Cookie: <COOKIE>" https://<HOST>/api/trading-v2/portfolios
+
+# Esperado: {"success":true,"data":[...]} — NOT {"error":"Acesso direto..."}
+
+# 3. Validar sem autenticação (deve retornar 401, não 403)
+curl -si https://<HOST>/api/trading-v2/portfolios | head -5
+
+# 4. Inspecionar logs do Caddy para ver upstream usado
+docker logs alice-caddy --tail 100 | grep "trading-v2"
+```
+
+### Mapeamento de rotas → upstreams (referência SSOT)
+
+| Prefixo de rota                   | Upstream               | Observações                                   |
+|-----------------------------------|------------------------|-----------------------------------------------|
+| `/api/auth/*`                     | `alice-auth:3001`      |                                               |
+| `/api/users*`                     | `alice-auth:3001`      |                                               |
+| `/api/audit/*`                    | `alice-auth:3001`      |                                               |
+| `/api/chat/*`                     | `alice-chat:3002`      | `/api/chat/stream` com timeouts estendidos    |
+| `/api/namespaces*`                | `alice-chat:3002`      |                                               |
+| `/api/agents*`                    | `alice-chat:3002`      |                                               |
+| `/api/rag/*`                      | `alice-rag:3003`       |                                               |
+| `/api/media*`                     | `alice-rag:3003`       |                                               |
+| `/api/training/*`                 | `alice-training:3004`  |                                               |
+| `/api/trading-v2/*`               | `alice-integrations:3005` | ✅ Adicionado 22/02/2026                   |
+| `/internal/trading-v2/*`          | `alice-integrations:3005` | ✅ Adicionado 22/02/2026                   |
+| `/api/integrations/*`             | `alice-integrations:3005` |                                            |
+| `/webhook/*`                      | `alice-integrations:3005` |                                            |
+| `/api/observability/*`            | `alice-observability:3007` |                                           |
+| `/ws/*`                           | `alice-chat:3002`      | WebSocket com headers específicos             |
+| `*` (fallback)                    | `alice-frontend:8080`  | SPA React — bloqueia `/api/*` e `/ws/*`       |
+
+> **Regra enterprise:** sempre que um endpoint de API retornar 403 com a mensagem
+> "Use o gateway Caddy", verificar primeiro se existe um bloco `handle` correspondente
+> no `infra/docker/Caddyfile`. Adicionar a regra antes do fallback e fazer novo deploy
+> do stack INFRA.
+
 ## Documentação relacionada
 
 - `docs/ARQUITETURA.md`
