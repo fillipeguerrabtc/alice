@@ -1,4 +1,5 @@
 import { and, desc, eq, getDatabase, schema } from '@alice/database';
+import { aggregateTradeFlow, computeMicrostructureFeatures, type OrderBookSnapshot, type TradeTick } from '@alice/shared-utils';
 import { z } from 'zod';
 
 const tradingIntervalSchema = z.enum(['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d', '1w']);
@@ -101,6 +102,7 @@ const CASH_AND_CARRY_VOL_THRESHOLD = 0.008;
 const VOLATILITY_BREAKOUT_THRESHOLD = 0.03;
 const SCALPING_MIN_LIQUIDITY = 0.4;
 const POSITIONAL_LOW_LIQUIDITY = 0.2;
+const MICROS_RETENTION_DAYS = 7;
 const connectedExchangesCache = new Map<string, { count: number; expiresAt: number }>();
 
 export function autoSelectOperationIntent(input: {
@@ -173,6 +175,144 @@ function resolveCandidateSide(input: {
   return input.baseSide;
 }
 
+type DeterministicArbitrageCandidate = {
+  operationIntent: TradingOperationIntent;
+  expectedEdge: number;
+  side: 'long' | 'short' | 'neutral';
+  riskFlags: string[];
+};
+
+export function deriveDeterministicArbitrageCandidates(input: {
+  baseEdge: number;
+  spreadBps: number;
+  depthDropRatio: number;
+  liquidityProxy: number;
+  crossExchangeAllowed: boolean;
+}): DeterministicArbitrageCandidate[] {
+  const internalEdge = input.baseEdge - ((input.spreadBps * 0.5) / 10_000);
+  const internalFlags: string[] = [];
+  if (internalEdge <= 0) internalFlags.push('net_edge_non_positive');
+  if (input.depthDropRatio > 0.5) internalFlags.push('liquidity_vacuum');
+  if (input.liquidityProxy < 0.2) internalFlags.push('low_liquidity');
+
+  const crossExchangeEdge = input.baseEdge - ((input.spreadBps + 10) / 10_000);
+  const crossExchangeFlags: string[] = [];
+  if (!input.crossExchangeAllowed) crossExchangeFlags.push('cross_exchange_not_available');
+  if (crossExchangeEdge <= 0) crossExchangeFlags.push('net_edge_non_positive');
+  if (input.liquidityProxy < 0.25) crossExchangeFlags.push('transfer_latency_risk');
+
+  return [
+    {
+      operationIntent: 'arbitrage_internal',
+      expectedEdge: internalEdge,
+      side: internalEdge > 0 ? 'long' : 'neutral',
+      riskFlags: internalFlags,
+    },
+    {
+      operationIntent: 'arbitrage_cross_exchange',
+      expectedEdge: crossExchangeEdge,
+      side: (crossExchangeEdge > 0 && input.crossExchangeAllowed) ? 'long' : 'neutral',
+      riskFlags: crossExchangeFlags,
+    },
+  ];
+}
+
+function parseOrderBookFromMarketData(data: Record<string, unknown>): OrderBookSnapshot | null {
+  const rawAsks = Array.isArray(data.asks) ? data.asks : [];
+  const rawBids = Array.isArray(data.bids) ? data.bids : [];
+  const asks = rawAsks
+    .map((entry) => {
+      if (!Array.isArray(entry) || entry.length < 2) return null;
+      const price = Number(entry[0]);
+      const size = Number(entry[1]);
+      if (!Number.isFinite(price) || !Number.isFinite(size)) return null;
+      return [price, size] as [number, number];
+    })
+    .filter((entry): entry is [number, number] => entry !== null);
+  const bids = rawBids
+    .map((entry) => {
+      if (!Array.isArray(entry) || entry.length < 2) return null;
+      const price = Number(entry[0]);
+      const size = Number(entry[1]);
+      if (!Number.isFinite(price) || !Number.isFinite(size)) return null;
+      return [price, size] as [number, number];
+    })
+    .filter((entry): entry is [number, number] => entry !== null);
+
+  if (asks.length === 0 || bids.length === 0) return null;
+  return { asks, bids };
+}
+
+function buildTradeTicksFromCandles(rows: Array<(typeof schema.tradingMarketData.$inferSelect)>): TradeTick[] {
+  return rows.flatMap((row) => {
+    const data = (row.data ?? {}) as Record<string, unknown>;
+    const open = Number(data.open);
+    const close = Number(data.close);
+    const volume = Number(data.volume);
+    if (!Number.isFinite(open) || !Number.isFinite(close) || !Number.isFinite(volume) || volume <= 0) {
+      return [];
+    }
+    return [{
+      ts: row.timestamp.getTime(),
+      side: close >= open ? 'buy' : 'sell',
+      size: volume,
+    }] satisfies TradeTick[];
+  });
+}
+
+async function upsertUniverseCandidate(input: {
+  tenantId: string;
+  instrumentId: string;
+  marketType: UniversePayload['marketType'];
+  operationIntent: TradingOperationIntent;
+  strategyKey: string;
+  strategyVersion: number;
+  timeframe: z.infer<typeof tradingIntervalSchema>;
+  candleTimestamp: Date;
+  side: 'long' | 'short' | 'neutral';
+  entryModel: Record<string, unknown>;
+  expectedEdge: number;
+  confidenceRaw: number;
+  riskFlags: unknown[];
+}): Promise<void> {
+  const db = getDatabase();
+  await db.insert(schema.tradingUniverseCandidates).values({
+    tenantId: input.tenantId,
+    instrumentId: input.instrumentId,
+    marketType: input.marketType,
+    operationIntent: input.operationIntent,
+    strategyKey: input.strategyKey,
+    strategyVersion: input.strategyVersion,
+    timeframe: input.timeframe,
+    candleTimestamp: input.candleTimestamp,
+    side: input.side,
+    entryModel: input.entryModel,
+    expectedEdge: String(input.expectedEdge),
+    confidenceRaw: String(input.confidenceRaw),
+    riskFlags: input.riskFlags,
+  }).onConflictDoUpdate({
+    target: [
+      schema.tradingUniverseCandidates.tenantId,
+      schema.tradingUniverseCandidates.instrumentId,
+      schema.tradingUniverseCandidates.marketType,
+      schema.tradingUniverseCandidates.timeframe,
+      schema.tradingUniverseCandidates.candleTimestamp,
+      schema.tradingUniverseCandidates.strategyKey,
+      schema.tradingUniverseCandidates.strategyVersion,
+      schema.tradingUniverseCandidates.operationIntent,
+    ],
+    set: {
+      side: input.side,
+      operationIntent: input.operationIntent,
+      entryModel: input.entryModel,
+      expectedEdge: String(input.expectedEdge),
+      confidenceRaw: String(input.confidenceRaw),
+      riskFlags: input.riskFlags,
+      createdAt: new Date(),
+    },
+  });
+}
+
 export async function runUniverseScanWorker(payload: UniversePayload): Promise<{ side: 'long' | 'short' | 'neutral'; operationIntent: TradingOperationIntent }> {
   const db = getDatabase();
   const timeframe = tradingIntervalSchema.parse(payload.timeframe);
@@ -206,6 +346,14 @@ export async function runUniverseScanWorker(payload: UniversePayload): Promise<{
     ),
     orderBy: [desc(schema.tradingMarketData.timestamp)],
     limit: 120,
+  });
+  const orderbookRows = await db.query.tradingMarketData.findMany({
+    where: and(
+      eq(schema.tradingMarketData.symbol, instrument.symbol),
+      eq(schema.tradingMarketData.dataType, 'orderbook'),
+    ),
+    orderBy: [desc(schema.tradingMarketData.timestamp)],
+    limit: 2,
   });
 
   const closes = rows
@@ -257,11 +405,6 @@ export async function runUniverseScanWorker(payload: UniversePayload): Promise<{
   const strategyParams = (strategy.params ?? {}) as Record<string, unknown>;
   const longThreshold = Number(strategyParams.longThreshold ?? 0);
   const shortThreshold = Number(strategyParams.shortThreshold ?? 0);
-  const sideByThreshold: 'long' | 'short' | 'neutral' = expectedEdge >= longThreshold
-    ? 'long'
-    : expectedEdge <= shortThreshold
-      ? 'short'
-      : 'neutral';
 
   const operationIntent = autoSelectOperationIntent({
     requestedIntent: payload.operationIntent ?? 'intraday',
@@ -274,6 +417,96 @@ export async function runUniverseScanWorker(payload: UniversePayload): Promise<{
     volatilityRegime,
   });
 
+  const currentOrderBook = orderbookRows[0]
+    ? parseOrderBookFromMarketData((orderbookRows[0].data ?? {}) as Record<string, unknown>)
+    : null;
+  const previousOrderBook = orderbookRows[1]
+    ? parseOrderBookFromMarketData((orderbookRows[1].data ?? {}) as Record<string, unknown>)
+    : null;
+  const tradeTicks = buildTradeTicksFromCandles(rows);
+  const tradeFlow = aggregateTradeFlow(tradeTicks, 60_000);
+  const microFeatures = currentOrderBook
+    ? computeMicrostructureFeatures({
+      currentOrderBook,
+      previousOrderBook: previousOrderBook ?? undefined,
+      tradeFlow,
+    })
+    : {
+      bidAskSpreadBps: 0,
+      spreadWideningBps: 0,
+      orderBookImbalance: 0,
+      depthDropRatio: 0,
+      microPrice: currentPrice,
+      aggressiveFlowDelta: 0,
+      cvd: 0,
+    };
+  const retentionUntil = new Date(Date.now() + (MICROS_RETENTION_DAYS * 24 * 60 * 60 * 1000));
+  if (currentOrderBook) {
+    await db.insert(schema.tradingOrderbookSnapshots).values({
+      tenantId: payload.tenantId,
+      instrumentId: payload.instrumentId,
+      marketType: payload.marketType,
+      timeframe,
+      snapshotAt: orderbookRows[0]?.timestamp ?? new Date(),
+      topLevels: {
+        asks: currentOrderBook.asks.slice(0, 5),
+        bids: currentOrderBook.bids.slice(0, 5),
+      },
+      spreadBps: String(microFeatures.bidAskSpreadBps),
+      orderBookImbalance: String(microFeatures.orderBookImbalance),
+      depthDropRatio: String(microFeatures.depthDropRatio),
+      microPrice: String(microFeatures.microPrice),
+      retentionUntil,
+    });
+  }
+  if (tradeFlow.length > 0) {
+    const latestFlow = tradeFlow[tradeFlow.length - 1];
+    if (latestFlow) {
+      await db.insert(schema.tradingTradeTicksAgg).values({
+        tenantId: payload.tenantId,
+        instrumentId: payload.instrumentId,
+        marketType: payload.marketType,
+        timeframe,
+        windowStart: new Date(latestFlow.windowStart),
+        windowEnd: new Date(latestFlow.windowEnd),
+        buyVolume: String(latestFlow.buyVolume),
+        sellVolume: String(latestFlow.sellVolume),
+        deltaVolume: String(latestFlow.deltaVolume),
+        cvd: String(latestFlow.cvd),
+        tradesCount: tradeTicks.length,
+        retentionUntil,
+      }).onConflictDoUpdate({
+        target: [
+          schema.tradingTradeTicksAgg.tenantId,
+          schema.tradingTradeTicksAgg.instrumentId,
+          schema.tradingTradeTicksAgg.marketType,
+          schema.tradingTradeTicksAgg.timeframe,
+          schema.tradingTradeTicksAgg.windowStart,
+          schema.tradingTradeTicksAgg.windowEnd,
+        ],
+        set: {
+          buyVolume: String(latestFlow.buyVolume),
+          sellVolume: String(latestFlow.sellVolume),
+          deltaVolume: String(latestFlow.deltaVolume),
+          cvd: String(latestFlow.cvd),
+          tradesCount: tradeTicks.length,
+          retentionUntil,
+          createdAt: new Date(),
+        },
+      });
+    }
+  }
+
+  const microEdgeAdjustment = (microFeatures.orderBookImbalance * 0.0002)
+    - ((microFeatures.spreadWideningBps / 10_000) * 0.1)
+    + ((Math.abs(microFeatures.aggressiveFlowDelta) > 0 ? Math.sign(microFeatures.aggressiveFlowDelta) : 0) * 0.0001);
+  const expectedEdgeWithMicro = expectedEdge + microEdgeAdjustment;
+  const sideByThreshold: 'long' | 'short' | 'neutral' = expectedEdgeWithMicro >= longThreshold
+    ? 'long'
+    : expectedEdgeWithMicro <= shortThreshold
+      ? 'short'
+      : 'neutral';
+
   const entryModel = {
     entry: currentPrice,
     stop: sideByThreshold === 'short' ? currentPrice + stopDistance : currentPrice - stopDistance,
@@ -282,7 +515,7 @@ export async function runUniverseScanWorker(payload: UniversePayload): Promise<{
   };
 
   const riskFlags: unknown[] = [];
-  if (expectedEdge <= 0) {
+  if (expectedEdgeWithMicro <= 0) {
     riskFlags.push('edge_liquido_negativo');
   }
   if (!costModel) {
@@ -292,6 +525,12 @@ export async function runUniverseScanWorker(payload: UniversePayload): Promise<{
   const crossExchangeAllowed = allowsCrossExchangeArbitrage(operationIntent, connectedExchangesCount);
   if (operationIntent === 'arbitrage_cross_exchange' && !crossExchangeAllowed) {
     riskFlags.push('cross_exchange_not_available');
+  }
+  if (microFeatures.spreadWideningBps > 10) {
+    riskFlags.push('spread_widening');
+  }
+  if (microFeatures.depthDropRatio > 0.5) {
+    riskFlags.push('depth_drop');
   }
   const finalSide = resolveCandidateSide({
     hasCostModel: Boolean(costModel),
@@ -320,8 +559,9 @@ export async function runUniverseScanWorker(payload: UniversePayload): Promise<{
       skew: skew(returns),
       kurtosis: kurt(returns),
       autocorr: autocorrProxy(returns),
-      liquidityProxy,
-      indicatorConfidence: latestIndicator?.signalConfidence ?? 0.5,
+        liquidityProxy,
+        microstructure: microFeatures,
+        indicatorConfidence: latestIndicator?.signalConfidence ?? 0.5,
       dataWindow: {
         from: rows[rows.length - 1]?.timestamp ?? null,
         to: rows[0]?.timestamp ?? null,
@@ -340,7 +580,7 @@ export async function runUniverseScanWorker(payload: UniversePayload): Promise<{
     riskScore: String(Math.min(1, expectedVolatility * 10)),
   }).onConflictDoNothing();
 
-  await db.insert(schema.tradingUniverseCandidates).values({
+  await upsertUniverseCandidate({
     tenantId: payload.tenantId,
     instrumentId: payload.instrumentId,
     marketType: payload.marketType,
@@ -351,30 +591,38 @@ export async function runUniverseScanWorker(payload: UniversePayload): Promise<{
     candleTimestamp,
     side: finalSide,
     entryModel,
-    expectedEdge: String(expectedEdge),
-    confidenceRaw: String(confidenceRaw),
+    expectedEdge: expectedEdgeWithMicro,
+    confidenceRaw,
     riskFlags,
-  }).onConflictDoUpdate({
-    target: [
-      schema.tradingUniverseCandidates.tenantId,
-      schema.tradingUniverseCandidates.instrumentId,
-      schema.tradingUniverseCandidates.marketType,
-      schema.tradingUniverseCandidates.timeframe,
-      schema.tradingUniverseCandidates.candleTimestamp,
-      schema.tradingUniverseCandidates.strategyKey,
-      schema.tradingUniverseCandidates.strategyVersion,
-      schema.tradingUniverseCandidates.operationIntent,
-    ],
-    set: {
-      side: finalSide,
-      operationIntent,
-      entryModel,
-      expectedEdge: String(expectedEdge),
-      confidenceRaw: String(confidenceRaw),
-      riskFlags,
-      createdAt: new Date(),
-    },
   });
+
+  const arbitrageCandidates = deriveDeterministicArbitrageCandidates({
+    baseEdge: expectedEdgeWithMicro,
+    spreadBps: microFeatures.bidAskSpreadBps,
+    depthDropRatio: microFeatures.depthDropRatio,
+    liquidityProxy,
+    crossExchangeAllowed,
+  });
+  for (const arbitrageCandidate of arbitrageCandidates) {
+    await upsertUniverseCandidate({
+      tenantId: payload.tenantId,
+      instrumentId: payload.instrumentId,
+      marketType: payload.marketType,
+      operationIntent: arbitrageCandidate.operationIntent,
+      strategyKey: payload.strategyKey,
+      strategyVersion: payload.strategyVersion,
+      timeframe,
+      candleTimestamp,
+      side: arbitrageCandidate.side,
+      entryModel: {
+        ...entryModel,
+        candidateType: arbitrageCandidate.operationIntent,
+      },
+      expectedEdge: arbitrageCandidate.expectedEdge,
+      confidenceRaw,
+      riskFlags: [...riskFlags, ...arbitrageCandidate.riskFlags],
+    });
+  }
 
   return { side: finalSide, operationIntent };
 }

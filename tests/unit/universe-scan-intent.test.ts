@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { allowsCrossExchangeArbitrage, autoSelectOperationIntent } from '../../apps/training-service/src/trading-v2/jobs/universe-scan-worker';
+import {
+  allowsCrossExchangeArbitrage,
+  autoSelectOperationIntent,
+  deriveDeterministicArbitrageCandidates,
+} from '../../apps/training-service/src/trading-v2/jobs/universe-scan-worker';
 
 describe('universe scan intent helpers', () => {
   it('auto-selects scalping for short timeframe with good liquidity', () => {
@@ -35,5 +39,20 @@ describe('universe scan intent helpers', () => {
     expect(autoSelectOperationIntent({ ...baseInput, requestedIntent: 'swing' })).toBe('swing');
     expect(autoSelectOperationIntent({ ...baseInput, requestedIntent: 'positional' })).toBe('positional');
     expect(autoSelectOperationIntent({ ...baseInput, requestedIntent: 'arbitrage_internal' })).toBe('arbitrage_internal');
+  });
+
+  it('builds deterministic arbitrage candidates with risk flags', () => {
+    const candidates = deriveDeterministicArbitrageCandidates({
+      baseEdge: 0.001,
+      spreadBps: 12,
+      depthDropRatio: 0.6,
+      liquidityProxy: 0.1,
+      crossExchangeAllowed: false,
+    });
+    expect(candidates).toHaveLength(2);
+    expect(candidates[0]?.operationIntent).toBe('arbitrage_internal');
+    expect(candidates[0]?.riskFlags).toContain('liquidity_vacuum');
+    expect(candidates[1]?.operationIntent).toBe('arbitrage_cross_exchange');
+    expect(candidates[1]?.riskFlags).toContain('cross_exchange_not_available');
   });
 });

@@ -39,6 +39,7 @@ export * from './llm-models.js';
 export * from './llm-routing.js';
 export { TRADING_CHANNEL_PREFIX, TRADING_CHANNELS } from './trading-channels.js';
 export * from './trading-v2-queues.js';
+export * from './trading-microstructure.js';
 
 export * as rbac from './rbac/index.js';
 export { 
