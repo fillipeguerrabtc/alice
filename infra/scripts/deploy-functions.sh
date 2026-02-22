@@ -113,20 +113,33 @@ verify_docker_credentials() {
 }
 
 # ═══════════════════════════════════════════════════════════════════════
-# pull_with_retry() - Pull com retry e backoff progressivo
+# pull_with_retry() - Pull com retry, backoff progressivo e fail-fast de auth
 # ═══════════════════════════════════════════════════════════════════════
 # Retries: 5 tentativas com backoff 15/30/60/90/120s para tolerar timeouts
 # intermitentes do GHCR (context deadline exceeded, Client.Timeout).
+# Fail-fast: erros de autenticação (401/403/unauthorized) abortam imediatamente
+# sem retries, pois retry não resolve ausência de credenciais.
 # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 9 (Validação contínua)
 # REF: 11/02/2026 - Aumentado para 5 tentativas após falhas em produção
+# REF: 22/02/2026 - Fail-fast em erros de autenticação
 # ═══════════════════════════════════════════════════════════════════════
 pull_with_retry() {
   local img="$1"
   local delays="15 30 60 90 120"
   local attempt=1
+  local pull_output pull_rc
   for delay in $delays; do
-    if docker pull "$img" 2>&1; then
+    pull_output=$(docker pull "$img" 2>&1) && pull_rc=0 || pull_rc=$?
+    printf '%s\n' "$pull_output"
+    if [ "$pull_rc" -eq 0 ]; then
       return 0
+    fi
+    # Fail-fast em erros de autenticação (retry não resolve falta de credenciais)
+    if echo "$pull_output" | grep -Eiq "unauthorized|denied|authentication required|403|401|access denied|no basic auth credentials"; then
+      echo "   ❌ ERRO DE AUTENTICAÇÃO ao fazer pull de $img (tentativa ${attempt}/5)"
+      echo "   💡 Causa provável: ~/.docker/config.json ausente ou sem credenciais GHCR no servidor de produção."
+      echo "   💡 Verifique se o job 'prepare' transferiu o config.json corretamente via SCP."
+      return 1
     fi
     if [ $attempt -lt 5 ]; then
       echo "   ⚠️ Retry $attempt/5 (aguardando ${delay}s)..."
