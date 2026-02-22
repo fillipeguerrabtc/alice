@@ -31,12 +31,19 @@ function computeEffectiveSlippageBps(input: {
   return input.baseCostsBps * input.slippageMultiplier * (1 + input.depthPressure) * (1 / Math.max(input.liquidity, 0.1));
 }
 
+function computeFillRatio(input: { liquidity: number; depthPressure: number }): number {
+  return Math.max(
+    MIN_FILL_RATIO,
+    Math.min(MAX_FILL_RATIO, input.liquidity * (1 - (input.depthPressure * DEPTH_PRESSURE_FILL_IMPACT))),
+  );
+}
+
 export function runDeterministicBacktest(input: BacktestInput): BacktestMetrics {
   const slippageMultiplier = Math.max(MIN_SLIPPAGE_MULTIPLIER, input.slippageMultiplier ?? 1);
   const barControls = input.returns.map((_value, index) => {
     const liquidity = Math.max(MIN_LIQUIDITY_THRESHOLD, Math.min(MAX_LIQUIDITY_THRESHOLD, input.liquidityByBar?.[index] ?? 1));
     const depthPressure = Math.max(0, Math.min(1, input.depthPressureByBar?.[index] ?? 0));
-    const fillRatio = Math.max(MIN_FILL_RATIO, Math.min(MAX_FILL_RATIO, liquidity * (1 - (depthPressure * DEPTH_PRESSURE_FILL_IMPACT))));
+    const fillRatio = computeFillRatio({ liquidity, depthPressure });
     return { liquidity, depthPressure, fillRatio };
   });
   const net = input.returns.map((value, index) => {

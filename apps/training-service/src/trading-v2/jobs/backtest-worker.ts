@@ -144,20 +144,20 @@ export async function runBacktestWorker(payload: BacktestPayload): Promise<{ dsr
     orderBy: [desc(schema.tradingTradeTicksAgg.windowEnd)],
     limit: Math.max(returns.length, 10),
   });
-  const microSnapshotsLength = Math.max(microSnapshots.length, 1);
-  const tradeAggRowsLength = Math.max(tradeAggRows.length, 1);
+  const microSnapshotsLength = microSnapshots.length;
+  const tradeAggRowsLength = tradeAggRows.length;
   const liquidityByBar = returns.map((_, index) => {
-    // Fallback deterministic: when microstructure arrays are shorter than backtest bars,
-    // we cycle snapshots to avoid missing data while preserving deterministic replay.
-    const micro = microSnapshots[index % microSnapshotsLength];
-    const tradeAgg = tradeAggRows[index % tradeAggRowsLength];
+    // Fallback deterministic: when arrays are shorter than backtest bars, cycling keeps deterministic replay.
+    // Nota: isso pode introduzir desalinhamento temporal em estratégias sensíveis a timestamp intrabar.
+    const micro = microSnapshotsLength > 0 ? microSnapshots[index % microSnapshotsLength] : undefined;
+    const tradeAgg = tradeAggRowsLength > 0 ? tradeAggRows[index % tradeAggRowsLength] : undefined;
     const depthDrop = Number(micro?.depthDropRatio ?? 0);
     const imbalance = Math.abs(Number(micro?.orderBookImbalance ?? 0));
     const volumeProxy = Number(tradeAgg?.buyVolume ?? 0) + Number(tradeAgg?.sellVolume ?? 0);
     return computeLiquidityScore({ depthDrop, imbalance, volumeProxy });
   });
   const depthPressureByBar = returns.map((_, index) => {
-    const micro = microSnapshots[index % microSnapshotsLength];
+    const micro = microSnapshotsLength > 0 ? microSnapshots[index % microSnapshotsLength] : undefined;
     const spreadBps = Number(micro?.spreadBps ?? 0);
     const depthDrop = Number(micro?.depthDropRatio ?? 0);
     const pressure = (spreadBps / BACKTEST_SPREAD_BPS_NORMALIZATION_FACTOR) + depthDrop;
