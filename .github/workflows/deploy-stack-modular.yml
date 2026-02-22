@@ -732,7 +732,7 @@ jobs:
           SECRET_STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
           SECRET_STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_PUBLISHABLE_KEY }}
           SECRET_STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
-          SECRET_STRIPE_WEBHOOK_BASE_URL: ${{ secrets.STRIPE_WEBHOOK_BASE_URL }}
+          # NOTA: STRIPE_WEBHOOK_BASE_URL não existe como secret GitHub - generate-env-prod.sh usa fallback https://yesyoudeserve.duckdns.org
           SECRET_TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
           SECRET_TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
           SECRET_TWILIO_WHATSAPP_NUMBER: ${{ secrets.TWILIO_WHATSAPP_NUMBER }}
@@ -784,7 +784,7 @@ jobs:
           export LANGFUSE_DB_PASSWORD_SECRET="${SECRET_LANGFUSE_DB_PASSWORD}"
           export LANGFUSE_DB_NAME_SECRET="${SECRET_LANGFUSE_DB_NAME}"
           export ERPNEXT_DB_PASSWORD_SECRET="${SECRET_ERPNEXT_DB_PASSWORD}"
-          export STRIPE_WEBHOOK_BASE_URL_SECRET="${SECRET_STRIPE_WEBHOOK_BASE_URL}"
+          export STRIPE_WEBHOOK_BASE_URL_SECRET=""  # STRIPE_WEBHOOK_BASE_URL não existe no GitHub; generate-env-prod.sh usa fallback https://yesyoudeserve.duckdns.org
           export WISE_SANDBOX_SECRET="${SECRET_WISE_SANDBOX}"
           
           # Variáveis sem sufixo _SECRET (script lê nome direto, não *_SECRET)
@@ -1738,14 +1738,22 @@ jobs:
           fi
           echo "   ✅ config.json encontrado no runner"
           
-          # Validação 2: Verificar que config.json tem conteúdo válido
-          if ! jq -e '.auths' ~/.docker/config.json >/dev/null 2>&1; then
-            echo "❌ ERRO: config.json do runner não contém campo 'auths' válido!"
+          # Validação 2: Verificar que config.json tem conteúdo válido (python3 - sem dependência de jq)
+          AUTHS_COUNT=$(python3 -c "
+import json, os, sys
+try:
+    with open(os.path.expanduser('~/.docker/config.json')) as f:
+        d = json.load(f)
+    print(len(d.get('auths', {})))
+except Exception as e:
+    print(0, file=sys.stderr)
+    sys.exit(1)
+" 2>/dev/null) || { echo "❌ ERRO: config.json do runner inválido ou ilegível!"; cat ~/.docker/config.json; exit 1; }
+          if [ "${AUTHS_COUNT:-0}" = "0" ]; then
+            echo "❌ ERRO: config.json do runner não contém campo 'auths' válido (0 registries)!"
             cat ~/.docker/config.json
             exit 1
           fi
-          
-          AUTHS_COUNT=$(jq '.auths | length' ~/.docker/config.json)
           echo "   ✅ config.json válido com $AUTHS_COUNT registries autenticados"
           
           # Configurar SSH para SCP
@@ -1789,24 +1797,28 @@ jobs:
           
           echo "   ✅ Validação de tamanho OK ($LOCAL_SIZE bytes)"
           
-          # Validação 4: Verificar conteúdo JSON no servidor
-          REMOTE_AUTHS=$(ssh -i ~/.ssh/docker_transfer_key -o StrictHostKeyChecking=no \
+          # Validação 4: Verificar conteúdo JSON no servidor (grep - sem dependência de jq)
+          REMOTE_GHCR=$(ssh -i ~/.ssh/docker_transfer_key -o StrictHostKeyChecking=no \
             ${{ env.HETZNER_USER }}@${{ env.HETZNER_HOST }} \
-            "jq '.auths | length' ~/.docker/config.json")
+            'grep -c "ghcr.io" ~/.docker/config.json 2>/dev/null || echo 0')
           
-          if [ "$REMOTE_AUTHS" != "$AUTHS_COUNT" ]; then
-            echo "❌ ERRO: Número de auths não coincide!"
-            echo "   Local:  $AUTHS_COUNT registries"
-            echo "   Remoto: $REMOTE_AUTHS registries"
+          if [ "${REMOTE_GHCR:-0}" = "0" ]; then
+            echo "❌ ERRO: config.json no servidor não contém credenciais GHCR (ghcr.io ausente)!"
+            echo "   Arquivo foi transferido mas 'ghcr.io' não encontrado no JSON."
             exit 1
           fi
           
-          echo "   ✅ Validação de conteúdo OK ($REMOTE_AUTHS registries)"
+          echo "   ✅ Validação de conteúdo OK (ghcr.io presente no servidor)"
           
-          # Cleanup chave SSH temporária
+          # Cleanup chave SSH temporária (sucesso)
           rm -f ~/.ssh/docker_transfer_key
           
           echo "✅ Docker config.json transferido e validado com sucesso"
+
+      - name: Limpar chave SSH docker_transfer_key
+        if: always()
+        run: |
+          rm -f ~/.ssh/docker_transfer_key 2>/dev/null || true
 
       - name: Preparar infraestrutura base (networks, volumes, permissões)
         uses: appleboy/ssh-action@v1.2.2
