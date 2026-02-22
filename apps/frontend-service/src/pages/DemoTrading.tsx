@@ -211,47 +211,30 @@ const SYMBOLS_REFETCH_INTERVAL = 300_000;
 // Componente Principal
 // ============================================================================
 
-export default function DemoTrading() {
+/**
+ * Componente interno com toda a lógica e hooks do Demo Trading.
+ *
+ * CORREÇÃO (22/02/2026) — Causa raiz dos crashes em produção:
+ * O componente original declarava hooks (useState, useQuery, etc.) APÓS
+ * early returns condicionais (isAuthLoading / !user?.id). Isso viola a
+ * Regra de Hooks do React: hooks devem ser chamados na mesma ordem em
+ * todos os renders. A violação causava:
+ *   1. React Error #310 ("Rendered more hooks than during the previous render")
+ *   2. ReferenceError TDZ no build minificado de produção
+ *      ("Cannot access 'X' before initialization")
+ *
+ * Solução: separar em wrapper (DemoTrading) + inner (DemoTradingContent).
+ * O inner é montado apenas quando o usuário está autenticado, portanto
+ * TODOS os seus hooks são sempre chamados na mesma ordem.
+ */
+function DemoTradingContent() {
   const { toast } = useToast();
-  
+
   // ============================================================================
-  // Autenticação (OBRIGATÓRIO primeiro - Regra de Inicialização)
+  // Autenticação (leitura do cache React Query — sem chamada extra ao servidor)
   // ============================================================================
-  const { user, isLoading: isAuthLoading, csrfReady } = useAuth();
-  
-  // Guard: Aguardar autenticação antes de inicializar componente
-  if (isAuthLoading) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-sm text-muted-foreground">Carregando autenticação...</p>
-        </div>
-      </div>
-    );
-  }
-  
-  // Guard: Usuário não autenticado
-  if (!user?.id) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <Card className="w-full max-w-md">
-          <CardHeader>
-            <CardTitle>Autenticação Necessária</CardTitle>
-            <CardDescription>
-              Você precisa estar autenticado para acessar o Demo Trading.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button onClick={() => window.location.href = '/login'} className="w-full">
-              Fazer Login
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-  
+  const { user, csrfReady } = useAuth();
+
   const [activeTab, setActiveTab] = useState('overview');
   const [orderDialogOpen, setOrderDialogOpen] = useState(false);
   const [addFundsDialogOpen, setAddFundsDialogOpen] = useState(false);
@@ -2190,4 +2173,51 @@ export default function DemoTrading() {
     </div>
     </ErrorBoundary>
   );
+}
+
+/**
+ * Wrapper de autenticação para Demo Trading.
+ *
+ * Mantém contagem de hooks constante (apenas useAuth) garantindo que
+ * DemoTradingContent só seja montado quando o usuário está autenticado.
+ * Isso evita a violação da Regra de Hooks que causava React Error #310 e
+ * ReferenceError TDZ no build minificado de produção.
+ */
+export default function DemoTrading() {
+  const { user, isLoading: isAuthLoading } = useAuth();
+
+  // Aguardar autenticação antes de montar componente com múltiplos hooks
+  if (isAuthLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-sm text-muted-foreground">Carregando autenticação...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Usuário não autenticado (redundante com App.tsx — defesa em profundidade)
+  if (!user?.id) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <CardTitle>Autenticação Necessária</CardTitle>
+            <CardDescription>
+              Você precisa estar autenticado para acessar o Demo Trading.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button onClick={() => window.location.href = '/login'} className="w-full">
+              Fazer Login
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  return <DemoTradingContent />;
 }

@@ -773,47 +773,30 @@ function CircuitBreakerStatus({ state, failures }: { state: string; failures: nu
 // COMPONENTE PRINCIPAL
 // ============================================================================
 
-export default function Trading() {
+/**
+ * Componente interno com toda a lógica e hooks do Trading.
+ *
+ * CORREÇÃO (22/02/2026) — Causa raiz dos crashes em produção:
+ * O componente original declarava hooks (useState, useQuery, etc.) APÓS
+ * early returns condicionais (isAuthLoading / !user?.id). Isso viola a
+ * Regra de Hooks do React: hooks devem ser chamados na mesma ordem em
+ * todos os renders. A violação causava:
+ *   1. React Error #310 ("Rendered more hooks than during the previous render")
+ *   2. ReferenceError TDZ no build minificado de produção
+ *      ("Cannot access 'X' before initialization")
+ *
+ * Solução: separar em wrapper (Trading) + inner (TradingContent).
+ * O inner é montado apenas quando o usuário está autenticado, portanto
+ * TODOS os seus hooks são sempre chamados na mesma ordem.
+ */
+function TradingContent() {
   const { t } = useTranslation();
-  
+
   // ============================================================================
-  // Autenticação (OBRIGATÓRIO primeiro - Regra de Inicialização)
+  // Autenticação (leitura do cache React Query — sem chamada extra ao servidor)
   // ============================================================================
-  const { user, isLoading: isAuthLoading, csrfReady } = useAuth();
-  
-  // Guard: Aguardar autenticação antes de inicializar componente
-  if (isAuthLoading) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-sm text-muted-foreground">{t('common.loading', { defaultValue: 'Carregando...' })}</p>
-        </div>
-      </div>
-    );
-  }
-  
-  // Guard: Usuário não autenticado (redundante com App.tsx mas defensivo)
-  if (!user?.id) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <Card className="w-full max-w-md">
-          <CardHeader>
-            <CardTitle>{t('auth.required', { defaultValue: 'Autenticação Necessária' })}</CardTitle>
-            <CardDescription>
-              {t('auth.requiredMessage', { defaultValue: 'Você precisa estar autenticado para acessar o Trading.' })}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button onClick={() => window.location.href = '/login'} className="w-full">
-              {t('auth.login', { defaultValue: 'Fazer Login' })}
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-  
+  const { user, csrfReady } = useAuth();
+
   const locale = user?.idioma ?? 'pt-BR';
   const timeZone = user?.timezone ?? TIMEZONE;
   const userRoles = user?.roles ?? (user?.role ? [user.role] : []);
@@ -6050,5 +6033,53 @@ export default function Trading() {
     </motion.div>
     </ErrorBoundary>
   );
+}
+
+/**
+ * Wrapper de autenticação para Trading.
+ *
+ * Mantém contagem de hooks constante (useTranslation + useAuth) garantindo que
+ * TradingContent só seja montado quando o usuário está autenticado.
+ * Isso evita a violação da Regra de Hooks que causava React Error #310 e
+ * ReferenceError TDZ no build minificado de produção.
+ */
+export default function Trading() {
+  const { t } = useTranslation();
+  const { user, isLoading: isAuthLoading } = useAuth();
+
+  // Aguardar autenticação antes de montar componente com múltiplos hooks
+  if (isAuthLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-sm text-muted-foreground">{t('common.loading', { defaultValue: 'Carregando...' })}</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Usuário não autenticado (redundante com App.tsx — defesa em profundidade)
+  if (!user?.id) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <CardTitle>{t('auth.required', { defaultValue: 'Autenticação Necessária' })}</CardTitle>
+            <CardDescription>
+              {t('auth.requiredMessage', { defaultValue: 'Você precisa estar autenticado para acessar o Trading.' })}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button onClick={() => window.location.href = '/login'} className="w-full">
+              {t('auth.login', { defaultValue: 'Fazer Login' })}
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  return <TradingContent />;
 }
                 
