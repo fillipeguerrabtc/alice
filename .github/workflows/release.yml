@@ -829,7 +829,7 @@ jobs:
   trigger-deploy:
     name: Trigger Deploy to Production
     runs-on: [self-hosted, linux, deploy]
-    timeout-minutes: 1
+    timeout-minutes: 3
     needs: [create-release, build-images, publish-release]
     # Só dispara deploy para releases normais (não prereleases)
     if: needs.publish-release.result == 'success' && !inputs.prerelease
@@ -852,25 +852,35 @@ jobs:
             console.log(`📦 Stack: all (todos os stacks)`);
             console.log(`🔨 Imagens buildadas: ${builtImages || '(todas retagged)'}`);
             
-            try {
-              await github.rest.actions.createWorkflowDispatch({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                workflow_id: 'deploy-stack-modular.yml',
-                ref: 'main',
-                inputs: {
-                  stack: 'all',
-                  version: version,
-                  rollback: 'false',
-                  rollback_version: '',
-                  dry_run: 'false',
-                  built_images: builtImages
+            const MAX_RETRIES = 5;
+            const RETRY_DELAY_MS = 15000;
+            let lastError;
+            for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+              try {
+                await github.rest.actions.createWorkflowDispatch({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  workflow_id: 'deploy-stack-modular.yml',
+                  ref: 'main',
+                  inputs: {
+                    stack: 'all',
+                    version: version,
+                    rollback: 'false',
+                    rollback_version: '',
+                    dry_run: 'false',
+                    built_images: builtImages
+                  }
+                });
+                console.log('✅ Deploy modular disparado com sucesso!');
+                console.log(`🔙 Verifique o workflow "Deploy - Production (Modular)" para acompanhar o deploy`);
+                break;
+              } catch (error) {
+                lastError = error;
+                console.error(`❌ Tentativa ${attempt}/${MAX_RETRIES} falhou: ${error.message}`);
+                if (attempt < MAX_RETRIES) {
+                  console.log(`⏳ Aguardando ${RETRY_DELAY_MS / 1000}s antes de tentar novamente...`);
+                  await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
                 }
-              });
-              
-              console.log('✅ Deploy modular disparado com sucesso!');
-              console.log(`🔙 Verifique o workflow "Deploy - Production (Modular)" para acompanhar o deploy`);
-            } catch (error) {
-              console.error('❌ ERRO ao disparar deploy:', error);
-              throw error;
+              }
             }
+            if (lastError) throw new Error(`Falhou após ${MAX_RETRIES} tentativas: ${lastError.message}`);
