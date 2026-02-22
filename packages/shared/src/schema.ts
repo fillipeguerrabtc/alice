@@ -3070,6 +3070,7 @@ export const tradingUniverseCandidates = pgTable('trading_universe_candidates', 
     table.candleTimestamp,
     table.strategyKey,
     table.strategyVersion,
+    table.operationIntent,
   ),
 }));
 
@@ -3111,6 +3112,7 @@ export const tradingSignalCalibration = pgTable('trading_signal_calibration', {
     table.tenantId,
     table.instrumentId,
     table.marketType,
+    table.operationIntent,
     table.strategyKey,
     table.strategyVersion,
     table.method,

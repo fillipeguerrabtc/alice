@@ -64,6 +64,7 @@ type CalibrationPayload = {
   marketType: 'spot' | 'futures' | 'margin';
   strategyKey: string;
   strategyVersion: number;
+  operationIntent?: 'scalping' | 'intraday' | 'swing' | 'positional' | 'arbitrage_internal' | 'arbitrage_cross_exchange' | 'cash_and_carry' | 'market_neutral' | 'volatility_breakout';
   timeframe: string;
   lookback: number;
   asofTimestamp: string;
@@ -80,6 +81,7 @@ export async function runCalibrationWorker(payload: CalibrationPayload) {
       eq(schema.tradingBacktestRuns.tenantId, payload.tenantId),
       eq(schema.tradingBacktestRuns.instrumentId, payload.instrumentId),
       eq(schema.tradingBacktestRuns.marketType, payload.marketType),
+      eq(schema.tradingBacktestRuns.operationIntent, payload.operationIntent ?? 'intraday'),
       eq(schema.tradingBacktestRuns.strategyKey, payload.strategyKey),
       eq(schema.tradingBacktestRuns.strategyVersion, payload.strategyVersion),
       lte(schema.tradingBacktestRuns.createdAt, new Date(payload.asofTimestamp)),
@@ -120,6 +122,7 @@ export async function runCalibrationWorker(payload: CalibrationPayload) {
     tenantId: payload.tenantId,
     instrumentId: payload.instrumentId,
     marketType: payload.marketType,
+    operationIntent: payload.operationIntent ?? 'intraday',
     strategyKey: payload.strategyKey,
     strategyVersion: payload.strategyVersion,
     method,
@@ -140,6 +143,7 @@ export async function runCalibrationWorker(payload: CalibrationPayload) {
       eq(schema.tradingUniverseCandidates.tenantId, payload.tenantId),
       eq(schema.tradingUniverseCandidates.instrumentId, payload.instrumentId),
       eq(schema.tradingUniverseCandidates.marketType, payload.marketType),
+      eq(schema.tradingUniverseCandidates.operationIntent, payload.operationIntent ?? 'intraday'),
       eq(schema.tradingUniverseCandidates.strategyKey, payload.strategyKey),
       eq(schema.tradingUniverseCandidates.strategyVersion, payload.strategyVersion),
     ),

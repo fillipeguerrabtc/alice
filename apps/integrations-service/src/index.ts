@@ -123,8 +123,11 @@ import type { ExtractedLLMValues } from './llm-validation.js';
 import { jsonrepair } from 'jsonrepair';
 import { callGatewayComplete, isGatewayConfigured, type GatewayCompleteResult } from './llm-gateway-client.js';
 import { listTenantPortfolios } from './trading-v2/core/portfolio-api.js';
+import { getConnectedExchangesCount } from './trading-v2/core/market-adapters.js';
 import { buildDecisionPacket } from './trading-v2/core/decision-packet.js';
 import { estimateCosts } from './trading-v2/engines/cost-model.js';
+import { selectAutoIntentCandidate } from './trading-v2/engines/intent-selection-engine.js';
+import type { TradingOperationIntent } from './trading-v2/core/types.js';
 import { buildCompactPrompt } from './trading-v2/llm/compact-prompt.js';
 import { enforceLlmGuardrails } from './trading-v2/llm/llm-guardrails.js';
 import { saveDecisionSnapshot } from './trading-v2/storage/snapshot-store.js';
@@ -162,6 +165,17 @@ const TRADING_DATASET_MIN_QUALITY = parseEnvFloat(
   'TRADING_DATASET_MIN_QUALITY'
 );
 const TRADING_MODE = (process.env.TRADING_MODE ?? 'portfolio_auto') as 'portfolio_auto' | 'signal_auto' | 'lab';
+const TRADING_OPERATION_INTENTS: TradingOperationIntent[] = [
+  'scalping',
+  'intraday',
+  'swing',
+  'positional',
+  'arbitrage_internal',
+  'arbitrage_cross_exchange',
+  'cash_and_carry',
+  'market_neutral',
+  'volatility_breakout',
+];
 const TRADING_LLM_PROMPT_MODE = (process.env.TRADING_LLM_PROMPT_MODE ?? 'compact') as 'compact' | 'verbose';
 
 // ============================================================================
@@ -12326,6 +12340,13 @@ async function generateTradingSignalFromLlm(params: {
     if (TRADING_MODE === 'portfolio_auto') {
       const portfolios = await listTenantPortfolios(params.tenantId);
       const selectedPortfolio = portfolios[0];
+      const portfolioAllowedIntentsRaw = (selectedPortfolio?.allowedOperationIntents ?? [])
+        .map((intent) => String(intent));
+      const allowedOperationIntents = (portfolioAllowedIntentsRaw.length > 0
+        ? portfolioAllowedIntentsRaw.filter((intent): intent is TradingOperationIntent => TRADING_OPERATION_INTENTS.includes(intent as TradingOperationIntent))
+        : TRADING_OPERATION_INTENTS);
+      const connectedExchangesCount = await getConnectedExchangesCount(params.tenantId);
+      const crossExchangeEnabled = connectedExchangesCount >= 2;
       const latestRebalance = selectedPortfolio
         ? await db.query.tradingPortfolioRebalances.findFirst({
           where: and(
@@ -12402,23 +12423,22 @@ async function generateTradingSignalFromLlm(params: {
         guardrails,
         universeScanCount: recentCandidates.length,
       }, 'Pacote institucional de portfólio gerado');
-      const topCandidate = candidateInputs
-        .map((candidate) => {
-          const cost = costsByInstrument[candidate.instrumentId];
-          const edgeNet = candidate.expectedEdge - ((cost?.totalBps ?? 0) / 10_000);
-          return { candidate, edgeNet };
-        })
-        .sort((a, b) => b.edgeNet - a.edgeNet)[0];
-      const firstDecision = topCandidate?.candidate;
+      const intentSelection = selectAutoIntentCandidate({
+        candidates: candidateInputs,
+        costsByInstrument,
+        allowedIntents: allowedOperationIntents,
+        crossExchangeEnabled,
+      });
+      const firstDecision = intentSelection.candidate;
       const signalType: 'entry_long' | 'entry_short' | 'hold' = firstDecision?.side === 'long' ? 'entry_long' : firstDecision?.side === 'short' ? 'entry_short' : 'hold';
       const createResult = await kucoinService.createSignal(
         { tenantId: params.tenantId, userId: params.userId },
         {
           signalType,
-          symbol: topCandidate?.candidate.symbol ?? params.symbol,
+          symbol: intentSelection.candidate?.symbol ?? params.symbol,
           marketType,
           marginMode: params.marginMode,
-          confidence: Number(topCandidate?.candidate.confidenceCalibrated ?? topCandidate?.candidate.confidenceRaw ?? 0.5),
+          confidence: Number(intentSelection.candidate?.confidenceCalibrated ?? intentSelection.candidate?.confidenceRaw ?? 0.5),
           reasoning: firstDecision
             ? `Portfolio auto via snapshot do rebalance (${latestExecutionReports.length} execution reports recentes)`
             : 'No-trade: sem candidato aprovado por edge líquido',
@@ -12427,7 +12447,16 @@ async function generateTradingSignalFromLlm(params: {
             decisionPacket: packet,
             noTrade: !firstDecision,
             rebalanceId: latestRebalance?.id ?? null,
-            topCandidateEdgeNet: topCandidate?.edgeNet ?? null,
+            topCandidateEdgeNet: intentSelection.edgeNet ?? null,
+            selectedOperationIntent: intentSelection.selectedIntent,
+            allowedOperationIntents,
+            connectedExchangesCount,
+            crossExchangeEnabled,
+            intentSelectionStats: {
+              evaluated: intentSelection.evaluated,
+              rejectedByIntent: intentSelection.rejectedByIntent,
+              rejectedByGuardrails: intentSelection.rejectedByGuardrails,
+            },
           },
         },
       );

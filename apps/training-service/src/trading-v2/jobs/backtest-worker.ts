@@ -10,6 +10,7 @@ type BacktestPayload = {
   marketType: 'spot' | 'futures' | 'margin';
   strategyKey: string;
   strategyVersion: number;
+  operationIntent?: 'scalping' | 'intraday' | 'swing' | 'positional' | 'arbitrage_internal' | 'arbitrage_cross_exchange' | 'cash_and_carry' | 'market_neutral' | 'volatility_breakout';
   timeframe: string;
   lookback: number;
   asofTimestamp: string;
@@ -140,6 +141,7 @@ export async function runBacktestWorker(payload: BacktestPayload): Promise<{ dsr
     tenantId: payload.tenantId,
     instrumentId: payload.instrumentId,
     marketType: payload.marketType,
+    operationIntent: payload.operationIntent ?? 'intraday',
     strategyKey: payload.strategyKey,
     strategyVersion: payload.strategyVersion,
     walkForwardConfig: {

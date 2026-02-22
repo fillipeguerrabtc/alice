@@ -10,6 +10,7 @@ type UniversePayload = {
   timeframe: string;
   strategyKey: string;
   strategyVersion: number;
+  operationIntent?: 'scalping' | 'intraday' | 'swing' | 'positional' | 'arbitrage_internal' | 'arbitrage_cross_exchange' | 'cash_and_carry' | 'market_neutral' | 'volatility_breakout';
   candleTimestamp: string;
 };
 
@@ -94,7 +95,85 @@ function parseCandleVolume(data: Record<string, unknown>): number {
   return 0;
 }
 
-export async function runUniverseScanWorker(payload: UniversePayload): Promise<{ side: 'long' | 'short' | 'neutral' }> {
+type TradingOperationIntent = NonNullable<UniversePayload['operationIntent']>;
+const CONNECTED_EXCHANGES_CACHE_TTL_MS = 30_000;
+const CASH_AND_CARRY_VOL_THRESHOLD = 0.008;
+const VOLATILITY_BREAKOUT_THRESHOLD = 0.03;
+const SCALPING_MIN_LIQUIDITY = 0.4;
+const POSITIONAL_LOW_LIQUIDITY = 0.2;
+const connectedExchangesCache = new Map<string, { count: number; expiresAt: number }>();
+
+export function autoSelectOperationIntent(input: {
+  requestedIntent: TradingOperationIntent;
+  timeframe: z.infer<typeof tradingIntervalSchema>;
+  marketType: UniversePayload['marketType'];
+  expectedEdge: number;
+  expectedVolatility: number;
+  liquidityProxy: number;
+  trend: string;
+  volatilityRegime: string;
+}): TradingOperationIntent {
+  if (input.requestedIntent !== 'intraday') {
+    return input.requestedIntent;
+  }
+  if (input.marketType === 'futures' && input.expectedEdge > 0 && input.expectedVolatility < CASH_AND_CARRY_VOL_THRESHOLD) {
+    return 'cash_and_carry';
+  }
+  if (input.volatilityRegime === 'high' || input.expectedVolatility > VOLATILITY_BREAKOUT_THRESHOLD) {
+    return 'volatility_breakout';
+  }
+  if ((input.timeframe === '1m' || input.timeframe === '3m' || input.timeframe === '5m') && input.liquidityProxy > SCALPING_MIN_LIQUIDITY) {
+    return 'scalping';
+  }
+  if (input.timeframe === '1d' || input.timeframe === '1w') {
+    return input.trend === 'up' || input.trend === 'down' ? 'swing' : 'positional';
+  }
+  if (input.liquidityProxy < POSITIONAL_LOW_LIQUIDITY) {
+    return 'positional';
+  }
+  return 'intraday';
+}
+
+export function allowsCrossExchangeArbitrage(operationIntent: TradingOperationIntent, connectedExchangesCount: number): boolean {
+  if (operationIntent !== 'arbitrage_cross_exchange') {
+    return true;
+  }
+  return connectedExchangesCount >= 2;
+}
+
+async function getConnectedExchangesCountCached(tenantId: string): Promise<number> {
+  const now = Date.now();
+  const cached = connectedExchangesCache.get(tenantId);
+  if (cached && cached.expiresAt > now) {
+    return cached.count;
+  }
+
+  const db = getDatabase();
+  const connectedExchanges = await db.query.tradingExchanges.findMany({
+    where: and(
+      eq(schema.tradingExchanges.tenantId, tenantId),
+      eq(schema.tradingExchanges.apiConnected, true),
+    ),
+  });
+  const count = connectedExchanges.length;
+  connectedExchangesCache.set(tenantId, { count, expiresAt: now + CONNECTED_EXCHANGES_CACHE_TTL_MS });
+  return count;
+}
+
+function resolveCandidateSide(input: {
+  hasCostModel: boolean;
+  baseSide: 'long' | 'short' | 'neutral';
+  operationIntent: TradingOperationIntent;
+  crossExchangeAllowed: boolean;
+}): 'long' | 'short' | 'neutral' {
+  if (!input.hasCostModel) return 'neutral';
+  if (input.operationIntent === 'arbitrage_cross_exchange' && !input.crossExchangeAllowed) {
+    return 'neutral';
+  }
+  return input.baseSide;
+}
+
+export async function runUniverseScanWorker(payload: UniversePayload): Promise<{ side: 'long' | 'short' | 'neutral'; operationIntent: TradingOperationIntent }> {
   const db = getDatabase();
   const timeframe = tradingIntervalSchema.parse(payload.timeframe);
   const candleTimestamp = new Date(payload.candleTimestamp);
@@ -150,6 +229,8 @@ export async function runUniverseScanWorker(payload: UniversePayload): Promise<{
   });
 
   const signal = latestIndicator?.overallSignal ?? 'neutral';
+  const trend = latestIndicator?.maTrend ?? 'neutral';
+  const volatilityRegime = latestIndicator?.atrVolatility ?? 'low';
 
   const costModel = await db.query.tradingCostModels.findFirst({
     where: and(
@@ -182,6 +263,17 @@ export async function runUniverseScanWorker(payload: UniversePayload): Promise<{
       ? 'short'
       : 'neutral';
 
+  const operationIntent = autoSelectOperationIntent({
+    requestedIntent: payload.operationIntent ?? 'intraday',
+    timeframe,
+    marketType: payload.marketType,
+    expectedEdge,
+    expectedVolatility,
+    liquidityProxy,
+    trend,
+    volatilityRegime,
+  });
+
   const entryModel = {
     entry: currentPrice,
     stop: sideByThreshold === 'short' ? currentPrice + stopDistance : currentPrice - stopDistance,
@@ -196,6 +288,17 @@ export async function runUniverseScanWorker(payload: UniversePayload): Promise<{
   if (!costModel) {
     riskFlags.push('missing_cost_model');
   }
+  const connectedExchangesCount = await getConnectedExchangesCountCached(payload.tenantId);
+  const crossExchangeAllowed = allowsCrossExchangeArbitrage(operationIntent, connectedExchangesCount);
+  if (operationIntent === 'arbitrage_cross_exchange' && !crossExchangeAllowed) {
+    riskFlags.push('cross_exchange_not_available');
+  }
+  const finalSide = resolveCandidateSide({
+    hasCostModel: Boolean(costModel),
+    baseSide: sideByThreshold,
+    operationIntent,
+    crossExchangeAllowed,
+  });
 
   await db.insert(schema.tradingFactorSnapshotsV2).values({
     tenantId: payload.tenantId,
@@ -207,8 +310,9 @@ export async function runUniverseScanWorker(payload: UniversePayload): Promise<{
     featureVersion: payload.strategyVersion,
     regimes: {
       signal,
-      trend: latestIndicator?.maTrend ?? 'neutral',
-      volatilityRegime: latestIndicator?.atrVolatility ?? 'low',
+      trend,
+      volatilityRegime,
+      operationIntent,
     },
     factors: {
       meanReturn: expectedReturn,
@@ -240,11 +344,12 @@ export async function runUniverseScanWorker(payload: UniversePayload): Promise<{
     tenantId: payload.tenantId,
     instrumentId: payload.instrumentId,
     marketType: payload.marketType,
+    operationIntent,
     strategyKey: payload.strategyKey,
     strategyVersion: payload.strategyVersion,
     timeframe,
     candleTimestamp,
-    side: costModel ? sideByThreshold : 'neutral',
+    side: finalSide,
     entryModel,
     expectedEdge: String(expectedEdge),
     confidenceRaw: String(confidenceRaw),
@@ -258,9 +363,11 @@ export async function runUniverseScanWorker(payload: UniversePayload): Promise<{
       schema.tradingUniverseCandidates.candleTimestamp,
       schema.tradingUniverseCandidates.strategyKey,
       schema.tradingUniverseCandidates.strategyVersion,
+      schema.tradingUniverseCandidates.operationIntent,
     ],
     set: {
-      side: costModel ? sideByThreshold : 'neutral',
+      side: finalSide,
+      operationIntent,
       entryModel,
       expectedEdge: String(expectedEdge),
       confidenceRaw: String(confidenceRaw),
@@ -269,5 +376,5 @@ export async function runUniverseScanWorker(payload: UniversePayload): Promise<{
     },
   });
 
-  return { side: costModel ? sideByThreshold : 'neutral' };
+  return { side: finalSide, operationIntent };
 }
