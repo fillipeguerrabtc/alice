@@ -2729,6 +2729,35 @@ function TradingContent() {
   const fallbackPriceValue = Number.isFinite(fallbackPrice ?? NaN) ? Number(fallbackPrice) : 0;
   const currentPrice = Number.isFinite(wsTickerPrice) ? wsTickerPrice : fallbackPriceValue;
 
+  // Derivados de posições — calculados aqui (antes dos early returns) para que o
+  // useEffect abaixo não viole a Regra de Hooks do React.
+  const positionsPayload = positionsData?.data ?? null;
+  const futuresPositions = selectedMarketType === 'futures' && Array.isArray(positionsPayload)
+    ? (positionsPayload as Position[])
+    : [];
+  const openFuturesPositions = futuresPositions.filter((position) => position.isOpen);
+
+  // Subscrição de quotes de posições abertas (futures) para PnL em tempo real.
+  // DEVE ficar antes dos early returns para não violar a Regra de Hooks do React.
+  useEffect(() => {
+    if (!isFuturesMarket || !positionQuotesWsState.connected) return;
+    const activeSymbols = new Set(
+      openFuturesPositions
+        .map((position) => position.symbol.toUpperCase())
+        .filter((symbol) => symbol.length > 0)
+    );
+
+    activeSymbols.forEach((symbol) => {
+      subscribePositionQuotes('ticker', symbol, undefined, 'futures', 'cross');
+    });
+
+    return () => {
+      activeSymbols.forEach((symbol) => {
+        unsubscribePositionQuotes('ticker', symbol, undefined, 'futures', 'cross');
+      });
+    };
+  }, [isFuturesMarket, openFuturesPositions, positionQuotesWsState.connected, subscribePositionQuotes, unsubscribePositionQuotes]);
+
   // ============================================================================
   // RENDER - Loading State
   // ============================================================================
@@ -2869,11 +2898,6 @@ function TradingContent() {
     : null;
   const marginIsolatedAsset = marginIsolatedAccount?.assets.find((asset) => asset.symbol === selectedSymbol)
     ?? marginIsolatedAccount?.assets[0];
-  const positionsPayload = positionsData?.data ?? null;
-  const futuresPositions = selectedMarketType === 'futures' && Array.isArray(positionsPayload)
-    ? (positionsPayload as Position[])
-    : [];
-  const openFuturesPositions = futuresPositions.filter((position) => position.isOpen);
   const marginCrossPositions = selectedMarketType === 'margin' && isMarginCrossAccount(positionsPayload)
     ? positionsPayload
     : null;
@@ -2894,25 +2918,6 @@ function TradingContent() {
             ? marginIsolatedPositions.assets.length
             : 0
         : 0;
-
-  useEffect(() => {
-    if (!isFuturesMarket || !positionQuotesWsState.connected) return;
-    const activeSymbols = new Set(
-      openFuturesPositions
-        .map((position) => position.symbol.toUpperCase())
-        .filter((symbol) => symbol.length > 0)
-    );
-
-    activeSymbols.forEach((symbol) => {
-      subscribePositionQuotes('ticker', symbol, undefined, 'futures', 'cross');
-    });
-
-    return () => {
-      activeSymbols.forEach((symbol) => {
-        unsubscribePositionQuotes('ticker', symbol, undefined, 'futures', 'cross');
-      });
-    };
-  }, [isFuturesMarket, openFuturesPositions, positionQuotesWsState.connected, subscribePositionQuotes, unsubscribePositionQuotes]);
 
   const orderSizeValue = orderForm.size ? parseLocaleNumberInput(orderForm.size) ?? NaN : NaN;
   const orderFundsValue = orderForm.funds ? parseLocaleNumberInput(orderForm.funds) ?? NaN : NaN;
