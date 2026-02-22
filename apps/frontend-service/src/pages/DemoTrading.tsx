@@ -345,10 +345,10 @@ function DemoTradingContent() {
     },
     onPositionUpdate: () => {
       void queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/positions', 'all'] });
-      void queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balance'] });
+      void queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balances'] });
     },
     onBalance: () => {
-      void queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balance'] });
+      void queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balances'] });
     },
   });
   const wsHealthy = wsEnabled && wsState.connected && !wsState.error;
@@ -426,11 +426,11 @@ function DemoTradingContent() {
   // ============================================================================
 
   const balancesQuery = useQuery({
-    queryKey: ['/api/integrations/demo-trading/balance'],
+    queryKey: ['/api/integrations/demo-trading/balances'],
     queryFn: async () => {
-      const res = await apiRequest('GET', '/api/integrations/demo-trading/balance');
+      const res = await apiRequest('GET', '/api/integrations/demo-trading/balances');
       const json = await res.json() as { data: DemoBalance[] };
-      return json.data;
+      return Array.isArray(json.data) ? json.data : [];
     },
     enabled: !!user?.id && isConfigured, // Só executar após auth e config OK
     refetchInterval: 10_000,
@@ -550,7 +550,7 @@ function DemoTradingContent() {
     onSuccess: () => {
       setOrderDialogOpen(false);
       // Ordem criada afeta: balance (margem congelada), ordens, e posições (se fill imediato)
-      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balance'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balances'] });
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/orders'] });
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/positions', 'all'] });
     },
@@ -572,7 +572,7 @@ function DemoTradingContent() {
     onSuccess: () => {
       setAddFundsDialogOpen(false);
       setFundsAmount('');
-      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balance'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balances'] });
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/funds/history'] });
     },
   });
@@ -585,7 +585,7 @@ function DemoTradingContent() {
       return json.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balance'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balances'] });
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/positions', 'all'] });
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/postmortem', 'demo'] });
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/postmortem/queue/stats'] });
@@ -619,7 +619,7 @@ function DemoTradingContent() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/positions', 'all'] });
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/orders'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balance'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balances'] });
     },
   });
 
@@ -628,7 +628,7 @@ function DemoTradingContent() {
       await apiRequest('DELETE', `/api/integrations/demo-trading/orders/${orderId}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balance'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balances'] });
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/orders'] });
     },
   });
