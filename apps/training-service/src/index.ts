@@ -332,7 +332,7 @@ const tradingV2Metrics = {
     registers: [metrics.registry],
   }),
   modelRiskSeconds: new PromHistogram({
-    name: 'trading_model_risk_seconds',
+    name: 'trading_v2_model_risk_seconds',
     help: 'Duração de processamento do worker de model risk',
     buckets: [0.05, 0.1, 0.5, 1, 2, 5],
     registers: [metrics.registry],

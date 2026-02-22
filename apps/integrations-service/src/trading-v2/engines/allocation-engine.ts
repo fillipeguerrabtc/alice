@@ -6,6 +6,20 @@ function safeWeight(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
 
+function portfolioVariance(
+  instrumentIds: string[],
+  weights: Record<string, number>,
+  covariance: Record<string, Record<string, number>>,
+): number {
+  let variance = 0;
+  for (const iId of instrumentIds) {
+    for (const jId of instrumentIds) {
+      variance += (weights[iId] ?? 0) * (weights[jId] ?? 0) * (covariance[iId]?.[jId] ?? 0);
+    }
+  }
+  return Math.max(variance, 0);
+}
+
 export function buildAllocations(input: AllocationInput): AllocationDecision[] {
   if (input.currentDrawdown >= input.maxDrawdownLimit) {
     return [];
@@ -18,12 +32,36 @@ export function buildAllocations(input: AllocationInput): AllocationDecision[] {
   const grossBudget = Math.max(0, input.maxGrossExposure);
 
   if (input.mode === 'risk_parity') {
+    const covariance = input.covarianceMatrix;
+    const baseWeights: Record<string, number> = {};
     const inverseVol = input.candidates.map((candidate) => {
       const vol = Math.max(0.0001, input.volByInstrument[candidate.instrumentId] ?? 1);
       return 1 / vol;
     });
-    const sum = inverseVol.reduce((acc, value) => acc + value, 0);
+    const inverseVolSum = inverseVol.reduce((acc, value) => acc + value, 0);
     input.candidates.forEach((candidate, idx) => {
+      baseWeights[candidate.instrumentId] = inverseVol[idx] / Math.max(inverseVolSum, 1e-9);
+    });
+
+    const riskAdjustedWeights: Record<string, number> = { ...baseWeights };
+    if (covariance) {
+      const instrumentIds = input.candidates.map((candidate) => candidate.instrumentId);
+      const variance = portfolioVariance(instrumentIds, baseWeights, covariance);
+      const portfolioVol = Math.sqrt(Math.max(variance, 1e-9));
+      for (const instrumentId of instrumentIds) {
+        const marginal = instrumentIds.reduce((sum, otherId) => {
+          return sum + (covariance[instrumentId]?.[otherId] ?? 0) * (baseWeights[otherId] ?? 0);
+        }, 0);
+        const contribution = (baseWeights[instrumentId] ?? 0) * marginal / Math.max(portfolioVol, 1e-9);
+        riskAdjustedWeights[instrumentId] = 1 / Math.max(Math.abs(contribution), 1e-6);
+      }
+      const adjustedSum = instrumentIds.reduce((sum, instrumentId) => sum + (riskAdjustedWeights[instrumentId] ?? 0), 0);
+      for (const instrumentId of instrumentIds) {
+        riskAdjustedWeights[instrumentId] = (riskAdjustedWeights[instrumentId] ?? 0) / Math.max(adjustedSum, 1e-9);
+      }
+    }
+
+    input.candidates.forEach((candidate) => {
       const cost = input.costs[candidate.instrumentId];
       const edgeNet = candidate.expectedEdge - ((cost?.totalBps ?? 0) / 10_000);
       const checks = applyNoTradeGuardrails({
@@ -32,7 +70,7 @@ export function buildAllocations(input: AllocationInput): AllocationDecision[] {
         pboScore: candidate.pboScore,
       });
       if (!checks.allowed) return;
-      const targetWeight = safeWeight((inverseVol[idx] / Math.max(sum, 1e-9)) * grossBudget);
+      const targetWeight = safeWeight((riskAdjustedWeights[candidate.instrumentId] ?? 0) * grossBudget);
       decisions.push({
         instrumentId: candidate.instrumentId,
         symbol: candidate.symbol,
