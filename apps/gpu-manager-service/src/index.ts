@@ -30,7 +30,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { createServer } from 'http';
 import cors from 'cors';
 import compression from 'compression';
-import { Gauge, Histogram } from 'prom-client';
+import { Counter, Gauge, Histogram } from 'prom-client';
 import { 
   CIRCUIT_BREAKER_PRESETS,
   createProtectedFetch,
@@ -201,6 +201,24 @@ const TOTAL_VRAM_GB = 20;
 
 /** Margem de segurança (GB) */
 const VRAM_SAFETY_MARGIN_GB = 2;
+const GPU_RETRY_AFTER_SECONDS = Number(process.env.GPU_RETRY_AFTER_SECONDS ?? '5');
+
+const ADMISSION_MIN_FREE_GB: Record<GpuServiceType, number> = {
+  [GpuServiceType.LLM]: Number(process.env.GPU_ADMISSION_MIN_FREE_GB_LLM ?? '2'),
+  [GpuServiceType.EMBEDDINGS]: Number(process.env.GPU_ADMISSION_MIN_FREE_GB_EMBEDDINGS ?? '1.5'),
+  [GpuServiceType.TRAINING]: Number(process.env.GPU_ADMISSION_MIN_FREE_GB_TRAINING ?? '6'),
+};
+
+for (const [serviceType, threshold] of Object.entries(ADMISSION_MIN_FREE_GB)) {
+  if (!Number.isFinite(threshold) || threshold < 0) {
+    logger.error({ serviceType, threshold }, 'Threshold de admission control inválido');
+    process.exit(1);
+  }
+}
+if (!Number.isFinite(GPU_RETRY_AFTER_SECONDS) || GPU_RETRY_AFTER_SECONDS < 1) {
+  logger.error({ retryAfterSeconds: GPU_RETRY_AFTER_SECONDS }, 'GPU_RETRY_AFTER_SECONDS inválido');
+  process.exit(1);
+}
 
 /** Prefixo Redis para fila GPU */
 const REDIS_QUEUE_PREFIX = 'alice:gpu:queue';
@@ -425,13 +443,15 @@ async function getVramStatus(): Promise<VramStatus> {
       gpuVramReservedBytes.set({ gpu_id: GPU_ID, service: cap }, reservedBytes);
     }
 
-    return {
+    const vramStatus = {
       totalGB,
       usedGB,
       freeGB,
       utilizationPercent,
       activeServices,
     };
+    observeVramFreeMetric(vramStatus);
+    return vramStatus;
   } catch (error) {
     // Logar erro apenas na primeira tentativa
     if (nvidiaSmiAvailable === null) {
@@ -492,13 +512,15 @@ async function getVramFallback(): Promise<VramStatus> {
     gpuVramReservedBytes.set({ gpu_id: GPU_ID, service: cap }, reservedBytes);
   }
 
-  return {
+  const vramStatus = {
     totalGB: TOTAL_VRAM_GB,
     usedGB: boundedUsedGB,
     freeGB,
     utilizationPercent,
     activeServices,
   };
+  observeVramFreeMetric(vramStatus);
+  return vramStatus;
 }
 
 /**
@@ -514,6 +536,34 @@ function hasEnoughVram(serviceType: GpuServiceType, currentVram: VramStatus): bo
   const required = VRAM_REQUIREMENTS[serviceType];
   const available = currentVram.freeGB;
   return available >= (required + VRAM_SAFETY_MARGIN_GB);
+}
+
+type GpuRejectionReason = 'insufficient_vram' | 'low_vram_low_priority' | 'gpu_busy' | 'simultaneous_policy';
+
+function observeVramFreeMetric(vramStatus: VramStatus): void {
+  gpuManagerVramFreeBytes.set({ gpu_id: GPU_ID }, vramStatus.freeGB * 1024 * 1024 * 1024);
+}
+
+function trackGpuRejection(serviceType: GpuServiceType, reason: GpuRejectionReason): void {
+  gpuManagerRejectionsTotal.inc({ service: capabilityForServiceType(serviceType), reason });
+}
+
+function isLowPriority(priority: GpuRequestPriority): boolean {
+  return priority <= GpuRequestPriority.MEDIUM;
+}
+
+function admissionControlReason(
+  serviceType: GpuServiceType,
+  priority: GpuRequestPriority,
+  vramStatus: VramStatus,
+): GpuRejectionReason | null {
+  if (!hasEnoughVram(serviceType, vramStatus)) {
+    return 'insufficient_vram';
+  }
+  if (isLowPriority(priority) && vramStatus.freeGB < ADMISSION_MIN_FREE_GB[serviceType]) {
+    return 'low_vram_low_priority';
+  }
+  return null;
 }
 
 // ============================================================================
@@ -984,6 +1034,23 @@ app.post('/api/gpu/queue', requireInternalAuth, asyncHandler(async (req: Request
     retries: 0,
     maxRetries: body.maxRetries || 3,
   };
+
+  const vramStatus = await getVramStatus();
+  const rejectionReason = admissionControlReason(request.serviceType, request.priority, vramStatus);
+  if (rejectionReason) {
+    trackGpuRejection(request.serviceType, rejectionReason);
+    const statusCode = rejectionReason === 'insufficient_vram' ? 503 : 429;
+    res.setHeader('Retry-After', String(GPU_RETRY_AFTER_SECONDS));
+    return res.status(statusCode).json({
+      error: 'Requisição rejeitada pelo admission control',
+      reason: rejectionReason,
+      serviceType: request.serviceType,
+      availableGB: vramStatus.freeGB,
+      requiredGB: VRAM_REQUIREMENTS[request.serviceType] + VRAM_SAFETY_MARGIN_GB,
+      thresholdGB: ADMISSION_MIN_FREE_GB[request.serviceType],
+      retryAfterSeconds: GPU_RETRY_AFTER_SECONDS,
+    });
+  }
   
   await enqueueRequest(request);
   
@@ -1025,6 +1092,10 @@ app.get('/api/gpu/orchestrator/state', requireInternalAuth, asyncHandler(async (
 }));
 
 app.post('/api/gpu/orchestrator/return', requireInternalAuth, asyncHandler(async (_req: Request, res: Response) => {
+  if (GPU_ORCHESTRATION_MODE === 'simultaneous') {
+    trackGpuRejection(GpuServiceType.TRAINING, 'simultaneous_policy');
+    return res.status(409).json({ error: 'Operação bloqueada: modo simultaneous proíbe stop/start de containers GPU' });
+  }
   if (!orchestratorAvailable || GPU_ORCHESTRATION_MODE !== 'preemptive') {
     return res.status(503).json({ error: 'Orquestrador não disponível' });
   }
@@ -1058,11 +1129,17 @@ app.post('/api/gpu/stream', requireInternalAuth, asyncHandler(async (req: Reques
   
   // Verificar VRAM disponível
   const vramStatus = await getVramStatus();
-  if (!hasEnoughVram(serviceType, vramStatus)) {
-    return res.status(503).json({ 
+  const admissionReason = admissionControlReason(serviceType, GpuRequestPriority.CRITICAL, vramStatus);
+  if (admissionReason) {
+    trackGpuRejection(serviceType, admissionReason);
+    const statusCode = admissionReason === 'insufficient_vram' ? 503 : 429;
+    res.setHeader('Retry-After', String(GPU_RETRY_AFTER_SECONDS));
+    return res.status(statusCode).json({
       error: 'VRAM insuficiente',
-      requiredGB: VRAM_REQUIREMENTS[serviceType],
+      reason: admissionReason,
+      requiredGB: VRAM_REQUIREMENTS[serviceType] + VRAM_SAFETY_MARGIN_GB,
       availableGB: vramStatus.freeGB,
+      retryAfterSeconds: GPU_RETRY_AFTER_SECONDS,
     });
   }
   
@@ -1074,7 +1151,9 @@ app.post('/api/gpu/stream', requireInternalAuth, asyncHandler(async (req: Reques
     const lockTtlMs = Math.min(timeoutMs + 30000, 5 * 60 * 1000);
     const acquired = await tryAcquireGpuLock(serviceType, streamingRequestId, lockTtlMs);
     if (!acquired) {
-      return res.status(503).json({ error: 'GPU ocupada - tente novamente' });
+      trackGpuRejection(serviceType, 'gpu_busy');
+      res.setHeader('Retry-After', String(GPU_RETRY_AFTER_SECONDS));
+      return res.status(503).json({ error: 'GPU ocupada - tente novamente', retryAfterSeconds: GPU_RETRY_AFTER_SECONDS });
     }
 
     await markServiceActive(serviceType, streamingRequestId);
@@ -1248,6 +1327,13 @@ const gpuVramUsedBytes = new Gauge({
   registers: [prometheus.registry],
 });
 
+const gpuManagerVramFreeBytes = new Gauge({
+  name: 'gpu_manager_vram_free_bytes',
+  help: 'VRAM livre observada pelo GPU Manager em bytes',
+  labelNames: ['gpu_id'] as const,
+  registers: [prometheus.registry],
+});
+
 // VRAM "reservada" por capacidade (bytes) - derivada de requisitos declarados
 // (transparente: não tenta inferir uso real por processo/container)
 const gpuVramReservedBytes = new Gauge({
@@ -1271,6 +1357,13 @@ const gpuManagerQueueWaitDuration = new Histogram({
   help: 'Tempo de espera na fila Redis (segundos) por capacidade',
   labelNames: ['queue'] as const,
   buckets: [0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60, 120],
+  registers: [prometheus.registry],
+});
+
+const gpuManagerRejectionsTotal = new Counter({
+  name: 'gpu_manager_rejections_total',
+  help: 'Total de rejeições do admission control/política do GPU Manager',
+  labelNames: ['service', 'reason'] as const,
   registers: [prometheus.registry],
 });
 

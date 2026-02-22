@@ -2877,6 +2877,17 @@ export const tradingRebalanceStatusEnum = pgEnum('trading_rebalance_status', [
   'succeeded',
   'failed',
 ]);
+export const tradingOperationIntentEnum = pgEnum('trading_operation_intent', [
+  'scalping',
+  'intraday',
+  'swing',
+  'positional',
+  'arbitrage_internal',
+  'arbitrage_cross_exchange',
+  'cash_and_carry',
+  'market_neutral',
+  'volatility_breakout',
+]);
 
 export const tradingModelRiskScopeEnum = pgEnum('trading_model_risk_scope', ['strategy', 'portfolio', 'instrument']);
 export const tradingModelRiskEventTypeEnum = pgEnum('trading_model_risk_event_type', ['drift', 'performance_decay', 'data_quality', 'execution_anomaly', 'kill_switch']);
@@ -2906,6 +2917,21 @@ export const tradingInstruments = pgTable('trading_instruments', {
   idxAssetClass: index('idx_trading_instruments_asset_class').on(table.assetClass),
   idxSymbol: index('idx_trading_instruments_symbol').on(table.symbol),
   uniqTenantVenueSymbol: uniqueIndex('uniq_trading_instruments_tenant_venue_symbol').on(table.tenantId, table.venue, table.symbol),
+}));
+
+export const tradingExchanges = pgTable('trading_exchanges', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  venue: varchar('venue', { length: 32 }).notNull(),
+  apiConnected: boolean('api_connected').notNull().default(false),
+  supportsSpot: boolean('supports_spot').notNull().default(false),
+  supportsFutures: boolean('supports_futures').notNull().default(false),
+  supportsMargin: boolean('supports_margin').notNull().default(false),
+  feeModelVersion: integer('fee_model_version').notNull().default(1),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, (table) => ({
+  idxTradingExchangesTenant: index('idx_trading_exchanges_tenant').on(table.tenantId),
+  uniqTradingExchangesTenantVenue: uniqueIndex('uniq_trading_exchanges_tenant_venue').on(table.tenantId, table.venue),
 }));
 
 export const tradingCostModels = pgTable('trading_cost_models', {
@@ -2957,6 +2983,7 @@ export const tradingFactorSnapshotsV2 = pgTable('trading_factor_snapshots_v2', {
 export const tradingStrategyRegistry = pgTable('trading_strategy_registry', {
   strategyKey: varchar('strategy_key', { length: 64 }).primaryKey(),
   version: integer('version').notNull(),
+  operationIntent: tradingOperationIntentEnum('operation_intent').notNull().default('intraday'),
   applicableAssetClasses: text('applicable_asset_classes').array().notNull(),
   applicableMarkets: tradingMarketTypeEnum('applicable_markets').array().notNull(),
   defaultTimeframes: tradingIntervalEnum('default_timeframes').array().notNull(),
@@ -2973,6 +3000,7 @@ export const tradingUniverseCandidates = pgTable('trading_universe_candidates', 
   instrumentId: uuid('instrument_id').notNull().references(() => tradingInstruments.id),
   marketType: tradingMarketTypeEnum('market_type').notNull(),
   marginMode: tradingMarginModeEnum('margin_mode'),
+  operationIntent: tradingOperationIntentEnum('operation_intent').notNull().default('intraday'),
   strategyKey: varchar('strategy_key', { length: 64 }).notNull(),
   strategyVersion: integer('strategy_version').notNull(),
   timeframe: tradingIntervalEnum('timeframe').notNull(),
@@ -3005,6 +3033,7 @@ export const tradingBacktestRuns = pgTable('trading_backtest_runs', {
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
   instrumentId: uuid('instrument_id').references(() => tradingInstruments.id),
   marketType: tradingMarketTypeEnum('market_type').notNull(),
+  operationIntent: tradingOperationIntentEnum('operation_intent').notNull().default('intraday'),
   strategyKey: varchar('strategy_key', { length: 64 }).notNull(),
   strategyVersion: integer('strategy_version').notNull(),
   walkForwardConfig: jsonb('walk_forward_config').$type<Record<string, unknown>>().notNull().default({}),
@@ -3025,6 +3054,7 @@ export const tradingSignalCalibration = pgTable('trading_signal_calibration', {
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
   instrumentId: uuid('instrument_id').notNull().references(() => tradingInstruments.id),
   marketType: tradingMarketTypeEnum('market_type').notNull(),
+  operationIntent: tradingOperationIntentEnum('operation_intent').notNull().default('intraday'),
   strategyKey: varchar('strategy_key', { length: 64 }).notNull(),
   strategyVersion: integer('strategy_version').notNull(),
   method: tradingCalibrationMethodEnum('method').notNull(),
@@ -3051,6 +3081,8 @@ export const tradingPortfolios = pgTable('trading_portfolios', {
   maxGrossExposure: numeric('max_gross_exposure').notNull(),
   maxNetExposure: numeric('max_net_exposure').notNull(),
   maxDrawdownLimit: numeric('max_drawdown_limit').notNull(),
+  allowedOperationIntents: tradingOperationIntentEnum('allowed_operation_intents').array().notNull().default(['intraday']),
+  policy: jsonb('policy').$type<Record<string, unknown>>().notNull().default({}),
   rebalancePolicy: jsonb('rebalance_policy').$type<Record<string, unknown>>().notNull().default({}),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
