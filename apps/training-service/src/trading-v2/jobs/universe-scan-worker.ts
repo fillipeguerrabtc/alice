@@ -102,6 +102,7 @@ const CASH_AND_CARRY_VOL_THRESHOLD = 0.008;
 const VOLATILITY_BREAKOUT_THRESHOLD = 0.03;
 const SCALPING_MIN_LIQUIDITY = 0.4;
 const POSITIONAL_LOW_LIQUIDITY = 0.2;
+const MULTI_VENUE_ARBITRAGE_EDGE_THRESHOLD = 0.0005;
 const MICRO_IMBALANCE_EDGE_FACTOR = 0.0002;
 const MICRO_SPREAD_WIDENING_PENALTY = 0.1;
 const MICRO_FLOW_EDGE_FACTOR = 0.0001;
@@ -246,6 +247,7 @@ async function deriveMultiVenueCrossExchangeCandidate(input: {
 
   let bestEdge = Number.NEGATIVE_INFINITY;
   let bestPeerSymbol = '';
+  let bestDirection: 'long' | 'short' | 'neutral' = 'neutral';
   for (const peer of candidates) {
     const latestPeerCandle = await db.query.tradingMarketData.findFirst({
       where: and(
@@ -257,9 +259,11 @@ async function deriveMultiVenueCrossExchangeCandidate(input: {
     if (!latestPeerCandle) continue;
     const peerClose = parseCandleClose((latestPeerCandle.data ?? {}) as Record<string, unknown>);
     if (peerClose === null || peerClose <= 0) continue;
-    const edge = Math.abs((peerClose - input.currentPrice) / input.currentPrice);
-    if (edge > bestEdge) {
-      bestEdge = edge;
+    const directionalEdge = (peerClose - input.currentPrice) / input.currentPrice;
+    const edgeMagnitude = Math.abs(directionalEdge);
+    if (edgeMagnitude > bestEdge) {
+      bestEdge = edgeMagnitude;
+      bestDirection = directionalEdge > 0 ? 'long' : directionalEdge < 0 ? 'short' : 'neutral';
       bestPeerSymbol = peer.symbol;
     }
   }
@@ -267,13 +271,13 @@ async function deriveMultiVenueCrossExchangeCandidate(input: {
 
   const riskFlags: string[] = [];
   if (!input.crossExchangeAllowed) riskFlags.push('cross_exchange_not_available');
-  if (bestEdge <= 0.0005) riskFlags.push('edge_below_threshold');
+  if (bestEdge <= MULTI_VENUE_ARBITRAGE_EDGE_THRESHOLD) riskFlags.push('edge_below_threshold');
   if (bestPeerSymbol) riskFlags.push(`cross_exchange_pair:${input.symbol}->${bestPeerSymbol}`);
 
   return {
     operationIntent: 'arbitrage_cross_exchange',
-    expectedEdge: bestEdge - 0.0005,
-    side: (bestEdge > 0.0005 && input.crossExchangeAllowed) ? 'long' : 'neutral',
+    expectedEdge: bestEdge - MULTI_VENUE_ARBITRAGE_EDGE_THRESHOLD,
+    side: (bestEdge > MULTI_VENUE_ARBITRAGE_EDGE_THRESHOLD && input.crossExchangeAllowed) ? bestDirection : 'neutral',
     riskFlags,
   };
 }

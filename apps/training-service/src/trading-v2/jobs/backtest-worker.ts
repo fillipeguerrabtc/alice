@@ -35,6 +35,7 @@ const BACKTEST_LIQUIDITY_IMBALANCE_WEIGHT = 0.2;
 const BACKTEST_LIQUIDITY_VOLUME_CAP = 0.2;
 const BACKTEST_LIQUIDITY_VOLUME_NORMALIZATION_FACTOR = 1_000_000;
 const BACKTEST_SPREAD_BPS_NORMALIZATION_FACTOR = 100;
+const BACKTEST_SLIPPAGE_MULTIPLIER = 1.1;
 
 function parseClose(data: Record<string, unknown>): number | null {
   const close = data.close;
@@ -131,9 +132,11 @@ export async function runBacktestWorker(payload: BacktestPayload): Promise<{ dsr
     orderBy: [desc(schema.tradingTradeTicksAgg.windowEnd)],
     limit: Math.max(returns.length, 10),
   });
+  const microSnapshotsLength = Math.max(microSnapshots.length, 1);
+  const tradeAggRowsLength = Math.max(tradeAggRows.length, 1);
   const liquidityByBar = returns.map((_, index) => {
-    const micro = microSnapshots[index % Math.max(microSnapshots.length, 1)];
-    const tradeAgg = tradeAggRows[index % Math.max(tradeAggRows.length, 1)];
+    const micro = microSnapshots[index % microSnapshotsLength];
+    const tradeAgg = tradeAggRows[index % tradeAggRowsLength];
     const depthDrop = Number(micro?.depthDropRatio ?? 0);
     const imbalance = Math.abs(Number(micro?.orderBookImbalance ?? 0));
     const volumeProxy = Number(tradeAgg?.buyVolume ?? 0) + Number(tradeAgg?.sellVolume ?? 0);
@@ -144,7 +147,7 @@ export async function runBacktestWorker(payload: BacktestPayload): Promise<{ dsr
     return clamp01(liquidity);
   });
   const depthPressureByBar = returns.map((_, index) => {
-    const micro = microSnapshots[index % Math.max(microSnapshots.length, 1)];
+    const micro = microSnapshots[index % microSnapshotsLength];
     const spreadBps = Number(micro?.spreadBps ?? 0);
     const depthDrop = Number(micro?.depthDropRatio ?? 0);
     const pressure = (spreadBps / BACKTEST_SPREAD_BPS_NORMALIZATION_FACTOR) + depthDrop;
@@ -166,14 +169,14 @@ export async function runBacktestWorker(payload: BacktestPayload): Promise<{ dsr
         costsBps,
         liquidityByBar: liquidityByBar.slice(0, trainReturns.length),
         depthPressureByBar: depthPressureByBar.slice(0, trainReturns.length),
-        slippageMultiplier: 1.1,
+        slippageMultiplier: BACKTEST_SLIPPAGE_MULTIPLIER,
       }),
       test: runDeterministicBacktest({
         returns: testReturns,
         costsBps,
         liquidityByBar: liquidityByBar.slice(testStartIndex, testStartIndex + testReturns.length),
         depthPressureByBar: depthPressureByBar.slice(testStartIndex, testStartIndex + testReturns.length),
-        slippageMultiplier: 1.1,
+        slippageMultiplier: BACKTEST_SLIPPAGE_MULTIPLIER,
       }),
     };
   });
@@ -192,7 +195,7 @@ export async function runBacktestWorker(payload: BacktestPayload): Promise<{ dsr
     costsBps,
     liquidityByBar,
     depthPressureByBar,
-    slippageMultiplier: 1.1,
+    slippageMultiplier: BACKTEST_SLIPPAGE_MULTIPLIER,
   });
   const dsr = computeDeflatedSharpe(aggregateOOS || finalBacktest.sharpeProxy, Math.max(splitMetrics.length, 1), returns.length || 2);
   const inSampleRanks = inSampleSharpe

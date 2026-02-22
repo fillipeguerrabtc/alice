@@ -15,6 +15,15 @@ export interface BacktestMetrics {
   averageSlippageBps: number;
 }
 
+function computeEffectiveSlippageBps(input: {
+  baseCostsBps: number;
+  slippageMultiplier: number;
+  liquidity: number;
+  depthPressure: number;
+}): number {
+  return input.baseCostsBps * input.slippageMultiplier * (1 + input.depthPressure) * (1 / Math.max(input.liquidity, 0.1));
+}
+
 export function runDeterministicBacktest(input: BacktestInput): BacktestMetrics {
   const slippageMultiplier = Math.max(0, input.slippageMultiplier ?? 1);
   const barControls = input.returns.map((_value, index) => {
@@ -25,7 +34,12 @@ export function runDeterministicBacktest(input: BacktestInput): BacktestMetrics 
   });
   const net = input.returns.map((value, index) => {
     const controls = barControls[index] ?? { liquidity: 1, depthPressure: 0, fillRatio: 1 };
-    const effectiveSlippageBps = input.costsBps * slippageMultiplier * (1 + controls.depthPressure) * (1 / Math.max(controls.liquidity, 0.1));
+    const effectiveSlippageBps = computeEffectiveSlippageBps({
+      baseCostsBps: input.costsBps,
+      slippageMultiplier,
+      liquidity: controls.liquidity,
+      depthPressure: controls.depthPressure,
+    });
     const effectiveCost = effectiveSlippageBps / 10_000;
     return (value * controls.fillRatio) - effectiveCost;
   });
@@ -40,7 +54,12 @@ export function runDeterministicBacktest(input: BacktestInput): BacktestMetrics 
     : 1;
   const averageSlippageBps = net.length
     ? barControls.reduce((sum, controls) => {
-      return sum + (input.costsBps * slippageMultiplier * (1 + controls.depthPressure) * (1 / Math.max(controls.liquidity, 0.1)));
+      return sum + computeEffectiveSlippageBps({
+        baseCostsBps: input.costsBps,
+        slippageMultiplier,
+        liquidity: controls.liquidity,
+        depthPressure: controls.depthPressure,
+      });
     }, 0) / net.length
     : input.costsBps;
   return {
