@@ -1740,15 +1740,15 @@ jobs:
           
           # Validação 2: Verificar que config.json tem conteúdo válido (python3 - sem dependência de jq)
           AUTHS_COUNT=$(python3 -c "
-import json, os, sys
-try:
-    with open(os.path.expanduser('~/.docker/config.json')) as f:
-        d = json.load(f)
-    print(len(d.get('auths', {})))
-except Exception as e:
-    print(0, file=sys.stderr)
-    sys.exit(1)
-" 2>/dev/null) || { echo "❌ ERRO: config.json do runner inválido ou ilegível!"; cat ~/.docker/config.json; exit 1; }
+          import json, os, sys
+          try:
+              with open(os.path.expanduser('~/.docker/config.json')) as f:
+                  d = json.load(f)
+              print(len(d.get('auths', {})))
+          except Exception as e:
+              print(0, file=sys.stderr)
+              sys.exit(1)
+          " 2>/dev/null) || { echo "❌ ERRO: config.json do runner inválido ou ilegível!"; cat ~/.docker/config.json; exit 1; }
           if [ "${AUTHS_COUNT:-0}" = "0" ]; then
             echo "❌ ERRO: config.json do runner não contém campo 'auths' válido (0 registries)!"
             cat ~/.docker/config.json
