@@ -18,12 +18,25 @@ const tradingV2JobBaseSchema = z.object({
   requestedBy: z.string().uuid(),
 });
 
+const operationIntentSchema = z.enum([
+  'scalping',
+  'intraday',
+  'swing',
+  'positional',
+  'arbitrage_internal',
+  'arbitrage_cross_exchange',
+  'cash_and_carry',
+  'market_neutral',
+  'volatility_breakout',
+]);
+
 export const tradingUniverseEnqueueSchema = tradingV2JobBaseSchema.extend({
   instrumentId: z.string().uuid(),
   marketType: z.enum(['spot', 'futures', 'margin']),
   timeframe: z.string().min(2).max(10),
   strategyKey: z.string().min(3).max(64),
   strategyVersion: z.number().int().positive(),
+  operationIntent: operationIntentSchema,
   candleTimestamp: z.string().datetime(),
 }).strict();
 
@@ -33,6 +46,7 @@ export const tradingBacktestEnqueueSchema = tradingV2JobBaseSchema.extend({
   marketType: z.enum(['spot', 'futures', 'margin']),
   strategyKey: z.string().min(3).max(64),
   strategyVersion: z.number().int().positive(),
+  operationIntent: operationIntentSchema,
   timeframe: z.string().min(2).max(10),
   lookback: z.number().int().min(30).max(10000),
   asofTimestamp: z.string().datetime(),
@@ -44,6 +58,7 @@ export const tradingCalibrationEnqueueSchema = tradingV2JobBaseSchema.extend({
   marketType: z.enum(['spot', 'futures', 'margin']),
   strategyKey: z.string().min(3).max(64),
   strategyVersion: z.number().int().positive(),
+  operationIntent: operationIntentSchema,
   timeframe: z.string().min(2).max(10),
   lookback: z.number().int().min(30).max(10000),
   asofTimestamp: z.string().datetime(),
@@ -53,6 +68,7 @@ export const tradingRebalanceEnqueueSchema = tradingV2JobBaseSchema.extend({
   portfolioId: z.string().uuid(),
   asofTimestamp: z.string().datetime(),
   policyVersion: z.number().int().positive(),
+  allowedOperationIntents: z.array(operationIntentSchema).min(1),
 }).strict();
 
 export const tradingModelRiskEnqueueSchema = tradingV2JobBaseSchema.extend({
@@ -72,6 +88,7 @@ export function buildTradingV2IdempotencyKey(stream: TradingV2StreamName, payloa
       String(payload.timeframe ?? 'unknown'),
       String(payload.candleTimestamp ?? 'unknown'),
       String(payload.strategyVersion ?? 'unknown'),
+      String(payload.operationIntent ?? 'unknown'),
     ].join(':');
   }
   if (stream === TRADING_V2_STREAMS.backtest) {
@@ -85,6 +102,7 @@ export function buildTradingV2IdempotencyKey(stream: TradingV2StreamName, payloa
       String(payload.asofTimestamp ?? 'unknown'),
       String(payload.strategyKey ?? 'unknown'),
       String(payload.strategyVersion ?? 'unknown'),
+      String(payload.operationIntent ?? 'unknown'),
     ].join(':');
   }
   if (stream === TRADING_V2_STREAMS.calibration) {
@@ -98,6 +116,7 @@ export function buildTradingV2IdempotencyKey(stream: TradingV2StreamName, payloa
       String(payload.asofTimestamp ?? 'unknown'),
       String(payload.strategyKey ?? 'unknown'),
       String(payload.strategyVersion ?? 'unknown'),
+      String(payload.operationIntent ?? 'unknown'),
     ].join(':');
   }
   if (stream === TRADING_V2_STREAMS.portfolioRebalance) {
@@ -106,6 +125,7 @@ export function buildTradingV2IdempotencyKey(stream: TradingV2StreamName, payloa
       String(payload.portfolioId ?? 'unknown'),
       String(payload.asofTimestamp ?? 'unknown'),
       String(payload.policyVersion ?? 'unknown'),
+      String((payload.allowedOperationIntents as string[] | undefined)?.join(',') ?? 'unknown'),
     ].join(':');
   }
   return [

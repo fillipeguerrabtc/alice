@@ -4,6 +4,7 @@ import {
   buildTradingV2IdempotencyKey,
   tradingBacktestEnqueueSchema,
   tradingCalibrationEnqueueSchema,
+  tradingUniverseEnqueueSchema,
   tradingRebalanceEnqueueSchema,
 } from '../../packages/shared-utils/src/trading-v2-queues';
 
@@ -22,6 +23,7 @@ describe('trading-v2 queue schemas', () => {
         marketType: 'futures',
         strategyKey: 'momentum_v2',
         strategyVersion: 2,
+        operationIntent: 'intraday',
         timeframe: '5m',
         lookback: 500,
         asofTimestamp: new Date().toISOString(),
@@ -38,6 +40,7 @@ describe('trading-v2 queue schemas', () => {
         marketType: 'futures',
         strategyKey: 'momentum_v2',
         strategyVersion: 2,
+        operationIntent: 'intraday',
         timeframe: '5m',
         lookback: 500,
         asofTimestamp: new Date().toISOString(),
@@ -53,9 +56,24 @@ describe('trading-v2 queue schemas', () => {
         portfolioId: '44444444-4444-4444-4444-444444444444',
         asofTimestamp: new Date().toISOString(),
         policyVersion: 1,
+        allowedOperationIntents: ['intraday'],
         decisions: {},
       });
     }).toThrow();
+  });
+
+  it('accepts operation intent for universe payload', () => {
+    const parsed = tradingUniverseEnqueueSchema.parse({
+      ...base,
+      instrumentId: '33333333-3333-3333-3333-333333333333',
+      marketType: 'futures',
+      timeframe: '5m',
+      strategyKey: 'momentum_v2',
+      strategyVersion: 2,
+      operationIntent: 'scalping',
+      candleTimestamp: new Date().toISOString(),
+    });
+    expect(parsed.operationIntent).toBe('scalping');
   });
 });
 
@@ -68,6 +86,7 @@ describe('buildTradingV2IdempotencyKey', () => {
       marketType: 'futures',
       strategyKey: 'momentum_v2',
       strategyVersion: 2,
+      operationIntent: 'intraday',
       timeframe: '5m',
       lookback: 500,
       asofTimestamp: '2026-02-22T00:00:00.000Z',

@@ -12363,6 +12363,7 @@ async function generateTradingSignalFromLlm(params: {
             instrumentId: candidate.instrumentId,
             symbol: instrument.symbol,
             marketType: candidate.marketType,
+            operationIntent: candidate.operationIntent ?? 'intraday',
             side: candidate.side as 'long' | 'short' | 'neutral',
             expectedEdge: Number(candidate.expectedEdge ?? 0),
             confidenceRaw: Number(candidate.confidenceRaw ?? 0),

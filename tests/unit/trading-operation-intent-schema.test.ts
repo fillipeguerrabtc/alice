@@ -7,6 +7,8 @@ import {
   tradingSignalCalibration,
   tradingPortfolios,
   tradingExchanges,
+  tradingOrderbookSnapshots,
+  tradingTradeTicksAgg,
 } from '../../packages/shared/src/schema';
 
 describe('trading operation intent schema', () => {
@@ -41,5 +43,12 @@ describe('trading operation intent schema', () => {
     expect(tradingExchanges.supportsFutures).toBeDefined();
     expect(tradingExchanges.supportsMargin).toBeDefined();
     expect(tradingExchanges.feeModelVersion).toBeDefined();
+  });
+
+  it('defines microstructure persistence tables', () => {
+    expect(tradingOrderbookSnapshots.topLevels).toBeDefined();
+    expect(tradingOrderbookSnapshots.orderBookImbalance).toBeDefined();
+    expect(tradingTradeTicksAgg.buyVolume).toBeDefined();
+    expect(tradingTradeTicksAgg.cvd).toBeDefined();
   });
 });

@@ -2980,6 +2980,51 @@ export const tradingFactorSnapshotsV2 = pgTable('trading_factor_snapshots_v2', {
   ),
 }));
 
+export const tradingOrderbookSnapshots = pgTable('trading_orderbook_snapshots', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  instrumentId: uuid('instrument_id').notNull().references(() => tradingInstruments.id),
+  marketType: tradingMarketTypeEnum('market_type').notNull(),
+  timeframe: tradingIntervalEnum('timeframe').notNull(),
+  snapshotAt: timestamp('snapshot_at').notNull(),
+  topLevels: jsonb('top_levels').$type<Record<string, unknown>>().notNull().default({}),
+  spreadBps: numeric('spread_bps'),
+  orderBookImbalance: numeric('order_book_imbalance'),
+  depthDropRatio: numeric('depth_drop_ratio'),
+  microPrice: numeric('micro_price'),
+  retentionUntil: timestamp('retention_until'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, (table) => ({
+  idxTradingOrderbookSnapshotsLookup: index('idx_trading_orderbook_snapshots_lookup').on(table.tenantId, table.instrumentId, table.snapshotAt),
+}));
+
+export const tradingTradeTicksAgg = pgTable('trading_trade_ticks_agg', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  instrumentId: uuid('instrument_id').notNull().references(() => tradingInstruments.id),
+  marketType: tradingMarketTypeEnum('market_type').notNull(),
+  timeframe: tradingIntervalEnum('timeframe').notNull(),
+  windowStart: timestamp('window_start').notNull(),
+  windowEnd: timestamp('window_end').notNull(),
+  buyVolume: numeric('buy_volume').notNull(),
+  sellVolume: numeric('sell_volume').notNull(),
+  deltaVolume: numeric('delta_volume').notNull(),
+  cvd: numeric('cvd').notNull(),
+  tradesCount: integer('trades_count').notNull().default(0),
+  retentionUntil: timestamp('retention_until'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, (table) => ({
+  idxTradingTradeTicksAggLookup: index('idx_trading_trade_ticks_agg_lookup').on(table.tenantId, table.instrumentId, table.windowStart),
+  uniqTradingTradeTicksAggWindow: uniqueIndex('uniq_trading_trade_ticks_agg_window').on(
+    table.tenantId,
+    table.instrumentId,
+    table.marketType,
+    table.timeframe,
+    table.windowStart,
+    table.windowEnd,
+  ),
+}));
+
 export const tradingStrategyRegistry = pgTable('trading_strategy_registry', {
   strategyKey: varchar('strategy_key', { length: 64 }).primaryKey(),
   version: integer('version').notNull(),
