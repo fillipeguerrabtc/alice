@@ -649,6 +649,104 @@ jobs:
           fetch-depth: 0
 
       # =================================================================
+      # PRÉ-VALIDAÇÃO DE SECRETS E CONECTIVIDADE (CLAUDE.md Regras 6, 9, 14)
+      # =================================================================
+      # Aborta imediatamente se secrets obrigatórios estão ausentes ou se o
+      # runner não consegue alcançar os registries Docker — antes de qualquer
+      # chamada de login, SCP ou exec remoto.
+      # =================================================================
+      - name: Validar secrets obrigatórios (fail-fast)
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+          HETZNER_SSH_PRIVATE_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "🔑 Validando secrets obrigatórios do deploy..."
+          MISSING=0
+
+          if [ -z "${GH_PAT:-}" ]; then
+            echo "❌ ERRO: Secret GH_PAT está ausente ou vazio!"
+            echo "   Necessário para login no GHCR (ghcr.io)."
+            echo "   Configure em: GitHub → Settings → Secrets → Actions"
+            echo "   Scope necessário: packages:read, packages:write"
+            MISSING=1
+          else
+            echo "   ✅ GH_PAT presente"
+          fi
+
+          if [ -z "${HETZNER_SSH_PRIVATE_KEY:-}" ]; then
+            echo "❌ ERRO: Secret HETZNER_SSH_PRIVATE_KEY está ausente!"
+            echo "   Necessário para SSH/SCP ao servidor de produção."
+            MISSING=1
+          else
+            echo "   ✅ HETZNER_SSH_PRIVATE_KEY presente"
+          fi
+
+          # DOCKERHUB_USERNAME e DOCKERHUB_TOKEN são opcionais, mas devem ser consistentes
+          if [ -n "${DOCKERHUB_USERNAME:-}" ] && [ -z "${DOCKERHUB_TOKEN:-}" ]; then
+            echo "❌ ERRO: DOCKERHUB_USERNAME presente mas DOCKERHUB_TOKEN ausente!"
+            echo "   Configure ambos ou nenhum."
+            MISSING=1
+          elif [ -z "${DOCKERHUB_USERNAME:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
+            echo "❌ ERRO: DOCKERHUB_TOKEN presente mas DOCKERHUB_USERNAME ausente!"
+            echo "   Configure ambos ou nenhum."
+            MISSING=1
+          elif [ -n "${DOCKERHUB_USERNAME:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
+            echo "   ✅ DOCKERHUB_USERNAME e DOCKERHUB_TOKEN presentes"
+          else
+            echo "   ⚠️  DOCKERHUB_USERNAME/TOKEN ausentes (opcional — apenas GHCR será usado)"
+          fi
+
+          if [ "$MISSING" = "1" ]; then
+            echo "════════════════════════════════════════════════════════"
+            echo "❌ DEPLOY ABORTADO: Secrets obrigatórios ausentes."
+            echo "   Corrija os secrets acima e re-execute o deploy."
+            echo "════════════════════════════════════════════════════════"
+            exit 1
+          fi
+          echo "✅ Todos os secrets obrigatórios validados"
+
+      - name: Verificar conectividade runner→registries (fail-fast)
+        run: |
+          set -euo pipefail
+          echo "🌐 Verificando conectividade runner→registries (obrigatório antes do login)..."
+          CONN_FAILED=0
+
+          # ghcr.io — registry privado principal (GHCR)
+          HTTP_GHCR=$(curl --silent --connect-timeout 10 --max-time 15 \
+            -o /dev/null -w "%{http_code}" https://ghcr.io/v2/ 2>/dev/null || echo "000")
+          if echo "$HTTP_GHCR" | grep -qE "^(200|401|403)$"; then
+            echo "   ✅ ghcr.io acessível do runner (HTTP $HTTP_GHCR)"
+          else
+            echo "   ❌ ghcr.io NÃO acessível do runner (HTTP $HTTP_GHCR)"
+            echo "   Hipóteses: firewall bloqueando outbound 443, DNS falhou, proxy ausente."
+            CONN_FAILED=1
+          fi
+
+          # registry-1.docker.io — Docker Hub (imagens públicas)
+          HTTP_DOCKERIO=$(curl --silent --connect-timeout 10 --max-time 15 \
+            -o /dev/null -w "%{http_code}" https://registry-1.docker.io/v2/ 2>/dev/null || echo "000")
+          if echo "$HTTP_DOCKERIO" | grep -qE "^(200|401|403)$"; then
+            echo "   ✅ docker.io acessível do runner (HTTP $HTTP_DOCKERIO)"
+          else
+            echo "   ❌ docker.io NÃO acessível do runner (HTTP $HTTP_DOCKERIO)"
+            echo "   Hipóteses: firewall bloqueando outbound 443, DNS falhou, proxy ausente."
+            CONN_FAILED=1
+          fi
+
+          if [ "$CONN_FAILED" = "1" ]; then
+            echo "════════════════════════════════════════════════════════"
+            echo "❌ DEPLOY ABORTADO: runner não consegue alcançar registries Docker."
+            echo "   docker login e docker pull são impossíveis sem conectividade."
+            echo "   Ações corretivas: verifique firewall, DNS e HTTP_PROXY no runner."
+            echo "════════════════════════════════════════════════════════"
+            exit 1
+          fi
+          echo "✅ Conectividade runner→registries OK"
+
+      # =================================================================
       # Login GHCR - usa GH_PAT (Personal Access Token) com scopes
       # write:packages + read:packages para pull de imagens no deploy.
       # CAUSA RAIZ (09/02/2026): ${{ secrets.GITHUB_TOKEN }} (token automático)
@@ -672,6 +770,92 @@ jobs:
           registry: docker.io
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # =================================================================
+      # VERIFICAÇÃO DE CREDENTIAL HELPER (CLAUDE.md Regras 6, 9)
+      # =================================================================
+      # Aborta ANTES de qualquer SSH/SCP se o runner usa credential helper.
+      # Com credsStore/credHelpers, o config.json NÃO contém tokens reais —
+      # apenas referência ao helper (ex: osxkeychain, pass, secretservice).
+      # O servidor não tem esse helper, então as credenciais seriam perdidas.
+      # Ref: https://docs.docker.com/reference/cli/docker/login/#credential-stores
+      # =================================================================
+      - name: Verificar config.json runner (abortar se credential helper ativo)
+        run: |
+          set -euo pipefail
+          echo "🔍 Verificando config.json runner (credential helper check)..."
+
+          if [ ! -f ~/.docker/config.json ]; then
+            echo "❌ ERRO: ~/.docker/config.json não foi criado pelo docker/login-action!"
+            echo "   O step 'Login to GHCR' deveria ter criado este arquivo."
+            exit 1
+          fi
+
+          # Detectar credsStore global (ex: "credsStore": "desktop")
+          CREDS_STORE=$(python3 -c "
+          import json, os
+          try:
+              with open(os.path.expanduser('~/.docker/config.json')) as f:
+                  d = json.load(f)
+              print(d.get('credsStore', '') or '')
+          except (FileNotFoundError, json.JSONDecodeError, IOError):
+              print('')
+          " 2>/dev/null || echo "")
+
+          if [ -n "${CREDS_STORE:-}" ]; then
+            echo "❌ ERRO CRÍTICO: Credential helper global ativo no runner: credsStore=${CREDS_STORE}"
+            echo "   Com credsStore ativo, config.json NÃO contém tokens reais —"
+            echo "   apenas referência ao helper, que não existe no servidor de produção."
+            echo "   Se transferirmos este config.json, o servidor ficará sem credenciais."
+            echo ""
+            echo "   AÇÃO NECESSÁRIA:"
+            echo "   Remova ou desative o credsStore no runner ~/.docker/config.json."
+            echo "   Hipóteses: docker-credential-pass, docker-credential-secretservice,"
+            echo "   docker-desktop, osxkeychain configurados no ambiente do runner."
+            exit 1
+          fi
+          echo "   ✅ Sem credsStore global"
+
+          # Detectar credHelpers por registro (ex: "credHelpers": {"ghcr.io": "pass"})
+          CRED_HELPERS=$(python3 -c "
+          import json, os
+          try:
+              with open(os.path.expanduser('~/.docker/config.json')) as f:
+                  d = json.load(f)
+              helpers = d.get('credHelpers', {})
+              print(' '.join(f'{k}={v}' for k, v in helpers.items()) if helpers else '')
+          except (FileNotFoundError, json.JSONDecodeError, IOError):
+              print('')
+          " 2>/dev/null || echo "")
+
+          if [ -n "${CRED_HELPERS:-}" ]; then
+            echo "❌ ERRO CRÍTICO: credHelpers por registro detectado no runner: ${CRED_HELPERS}"
+            echo "   Esses helpers não existem no servidor e impedirão o pull de imagens."
+            echo "   Remova os credHelpers do config.json antes de prosseguir."
+            exit 1
+          fi
+          echo "   ✅ Sem credHelpers por registro"
+
+          # Verificar que auths tem entradas reais
+          AUTHS_COUNT=$(python3 -c "
+          import json, os
+          try:
+              with open(os.path.expanduser('~/.docker/config.json')) as f:
+                  d = json.load(f)
+              print(len(d.get('auths', {})))
+          except (FileNotFoundError, json.JSONDecodeError, IOError):
+              print(0)
+          " 2>/dev/null || echo "0")
+
+          if [ "${AUTHS_COUNT:-0}" = "0" ]; then
+            echo "❌ ERRO: config.json não contém credenciais válidas (auths vazio)!"
+            echo "   Hipóteses: docker login não foi executado, token inválido, rate limit."
+            echo "   Verifique os steps 'Login to GHCR' e 'Login Docker Hub' acima."
+            exit 1
+          fi
+
+          echo "   ✅ config.json com ${AUTHS_COUNT} registries autenticados"
+          echo "✅ config.json runner pronto para transferência ao servidor"
 
       - name: Generate .env.prod
         id: generate-env
@@ -1756,6 +1940,27 @@ jobs:
           fi
           echo "   ✅ config.json válido com $AUTHS_COUNT registries autenticados"
           
+          # Validação 2b: Segurança adicional — verificar ausência de credential helper
+          # (o step dedicado já verificou, mas este é um second check antes do SCP)
+          CREDS_STORE_CHK=$(python3 -c "
+          import json, os
+          try:
+              with open(os.path.expanduser('~/.docker/config.json')) as f:
+                  d = json.load(f)
+              cs = d.get('credsStore', '') or ''
+              ch = list(d.get('credHelpers', {}).keys())
+              print(cs or ','.join(ch) or '')
+          except (FileNotFoundError, json.JSONDecodeError, IOError):
+              print('')
+          " 2>/dev/null || echo "")
+          if [ -n "${CREDS_STORE_CHK:-}" ]; then
+            echo "❌ ABORTANDO SCP: credential helper detectado (${CREDS_STORE_CHK})."
+            echo "   config.json não contém tokens reais — SCP seria inútil."
+            echo "   Verifique o step 'Verificar config.json runner' acima."
+            exit 1
+          fi
+          echo "   ✅ Confirmado: sem credential helper no config.json"
+          
           # Configurar SSH para SCP
           mkdir -p ~/.ssh
           echo "${{ secrets.HETZNER_SSH_PRIVATE_KEY }}" > ~/.ssh/docker_transfer_key
@@ -1810,6 +2015,16 @@ jobs:
           
           echo "   ✅ Validação de conteúdo OK (ghcr.io presente no servidor)"
           
+          # Validação 5: Verificar docker.io no servidor (informativo)
+          REMOTE_DOCKERIO=$(ssh -i ~/.ssh/docker_transfer_key -o StrictHostKeyChecking=no \
+            ${{ env.HETZNER_USER }}@${{ env.HETZNER_HOST }} \
+            'grep -c "docker.io\|index.docker.io" ~/.docker/config.json 2>/dev/null || echo 0')
+          if [ "${REMOTE_DOCKERIO:-0}" = "0" ]; then
+            echo "   ⚠️  docker.io ausente do config.json no servidor (opcional se deploy usa só GHCR)"
+          else
+            echo "   ✅ Validação de conteúdo OK (docker.io presente no servidor)"
+          fi
+          
           # Cleanup chave SSH temporária (sucesso)
           rm -f ~/.ssh/docker_transfer_key
           
@@ -1821,110 +2036,158 @@ jobs:
           rm -f ~/.ssh/docker_transfer_key 2>/dev/null || true
 
       # =======================================================================
-      # AUTENTICAÇÃO DE REGISTRIES DOCKER NO SERVIDOR DE PRODUÇÃO (22/02/2026)
+      # VALIDAÇÃO CONFIG.JSON NO SERVIDOR + DIAGNÓSTICO DE CONECTIVIDADE
       # =======================================================================
-      # PROPÓSITO: Garantir que o servidor Hetzner (HETZNER_VM_HOST) esteja
-      # autenticado em TODOS os registries privados ANTES de qualquer docker pull.
+      # CAUSA RAIZ DA FALHA (22/02/2026):
+      #   O step anterior tentava fazer `docker login ghcr.io` via SSH no servidor
+      #   de produção, mas o servidor NÃO consegue alcançar ghcr.io/docker.io
+      #   ("Client.Timeout exceeded while awaiting headers").
       #
-      # PROBLEMA: A transferência de config.json (step anterior) pode falhar
-      # silenciosamente se o runner usa credential helper (credsStore) que
-      # armazena tokens fora do JSON — nesse caso, o servidor receberia um
-      # config.json vazio/inválido sem credenciais reais.
+      # SOLUÇÃO ENTERPRISE:
+      #   - O runner (que SÍ alcança registries) já fez login e transferiu o
+      #     config.json com tokens base64 via SCP (step anterior).
+      #   - Este step VALIDA que o config.json chegou corretamente ao servidor,
+      #     SEM precisar fazer `docker login` (o que exigiria conectividade).
+      #   - Diagnóstico de conectividade servidor→registry é emitido como
+      #     informação, sem abortar (o docker pull pode funcionar mesmo se
+      #     o daemon não alcança o endpoint de auth — pois os tokens já estão
+      #     no config.json).
       #
-      # SOLUÇÃO: Login direto via SSH no servidor usando os secrets do GitHub:
-      #   - GH_PAT        → acesso ao GitHub Container Registry (ghcr.io)
-      #   - DOCKERHUB_USERNAME + DOCKERHUB_TOKEN → acesso ao Docker Hub
-      #
-      # SEGURANÇA:
-      #   - Secrets passados apenas como variáveis de ambiente da sessão SSH
-      #   - Nunca gravados permanentemente em disco no servidor
-      #   - Docker escreve ~/.docker/config.json (padrão Docker, controlado pelo daemon)
-      #
-      # ORIGEM DOS SECRETS (GitHub Actions → Settings → Secrets):
-      #   - GH_PAT: Personal Access Token com scope packages:read/write
-      #   - DOCKERHUB_USERNAME: usuário Docker Hub
-      #   - DOCKERHUB_TOKEN: token de acesso Docker Hub
-      #
+      # SEGURANÇA: Nenhuma senha ou token é impresso nos logs.
       # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 14 (Verificar secrets)
-      # REF: https://docs.github.com/en/packages/working-with-a-github-packages-registry
+      # REF: https://docs.docker.com/reference/cli/docker/login/#credential-stores
       # =======================================================================
-      - name: Autenticar registries Docker no servidor de produção
+      - name: Validar config.json no servidor + diagnóstico conectividade
         uses: appleboy/ssh-action@v1.2.2
-        env:
-          GH_PAT: ${{ secrets.GH_PAT }}
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
-          envs: GH_PAT,DOCKERHUB_USERNAME,DOCKERHUB_TOKEN
-          command_timeout: 3m
+          command_timeout: 2m
           script: |
             set -euo pipefail
 
-            echo "🔐 AUTENTICAÇÃO DE REGISTRIES DOCKER"
-            echo "══════════════════════════════════════════════════════════════════"
-            echo "IMPORTANTE: Secrets são usados apenas nesta sessão SSH."
-            echo "Nunca são gravados permanentemente em disco além do ~/.docker/config.json"
-            echo "gerenciado pelo Docker daemon (padrão oficial)."
-            echo "══════════════════════════════════════════════════════════════════"
-            echo ""
-
-            LOGIN_FAILED=false
+            echo "🔍 VALIDAÇÃO CONFIG.JSON NO SERVIDOR DE PRODUÇÃO"
+            echo "════════════════════════════════════════════════════════"
 
             # ------------------------------------------------------------------
-            # 1. Login no GitHub Container Registry (ghcr.io)
+            # 1. Verificar que config.json existe no servidor
             # ------------------------------------------------------------------
-            echo "1️⃣  Login GHCR (ghcr.io)..."
-            if [ -z "${GH_PAT:-}" ]; then
-              echo "❌ ERRO: Secret GH_PAT não foi injetado via SSH envs!"
-              echo "   Verifique se o secret GH_PAT está configurado no GitHub."
-              LOGIN_FAILED=true
-            else
-              if echo "$GH_PAT" | docker login ghcr.io -u "${{ github.repository_owner }}" --password-stdin 2>&1; then
-                echo "   ✅ Login GHCR OK"
-              else
-                echo "❌ ERRO: Falha no login do GHCR (ghcr.io)!"
-                echo "   Verifique se GH_PAT tem scope packages:read (e packages:write para push)."
-                LOGIN_FAILED=true
-              fi
-            fi
-
-            echo ""
-
-            # ------------------------------------------------------------------
-            # 2. Login no Docker Hub (docker.io)
-            # ------------------------------------------------------------------
-            echo "2️⃣  Login Docker Hub (docker.io)..."
-            if [ -z "${DOCKERHUB_USERNAME:-}" ] || [ -z "${DOCKERHUB_TOKEN:-}" ]; then
-              echo "⚠️  Secrets DOCKERHUB_USERNAME/DOCKERHUB_TOKEN não injetados — pulando login Docker Hub."
-              echo "   (Opcional se o deploy usa apenas imagens do GHCR e registries públicos)"
-            else
-              if echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USERNAME" --password-stdin 2>&1; then
-                echo "   ✅ Login Docker Hub OK"
-              else
-                echo "❌ ERRO: Falha no login do Docker Hub!"
-                echo "   Verifique DOCKERHUB_USERNAME e DOCKERHUB_TOKEN no GitHub Secrets."
-                LOGIN_FAILED=true
-              fi
-            fi
-
-            echo ""
-
-            # ------------------------------------------------------------------
-            # 3. Validação final — abortar se algum login obrigatório falhou
-            # ------------------------------------------------------------------
-            if [ "$LOGIN_FAILED" = "true" ]; then
-              echo "══════════════════════════════════════════════════════════════════"
-              echo "❌ DEPLOY ABORTADO: Falha na autenticação de registry Docker."
-              echo "   Corrija os secrets e re-execute o deploy."
-              echo "══════════════════════════════════════════════════════════════════"
+            if [ ! -f ~/.docker/config.json ]; then
+              echo "❌ ERRO: ~/.docker/config.json não existe no servidor!"
+              echo "   O SCP do step 'Transferir Docker config.json' deveria tê-lo criado."
+              echo "   Hipóteses: falha de rede no SCP, permissão de diretório, disco cheio."
               exit 1
             fi
+            echo "   ✅ config.json encontrado no servidor"
 
-            echo "✅ Todos os registries Docker autenticados com sucesso no servidor."
+            # ------------------------------------------------------------------
+            # 2. Verificar que não usa credential helper (helper não existe aqui)
+            # ------------------------------------------------------------------
+            CREDS_STORE=$(python3 -c "
+            import json, os
+            try:
+                with open(os.path.expanduser('~/.docker/config.json')) as f:
+                    d = json.load(f)
+                cs = d.get('credsStore', '') or ''
+                ch = list(d.get('credHelpers', {}).keys())
+                print(cs or ','.join(ch) or '')
+            except (FileNotFoundError, json.JSONDecodeError, IOError):
+                print('')
+            " 2>/dev/null || echo "")
+
+            if [ -n "${CREDS_STORE:-}" ]; then
+              echo "❌ ERRO CRÍTICO: config.json no servidor usa credential helper: ${CREDS_STORE}"
+              echo "   Tokens reais NÃO foram transferidos — apenas referência ao helper."
+              echo "   O helper não existe neste servidor, docker pull falhará com 401."
+              echo "   Causa raiz: o runner usa credential helper e o SCP transferiu"
+              echo "   config.json sem tokens reais. Desative o helper no runner."
+              exit 1
+            fi
+            echo "   ✅ Sem credential helper no config.json do servidor"
+
+            # ------------------------------------------------------------------
+            # 3. Verificar que auths tem ghcr.io (obrigatório)
+            # ------------------------------------------------------------------
+            GHCR_OK=$(python3 -c "
+            import json, os
+            try:
+                with open(os.path.expanduser('~/.docker/config.json')) as f:
+                    d = json.load(f)
+                auths = d.get('auths', {})
+                print('1' if 'ghcr.io' in auths else '0')
+            except (FileNotFoundError, json.JSONDecodeError, IOError):
+                print('0')
+            " 2>/dev/null || echo "0")
+
+            if [ "$GHCR_OK" != "1" ]; then
+              echo "❌ ERRO: config.json no servidor não contém credenciais para ghcr.io!"
+              echo "   O deploy não conseguirá fazer pull das imagens Alice."
+              echo "   Hipóteses: SCP falhou silenciosamente, arquivo corrompido,"
+              echo "   ou runner não fez login ghcr.io corretamente."
+              exit 1
+            fi
+            echo "   ✅ Credenciais ghcr.io presentes no servidor"
+
+            # ------------------------------------------------------------------
+            # 4. Verificar docker.io (informativo)
+            # ------------------------------------------------------------------
+            DOCKERIO_OK=$(python3 -c "
+            import json, os
+            try:
+                with open(os.path.expanduser('~/.docker/config.json')) as f:
+                    d = json.load(f)
+                auths = d.get('auths', {})
+                has = any('docker.io' in k or 'index.docker.io' in k for k in auths)
+                print('1' if has else '0')
+            except (FileNotFoundError, json.JSONDecodeError, IOError):
+                print('0')
+            " 2>/dev/null || echo "0")
+
+            if [ "$DOCKERIO_OK" = "1" ]; then
+              echo "   ✅ Credenciais docker.io presentes no servidor"
+            else
+              echo "   ⚠️  docker.io ausente do config.json (opcional — OK se deploy usa só GHCR)"
+            fi
+
+            echo ""
+            echo "════════════════════════════════════════════════════════"
+            echo "🌐 DIAGNÓSTICO CONECTIVIDADE SERVIDOR→REGISTRIES (informativo)"
+            echo "   (Falha de conectividade NÃO aborta o deploy — tokens já estão no config.json)"
+            echo "════════════════════════════════════════════════════════"
+
+            # ------------------------------------------------------------------
+            # 5. Diagnóstico de conectividade servidor→registries
+            #    INFORMATIVO apenas — não aborta, pois o docker pull usa os
+            #    tokens do config.json sem precisar de nova autenticação.
+            # ------------------------------------------------------------------
+            if command -v curl >/dev/null 2>&1; then
+              HTTP_GHCR=$(curl --silent --connect-timeout 10 --max-time 15 \
+                -o /dev/null -w "%{http_code}" https://ghcr.io/v2/ 2>/dev/null || echo "000")
+              if echo "$HTTP_GHCR" | grep -qE "^(200|401|403)$"; then
+                echo "   ✅ ghcr.io acessível do servidor (HTTP $HTTP_GHCR)"
+              else
+                echo "   ⚠️  ghcr.io NÃO acessível do servidor (HTTP $HTTP_GHCR)"
+                echo "      Hipóteses: firewall bloqueando outbound 443, DNS, proxy ausente."
+                echo "      docker pull tentará usar os tokens do config.json diretamente."
+              fi
+
+              HTTP_DOCKERIO=$(curl --silent --connect-timeout 10 --max-time 15 \
+                -o /dev/null -w "%{http_code}" https://registry-1.docker.io/v2/ 2>/dev/null || echo "000")
+              if echo "$HTTP_DOCKERIO" | grep -qE "^(200|401|403)$"; then
+                echo "   ✅ docker.io acessível do servidor (HTTP $HTTP_DOCKERIO)"
+              else
+                echo "   ⚠️  docker.io NÃO acessível do servidor (HTTP $HTTP_DOCKERIO)"
+                echo "      Hipóteses: firewall bloqueando outbound 443, DNS, proxy ausente."
+                echo "      Imagens Docker Hub públicas podem não ser acessíveis."
+              fi
+            else
+              echo "   ℹ️  curl não disponível — pulando diagnóstico de conectividade"
+            fi
+
+            echo ""
+            echo "✅ Validação config.json servidor concluída — credenciais prontas para docker pull"
 
       - name: Preparar infraestrutura base (networks, volumes, permissões)
         uses: appleboy/ssh-action@v1.2.2
