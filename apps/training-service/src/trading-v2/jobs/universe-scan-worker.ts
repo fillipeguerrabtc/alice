@@ -267,7 +267,7 @@ async function deriveMultiVenueCrossExchangeCandidate(input: {
 
   const riskFlags: string[] = [];
   if (!input.crossExchangeAllowed) riskFlags.push('cross_exchange_not_available');
-  if (bestEdge <= 0.0005) riskFlags.push('net_edge_non_positive');
+  if (bestEdge <= 0.0005) riskFlags.push('edge_below_threshold');
   if (bestPeerSymbol) riskFlags.push(`cross_exchange_pair:${input.symbol}->${bestPeerSymbol}`);
 
   return {

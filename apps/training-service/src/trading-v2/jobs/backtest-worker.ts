@@ -30,6 +30,11 @@ const timeframeToDataType: Record<string, (typeof schema.tradingMarketData.$infe
   '1d': 'candle_1d',
   '1w': 'candle_1w',
 };
+const BACKTEST_LIQUIDITY_DEPTH_DROP_WEIGHT = 0.6;
+const BACKTEST_LIQUIDITY_IMBALANCE_WEIGHT = 0.2;
+const BACKTEST_LIQUIDITY_VOLUME_CAP = 0.2;
+const BACKTEST_LIQUIDITY_VOLUME_NORMALIZATION_FACTOR = 1_000_000;
+const BACKTEST_SPREAD_BPS_NORMALIZATION_FACTOR = 100;
 
 function parseClose(data: Record<string, unknown>): number | null {
   const close = data.close;
@@ -132,14 +137,17 @@ export async function runBacktestWorker(payload: BacktestPayload): Promise<{ dsr
     const depthDrop = Number(micro?.depthDropRatio ?? 0);
     const imbalance = Math.abs(Number(micro?.orderBookImbalance ?? 0));
     const volumeProxy = Number(tradeAgg?.buyVolume ?? 0) + Number(tradeAgg?.sellVolume ?? 0);
-    const liquidity = 1 - (depthDrop * 0.6) - (imbalance * 0.2) + Math.min(0.2, volumeProxy / 1_000_000);
+    const liquidity = 1
+      - (depthDrop * BACKTEST_LIQUIDITY_DEPTH_DROP_WEIGHT)
+      - (imbalance * BACKTEST_LIQUIDITY_IMBALANCE_WEIGHT)
+      + Math.min(BACKTEST_LIQUIDITY_VOLUME_CAP, volumeProxy / BACKTEST_LIQUIDITY_VOLUME_NORMALIZATION_FACTOR);
     return clamp01(liquidity);
   });
   const depthPressureByBar = returns.map((_, index) => {
     const micro = microSnapshots[index % Math.max(microSnapshots.length, 1)];
     const spreadBps = Number(micro?.spreadBps ?? 0);
     const depthDrop = Number(micro?.depthDropRatio ?? 0);
-    const pressure = (spreadBps / 100) + depthDrop;
+    const pressure = (spreadBps / BACKTEST_SPREAD_BPS_NORMALIZATION_FACTOR) + depthDrop;
     return clamp01(pressure);
   });
 
