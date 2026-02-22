@@ -124,13 +124,19 @@ import { jsonrepair } from 'jsonrepair';
 import { callGatewayComplete, isGatewayConfigured, type GatewayCompleteResult } from './llm-gateway-client.js';
 import { listTenantPortfolios } from './trading-v2/core/portfolio-api.js';
 import { buildDecisionPacket } from './trading-v2/core/decision-packet.js';
-import { buildCorrelationMatrix } from './trading-v2/engines/correlation-engine.js';
-import { buildAllocations } from './trading-v2/engines/allocation-engine.js';
 import { estimateCosts } from './trading-v2/engines/cost-model.js';
-import { buildExecutionPlan } from './trading-v2/engines/execution-engine.js';
 import { buildCompactPrompt } from './trading-v2/llm/compact-prompt.js';
 import { enforceLlmGuardrails } from './trading-v2/llm/llm-guardrails.js';
 import { saveDecisionSnapshot } from './trading-v2/storage/snapshot-store.js';
+import {
+  TRADING_V2_STREAMS,
+  buildTradingV2IdempotencyKey,
+  tradingBacktestEnqueueSchema,
+  tradingCalibrationEnqueueSchema,
+  tradingModelRiskEnqueueSchema,
+  tradingRebalanceEnqueueSchema,
+  tradingUniverseEnqueueSchema,
+} from '@alice/shared-utils';
 
 const logger = createLogger('integrations-service');
 const config = loadConfig(integrationsServiceConfigSchema);
@@ -155,7 +161,6 @@ const TRADING_DATASET_MIN_QUALITY = parseEnvFloat(
   0.35,
   'TRADING_DATASET_MIN_QUALITY'
 );
-const RETURNS_FALLBACK_FACTORS = [1, 0.5, 0.25, 0.1] as const;
 const TRADING_MODE = (process.env.TRADING_MODE ?? 'portfolio_auto') as 'portfolio_auto' | 'signal_auto' | 'lab';
 const TRADING_LLM_PROMPT_MODE = (process.env.TRADING_LLM_PROMPT_MODE ?? 'compact') as 'compact' | 'verbose';
 
@@ -12231,25 +12236,25 @@ async function generateTradingSignalFromLlm(params: {
     if (TRADING_MODE === 'portfolio_auto') {
       const portfolios = await listTenantPortfolios(params.tenantId);
       const selectedPortfolio = portfolios[0];
-      const returnsByInstrument: Record<string, number[]> = {};
-      const snapshotRows = instrumentIds.length > 0
-        ? await db.query.tradingFactorSnapshotsV2.findMany({
+      const latestRebalance = selectedPortfolio
+        ? await db.query.tradingPortfolioRebalances.findFirst({
           where: and(
-            eq(schema.tradingFactorSnapshotsV2.tenantId, params.tenantId),
-            inArray(schema.tradingFactorSnapshotsV2.instrumentId, instrumentIds),
+            eq(schema.tradingPortfolioRebalances.tenantId, params.tenantId),
+            eq(schema.tradingPortfolioRebalances.portfolioId, selectedPortfolio.id),
           ),
-          orderBy: [desc(schema.tradingFactorSnapshotsV2.candleTimestamp)],
-          limit: 500,
+          orderBy: [desc(schema.tradingPortfolioRebalances.createdAt)],
+        })
+        : null;
+      const latestExecutionReports = selectedPortfolio
+        ? await db.query.tradingExecutionReports.findMany({
+          where: and(
+            eq(schema.tradingExecutionReports.tenantId, params.tenantId),
+            eq(schema.tradingExecutionReports.portfolioId, selectedPortfolio.id),
+          ),
+          orderBy: [desc(schema.tradingExecutionReports.createdAt)],
+          limit: 30,
         })
         : [];
-      const snapshotsByInstrument = new Map<string, number[]>();
-      for (const row of snapshotRows) {
-        const current = snapshotsByInstrument.get(row.instrumentId) ?? [];
-        if (current.length < 50) {
-          current.push(Number(row.expectedReturn ?? 0));
-          snapshotsByInstrument.set(row.instrumentId, current);
-        }
-      }
       const costsByInstrument = Object.fromEntries(
         recentCandidates.map((candidate) => [
           candidate.instrumentId,
@@ -12260,11 +12265,6 @@ async function generateTradingSignalFromLlm(params: {
           }),
         ]),
       );
-      recentCandidates.forEach((candidate) => {
-        const edge = Number(candidate.expectedEdge ?? 0);
-        returnsByInstrument[candidate.instrumentId] = snapshotsByInstrument.get(candidate.instrumentId)
-          ?? RETURNS_FALLBACK_FACTORS.map((factor) => edge * factor);
-      });
       const candidateInputs = recentCandidates
         .map((candidate) => {
           const instrument = instrumentById.get(candidate.instrumentId);
@@ -12284,38 +12284,22 @@ async function generateTradingSignalFromLlm(params: {
           };
         })
         .filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== null);
-      const correlations = buildCorrelationMatrix(returnsByInstrument);
-      const decisions = buildAllocations({
-        mode: 'signal_weighted',
-        portfolioId: selectedPortfolio?.id ?? 'default',
-        maxGrossExposure: Number(selectedPortfolio?.maxGrossExposure ?? 0.8),
-        maxNetExposure: Number(selectedPortfolio?.maxNetExposure ?? 0.5),
-        maxDrawdownLimit: Number(selectedPortfolio?.maxDrawdownLimit ?? 0.2),
-        currentDrawdown: 0,
-        candidates: candidateInputs,
-        costs: costsByInstrument,
-        volByInstrument: Object.fromEntries(recentCandidates.map((candidate) => [candidate.instrumentId, 0.02])),
-        liquidityScoreByInstrument: Object.fromEntries(recentCandidates.map((candidate) => [candidate.instrumentId, 0.7])),
-        constraints: {},
-      });
-      const executionPlan = buildExecutionPlan(decisions, Object.fromEntries(recentCandidates.map((candidate) => [candidate.instrumentId, 0.7])));
       const packet = buildDecisionPacket({
         portfolioId: selectedPortfolio?.id,
-        decisions,
+        decisions: [],
         costs: costsByInstrument,
-        evidence: { correlations, candidates: recentCandidates.length, executionPlan },
+        evidence: {
+          candidates: recentCandidates.length,
+          rebalanceAsOf: latestRebalance?.asofTimestamp ?? null,
+          executionReports: latestExecutionReports.map((report) => ({
+            id: report.id,
+            instrumentId: report.instrumentId,
+            createdAt: report.createdAt,
+            estimatedCosts: report.estimatedCosts,
+          })),
+        },
       });
       await saveDecisionSnapshot(params.tenantId, packet as unknown as Record<string, unknown>);
-      if (selectedPortfolio) {
-        await db.insert(schema.tradingPortfolioRebalances).values({
-          tenantId: params.tenantId,
-          portfolioId: selectedPortfolio.id,
-          asofTimestamp: new Date(),
-          inputs: { candidates: recentCandidates.length, correlations },
-          decisions: { decisions, executionPlan },
-          status: 'succeeded',
-        });
-      }
       const promptData = buildCompactPrompt(packet);
       tradingPromptTokensEstimate.labels(TRADING_LLM_PROMPT_MODE).set(promptData.estimatedTokens);
       const guardrails = enforceLlmGuardrails({ estimatedTokens: promptData.estimatedTokens, promptMode: TRADING_LLM_PROMPT_MODE });
@@ -12327,21 +12311,32 @@ async function generateTradingSignalFromLlm(params: {
         guardrails,
         universeScanCount: recentCandidates.length,
       }, 'Pacote institucional de portfólio gerado');
-      const firstDecision = decisions[0];
-      const signalType: 'entry_long' | 'entry_short' | 'hold' = firstDecision?.side === 'buy' ? 'entry_long' : firstDecision?.side === 'sell' ? 'entry_short' : 'hold';
+      const topCandidate = candidateInputs
+        .map((candidate) => {
+          const cost = costsByInstrument[candidate.instrumentId];
+          const edgeNet = candidate.expectedEdge - ((cost?.totalBps ?? 0) / 10_000);
+          return { candidate, edgeNet };
+        })
+        .sort((a, b) => b.edgeNet - a.edgeNet)[0];
+      const firstDecision = topCandidate?.candidate;
+      const signalType: 'entry_long' | 'entry_short' | 'hold' = firstDecision?.side === 'long' ? 'entry_long' : firstDecision?.side === 'short' ? 'entry_short' : 'hold';
       const createResult = await kucoinService.createSignal(
         { tenantId: params.tenantId, userId: params.userId },
         {
           signalType,
-          symbol: firstDecision?.symbol ?? params.symbol,
+          symbol: topCandidate?.candidate.symbol ?? params.symbol,
           marketType,
           marginMode: params.marginMode,
-          confidence: 0.5,
-          reasoning: firstDecision ? `Decision packet institucional (${decisions.length} decisões)` : 'No-trade: sem edge líquido após custos',
+          confidence: Number(topCandidate?.candidate.confidenceCalibrated ?? topCandidate?.candidate.confidenceRaw ?? 0.5),
+          reasoning: firstDecision
+            ? `Portfolio auto via snapshot do rebalance (${latestExecutionReports.length} execution reports recentes)`
+            : 'No-trade: sem candidato aprovado por edge líquido',
           metadata: {
             generationSource: params.source,
             decisionPacket: packet,
             noTrade: !firstDecision,
+            rebalanceId: latestRebalance?.id ?? null,
+            topCandidateEdgeNet: topCandidate?.edgeNet ?? null,
           },
         },
       );
@@ -12948,6 +12943,205 @@ function parseHistoryDateParam(value?: string): Date | null {
   if (Number.isNaN(parsed.getTime())) return null;
   return parsed;
 }
+
+async function enqueueTradingV2Job(params: {
+  tenantId: string;
+  userId: string;
+  path: '/internal/trading-v2/enqueue/universe-scan' | '/internal/trading-v2/enqueue/backtest' | '/internal/trading-v2/enqueue/calibration' | '/internal/trading-v2/enqueue/portfolio-rebalance' | '/internal/trading-v2/enqueue/model-risk';
+  payload: Record<string, unknown>;
+}): Promise<{ queued: boolean; queue: string; idempotencyKey: string }> {
+  const internalHeaders = generateInternalAuthHeaders({
+    userId: params.userId,
+    tenantId: params.tenantId,
+    role: 'operator',
+  });
+  const response = await fetch(`${TRAINING_SERVICE_URL_FINAL}${params.path}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...internalHeaders,
+    },
+    body: JSON.stringify(params.payload),
+  });
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Falha ao enfileirar job Trading V2: ${response.status} ${errorText}`);
+  }
+  const result = await response.json() as { queued: boolean; queue: string; idempotencyKey: string };
+  return result;
+}
+
+app.get('/api/trading-v2/portfolios', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+    const portfolios = await listTenantPortfolios(authContext.tenantId);
+    res.json({ success: true, data: portfolios });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao listar portfolios trading-v2');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+app.get('/api/trading-v2/candidates', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+    const queryResult = z.object({
+      marketType: z.enum(['futures', 'spot', 'margin']).optional(),
+      limit: z.coerce.number().int().min(1).max(200).optional(),
+    }).safeParse(req.query);
+    if (!queryResult.success) {
+      res.status(400).json({ error: 'Query inválida', details: queryResult.error.flatten() });
+      return;
+    }
+    const db = getDatabase();
+    const candidateFilters = [eq(schema.tradingUniverseCandidates.tenantId, authContext.tenantId)];
+    if (queryResult.data.marketType) {
+      candidateFilters.push(eq(schema.tradingUniverseCandidates.marketType, queryResult.data.marketType));
+    }
+    const candidates = await db.query.tradingUniverseCandidates.findMany({
+      where: and(...candidateFilters),
+      orderBy: [desc(schema.tradingUniverseCandidates.createdAt)],
+      limit: queryResult.data.limit ?? 50,
+    });
+    res.json({ success: true, data: candidates });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao listar candidates trading-v2');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+app.get('/api/trading-v2/rebalances', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+    const queryResult = z.object({
+      portfolioId: z.string().uuid().optional(),
+      limit: z.coerce.number().int().min(1).max(100).optional(),
+    }).safeParse(req.query);
+    if (!queryResult.success) {
+      res.status(400).json({ error: 'Query inválida', details: queryResult.error.flatten() });
+      return;
+    }
+    const db = getDatabase();
+    const rebalanceFilters = [eq(schema.tradingPortfolioRebalances.tenantId, authContext.tenantId)];
+    if (queryResult.data.portfolioId) {
+      rebalanceFilters.push(eq(schema.tradingPortfolioRebalances.portfolioId, queryResult.data.portfolioId));
+    }
+    const rebalances = await db.query.tradingPortfolioRebalances.findMany({
+      where: and(...rebalanceFilters),
+      orderBy: [desc(schema.tradingPortfolioRebalances.createdAt)],
+      limit: queryResult.data.limit ?? 20,
+    });
+    const executionReports = await db.query.tradingExecutionReports.findMany({
+      where: eq(schema.tradingExecutionReports.tenantId, authContext.tenantId),
+      orderBy: [desc(schema.tradingExecutionReports.createdAt)],
+      limit: 50,
+    });
+    res.json({ success: true, data: { rebalances, executionReports } });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao listar rebalances trading-v2');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+app.post('/internal/trading-v2/enqueue/universe-scan', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  const authContext = extractAuthContext(req);
+  if (!authContext?.tenantId || !authContext?.userId) {
+    res.status(401).json({ error: 'Autenticação necessária' });
+    return;
+  }
+  const parsed = tradingUniverseEnqueueSchema.parse(req.body);
+  const idempotencyKey = buildTradingV2IdempotencyKey(TRADING_V2_STREAMS.universeScan, parsed);
+  const result = await enqueueTradingV2Job({
+    tenantId: authContext.tenantId,
+    userId: authContext.userId,
+    path: '/internal/trading-v2/enqueue/universe-scan',
+    payload: { ...parsed, idempotencyKey },
+  });
+  res.status(202).json({ success: true, data: result });
+});
+
+app.post('/internal/trading-v2/enqueue/backtest', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  const authContext = extractAuthContext(req);
+  if (!authContext?.tenantId || !authContext?.userId) {
+    res.status(401).json({ error: 'Autenticação necessária' });
+    return;
+  }
+  const parsed = tradingBacktestEnqueueSchema.parse(req.body);
+  const idempotencyKey = buildTradingV2IdempotencyKey(TRADING_V2_STREAMS.backtest, parsed);
+  const result = await enqueueTradingV2Job({
+    tenantId: authContext.tenantId,
+    userId: authContext.userId,
+    path: '/internal/trading-v2/enqueue/backtest',
+    payload: { ...parsed, idempotencyKey },
+  });
+  res.status(202).json({ success: true, data: result });
+});
+
+app.post('/internal/trading-v2/enqueue/calibration', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  const authContext = extractAuthContext(req);
+  if (!authContext?.tenantId || !authContext?.userId) {
+    res.status(401).json({ error: 'Autenticação necessária' });
+    return;
+  }
+  const parsed = tradingCalibrationEnqueueSchema.parse(req.body);
+  const idempotencyKey = buildTradingV2IdempotencyKey(TRADING_V2_STREAMS.calibration, parsed);
+  const result = await enqueueTradingV2Job({
+    tenantId: authContext.tenantId,
+    userId: authContext.userId,
+    path: '/internal/trading-v2/enqueue/calibration',
+    payload: { ...parsed, idempotencyKey },
+  });
+  res.status(202).json({ success: true, data: result });
+});
+
+app.post('/internal/trading-v2/enqueue/portfolio-rebalance', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  const authContext = extractAuthContext(req);
+  if (!authContext?.tenantId || !authContext?.userId) {
+    res.status(401).json({ error: 'Autenticação necessária' });
+    return;
+  }
+  const parsed = tradingRebalanceEnqueueSchema.parse(req.body);
+  const idempotencyKey = buildTradingV2IdempotencyKey(TRADING_V2_STREAMS.portfolioRebalance, parsed);
+  const result = await enqueueTradingV2Job({
+    tenantId: authContext.tenantId,
+    userId: authContext.userId,
+    path: '/internal/trading-v2/enqueue/portfolio-rebalance',
+    payload: { ...parsed, idempotencyKey },
+  });
+  res.status(202).json({ success: true, data: result });
+});
+
+app.post('/internal/trading-v2/enqueue/model-risk', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  const authContext = extractAuthContext(req);
+  if (!authContext?.tenantId || !authContext?.userId) {
+    res.status(401).json({ error: 'Autenticação necessária' });
+    return;
+  }
+  const parsed = tradingModelRiskEnqueueSchema.parse(req.body);
+  const idempotencyKey = buildTradingV2IdempotencyKey(TRADING_V2_STREAMS.modelRisk, parsed);
+  const result = await enqueueTradingV2Job({
+    tenantId: authContext.tenantId,
+    userId: authContext.userId,
+    path: '/internal/trading-v2/enqueue/model-risk',
+    payload: { ...parsed, idempotencyKey },
+  });
+  res.status(202).json({ success: true, data: result });
+});
 
 // GET /api/integrations/trading/signals - Lista sinais de trading ativos
 app.get('/api/integrations/trading/signals', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {

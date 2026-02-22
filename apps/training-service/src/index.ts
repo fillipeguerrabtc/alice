@@ -56,6 +56,14 @@ import {
   GpuServiceType,
   GpuRequestPriority,
   GPU_MANAGER_CONFIG,
+  RedisStreamQueue,
+  TRADING_V2_STREAMS,
+  buildTradingV2IdempotencyKey,
+  tradingUniverseEnqueueSchema,
+  tradingBacktestEnqueueSchema,
+  tradingCalibrationEnqueueSchema,
+  tradingRebalanceEnqueueSchema,
+  tradingModelRiskEnqueueSchema,
   Gauge as PromGauge,
   Counter as PromCounter,
   Histogram as PromHistogram,
@@ -293,38 +301,44 @@ const trainingPipelineMetrics = {
 };
 
 const tradingV2Metrics = {
+  queueLag: new PromGauge({
+    name: 'trading_v2_queue_lag',
+    help: 'Quantidade de mensagens pendentes por stream de trading V2',
+    labelNames: ['queue'] as const,
+    registers: [metrics.registry],
+  }),
   universeScanSeconds: new PromHistogram({
-    name: 'trading_universe_scan_seconds',
+    name: 'trading_v2_universe_scan_seconds',
     help: 'Duração de processamento do worker de universe scan',
     buckets: [0.05, 0.1, 0.5, 1, 2, 5],
     registers: [metrics.registry],
   }),
   backtestSeconds: new PromHistogram({
-    name: 'trading_backtest_seconds',
+    name: 'trading_v2_backtest_seconds',
     help: 'Duração de processamento do worker de backtest',
     buckets: [0.1, 0.5, 1, 2, 5, 10],
     registers: [metrics.registry],
   }),
   calibrationSeconds: new PromHistogram({
-    name: 'trading_calibration_seconds',
+    name: 'trading_v2_calibration_seconds',
     help: 'Duração de processamento do worker de calibration',
     buckets: [0.05, 0.1, 0.5, 1, 2, 5],
     registers: [metrics.registry],
   }),
   rebalanceSeconds: new PromHistogram({
-    name: 'trading_portfolio_rebalance_seconds',
+    name: 'trading_v2_rebalance_seconds',
     help: 'Duração de processamento do worker de rebalance',
     buckets: [0.05, 0.1, 0.5, 1, 2, 5],
     registers: [metrics.registry],
   }),
   modelRiskSeconds: new PromHistogram({
-    name: 'trading_model_risk_seconds',
+    name: 'trading_v2_model_risk_seconds',
     help: 'Duração de processamento do worker de model risk',
     buckets: [0.05, 0.1, 0.5, 1, 2, 5],
     registers: [metrics.registry],
   }),
   modelRiskEventsTotal: new PromCounter({
-    name: 'trading_model_risk_events_total',
+    name: 'trading_v2_model_risk_events_total',
     help: 'Total de eventos de model risk registrados',
     registers: [metrics.registry],
   }),
@@ -336,24 +350,19 @@ const tradingV2Metrics = {
 };
 
 const tradingQueueNames = {
-  universe: 'alice:trading:universe-scan',
-  backtest: 'alice:trading:backtest',
-  calibration: 'alice:trading:calibration',
-  rebalance: 'alice:trading:portfolio-rebalance',
-  modelRisk: 'alice:trading:model-risk',
+  universe: TRADING_V2_STREAMS.universeScan,
+  backtest: TRADING_V2_STREAMS.backtest,
+  calibration: TRADING_V2_STREAMS.calibration,
+  rebalance: TRADING_V2_STREAMS.portfolioRebalance,
+  modelRisk: TRADING_V2_STREAMS.modelRisk,
 } as const;
-
-const tradingJobBaseSchema = z.object({
-  idempotencyKey: z.string().min(8),
-  tenantId: z.string().uuid(),
-  requestedBy: z.string().uuid(),
-});
 
 const TRAINING_METRICS_INTERVAL_MS = parseEnvInt(
   process.env.TRAINING_METRICS_INTERVAL_MS,
   60000,
   'TRAINING_METRICS_INTERVAL_MS'
 );
+const TRADING_WORKER_POLL_INTERVAL_MS = 250;
 
 let trainingMetricsInterval: NodeJS.Timeout | null = null;
 
@@ -385,53 +394,22 @@ function startTrainingMetricsScheduler(): void {
   }, TRAINING_METRICS_INTERVAL_MS);
 }
 
-const tradingUniverseEnqueueSchema = tradingJobBaseSchema.extend({
-  instrumentId: z.string().uuid(),
-  marketType: z.enum(['spot', 'futures', 'margin']),
-  timeframe: z.string().min(2).max(10),
-  strategyKey: z.string().min(3).max(64),
-  strategyVersion: z.number().int().positive(),
-  candleTimestamp: z.string().datetime(),
-});
 
-const tradingBacktestEnqueueSchema = tradingJobBaseSchema.extend({
-  instrumentId: z.string().uuid().optional(),
-  marketType: z.enum(['spot', 'futures', 'margin']),
-  strategyKey: z.string().min(3).max(64),
-  strategyVersion: z.number().int().positive(),
-  returns: z.array(z.number()).min(3),
-  costsBps: z.number().min(0).max(500),
-});
-
-const tradingCalibrationEnqueueSchema = tradingJobBaseSchema.extend({
-  instrumentId: z.string().uuid(),
-  marketType: z.enum(['spot', 'futures', 'margin']),
-  strategyKey: z.string().min(3).max(64),
-  strategyVersion: z.number().int().positive(),
-  points: z.array(z.object({ raw: z.number().min(0).max(1), outcome: z.union([z.literal(0), z.literal(1)]) })).min(5),
-});
-
-const tradingRebalanceEnqueueSchema = tradingJobBaseSchema.extend({
-  portfolioId: z.string().uuid(),
-  asofTimestamp: z.string().datetime(),
-  inputs: z.record(z.unknown()),
-  decisions: z.record(z.unknown()),
-});
-
-const tradingModelRiskEnqueueSchema = tradingJobBaseSchema.extend({
-  scope: z.enum(['strategy', 'portfolio', 'instrument']),
-  scopeKey: z.string().min(2).max(128),
-  criticalEvents: z.number().int().min(0),
-  drawdown: z.number().min(0),
-  maxDrawdown: z.number().min(0),
-});
-
-async function enqueueTradingJob(queueName: string, payload: Record<string, unknown>): Promise<void> {
+async function enqueueTradingJob(
+  queueName: (typeof tradingQueueNames)[keyof typeof tradingQueueNames],
+  payload: Record<string, unknown>,
+): Promise<void> {
   const redis = getRedisClient();
   if (!redis) {
     throw new Error('Redis não disponível para fila de trading');
   }
-  await redis.rPush(queueName, JSON.stringify(payload));
+  const queue = new RedisStreamQueue(queueName, {
+    group: 'training-service',
+    consumer: `training-${process.pid}`,
+    maxRetries: 3,
+  });
+  const idempotencyKey = buildTradingV2IdempotencyKey(queueName, payload);
+  await queue.enqueue(redis, payload, idempotencyKey);
 }
 
 function createTradingWorker<T extends { idempotencyKey: string }>(
@@ -440,29 +418,34 @@ function createTradingWorker<T extends { idempotencyKey: string }>(
   handler: (payload: T) => Promise<void>,
   metric: PromHistogram,
 ): void {
+  const queue = new RedisStreamQueue<T>(queueName, {
+    group: 'training-service',
+    consumer: `training-${process.pid}`,
+    maxRetries: 3,
+  });
+
   const tick = async () => {
     try {
       const redis = getRedisClient();
       if (!redis) return;
-      const item = await redis.lPop(queueName);
-      if (!item) return;
-      const parsed = parser.parse(JSON.parse(item));
-      const lockKey = `${queueName}:lock:${parsed.idempotencyKey}`;
-      const lockAcquired = await redis.set(lockKey, '1', { NX: true, EX: 300 });
-      if (!lockAcquired) return;
-      const timer = metric.startTimer();
-      try {
-        await handler(parsed);
-      } finally {
-        timer();
-      }
+      await queue.consumeOnce(redis, async (message) => {
+        const parsed = parser.parse(message);
+        const timer = metric.startTimer();
+        try {
+          await handler(parsed);
+        } finally {
+          timer();
+        }
+      });
+      const queueLag = await queue.lag(redis);
+      tradingV2Metrics.queueLag.set({ queue: queueName }, queueLag);
     } catch (error) {
       logger.error({ queueName, error: error instanceof Error ? error.message : String(error) }, 'Falha ao processar job trading-v2');
     }
   };
   setInterval(() => {
     void tick();
-  }, 500);
+  }, TRADING_WORKER_POLL_INTERVAL_MS);
 }
 
 // Inicializar métricas RBAC (Regra 16 - Observability Enterprise)
@@ -721,35 +704,35 @@ app.get('/ready', async (_req: Request, res: Response) => {
   }
 });
 
-app.post('/internal/trading/universe/enqueue', requireInternalApiAuth, async (req: Request, res: Response) => {
+app.post(['/internal/trading/universe/enqueue', '/internal/trading-v2/enqueue/universe-scan'], requireInternalApiAuth, async (req: Request, res: Response) => {
   const payload = tradingUniverseEnqueueSchema.parse(req.body);
   await enqueueTradingJob(tradingQueueNames.universe, payload);
   logger.info({ tenantId: payload.tenantId, instrumentId: payload.instrumentId, queue: tradingQueueNames.universe }, 'Trading V2 universe scan enfileirado');
   res.status(202).json({ queued: true, queue: tradingQueueNames.universe, idempotencyKey: payload.idempotencyKey });
 });
 
-app.post('/internal/trading/backtest/enqueue', requireInternalApiAuth, async (req: Request, res: Response) => {
+app.post(['/internal/trading/backtest/enqueue', '/internal/trading-v2/enqueue/backtest'], requireInternalApiAuth, async (req: Request, res: Response) => {
   const payload = tradingBacktestEnqueueSchema.parse(req.body);
   await enqueueTradingJob(tradingQueueNames.backtest, payload);
   logger.info({ tenantId: payload.tenantId, strategyKey: payload.strategyKey, queue: tradingQueueNames.backtest }, 'Trading V2 backtest enfileirado');
   res.status(202).json({ queued: true, queue: tradingQueueNames.backtest, idempotencyKey: payload.idempotencyKey });
 });
 
-app.post('/internal/trading/calibration/enqueue', requireInternalApiAuth, async (req: Request, res: Response) => {
+app.post(['/internal/trading/calibration/enqueue', '/internal/trading-v2/enqueue/calibration'], requireInternalApiAuth, async (req: Request, res: Response) => {
   const payload = tradingCalibrationEnqueueSchema.parse(req.body);
   await enqueueTradingJob(tradingQueueNames.calibration, payload);
   logger.info({ tenantId: payload.tenantId, strategyKey: payload.strategyKey, queue: tradingQueueNames.calibration }, 'Trading V2 calibration enfileirado');
   res.status(202).json({ queued: true, queue: tradingQueueNames.calibration, idempotencyKey: payload.idempotencyKey });
 });
 
-app.post('/internal/trading/portfolio-rebalance/enqueue', requireInternalApiAuth, async (req: Request, res: Response) => {
+app.post(['/internal/trading/portfolio-rebalance/enqueue', '/internal/trading-v2/enqueue/portfolio-rebalance'], requireInternalApiAuth, async (req: Request, res: Response) => {
   const payload = tradingRebalanceEnqueueSchema.parse(req.body);
   await enqueueTradingJob(tradingQueueNames.rebalance, payload);
   logger.info({ tenantId: payload.tenantId, portfolioId: payload.portfolioId, queue: tradingQueueNames.rebalance }, 'Trading V2 rebalance enfileirado');
   res.status(202).json({ queued: true, queue: tradingQueueNames.rebalance, idempotencyKey: payload.idempotencyKey });
 });
 
-app.post('/internal/trading/model-risk/enqueue', requireInternalApiAuth, async (req: Request, res: Response) => {
+app.post(['/internal/trading/model-risk/enqueue', '/internal/trading-v2/enqueue/model-risk'], requireInternalApiAuth, async (req: Request, res: Response) => {
   const payload = tradingModelRiskEnqueueSchema.parse(req.body);
   await enqueueTradingJob(tradingQueueNames.modelRisk, payload);
   logger.info({ tenantId: payload.tenantId, scope: payload.scope, scopeKey: payload.scopeKey, queue: tradingQueueNames.modelRisk }, 'Trading V2 model risk enfileirado');

@@ -1,5 +1,5 @@
 -- =====================================================
--- Migration: 0068_llm_fallback_logs_enrichment
+-- Migration: 0068a_llm_fallback_logs_enrichment
 -- Objetivo: Enriquecer logs de fallback para governança
 -- Data: 2026-02-12
 -- =====================================================

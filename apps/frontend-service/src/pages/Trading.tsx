@@ -123,6 +123,12 @@ import { useToast } from '@/hooks/use-toast';
 import { useKucoinWebSocket } from '@/hooks/useKucoinWebSocket';
 import { apiRequest, ApiError, queryClient } from '@/lib/queryClient';
 import { frontendLogger } from '@/lib/logger';
+import {
+  enqueueTradingV2Job,
+  getTradingV2Candidates,
+  getTradingV2Portfolios,
+  getTradingV2Rebalances,
+} from '@/services/api/tradingV2';
 import { 
   CandleChart, 
   OrderBookViz, 
@@ -810,6 +816,8 @@ function TradingContent() {
   const [symbolReady, setSymbolReady] = useState(false); // ✅ CORREÇÃO: Flag para evitar race condition
   const sanitizedSymbol = selectedSymbol.trim();
   const [selectedInterval, setSelectedInterval] = useState('');
+  const [selectedPortfolioAutoId, setSelectedPortfolioAutoId] = useState<string>('');
+  const [tradingV2JobStatus, setTradingV2JobStatus] = useState<string>('');
   const [controlMode, setControlMode] = useState<TradingControlMode>('manual');
   const [showNewOrderDialog, setShowNewOrderDialog] = useState(false);
   const [showOcoOrderDialog, setShowOcoOrderDialog] = useState(false);
@@ -984,6 +992,56 @@ function TradingContent() {
   });
 
   const {
+    data: tradingV2Portfolios = [],
+    refetch: refetchTradingV2Portfolios,
+  } = useQuery({
+    queryKey: ['/api/trading-v2/portfolios'],
+    queryFn: getTradingV2Portfolios,
+    enabled: !!user?.id && csrfReady,
+  });
+
+  useEffect(() => {
+    if (!selectedPortfolioAutoId && tradingV2Portfolios.length > 0) {
+      setSelectedPortfolioAutoId(tradingV2Portfolios[0].id);
+    }
+  }, [selectedPortfolioAutoId, tradingV2Portfolios]);
+
+  const {
+    data: tradingV2Candidates = [],
+    refetch: refetchTradingV2Candidates,
+  } = useQuery({
+    queryKey: ['/api/trading-v2/candidates', selectedMarketType],
+    queryFn: async () => getTradingV2Candidates({ marketType: selectedMarketType, limit: 30 }),
+    enabled: !!user?.id && csrfReady,
+  });
+
+  const {
+    data: tradingV2RebalancesPayload = { rebalances: [], executionReports: [] },
+    refetch: refetchTradingV2Rebalances,
+  } = useQuery({
+    queryKey: ['/api/trading-v2/rebalances', selectedPortfolioAutoId],
+    queryFn: async () => getTradingV2Rebalances({ portfolioId: selectedPortfolioAutoId || undefined, limit: 20 }),
+    enabled: !!user?.id && csrfReady,
+  });
+
+  const enqueueTradingV2Mutation = useMutation({
+    mutationFn: async (params: {
+      job: 'universe-scan' | 'backtest' | 'calibration' | 'portfolio-rebalance' | 'model-risk';
+      payload: Record<string, unknown>;
+    }) => enqueueTradingV2Job(params.job, params.payload),
+    onSuccess: (result, variables) => {
+      setTradingV2JobStatus(`${variables.job} enfileirado (${result.idempotencyKey})`);
+      refetchTradingV2Candidates();
+      refetchTradingV2Rebalances();
+      refetchTradingV2Portfolios();
+    },
+    onError: (error) => {
+      const message = error instanceof Error ? error.message : t('common.error');
+      setTradingV2JobStatus(`Falha ao enfileirar job: ${message}`);
+    },
+  });
+
+  const {
     data: intervalsData,
     error: intervalsError,
   } = useQuery<{
@@ -1086,6 +1144,109 @@ function TradingContent() {
   const selectedSignalSources = Object.entries(signalProfileForm.dataSources)
     .filter(([, enabled]) => enabled)
     .map(([key]) => key);
+  const tradingV2Rebalances = tradingV2RebalancesPayload.rebalances;
+  const tradingV2ExecutionReports = tradingV2RebalancesPayload.executionReports;
+  const topTradingV2Candidates = tradingV2Candidates
+    .slice()
+    .sort((a, b) => Number(b.expectedEdge ?? 0) - Number(a.expectedEdge ?? 0))
+    .slice(0, 8);
+
+  const enqueueTradingV2 = useCallback((job: 'universe-scan' | 'backtest' | 'calibration' | 'portfolio-rebalance' | 'model-risk') => {
+    if (!user?.id) return;
+    const resolvedTenantId = typeof user.tenantId === 'string' ? user.tenantId : '';
+    if (!resolvedTenantId) return;
+    const firstCandidate = topTradingV2Candidates[0];
+    const basePayload = {
+      tenantId: resolvedTenantId,
+      requestedBy: user.id,
+      idempotencyKey: crypto.randomUUID(),
+    };
+
+    if (job === 'universe-scan') {
+      if (!firstCandidate) return;
+      enqueueTradingV2Mutation.mutate({
+        job,
+        payload: {
+          ...basePayload,
+          instrumentId: firstCandidate.instrumentId,
+          marketType: selectedMarketType,
+          timeframe: firstCandidate.timeframe ?? '5m',
+          strategyKey: firstCandidate.strategyKey,
+          strategyVersion: firstCandidate.strategyVersion,
+          candleTimestamp: new Date().toISOString(),
+        },
+      });
+      return;
+    }
+    if (job === 'backtest') {
+      enqueueTradingV2Mutation.mutate({
+        job,
+        payload: {
+          ...basePayload,
+          instrumentId: firstCandidate?.instrumentId,
+          marketType: selectedMarketType,
+          strategyKey: firstCandidate?.strategyKey ?? 'default',
+          strategyVersion: firstCandidate?.strategyVersion ?? 1,
+          returns: topTradingV2Candidates.slice(0, 20).map((candidate) => Number(candidate.expectedEdge ?? 0)),
+          costsBps: 25,
+        },
+      });
+      return;
+    }
+    if (job === 'calibration') {
+      if (!firstCandidate) return;
+      enqueueTradingV2Mutation.mutate({
+        job,
+        payload: {
+          ...basePayload,
+          instrumentId: firstCandidate.instrumentId,
+          marketType: selectedMarketType,
+          strategyKey: firstCandidate.strategyKey,
+          strategyVersion: firstCandidate.strategyVersion,
+          points: topTradingV2Candidates.slice(0, 20).map((candidate) => ({
+            raw: Number(candidate.confidenceRaw ?? 0),
+            outcome: Number(candidate.expectedEdge ?? 0) > 0 ? 1 : 0,
+          })),
+        },
+      });
+      return;
+    }
+    if (job === 'portfolio-rebalance') {
+      if (!selectedPortfolioAutoId) return;
+      enqueueTradingV2Mutation.mutate({
+        job,
+        payload: {
+          ...basePayload,
+          portfolioId: selectedPortfolioAutoId,
+          asofTimestamp: new Date().toISOString(),
+          inputs: {
+            marketType: selectedMarketType,
+            candidateCount: topTradingV2Candidates.length,
+          },
+          decisions: {},
+        },
+      });
+      return;
+    }
+    enqueueTradingV2Mutation.mutate({
+      job,
+      payload: {
+        ...basePayload,
+        scope: 'portfolio',
+        scopeKey: selectedPortfolioAutoId || 'global',
+        criticalEvents: 0,
+        drawdown: 0,
+        maxDrawdown: 0.2,
+      },
+    });
+  }, [
+    enqueueTradingV2Mutation,
+    selectedMarketType,
+    selectedPortfolioAutoId,
+    topTradingV2Candidates,
+    user?.id,
+    user?.tenantId,
+  ]);
 
   const {
     data: newsPresetsResponse,
@@ -3731,6 +3892,21 @@ function TradingContent() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
+                <div className="flex flex-wrap gap-2 items-center">
+                  <Label htmlFor="portfolio-auto-select">Portfólio</Label>
+                  <Select value={selectedPortfolioAutoId} onValueChange={setSelectedPortfolioAutoId}>
+                    <SelectTrigger id="portfolio-auto-select" className="w-[280px]">
+                      <SelectValue placeholder="Selecione o portfólio" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {tradingV2Portfolios.map((portfolio) => (
+                        <SelectItem key={portfolio.id} value={portfolio.id}>
+                          {portfolio.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
                 <Alert>
                   <AlertTriangle className="h-4 w-4" />
                   <AlertDescription>
@@ -3738,9 +3914,54 @@ function TradingContent() {
                   </AlertDescription>
                 </Alert>
                 <div className="flex flex-wrap gap-2">
-                  <Button variant="secondary" onClick={() => setActiveTab('signals')}>Abrir sinais recentes</Button>
-                  <Button variant="secondary" onClick={() => setActiveTab('history')}>Histórico de rebalances/execução</Button>
+                  <Button variant="secondary" onClick={() => enqueueTradingV2('universe-scan')} disabled={enqueueTradingV2Mutation.isPending}>Enqueue Universe</Button>
+                  <Button variant="secondary" onClick={() => enqueueTradingV2('backtest')} disabled={enqueueTradingV2Mutation.isPending}>Enqueue Backtest</Button>
+                  <Button variant="secondary" onClick={() => enqueueTradingV2('calibration')} disabled={enqueueTradingV2Mutation.isPending}>Enqueue Calibration</Button>
+                  <Button variant="secondary" onClick={() => enqueueTradingV2('portfolio-rebalance')} disabled={enqueueTradingV2Mutation.isPending}>Enqueue Rebalance</Button>
+                  <Button variant="secondary" onClick={() => enqueueTradingV2('model-risk')} disabled={enqueueTradingV2Mutation.isPending}>Enqueue Model Risk</Button>
                   <Button variant="outline" onClick={() => setActiveTab('lab')}>Abrir Lab assíncrono</Button>
+                </div>
+                {tradingV2JobStatus && (
+                  <div className="text-xs text-muted-foreground">{tradingV2JobStatus}</div>
+                )}
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base">Top Candidates</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2 text-sm">
+                      {topTradingV2Candidates.length === 0 ? (
+                        <div className="text-muted-foreground">Nenhum candidate encontrado.</div>
+                      ) : topTradingV2Candidates.map((candidate) => (
+                        <div key={candidate.id} className="border rounded p-2">
+                          <div className="font-medium">{candidate.strategyKey} · {candidate.timeframe}</div>
+                          <div>Edge líquido: {formatNumber(Number(candidate.expectedEdge ?? 0), locale)}</div>
+                          <div>Conf. calibrada: {formatNumber(Number(candidate.confidenceCalibrated ?? candidate.confidenceRaw ?? 0), locale)}</div>
+                          <div>DSR/PBO: {formatNumber(Number(candidate.dsrScore ?? 0), locale)} / {formatNumber(Number(candidate.pboScore ?? 0), locale)}</div>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base">Rebalances e Execution Reports</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2 text-sm">
+                      {tradingV2Rebalances.slice(0, 4).map((rebalance) => (
+                        <div key={rebalance.id} className="border rounded p-2">
+                          <div className="font-medium">{rebalance.status}</div>
+                          <div>Asof: {formatDateTime(rebalance.asofTimestamp, { locale, timeZone })}</div>
+                        </div>
+                      ))}
+                      {tradingV2ExecutionReports.slice(0, 4).map((report) => (
+                        <div key={report.id} className="border rounded p-2">
+                          <div className="font-medium">{report.marketType.toUpperCase()}</div>
+                          <div>Instrumento: {report.instrumentId}</div>
+                          <div>Criado em: {formatDateTime(report.createdAt, { locale, timeZone })}</div>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
                 </div>
               </CardContent>
             </Card>
@@ -3752,7 +3973,20 @@ function TradingContent() {
                 <CardTitle>Sinais IA (Auto)</CardTitle>
                 <CardDescription>Fluxo single-asset com guardrails institucionais e sanity-check opcional de LLM.</CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-3">
+                <div className="text-sm text-muted-foreground">
+                  Os sinais abaixo usam candidates recentes e guardrails (edge líquido, DSR/PBO e risco).
+                </div>
+                <div className="space-y-2">
+                  {topTradingV2Candidates.slice(0, 5).map((candidate) => (
+                    <div key={candidate.id} className="border rounded p-2 text-sm">
+                      <div className="font-medium">{candidate.strategyKey} · {candidate.timeframe}</div>
+                      <div>Side: {candidate.side}</div>
+                      <div>Edge: {formatNumber(Number(candidate.expectedEdge ?? 0), locale)}</div>
+                      <div>Guardrails: {(candidate.riskFlags ?? []).length > 0 ? 'restrito' : 'aprovável'}</div>
+                    </div>
+                  ))}
+                </div>
                 <Button onClick={() => setActiveTab('signals')}>Ir para painel de sinais</Button>
               </CardContent>
             </Card>
@@ -3771,6 +4005,13 @@ function TradingContent() {
                     Múltiplos testes elevam risco de overfitting. Use purge/embargo e valide com DSR/PBO.
                   </AlertDescription>
                 </Alert>
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="outline" onClick={() => enqueueTradingV2('universe-scan')} disabled={enqueueTradingV2Mutation.isPending}>Queue Universe Scan</Button>
+                  <Button variant="outline" onClick={() => enqueueTradingV2('backtest')} disabled={enqueueTradingV2Mutation.isPending}>Queue Backtest</Button>
+                  <Button variant="outline" onClick={() => enqueueTradingV2('calibration')} disabled={enqueueTradingV2Mutation.isPending}>Queue Calibration</Button>
+                  <Button variant="outline" onClick={() => enqueueTradingV2('portfolio-rebalance')} disabled={enqueueTradingV2Mutation.isPending}>Queue Rebalance</Button>
+                  <Button variant="outline" onClick={() => enqueueTradingV2('model-risk')} disabled={enqueueTradingV2Mutation.isPending}>Queue Model Risk</Button>
+                </div>
                 <Button variant="outline" onClick={() => setActiveTab('analysis')}>Abrir análise manual</Button>
               </CardContent>
             </Card>

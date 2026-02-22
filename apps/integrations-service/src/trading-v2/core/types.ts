@@ -50,6 +50,7 @@ export interface AllocationInput {
   costs: Record<string, CostEstimate>;
   volByInstrument: Record<string, number>;
   liquidityScoreByInstrument: Record<string, number>;
+  covarianceMatrix?: Record<string, Record<string, number>>;
   constraints: Record<string, InstrumentConstraint>;
 }
 
@@ -70,4 +71,6 @@ export interface ExecutionPlanItem {
   slicing: 'single' | 'twap_lite';
   slices: number;
   expectedSlippageBps: number;
+  expectedImpactBps: number;
+  reason: string;
 }

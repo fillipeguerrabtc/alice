@@ -1,5 +1,5 @@
 -- =============================================================================
--- MIGRATION 0019 - Remoção completa de embeddings de imagem
+-- MIGRATION 0019b - Remoção completa de embeddings de imagem
 -- Plataforma Alice - OpenAI-only para imagens
 --
 -- Autor: Fillipe Guerra

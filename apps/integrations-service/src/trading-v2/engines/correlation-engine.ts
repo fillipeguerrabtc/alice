@@ -1,4 +1,5 @@
 export type CorrelationMatrix = Record<string, Record<string, number>>;
+export type CovarianceMatrix = Record<string, Record<string, number>>;
 
 function mean(values: number[]): number {
   if (values.length === 0) return 0;
@@ -40,6 +41,29 @@ export function buildCorrelationMatrix(returnsByInstrument: Record<string, numbe
         const corr = pearson(returnsByInstrument[iKey], returnsByInstrument[jKey]);
         matrix[iKey][jKey] = (1 - shrinkage) * corr;
       }
+    }
+  }
+  return matrix;
+}
+
+export function buildCovarianceMatrix(
+  returnsByInstrument: Record<string, number[]>,
+  shrinkage = 0.1,
+): CovarianceMatrix {
+  const correlation = buildCorrelationMatrix(returnsByInstrument, shrinkage);
+  const keys = Object.keys(returnsByInstrument);
+  const volByKey = Object.fromEntries(
+    keys.map((key) => {
+      const values = returnsByInstrument[key];
+      const m = mean(values);
+      return [key, Math.max(0.0001, std(values, m))];
+    }),
+  );
+  const matrix: CovarianceMatrix = {};
+  for (const iKey of keys) {
+    matrix[iKey] = {};
+    for (const jKey of keys) {
+      matrix[iKey][jKey] = correlation[iKey][jKey] * volByKey[iKey] * volByKey[jKey];
     }
   }
   return matrix;

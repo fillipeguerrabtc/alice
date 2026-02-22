@@ -26,6 +26,7 @@ export * from './agentic-actions.js';
 export * from './prometheus.js';
 export * from './shutdown-manager.js';
 export * from './redis-cache-adapter.js';
+export * from './redis-queue.js';
 export * from './openapi.js';
 export * from './multi-tenant-validation.js';
 export * from './namespace-context-resolver.js';
@@ -37,6 +38,7 @@ export * from './session-auth.js';
 export * from './llm-models.js';
 export * from './llm-routing.js';
 export { TRADING_CHANNEL_PREFIX, TRADING_CHANNELS } from './trading-channels.js';
+export * from './trading-v2-queues.js';
 
 export * as rbac from './rbac/index.js';
 export { 
