@@ -1618,6 +1618,21 @@ type TradingSignalDatasetCreationResult = {
   };
 };
 
+// Namespace inferido automaticamente sem conflito de tenant e com heurística estável.
+const NAMESPACE_INFERENCE_CONFIDENCE = 0.95;
+
+async function validateTenantNamespace(tenantId: string, namespaceId: string): Promise<boolean> {
+  const db = getDatabase();
+  const namespace = await db.query.namespaces.findFirst({
+    where: and(
+      eq(schema.namespaces.id, namespaceId),
+      eq(schema.namespaces.tenantId, tenantId),
+    ),
+    columns: { id: true },
+  });
+  return Boolean(namespace);
+}
+
 async function createTradingDatasetFromSignalSource(params: {
   authContext: { tenantId: string; userId: string };
   signal: schema.TradingSignal;
@@ -1646,11 +1661,6 @@ async function createTradingDatasetFromSignalSource(params: {
         similarityScore: existing.similarityScore ?? undefined,
       },
     };
-  }
-
-  const namespaceId = params.namespaceId ?? await resolveTradingNamespaceId(params.authContext.tenantId);
-  if (!namespaceId) {
-    throw new Error('Namespace de destino não encontrado para o tenant');
   }
 
   const seed = await buildTradingDatasetSeedFromSignal({
@@ -1682,6 +1692,23 @@ async function createTradingDatasetFromSignalSource(params: {
   const metadataNamespaceId = z.string().uuid().safeParse(signalMetadata.namespaceId).success
     ? signalMetadata.namespaceId
     : null;
+  const explicitNamespaceId = params.namespaceId ?? null;
+  const namespaceCandidates = [explicitNamespaceId, metadataNamespaceId].filter((value): value is string => Boolean(value));
+  let namespaceId: string | null = null;
+  for (const candidate of namespaceCandidates) {
+    if (await validateTenantNamespace(params.authContext.tenantId, candidate)) {
+      namespaceId = candidate;
+      break;
+    }
+  }
+  let inferenceConfidence: number | null = null;
+  if (!namespaceId) {
+    const inferredNamespaceId = await resolveTradingNamespaceId(params.authContext.tenantId);
+    if (inferredNamespaceId && await validateTenantNamespace(params.authContext.tenantId, inferredNamespaceId)) {
+      namespaceId = inferredNamespaceId;
+      inferenceConfidence = NAMESPACE_INFERENCE_CONFIDENCE;
+    }
+  }
   const metadataAgentId = z.string().uuid().safeParse(signalMetadata.agentId).success
     ? signalMetadata.agentId
     : null;
@@ -1702,14 +1729,22 @@ async function createTradingDatasetFromSignalSource(params: {
       marketType: params.signal.marketType,
       namespaceId: metadataNamespaceId,
       agentId: metadataAgentId,
+      instrumentId: (params.signal as Record<string, unknown>).instrumentId ?? null,
+      venue: seed.marketContext.venue ?? null,
+      assetClass: seed.marketContext.assetClass ?? 'crypto',
+      timeframe: seed.interval,
       actionType: params.signal.signalType,
       marketContext: seed.marketContext,
       signalId: params.signal.id,
       orderId: params.signal.executedOrderId ?? null,
+      outcome: (params.signal as Record<string, unknown>).outcome ?? null,
     } as Record<string, unknown>,
     messages,
     qualityScore,
-    status,
+    status: namespaceId ? status : 'pending',
+    needsHumanReview: namespaceId ? false : true,
+    quarantineReason: namespaceId ? null : 'namespace_unresolved',
+    inferenceConfidence,
     reviewNotes,
     semhash,
     embedding,
@@ -1719,6 +1754,18 @@ async function createTradingDatasetFromSignalSource(params: {
   }).returning();
 
   if (created) {
+    await db.insert(schema.trainingLineageEvents).values({
+      tenantId: params.authContext.tenantId,
+      namespaceId: created.namespaceId ?? null,
+      eventType: 'training_data_created',
+      sourceTable: 'trading_signals',
+      sourceId: params.signal.id,
+      producedTable: 'training_data',
+      producedId: created.id,
+      metadata: {
+        sourceType: 'trading_signal',
+      },
+    });
     await db
       .update(schema.tradingSignals)
       .set({ sentToTrainingAt: new Date() })
@@ -1803,11 +1850,6 @@ async function createTradingDatasetFromOrder(params: {
     return { skipped: 'training data já existe para a ordem' };
   }
 
-  const namespaceId = await resolveTradingNamespaceId(params.authContext.tenantId);
-  if (!namespaceId) {
-    throw new Error('Namespace Trading não encontrado para o tenant');
-  }
-
   const signalId = params.order.signalId ?? (params.order.metadata as TradingOrderMetadata | undefined)?.signalId;
   const signal = signalId
     ? await db.query.tradingSignals.findFirst({
@@ -1863,6 +1905,31 @@ async function createTradingDatasetFromOrder(params: {
     { role: 'assistant', content: responseText },
   ];
 
+  const orderMetadata = (params.order.metadata ?? {}) as Record<string, unknown>;
+  const metadataNamespaceId = z.string().uuid().safeParse(orderMetadata.namespaceId).success
+    ? String(orderMetadata.namespaceId)
+    : null;
+  const signalMetadata = (signal?.metadata ?? {}) as Record<string, unknown>;
+  const signalNamespaceId = z.string().uuid().safeParse(signalMetadata.namespaceId).success
+    ? String(signalMetadata.namespaceId)
+    : null;
+  const namespaceCandidates = [metadataNamespaceId, signalNamespaceId].filter((value): value is string => Boolean(value));
+  let namespaceId: string | null = null;
+  for (const candidate of namespaceCandidates) {
+    if (await validateTenantNamespace(params.authContext.tenantId, candidate)) {
+      namespaceId = candidate;
+      break;
+    }
+  }
+  let inferenceConfidence: number | null = null;
+  if (!namespaceId) {
+    const inferredNamespaceId = await resolveTradingNamespaceId(params.authContext.tenantId);
+    if (inferredNamespaceId && await validateTenantNamespace(params.authContext.tenantId, inferredNamespaceId)) {
+      namespaceId = inferredNamespaceId;
+      inferenceConfidence = NAMESPACE_INFERENCE_CONFIDENCE;
+    }
+  }
+
   const [created] = await db.insert(schema.trainingData).values({
     tenantId: params.authContext.tenantId,
     namespaceId,
@@ -1873,11 +1940,19 @@ async function createTradingDatasetFromOrder(params: {
       orderId: params.order.id,
       signalId: signal?.id ?? null,
       actionType,
+      instrumentId: (params.order as Record<string, unknown>).instrumentId ?? null,
+      venue: orderMetadata.venue ?? marketContext.venue ?? null,
+      assetClass: orderMetadata.assetClass ?? marketContext.assetClass ?? 'crypto',
+      timeframe: orderMetadata.timeframe ?? '5m',
       marketContext,
+      outcome: orderMetadata.outcome ?? null,
     } as Record<string, unknown>,
     messages,
     qualityScore,
-    status,
+    status: namespaceId ? status : 'pending',
+    needsHumanReview: namespaceId ? false : true,
+    quarantineReason: namespaceId ? null : 'namespace_unresolved',
+    inferenceConfidence,
     reviewNotes,
     semhash,
     embedding,
@@ -1885,6 +1960,21 @@ async function createTradingDatasetFromOrder(params: {
     duplicateOfId: duplicateResult.duplicateOfId ?? null,
     similarityScore: duplicateResult.similarityScore ?? null,
   }).returning();
+
+  if (created) {
+    await db.insert(schema.trainingLineageEvents).values({
+      tenantId: params.authContext.tenantId,
+      namespaceId: created.namespaceId ?? null,
+      eventType: 'training_data_created',
+      sourceTable: 'trading_orders',
+      sourceId: params.order.id,
+      producedTable: 'training_data',
+      producedId: created.id,
+      metadata: {
+        sourceType: 'trading_order',
+      },
+    });
+  }
 
   const sourceTypeMetric = 'order';
   tradingDatasetMetrics.createdTotal.labels(sourceTypeMetric, status).inc();

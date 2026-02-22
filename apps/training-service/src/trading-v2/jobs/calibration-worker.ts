@@ -1,4 +1,4 @@
-import { and, desc, eq, getDatabase, schema } from '@alice/database';
+import { and, desc, eq, getDatabase, lte, schema } from '@alice/database';
 import { applyPlatt, calibratePlatt, type CalibrationPoint } from '../validation/calibration.js';
 
 function calibrateIsotonic(points: CalibrationPoint[]): Array<{ threshold: number; value: number }> {
@@ -57,17 +57,65 @@ function eceScore(points: CalibrationPoint[], predict: (raw: number) => number):
   }, 0);
 }
 
-export async function runCalibrationWorker(payload: { tenantId: string; instrumentId: string; marketType: 'spot' | 'futures' | 'margin'; strategyKey: string; strategyVersion: number; points: CalibrationPoint[] }) {
-  const plattModel = calibratePlatt(payload.points);
-  const isotonicModel = calibrateIsotonic(payload.points);
-  const plattBrier = brierScore(payload.points, (raw) => applyPlatt(raw, plattModel));
-  const isotonicBrier = brierScore(payload.points, (raw) => applyIsotonic(raw, isotonicModel));
+type CalibrationPayload = {
+  tenantId: string;
+  namespaceId?: string;
+  instrumentId: string;
+  marketType: 'spot' | 'futures' | 'margin';
+  strategyKey: string;
+  strategyVersion: number;
+  timeframe: string;
+  lookback: number;
+  asofTimestamp: string;
+};
+
+function clamp01(v: number): number {
+  return Math.min(1, Math.max(0, v));
+}
+
+export async function runCalibrationWorker(payload: CalibrationPayload) {
+  const db = getDatabase();
+  const backtestRuns = await db.query.tradingBacktestRuns.findMany({
+    where: and(
+      eq(schema.tradingBacktestRuns.tenantId, payload.tenantId),
+      eq(schema.tradingBacktestRuns.instrumentId, payload.instrumentId),
+      eq(schema.tradingBacktestRuns.marketType, payload.marketType),
+      eq(schema.tradingBacktestRuns.strategyKey, payload.strategyKey),
+      eq(schema.tradingBacktestRuns.strategyVersion, payload.strategyVersion),
+      lte(schema.tradingBacktestRuns.createdAt, new Date(payload.asofTimestamp)),
+    ),
+    orderBy: [desc(schema.tradingBacktestRuns.createdAt)],
+    limit: payload.lookback,
+  });
+
+  const points: CalibrationPoint[] = backtestRuns
+    .map((run) => {
+      const dsrProbability = Number(((run.dsr ?? {}) as Record<string, unknown>).probability ?? 0);
+      const aggregateOosSharpe = Number(((run.oosMetrics ?? {}) as Record<string, unknown>).aggregateOutOfSampleSharpe ?? 0);
+      if (!Number.isFinite(dsrProbability) || !Number.isFinite(aggregateOosSharpe)) {
+        return null;
+      }
+      return {
+        raw: clamp01(dsrProbability),
+        outcome: aggregateOosSharpe > 0 ? 1 : 0,
+      } as CalibrationPoint;
+    })
+    .filter((point): point is CalibrationPoint => point !== null);
+
+  if (points.length < 5) {
+    return;
+  }
+
+  const plattModel = calibratePlatt(points);
+  const isotonicModel = calibrateIsotonic(points);
+  const plattBrier = brierScore(points, (raw) => applyPlatt(raw, plattModel));
+  const isotonicBrier = brierScore(points, (raw) => applyIsotonic(raw, isotonicModel));
   const method = isotonicBrier < plattBrier ? 'isotonic' : 'platt';
   const predict = method === 'isotonic'
     ? (raw: number) => applyIsotonic(raw, isotonicModel)
     : (raw: number) => applyPlatt(raw, plattModel);
-  const preview = payload.points.slice(0, 10).map((point) => ({ raw: point.raw, calibrated: predict(point.raw) }));
-  const db = getDatabase();
+  const preview = points.slice(0, 10).map((point) => ({ raw: point.raw, calibrated: predict(point.raw) }));
+
   await db.insert(schema.tradingSignalCalibration).values({
     tenantId: payload.tenantId,
     instrumentId: payload.instrumentId,
@@ -79,9 +127,11 @@ export async function runCalibrationWorker(payload: { tenantId: string; instrume
     evalMetrics: {
       preview,
       brier: method === 'isotonic' ? isotonicBrier : plattBrier,
-      ece: eceScore(payload.points, predict),
+      ece: eceScore(points, predict),
       plattBrier,
       isotonicBrier,
+      bins: 10,
+      timeframe: payload.timeframe,
     },
   }).onConflictDoNothing();
 

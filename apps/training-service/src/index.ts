@@ -301,9 +301,21 @@ const trainingPipelineMetrics = {
 };
 
 const tradingV2Metrics = {
-  queueLag: new PromGauge({
-    name: 'trading_v2_queue_lag',
-    help: 'Quantidade de mensagens pendentes por stream de trading V2',
+  queuePending: new PromGauge({
+    name: 'trading_v2_queue_pending',
+    help: 'Mensagens pendentes por consumer group nas filas de trading V2',
+    labelNames: ['queue'] as const,
+    registers: [metrics.registry],
+  }),
+  queueLagMs: new PromGauge({
+    name: 'trading_v2_queue_lag_ms',
+    help: 'Lag aproximado do consumer group de trading V2 (ms)',
+    labelNames: ['queue'] as const,
+    registers: [metrics.registry],
+  }),
+  dlqTotal: new PromGauge({
+    name: 'trading_v2_dlq_total',
+    help: 'Total acumulado de mensagens em DLQ por stream de trading V2',
     labelNames: ['queue'] as const,
     registers: [metrics.registry],
   }),
@@ -342,9 +354,27 @@ const tradingV2Metrics = {
     help: 'Total de eventos de model risk registrados',
     registers: [metrics.registry],
   }),
+  backtestDsr: new PromGauge({
+    name: 'trading_v2_backtest_dsr',
+    help: 'Último DSR calculado por mercado/estratégia',
+    labelNames: ['marketType', 'strategyKey'] as const,
+    registers: [metrics.registry],
+  }),
+  backtestPbo: new PromGauge({
+    name: 'trading_v2_backtest_pbo',
+    help: 'Último PBO calculado por mercado/estratégia',
+    labelNames: ['marketType', 'strategyKey'] as const,
+    registers: [metrics.registry],
+  }),
   candidateCount: new PromCounter({
-    name: 'trading_candidate_count',
-    help: 'Total de candidatos produzidos para trading',
+    name: 'trading_v2_candidates_total',
+    help: 'Total de candidatos produzidos por lado e mercado',
+    labelNames: ['side', 'marketType'] as const,
+    registers: [metrics.registry],
+  }),
+  datasetVersionCreatedTotal: new PromCounter({
+    name: 'training_dataset_version_created_total',
+    help: 'Total de versões de dataset criadas',
     registers: [metrics.registry],
   }),
 };
@@ -365,6 +395,11 @@ const TRAINING_METRICS_INTERVAL_MS = parseEnvInt(
 const TRADING_WORKER_POLL_INTERVAL_MS = 250;
 
 let trainingMetricsInterval: NodeJS.Timeout | null = null;
+const tradingWorkerStoppers: Array<() => Promise<void>> = [];
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 async function refreshTrainingMetrics(): Promise<void> {
   try {
@@ -417,18 +452,21 @@ function createTradingWorker<T extends { idempotencyKey: string }>(
   parser: z.ZodSchema<T>,
   handler: (payload: T) => Promise<void>,
   metric: PromHistogram,
-): void {
+): () => Promise<void> {
   const queue = new RedisStreamQueue<T>(queueName, {
     group: 'training-service',
     consumer: `training-${process.pid}`,
     maxRetries: 3,
+    autoClaimCount: 10,
+    streamMaxLen: parseEnvInt(process.env.TRADING_V2_QUEUE_MAXLEN, 20_000, 'TRADING_V2_QUEUE_MAXLEN'),
   });
+  let stopped = false;
+  const stopToken = { isStopped: () => stopped };
 
-  const tick = async () => {
-    try {
-      const redis = getRedisClient();
-      if (!redis) return;
-      await queue.consumeOnce(redis, async (message) => {
+  const runLoop = async () => {
+    const redis = getRedisClient();
+    if (!redis) return;
+    await queue.consumeLoop(redis, async (message) => {
         const parsed = parser.parse(message);
         const timer = metric.startTimer();
         try {
@@ -436,16 +474,37 @@ function createTradingWorker<T extends { idempotencyKey: string }>(
         } finally {
           timer();
         }
-      });
-      const queueLag = await queue.lag(redis);
-      tradingV2Metrics.queueLag.set({ queue: queueName }, queueLag);
-    } catch (error) {
-      logger.error({ queueName, error: error instanceof Error ? error.message : String(error) }, 'Falha ao processar job trading-v2');
-    }
+      }, {
+      stopToken,
+      idleSleepMs: TRADING_WORKER_POLL_INTERVAL_MS,
+    });
   };
-  setInterval(() => {
-    void tick();
-  }, TRADING_WORKER_POLL_INTERVAL_MS);
+
+  void (async () => {
+    while (!stopped) {
+      try {
+        await runLoop();
+        const redis = getRedisClient();
+        if (!redis) {
+          await sleep(TRADING_WORKER_POLL_INTERVAL_MS);
+          continue;
+        }
+        const lagMetrics = await queue.getLagMetrics(redis);
+        tradingV2Metrics.queuePending.set({ queue: queueName }, lagMetrics.pending);
+        tradingV2Metrics.queueLagMs.set({ queue: queueName }, lagMetrics.lag * TRADING_WORKER_POLL_INTERVAL_MS);
+        tradingV2Metrics.dlqTotal.set({ queue: queueName }, await queue.dlqSize(redis));
+      } catch (error) {
+        logger.error({ queueName, error: error instanceof Error ? error.message : String(error) }, 'Falha ao processar job trading-v2');
+        await sleep(TRADING_WORKER_POLL_INTERVAL_MS);
+      }
+    }
+  })();
+
+  return async () => {
+    stopped = true;
+    queue.requestStop();
+    await sleep(TRADING_WORKER_POLL_INTERVAL_MS + 50);
+  };
 }
 
 // Inicializar métricas RBAC (Regra 16 - Observability Enterprise)
@@ -3126,7 +3185,7 @@ async function validateEmbeddingDimensionsSSOT(): Promise<void> {
 }
 
 let server: ReturnType<typeof app.listen>;
-let autoLearningInterval: NodeJS.Timeout | null = null;
+let autoLearningLoopActive = false;
 
 (async () => {
   try {
@@ -3152,48 +3211,50 @@ let autoLearningInterval: NodeJS.Timeout | null = null;
     await initializeRedisCache();
     await initializeSessionAuthCache();
     logger.info('Auth cache (session-auth) inicializado');
-    createTradingWorker(
+    tradingWorkerStoppers.push(createTradingWorker(
       tradingQueueNames.universe,
       tradingUniverseEnqueueSchema,
       async (payload) => {
-        await runUniverseScanWorker(payload);
-        tradingV2Metrics.candidateCount.inc(1);
+        const result = await runUniverseScanWorker(payload);
+        tradingV2Metrics.candidateCount.inc({ side: result.side, marketType: payload.marketType });
       },
       tradingV2Metrics.universeScanSeconds,
-    );
-    createTradingWorker(
+    ));
+    tradingWorkerStoppers.push(createTradingWorker(
       tradingQueueNames.backtest,
       tradingBacktestEnqueueSchema,
       async (payload) => {
-        await runBacktestWorker(payload);
+        const result = await runBacktestWorker(payload);
+        tradingV2Metrics.backtestDsr.set({ marketType: payload.marketType, strategyKey: payload.strategyKey }, result.dsr);
+        tradingV2Metrics.backtestPbo.set({ marketType: payload.marketType, strategyKey: payload.strategyKey }, result.pbo);
       },
       tradingV2Metrics.backtestSeconds,
-    );
-    createTradingWorker(
+    ));
+    tradingWorkerStoppers.push(createTradingWorker(
       tradingQueueNames.calibration,
       tradingCalibrationEnqueueSchema,
       async (payload) => {
         await runCalibrationWorker(payload);
       },
       tradingV2Metrics.calibrationSeconds,
-    );
-    createTradingWorker(
+    ));
+    tradingWorkerStoppers.push(createTradingWorker(
       tradingQueueNames.rebalance,
       tradingRebalanceEnqueueSchema,
       async (payload) => {
         await runPortfolioRebalanceWorker(payload);
       },
       tradingV2Metrics.rebalanceSeconds,
-    );
-    createTradingWorker(
+    ));
+    tradingWorkerStoppers.push(createTradingWorker(
       tradingQueueNames.modelRisk,
       tradingModelRiskEnqueueSchema,
       async (payload) => {
         await runModelRiskWorker(payload);
-        tradingV2Metrics.modelRiskEventsTotal.inc(1);
+        tradingV2Metrics.modelRiskEventsTotal.inc();
       },
       tradingV2Metrics.modelRiskSeconds,
-    );
+    ));
     
     server = app.listen(PORT, '0.0.0.0', () => {
       logger.info({ 
@@ -3206,19 +3267,20 @@ let autoLearningInterval: NodeJS.Timeout | null = null;
       startTrainingMetricsScheduler();
       logger.info({ intervalMs: TRAINING_METRICS_INTERVAL_MS }, 'Scheduler de métricas de training iniciado');
 
-      autoLearningInterval = setInterval(() => {
-        processScheduledJobs()
-          .then(() => {
+      autoLearningLoopActive = true;
+      void (async () => {
+        while (autoLearningLoopActive) {
+          try {
+            await processScheduledJobs();
             trainingPipelineMetrics.schedulerRunsTotal.labels('success').inc();
-          })
-          .catch((error: unknown) => {
+          } catch (error: unknown) {
             trainingPipelineMetrics.schedulerRunsTotal.labels('error').inc();
-            // CORREÇÃO 11/02/2026: Usar 'err' ao invés de 'error' para acionar
-            // serializer Pino que captura message+stack (antes logava "{}")
             const errObj = error instanceof Error ? error : new Error(String(error));
             logger.warn({ err: errObj }, 'Falha ao processar jobs agendados de auto-learning');
-          });
-      }, TRAINING_SCHEDULER_POLL_MS);
+          }
+          await sleep(TRAINING_SCHEDULER_POLL_MS);
+        }
+      })();
       logger.info({ intervalMs: TRAINING_SCHEDULER_POLL_MS }, 'Scheduler de auto-learning iniciado');
 
       // Retomar jobs pendentes após restart (Regra 6: sem dependência de state em memória)
@@ -3292,12 +3354,17 @@ let autoLearningInterval: NodeJS.Timeout | null = null;
     );
 
     registerShutdownCallback(
+      'training-trading-v2-workers',
+      async () => {
+        await Promise.all(tradingWorkerStoppers.map((stop) => stop()));
+      },
+      { priority: ShutdownPriority.BACKGROUND_JOBS }
+    );
+
+    registerShutdownCallback(
       'training-auto-learning-scheduler',
       async () => {
-        if (autoLearningInterval) {
-          clearInterval(autoLearningInterval);
-          autoLearningInterval = null;
-        }
+        autoLearningLoopActive = false;
       },
       { priority: ShutdownPriority.BACKGROUND_JOBS }
     );

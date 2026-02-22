@@ -43,6 +43,37 @@ function std(values: number[]): number {
   return Math.sqrt(variance);
 }
 
+function skew(values: number[]): number {
+  if (values.length < 3) return 0;
+  const m = mean(values);
+  const s = std(values);
+  if (s === 0) return 0;
+  return values.reduce((sum, value) => sum + (((value - m) / s) ** 3), 0) / values.length;
+}
+
+function kurt(values: number[]): number {
+  if (values.length < 4) return 0;
+  const m = mean(values);
+  const s = std(values);
+  if (s === 0) return 0;
+  return values.reduce((sum, value) => sum + (((value - m) / s) ** 4), 0) / values.length;
+}
+
+function autocorrProxy(values: number[]): number {
+  if (values.length < 3) return 0;
+  const left = values.slice(0, -1);
+  const right = values.slice(1);
+  const lm = mean(left);
+  const rm = mean(right);
+  const numerator = left.reduce((sum, value, index) => sum + ((value - lm) * (right[index] - rm)), 0);
+  const denom = Math.sqrt(
+    left.reduce((sum, value) => sum + ((value - lm) ** 2), 0)
+    * right.reduce((sum, value) => sum + ((value - rm) ** 2), 0),
+  );
+  if (denom === 0) return 0;
+  return numerator / denom;
+}
+
 function parseCandleClose(data: Record<string, unknown>): number | null {
   const close = data.close;
   if (typeof close === 'number' && Number.isFinite(close)) return close;
@@ -63,7 +94,7 @@ function parseCandleVolume(data: Record<string, unknown>): number {
   return 0;
 }
 
-export async function runUniverseScanWorker(payload: UniversePayload) {
+export async function runUniverseScanWorker(payload: UniversePayload): Promise<{ side: 'long' | 'short' | 'neutral' }> {
   const db = getDatabase();
   const timeframe = tradingIntervalSchema.parse(payload.timeframe);
   const candleTimestamp = new Date(payload.candleTimestamp);
@@ -119,16 +150,21 @@ export async function runUniverseScanWorker(payload: UniversePayload) {
   });
 
   const signal = latestIndicator?.overallSignal ?? 'neutral';
-  const side: 'long' | 'short' | 'neutral' = signal === 'strong_buy' || signal === 'buy'
-    ? 'long'
-    : signal === 'strong_sell' || signal === 'sell'
-      ? 'short'
-      : 'neutral';
 
-  const strategyParams = strategy.params ?? {};
-  const feeBps = Number((strategyParams.feeBps ?? process.env.TRADING_COST_BASELINE_FEE_BPS ?? 8));
-  const slippageBps = Number((strategyParams.slippageBps ?? process.env.TRADING_COST_BASELINE_SLIPPAGE_BPS ?? 12));
-  const spreadBps = Number((strategyParams.spreadBps ?? process.env.TRADING_COST_BASELINE_SPREAD_BPS ?? 5));
+  const costModel = await db.query.tradingCostModels.findFirst({
+    where: and(
+      eq(schema.tradingCostModels.tenantId, payload.tenantId),
+      eq(schema.tradingCostModels.venue, instrument.venue),
+      eq(schema.tradingCostModels.assetClass, instrument.assetClass),
+      eq(schema.tradingCostModels.marketType, payload.marketType),
+      eq(schema.tradingCostModels.active, true),
+    ),
+    orderBy: [desc(schema.tradingCostModels.version)],
+  });
+
+  const feeBps = Number(costModel?.feeBps ?? 0);
+  const slippageBps = Number(((costModel?.slippageModel ?? {}) as Record<string, unknown>).baseBps ?? 0);
+  const spreadBps = Number(((costModel?.spreadModel ?? {}) as Record<string, unknown>).baseBps ?? 0);
   const totalCost = (feeBps + slippageBps + spreadBps) / 10_000;
   const expectedEdge = expectedReturn - totalCost;
   const confidenceRaw = Math.max(0, Math.min(1, (Math.abs(expectedEdge) / Math.max(expectedVolatility, 1e-6)) * (latestIndicator?.signalConfidence ?? 0.5)));
@@ -142,6 +178,23 @@ export async function runUniverseScanWorker(payload: UniversePayload) {
     takeProfit: side === 'short' ? currentPrice - takeProfitDistance : currentPrice + takeProfitDistance,
     liquidityProxy,
   };
+
+  const strategyParams = (strategy.params ?? {}) as Record<string, unknown>;
+  const longThreshold = Number(strategyParams.longThreshold ?? 0);
+  const shortThreshold = Number(strategyParams.shortThreshold ?? 0);
+  const sideByThreshold: 'long' | 'short' | 'neutral' = expectedEdge >= longThreshold
+    ? 'long'
+    : expectedEdge <= shortThreshold
+      ? 'short'
+      : 'neutral';
+
+  const riskFlags: unknown[] = [];
+  if (expectedEdge <= 0) {
+    riskFlags.push('edge_liquido_negativo');
+  }
+  if (!costModel) {
+    riskFlags.push('missing_cost_model');
+  }
 
   await db.insert(schema.tradingFactorSnapshotsV2).values({
     tenantId: payload.tenantId,
@@ -157,9 +210,18 @@ export async function runUniverseScanWorker(payload: UniversePayload) {
       volatilityRegime: latestIndicator?.atrVolatility ?? 'low',
     },
     factors: {
-      returns,
+      meanReturn: expectedReturn,
+      volatility: expectedVolatility,
+      skew: skew(returns),
+      kurtosis: kurt(returns),
+      autocorr: autocorrProxy(returns),
       liquidityProxy,
       indicatorConfidence: latestIndicator?.signalConfidence ?? 0.5,
+      dataWindow: {
+        from: rows[rows.length - 1]?.timestamp ?? null,
+        to: rows[0]?.timestamp ?? null,
+        count: rows.length,
+      },
     },
     costsEstimate: {
       feeBps,
@@ -181,10 +243,30 @@ export async function runUniverseScanWorker(payload: UniversePayload) {
     strategyVersion: payload.strategyVersion,
     timeframe,
     candleTimestamp,
-    side,
+    side: costModel ? sideByThreshold : 'neutral',
     entryModel,
     expectedEdge: String(expectedEdge),
     confidenceRaw: String(confidenceRaw),
-    riskFlags: expectedEdge <= 0 ? ['edge_liquido_negativo'] : [],
+    riskFlags,
+  }).onConflictDoUpdate({
+    target: [
+      schema.tradingUniverseCandidates.tenantId,
+      schema.tradingUniverseCandidates.instrumentId,
+      schema.tradingUniverseCandidates.marketType,
+      schema.tradingUniverseCandidates.timeframe,
+      schema.tradingUniverseCandidates.candleTimestamp,
+      schema.tradingUniverseCandidates.strategyKey,
+      schema.tradingUniverseCandidates.strategyVersion,
+    ],
+    set: {
+      side: costModel ? sideByThreshold : 'neutral',
+      entryModel,
+      expectedEdge: String(expectedEdge),
+      confidenceRaw: String(confidenceRaw),
+      riskFlags,
+      createdAt: new Date(),
+    },
   });
+
+  return { side: costModel ? sideByThreshold : 'neutral' };
 }

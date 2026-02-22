@@ -19,6 +19,7 @@ import { getDatabase, schema, eq, and, desc, sql, inArray, isNull, or, not } fro
 import { getSystemConfig } from '@alice/database/system-config';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { requestGpu, GpuServiceType, GpuRequestPriority, GPU_MANAGER_CONFIG } from '@alice/shared-utils';
 import type {
   LoraJob,
@@ -149,7 +150,95 @@ interface PreparedDataset {
     byActionType: Record<string, number>;
     /** Número de imagens aprovadas incluídas (quando includeImages=true). */
     imagesUsed?: number;
+    dataWindow?: { from: Date | null; to: Date | null };
   };
+}
+
+type DatasetProfileConfig = {
+  id: string | null;
+  version: number;
+  systemPromptTemplate: string;
+  allowedActions?: string[];
+};
+
+async function resolveDatasetProfile(
+  tenantId: string,
+  namespaceId: string,
+  agentId?: string,
+): Promise<DatasetProfileConfig> {
+  const db = getDatabase();
+  const profile = agentId
+    ? await db.query.trainingDatasetProfiles.findFirst({
+        where: and(
+          eq(schema.trainingDatasetProfiles.tenantId, tenantId),
+          eq(schema.trainingDatasetProfiles.namespaceId, namespaceId),
+          eq(schema.trainingDatasetProfiles.agentId, agentId),
+          eq(schema.trainingDatasetProfiles.isActive, true),
+        ),
+        orderBy: [desc(schema.trainingDatasetProfiles.version)],
+      })
+    : null;
+
+  const fallbackNamespaceProfile = profile ?? await db.query.trainingDatasetProfiles.findFirst({
+    where: and(
+      eq(schema.trainingDatasetProfiles.tenantId, tenantId),
+      eq(schema.trainingDatasetProfiles.namespaceId, namespaceId),
+      eq(schema.trainingDatasetProfiles.isActive, true),
+      isNull(schema.trainingDatasetProfiles.agentId),
+    ),
+    orderBy: [desc(schema.trainingDatasetProfiles.version)],
+  });
+
+  const globalTenantProfile = fallbackNamespaceProfile ?? await db.query.trainingDatasetProfiles.findFirst({
+    where: and(
+      eq(schema.trainingDatasetProfiles.tenantId, tenantId),
+      eq(schema.trainingDatasetProfiles.isActive, true),
+      isNull(schema.trainingDatasetProfiles.agentId),
+    ),
+    orderBy: [desc(schema.trainingDatasetProfiles.version)],
+  });
+
+  const rawTemplate = ((globalTenantProfile?.samplingPolicy ?? {}) as Record<string, unknown>).systemPromptTemplate;
+  const template = typeof rawTemplate === 'string' && rawTemplate.trim().length > 0
+    ? rawTemplate
+    : 'Você é Alice, assistente financeira institucional para {{assetClass}} em {{marketType}} na venue {{venue}}. Siga a política de risco {{riskPolicy}} e priorize os timeframes {{timeframes}}.';
+  const allowedActionsRaw = ((globalTenantProfile?.samplingPolicy ?? {}) as Record<string, unknown>).allowedActions;
+  const allowedActions = Array.isArray(allowedActionsRaw)
+    ? allowedActionsRaw.filter((item): item is string => typeof item === 'string')
+    : undefined;
+
+  return {
+    id: globalTenantProfile?.id ?? null,
+    version: globalTenantProfile?.version ?? 1,
+    systemPromptTemplate: template,
+    allowedActions,
+  };
+}
+
+function renderDatasetSystemPrompt(
+  template: string,
+  context: {
+    assetClass: string;
+    marketType: string;
+    venue: string;
+    riskPolicy: string;
+    timeframes: string;
+  },
+): string {
+  const rendered = template
+    .replaceAll('{{assetClass}}', context.assetClass)
+    .replaceAll('{{marketType}}', context.marketType)
+    .replaceAll('{{venue}}', context.venue)
+    .replaceAll('{{riskPolicy}}', context.riskPolicy)
+    .replaceAll('{{timeframes}}', context.timeframes);
+  if (context.assetClass !== 'crypto') {
+    return rendered
+      .replaceAll('funding', '')
+      .replaceAll('open interest', '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+  }
+  return rendered;
 }
 
 // ============================================================================
@@ -239,6 +328,15 @@ export async function prepareDataset(
   for (const d of filtered) {
     byActionType[d.actionType] = (byActionType[d.actionType] || 0) + 1;
   }
+  const sortedByDate = [...filtered].sort((a, b) => {
+    const aTime = a.criadoEm?.getTime() ?? 0;
+    const bTime = b.criadoEm?.getTime() ?? 0;
+    return aTime - bTime;
+  });
+  const dataWindow = {
+    from: sortedByDate[0]?.criadoEm ?? null,
+    to: sortedByDate[sortedByDate.length - 1]?.criadoEm ?? null,
+  };
 
   // Dividir em treinamento (90%) e validação (10%)
   // ENTERPRISE FIX: Usar Fisher-Yates shuffle para distribuição uniforme
@@ -247,10 +345,20 @@ export async function prepareDataset(
   const training = shuffled.slice(0, splitIndex);
   const validation = shuffled.slice(splitIndex);
 
+  const datasetProfile = await resolveDatasetProfile(tenantId, namespaceId, agentId);
+  const firstMetadata = (filtered[0]?.sourceMetadata ?? {}) as Record<string, unknown>;
+  const systemPrompt = renderDatasetSystemPrompt(datasetProfile.systemPromptTemplate, {
+    assetClass: String(firstMetadata.assetClass ?? 'crypto'),
+    marketType: String(firstMetadata.marketType ?? 'futures'),
+    venue: String(firstMetadata.venue ?? 'unknown'),
+    riskPolicy: String(firstMetadata.riskPolicy ?? 'strict'),
+    timeframes: String(firstMetadata.timeframe ?? '1m,3m,5m'),
+  });
+
   // Converter para formato JSONL (SFT): campo `text` obrigatório (gpu-trainer valida)
   const formatToJsonl = (d: { prompt: string; response: string }): string => {
     const text = [
-      'system: Você é Alice, uma assistente especializada em trading de BTC Futures. Analise o contexto de mercado e forneça sinais de trading baseados em análise técnica e dados em tempo real.',
+      `system: ${systemPrompt}`,
       `user: ${d.prompt}`,
       `assistant: ${d.response}`,
     ].join('\n');
@@ -283,6 +391,7 @@ export async function prepareDataset(
       training: trainingData.length,
       validation: validationData.length,
       byActionType,
+      dataWindow,
     },
   };
 }
@@ -443,6 +552,7 @@ export async function createLoraJob(params: CreateJobParams): Promise<LoraJob> {
 
   // Preparar dataset para obter contagens
   const dataset = await prepareDataset(params.tenantId, params.namespaceId, params.agentId, params.datasetFilter);
+  const profile = await resolveDatasetProfile(params.tenantId, params.namespaceId, params.agentId);
 
   const minRequired = params.forceMinSize ? 1 : minOndemand;
   if (dataset.stats.total < minRequired) {
@@ -457,13 +567,30 @@ export async function createLoraJob(params: CreateJobParams): Promise<LoraJob> {
     ...params.hyperparameters,
   };
 
+  const sortedIds = [...dataset.datasetIds].sort((a, b) => a.localeCompare(b));
+  const datasetHash = createHash('sha256').update(sortedIds.join(',')).digest('hex');
+  const [datasetVersion] = await db
+    .insert(schema.trainingDatasetVersions)
+    .values({
+      tenantId: params.tenantId,
+      namespaceId: params.namespaceId,
+      agentId: params.agentId ?? null,
+      sourceCounts: dataset.stats.byActionType,
+      dataWindow: dataset.stats.dataWindow ?? {},
+      profileId: profile.id,
+      profileVersion: profile.version,
+      hash: datasetHash,
+    })
+    .returning();
+
   // Criar job (source: explicit_job = criado via API/UI)
   const jobData: InsertLoraJob = {
     tenantId: params.tenantId,
     scopeType: params.agentId ? 'agent' : 'namespace',
     scopeNamespaceId: params.namespaceId,
     scopeAgentId: params.agentId ?? null,
-    profileVersion: params.profileVersion ?? 1,
+    profileVersion: params.profileVersion ?? profile.version,
+    datasetVersionId: datasetVersion?.id ?? null,
     source: 'explicit_job',
     name: params.name,
     description: params.description,
@@ -481,6 +608,36 @@ export async function createLoraJob(params: CreateJobParams): Promise<LoraJob> {
     .insert(schema.loraJobs)
     .values(jobData)
     .returning();
+
+  if (datasetVersion) {
+    await db.insert(schema.trainingLineageEvents).values([
+      {
+        tenantId: params.tenantId,
+        namespaceId: params.namespaceId,
+        eventType: 'dataset_version_created',
+        sourceTable: 'training_data',
+        sourceId: datasetHash,
+        producedTable: 'training_dataset_versions',
+        producedId: datasetVersion.id,
+        metadata: {
+          datasetCount: dataset.datasetIds.length,
+          profileVersion: profile.version,
+        },
+      },
+      {
+        tenantId: params.tenantId,
+        namespaceId: params.namespaceId,
+        eventType: 'lora_job_created',
+        sourceTable: 'training_dataset_versions',
+        sourceId: datasetVersion.id,
+        producedTable: 'lora_jobs',
+        producedId: job.id,
+        metadata: {
+          datasetVersionId: datasetVersion.id,
+        },
+      },
+    ]);
+  }
 
   // Usar os IDs dos datasets FILTRADOS (retornados por prepareDataset) - training_data com sourceType trading
   if (dataset.datasetIds.length > 0) {

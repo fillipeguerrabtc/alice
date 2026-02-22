@@ -4,8 +4,7 @@ type RebalancePayload = {
   tenantId: string;
   portfolioId: string;
   asofTimestamp: string;
-  inputs: Record<string, unknown>;
-  decisions: Record<string, unknown>;
+  policyVersion: number;
 };
 
 function mean(values: number[]): number {
@@ -53,7 +52,9 @@ export async function runPortfolioRebalanceWorker(payload: RebalancePayload) {
       tenantId: payload.tenantId,
       portfolioId: payload.portfolioId,
       asofTimestamp: new Date(payload.asofTimestamp),
-      inputs: payload.inputs,
+      inputs: {
+        policyVersion: payload.policyVersion,
+      },
       decisions: { reason: 'no_enabled_allocations' },
       status: 'failed',
     });
@@ -146,12 +147,11 @@ export async function runPortfolioRebalanceWorker(payload: RebalancePayload) {
     portfolioId: payload.portfolioId,
     asofTimestamp: new Date(payload.asofTimestamp),
     inputs: {
-      ...payload.inputs,
+      policyVersion: payload.policyVersion,
       covarianceMatrix,
       returnsByInstrument: Object.fromEntries(Array.from(returnsByInstrument.entries())),
     },
     decisions: {
-      ...payload.decisions,
       allocationMode: 'risk_parity_with_vol_target',
       decisions: scaledDecisions.map((decision) => ({
         instrumentId: decision.allocation.instrumentId,
