@@ -1820,6 +1820,112 @@ jobs:
         run: |
           rm -f ~/.ssh/docker_transfer_key 2>/dev/null || true
 
+      # =======================================================================
+      # AUTENTICAÇÃO DE REGISTRIES DOCKER NO SERVIDOR DE PRODUÇÃO (22/02/2026)
+      # =======================================================================
+      # PROPÓSITO: Garantir que o servidor Hetzner (HETZNER_VM_HOST) esteja
+      # autenticado em TODOS os registries privados ANTES de qualquer docker pull.
+      #
+      # PROBLEMA: A transferência de config.json (step anterior) pode falhar
+      # silenciosamente se o runner usa credential helper (credsStore) que
+      # armazena tokens fora do JSON — nesse caso, o servidor receberia um
+      # config.json vazio/inválido sem credenciais reais.
+      #
+      # SOLUÇÃO: Login direto via SSH no servidor usando os secrets do GitHub:
+      #   - GH_PAT        → acesso ao GitHub Container Registry (ghcr.io)
+      #   - DOCKERHUB_USERNAME + DOCKERHUB_TOKEN → acesso ao Docker Hub
+      #
+      # SEGURANÇA:
+      #   - Secrets passados apenas como variáveis de ambiente da sessão SSH
+      #   - Nunca gravados permanentemente em disco no servidor
+      #   - Docker escreve ~/.docker/config.json (padrão Docker, controlado pelo daemon)
+      #
+      # ORIGEM DOS SECRETS (GitHub Actions → Settings → Secrets):
+      #   - GH_PAT: Personal Access Token com scope packages:read/write
+      #   - DOCKERHUB_USERNAME: usuário Docker Hub
+      #   - DOCKERHUB_TOKEN: token de acesso Docker Hub
+      #
+      # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 14 (Verificar secrets)
+      # REF: https://docs.github.com/en/packages/working-with-a-github-packages-registry
+      # =======================================================================
+      - name: Autenticar registries Docker no servidor de produção
+        uses: appleboy/ssh-action@v1.2.2
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: ${{ env.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          envs: GH_PAT,DOCKERHUB_USERNAME,DOCKERHUB_TOKEN
+          command_timeout: 3m
+          script: |
+            set -euo pipefail
+
+            echo "🔐 AUTENTICAÇÃO DE REGISTRIES DOCKER"
+            echo "══════════════════════════════════════════════════════════════════"
+            echo "IMPORTANTE: Secrets são usados apenas nesta sessão SSH."
+            echo "Nunca são gravados permanentemente em disco além do ~/.docker/config.json"
+            echo "gerenciado pelo Docker daemon (padrão oficial)."
+            echo "══════════════════════════════════════════════════════════════════"
+            echo ""
+
+            LOGIN_FAILED=false
+
+            # ------------------------------------------------------------------
+            # 1. Login no GitHub Container Registry (ghcr.io)
+            # ------------------------------------------------------------------
+            echo "1️⃣  Login GHCR (ghcr.io)..."
+            if [ -z "${GH_PAT:-}" ]; then
+              echo "❌ ERRO: Secret GH_PAT não foi injetado via SSH envs!"
+              echo "   Verifique se o secret GH_PAT está configurado no GitHub."
+              LOGIN_FAILED=true
+            else
+              if echo "$GH_PAT" | docker login ghcr.io -u "${{ github.repository_owner }}" --password-stdin 2>&1; then
+                echo "   ✅ Login GHCR OK"
+              else
+                echo "❌ ERRO: Falha no login do GHCR (ghcr.io)!"
+                echo "   Verifique se GH_PAT tem scope packages:read (e packages:write para push)."
+                LOGIN_FAILED=true
+              fi
+            fi
+
+            echo ""
+
+            # ------------------------------------------------------------------
+            # 2. Login no Docker Hub (docker.io)
+            # ------------------------------------------------------------------
+            echo "2️⃣  Login Docker Hub (docker.io)..."
+            if [ -z "${DOCKERHUB_USERNAME:-}" ] || [ -z "${DOCKERHUB_TOKEN:-}" ]; then
+              echo "⚠️  Secrets DOCKERHUB_USERNAME/DOCKERHUB_TOKEN não injetados — pulando login Docker Hub."
+              echo "   (Opcional se o deploy usa apenas imagens do GHCR e registries públicos)"
+            else
+              if echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USERNAME" --password-stdin 2>&1; then
+                echo "   ✅ Login Docker Hub OK"
+              else
+                echo "❌ ERRO: Falha no login do Docker Hub!"
+                echo "   Verifique DOCKERHUB_USERNAME e DOCKERHUB_TOKEN no GitHub Secrets."
+                LOGIN_FAILED=true
+              fi
+            fi
+
+            echo ""
+
+            # ------------------------------------------------------------------
+            # 3. Validação final — abortar se algum login obrigatório falhou
+            # ------------------------------------------------------------------
+            if [ "$LOGIN_FAILED" = "true" ]; then
+              echo "══════════════════════════════════════════════════════════════════"
+              echo "❌ DEPLOY ABORTADO: Falha na autenticação de registry Docker."
+              echo "   Corrija os secrets e re-execute o deploy."
+              echo "══════════════════════════════════════════════════════════════════"
+              exit 1
+            fi
+
+            echo "✅ Todos os registries Docker autenticados com sucesso no servidor."
+
       - name: Preparar infraestrutura base (networks, volumes, permissões)
         uses: appleboy/ssh-action@v1.2.2
         with:
