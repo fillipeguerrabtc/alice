@@ -220,6 +220,64 @@ export function deriveDeterministicArbitrageCandidates(input: {
   ];
 }
 
+async function deriveMultiVenueCrossExchangeCandidate(input: {
+  tenantId: string;
+  instrumentId: string;
+  symbol: string;
+  baseAsset?: string | null;
+  quoteAsset?: string | null;
+  timeframe: z.infer<typeof tradingIntervalSchema>;
+  currentPrice: number;
+  crossExchangeAllowed: boolean;
+}): Promise<DeterministicArbitrageCandidate | null> {
+  if (!input.baseAsset || !input.quoteAsset) return null;
+  const db = getDatabase();
+  const peers = await db.query.tradingInstruments.findMany({
+    where: and(
+      eq(schema.tradingInstruments.tenantId, input.tenantId),
+      eq(schema.tradingInstruments.assetClass, 'crypto'),
+      eq(schema.tradingInstruments.baseAsset, input.baseAsset),
+      eq(schema.tradingInstruments.quoteAsset, input.quoteAsset),
+      eq(schema.tradingInstruments.isActive, true),
+    ),
+  });
+  const candidates = peers.filter((peer) => peer.id !== input.instrumentId);
+  if (candidates.length === 0) return null;
+
+  let bestEdge = Number.NEGATIVE_INFINITY;
+  let bestPeerSymbol = '';
+  for (const peer of candidates) {
+    const latestPeerCandle = await db.query.tradingMarketData.findFirst({
+      where: and(
+        eq(schema.tradingMarketData.symbol, peer.symbol),
+        eq(schema.tradingMarketData.dataType, toDataType(input.timeframe)),
+      ),
+      orderBy: [desc(schema.tradingMarketData.timestamp)],
+    });
+    if (!latestPeerCandle) continue;
+    const peerClose = parseCandleClose((latestPeerCandle.data ?? {}) as Record<string, unknown>);
+    if (peerClose === null || peerClose <= 0) continue;
+    const edge = Math.abs((peerClose - input.currentPrice) / input.currentPrice);
+    if (edge > bestEdge) {
+      bestEdge = edge;
+      bestPeerSymbol = peer.symbol;
+    }
+  }
+  if (!Number.isFinite(bestEdge)) return null;
+
+  const riskFlags: string[] = [];
+  if (!input.crossExchangeAllowed) riskFlags.push('cross_exchange_not_available');
+  if (bestEdge <= 0.0005) riskFlags.push('net_edge_non_positive');
+  if (bestPeerSymbol) riskFlags.push(`cross_exchange_pair:${input.symbol}->${bestPeerSymbol}`);
+
+  return {
+    operationIntent: 'arbitrage_cross_exchange',
+    expectedEdge: bestEdge - 0.0005,
+    side: (bestEdge > 0.0005 && input.crossExchangeAllowed) ? 'long' : 'neutral',
+    riskFlags,
+  };
+}
+
 function parseOrderBookFromMarketData(data: Record<string, unknown>): OrderBookSnapshot | null {
   const rawAsks = Array.isArray(data.asks) ? data.asks : [];
   const rawBids = Array.isArray(data.bids) ? data.bids : [];
@@ -607,6 +665,19 @@ export async function runUniverseScanWorker(payload: UniversePayload): Promise<{
     liquidityProxy,
     crossExchangeAllowed,
   });
+  const multiVenueCandidate = await deriveMultiVenueCrossExchangeCandidate({
+    tenantId: payload.tenantId,
+    instrumentId: payload.instrumentId,
+    symbol: instrument.symbol,
+    baseAsset: instrument.baseAsset,
+    quoteAsset: instrument.quoteAsset,
+    timeframe,
+    currentPrice,
+    crossExchangeAllowed,
+  });
+  if (multiVenueCandidate) {
+    arbitrageCandidates.push(multiVenueCandidate);
+  }
   for (const arbitrageCandidate of arbitrageCandidates) {
     await upsertUniverseCandidate({
       tenantId: payload.tenantId,
