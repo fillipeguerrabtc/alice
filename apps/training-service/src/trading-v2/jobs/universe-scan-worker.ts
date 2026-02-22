@@ -102,6 +102,9 @@ const CASH_AND_CARRY_VOL_THRESHOLD = 0.008;
 const VOLATILITY_BREAKOUT_THRESHOLD = 0.03;
 const SCALPING_MIN_LIQUIDITY = 0.4;
 const POSITIONAL_LOW_LIQUIDITY = 0.2;
+const MICRO_IMBALANCE_EDGE_FACTOR = 0.0002;
+const MICRO_SPREAD_WIDENING_PENALTY = 0.1;
+const MICRO_FLOW_EDGE_FACTOR = 0.0001;
 const MICROS_RETENTION_DAYS = 7;
 const connectedExchangesCache = new Map<string, { count: number; expiresAt: number }>();
 
@@ -473,7 +476,7 @@ export async function runUniverseScanWorker(payload: UniversePayload): Promise<{
         sellVolume: String(latestFlow.sellVolume),
         deltaVolume: String(latestFlow.deltaVolume),
         cvd: String(latestFlow.cvd),
-        tradesCount: tradeTicks.length,
+        tradesCount: tradeTicks.filter((tick) => tick.ts >= latestFlow.windowStart && tick.ts < latestFlow.windowEnd).length,
         retentionUntil,
       }).onConflictDoUpdate({
         target: [
@@ -489,7 +492,7 @@ export async function runUniverseScanWorker(payload: UniversePayload): Promise<{
           sellVolume: String(latestFlow.sellVolume),
           deltaVolume: String(latestFlow.deltaVolume),
           cvd: String(latestFlow.cvd),
-          tradesCount: tradeTicks.length,
+          tradesCount: tradeTicks.filter((tick) => tick.ts >= latestFlow.windowStart && tick.ts < latestFlow.windowEnd).length,
           retentionUntil,
           createdAt: new Date(),
         },
@@ -497,9 +500,9 @@ export async function runUniverseScanWorker(payload: UniversePayload): Promise<{
     }
   }
 
-  const microEdgeAdjustment = (microFeatures.orderBookImbalance * 0.0002)
-    - ((microFeatures.spreadWideningBps / 10_000) * 0.1)
-    + ((Math.abs(microFeatures.aggressiveFlowDelta) > 0 ? Math.sign(microFeatures.aggressiveFlowDelta) : 0) * 0.0001);
+  const microEdgeAdjustment = (microFeatures.orderBookImbalance * MICRO_IMBALANCE_EDGE_FACTOR)
+    - ((microFeatures.spreadWideningBps / 10_000) * MICRO_SPREAD_WIDENING_PENALTY)
+    + ((Math.abs(microFeatures.aggressiveFlowDelta) > 0 ? Math.sign(microFeatures.aggressiveFlowDelta) : 0) * MICRO_FLOW_EDGE_FACTOR);
   const expectedEdgeWithMicro = expectedEdge + microEdgeAdjustment;
   const sideByThreshold: 'long' | 'short' | 'neutral' = expectedEdgeWithMicro >= longThreshold
     ? 'long'
@@ -559,9 +562,9 @@ export async function runUniverseScanWorker(payload: UniversePayload): Promise<{
       skew: skew(returns),
       kurtosis: kurt(returns),
       autocorr: autocorrProxy(returns),
-        liquidityProxy,
-        microstructure: microFeatures,
-        indicatorConfidence: latestIndicator?.signalConfidence ?? 0.5,
+      liquidityProxy,
+      microstructure: microFeatures,
+      indicatorConfidence: latestIndicator?.signalConfidence ?? 0.5,
       dataWindow: {
         from: rows[rows.length - 1]?.timestamp ?? null,
         to: rows[0]?.timestamp ?? null,
