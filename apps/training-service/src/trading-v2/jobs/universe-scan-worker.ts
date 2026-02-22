@@ -465,6 +465,7 @@ export async function runUniverseScanWorker(payload: UniversePayload): Promise<{
   if (tradeFlow.length > 0) {
     const latestFlow = tradeFlow[tradeFlow.length - 1];
     if (latestFlow) {
+      const tradesInWindow = tradeTicks.filter((tick) => tick.ts >= latestFlow.windowStart && tick.ts < latestFlow.windowEnd).length;
       await db.insert(schema.tradingTradeTicksAgg).values({
         tenantId: payload.tenantId,
         instrumentId: payload.instrumentId,
@@ -476,7 +477,7 @@ export async function runUniverseScanWorker(payload: UniversePayload): Promise<{
         sellVolume: String(latestFlow.sellVolume),
         deltaVolume: String(latestFlow.deltaVolume),
         cvd: String(latestFlow.cvd),
-        tradesCount: tradeTicks.filter((tick) => tick.ts >= latestFlow.windowStart && tick.ts < latestFlow.windowEnd).length,
+        tradesCount: tradesInWindow,
         retentionUntil,
       }).onConflictDoUpdate({
         target: [
@@ -492,7 +493,7 @@ export async function runUniverseScanWorker(payload: UniversePayload): Promise<{
           sellVolume: String(latestFlow.sellVolume),
           deltaVolume: String(latestFlow.deltaVolume),
           cvd: String(latestFlow.cvd),
-          tradesCount: tradeTicks.filter((tick) => tick.ts >= latestFlow.windowStart && tick.ts < latestFlow.windowEnd).length,
+          tradesCount: tradesInWindow,
           retentionUntil,
           createdAt: new Date(),
         },
