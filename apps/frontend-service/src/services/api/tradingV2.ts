@@ -11,6 +11,7 @@ export interface TradingV2Portfolio {
 
 export interface TradingV2Candidate {
   id: string;
+  namespaceId?: string | null;
   instrumentId: string;
   marketType: 'spot' | 'futures' | 'margin';
   strategyKey: string;

@@ -2078,6 +2078,46 @@ export const trainingDatasetProfiles = pgTable(
   })
 );
 
+export const trainingDatasetVersions = pgTable(
+  "training_dataset_versions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").notNull().references(() => tenants.id),
+    namespaceId: uuid("namespace_id").references(() => namespaces.id),
+    agentId: uuid("agent_id").references(() => agents.id),
+    sourceCounts: jsonb("source_counts").$type<Record<string, number>>().notNull().default({}),
+    dataWindow: jsonb("data_window").$type<Record<string, unknown>>().notNull().default({}),
+    profileId: uuid("profile_id").references(() => trainingDatasetProfiles.id),
+    profileVersion: integer("profile_version").notNull().default(1),
+    hash: varchar("hash", { length: 64 }).notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    idxTrainingDatasetVersionsTenant: index("idx_training_dataset_versions_tenant").on(table.tenantId),
+    idxTrainingDatasetVersionsNamespace: index("idx_training_dataset_versions_namespace").on(table.namespaceId),
+  })
+);
+
+export const trainingLineageEvents = pgTable(
+  "training_lineage_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").notNull().references(() => tenants.id),
+    namespaceId: uuid("namespace_id").references(() => namespaces.id),
+    eventType: varchar("event_type", { length: 64 }).notNull(),
+    sourceTable: varchar("source_table", { length: 64 }),
+    sourceId: varchar("source_id", { length: 255 }),
+    producedTable: varchar("produced_table", { length: 64 }),
+    producedId: varchar("produced_id", { length: 255 }),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    idxTrainingLineageEventsTenant: index("idx_training_lineage_events_tenant").on(table.tenantId),
+    idxTrainingLineageEventsEventType: index("idx_training_lineage_events_event_type").on(table.eventType),
+  })
+);
+
 export const trainingScopeOverrides = pgTable(
   "training_scope_overrides",
   {
@@ -2128,6 +2168,7 @@ export const fineTuningJobs = pgTable(
     containerGroupId: varchar("container_group_id", { length: 255 }),
     trainingDataCount: integer("training_data_count").default(0),
     validationDataCount: integer("validation_data_count").default(0),
+    datasetVersionId: uuid("dataset_version_id").references(() => trainingDatasetVersions.id),
     hyperparameters: jsonb("hyperparameters").$type<FineTuningHyperparameters>().default({}),
     metrics: jsonb("metrics").$type<FineTuningMetrics>().default({}),
     resultModel: varchar("result_model", { length: 255 }),
@@ -2840,17 +2881,21 @@ export const tradingRebalanceStatusEnum = pgEnum('trading_rebalance_status', [
 export const tradingModelRiskScopeEnum = pgEnum('trading_model_risk_scope', ['strategy', 'portfolio', 'instrument']);
 export const tradingModelRiskEventTypeEnum = pgEnum('trading_model_risk_event_type', ['drift', 'performance_decay', 'data_quality', 'execution_anomaly', 'kill_switch']);
 export const tradingModelRiskSeverityEnum = pgEnum('trading_model_risk_severity', ['low', 'medium', 'high', 'critical']);
+export const tradingVenueTypeEnum = pgEnum('trading_venue_type', ['cex', 'dex', 'broker', 'bank']);
 
 export const tradingInstruments = pgTable('trading_instruments', {
   id: uuid('id').primaryKey().defaultRandom(),
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
   venue: varchar('venue', { length: 32 }).notNull(),
+  venueType: tradingVenueTypeEnum('venue_type').notNull().default('cex'),
   assetClass: varchar('asset_class', { length: 24 }).notNull(),
   symbol: varchar('symbol', { length: 64 }).notNull(),
   baseAsset: varchar('base_asset', { length: 32 }),
   quoteAsset: varchar('quote_asset', { length: 32 }),
   tickSize: numeric('tick_size'),
   lotSize: numeric('lot_size'),
+  tradingHours: jsonb('trading_hours').$type<Record<string, unknown>>().notNull().default({}),
+  fundingRules: jsonb('funding_rules').$type<Record<string, unknown>>().notNull().default({}),
   minNotional: numeric('min_notional'),
   priceDecimals: integer('price_decimals'),
   sizeDecimals: integer('size_decimals'),
@@ -2861,6 +2906,24 @@ export const tradingInstruments = pgTable('trading_instruments', {
   idxAssetClass: index('idx_trading_instruments_asset_class').on(table.assetClass),
   idxSymbol: index('idx_trading_instruments_symbol').on(table.symbol),
   uniqTenantVenueSymbol: uniqueIndex('uniq_trading_instruments_tenant_venue_symbol').on(table.tenantId, table.venue, table.symbol),
+}));
+
+export const tradingCostModels = pgTable('trading_cost_models', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  venue: varchar('venue', { length: 32 }).notNull(),
+  assetClass: varchar('asset_class', { length: 24 }).notNull(),
+  marketType: tradingMarketTypeEnum('market_type').notNull(),
+  feeBps: numeric('fee_bps').notNull(),
+  slippageModel: jsonb('slippage_model').$type<Record<string, unknown>>().notNull().default({}),
+  spreadModel: jsonb('spread_model').$type<Record<string, unknown>>().notNull().default({}),
+  version: integer('version').notNull().default(1),
+  active: boolean('active').notNull().default(true),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, (table) => ({
+  idxTradingCostModelsTenant: index('idx_trading_cost_models_tenant').on(table.tenantId),
+  idxTradingCostModelsLookup: index('idx_trading_cost_models_lookup').on(table.tenantId, table.venue, table.assetClass, table.marketType, table.active),
+  uniqTradingCostModelsVersion: uniqueIndex('uniq_trading_cost_models_version').on(table.tenantId, table.venue, table.assetClass, table.marketType, table.version),
 }));
 
 export const tradingFactorSnapshotsV2 = pgTable('trading_factor_snapshots_v2', {
@@ -2926,6 +2989,15 @@ export const tradingUniverseCandidates = pgTable('trading_universe_candidates', 
   createdAt: timestamp('created_at').notNull().defaultNow(),
 }, (table) => ({
   idxQuery: index('idx_trading_universe_candidates_query').on(table.tenantId, table.marketType, table.createdAt),
+  uniqCandidateScope: uniqueIndex('uniq_trading_universe_candidates_scope').on(
+    table.tenantId,
+    table.instrumentId,
+    table.marketType,
+    table.timeframe,
+    table.candleTimestamp,
+    table.strategyKey,
+    table.strategyVersion,
+  ),
 }));
 
 export const tradingBacktestRuns = pgTable('trading_backtest_runs', {
@@ -3811,6 +3883,7 @@ export const loraJobs = pgTable(
     // Dados de treinamento
     datasetCount: integer("dataset_count").default(0),
     validationCount: integer("validation_count").default(0),
+    datasetVersionId: uuid("dataset_version_id").references(() => trainingDatasetVersions.id),
     /** Incluir trading_dataset no treino (scheduled_run). NULL = inferir de scope_namespace_id (backward compat). */
     includeTradingDataset: boolean("include_trading_dataset"),
     /** Incluir contagem de imagens aprovadas (generated_images) e retornar imagesUsed. */

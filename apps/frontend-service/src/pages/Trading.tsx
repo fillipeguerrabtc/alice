@@ -1179,16 +1179,19 @@ function TradingContent() {
       return;
     }
     if (job === 'backtest') {
+      if (!firstCandidate) return;
       enqueueTradingV2Mutation.mutate({
         job,
         payload: {
           ...basePayload,
-          instrumentId: firstCandidate?.instrumentId,
+          namespaceId: firstCandidate.namespaceId,
+          instrumentId: firstCandidate.instrumentId,
           marketType: selectedMarketType,
-          strategyKey: firstCandidate?.strategyKey ?? 'default',
-          strategyVersion: firstCandidate?.strategyVersion ?? 1,
-          returns: topTradingV2Candidates.slice(0, 20).map((candidate) => Number(candidate.expectedEdge ?? 0)),
-          costsBps: 25,
+          strategyKey: firstCandidate.strategyKey,
+          strategyVersion: firstCandidate.strategyVersion,
+          timeframe: firstCandidate.timeframe ?? '5m',
+          lookback: 500,
+          asofTimestamp: new Date().toISOString(),
         },
       });
       return;
@@ -1199,14 +1202,14 @@ function TradingContent() {
         job,
         payload: {
           ...basePayload,
+          namespaceId: firstCandidate.namespaceId,
           instrumentId: firstCandidate.instrumentId,
           marketType: selectedMarketType,
           strategyKey: firstCandidate.strategyKey,
           strategyVersion: firstCandidate.strategyVersion,
-          points: topTradingV2Candidates.slice(0, 20).map((candidate) => ({
-            raw: Number(candidate.confidenceRaw ?? 0),
-            outcome: Number(candidate.expectedEdge ?? 0) > 0 ? 1 : 0,
-          })),
+          timeframe: firstCandidate.timeframe ?? '5m',
+          lookback: 500,
+          asofTimestamp: new Date().toISOString(),
         },
       });
       return;
@@ -1219,11 +1222,7 @@ function TradingContent() {
           ...basePayload,
           portfolioId: selectedPortfolioAutoId,
           asofTimestamp: new Date().toISOString(),
-          inputs: {
-            marketType: selectedMarketType,
-            candidateCount: topTradingV2Candidates.length,
-          },
-          decisions: {},
+          policyVersion: 1,
         },
       });
       return;
