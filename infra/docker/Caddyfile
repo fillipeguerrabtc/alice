@@ -70,7 +70,7 @@
 }
 
 # =============================================================================
-# HEALTH ENDPOINT (Docker Healthcheck)
+# HEALTH ENDPOINT (Docker Healthcheck) + Redirect HTTP→HTTPS
 # =============================================================================
 # Endpoint simples para verificação de saúde do container
 # Responde em porta 80 sem requerer SSL ou DNS
@@ -78,6 +78,13 @@
 :80 {
 	handle /health {
 		respond "OK" 200
+	}
+
+	# Redireciona todo o tráfego HTTP para HTTPS (exceto o health check interno).
+	# CORREÇÃO: sem este fallback, qualquer request HTTP que não seja /health
+	# não tinha handler — Caddy retornava vazio/404 sem redirecionar para HTTPS.
+	handle {
+		redir https://{host}{uri} 308
 	}
 }
 
