@@ -61,6 +61,18 @@ function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
 
+function computeLiquidityScore(input: {
+  depthDrop: number;
+  imbalance: number;
+  volumeProxy: number;
+}): number {
+  const liquidity = 1
+    - (input.depthDrop * BACKTEST_LIQUIDITY_DEPTH_DROP_WEIGHT)
+    - (input.imbalance * BACKTEST_LIQUIDITY_IMBALANCE_WEIGHT)
+    + Math.min(BACKTEST_LIQUIDITY_VOLUME_CAP, input.volumeProxy / BACKTEST_LIQUIDITY_VOLUME_NORMALIZATION_FACTOR);
+  return clamp01(liquidity);
+}
+
 export async function runBacktestWorker(payload: BacktestPayload): Promise<{ dsr: number; pbo: number }> {
   const startedAt = new Date();
   const db = getDatabase();
@@ -135,16 +147,14 @@ export async function runBacktestWorker(payload: BacktestPayload): Promise<{ dsr
   const microSnapshotsLength = Math.max(microSnapshots.length, 1);
   const tradeAggRowsLength = Math.max(tradeAggRows.length, 1);
   const liquidityByBar = returns.map((_, index) => {
+    // Fallback deterministic: when microstructure arrays are shorter than backtest bars,
+    // we cycle snapshots to avoid missing data while preserving deterministic replay.
     const micro = microSnapshots[index % microSnapshotsLength];
     const tradeAgg = tradeAggRows[index % tradeAggRowsLength];
     const depthDrop = Number(micro?.depthDropRatio ?? 0);
     const imbalance = Math.abs(Number(micro?.orderBookImbalance ?? 0));
     const volumeProxy = Number(tradeAgg?.buyVolume ?? 0) + Number(tradeAgg?.sellVolume ?? 0);
-    const liquidity = 1
-      - (depthDrop * BACKTEST_LIQUIDITY_DEPTH_DROP_WEIGHT)
-      - (imbalance * BACKTEST_LIQUIDITY_IMBALANCE_WEIGHT)
-      + Math.min(BACKTEST_LIQUIDITY_VOLUME_CAP, volumeProxy / BACKTEST_LIQUIDITY_VOLUME_NORMALIZATION_FACTOR);
-    return clamp01(liquidity);
+    return computeLiquidityScore({ depthDrop, imbalance, volumeProxy });
   });
   const depthPressureByBar = returns.map((_, index) => {
     const micro = microSnapshots[index % microSnapshotsLength];

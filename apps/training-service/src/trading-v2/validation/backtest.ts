@@ -15,6 +15,13 @@ export interface BacktestMetrics {
   averageSlippageBps: number;
 }
 
+const MIN_SLIPPAGE_MULTIPLIER = 0.1;
+const MIN_LIQUIDITY_THRESHOLD = 0.05;
+const MAX_LIQUIDITY_THRESHOLD = 1;
+const DEPTH_PRESSURE_FILL_IMPACT = 0.5;
+const MIN_FILL_RATIO = 0.1;
+const MAX_FILL_RATIO = 1;
+
 function computeEffectiveSlippageBps(input: {
   baseCostsBps: number;
   slippageMultiplier: number;
@@ -25,11 +32,11 @@ function computeEffectiveSlippageBps(input: {
 }
 
 export function runDeterministicBacktest(input: BacktestInput): BacktestMetrics {
-  const slippageMultiplier = Math.max(0, input.slippageMultiplier ?? 1);
+  const slippageMultiplier = Math.max(MIN_SLIPPAGE_MULTIPLIER, input.slippageMultiplier ?? 1);
   const barControls = input.returns.map((_value, index) => {
-    const liquidity = Math.max(0.05, Math.min(1, input.liquidityByBar?.[index] ?? 1));
+    const liquidity = Math.max(MIN_LIQUIDITY_THRESHOLD, Math.min(MAX_LIQUIDITY_THRESHOLD, input.liquidityByBar?.[index] ?? 1));
     const depthPressure = Math.max(0, Math.min(1, input.depthPressureByBar?.[index] ?? 0));
-    const fillRatio = Math.max(0.1, Math.min(1, liquidity * (1 - (depthPressure * 0.5))));
+    const fillRatio = Math.max(MIN_FILL_RATIO, Math.min(MAX_FILL_RATIO, liquidity * (1 - (depthPressure * DEPTH_PRESSURE_FILL_IMPACT))));
     return { liquidity, depthPressure, fillRatio };
   });
   const net = input.returns.map((value, index) => {

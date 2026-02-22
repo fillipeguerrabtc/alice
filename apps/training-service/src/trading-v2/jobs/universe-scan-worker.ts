@@ -277,7 +277,7 @@ async function deriveMultiVenueCrossExchangeCandidate(input: {
   return {
     operationIntent: 'arbitrage_cross_exchange',
     expectedEdge: bestEdge - MULTI_VENUE_ARBITRAGE_EDGE_THRESHOLD,
-    side: (bestEdge > MULTI_VENUE_ARBITRAGE_EDGE_THRESHOLD && input.crossExchangeAllowed) ? bestDirection : 'neutral',
+    side: (bestDirection === 'neutral' || bestEdge <= MULTI_VENUE_ARBITRAGE_EDGE_THRESHOLD || !input.crossExchangeAllowed) ? 'neutral' : bestDirection,
     riskFlags,
   };
 }
