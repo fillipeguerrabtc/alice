@@ -172,12 +172,6 @@ export async function runUniverseScanWorker(payload: UniversePayload): Promise<{
   const currentPrice = closes.length > 0 ? closes[closes.length - 1] : Number(latestIndicator?.currentPrice ?? 0);
   const stopDistance = Math.max(expectedVolatility * currentPrice * 1.2, currentPrice * 0.003);
   const takeProfitDistance = Math.max(expectedVolatility * currentPrice * 1.8, currentPrice * 0.005);
-  const entryModel = {
-    entry: currentPrice,
-    stop: side === 'short' ? currentPrice + stopDistance : currentPrice - stopDistance,
-    takeProfit: side === 'short' ? currentPrice - takeProfitDistance : currentPrice + takeProfitDistance,
-    liquidityProxy,
-  };
 
   const strategyParams = (strategy.params ?? {}) as Record<string, unknown>;
   const longThreshold = Number(strategyParams.longThreshold ?? 0);
@@ -187,6 +181,13 @@ export async function runUniverseScanWorker(payload: UniversePayload): Promise<{
     : expectedEdge <= shortThreshold
       ? 'short'
       : 'neutral';
+
+  const entryModel = {
+    entry: currentPrice,
+    stop: sideByThreshold === 'short' ? currentPrice + stopDistance : currentPrice - stopDistance,
+    takeProfit: sideByThreshold === 'short' ? currentPrice - takeProfitDistance : currentPrice + takeProfitDistance,
+    liquidityProxy,
+  };
 
   const riskFlags: unknown[] = [];
   if (expectedEdge <= 0) {
