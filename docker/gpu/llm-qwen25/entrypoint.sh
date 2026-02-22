@@ -40,21 +40,83 @@ resolve_env_value() {
   printf '%s|%s\n' "$resolved_value" "$source_name"
 }
 
-MAX_MODEL_LEN_RESOLVED="$(resolve_env_value "4096" "MAX_MODEL_LEN" "LLM_MAX_MODEL_LEN")"
+validate_integer_env() {
+  local env_key="$1"
+  local env_value="$2"
+  local min_value="$3"
+  if ! [[ "$env_value" =~ ^[0-9]+$ ]]; then
+    echo "ERROR: ${env_key} deve ser inteiro não-negativo (valor atual: ${env_value})"
+    exit 1
+  fi
+  if ! awk "BEGIN { exit !(${env_value} >= ${min_value}) }"; then
+    echo "ERROR: ${env_key} deve ser >= ${min_value} (valor atual: ${env_value})"
+    exit 1
+  fi
+}
+
+validate_float_range_env() {
+  local env_key="$1"
+  local env_value="$2"
+  local min_value="$3"
+  local max_value="$4"
+  if ! [[ "$env_value" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+    echo "ERROR: ${env_key} deve ser número decimal válido (valor atual: ${env_value})"
+    exit 1
+  fi
+  if ! awk "BEGIN { exit !(${env_value} >= ${min_value} && ${env_value} <= ${max_value}) }"; then
+    echo "ERROR: ${env_key} deve estar entre ${min_value} e ${max_value} (valor atual: ${env_value})"
+    exit 1
+  fi
+}
+
+MAX_MODEL_LEN_RESOLVED="$(resolve_env_value "3072" "MAX_MODEL_LEN" "LLM_MAX_MODEL_LEN")"
 MAX_MODEL_LEN_VALUE="${MAX_MODEL_LEN_RESOLVED%%|*}"
 MAX_MODEL_LEN_SOURCE="${MAX_MODEL_LEN_RESOLVED#*|}"
 
-MAX_NUM_SEQS_RESOLVED="$(resolve_env_value "8" "MAX_NUM_SEQS" "LLM_MAX_NUM_SEQS")"
+MAX_NUM_SEQS_RESOLVED="$(resolve_env_value "4" "MAX_NUM_SEQS" "LLM_MAX_NUM_SEQS")"
 MAX_NUM_SEQS_VALUE="${MAX_NUM_SEQS_RESOLVED%%|*}"
 MAX_NUM_SEQS_SOURCE="${MAX_NUM_SEQS_RESOLVED#*|}"
 
-MAX_BATCHED_TOKENS_RESOLVED="$(resolve_env_value "1024" "MAX_NUM_BATCHED_TOKENS" "LLM_MAX_NUM_BATCHED_TOKENS")"
+MAX_BATCHED_TOKENS_RESOLVED="$(resolve_env_value "768" "MAX_NUM_BATCHED_TOKENS" "LLM_MAX_NUM_BATCHED_TOKENS")"
 MAX_BATCHED_TOKENS_VALUE="${MAX_BATCHED_TOKENS_RESOLVED%%|*}"
 MAX_BATCHED_TOKENS_SOURCE="${MAX_BATCHED_TOKENS_RESOLVED#*|}"
 
-GPU_MEMORY_UTILIZATION_RESOLVED="$(resolve_env_value "0.34" "GPU_MEMORY_UTILIZATION" "LLM_GPU_MEMORY_UTILIZATION")"
+GPU_MEMORY_UTILIZATION_RESOLVED="$(resolve_env_value "0.30" "GPU_MEMORY_UTILIZATION" "LLM_GPU_MEMORY_UTILIZATION")"
 GPU_MEMORY_UTILIZATION_VALUE="${GPU_MEMORY_UTILIZATION_RESOLVED%%|*}"
 GPU_MEMORY_UTILIZATION_SOURCE="${GPU_MEMORY_UTILIZATION_RESOLVED#*|}"
+
+KV_CACHE_DTYPE_RESOLVED="$(resolve_env_value "fp8" "KV_CACHE_DTYPE" "LLM_KV_CACHE_DTYPE")"
+KV_CACHE_DTYPE_VALUE="${KV_CACHE_DTYPE_RESOLVED%%|*}"
+KV_CACHE_DTYPE_SOURCE="${KV_CACHE_DTYPE_RESOLVED#*|}"
+
+KV_OFFLOADING_SIZE_GB_RESOLVED="$(resolve_env_value "0" "KV_OFFLOADING_SIZE_GB" "LLM_KV_OFFLOADING_SIZE_GB")"
+KV_OFFLOADING_SIZE_GB_VALUE="${KV_OFFLOADING_SIZE_GB_RESOLVED%%|*}"
+KV_OFFLOADING_SIZE_GB_SOURCE="${KV_OFFLOADING_SIZE_GB_RESOLVED#*|}"
+
+KV_OFFLOADING_BACKEND_RESOLVED="$(resolve_env_value "cpu" "KV_OFFLOADING_BACKEND" "LLM_KV_OFFLOADING_BACKEND")"
+KV_OFFLOADING_BACKEND_VALUE="${KV_OFFLOADING_BACKEND_RESOLVED%%|*}"
+KV_OFFLOADING_BACKEND_SOURCE="${KV_OFFLOADING_BACKEND_RESOLVED#*|}"
+
+validate_integer_env "MAX_MODEL_LEN/LLM_MAX_MODEL_LEN" "${MAX_MODEL_LEN_VALUE}" "1"
+validate_integer_env "MAX_NUM_SEQS/LLM_MAX_NUM_SEQS" "${MAX_NUM_SEQS_VALUE}" "1"
+validate_integer_env "MAX_NUM_BATCHED_TOKENS/LLM_MAX_NUM_BATCHED_TOKENS" "${MAX_BATCHED_TOKENS_VALUE}" "1"
+validate_float_range_env "GPU_MEMORY_UTILIZATION/LLM_GPU_MEMORY_UTILIZATION" "${GPU_MEMORY_UTILIZATION_VALUE}" "0.1" "1.0"
+validate_float_range_env "KV_OFFLOADING_SIZE_GB/LLM_KV_OFFLOADING_SIZE_GB" "${KV_OFFLOADING_SIZE_GB_VALUE}" "0" "64"
+
+if [ "${KV_CACHE_DTYPE_VALUE}" != "fp8" ] && [ "${KV_CACHE_DTYPE_VALUE}" != "auto" ]; then
+  echo "ERROR: KV_CACHE_DTYPE/LLM_KV_CACHE_DTYPE deve ser fp8 ou auto (valor atual: ${KV_CACHE_DTYPE_VALUE})"
+  exit 1
+fi
+
+if [ "${KV_OFFLOADING_BACKEND_VALUE}" != "cpu" ]; then
+  echo "ERROR: KV_OFFLOADING_BACKEND/LLM_KV_OFFLOADING_BACKEND deve ser cpu (valor atual: ${KV_OFFLOADING_BACKEND_VALUE})"
+  exit 1
+fi
+
+KV_OFFLOADING_ARGS=""
+if awk "BEGIN { exit !(${KV_OFFLOADING_SIZE_GB_VALUE} > 0) }"; then
+  KV_OFFLOADING_ARGS="--kv-offloading-size ${KV_OFFLOADING_SIZE_GB_VALUE} --kv-offloading-backend ${KV_OFFLOADING_BACKEND_VALUE}"
+fi
 
 echo "=== Alice LLM (Qwen2.5 7B Instruct AWQ + LoRA) ==="
 echo "Model: ${MODEL_NAME}"
@@ -63,6 +125,9 @@ echo "Max Model Length: ${MAX_MODEL_LEN_VALUE} (source=${MAX_MODEL_LEN_SOURCE})"
 echo "GPU Memory Utilization: ${GPU_MEMORY_UTILIZATION_VALUE} (source=${GPU_MEMORY_UTILIZATION_SOURCE})"
 echo "Max Batched Tokens: ${MAX_BATCHED_TOKENS_VALUE} (source=${MAX_BATCHED_TOKENS_SOURCE})"
 echo "Max Num Seqs: ${MAX_NUM_SEQS_VALUE} (source=${MAX_NUM_SEQS_SOURCE})"
+echo "KV Cache DType: ${KV_CACHE_DTYPE_VALUE} (source=${KV_CACHE_DTYPE_SOURCE})"
+echo "KV Offloading Size (GB): ${KV_OFFLOADING_SIZE_GB_VALUE} (source=${KV_OFFLOADING_SIZE_GB_SOURCE})"
+echo "KV Offloading Backend: ${KV_OFFLOADING_BACKEND_VALUE} (source=${KV_OFFLOADING_BACKEND_SOURCE})"
 echo "LoRA Enabled: ${ENABLE_LORA:-true}"
 echo "Max LoRA Rank: ${MAX_LORA_RANK:-16}"
 echo "Max LoRAs: ${MAX_LORAS:-2}"
@@ -111,8 +176,10 @@ exec python3 -m vllm.entrypoints.openai.api_server \
   --gpu-memory-utilization "${GPU_MEMORY_UTILIZATION_VALUE}" \
   --max-num-batched-tokens "${MAX_BATCHED_TOKENS_VALUE}" \
   --max-num-seqs "${MAX_NUM_SEQS_VALUE}" \
+  --kv-cache-dtype "${KV_CACHE_DTYPE_VALUE}" \
   --tensor-parallel-size "${TENSOR_PARALLEL_SIZE}" \
   --structured-outputs-config '{"backend":"outlines"}' \
   ${LORA_ARGS} \
+  ${KV_OFFLOADING_ARGS} \
   --host "${HOST}" \
   --port "${PORT}"

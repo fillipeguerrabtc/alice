@@ -1,7 +1,8 @@
-import { tradingMarketTypeEnum, tradingMarginModeEnum } from '@alice/shared/schema';
+import { tradingMarketTypeEnum, tradingMarginModeEnum, tradingOperationIntentEnum } from '@alice/shared/schema';
 
 export type TradingMarketType = typeof tradingMarketTypeEnum.enumValues[number];
 export type TradingMarginMode = typeof tradingMarginModeEnum.enumValues[number];
+export type TradingOperationIntent = typeof tradingOperationIntentEnum.enumValues[number];
 
 export type PortfolioMode = 'risk_parity' | 'signal_weighted';
 
@@ -21,6 +22,7 @@ export interface CandidateSignal {
   instrumentId: string;
   symbol: string;
   marketType: TradingMarketType;
+  operationIntent: TradingOperationIntent;
   side: 'long' | 'short' | 'neutral';
   expectedEdge: number;
   confidenceRaw: number;

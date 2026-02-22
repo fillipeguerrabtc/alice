@@ -38,9 +38,13 @@ const COMPOSE_ENV_FILE = process.env.GPU_ORCHESTRATOR_ENV_FILE || '/opt/alice/co
 const COMPOSE_PROJECT = process.env.GPU_ORCHESTRATOR_PROJECT || 'alice-alice';
 const DOCKER_COMPOSE_CMD = process.env.DOCKER_COMPOSE_CMD || 'docker compose';
 const IDLE_RETURN_MS = parseInt(process.env.GPU_ORCHESTRATOR_IDLE_MS || '600000', 10); // 10 min
-export const GPU_ORCHESTRATION_MODE = process.env.GPU_ORCHESTRATION_MODE === 'preemptive'
-  ? 'preemptive'
-  : 'simultaneous';
+const resolvedConcurrencyMode = process.env.GPU_CONCURRENCY_MODE ?? process.env.GPU_ORCHESTRATION_MODE ?? 'simultaneous';
+if (resolvedConcurrencyMode !== 'simultaneous' && resolvedConcurrencyMode !== 'preemptive') {
+  throw new Error(`GPU_CONCURRENCY_MODE inválido: ${resolvedConcurrencyMode}. Valores permitidos: simultaneous|preemptive`);
+}
+export const GPU_CONCURRENCY_MODE = resolvedConcurrencyMode;
+// Compatibilidade retroativa para variáveis/código legado
+export const GPU_ORCHESTRATION_MODE = GPU_CONCURRENCY_MODE;
 
 /** Estado em memória (persistência opcional via Redis em versão futura) */
 let currentState: OrchestratorState = 'llm_embeddings';

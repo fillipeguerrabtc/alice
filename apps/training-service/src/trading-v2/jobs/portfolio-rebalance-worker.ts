@@ -5,6 +5,7 @@ type RebalancePayload = {
   portfolioId: string;
   asofTimestamp: string;
   policyVersion: number;
+  allowedOperationIntents?: Array<'scalping' | 'intraday' | 'swing' | 'positional' | 'arbitrage_internal' | 'arbitrage_cross_exchange' | 'cash_and_carry' | 'market_neutral' | 'volatility_breakout'>;
 };
 
 function mean(values: number[]): number {
@@ -54,6 +55,7 @@ export async function runPortfolioRebalanceWorker(payload: RebalancePayload) {
       asofTimestamp: new Date(payload.asofTimestamp),
       inputs: {
         policyVersion: payload.policyVersion,
+        allowedOperationIntents: payload.allowedOperationIntents ?? ['intraday'],
       },
       decisions: { reason: 'no_enabled_allocations' },
       status: 'failed',
@@ -148,6 +150,7 @@ export async function runPortfolioRebalanceWorker(payload: RebalancePayload) {
     asofTimestamp: new Date(payload.asofTimestamp),
     inputs: {
       policyVersion: payload.policyVersion,
+      allowedOperationIntents: payload.allowedOperationIntents ?? ['intraday'],
       covarianceMatrix,
       returnsByInstrument: Object.fromEntries(Array.from(returnsByInstrument.entries())),
     },

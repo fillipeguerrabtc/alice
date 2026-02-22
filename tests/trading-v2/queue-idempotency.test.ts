@@ -34,9 +34,10 @@ describe('trading-v2 redis queue idempotency', () => {
       timeframe: '5m',
       candleTimestamp: '2026-02-22T00:00:00.000Z',
       strategyVersion: 4,
+      operationIntent: 'intraday',
     });
 
-    expect(key).toBe('tenant-a:inst-a:5m:2026-02-22T00:00:00.000Z:4');
+    expect(key).toBe('tenant-a:inst-a:5m:2026-02-22T00:00:00.000Z:4:intraday');
   });
 
   it('prevents duplicate enqueue for same idempotency key', async () => {
