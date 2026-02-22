@@ -18,18 +18,51 @@
 
 set -e
 
-MAX_MODEL_LEN_VALUE="${LLM_MAX_MODEL_LEN:-4096}"
-MAX_NUM_SEQS_VALUE="${LLM_MAX_NUM_SEQS:-8}"
-MAX_BATCHED_TOKENS_VALUE="${LLM_MAX_NUM_BATCHED_TOKENS:-1024}"
-GPU_MEMORY_UTILIZATION_VALUE="${LLM_GPU_MEMORY_UTILIZATION:-0.34}"
+resolve_env_value() {
+  local default_value="$1"
+  shift
+  local resolved_value=""
+  local source_name="default"
+
+  for env_name in "$@"; do
+    local current_value="${!env_name:-}"
+    if [ -n "$current_value" ]; then
+      resolved_value="$current_value"
+      source_name="$env_name"
+      break
+    fi
+  done
+
+  if [ -z "$resolved_value" ]; then
+    resolved_value="$default_value"
+  fi
+
+  printf '%s|%s\n' "$resolved_value" "$source_name"
+}
+
+MAX_MODEL_LEN_RESOLVED="$(resolve_env_value "4096" "MAX_MODEL_LEN" "LLM_MAX_MODEL_LEN")"
+MAX_MODEL_LEN_VALUE="${MAX_MODEL_LEN_RESOLVED%%|*}"
+MAX_MODEL_LEN_SOURCE="${MAX_MODEL_LEN_RESOLVED#*|}"
+
+MAX_NUM_SEQS_RESOLVED="$(resolve_env_value "8" "MAX_NUM_SEQS" "LLM_MAX_NUM_SEQS")"
+MAX_NUM_SEQS_VALUE="${MAX_NUM_SEQS_RESOLVED%%|*}"
+MAX_NUM_SEQS_SOURCE="${MAX_NUM_SEQS_RESOLVED#*|}"
+
+MAX_BATCHED_TOKENS_RESOLVED="$(resolve_env_value "1024" "MAX_NUM_BATCHED_TOKENS" "LLM_MAX_NUM_BATCHED_TOKENS")"
+MAX_BATCHED_TOKENS_VALUE="${MAX_BATCHED_TOKENS_RESOLVED%%|*}"
+MAX_BATCHED_TOKENS_SOURCE="${MAX_BATCHED_TOKENS_RESOLVED#*|}"
+
+GPU_MEMORY_UTILIZATION_RESOLVED="$(resolve_env_value "0.34" "GPU_MEMORY_UTILIZATION" "LLM_GPU_MEMORY_UTILIZATION")"
+GPU_MEMORY_UTILIZATION_VALUE="${GPU_MEMORY_UTILIZATION_RESOLVED%%|*}"
+GPU_MEMORY_UTILIZATION_SOURCE="${GPU_MEMORY_UTILIZATION_RESOLVED#*|}"
 
 echo "=== Alice LLM (Qwen2.5 7B Instruct AWQ + LoRA) ==="
 echo "Model: ${MODEL_NAME}"
 echo "Quantization: ${QUANTIZATION}"
-echo "Max Model Length: ${MAX_MODEL_LEN_VALUE}"
-echo "GPU Memory Utilization: ${GPU_MEMORY_UTILIZATION_VALUE}"
-echo "Max Batched Tokens: ${MAX_BATCHED_TOKENS_VALUE}"
-echo "Max Num Seqs: ${MAX_NUM_SEQS_VALUE}"
+echo "Max Model Length: ${MAX_MODEL_LEN_VALUE} (source=${MAX_MODEL_LEN_SOURCE})"
+echo "GPU Memory Utilization: ${GPU_MEMORY_UTILIZATION_VALUE} (source=${GPU_MEMORY_UTILIZATION_SOURCE})"
+echo "Max Batched Tokens: ${MAX_BATCHED_TOKENS_VALUE} (source=${MAX_BATCHED_TOKENS_SOURCE})"
+echo "Max Num Seqs: ${MAX_NUM_SEQS_VALUE} (source=${MAX_NUM_SEQS_SOURCE})"
 echo "LoRA Enabled: ${ENABLE_LORA:-true}"
 echo "Max LoRA Rank: ${MAX_LORA_RANK:-16}"
 echo "Max LoRAs: ${MAX_LORAS:-2}"

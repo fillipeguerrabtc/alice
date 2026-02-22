@@ -116,7 +116,7 @@ export async function switchToTraining(): Promise<void> {
 
   try {
     await runCompose(['stop', 'gpu-embeddings'], 30000);
-    await runCompose(['--profile', 'gpu-training', 'up', '-d', 'gpu-trainer'], 120000);
+    await runCompose(['up', '-d', 'gpu-trainer'], 120000);
     currentState = 'training';
     _lastTrainingActivityAt = Date.now();
     scheduleIdleReturn();
