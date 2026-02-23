@@ -3420,61 +3420,61 @@ function TradingContent() {
       <motion.div variants={itemVariants}>
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           {/* MOBILE-FIRST 12/01/2026: Tabs com scroll horizontal para caber em mobile */}
-          <div className="overflow-x-auto pb-2 -mx-2 px-2 md:mx-0 md:px-0">
+          <div className="max-w-full overflow-x-auto pb-2 -mx-2 px-2 md:mx-0 md:px-0">
             <TabsList className="flex min-w-max flex-nowrap items-center gap-1 whitespace-nowrap">
-              <TabsTrigger value="overview" data-testid="tab-overview" className="whitespace-nowrap">
+              <TabsTrigger value="overview" data-testid="tab-overview" className="whitespace-nowrap shrink-0">
                 <BarChart3 className="h-4 w-4 md:mr-2" />
                 <span className="hidden md:inline">{t('trading.tabs.overview')}</span>
               </TabsTrigger>
-              <TabsTrigger value="portfolio-auto" data-testid="tab-portfolio-auto" className="whitespace-nowrap">
+              <TabsTrigger value="portfolio-auto" data-testid="tab-portfolio-auto" className="whitespace-nowrap shrink-0">
                 <Wallet className="h-4 w-4 md:mr-2" />
                 <span className="hidden md:inline">Portfólio (Auto)</span>
               </TabsTrigger>
-              <TabsTrigger value="signals-auto" data-testid="tab-signals-auto" className="whitespace-nowrap">
+              <TabsTrigger value="signals-auto" data-testid="tab-signals-auto" className="whitespace-nowrap shrink-0">
                 <Brain className="h-4 w-4 md:mr-2" />
                 <span className="hidden md:inline">Sinais IA (Auto)</span>
               </TabsTrigger>
-              <TabsTrigger value="lab" data-testid="tab-lab" className="whitespace-nowrap">
+              <TabsTrigger value="lab" data-testid="tab-lab" className="whitespace-nowrap shrink-0">
                 <FlaskConical className="h-4 w-4 md:mr-2" />
                 <span className="hidden md:inline">Lab/Research</span>
               </TabsTrigger>
-              <TabsTrigger value="chart" data-testid="tab-chart" className="whitespace-nowrap">
+              <TabsTrigger value="chart" data-testid="tab-chart" className="whitespace-nowrap shrink-0">
                 <CandlestickChart className="h-4 w-4 md:mr-2" />
                 <span className="hidden md:inline">{t('trading.tabs.chart')}</span>
               </TabsTrigger>
-              <TabsTrigger value="orderbook" data-testid="tab-orderbook" className="whitespace-nowrap">
+              <TabsTrigger value="orderbook" data-testid="tab-orderbook" className="whitespace-nowrap shrink-0">
                 <Layers className="h-4 w-4 md:mr-2" />
                 <span className="hidden md:inline">{t('trading.tabs.orderbook')}</span>
               </TabsTrigger>
-              <TabsTrigger value="orders" data-testid="tab-orders" className="whitespace-nowrap">
+              <TabsTrigger value="orders" data-testid="tab-orders" className="whitespace-nowrap shrink-0">
                 <Activity className="h-4 w-4 md:mr-2" />
                 <span className="hidden md:inline">{t('trading.tabs.orders')}</span>
               </TabsTrigger>
-              <TabsTrigger value="positions" data-testid="tab-positions" className="whitespace-nowrap">
+              <TabsTrigger value="positions" data-testid="tab-positions" className="whitespace-nowrap shrink-0">
                 <Target className="h-4 w-4 md:mr-2" />
                 <span className="hidden md:inline">{t('trading.tabs.positions')}</span>
               </TabsTrigger>
-              <TabsTrigger value="signals" data-testid="tab-signals" className="whitespace-nowrap">
+              <TabsTrigger value="signals" data-testid="tab-signals" className="whitespace-nowrap shrink-0">
                 <Brain className="h-4 w-4 md:mr-2" />
                 <span className="hidden md:inline">{t('trading.tabs.signals')}</span>
               </TabsTrigger>
-              <TabsTrigger value="analysis" data-testid="tab-analysis" className="whitespace-nowrap">
+              <TabsTrigger value="analysis" data-testid="tab-analysis" className="whitespace-nowrap shrink-0">
                 <BarChart3 className="h-4 w-4 md:mr-2" />
                 <span className="hidden md:inline">Análise</span>
               </TabsTrigger>
-              <TabsTrigger value="history" data-testid="tab-history" className="whitespace-nowrap">
+              <TabsTrigger value="history" data-testid="tab-history" className="whitespace-nowrap shrink-0">
                 <History className="h-4 w-4 md:mr-2" />
                 <span className="hidden md:inline">{t('trading.tabs.history')}</span>
               </TabsTrigger>
-              <TabsTrigger value="postmortems" data-testid="tab-postmortems" className="whitespace-nowrap">
+              <TabsTrigger value="postmortems" data-testid="tab-postmortems" className="whitespace-nowrap shrink-0">
                 <FileCheck className="h-4 w-4 md:mr-2" />
                 <span className="hidden md:inline">Post-Mortems</span>
               </TabsTrigger>
-              <TabsTrigger value="account" data-testid="tab-account" className="whitespace-nowrap">
+              <TabsTrigger value="account" data-testid="tab-account" className="whitespace-nowrap shrink-0">
                 <Wallet className="h-4 w-4 md:mr-2" />
                 <span className="hidden md:inline">{t('trading.tabs.account', 'Conta')}</span>
               </TabsTrigger>
-              <TabsTrigger value="control" data-testid="tab-control" className="whitespace-nowrap">
+              <TabsTrigger value="control" data-testid="tab-control" className="whitespace-nowrap shrink-0">
                 <Hand className="h-4 w-4 md:mr-2" />
                 <span className="hidden md:inline">{t('trading.tabs.control')}</span>
               </TabsTrigger>

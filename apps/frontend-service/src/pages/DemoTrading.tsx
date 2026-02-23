@@ -646,7 +646,7 @@ function DemoTradingContent() {
   const openPositions = positions.filter(p => p.status === 'open');
   const closedPositions = positions.filter(p => p.status !== 'open');
   const balances = Array.isArray(balancesQuery.data) ? balancesQuery.data : [];
-  const usdtBalance = balances.find((entry) => entry.currency.toUpperCase() === 'USDT');
+  const usdtBalance = balances.find?.((entry) => entry.currency.toUpperCase() === 'USDT') ?? null;
   const balancesWithFunds = balances.filter((entry) => Number(entry.available) > 0 || Number(entry.frozen) > 0);
 
   const totalPnl = closedPositions.reduce((acc, p) => acc + parseFloat(p.realizedPnl ?? '0'), 0);
