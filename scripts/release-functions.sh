@@ -90,12 +90,25 @@ retag_image() {
 # decide_build_or_retag() - Decisão enterprise: BUILD ou RETAG
 # ═══════════════════════════════════════════════════════════════════════
 # Retorna via variável NEEDS_BUILD: 1 = build, 0 = retag
+#
+# Guard FORCE_FULL_REBUILD (23/02/2026):
+# Se FORCE_FULL_REBUILD=true (release anterior sem manifesto de imagens),
+# sempre faz build para garantir integridade das imagens. Isso previne
+# retag de imagens potencialmente incompletas de releases parcialmente
+# com falha. REF: CLAUDE.md Regra 6 (Enterprise-grade).
 # ═══════════════════════════════════════════════════════════════════════
 decide_build_or_retag() {
   local image="$1"
   local build_pattern="$2"
 
   NEEDS_BUILD=1  # default: build
+
+  # Guard: release anterior sem manifesto de imagens → rebuild forçado
+  # Previne retag de imagens de release com falha parcial (CLAUDE.md Regra 6)
+  if [ "${FORCE_FULL_REBUILD:-false}" = "true" ]; then
+    return
+  fi
+
   if [ -n "${PREVIOUS_TAG:-}" ] && ! should_build "$build_pattern"; then
     # Sem mudanças relevantes: tentar retag do release anterior
     local from_img="${IMAGE_PREFIX}-${image}:${PREVIOUS_TAG}"
