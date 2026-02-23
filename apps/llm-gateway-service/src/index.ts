@@ -476,6 +476,7 @@ app.post(
 
     if (!gpuResponse.ok || !gpuResponse.body) {
       const text = await gpuResponse.text().catch(() => '');
+      metrics.llm.requestsTotal.inc({ model, type: 'stream', status: 'error' });
       res.status(502).json({ error: text || 'Erro no GPU Manager' });
       return;
     }
@@ -511,6 +512,7 @@ app.post(
     };
     pump().catch((err) => {
       logger.error({ err }, 'Erro ao encaminhar stream');
+      metrics.llm.requestsTotal.inc({ model, type: 'stream', status: 'error' });
       res.end();
     });
   })
