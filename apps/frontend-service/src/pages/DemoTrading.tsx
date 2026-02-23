@@ -646,6 +646,8 @@ function DemoTradingContent() {
   const openPositions = positions.filter(p => p.status === 'open');
   const closedPositions = positions.filter(p => p.status !== 'open');
   const balances = Array.isArray(balancesQuery.data) ? balancesQuery.data : [];
+  const orders = Array.isArray(ordersQuery.data) ? ordersQuery.data : [];
+  const postmortems = Array.isArray(postmortemsQuery.data) ? postmortemsQuery.data : [];
   const usdtBalance = balances.find((entry) => entry.currency.toUpperCase() === 'USDT');
   const balancesWithFunds = balances.filter((entry) => Number(entry.available) > 0 || Number(entry.frozen) > 0);
 
@@ -1607,7 +1609,7 @@ function DemoTradingContent() {
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-sm">Total Completos</span>
-                  <Badge>{(postmortemsQuery.data ?? []).filter(pm => pm.status === 'completed').length}</Badge>
+                  <Badge>{postmortems.filter(pm => pm.status === 'completed').length}</Badge>
                 </div>
               </div>
             </CardContent>
@@ -1787,11 +1789,11 @@ function DemoTradingContent() {
               <CardTitle>Ordens Demo</CardTitle>
             </CardHeader>
             <CardContent>
-              {(ordersQuery.data ?? []).length === 0 ? (
+              {orders.length === 0 ? (
                 <p className="text-muted-foreground text-center py-8">Nenhuma ordem encontrada</p>
               ) : (
                 <div className="space-y-2">
-                  {(ordersQuery.data ?? []).map(order => (
+                  {orders.map(order => (
                     <div key={order.id} className="flex items-center justify-between p-3 border rounded-lg">
                       <div className="flex items-center gap-3">
                         {getStatusBadge(order.status)}
@@ -1828,11 +1830,11 @@ function DemoTradingContent() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {(postmortemsQuery.data ?? []).length === 0 ? (
+              {postmortems.length === 0 ? (
                 <p className="text-muted-foreground text-center py-8">Nenhum post-mortem ainda. Feche uma posição para gerar automaticamente.</p>
               ) : (
                 <div className="space-y-3">
-                  {(postmortemsQuery.data ?? []).map(pm => (
+                  {postmortems.map(pm => (
                     <div key={pm.id} className="p-4 border rounded-lg space-y-3">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
@@ -1851,7 +1853,7 @@ function DemoTradingContent() {
                       </div>
 
                       {/* Motivadores */}
-                      {pm.motivators && pm.motivators.length > 0 && (
+                      {Array.isArray(pm.motivators) && pm.motivators.length > 0 && (
                         <div className="space-y-2">
                           <h4 className="text-sm font-semibold flex items-center gap-1">
                             <BookOpen className="h-3 w-3" /> Motivadores
@@ -1860,7 +1862,7 @@ function DemoTradingContent() {
                             <div key={i} className="ml-4 text-sm">
                               <p className="font-medium">{m.title}</p>
                               <p className="text-muted-foreground">{m.explanation}</p>
-                              {Object.keys(m.citedValues).length > 0 && (
+                              {m.citedValues && Object.keys(m.citedValues).length > 0 && (
                                 <div className="flex gap-2 mt-1 flex-wrap">
                                   {Object.entries(m.citedValues).map(([k, v]) => (
                                     <Badge key={k} variant="secondary" className="text-xs">
@@ -1877,7 +1879,7 @@ function DemoTradingContent() {
                       {/* Lições */}
                       {pm.lessons && (
                         <div className="grid grid-cols-2 gap-4">
-                          {pm.lessons.repeat.length > 0 && (
+                          {Array.isArray(pm.lessons.repeat) && pm.lessons.repeat.length > 0 && (
                             <div>
                               <h4 className="text-sm font-semibold text-green-500 flex items-center gap-1">
                                 <CheckCircle className="h-3 w-3" /> Repetir
@@ -1887,7 +1889,7 @@ function DemoTradingContent() {
                               </ul>
                             </div>
                           )}
-                          {pm.lessons.avoid.length > 0 && (
+                          {Array.isArray(pm.lessons.avoid) && pm.lessons.avoid.length > 0 && (
                             <div>
                               <h4 className="text-sm font-semibold text-red-500 flex items-center gap-1">
                                 <AlertTriangle className="h-3 w-3" /> Evitar

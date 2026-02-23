@@ -128,7 +128,11 @@ import {
   getTradingV2Candidates,
   getTradingV2Portfolios,
   getTradingV2Rebalances,
+  startPortfolioAutoRun,
+  startSignalAutoRun,
+  getTradingAutoRunDetail,
 } from '@/services/api/tradingV2';
+import type { TradingAutoRunDetail } from '@/services/api/tradingV2';
 import { 
   CandleChart, 
   OrderBookViz, 
@@ -818,6 +822,7 @@ function TradingContent() {
   const [selectedInterval, setSelectedInterval] = useState('');
   const [selectedPortfolioAutoId, setSelectedPortfolioAutoId] = useState<string>('');
   const [tradingV2JobStatus, setTradingV2JobStatus] = useState<string>('');
+  const [activeAutoRunId, setActiveAutoRunId] = useState<string | null>(null);
   const [controlMode, setControlMode] = useState<TradingControlMode>('manual');
   const [showNewOrderDialog, setShowNewOrderDialog] = useState(false);
   const [showOcoOrderDialog, setShowOcoOrderDialog] = useState(false);
@@ -1022,6 +1027,20 @@ function TradingContent() {
     queryKey: ['/api/trading-v2/rebalances', selectedPortfolioAutoId],
     queryFn: async () => getTradingV2Rebalances({ portfolioId: selectedPortfolioAutoId || undefined, limit: 20 }),
     enabled: !!user?.id && csrfReady,
+  });
+
+  // Polling para acompanhar status do auto run ativo
+  const {
+    data: activeAutoRunDetail,
+  } = useQuery<TradingAutoRunDetail>({
+    queryKey: ['/api/trading-v2/auto/runs', activeAutoRunId],
+    queryFn: async () => getTradingAutoRunDetail(activeAutoRunId!),
+    enabled: !!activeAutoRunId && !!user?.id && csrfReady,
+    refetchInterval: (query) => {
+      const status = query.state.data?.run?.status;
+      if (status === 'succeeded' || status === 'failed' || status === 'cancelled') return false;
+      return 3000; // poll a cada 3s enquanto ativo
+    },
   });
 
   const enqueueTradingV2Mutation = useMutation({
@@ -1248,18 +1267,22 @@ function TradingContent() {
   ]);
 
   const runPortfolioAutoPipeline = useCallback(() => {
-    const jobs: Array<'universe-scan' | 'backtest' | 'calibration' | 'portfolio-rebalance' | 'model-risk'> = [
-      'universe-scan',
-      'backtest',
-      'calibration',
-      'portfolio-rebalance',
-      'model-risk',
-    ];
-    jobs.forEach((job, index) => {
-      window.setTimeout(() => enqueueTradingV2(job), index * 200);
+    if (!selectedPortfolioAutoId) {
+      setTradingV2JobStatus('Selecione um portfólio antes de rodar o pipeline.');
+      return;
+    }
+    setTradingV2JobStatus('Iniciando pipeline institucional...');
+    startPortfolioAutoRun({
+      portfolioId: selectedPortfolioAutoId,
+      marketType: selectedMarketType !== 'futures' ? selectedMarketType : undefined,
+    }).then((result) => {
+      setActiveAutoRunId(result.runId);
+      setTradingV2JobStatus(`Pipeline enfileirado (run: ${result.runId.slice(0, 8)}…). Acompanhe o status abaixo.`);
+    }).catch((error: unknown) => {
+      const msg = error instanceof Error ? error.message : 'Erro desconhecido';
+      setTradingV2JobStatus(`Falha ao iniciar pipeline: ${msg}`);
     });
-    setTradingV2JobStatus('Pipeline institucional enfileirado: universe-scan → backtest → calibration → rebalance → model-risk');
-  }, [enqueueTradingV2]);
+  }, [selectedPortfolioAutoId, selectedMarketType]);
 
   const {
     data: newsPresetsResponse,
@@ -2470,6 +2493,31 @@ function TradingContent() {
     },
   });
 
+  // Mutation para Sinais IA (Auto) - usa endpoint auto engine
+  const signalAutoRunMutation = useMutation({
+    mutationFn: async () => {
+      return startSignalAutoRun({
+        symbol: requestSymbol || undefined,
+        marketType: selectedMarketType,
+        autoMix: true,
+      });
+    },
+    onSuccess: (data) => {
+      setActiveAutoRunId(data.runId);
+      toast({
+        title: 'Signal Auto Run iniciado',
+        description: `Run ${data.runId.slice(0, 8)}… enfileirado. Acompanhe o status na aba.`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Falha ao iniciar Signal Auto Run',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
   const updateSignalSchedulerMutation = useMutation({
     mutationFn: async () => {
       const intervalMinutes = Number.parseInt(schedulerForm.intervalMinutes, 10);
@@ -3419,9 +3467,9 @@ function TradingContent() {
       {/* Main Tabs - Mobile-First: Scroll horizontal em mobile */}
       <motion.div variants={itemVariants}>
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          {/* MOBILE-FIRST 12/01/2026: Tabs com scroll horizontal para caber em mobile */}
-          <div className="max-w-full overflow-x-auto pb-2 -mx-2 px-2 md:mx-0 md:px-0">
-            <TabsList className="flex min-w-max flex-nowrap items-center gap-1 whitespace-nowrap">
+          {/* MOBILE-FIRST 12/01/2026: Tabs com scroll horizontal para caber em mobile + sidebar */}
+          <div className="w-full min-w-0 overflow-x-auto pb-2 -mx-2 px-2 md:mx-0 md:px-0">
+            <TabsList className="inline-flex min-w-max flex-nowrap items-center gap-1 whitespace-nowrap">
               <TabsTrigger value="overview" data-testid="tab-overview" className="whitespace-nowrap shrink-0">
                 <BarChart3 className="h-4 w-4 md:mr-2" />
                 <span className="hidden md:inline">{t('trading.tabs.overview')}</span>
@@ -3934,6 +3982,39 @@ function TradingContent() {
                 {tradingV2JobStatus && (
                   <div className="text-xs text-muted-foreground">{tradingV2JobStatus}</div>
                 )}
+                {/* Status do Auto Run ativo */}
+                {activeAutoRunDetail && activeAutoRunDetail.run.runType === 'portfolio_auto' && (
+                  <Card className="border-primary/30">
+                    <CardHeader className="py-2 px-3">
+                      <CardTitle className="text-sm">Run: {activeAutoRunDetail.run.id.slice(0, 8)}… — {activeAutoRunDetail.run.status}</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-1 text-xs px-3 pb-3">
+                      {Array.isArray(activeAutoRunDetail.steps) && activeAutoRunDetail.steps.map((step) => (
+                        <div key={step.id} className="flex items-center gap-2">
+                          <span className={
+                            step.status === 'succeeded' ? 'text-green-600' :
+                            step.status === 'failed' ? 'text-red-600' :
+                            step.status === 'running' ? 'text-yellow-600' :
+                            'text-muted-foreground'
+                          }>●</span>
+                          <span>{step.stepName}: {step.status}</span>
+                          {step.error && <span className="text-red-500 truncate max-w-[200px]">{step.error}</span>}
+                        </div>
+                      ))}
+                      {Array.isArray(activeAutoRunDetail.decisions) && activeAutoRunDetail.decisions.length > 0 && (
+                        <div className="mt-2 border-t pt-2">
+                          <div className="font-medium">Decisão: {activeAutoRunDetail.decisions[0].approved ? 'Aprovada ✅' : 'Reprovada ❌'}</div>
+                          {activeAutoRunDetail.decisions[0].reasoning && (
+                            <div className="text-muted-foreground">{activeAutoRunDetail.decisions[0].reasoning}</div>
+                          )}
+                        </div>
+                      )}
+                      {activeAutoRunDetail.run.error && (
+                        <div className="text-red-500 mt-1">{activeAutoRunDetail.run.error}</div>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
                 <div className="grid gap-4 lg:grid-cols-2">
                   <Card>
                     <CardHeader>
@@ -3986,6 +4067,7 @@ function TradingContent() {
               <CardContent className="space-y-3">
                 <div className="text-sm text-muted-foreground">
                   Os sinais abaixo usam candidates recentes e guardrails (edge líquido, DSR/PBO e risco).
+                  Auto seleciona a melhor modalidade quando autoMix=true.
                 </div>
                 <div className="space-y-2">
                   {topTradingV2Candidates.slice(0, 5).map((candidate) => (
@@ -3993,20 +4075,55 @@ function TradingContent() {
                       <div className="font-medium">{candidate.strategyKey} · {candidate.timeframe}</div>
                       <div>Side: {candidate.side}</div>
                       <div>Edge: {formatNumber(Number(candidate.expectedEdge ?? 0), locale)}</div>
-                      <div>Guardrails: {(candidate.riskFlags ?? []).length > 0 ? 'restrito' : 'aprovável'}</div>
+                      <div>Guardrails: {(Array.isArray(candidate.riskFlags) ? candidate.riskFlags : []).length > 0 ? 'restrito' : 'aprovável'}</div>
                     </div>
                   ))}
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Button
-                    onClick={() => generateSignalMutation.mutate()}
-                    disabled={generateSignalMutation.isPending || isSignalArbitrageInvalid}
+                    onClick={() => signalAutoRunMutation.mutate()}
+                    disabled={signalAutoRunMutation.isPending}
                   >
-                    {generateSignalMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                    {signalAutoRunMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                     Rodar Auto agora
                   </Button>
                   <Button variant="outline" onClick={() => setActiveTab('signals')}>Ir para painel de sinais</Button>
                 </div>
+                {/* Status do Signal Auto Run */}
+                {activeAutoRunDetail && activeAutoRunDetail.run.runType === 'signal_auto' && (
+                  <Card className="border-primary/30 mt-2">
+                    <CardHeader className="py-2 px-3">
+                      <CardTitle className="text-sm">Signal Run: {activeAutoRunDetail.run.id.slice(0, 8)}… — {activeAutoRunDetail.run.status}</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-1 text-xs px-3 pb-3">
+                      {Array.isArray(activeAutoRunDetail.steps) && activeAutoRunDetail.steps.map((step) => (
+                        <div key={step.id} className="flex items-center gap-2">
+                          <span className={
+                            step.status === 'succeeded' ? 'text-green-600' :
+                            step.status === 'failed' ? 'text-red-600' :
+                            step.status === 'running' ? 'text-yellow-600' :
+                            'text-muted-foreground'
+                          }>●</span>
+                          <span>{step.stepName}: {step.status}</span>
+                        </div>
+                      ))}
+                      {Array.isArray(activeAutoRunDetail.decisions) && activeAutoRunDetail.decisions.length > 0 && (
+                        <div className="mt-2 border-t pt-2">
+                          <div className="font-medium">Decisão: {activeAutoRunDetail.decisions[0].approved ? 'Aprovada ✅' : 'Nenhum candidate aprovado ❌'}</div>
+                          {activeAutoRunDetail.decisions[0].reasoning && (
+                            <div className="text-muted-foreground">{activeAutoRunDetail.decisions[0].reasoning}</div>
+                          )}
+                          {activeAutoRunDetail.decisions[0].entryPayload && (
+                            <div className="mt-1">
+                              <span className="font-medium">Símbolo: </span>{String(activeAutoRunDetail.decisions[0].entryPayload.symbol ?? 'N/A')}
+                              <span className="ml-2 font-medium">Side: </span>{String(activeAutoRunDetail.decisions[0].entryPayload.side ?? 'N/A')}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
