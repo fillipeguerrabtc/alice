@@ -4033,12 +4033,29 @@ function TradingContent() {
                         const entrySummary = formatDecisionSummary(decision.entryPayload);
                         const guardrailsSummary = formatDecisionSummary(decision.guardrails);
                         const costsSummary = formatDecisionSummary(decision.estimatedCosts);
+                        const entryPayload = decision.entryPayload ?? {};
+                        const noTradeReasonCode = typeof entryPayload.noTradeReasonCode === 'string' ? entryPayload.noTradeReasonCode : null;
+                        const noTradeReasonHuman = typeof entryPayload.noTradeReasonHuman === 'string' ? entryPayload.noTradeReasonHuman : null;
+                        const nextAction = typeof entryPayload.nextAction === 'string' ? entryPayload.nextAction : null;
+                        const timeframe = typeof entryPayload.timeframe === 'string' ? entryPayload.timeframe : '-';
+                        const horizon = typeof entryPayload.horizon === 'string' ? entryPayload.horizon : '-';
+                        const operationIntent = typeof entryPayload.operationIntent === 'string' ? entryPayload.operationIntent : '-';
+                        const side = typeof entryPayload.side === 'string' ? entryPayload.side : '-';
+                        const edgeNet = Number(entryPayload.edgeNet);
+                        const confidenceCalibrated = Number(entryPayload.confidenceCalibrated);
+                        const riskReward = Number(entryPayload.riskReward);
                         return (
                           <div className="mt-2 border-t pt-2 space-y-1">
                             <div className="font-medium">Decisão: {decision.approved ? 'Aprovada ✅' : 'Sem trade ❌'}</div>
                             {decision.reasoning && (
                               <div className="text-muted-foreground">Motivo: {decision.reasoning}</div>
                             )}
+                            <div>Intent: {operationIntent} · Side: {side} · Timeframe: {timeframe} · Horizonte: {horizon}</div>
+                            <div>
+                              Edge líquido: {Number.isFinite(edgeNet) ? formatNumber(edgeNet, locale, { maximumFractionDigits: 6 }) : '-'} ·
+                              Conf. calibrada: {Number.isFinite(confidenceCalibrated) ? formatNumber(confidenceCalibrated, locale, { maximumFractionDigits: 4 }) : '-'} ·
+                              R/R: {Number.isFinite(riskReward) ? formatNumber(riskReward, locale, { maximumFractionDigits: 3 }) : '-'}
+                            </div>
                             {entrySummary && (
                               <div><span className="font-medium">Entrada:</span> {entrySummary}</div>
                             )}
@@ -4047,6 +4064,15 @@ function TradingContent() {
                             )}
                             {costsSummary && (
                               <div><span className="font-medium">Custos:</span> {costsSummary}</div>
+                            )}
+                            {!decision.approved && noTradeReasonCode && (
+                              <div>
+                                <span className="font-medium">No-trade:</span> {noTradeReasonCode}
+                                {noTradeReasonHuman ? ` · ${noTradeReasonHuman}` : ''}
+                              </div>
+                            )}
+                            {!decision.approved && nextAction && (
+                              <div><span className="font-medium">Próxima ação:</span> {nextAction}</div>
                             )}
                           </div>
                         );
@@ -4154,12 +4180,29 @@ function TradingContent() {
                         const entrySummary = formatDecisionSummary(decision.entryPayload);
                         const guardrailsSummary = formatDecisionSummary(decision.guardrails);
                         const costsSummary = formatDecisionSummary(decision.estimatedCosts);
+                        const entryPayload = decision.entryPayload ?? {};
+                        const noTradeReasonCode = typeof entryPayload.noTradeReasonCode === 'string' ? entryPayload.noTradeReasonCode : null;
+                        const noTradeReasonHuman = typeof entryPayload.noTradeReasonHuman === 'string' ? entryPayload.noTradeReasonHuman : null;
+                        const nextAction = typeof entryPayload.nextAction === 'string' ? entryPayload.nextAction : null;
+                        const timeframe = typeof entryPayload.timeframe === 'string' ? entryPayload.timeframe : '-';
+                        const horizon = typeof entryPayload.horizon === 'string' ? entryPayload.horizon : '-';
+                        const operationIntent = typeof entryPayload.operationIntent === 'string' ? entryPayload.operationIntent : '-';
+                        const side = typeof entryPayload.side === 'string' ? entryPayload.side : '-';
+                        const edgeNet = Number(entryPayload.edgeNet);
+                        const confidenceCalibrated = Number(entryPayload.confidenceCalibrated);
+                        const riskReward = Number(entryPayload.riskReward);
                         return (
                           <div className="mt-2 border-t pt-2 space-y-1">
                             <div className="font-medium">Decisão: {decision.approved ? 'Aprovada ✅' : 'Sem trade ❌'}</div>
                             {decision.reasoning && (
                               <div className="text-muted-foreground">Motivo: {decision.reasoning}</div>
                             )}
+                            <div>Intent: {operationIntent} · Side: {side} · Timeframe: {timeframe} · Horizonte: {horizon}</div>
+                            <div>
+                              Edge líquido: {Number.isFinite(edgeNet) ? formatNumber(edgeNet, locale, { maximumFractionDigits: 6 }) : '-'} ·
+                              Conf. calibrada: {Number.isFinite(confidenceCalibrated) ? formatNumber(confidenceCalibrated, locale, { maximumFractionDigits: 4 }) : '-'} ·
+                              R/R: {Number.isFinite(riskReward) ? formatNumber(riskReward, locale, { maximumFractionDigits: 3 }) : '-'}
+                            </div>
                             {entrySummary && (
                               <div><span className="font-medium">Entrada:</span> {entrySummary}</div>
                             )}
@@ -4168,6 +4211,15 @@ function TradingContent() {
                             )}
                             {costsSummary && (
                               <div><span className="font-medium">Custos:</span> {costsSummary}</div>
+                            )}
+                            {!decision.approved && noTradeReasonCode && (
+                              <div>
+                                <span className="font-medium">No-trade:</span> {noTradeReasonCode}
+                                {noTradeReasonHuman ? ` · ${noTradeReasonHuman}` : ''}
+                              </div>
+                            )}
+                            {!decision.approved && nextAction && (
+                              <div><span className="font-medium">Próxima ação:</span> {nextAction}</div>
                             )}
                           </div>
                         );

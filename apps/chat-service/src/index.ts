@@ -4522,6 +4522,18 @@ async function updateAgentRoutingMetadata(params: {
     .where(eq(schema.conversationStates.conversationId, params.conversationId));
 }
 
+async function resolveTenantDefaultNamespaceId(tenantId: string): Promise<string | null> {
+  const fallback = await db.query.namespaces.findFirst({
+    where: and(
+      eq(schema.namespaces.tenantId, tenantId),
+      eq(schema.namespaces.ativo, true),
+    ),
+    columns: { id: true },
+    orderBy: [schema.namespaces.ordem, schema.namespaces.criadoEm],
+  });
+  return fallback?.id ?? null;
+}
+
 async function resolveAgentRoutingForMessage(params: {
   tenantId: string;
   conversationId: string;
@@ -4533,6 +4545,7 @@ async function resolveAgentRoutingForMessage(params: {
 }): Promise<{
   agent: AgentRoutingRecord | null;
   namespaceId?: string | null;
+  namespaceFallbackReason?: string;
   mode: AgentRoutingMode;
   source: 'auto' | 'manual' | 'mention' | 'none';
   score: number;
@@ -4652,14 +4665,25 @@ async function resolveAgentRoutingForMessage(params: {
     score = 1;
   }
 
-  const namespaceId = selectedAgent?.namespaceId
+  let namespaceFallbackReason: string | undefined;
+  let namespaceId = selectedAgent?.namespaceId
     ?? params.requestedNamespaceId
     ?? params.conversation.namespaceId
     ?? null;
+  if (!namespaceId) {
+    const tenantDefaultNamespaceId = await resolveTenantDefaultNamespaceId(params.tenantId);
+    if (tenantDefaultNamespaceId) {
+      namespaceId = tenantDefaultNamespaceId;
+      namespaceFallbackReason = 'tenant_default_namespace';
+    } else {
+      namespaceFallbackReason = 'namespace_unresolved';
+    }
+  }
 
   return {
     agent: selectedAgent,
     namespaceId,
+    namespaceFallbackReason,
     mode,
     source,
     score,
@@ -5860,16 +5884,19 @@ function shouldRequireTradingConfirmation(
   policy: ConversationApprovalPolicy
 ): boolean {
   const risk = getTradingCommandRisk(command);
+  const isRiskyCommand = risk === 'high';
   if (policy === 'always_confirm') {
     return true;
   }
   if (policy === 'confirm_risky') {
-    return risk === 'high';
+    return isRiskyCommand;
   }
   if (policy === 'never_confirm') {
-    return false;
+    // Regra de segurança: comandos de risco alto continuam exigindo confirmação explícita.
+    // "never_confirm" remove prompts para baixo/médio risco, mas não permite bypass de ações críticas.
+    return isRiskyCommand;
   }
-  return risk === 'high';
+  return isRiskyCommand;
 }
 
 function shouldRequireAgenticConfirmation(
@@ -8266,6 +8293,7 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
           score: routingDecision.score,
           profile: routingDecision.profile,
           selectedAgentId: activeAgentId ?? null,
+          namespaceFallbackReason: routingDecision.namespaceFallbackReason ?? null,
           updatedAt: new Date().toISOString(),
         },
       });
@@ -8755,6 +8783,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           score: routingDecision.score,
           profile: routingDecision.profile,
           selectedAgentId: activeAgentId ?? null,
+          namespaceFallbackReason: routingDecision.namespaceFallbackReason ?? null,
           updatedAt: new Date().toISOString(),
         },
       });
@@ -8908,7 +8937,10 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     }
 
     const writeStatus = (stage: string) => {
-      if (res.headersSent && !res.writableEnded) {
+      if (!res.headersSent) {
+        res.flushHeaders();
+      }
+      if (!res.writableEnded) {
         res.write(`data: ${JSON.stringify({ type: 'status', stage })}\n\n`);
       }
     };
@@ -8921,7 +8953,10 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     };
 
     const emitAgentEvent = (event: Omit<AgentEvent, 'id' | 'ts' | 'payload'> & { payload?: unknown }) => {
-      if (!res.headersSent || res.writableEnded) return;
+      if (!res.headersSent) {
+        res.flushHeaders();
+      }
+      if (res.writableEnded) return;
       const { payload: rawPayload, ...rest } = event;
       const payload = redactSensitivePayload(rawPayload);
       const data: AgentEvent = {
@@ -13549,6 +13584,7 @@ wss.on('connection', (ws, req) => {
               score: routingDecision.score,
               profile: routingDecision.profile,
               selectedAgentId: activeAgentId ?? null,
+              namespaceFallbackReason: routingDecision.namespaceFallbackReason ?? null,
               updatedAt: new Date().toISOString(),
             },
           });

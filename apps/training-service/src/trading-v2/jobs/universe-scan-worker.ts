@@ -569,6 +569,52 @@ export async function runUniverseScanWorker(payload: UniversePayload): Promise<{
       });
     }
   }
+  const latestTradeFlow = tradeFlow.length > 0 ? tradeFlow[tradeFlow.length - 1] : null;
+  await db.insert(schema.tradingMicrostructureAgg).values({
+    tenantId: payload.tenantId,
+    instrumentId: payload.instrumentId,
+    marketType: payload.marketType,
+    intervalSeconds: 60,
+    asofTs: orderbookRows[0]?.timestamp ?? new Date(),
+    metrics: {
+      spreadBps: microFeatures.bidAskSpreadBps,
+      spreadWideningBps: microFeatures.spreadWideningBps,
+      orderBookImbalance: microFeatures.orderBookImbalance,
+      depthDropRatio: microFeatures.depthDropRatio,
+      microPrice: microFeatures.microPrice,
+      aggressiveFlowDelta: microFeatures.aggressiveFlowDelta,
+      cvd: microFeatures.cvd,
+      tradeFlowDelta: latestTradeFlow?.deltaVolume ?? null,
+      tradeFlowBuyVolume: latestTradeFlow?.buyVolume ?? null,
+      tradeFlowSellVolume: latestTradeFlow?.sellVolume ?? null,
+      liquidityProxy,
+      timeframe,
+    },
+  }).onConflictDoUpdate({
+    target: [
+      schema.tradingMicrostructureAgg.tenantId,
+      schema.tradingMicrostructureAgg.instrumentId,
+      schema.tradingMicrostructureAgg.marketType,
+      schema.tradingMicrostructureAgg.intervalSeconds,
+      schema.tradingMicrostructureAgg.asofTs,
+    ],
+    set: {
+      metrics: {
+        spreadBps: microFeatures.bidAskSpreadBps,
+        spreadWideningBps: microFeatures.spreadWideningBps,
+        orderBookImbalance: microFeatures.orderBookImbalance,
+        depthDropRatio: microFeatures.depthDropRatio,
+        microPrice: microFeatures.microPrice,
+        aggressiveFlowDelta: microFeatures.aggressiveFlowDelta,
+        cvd: microFeatures.cvd,
+        tradeFlowDelta: latestTradeFlow?.deltaVolume ?? null,
+        tradeFlowBuyVolume: latestTradeFlow?.buyVolume ?? null,
+        tradeFlowSellVolume: latestTradeFlow?.sellVolume ?? null,
+        liquidityProxy,
+        timeframe,
+      },
+    },
+  });
 
   const microEdgeAdjustment = (microFeatures.orderBookImbalance * MICRO_IMBALANCE_EDGE_FACTOR)
     - ((microFeatures.spreadWideningBps / 10_000) * MICRO_SPREAD_WIDENING_PENALTY)
