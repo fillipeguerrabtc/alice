@@ -196,6 +196,18 @@ export function requireInternalHmacAuth() {
       return;
     }
 
+    if (!/^\d+$/.test(internalTimestamp)) {
+      logger.info({
+        path: req.path,
+        method: req.method,
+        ip: req.ip,
+        correlationId,
+        statusCode: 401,
+      }, 'Timestamp interno inválido');
+      res.status(401).json({ error: 'Timestamp interno inválido', code: 'INTERNAL_UNAUTHORIZED' });
+      return;
+    }
+
     const isValid = validateInternalToken(
       internalSignature,
       internalUserId,

@@ -248,7 +248,7 @@ export function useKucoinWebSocket(
 
   /** Busca token efêmero para autenticação WebSocket */
   const fetchWsToken = useCallback(async (): Promise<string | null> => {
-    if (!isAuthenticated) {
+    if (isAuthLoading || !isAuthenticated) {
       return null;
     }
     // Usar cache se ainda válido (com margem de 10s)
@@ -270,7 +270,7 @@ export function useKucoinWebSocket(
       frontendLogger.warn('Falha ao buscar ws-token', { error: error instanceof Error ? error.message : String(error) });
       return null;
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, isAuthLoading]);
 
   // Get WebSocket URL (com token quando disponível)
   const getWsUrl = useCallback((token: string | null) => {
@@ -444,6 +444,9 @@ export function useKucoinWebSocket(
 
   // Connect to WebSocket
   const connect = useCallback(async () => {
+    if (isAuthLoading) {
+      return;
+    }
     if (!isAuthenticated) {
       clearReconnect();
       setState({
@@ -607,7 +610,7 @@ export function useKucoinWebSocket(
         lastPing: null,
       });
     }
-  }, [isAuthenticated, getWsUrl, fetchWsToken, handleMessage, clearReconnect, clearPing, channels, symbol, interval, marketType, marginMode, orderBookDepth, autoConnect]);
+  }, [isAuthenticated, isAuthLoading, getWsUrl, fetchWsToken, handleMessage, clearReconnect, clearPing, channels, symbol, interval, marketType, marginMode, orderBookDepth, autoConnect]);
 
   // Disconnect from WebSocket
   const disconnect = useCallback(() => {

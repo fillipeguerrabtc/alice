@@ -15099,7 +15099,7 @@ app.get('/api/integrations/trading/signal-scheduler', requirePermission('integra
     let data: typeof schedulers;
     if (schedulers.length > 0) {
       const now = new Date();
-      const updated = await Promise.all(schedulers.map(async (scheduler) => {
+      const updatedEntries = await Promise.allSettled(schedulers.map(async (scheduler) => {
         if (scheduler.enabled && !scheduler.nextRunAt) {
           const nextRunAt = new Date(now.getTime() + (scheduler.intervalMinutes ?? 15) * 60 * 1000);
           await db.update(schema.tradingSignalSchedulers)
@@ -15109,7 +15109,11 @@ app.get('/api/integrations/trading/signal-scheduler', requirePermission('integra
         }
         return scheduler;
       }));
-      data = updated;
+      data = updatedEntries.map((entry, index) => {
+        if (entry.status === 'fulfilled') return entry.value;
+        logger.warn({ error: entry.reason, schedulerId: schedulers[index]?.id }, 'Falha ao atualizar nextRunAt do scheduler');
+        return schedulers[index]!;
+      });
     } else {
       data = [{
         tenantId: authContext.tenantId,

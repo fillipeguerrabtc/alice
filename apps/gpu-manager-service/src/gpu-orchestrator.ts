@@ -25,6 +25,7 @@ import { createLogger } from '@alice/logger';
 
 const execAsync = promisify(exec);
 const logger = createLogger('gpu-orchestrator');
+const GPU_TRAINING_PROFILE = 'gpu-training';
 
 /** Estado atual do orquestrador */
 export type OrchestratorState =
@@ -116,7 +117,7 @@ export async function switchToTraining(): Promise<void> {
   if (GPU_ORCHESTRATION_MODE === 'simultaneous') {
     logger.info('Orquestrador: subindo trainer sob demanda (modo simultaneous)');
     try {
-      await runCompose(['--profile', 'gpu-training', 'up', '-d', 'gpu-trainer'], 120000);
+      await runCompose(['--profile', GPU_TRAINING_PROFILE, 'up', '-d', 'gpu-trainer'], 120000);
       currentState = 'training';
       _lastTrainingActivityAt = Date.now();
       scheduleIdleReturn();
@@ -132,7 +133,7 @@ export async function switchToTraining(): Promise<void> {
 
   try {
     await runCompose(['stop', 'gpu-embeddings'], 30000);
-    await runCompose(['--profile', 'gpu-training', 'up', '-d', 'gpu-trainer'], 120000);
+    await runCompose(['--profile', GPU_TRAINING_PROFILE, 'up', '-d', 'gpu-trainer'], 120000);
     currentState = 'training';
     _lastTrainingActivityAt = Date.now();
     scheduleIdleReturn();
@@ -158,7 +159,7 @@ export async function switchToLlmEmbeddings(): Promise<void> {
   if (GPU_ORCHESTRATION_MODE === 'simultaneous') {
     logger.info('Orquestrador: parando trainer (modo simultaneous)');
     try {
-      await runCompose(['--profile', 'gpu-training', 'stop', 'gpu-trainer'], 60000);
+      await runCompose(['--profile', GPU_TRAINING_PROFILE, 'stop', 'gpu-trainer'], 60000);
       currentState = 'llm_embeddings';
       logger.info('Orquestrador: trainer parado (modo simultaneous)');
       return;
@@ -170,7 +171,7 @@ export async function switchToLlmEmbeddings(): Promise<void> {
   logger.info('Orquestrador: voltando para LLM+Embeddings (parando trainer, subindo embeddings)');
 
   try {
-    await runCompose(['--profile', 'gpu-training', 'stop', 'gpu-trainer'], 60000);
+    await runCompose(['--profile', GPU_TRAINING_PROFILE, 'stop', 'gpu-trainer'], 60000);
     await runCompose(['up', '-d', 'gpu-embeddings'], 120000);
     currentState = 'llm_embeddings';
     logger.info('Orquestrador: modo LLM+Embeddings ativo');

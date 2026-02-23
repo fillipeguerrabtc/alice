@@ -787,6 +787,8 @@ services:
     image: ${IMAGE_PREFIX}-qwen-trainer:${IMAGE_TAG:-latest}
     platform: linux/amd64
     container_name: gpu-trainer
+    # Subir manualmente quando necessário:
+    # docker compose --profile gpu-training up -d gpu-trainer
     profiles: ["gpu-training"]
     restart: "no"
     runtime: nvidia

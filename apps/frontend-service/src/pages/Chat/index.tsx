@@ -1304,7 +1304,7 @@ export default function Chat() {
       setMessages((prev) => [...prev, assistantMessage]);
 
       const pathname = (location as string) ?? '';
-      const resolvedRoute = pathname.split('?')[0] || '/chat';
+      const resolvedRoute = pathname ? pathname.split('?')[0] : '/chat';
       let activeConversationId = conversationId;
       if (!activeConversationId) {
         const contextPayload: { agentId?: string; namespaceId?: string; context?: 'trading' | 'sales' | 'support' | 'cambio' | 'default'; route?: string } = {};
