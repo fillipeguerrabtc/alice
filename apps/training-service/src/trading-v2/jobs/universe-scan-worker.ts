@@ -613,7 +613,6 @@ export async function runUniverseScanWorker(payload: UniversePayload): Promise<{
         liquidityProxy,
         timeframe,
       },
-      createdAt: new Date(),
     },
   });
 

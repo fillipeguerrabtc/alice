@@ -987,16 +987,16 @@ async function resolveAutoDecisionEvidenceIds(params: {
   symbol?: string;
   marketType?: 'spot' | 'futures' | 'margin';
 }): Promise<string[]> {
-  const signalFilters = [eq(schema.tradingSignals.tenantId, params.tenantId), lte(schema.tradingSignals.criadoEm, params.asof)];
+  const signalWhereConditions = [eq(schema.tradingSignals.tenantId, params.tenantId), lte(schema.tradingSignals.criadoEm, params.asof)];
   if (params.symbol) {
-    signalFilters.push(eq(schema.tradingSignals.symbol, params.symbol));
+    signalWhereConditions.push(eq(schema.tradingSignals.symbol, params.symbol));
   }
   if (params.marketType) {
-    signalFilters.push(eq(schema.tradingSignals.marketType, params.marketType));
+    signalWhereConditions.push(eq(schema.tradingSignals.marketType, params.marketType));
   }
   const [signals, postmortems] = await Promise.all([
     db.query.tradingSignals.findMany({
-      where: and(...signalFilters),
+      where: and(...signalWhereConditions),
       columns: { id: true },
       orderBy: [desc(schema.tradingSignals.criadoEm)],
       limit: 4,
@@ -1210,29 +1210,30 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
       marketType: payload.marketType ?? candidateForReason?.marketType,
     });
 
-    const noTradeReasonCode = (() => {
-      if (candidates.length === 0) return 'NO_CANDIDATES';
-      if ((guardrailResults.unvalidated as number) > 0 && approvedCandidates.length === 0) return 'UNVALIDATED';
-      if ((guardrailResults.filteredByLiquidity as number) > 0) return 'LIQUIDITY_CONSTRAINT';
-      if ((guardrailResults.filteredByDSR as number) > 0 || (guardrailResults.filteredByPBO as number) > 0) return 'GUARDRAIL_BLOCKED';
-      return 'NO_EDGE';
-    })();
-    const noTradeReasonHuman = noTradeReasonCode === 'UNVALIDATED'
-      ? 'Candidate ainda sem validação estatística mínima (DSR/PBO).'
-      : noTradeReasonCode === 'LIQUIDITY_CONSTRAINT'
-        ? 'Sem liquidez mínima: spread alargado ou profundidade insuficiente.'
-        : noTradeReasonCode === 'GUARDRAIL_BLOCKED'
-          ? 'Guardrails bloquearam o trade por DSR/PBO fora da faixa.'
-          : noTradeReasonCode === 'NO_CANDIDATES'
-            ? 'Nenhum candidate disponível para o escopo atual.'
-            : 'Edge líquido insuficiente para execução segura.';
-    const nextAction = noTradeReasonCode === 'UNVALIDATED'
-      ? 'Rodar pipeline de backtest+calibration e aguardar próxima janela de mercado.'
-      : noTradeReasonCode === 'LIQUIDITY_CONSTRAINT'
-        ? 'Aguardar melhora de liquidez (spread/depth) e tentar novamente.'
-        : noTradeReasonCode === 'NO_CANDIDATES'
-          ? 'Executar universe scan para ampliar o conjunto de candidates.'
-          : 'Revisar thresholds e aguardar novas condições de regime.';
+    const noTradeReasons: string[] = [];
+    if (candidates.length === 0) noTradeReasons.push('NO_CANDIDATES');
+    if ((guardrailResults.unvalidated as number) > 0 && approvedCandidates.length === 0) noTradeReasons.push('UNVALIDATED');
+    if ((guardrailResults.filteredByLiquidity as number) > 0) noTradeReasons.push('LIQUIDITY_CONSTRAINT');
+    if ((guardrailResults.filteredByDSR as number) > 0 || (guardrailResults.filteredByPBO as number) > 0) noTradeReasons.push('GUARDRAIL_BLOCKED');
+    if (noTradeReasons.length === 0 && approvedCandidates.length === 0) noTradeReasons.push('NO_EDGE');
+    const reasonPriority = ['UNVALIDATED', 'LIQUIDITY_CONSTRAINT', 'GUARDRAIL_BLOCKED', 'NO_CANDIDATES', 'NO_EDGE'];
+    const noTradeReasonCode = reasonPriority.find((reason) => noTradeReasons.includes(reason)) ?? 'NO_EDGE';
+    const noTradeReasonHumanMap: Record<string, string> = {
+      UNVALIDATED: 'Candidato ainda sem validação estatística mínima (DSR/PBO).',
+      LIQUIDITY_CONSTRAINT: 'Sem liquidez mínima: spread alargado ou profundidade insuficiente.',
+      GUARDRAIL_BLOCKED: 'Guardrails bloquearam o trade por DSR/PBO fora da faixa.',
+      NO_CANDIDATES: 'Nenhum candidato disponível para o escopo atual.',
+      NO_EDGE: 'Edge líquido insuficiente para execução segura.',
+    };
+    const nextActionMap: Record<string, string> = {
+      UNVALIDATED: 'Rodar pipeline de backtest+calibration e aguardar próxima janela de mercado.',
+      LIQUIDITY_CONSTRAINT: 'Aguardar melhora de liquidez (spread/depth) e tentar novamente.',
+      NO_CANDIDATES: 'Executar universe scan para ampliar o conjunto de candidates.',
+      GUARDRAIL_BLOCKED: 'Revisar thresholds e aguardar novas condições de regime.',
+      NO_EDGE: 'Revisar thresholds e aguardar novas condições de regime.',
+    };
+    const noTradeReasonHuman = noTradeReasonHumanMap[noTradeReasonCode] ?? noTradeReasonHumanMap.NO_EDGE;
+    const nextAction = nextActionMap[noTradeReasonCode] ?? nextActionMap.NO_EDGE;
 
     await db.insert(schema.tradingAutoDecisions).values({
       runId,
@@ -1260,6 +1261,7 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
           estimationMode: 'candidate_expected_edge_net',
         },
         noTradeReasonCode: bestCandidate ? null : noTradeReasonCode,
+        noTradeReasons: bestCandidate ? [] : noTradeReasons,
         noTradeReasonHuman: bestCandidate ? null : noTradeReasonHuman,
         nextAction: bestCandidate ? null : nextAction,
         autoMix: payload.autoMix ?? true,

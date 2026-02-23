@@ -8937,6 +8937,9 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     }
 
     const writeStatus = (stage: string) => {
+      if (!res.headersSent) {
+        res.flushHeaders();
+      }
       if (!res.writableEnded) {
         res.write(`data: ${JSON.stringify({ type: 'status', stage })}\n\n`);
       }
@@ -8950,6 +8953,9 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     };
 
     const emitAgentEvent = (event: Omit<AgentEvent, 'id' | 'ts' | 'payload'> & { payload?: unknown }) => {
+      if (!res.headersSent) {
+        res.flushHeaders();
+      }
       if (res.writableEnded) return;
       const { payload: rawPayload, ...rest } = event;
       const payload = redactSensitivePayload(rawPayload);
