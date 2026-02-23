@@ -1772,7 +1772,75 @@ jobs:
             .env.prod ${{ env.HETZNER_USER }}@${{ env.HETZNER_HOST }}:/opt/alice/app/infra/docker/.env.prod
           
           echo "✅ .env.prod copiado para servidor"
-          
+
+      # =================================================================
+      # MANIFESTO DE IMAGENS - Download e transferência (23/02/2026)
+      # =================================================================
+      # Baixa o manifesto de imagens do GitHub Release e transfere para
+      # o servidor de produção em /opt/alice/manifests/images-manifest.json.
+      #
+      # O deploy-functions.sh auto-detecta este arquivo e usa os digests
+      # para decidir pull vs skip, garantindo que imagens stale nunca
+      # entrem em produção (even após retag de release com falha parcial).
+      #
+      # Se o manifesto não existir (primeira release, prerelease, ou release
+      # anterior a 23/02/2026), deploy continua com lógica legada (built_images).
+      #
+      # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 9 (Validação contínua)
+      # =================================================================
+      - name: Baixar manifesto de imagens e transferir para servidor
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.validate.outputs.version }}"
+          MANIFEST_LOCAL="/tmp/images-manifest.json"
+
+          echo "📋 Baixando manifesto de imagens para Release $VERSION..."
+
+          # Obter URL do asset via GitHub API
+          ASSET_URL=$(curl -s \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/$VERSION" \
+            | jq -r '.assets[]? | select(.name == "images-manifest.json") | .url' \
+            2>/dev/null | head -1 || echo "")
+
+          if [ -z "$ASSET_URL" ] || [ "$ASSET_URL" = "null" ]; then
+            echo "⚠️  Manifesto não encontrado para Release $VERSION"
+            echo "   Deploy continuará com lógica legada (built_images)"
+            echo "   (Normal para primeira release ou release anterior a 23/02/2026)"
+            exit 0
+          fi
+
+          # Download do asset (GitHub usa redirect, precisa de Accept: octet-stream)
+          curl -s -L \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/octet-stream" \
+            "$ASSET_URL" \
+            -o "$MANIFEST_LOCAL"
+
+          # Validar JSON
+          if ! jq '.' "$MANIFEST_LOCAL" > /dev/null 2>&1; then
+            echo "⚠️  Manifesto baixado corrompido ou inválido - ignorando"
+            rm -f "$MANIFEST_LOCAL"
+            exit 0
+          fi
+
+          NIMAGES=$(jq '.images | length' "$MANIFEST_LOCAL")
+          echo "✅ Manifesto baixado: $NIMAGES imagens"
+
+          # Transferir para servidor de produção
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            "${{ env.HETZNER_USER }}@${{ env.HETZNER_HOST }}" \
+            "mkdir -p /opt/alice/manifests"
+
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            "$MANIFEST_LOCAL" \
+            "${{ env.HETZNER_USER }}@${{ env.HETZNER_HOST }}:/opt/alice/manifests/images-manifest.json"
+
+          echo "✅ Manifesto transferido para /opt/alice/manifests/images-manifest.json"
+          rm -f "$MANIFEST_LOCAL"
+
       - name: Limpar chave SSH temporária
         if: always()
         run: |

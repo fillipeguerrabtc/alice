@@ -203,6 +203,51 @@ jobs:
       - name: Docker prune
         run: docker system prune -f --filter "until=24h" || true
 
+      # =================================================================
+      # GUARD: Verificar manifesto do release anterior
+      # =================================================================
+      # Se o release anterior não tem manifesto de imagens (images-manifest.json),
+      # isso indica que a release anterior falhou parcialmente — algumas imagens
+      # foram pushed ao GHCR mas o build não concluiu. Nesse caso, forçamos
+      # rebuild completo de TODAS as imagens para garantir integridade.
+      #
+      # Sem esse guard: deploy poderia retag de imagens de release com falha
+      # parcial, deixando produção em estado inconsistente.
+      #
+      # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 9 (Validação contínua)
+      # =================================================================
+      - name: Verificar manifesto do release anterior (guard de integridade)
+        id: check-prev-manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PREVIOUS_TAG="${{ needs.create-release.outputs.previous_tag }}"
+          FORCE_FULL_REBUILD="false"
+
+          if [ -n "$PREVIOUS_TAG" ]; then
+            echo "🔍 Verificando manifesto do release anterior: $PREVIOUS_TAG"
+            ASSET_NAME=$(curl -s \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              "https://api.github.com/repos/${{ github.repository }}/releases/tags/$PREVIOUS_TAG" \
+              | jq -r '.assets[]? | select(.name == "images-manifest.json") | .name' 2>/dev/null \
+              | head -1 || echo "")
+
+            if [ -z "$ASSET_NAME" ]; then
+              echo "⚠️  Release anterior ($PREVIOUS_TAG) sem manifesto de imagens"
+              echo "    Causa provável: release anterior falhou parcialmente, ou é anterior"
+              echo "    à implementação do manifesto (23/02/2026)."
+              echo "    Ação: rebuild completo de todas as imagens para garantir integridade."
+              FORCE_FULL_REBUILD="true"
+            else
+              echo "✅ Manifesto encontrado para release anterior ($PREVIOUS_TAG)"
+              echo "   Retag condicional permitido (release anterior confiável)."
+            fi
+          else
+            echo "ℹ️  Primeiro release (sem tag anterior) → build de tudo normalmente"
+          fi
+
+          echo "force_full_rebuild=$FORCE_FULL_REBUILD" >> $GITHUB_OUTPUT
+
       # Build de todos os microsserviços (apps/)
       - name: Build Microservices
         id: build-microservices
@@ -227,6 +272,15 @@ jobs:
           # Funções compartilhadas: should_build, image_exists, retag_image, decide_build_or_retag
           # CHANGED_FILES calculado automaticamente pelo script (CLAUDE.md Regra 2)
           source scripts/release-functions.sh
+
+          # Guard de integridade: se release anterior sem manifesto, forçar rebuild completo
+          # Previne retag de imagens de release com falha parcial (CLAUDE.md Regra 6)
+          export FORCE_FULL_REBUILD="${{ steps.check-prev-manifest.outputs.force_full_rebuild }}"
+          if [ "$FORCE_FULL_REBUILD" = "true" ]; then
+            FORCE_ALL_MICROS=1
+            FORCE_ALL_REASON="release anterior sem manifesto de imagens (provável falha parcial)"
+            echo "⚠️  Guard de integridade ativado: $FORCE_ALL_REASON"
+          fi
 
           # Se não há arquivos alterados entre tags, estamos em retag do mesmo commit.
           # Neste cenário, permitimos fallback para uma tag anterior existente no registry.
@@ -615,7 +669,14 @@ jobs:
           # Funções compartilhadas: should_build, image_exists, retag_image, decide_build_or_retag
           # CHANGED_FILES calculado automaticamente pelo script (CLAUDE.md Regra 2)
           source scripts/release-functions.sh
-          
+
+          # Guard de integridade: se release anterior sem manifesto, forçar rebuild completo
+          # decide_build_or_retag() verifica FORCE_FULL_REBUILD automaticamente (CLAUDE.md Regra 6)
+          export FORCE_FULL_REBUILD="${{ steps.check-prev-manifest.outputs.force_full_rebuild }}"
+          if [ "$FORCE_FULL_REBUILD" = "true" ]; then
+            echo "⚠️  Guard de integridade ativado: rebuild completo de todos os GPU services"
+          fi
+
           echo "Changed files (GPU diff):"
           if [ -n "$CHANGED_FILES" ]; then
             echo "$CHANGED_FILES"
@@ -704,6 +765,123 @@ jobs:
           fi
           echo "   📦 Deploy receberá esta lista para pull seletivo"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+      # =================================================================
+      # MANIFESTO DE IMAGENS (23/02/2026)
+      # =================================================================
+      # Captura o digest SHA256 de cada imagem pushada ao GHCR e gera
+      # um manifesto JSON que será:
+      #   1. Anexado como asset da GitHub Release (fonte de verdade)
+      #   2. Usado pelo deploy para comparação de digest antes do pull
+      #
+      # Fluxo de segurança:
+      #   Release → captura digests → manifesto → Release asset
+      #   Deploy  → baixa manifesto → compara digest local vs registry
+      #           → pull apenas se digest diferente
+      #
+      # Formato do manifesto:
+      #   {
+      #     "version": "v1.0.0",
+      #     "commit": "abc123",
+      #     "timestamp": "2026-02-23T22:33:37Z",
+      #     "previous_tag": "v0.9.0",
+      #     "images": [
+      #       {"name":"auth","image":"ghcr.io/.../alice-auth:v1.0.0",
+      #        "digest":"sha256:...","action":"build"},
+      #       ...
+      #     ]
+      #   }
+      #
+      # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 9 (Validação contínua)
+      # =================================================================
+      - name: Gerar manifesto de imagens
+        id: generate-manifest
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.create-release.outputs.version }}"
+          PREVIOUS_TAG="${{ needs.create-release.outputs.previous_tag }}"
+          IMAGE_PREFIX="${{ env.IMAGE_PREFIX }}"
+          BUILT_IMAGES="${{ steps.build-summary.outputs.built_images }}"
+          TAG_COMMIT="$(git rev-list -n 1 "$VERSION")"
+          TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          MANIFEST_FILE="/tmp/images-manifest.json"
+
+          echo "📋 Gerando manifesto de imagens para $VERSION..."
+          echo "   Commit: $TAG_COMMIT | Imagens buildadas: ${BUILT_IMAGES:-none}"
+          echo ""
+
+          ALL_IMAGES=(
+            api-gateway auth biometrics chat llm-gateway frontend
+            integrations observability rag training gpu-manager
+            pgbackrest postgres caddy llm-qwen25 embeddings-gpu qwen-trainer
+          )
+
+          # Inicializar manifesto JSON
+          MANIFEST=$(jq -n \
+            --arg version "$VERSION" \
+            --arg commit "$TAG_COMMIT" \
+            --arg ts "$TIMESTAMP" \
+            --arg prev "${PREVIOUS_TAG:-}" \
+            '{version:$version,commit:$commit,timestamp:$ts,previous_tag:$prev,images:[]}')
+
+          CAPTURED=0
+          FAILED=0
+
+          for img in "${ALL_IMAGES[@]}"; do
+            FULL_IMAGE="${IMAGE_PREFIX}-${img}:${VERSION}"
+
+            # Capturar manifest digest do GHCR via buildx imagetools
+            # O manifest digest é o sha256 que aparece em RepoDigests após docker pull
+            DIGEST=$(docker buildx imagetools inspect \
+              --format '{{json .Manifest.Digest}}' \
+              "$FULL_IMAGE" 2>/dev/null | tr -d '"' || echo "")
+
+            if [ -z "$DIGEST" ]; then
+              echo "  ⚠️  $img: digest não disponível (imagem ausente no registry?)"
+              FAILED=$((FAILED + 1))
+              continue
+            fi
+
+            # Determinar ação: build (código novo) ou retag (conteúdo reutilizado)
+            ACTION="retag"
+            if [ -n "$BUILT_IMAGES" ] && [ "$BUILT_IMAGES" != "__NONE__" ]; then
+              if echo ",$BUILT_IMAGES," | grep -q ",$img,"; then
+                ACTION="build"
+              fi
+            fi
+
+            MANIFEST=$(echo "$MANIFEST" | jq \
+              --arg name "$img" \
+              --arg image "$FULL_IMAGE" \
+              --arg digest "$DIGEST" \
+              --arg action "$ACTION" \
+              '.images += [{"name":$name,"image":$image,"digest":$digest,"action":$action}]')
+
+            echo "  ✅ $img: ${DIGEST:0:19}... ($ACTION)"
+            CAPTURED=$((CAPTURED + 1))
+          done
+
+          # Salvar manifesto
+          echo "$MANIFEST" | jq '.' > "$MANIFEST_FILE"
+
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📦 MANIFESTO DE IMAGENS GERADO"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "   Versão:  $VERSION | Commit: $TAG_COMMIT"
+          echo "   Imagens: $CAPTURED capturadas, $FAILED sem digest"
+          echo "   Arquivo: $MANIFEST_FILE"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+          echo "manifest_file=$MANIFEST_FILE" >> $GITHUB_OUTPUT
+          echo "manifest_count=$CAPTURED" >> $GITHUB_OUTPUT
+
+      - name: Upload manifesto como artifact do workflow
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08
+        with:
+          name: images-manifest-${{ needs.create-release.outputs.version }}
+          path: /tmp/images-manifest.json
+          retention-days: 30
 
   # ===========================================================================
   # Job 3: Publicar GitHub Release (APÓS build das imagens)
@@ -806,6 +984,33 @@ jobs:
             echo "- Caminho no runner: \`${NOTES_FILE}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Download manifesto de imagens (para attach no Release)
+        if: ${{ !inputs.prerelease }}
+        uses: actions/download-artifact@v4
+        with:
+          name: images-manifest-${{ needs.create-release.outputs.version }}
+          path: /tmp/manifest/
+        continue-on-error: true
+
+      - name: Preparar manifesto (fallback para prerelease ou falha de download)
+        id: manifest-prep
+        run: |
+          mkdir -p /tmp/manifest
+          if [ -f /tmp/manifest/images-manifest.json ] && jq '.' /tmp/manifest/images-manifest.json > /dev/null 2>&1; then
+            NIMAGES=$(jq '.images | length' /tmp/manifest/images-manifest.json)
+            echo "✅ Manifesto disponível para attach no Release ($NIMAGES imagens)"
+            echo "has_manifest=true" >> $GITHUB_OUTPUT
+          else
+            # Criar manifesto mínimo para prerelease ou quando download falhou
+            # Garante que o asset images-manifest.json sempre exista no Release
+            VERSION="${{ needs.create-release.outputs.version }}"
+            jq -n --arg v "$VERSION" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              '{"version":$v,"timestamp":$ts,"images":[]}' \
+              > /tmp/manifest/images-manifest.json
+            echo "ℹ️  Manifesto mínimo criado (prerelease ou download falhou)"
+            echo "has_manifest=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Criar GitHub Release (publicada)
         uses: softprops/action-gh-release@01570a1f39cb168c169c802c3bceb9e93fb10974
         with:
@@ -815,6 +1020,7 @@ jobs:
           prerelease: ${{ inputs.prerelease }}
           generate_release_notes: false
           body_path: /tmp/release-notes.md
+          files: /tmp/manifest/images-manifest.json
 
   # ===========================================================================
   # Job 4: Disparar Deploy em Produção (Stacks)

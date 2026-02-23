@@ -23,6 +23,33 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   exit 1
 fi
 
+# =============================================================================
+# AUTO-DETECÇÃO DE MANIFESTO DE IMAGENS (23/02/2026)
+# =============================================================================
+# O manifesto é gerado pelo release.yml e transferido pelo prepare job do
+# deploy para /opt/alice/manifests/images-manifest.json no servidor de produção.
+#
+# A comparação de digest garante que pull ocorre APENAS quando o conteúdo
+# da imagem local difere do esperado pelo Release, prevenindo:
+#   - Deploy com imagens stale (retag local de versão antiga)
+#   - Produção em estado inconsistente após release com falha parcial
+#
+# Se o manifesto não existir (primeiro deploy, deploy manual, prerelease),
+# o comportamento cai para a lógica legada baseada em built_images.
+#
+# REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Mudanças cirúrgicas)
+# =============================================================================
+if [ -z "${MANIFEST_FILE:-}" ]; then
+  _MANIFEST_DEFAULT="/opt/alice/manifests/images-manifest.json"
+  if [ -f "$_MANIFEST_DEFAULT" ] && command -v jq >/dev/null 2>&1; then
+    MANIFEST_FILE="$_MANIFEST_DEFAULT"
+    _MANIFEST_VERSION=$(jq -r '.version // "?"' "$MANIFEST_FILE" 2>/dev/null || echo "?")
+    _MANIFEST_COUNT=$(jq '.images | length' "$MANIFEST_FILE" 2>/dev/null || echo "0")
+    echo "ℹ️  Manifesto de imagens detectado: $MANIFEST_FILE"
+    echo "   Versão: $_MANIFEST_VERSION | Imagens: $_MANIFEST_COUNT"
+  fi
+fi
+
 # ═══════════════════════════════════════════════════════════════════════
 # verify_docker_credentials() - Valida config + auth GHCR
 # ═══════════════════════════════════════════════════════════════════════
@@ -259,6 +286,53 @@ pull_if_needed() {
   local built_images="${3:-}"
   local repo="${image%:*}"
   local tag="${image##*:}"
+
+  # ─── MANIFESTO: Comparação de digest enterprise-safe ───────────────────────
+  # Quando manifesto disponível (gerado pelo release.yml) e imagem é GHCR custom:
+  #   - Digest local == manifesto → SKIP (conteúdo correto, zero rede)
+  #   - Digest diferente ou imagem ausente → PULL (garante conteúdo correto)
+  #
+  # Isso previne o bug de retag stale: se release anterior falhou parcialmente
+  # e a tag local é de versão mais antiga, o digest difere → pull correto.
+  #
+  # NOTA: RepoDigests é populado apenas em imagens pulled do registry (não
+  # imagens built localmente). Para imagens sem RepoDigests, digest fica vazio
+  # → pull conservativo (correto por design).
+  #
+  # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Mudanças cirúrgicas)
+  # ───────────────────────────────────────────────────────────────────────────
+  local _manifest_file="${MANIFEST_FILE:-}"
+  if [ -n "$_manifest_file" ] && [ -f "$_manifest_file" ] && \
+     echo "$repo" | grep -q "ghcr.io" && command -v jq >/dev/null 2>&1; then
+    local expected_digest
+    expected_digest=$(jq -r --arg svc "$service_name" \
+      '.images[]? | select(.name == $svc) | .digest' \
+      "$_manifest_file" 2>/dev/null || echo "")
+
+    if [ -n "$expected_digest" ] && [ "$expected_digest" != "null" ]; then
+      # Verificar digest local (RepoDigests[0] = digest do pull anterior)
+      local local_digest=""
+      if docker image inspect "$image" >/dev/null 2>&1; then
+        local_digest=$(docker image inspect "$image" \
+          --format '{{index .RepoDigests 0}}' 2>/dev/null | \
+          sed 's/.*@//' || echo "")
+      fi
+
+      if [ -n "$local_digest" ] && [ "$local_digest" = "$expected_digest" ]; then
+        echo "   ✅ SKIP (digest OK: ${expected_digest:0:19}...)"
+        return 0
+      fi
+
+      if [ -n "$local_digest" ]; then
+        echo "   🔄 PULL (digest local ${local_digest:0:19}... ≠ manifesto ${expected_digest:0:19}...)"
+      else
+        echo "   📥 PULL (sem digest local; esperado: ${expected_digest:0:19}...)"
+      fi
+      pull_with_retry "$image"
+      return $?
+    fi
+    # Serviço não encontrado no manifesto → cai na lógica legada abaixo
+  fi
 
   # ─── CASO 1: Tag exata já existe localmente → SKIP ───
   if docker image inspect "$image" >/dev/null 2>&1; then
