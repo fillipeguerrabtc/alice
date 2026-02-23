@@ -54,6 +54,15 @@ import { useKucoinWebSocket } from '@/hooks/useKucoinWebSocket';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 import { formatTradingNumber, parseLocaleNumberInput } from '@/lib/utils';
+import {
+  getDemoBalances,
+  getDemoFundHistory,
+  getDemoOrders,
+  getDemoPositions,
+  getDemoPostMortemQueueStats,
+  getDemoPostMortems,
+  getDemoSourceDatasets,
+} from '@/services/api/tradingDemo';
 
 // ============================================================================
 // Tipos
@@ -333,7 +342,13 @@ function DemoTradingContent() {
   // WebSocket para cotações em tempo real (reusar hook da Trading Real — 3 mercados)
   // CRÍTICO: Só conectar após auth completa E config OK
   const wsEnabled = !!user?.id && isSymbolValid && isConfigured;
-  const { state: wsState, ticker: wsTicker } = useKucoinWebSocket({
+  const [positionLiveQuotes, setPositionLiveQuotes] = useState<Record<string, number>>({});
+  const {
+    state: wsState,
+    ticker: wsTicker,
+    subscribe: subscribePositionQuotes,
+    unsubscribe: unsubscribePositionQuotes,
+  } = useKucoinWebSocket({
     symbol: wsEnabled ? requestSymbol : '',
     channels: wsEnabled ? ['ticker', 'positions', 'orders', 'balance'] : [],
     autoConnect: wsEnabled,
@@ -350,19 +365,6 @@ function DemoTradingContent() {
     onBalance: () => {
       void queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balances'] });
     },
-  });
-  const wsHealthy = wsEnabled && wsState.connected && !wsState.error;
-  const [positionLiveQuotes, setPositionLiveQuotes] = useState<Record<string, number>>({});
-  const {
-    state: positionQuotesWsState,
-    subscribe: subscribePositionQuotes,
-    unsubscribe: unsubscribePositionQuotes,
-  } = useKucoinWebSocket({
-    symbol: '',
-    channels: [],
-    autoConnect: !!user?.id && isConfigured, // Só conectar após auth e config OK
-    marketType: selectedMarketType,
-    marginMode: selectedMarginMode,
     onTicker: (data) => {
       const next = Number(data.price);
       if (!Number.isFinite(next) || next <= 0) return;
@@ -374,6 +376,7 @@ function DemoTradingContent() {
       });
     },
   });
+  const wsHealthy = wsEnabled && wsState.connected && !wsState.error;
 
   /** Dados de mercado REST (mesma query key da Trading Real para reusar cache) */
   const marketQueryString = useMemo(() => {
@@ -425,56 +428,36 @@ function DemoTradingContent() {
   // Queries de dados demo
   // ============================================================================
 
-  const balancesQuery = useQuery({
+  const balancesQuery = useQuery<DemoBalance[]>({
     queryKey: ['/api/integrations/demo-trading/balances'],
-    queryFn: async () => {
-      const res = await apiRequest('GET', '/api/integrations/demo-trading/balances');
-      const json = await res.json() as { data: DemoBalance[] };
-      return Array.isArray(json.data) ? json.data : [];
-    },
+    queryFn: () => getDemoBalances(),
     enabled: !!user?.id && isConfigured, // Só executar após auth e config OK
     refetchInterval: 10_000,
   });
 
-  const positionsQuery = useQuery({
+  const positionsQuery = useQuery<DemoPosition[]>({
     queryKey: ['/api/integrations/demo-trading/positions', 'all'],
-    queryFn: async () => {
-      const res = await apiRequest('GET', '/api/integrations/demo-trading/positions?limit=100');
-      const json = await res.json() as { data: DemoPosition[] };
-      return json.data;
-    },
+    queryFn: () => getDemoPositions(100),
     enabled: !!user?.id && isConfigured, // Só executar após auth e config OK
     refetchInterval: 2_000,
   });
 
-  const ordersQuery = useQuery({
+  const ordersQuery = useQuery<DemoOrder[]>({
     queryKey: ['/api/integrations/demo-trading/orders'],
-    queryFn: async () => {
-      const res = await apiRequest('GET', '/api/integrations/demo-trading/orders?limit=100');
-      const json = await res.json() as { data: DemoOrder[] };
-      return json.data;
-    },
+    queryFn: () => getDemoOrders(100),
     enabled: !!user?.id && isConfigured, // Só executar após auth e config OK
     refetchInterval: 2_000,
   });
 
-  const fundHistoryQuery = useQuery({
+  const fundHistoryQuery = useQuery<FundHistory[]>({
     queryKey: ['/api/integrations/demo-trading/funds/history'],
-    queryFn: async () => {
-      const res = await apiRequest('GET', '/api/integrations/demo-trading/funds/history');
-      const json = await res.json() as { data: FundHistory[] };
-      return json.data;
-    },
+    queryFn: () => getDemoFundHistory(),
     enabled: !!user?.id && isConfigured, // Só executar após auth e config OK
   });
 
-  const postmortemsQuery = useQuery({
+  const postmortemsQuery = useQuery<PostMortem[]>({
     queryKey: ['/api/integrations/postmortem', 'demo'],
-    queryFn: async () => {
-      const res = await apiRequest('GET', '/api/integrations/postmortem?isDemo=true&limit=50');
-      const json = await res.json() as { data: PostMortem[] };
-      return json.data;
-    },
+    queryFn: () => getDemoPostMortems(50),
     enabled: !!user?.id && isConfigured, // Só executar após auth e config OK
     refetchInterval: 15_000,
   });
@@ -491,11 +474,7 @@ function DemoTradingContent() {
   /** IDs de post-mortems já enviados para treinamento (têm training_data com sourceType trading_postmortem) */
   const { data: tradingDatasetsForSentCheck } = useQuery({
     queryKey: ['/api/integrations/trading/datasets', 'postmortem-ids'],
-    queryFn: async () => {
-      const res = await apiRequest('GET', '/api/integrations/trading/datasets?limit=200');
-      const json = await res.json() as { data: Array<{ sourceType?: string; sourceId?: string }> };
-      return json.data ?? [];
-    },
+    queryFn: () => getDemoSourceDatasets(200),
     staleTime: 1000 * 30,
   });
 
@@ -510,11 +489,7 @@ function DemoTradingContent() {
 
   const queueStatsQuery = useQuery({
     queryKey: ['/api/integrations/postmortem/queue/stats'],
-    queryFn: async () => {
-      const res = await apiRequest('GET', '/api/integrations/postmortem/queue/stats');
-      const json = await res.json() as { data: { pending: number; dlq: number } };
-      return json.data;
-    },
+    queryFn: () => getDemoPostMortemQueueStats(),
     refetchInterval: 10_000,
   });
 
@@ -667,9 +642,10 @@ function DemoTradingContent() {
   // Dados derivados
   // ============================================================================
 
-  const openPositions = (positionsQuery.data ?? []).filter(p => p.status === 'open');
-  const closedPositions = (positionsQuery.data ?? []).filter(p => p.status !== 'open');
-  const balances = balancesQuery.data ?? [];
+  const positions = Array.isArray(positionsQuery.data) ? positionsQuery.data : [];
+  const openPositions = positions.filter(p => p.status === 'open');
+  const closedPositions = positions.filter(p => p.status !== 'open');
+  const balances = Array.isArray(balancesQuery.data) ? balancesQuery.data : [];
   const usdtBalance = balances.find((entry) => entry.currency.toUpperCase() === 'USDT');
   const balancesWithFunds = balances.filter((entry) => Number(entry.available) > 0 || Number(entry.frozen) > 0);
 
@@ -813,7 +789,7 @@ function DemoTradingContent() {
   }, [positionLiveQuotes]);
 
   useEffect(() => {
-    if (!positionQuotesWsState.connected) return;
+    if (!wsState.connected) return;
     const activeSymbols = new Set(
       openPositions.map((position) => (position.symbol ?? '').toUpperCase()).filter((symbol) => symbol.length > 0)
     );
@@ -825,7 +801,7 @@ function DemoTradingContent() {
         unsubscribePositionQuotes('ticker', symbol, undefined, selectedMarketType, selectedMarginMode);
       });
     };
-  }, [openPositions, positionQuotesWsState.connected, selectedMarketType, selectedMarginMode, subscribePositionQuotes, unsubscribePositionQuotes]);
+  }, [openPositions, wsState.connected, selectedMarketType, selectedMarginMode, subscribePositionQuotes, unsubscribePositionQuotes]);
 
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });

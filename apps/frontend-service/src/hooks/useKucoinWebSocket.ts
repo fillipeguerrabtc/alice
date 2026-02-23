@@ -154,6 +154,8 @@ export interface UseKucoinWebSocketReturn {
 // ============================================================================
 
 const RECONNECT_DELAYS = [1000, 2000, 4000, 8000, 16000, 30000];
+const MAX_RECONNECT_ATTEMPTS = 8;
+const RECONNECT_JITTER_FACTOR = 0.2;
 const MAX_KLINES_CACHE = 500;
 const PING_INTERVAL = 25000;
 
@@ -526,9 +528,26 @@ export function useKucoinWebSocket(
         // já rodou quando chegamos aqui. Se não verificarmos a flag, criamos um NOVO
         // timeout que causa reconexão indesejada e memory leaks em componentes desmontados
         if (autoConnect && !isIntentionalDisconnectRef.current) {
-          const delay = RECONNECT_DELAYS[
+          if (reconnectAttemptRef.current >= MAX_RECONNECT_ATTEMPTS) {
+            const degradedMessage = 'WebSocket em estado degradado após múltiplas falhas de reconexão';
+            setState(prev => ({
+              ...prev,
+              connected: false,
+              connecting: false,
+              error: degradedMessage,
+            }));
+            onError?.(degradedMessage);
+            frontendLogger.warn('Trading WS em estado degradado', {
+              reconnectAttempts: reconnectAttemptRef.current,
+              maxReconnectAttempts: MAX_RECONNECT_ATTEMPTS,
+            });
+            return;
+          }
+          const baseDelay = RECONNECT_DELAYS[
             Math.min(reconnectAttemptRef.current, RECONNECT_DELAYS.length - 1)
           ];
+          const jitter = Math.round(baseDelay * Math.random() * RECONNECT_JITTER_FACTOR);
+          const delay = baseDelay + jitter;
           reconnectAttemptRef.current++;
 
           reconnectTimeoutRef.current = setTimeout(() => {
