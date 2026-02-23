@@ -6968,7 +6968,9 @@ function verifyWsToken(token: string): { userId: string; tenantId: string; role:
   }
 }
 
-app.get('/api/chat/ws-token', requireAuth({ allowAnonymous: true, logUnauthorized: false }), async (req: Request, res: Response) => {
+const wsTokenAuth = requireAuth({ allowAnonymous: true, logUnauthorized: false });
+// Permite request anônima para logar 401 de forma explícita, sem spam.
+app.get('/api/chat/ws-token', wsTokenAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.user?.userId;
     const tenantId = req.tenantId;
