@@ -15129,7 +15129,10 @@ app.get('/api/integrations/trading/signal-scheduler', requirePermission('integra
       });
     } else {
       data = [{
+        id: '',
         tenantId: authContext.tenantId,
+        agentId: null,
+        namespaceId: null,
         marketType,
         marginMode: 'cross',
         intervalMinutes: 15,
@@ -15146,6 +15149,8 @@ app.get('/api/integrations/trading/signal-scheduler', requirePermission('integra
         lastSignalId: null,
         lastDurationMs: null,
         lastError: null,
+        criadoEm: null,
+        atualizadoEm: null,
       }];
     }
 
