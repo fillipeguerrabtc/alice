@@ -827,7 +827,7 @@ setInterval(() => {
 }, 30000);
 
 // SEGURANÇA: maxPayload e ping/pong heartbeat (ws v8.18.3)
-// Autenticação completa via sessão PostgreSQL (OWASP API2 2023)
+// Autenticação via token efêmero (preferencial) ou sessão cookie (OWASP API2 2023)
 const wss = new WebSocketServer({ 
   noServer: true,
   maxPayload: 10 * 1024 * 1024, // 10MB max payload (OWASP WebSocket Security)
@@ -835,7 +835,29 @@ const wss = new WebSocketServer({
     const origin = info.origin || info.req.headers.origin;
     const cookies = info.req.headers.cookie;
     
-    // Autenticação assíncrona via sessão
+    // Tentar autenticação via token efêmero (query param ?token=)
+    const url = new URL(info.req.url ?? '/', `http://${info.req.headers.host ?? 'localhost'}`);
+    const wsToken = url.searchParams.get('token');
+    
+    if (wsToken) {
+      const tokenPayload = verifyWsToken(wsToken);
+      if (tokenPayload) {
+        const authResult: WebSocketAuthResult = {
+          authenticated: true,
+          userId: tokenPayload.userId,
+          tenantId: tokenPayload.tenantId,
+          role: tokenPayload.role as Role,
+        };
+        const tempKey = `${info.req.socket?.remoteAddress}:${Date.now()}`;
+        pendingAuthResults.set(tempKey, authResult);
+        (info.req as unknown as { __authKey: string }).__authKey = tempKey;
+        callback(true);
+        return;
+      }
+      logger.warn({ ip: info.req.socket?.remoteAddress }, 'WebSocket: Token efêmero inválido ou expirado');
+    }
+    
+    // Fallback: autenticação via cookie de sessão
     const authResult = await authenticateWebSocketConnection(cookies, origin);
     
     if (!authResult.authenticated) {
@@ -843,17 +865,15 @@ const wss = new WebSocketServer({
         origin, 
         error: authResult.error,
         ip: info.req.socket?.remoteAddress,
+        hadToken: !!wsToken,
       }, 'WebSocket: Conexão rejeitada - autenticação falhou');
       callback(false, 401, authResult.error || 'Unauthorized');
       return;
     }
     
     // Armazenar resultado de auth para uso no connection handler
-    // Usar IP + timestamp como chave temporária
     const tempKey = `${info.req.socket?.remoteAddress}:${Date.now()}`;
     pendingAuthResults.set(tempKey, authResult);
-    
-    // Adicionar key ao request para recuperar no connection handler
     (info.req as unknown as { __authKey: string }).__authKey = tempKey;
     
     callback(true);
@@ -6892,6 +6912,68 @@ app.get('/api/chat/version', (_req: Request, res: Response) => {
     service: 'chat-service',
     timestamp: new Date().toISOString(),
   });
+});
+
+// ============================================================================
+// WS TOKEN - Token efêmero para autenticação WebSocket
+// Resolve: "WebSocket is closed before the connection is established"
+// ============================================================================
+
+const WS_TOKEN_SECRET = process.env.WS_TOKEN_SECRET || SESSION_SECRET;
+const WS_TOKEN_TTL_SECONDS = Number(process.env.WS_TOKEN_TTL_SECONDS ?? '60');
+
+/** Gera token HMAC efêmero para autenticação WebSocket */
+function generateWsToken(payload: { userId: string; tenantId: string; role: string }): string {
+  const nonce = crypto.randomUUID();
+  const exp = Math.floor(Date.now() / 1000) + WS_TOKEN_TTL_SECONDS;
+  const data = JSON.stringify({ ...payload, nonce, exp, aud: 'ws' });
+  const signature = crypto.createHmac('sha256', WS_TOKEN_SECRET).update(data).digest('hex');
+  // Codificar payload + assinatura em base64url
+  return Buffer.from(`${data}.${signature}`).toString('base64url');
+}
+
+/** Valida token HMAC efêmero */
+function verifyWsToken(token: string): { userId: string; tenantId: string; role: string } | null {
+  try {
+    const decoded = Buffer.from(token, 'base64url').toString('utf-8');
+    const dotIndex = decoded.lastIndexOf('.');
+    if (dotIndex === -1) return null;
+
+    const data = decoded.slice(0, dotIndex);
+    const signature = decoded.slice(dotIndex + 1);
+
+    const expectedSig = crypto.createHmac('sha256', WS_TOKEN_SECRET).update(data).digest('hex');
+    if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSig))) {
+      return null;
+    }
+
+    const payload = JSON.parse(data) as { userId: string; tenantId: string; role: string; exp: number; aud: string };
+    if (payload.aud !== 'ws') return null;
+    if (payload.exp < Math.floor(Date.now() / 1000)) return null;
+
+    return { userId: payload.userId, tenantId: payload.tenantId, role: payload.role };
+  } catch {
+    return null;
+  }
+}
+
+app.get('/api/chat/ws-token', requireAuth(), async (req: Request, res: Response) => {
+  try {
+    const userId = (req as unknown as { userId?: string }).userId;
+    const tenantId = (req as unknown as { tenantId?: string }).tenantId;
+    const role = (req as unknown as { role?: string }).role;
+
+    if (!userId || !tenantId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    const token = generateWsToken({ userId, tenantId, role: role ?? 'viewer' });
+    res.json({ success: true, data: { token, expiresIn: WS_TOKEN_TTL_SECONDS } });
+  } catch (error) {
+    logger.error({ error: error instanceof Error ? error.message : String(error) }, 'Erro ao gerar ws-token');
+    res.status(500).json({ error: 'Erro ao gerar token WebSocket' });
+  }
 });
 
 // ============================================================================
