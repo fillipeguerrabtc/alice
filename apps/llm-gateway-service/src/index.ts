@@ -458,6 +458,12 @@ app.post(
         Number(process.hrtime.bigint() - inferenceStart) / 1e9
       );
     };
+    let streamErrorRecorded = false;
+    const recordStreamError = () => {
+      if (streamErrorRecorded) return;
+      streamErrorRecorded = true;
+      metrics.llm.requestsTotal.inc({ model, type: 'stream', status: 'error' });
+    };
 
     const gpuResponse = await requestGpuStream({
       serviceType: GpuServiceType.LLM,
@@ -476,7 +482,7 @@ app.post(
 
     if (!gpuResponse.ok || !gpuResponse.body) {
       const text = await gpuResponse.text().catch(() => '');
-      metrics.llm.requestsTotal.inc({ model, type: 'stream', status: 'error' });
+      recordStreamError();
       res.status(502).json({ error: text || 'Erro no GPU Manager' });
       return;
     }
@@ -512,7 +518,7 @@ app.post(
     };
     pump().catch((err) => {
       logger.error({ err }, 'Erro ao encaminhar stream');
-      metrics.llm.requestsTotal.inc({ model, type: 'stream', status: 'error' });
+      recordStreamError();
       res.end();
     });
   })

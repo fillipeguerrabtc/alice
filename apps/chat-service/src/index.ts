@@ -6973,7 +6973,7 @@ const wsTokenAuth = requireAuth({ allowAnonymous: true, logUnauthorized: false }
 app.get('/api/chat/ws-token', wsTokenAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const tenantId = req.tenantId;
+    const tenantId = req.user?.tenantId ?? req.tenantId;
     const role = req.user?.role;
     const correlationId = req.headers['x-correlation-id'] as string | undefined;
 
