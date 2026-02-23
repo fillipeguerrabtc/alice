@@ -317,6 +317,13 @@ const conversationWindowsCreatedCounter = new PromCounter({
   registers: [metrics.registry],
 });
 
+const chatSseErrorsTotal = new PromCounter({
+  name: 'alice_chat_sse_errors_total',
+  help: 'Total de erros durante streaming SSE do chat',
+  labelNames: ['tenant_id'] as const,
+  registers: [metrics.registry],
+});
+
 type AgenticActionLabel = 'trading' | 'payments' | 'stack_ops' | 'agentic_task' | 'erp' | 'grafana';
 type AgenticDecisionLabel = 'approve' | 'reject';
 type AgenticStatusLabel = 'pending' | 'executed' | 'rejected' | 'failed';
@@ -6961,13 +6968,19 @@ function verifyWsToken(token: string): { userId: string; tenantId: string; role:
   }
 }
 
-app.get('/api/chat/ws-token', requireAuth({ logUnauthorized: false }), async (req: Request, res: Response) => {
+app.get('/api/chat/ws-token', requireAuth({ allowAnonymous: true, logUnauthorized: false }), async (req: Request, res: Response) => {
   try {
-    const userId = (req as unknown as { userId?: string }).userId;
-    const tenantId = (req as unknown as { tenantId?: string }).tenantId;
-    const role = (req as unknown as { role?: string }).role;
+    const userId = req.user?.userId;
+    const tenantId = req.tenantId;
+    const role = req.user?.role;
+    const correlationId = req.headers['x-correlation-id'] as string | undefined;
 
     if (!userId || !tenantId) {
+      logger.debug({
+        correlationId,
+        ip: req.ip,
+        statusCode: 401,
+      }, 'ws-token solicitado sem autenticação');
       res.status(401).json({ error: 'Autenticação necessária' });
       return;
     }
@@ -12535,9 +12548,12 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         }
       );
     } catch (streamError) {
+      const correlationId = req.headers['x-correlation-id'] as string | undefined;
+      chatSseErrorsTotal.inc({ tenant_id: tenantId ?? 'unknown' });
       logger.error({ 
         error: streamError instanceof Error ? streamError.message : String(streamError),
-        stack: streamError instanceof Error ? streamError.stack : undefined 
+        stack: streamError instanceof Error ? streamError.stack : undefined,
+        correlationId,
       }, 'Erro no streaming do GPU Manager Service');
       emitAgentEvent({
         phase: 'llm',

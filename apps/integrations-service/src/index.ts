@@ -2471,6 +2471,13 @@ const tradingDatasetMetrics = {
   }),
 };
 
+const tradingAutoRunErrorsTotal = new PromCounter({
+  name: 'alice_trading_auto_run_errors_total',
+  help: 'Total de erros em auto runs de trading',
+  labelNames: ['run_type', 'stage'] as const,
+  registers: [metrics.registry],
+});
+
 function classifyIntegrationError(error: unknown): string {
   if (error instanceof Error) {
     const message = error.message.toLowerCase();
@@ -13291,6 +13298,7 @@ const tradingAutoRunsQuerySchema = z.object({
 
 /** POST /api/trading-v2/auto/portfolio/run - Inicia pipeline automático de portfólio */
 app.post('/api/trading-v2/auto/portfolio/run', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  let correlationId: string | null = null;
   try {
     const authContext = extractAuthContext(req);
     if (!authContext?.tenantId || !authContext?.userId) {
@@ -13302,7 +13310,7 @@ app.post('/api/trading-v2/auto/portfolio/run', requirePermission('integrations:t
       res.status(400).json({ error: 'Payload inválido', details: parsed.error.flatten() });
       return;
     }
-    const correlationId = crypto.randomUUID();
+    correlationId = crypto.randomUUID();
     const db = getDatabase();
 
     // Criar run + steps em DB
@@ -13340,6 +13348,7 @@ app.post('/api/trading-v2/auto/portfolio/run', requirePermission('integrations:t
     });
     if (!enqueueResponse.ok) {
       const errorText = await enqueueResponse.text();
+      tradingAutoRunErrorsTotal.inc({ run_type: 'portfolio_auto', stage: 'enqueue' });
       logger.error({ runId: run.id, status: enqueueResponse.status, errorText, correlationId }, 'Falha ao enfileirar portfolio-auto-run');
       await db.update(schema.tradingAutoRuns).set({ status: 'failed', error: `Falha ao enfileirar: ${enqueueResponse.status}` }).where(eq(schema.tradingAutoRuns.id, run.id));
       res.status(502).json({ error: 'Falha ao enfileirar job de portfólio automático' });
@@ -13350,13 +13359,15 @@ app.post('/api/trading-v2/auto/portfolio/run', requirePermission('integrations:t
     res.status(202).json({ success: true, data: { runId: run.id } });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
-    logger.error({ error: errorMessage }, 'Erro ao criar portfolio auto run');
+    tradingAutoRunErrorsTotal.inc({ run_type: 'portfolio_auto', stage: 'handler' });
+    logger.error({ error: errorMessage, correlationId }, 'Erro ao criar portfolio auto run');
     res.status(500).json({ error: errorMessage });
   }
 });
 
 /** POST /api/trading-v2/auto/signal/run - Inicia geração automática de sinais */
 app.post('/api/trading-v2/auto/signal/run', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  let correlationId: string | null = null;
   try {
     const authContext = extractAuthContext(req);
     if (!authContext?.tenantId || !authContext?.userId) {
@@ -13368,7 +13379,7 @@ app.post('/api/trading-v2/auto/signal/run', requirePermission('integrations:trad
       res.status(400).json({ error: 'Payload inválido', details: parsed.error.flatten() });
       return;
     }
-    const correlationId = crypto.randomUUID();
+    correlationId = crypto.randomUUID();
     const db = getDatabase();
 
     const [run] = await db.insert(schema.tradingAutoRuns).values({
@@ -13400,6 +13411,7 @@ app.post('/api/trading-v2/auto/signal/run', requirePermission('integrations:trad
     });
     if (!enqueueResponse.ok) {
       const errorText = await enqueueResponse.text();
+      tradingAutoRunErrorsTotal.inc({ run_type: 'signal_auto', stage: 'enqueue' });
       logger.error({ runId: run.id, status: enqueueResponse.status, errorText, correlationId }, 'Falha ao enfileirar signal-auto-run');
       await db.update(schema.tradingAutoRuns).set({ status: 'failed', error: `Falha ao enfileirar: ${enqueueResponse.status}` }).where(eq(schema.tradingAutoRuns.id, run.id));
       res.status(502).json({ error: 'Falha ao enfileirar job de sinal automático' });
@@ -13410,7 +13422,8 @@ app.post('/api/trading-v2/auto/signal/run', requirePermission('integrations:trad
     res.status(202).json({ success: true, data: { runId: run.id } });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
-    logger.error({ error: errorMessage }, 'Erro ao criar signal auto run');
+    tradingAutoRunErrorsTotal.inc({ run_type: 'signal_auto', stage: 'handler' });
+    logger.error({ error: errorMessage, correlationId }, 'Erro ao criar signal auto run');
     res.status(500).json({ error: errorMessage });
   }
 });

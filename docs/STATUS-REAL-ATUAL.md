@@ -8,6 +8,7 @@
 ---
 
 - **Configurações do Sistema editáveis via UI:** Página Configurações do Sistema (menu lateral) permite alterar limites de treinamento em tempo real. Valores gravados no PostgreSQL (tabela `system_config`) têm precedência sobre variáveis de ambiente. Chaves: DOCUMENT_MAX_CHUNKS, TRAINING_DOC_MAX_SAMPLES, TRAINING_CONVERSATION_MAX_MESSAGES, CONVERSATION_SLICE_SIZE, MIN_ONDEMAND_DATASET_SIZE, maxSeqLen. Cache 60s invalidado no save; alterações aplicadas imediatamente nos serviços (RAG, Chat, Training). API GET/PATCH `/api/training/system-config` com RBAC (`config:system:read` / `config:system:write`). (11/02/2026)
+- **Hardening Chat/Trading (23/02/2026):** Autenticação interna HMAC unificada entre serviços, GPU trainer sob demanda via profile `gpu-training`, chat sem login não abre WebSocket e exibe aviso, métricas de erro SSE + auto-runs e latência do LLM Gateway observadas em Prometheus.
 
 ---
 

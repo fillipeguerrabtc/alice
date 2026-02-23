@@ -307,21 +307,29 @@ app.post(
       high: GpuRequestPriority.HIGH,
       critical: GpuRequestPriority.CRITICAL,
     };
-    const gpuResponse = await requestGpu({
-      serviceType: GpuServiceType.LLM,
-      endpoint: '/v1/chat/completions',
-      method: 'POST',
-      priority: requestOptions?.priority ? priorityMap[requestOptions.priority] ?? GpuRequestPriority.CRITICAL : GpuRequestPriority.CRITICAL,
-      timeout: requestOptions?.timeout ?? 60000,
-      body,
-    });
+    const inferenceStart = process.hrtime.bigint();
+    try {
+      const gpuResponse = await requestGpu({
+        serviceType: GpuServiceType.LLM,
+        endpoint: '/v1/chat/completions',
+        method: 'POST',
+        priority: requestOptions?.priority ? priorityMap[requestOptions.priority] ?? GpuRequestPriority.CRITICAL : GpuRequestPriority.CRITICAL,
+        timeout: requestOptions?.timeout ?? 60000,
+        body,
+      });
 
-    if (!gpuResponse.success || !gpuResponse.data) {
-      res.status(502).json({ error: gpuResponse.error || 'Erro no GPU Manager' });
-      return;
+      if (!gpuResponse.success || !gpuResponse.data) {
+        res.status(502).json({ error: gpuResponse.error || 'Erro no GPU Manager' });
+        return;
+      }
+
+      res.status(200).json(gpuResponse.data);
+    } finally {
+      metrics.llm.inferenceDuration.observe(
+        { model, type: 'complete' },
+        Number(process.hrtime.bigint() - inferenceStart) / 1e9
+      );
     }
-
-    res.status(200).json(gpuResponse.data);
   })
 );
 
@@ -446,6 +454,17 @@ app.post(
       });
     }
 
+    const inferenceStart = process.hrtime.bigint();
+    let inferenceRecorded = false;
+    const recordInference = () => {
+      if (inferenceRecorded) return;
+      inferenceRecorded = true;
+      metrics.llm.inferenceDuration.observe(
+        { model, type: 'stream' },
+        Number(process.hrtime.bigint() - inferenceStart) / 1e9
+      );
+    };
+
     const gpuResponse = await requestGpuStream({
       serviceType: GpuServiceType.LLM,
       endpoint: '/v1/chat/completions',
@@ -463,6 +482,7 @@ app.post(
 
     if (!gpuResponse.ok || !gpuResponse.body) {
       const text = await gpuResponse.text().catch(() => '');
+      recordInference();
       res.status(502).json({ error: text || 'Erro no GPU Manager' });
       return;
     }
@@ -482,18 +502,23 @@ app.post(
 
     const reader = gpuResponse.body.getReader();
     const pump = async () => {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        res.write(value);
-        if (typeof (res as unknown as { flush?: () => void }).flush === 'function') {
-          (res as unknown as { flush: () => void }).flush();
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          res.write(value);
+          if (typeof (res as unknown as { flush?: () => void }).flush === 'function') {
+            (res as unknown as { flush: () => void }).flush();
+          }
         }
+        res.end();
+      } finally {
+        recordInference();
       }
-      res.end();
     };
     pump().catch((err) => {
       logger.error({ err }, 'Erro ao encaminhar stream');
+      recordInference();
       res.end();
     });
   })
