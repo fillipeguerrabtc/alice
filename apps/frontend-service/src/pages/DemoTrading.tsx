@@ -465,6 +465,7 @@ function DemoTradingContent() {
   const { data: namespacesData } = useQuery<NamespaceOption[]>({
     queryKey: ['/api/namespaces'],
     staleTime: 60_000,
+    enabled: !!user?.id, // Só executar após auth completa
   });
   const availableNamespaces = useMemo(
     () => (namespacesData ?? []).filter((namespace) => namespace.ativo !== false),
@@ -476,6 +477,7 @@ function DemoTradingContent() {
     queryKey: ['/api/integrations/trading/datasets', 'postmortem-ids'],
     queryFn: () => getDemoSourceDatasets(200),
     staleTime: 1000 * 30,
+    enabled: !!user?.id && isConfigured, // Só executar após auth e config OK
   });
 
   const postmortemIdsSentToTraining = useMemo(() => {
@@ -491,6 +493,7 @@ function DemoTradingContent() {
     queryKey: ['/api/integrations/postmortem/queue/stats'],
     queryFn: () => getDemoPostMortemQueueStats(),
     refetchInterval: 10_000,
+    enabled: !!user?.id && isConfigured, // Só executar após auth e config OK
   });
 
   // ============================================================================
@@ -656,6 +659,31 @@ function DemoTradingContent() {
   const lossCount = closedPositions.filter(p => parseFloat(p.realizedPnl ?? '0') < 0).length;
   const winRate = closedPositions.length > 0 ? (winCount / closedPositions.length * 100) : 0;
 
+  // CORREÇÃO TDZ (22/02/2026): getLivePositionStats precisa ser declarado ANTES
+  // de totalUnrealizedPnL que o usa. const/useCallback não são hoisted.
+  const getLivePositionStats = useCallback((position: DemoPosition): { markPrice: number | null; pnlValue: number | null; pnlPct: number | null } => {
+    const posSymbol = (position.symbol ?? '').toUpperCase();
+    const markPrice = positionLiveQuotes[posSymbol];
+    if (!Number.isFinite(markPrice) || (markPrice ?? 0) <= 0) {
+      return { markPrice: null, pnlValue: null, pnlPct: null };
+    }
+
+    const size = Number(position.size);
+    const entryPrice = Number(position.entryPrice);
+    const leverage = Math.max(Number(position.leverage ?? 1), 1);
+    if (!Number.isFinite(size) || !Number.isFinite(entryPrice) || size <= 0 || entryPrice <= 0) {
+      return { markPrice: null, pnlValue: null, pnlPct: null };
+    }
+
+    const isLong = position.side === 'long';
+    const direction = isLong ? 1 : -1;
+    const pnlValue = ((markPrice as number) - entryPrice) * size * direction;
+    const margin = (entryPrice * size) / leverage;
+    const pnlPct = margin > 0 ? (pnlValue / margin) * 100 : 0;
+
+    return { markPrice: markPrice as number, pnlValue, pnlPct };
+  }, [positionLiveQuotes]);
+
   // ✅ CROSS MARGIN: Calcular Equity Total (saldo + frozen + unrealized PnL)
   const totalUnrealizedPnL = openPositions.reduce((acc, pos) => {
     const live = getLivePositionStats(pos);
@@ -766,29 +794,6 @@ function DemoTradingContent() {
     const pnlPct = margin > 0 ? (pnlValue / margin) * 100 : 0;
     return { pnlValue, pnlPct };
   }, []);
-
-  const getLivePositionStats = useCallback((position: DemoPosition): { markPrice: number | null; pnlValue: number | null; pnlPct: number | null } => {
-    const posSymbol = (position.symbol ?? '').toUpperCase();
-    const markPrice = positionLiveQuotes[posSymbol];
-    if (!Number.isFinite(markPrice) || (markPrice ?? 0) <= 0) {
-      return { markPrice: null, pnlValue: null, pnlPct: null };
-    }
-
-    const size = Number(position.size);
-    const entryPrice = Number(position.entryPrice);
-    const leverage = Math.max(Number(position.leverage ?? 1), 1);
-    if (!Number.isFinite(size) || !Number.isFinite(entryPrice) || size <= 0 || entryPrice <= 0) {
-      return { markPrice: null, pnlValue: null, pnlPct: null };
-    }
-
-    const isLong = position.side === 'long';
-    const direction = isLong ? 1 : -1;
-    const pnlValue = ((markPrice as number) - entryPrice) * size * direction;
-    const margin = (entryPrice * size) / leverage;
-    const pnlPct = margin > 0 ? (pnlValue / margin) * 100 : 0;
-
-    return { markPrice: markPrice as number, pnlValue, pnlPct };
-  }, [positionLiveQuotes]);
 
   useEffect(() => {
     if (!wsState.connected) return;

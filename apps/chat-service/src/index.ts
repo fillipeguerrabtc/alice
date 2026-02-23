@@ -10529,6 +10529,19 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
               })
               .where(eq(schema.conversations.id, conversationId));
 
+            // Emitir SSE estruturado type:"action_result" — frontend renderiza ActionResultCard
+            const actionResultPayload = redactSensitivePayload(integrationResult);
+            res.write(`data: ${JSON.stringify({
+              type: 'action_result',
+              data: {
+                actionRequestId: pendingAction.id,
+                actionType: pendingIntegration?.action ?? actionLabel,
+                actionOperation: pendingIntegration?.operation,
+                status: 'executed',
+                summary: payload.summary,
+                result: actionResultPayload,
+              },
+            })}\n\n`);
             res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
             res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
             res.write('data: [DONE]\n\n');

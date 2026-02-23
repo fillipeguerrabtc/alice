@@ -127,6 +127,7 @@ import { getConnectedExchangesCount } from './trading-v2/core/market-adapters.js
 import { buildDecisionPacket } from './trading-v2/core/decision-packet.js';
 import { estimateCosts } from './trading-v2/engines/cost-model.js';
 import { selectAutoIntentCandidate } from './trading-v2/engines/intent-selection-engine.js';
+import type { GuardrailThresholdBucket } from './trading-v2/engines/intent-selection-engine.js';
 import type { TradingOperationIntent } from './trading-v2/core/types.js';
 import { buildCompactPrompt } from './trading-v2/llm/compact-prompt.js';
 import { enforceLlmGuardrails } from './trading-v2/llm/llm-guardrails.js';
@@ -12430,11 +12431,29 @@ async function generateTradingSignalFromLlm(params: {
         guardrails,
         universeScanCount: recentCandidates.length,
       }, 'Pacote institucional de portfólio gerado');
+
+      // Carregar guardrail thresholds do banco por intent (fallback seguro para defaults)
+      const guardrailRows = await db.query.tradingGuardrailThresholds.findMany({
+        where: and(
+          eq(schema.tradingGuardrailThresholds.tenantId, params.tenantId),
+          eq(schema.tradingGuardrailThresholds.marketType, marketType),
+        ),
+      });
+      const guardrailsByIntent: Partial<Record<TradingOperationIntent, GuardrailThresholdBucket>> = {};
+      for (const row of guardrailRows) {
+        const intent = row.intent as TradingOperationIntent;
+        guardrailsByIntent[intent] = {
+          dsrMin: Number(row.dsrMin),
+          pboMax: Number(row.pboMax),
+        };
+      }
+
       const intentSelection = selectAutoIntentCandidate({
         candidates: candidateInputs,
         costsByInstrument,
         allowedIntents: allowedOperationIntents,
         crossExchangeEnabled,
+        guardrailsByIntent,
       });
       const firstDecision = intentSelection.candidate;
       const signalType: 'entry_long' | 'entry_short' | 'hold' = firstDecision?.side === 'long' ? 'entry_long' : firstDecision?.side === 'short' ? 'entry_short' : 'hold';

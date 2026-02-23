@@ -1632,6 +1632,30 @@ export default function Chat() {
                   });
                   resetTimeout();
                 }
+
+                if (parsed.type === 'action_result' && parsed.data && typeof parsed.data === 'object') {
+                  // Injeta metadados de action_result na última mensagem assistant para ActionResultCard
+                  const actionData = parsed.data as Record<string, unknown>;
+                  setMessages((prev) => {
+                    const newMessages = [...prev];
+                    const lastIdx = newMessages.length - 1;
+                    if (lastIdx >= 0 && newMessages[lastIdx].role === 'assistant') {
+                      newMessages[lastIdx] = {
+                        ...newMessages[lastIdx],
+                        metadata: {
+                          ...(newMessages[lastIdx].metadata as Record<string, unknown> ?? {}),
+                          actionType: actionData.actionType,
+                          actionOperation: actionData.actionOperation,
+                          actionStatus: actionData.status,
+                          actionSummary: actionData.summary,
+                          actionResult: actionData.result,
+                        },
+                      };
+                    }
+                    return newMessages;
+                  });
+                  resetTimeout();
+                }
               } catch {
                 // Ignorar erros de parse
               }

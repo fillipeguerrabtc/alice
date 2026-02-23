@@ -151,6 +151,7 @@ function readUuidFromUnknown(value: unknown): string | null {
 
 const PORT = parseEnvInt(process.env.PORT, 3004, 'PORT');
 const DATABASE_URL = process.env.DATABASE_URL;
+const RAG_SERVICE_URL = process.env.RAG_SERVICE_URL ?? 'http://alice-rag:3003';
 const corsOriginsEnv = process.env.CORS_ORIGINS;
 if (!corsOriginsEnv && process.env.NODE_ENV === 'production') {
   logger.error('CORS_ORIGINS é obrigatório em produção (Regra 6 - fail-fast)');
@@ -983,9 +984,13 @@ function resolveAdaptiveThresholds(candidate: typeof schema.tradingUniverseCandi
 
 async function resolveAutoDecisionEvidenceIds(params: {
   tenantId: string;
+  userId?: string;
   asof: Date;
   symbol?: string;
   marketType?: 'spot' | 'futures' | 'margin';
+  operationIntent?: string;
+  regime?: string;
+  namespaceId?: string | null;
 }): Promise<string[]> {
   const signalWhereConditions = [eq(schema.tradingSignals.tenantId, params.tenantId), lte(schema.tradingSignals.criadoEm, params.asof)];
   if (params.symbol) {
@@ -1012,10 +1017,51 @@ async function resolveAutoDecisionEvidenceIds(params: {
     }),
   ]);
 
-  return [
+  const dbEvidenceIds = [
     ...signals.map((row) => `signal:${row.id}`),
     ...postmortems.map((row) => `postmortem:${row.id}`),
   ];
+
+  // Busca RAG por intent/regime quando disponível (não bloqueante — falha silenciosa)
+  const ragEvidenceIds: string[] = [];
+  if (params.namespaceId && params.operationIntent && params.userId) {
+    try {
+      const internalHeaders: Record<string, string> = {
+        'x-internal-auth': 'service',
+        'x-user-id': params.userId,
+        'x-tenant-id': params.tenantId,
+      };
+      const queryParts = [
+        `Estratégia: ${params.operationIntent}`,
+        params.regime ? `Regime: ${params.regime}` : null,
+        params.symbol ? `Par: ${params.symbol}` : null,
+        params.marketType ? `Mercado: ${params.marketType}` : null,
+      ].filter(Boolean).join('. ');
+
+      const ragResponse = await fetch(`${RAG_SERVICE_URL}/api/rag/search`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...internalHeaders },
+        body: JSON.stringify({
+          query: queryParts,
+          namespaceId: params.namespaceId,
+          limit: 3,
+          minSimilarity: 0.6,
+        }),
+        signal: AbortSignal.timeout(5000),
+      });
+      if (ragResponse.ok) {
+        const ragData = await ragResponse.json() as { data?: Array<{ id?: string }> };
+        for (const doc of ragData.data ?? []) {
+          if (doc.id) ragEvidenceIds.push(`rag:${doc.id}`);
+        }
+      }
+    } catch {
+      // RAG não disponível — continuar sem contexto (não bloqueante)
+      logger.debug({ tenantId: params.tenantId, operationIntent: params.operationIntent }, 'RAG intent/regime indisponível (não bloqueante)');
+    }
+  }
+
+  return [...dbEvidenceIds, ...ragEvidenceIds];
 }
 
 async function autoValidateCandidateIfNeeded(params: {
@@ -1205,9 +1251,13 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
     const symbol = payload.symbol ?? instrumentSymbol?.symbol ?? null;
     const ragEvidenceIds = await resolveAutoDecisionEvidenceIds({
       tenantId: run.tenantId,
+      userId: run.userId,
       asof: run.createdAt ?? new Date(),
       symbol: symbol ?? undefined,
       marketType: payload.marketType ?? candidateForReason?.marketType,
+      operationIntent: candidateForReason?.operationIntent ?? undefined,
+      regime: thresholdsUsed?.regimeBucket ?? 'unknown',
+      namespaceId: run.namespaceId ?? null,
     });
 
     const noTradeReasons: string[] = [];
