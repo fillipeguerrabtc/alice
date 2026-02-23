@@ -1644,11 +1644,11 @@ export default function Chat() {
                         ...newMessages[lastIdx],
                         metadata: {
                           ...(newMessages[lastIdx].metadata as Record<string, unknown> ?? {}),
-                          actionType: actionData.actionType,
-                          actionOperation: actionData.actionOperation,
-                          actionStatus: actionData.status,
-                          actionSummary: actionData.summary,
-                          actionResult: actionData.result,
+                          actionType: typeof actionData.actionType === 'string' ? actionData.actionType : undefined,
+                          actionOperation: typeof actionData.actionOperation === 'string' ? actionData.actionOperation : undefined,
+                          actionStatus: typeof actionData.status === 'string' ? actionData.status : undefined,
+                          actionSummary: typeof actionData.summary === 'string' ? actionData.summary : undefined,
+                          actionResult: actionData.result !== null && typeof actionData.result === 'object' ? actionData.result as Record<string, unknown> : undefined,
                         },
                       };
                     }
