@@ -190,23 +190,31 @@ const GPU_SERVICE_URLS = {
  * Para coexistência em 20GB, usamos requisitos conservadores.
  */
 const VRAM_REQUIREMENTS: Record<GpuServiceType, number> = {
-  [GpuServiceType.LLM]: 6,           // LLM AWQ + KV cache (budget conservador)
-  [GpuServiceType.EMBEDDINGS]: 3,    // Qwen3-Embedding-0.6B INT8 (budget conservador)
-  [GpuServiceType.TRAINING]: 12,     // QLoRA (sob demanda, pausa outros)
+  [GpuServiceType.LLM]: Number(process.env.GPU_VRAM_BUDGET_LLM ?? '6'),
+  [GpuServiceType.EMBEDDINGS]: Number(process.env.GPU_VRAM_BUDGET_EMBEDDINGS ?? '3'),
+  [GpuServiceType.TRAINING]: Number(process.env.GPU_VRAM_BUDGET_TRAINING ?? '8'),
 };
+
+// Validar budgets por serviço
+for (const [serviceType, budget] of Object.entries(VRAM_REQUIREMENTS)) {
+  if (!Number.isFinite(budget) || budget <= 0) {
+    logger.error({ serviceType, budget }, 'Budget de VRAM por serviço inválido');
+    process.exit(1);
+  }
+}
 
 /** VRAM total disponível (20GB para RTX 4000 Ada - Hetzner GEX44) */
 // BUG FIX 25/12/2025: Corrigido de 24GB (RTX 4090) para 20GB (RTX 4000 Ada)
-const TOTAL_VRAM_GB = 20;
+const TOTAL_VRAM_GB = Number(process.env.GPU_TOTAL_VRAM_GB ?? '20');
 
 /** Margem de segurança (GB) */
-const VRAM_SAFETY_MARGIN_GB = 2;
+const VRAM_SAFETY_MARGIN_GB = Number(process.env.GPU_VRAM_SAFETY_MARGIN_GB ?? '2');
 const GPU_RETRY_AFTER_SECONDS = Number(process.env.GPU_RETRY_AFTER_SECONDS ?? '5');
 
 const ADMISSION_MIN_FREE_GB: Record<GpuServiceType, number> = {
   [GpuServiceType.LLM]: Number(process.env.GPU_ADMISSION_MIN_FREE_GB_LLM ?? '2'),
   [GpuServiceType.EMBEDDINGS]: Number(process.env.GPU_ADMISSION_MIN_FREE_GB_EMBEDDINGS ?? '1.5'),
-  [GpuServiceType.TRAINING]: Number(process.env.GPU_ADMISSION_MIN_FREE_GB_TRAINING ?? '6'),
+  [GpuServiceType.TRAINING]: Number(process.env.GPU_ADMISSION_MIN_FREE_GB_TRAINING ?? '2'),
 };
 
 for (const [serviceType, threshold] of Object.entries(ADMISSION_MIN_FREE_GB)) {
@@ -557,13 +565,29 @@ function admissionControlReason(
   priority: GpuRequestPriority,
   vramStatus: VramStatus,
 ): GpuRejectionReason | null {
-  if (!hasEnoughVram(serviceType, vramStatus)) {
-    return 'insufficient_vram';
-  }
-  if (isLowPriority(priority) && vramStatus.freeGB < ADMISSION_MIN_FREE_GB[serviceType]) {
-    return 'low_vram_low_priority';
-  }
-  return null;
+  const reason = (() => {
+    if (!hasEnoughVram(serviceType, vramStatus)) {
+      return 'insufficient_vram' as const;
+    }
+    if (isLowPriority(priority) && vramStatus.freeGB < ADMISSION_MIN_FREE_GB[serviceType]) {
+      return 'low_vram_low_priority' as const;
+    }
+    return null;
+  })();
+
+  // Log estruturado de cada decisão de admission (observabilidade)
+  logger.info({
+    serviceType,
+    priority,
+    freeGB: vramStatus.freeGB,
+    usedGB: vramStatus.usedGB,
+    threshold: ADMISSION_MIN_FREE_GB[serviceType],
+    required: VRAM_REQUIREMENTS[serviceType],
+    activeServices: vramStatus.activeServices,
+    decision: reason ?? 'admitted',
+  }, reason ? `Admission control: ${reason}` : 'Admission control: requisição admitida');
+
+  return reason;
 }
 
 // ============================================================================
@@ -1427,7 +1451,14 @@ async function start(): Promise<void> {
     
     // Iniciar servidor
     server.listen(PORT, () => {
-      logger.info({ port: PORT }, 'GPU Manager Service iniciado');
+      logger.info({
+        port: PORT,
+        totalVramGB: TOTAL_VRAM_GB,
+        safetyMarginGB: VRAM_SAFETY_MARGIN_GB,
+        budgets: VRAM_REQUIREMENTS,
+        admissionThresholds: ADMISSION_MIN_FREE_GB,
+        nvidiaSmiStatus: nvidiaSmiAvailable === null ? 'unknown' : nvidiaSmiAvailable ? 'available' : 'unavailable',
+      }, 'GPU Manager Service iniciado - coexistência habilitada (LLM+Embeddings+Training)');
     });
 
     // SEGURANÇA: Timeouts para prevenir conexões pendentes (Node.js 20 LTS Best Practices)

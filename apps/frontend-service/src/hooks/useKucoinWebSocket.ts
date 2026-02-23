@@ -128,7 +128,7 @@ export interface UseKucoinWebSocketReturn {
   balance: BalanceData | null;
   positionUpdate: PositionUpdateData | null;
   orderUpdate: OrderUpdateData | null;
-  connect: () => void;
+  connect: () => Promise<void>;
   disconnect: () => void;
   subscribe: (
     channel: string,
@@ -240,11 +240,38 @@ export function useKucoinWebSocket(
     return `${data.channel}:${resolvedMarketType}:${resolvedMarginMode}:${normalizedSymbol}`;
   }, []);
 
-  // Get WebSocket URL
-  const getWsUrl = useCallback(() => {
+  // WS Token cache (evita buscar token a cada reconexão)
+  const wsTokenRef = useRef<{ token: string; expiresAt: number } | null>(null);
+
+  /** Busca token efêmero para autenticação WebSocket */
+  const fetchWsToken = useCallback(async (): Promise<string | null> => {
+    // Usar cache se ainda válido (com margem de 10s)
+    const cached = wsTokenRef.current;
+    if (cached && cached.expiresAt > Date.now() + 10_000) {
+      return cached.token;
+    }
+    try {
+      const response = await fetch('/api/chat/ws-token', { credentials: 'include' });
+      if (!response.ok) return null;
+      const body = await response.json() as { success: boolean; data: { token: string; expiresIn: number } };
+      if (!body.success || !body.data?.token) return null;
+      wsTokenRef.current = {
+        token: body.data.token,
+        expiresAt: Date.now() + body.data.expiresIn * 1000,
+      };
+      return body.data.token;
+    } catch (error) {
+      frontendLogger.warn('Falha ao buscar ws-token', { error: error instanceof Error ? error.message : String(error) });
+      return null;
+    }
+  }, []);
+
+  // Get WebSocket URL (com token quando disponível)
+  const getWsUrl = useCallback((token: string | null) => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
-    return `${protocol}//${host}/ws/chat`;
+    const base = `${protocol}//${host}/ws/chat`;
+    return token ? `${base}?token=${encodeURIComponent(token)}` : base;
   }, []);
 
   // Clear reconnect timeout
@@ -410,28 +437,29 @@ export function useKucoinWebSocket(
   }, [buildSubscriptionKey, interval, marketType, onTicker, onOrderBook, onKline, onTrade, onBalance, onPositionUpdate, onOrderUpdate, onCommandResult, onError]);
 
   // Connect to WebSocket
-  const connect = useCallback(() => {
+  const connect = useCallback(async () => {
     // CORREÇÃO 17/12/2025: Verificar CONNECTING além de OPEN para evitar conexões duplicadas
-    // Bug: Quando symbol muda rápido, connect() era chamado enquanto WebSocket ainda estava CONNECTING
-    // Isso criava múltiplas conexões simultâneas, todas atualizando o mesmo estado
     if (wsRef.current?.readyState === WebSocket.OPEN || 
         wsRef.current?.readyState === WebSocket.CONNECTING) {
       return;
     }
 
     // CORREÇÃO 17/12/2025: Resetar flag de disconnect intencional ao iniciar nova conexão
-    // Isso permite que auto-reconnect funcione corretamente em conexões subsequentes
     isIntentionalDisconnectRef.current = false;
 
     // CORREÇÃO 17/12/2025: Incrementar connection ID para invalidar callbacks de WebSockets antigos
-    // Cada nova conexão tem um ID único; callbacks verificam se o ID ainda é válido
     const currentConnectionId = ++connectionIdRef.current;
 
     clearReconnect();
     setState(prev => ({ ...prev, connecting: true, error: null }));
 
     try {
-      const ws = new WebSocket(getWsUrl());
+      // Buscar token efêmero (fallback para cookie se falhar)
+      const token = await fetchWsToken();
+      // Verificar se conexão ainda é desejada após await
+      if (connectionIdRef.current !== currentConnectionId) return;
+
+      const ws = new WebSocket(getWsUrl(token));
       wsRef.current = ws;
 
       ws.onopen = () => {
@@ -551,7 +579,7 @@ export function useKucoinWebSocket(
           reconnectAttemptRef.current++;
 
           reconnectTimeoutRef.current = setTimeout(() => {
-            connect();
+            void connect();
           }, delay);
         }
       };
@@ -563,7 +591,7 @@ export function useKucoinWebSocket(
         lastPing: null,
       });
     }
-  }, [getWsUrl, handleMessage, clearReconnect, clearPing, channels, symbol, interval, marketType, marginMode, orderBookDepth, autoConnect]);
+  }, [getWsUrl, fetchWsToken, handleMessage, clearReconnect, clearPing, channels, symbol, interval, marketType, marginMode, orderBookDepth, autoConnect]);
 
   // Disconnect from WebSocket
   const disconnect = useCallback(() => {
@@ -667,7 +695,7 @@ export function useKucoinWebSocket(
   // Auto-connect on mount
   useEffect(() => {
     if (autoConnect) {
-      connectRef.current();
+      void connectRef.current();
     }
 
     return () => {

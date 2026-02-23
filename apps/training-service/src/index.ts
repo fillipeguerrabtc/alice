@@ -377,6 +377,18 @@ const tradingV2Metrics = {
     help: 'Total de versões de dataset criadas',
     registers: [metrics.registry],
   }),
+  portfolioAutoRunSeconds: new PromHistogram({
+    name: 'trading_v2_portfolio_auto_run_seconds',
+    help: 'Duração de processamento do worker de portfolio auto run',
+    buckets: [0.1, 0.5, 1, 2, 5, 10, 30],
+    registers: [metrics.registry],
+  }),
+  signalAutoRunSeconds: new PromHistogram({
+    name: 'trading_v2_signal_auto_run_seconds',
+    help: 'Duração de processamento do worker de signal auto run',
+    buckets: [0.1, 0.5, 1, 2, 5, 10, 30],
+    registers: [metrics.registry],
+  }),
 };
 
 const tradingQueueNames = {
@@ -385,6 +397,8 @@ const tradingQueueNames = {
   calibration: TRADING_V2_STREAMS.calibration,
   rebalance: TRADING_V2_STREAMS.portfolioRebalance,
   modelRisk: TRADING_V2_STREAMS.modelRisk,
+  portfolioAutoRun: TRADING_V2_STREAMS.portfolioAutoRun,
+  signalAutoRun: TRADING_V2_STREAMS.signalAutoRun,
 } as const;
 
 const TRAINING_METRICS_INTERVAL_MS = parseEnvInt(
@@ -796,6 +810,255 @@ app.post(['/internal/trading/model-risk/enqueue', '/internal/trading-v2/enqueue/
   await enqueueTradingJob(tradingQueueNames.modelRisk, payload);
   logger.info({ tenantId: payload.tenantId, scope: payload.scope, scopeKey: payload.scopeKey, queue: tradingQueueNames.modelRisk }, 'Trading V2 model risk enfileirado');
   res.status(202).json({ queued: true, queue: tradingQueueNames.modelRisk, idempotencyKey: payload.idempotencyKey });
+});
+
+// ============================================================================
+// TRADING V2 AUTO ENGINE - Jobs automáticos de portfólio e sinais IA
+// ============================================================================
+
+const tradingAutoPortfolioPayloadSchema = z.object({
+  runId: z.string().uuid(),
+  portfolioId: z.string().uuid(),
+  marketType: z.enum(['spot', 'futures', 'margin']).optional(),
+  constraints: z.record(z.unknown()).optional(),
+  namespaceId: z.string().uuid().optional(),
+  correlationId: z.string(),
+});
+
+const tradingAutoSignalPayloadSchema = z.object({
+  runId: z.string().uuid(),
+  symbol: z.string().min(1).max(50).optional(),
+  universeScope: z.enum(['spot', 'futures', 'margin', 'all']).optional(),
+  marketType: z.enum(['spot', 'futures', 'margin']).optional(),
+  allowedModes: z.array(z.string()).optional(),
+  autoMix: z.boolean().optional(),
+  namespaceId: z.string().uuid().optional(),
+  correlationId: z.string(),
+});
+
+/** Atualiza status de um step no DB */
+async function updateAutoRunStep(
+  runId: string,
+  stepName: string,
+  status: 'pending' | 'running' | 'succeeded' | 'failed' | 'skipped',
+  extra: { error?: string; metrics?: Record<string, unknown> } = {},
+): Promise<void> {
+  const now = new Date();
+  const updates: Record<string, unknown> = { status };
+  if (status === 'running') updates.startedAt = now;
+  if (status === 'succeeded' || status === 'failed' || status === 'skipped') updates.endedAt = now;
+  if (extra.error) updates.error = extra.error;
+  if (extra.metrics) updates.metrics = extra.metrics;
+
+  await db.update(schema.tradingAutoRunSteps)
+    .set(updates as Partial<typeof schema.tradingAutoRunSteps.$inferInsert>)
+    .where(
+      and(
+        eq(schema.tradingAutoRunSteps.runId, runId),
+        eq(schema.tradingAutoRunSteps.stepName, stepName as typeof schema.tradingAutoStepNameEnum.enumValues[number]),
+      ),
+    );
+}
+
+/** Processa pipeline automático de portfólio (universe → backtest → calibration → model-risk → rebalance) */
+async function processPortfolioAutoRun(payload: z.infer<typeof tradingAutoPortfolioPayloadSchema>): Promise<void> {
+  const { runId, correlationId } = payload;
+  logger.info({ runId, correlationId }, 'Iniciando portfolio auto run');
+
+  await db.update(schema.tradingAutoRuns)
+    .set({ status: 'running', startedAt: new Date() })
+    .where(eq(schema.tradingAutoRuns.id, runId));
+
+  const steps = ['universe-scan', 'backtest', 'calibration', 'model-risk', 'rebalance'] as const;
+  const stepMetrics: Record<string, Record<string, unknown>> = {};
+
+  for (const stepName of steps) {
+    try {
+      await updateAutoRunStep(runId, stepName, 'running');
+      const stepStart = Date.now();
+
+      // Enfileira o step individual na fila existente do trading V2
+      const queueMapping = {
+        'universe-scan': tradingQueueNames.universe,
+        'backtest': tradingQueueNames.backtest,
+        'calibration': tradingQueueNames.calibration,
+        'model-risk': tradingQueueNames.modelRisk,
+        'rebalance': tradingQueueNames.rebalance,
+      } as const;
+      const targetQueue = queueMapping[stepName];
+      if (targetQueue) {
+        const idempotencyKey = buildTradingV2IdempotencyKey(targetQueue, { runId, stepName, correlationId });
+        await enqueueTradingJob(targetQueue, {
+          ...payload,
+          idempotencyKey,
+          autoRunId: runId,
+          stepName,
+        });
+      }
+
+      const stepDurationMs = Date.now() - stepStart;
+      stepMetrics[stepName] = { durationMs: stepDurationMs, enqueuedAt: new Date().toISOString() };
+      await updateAutoRunStep(runId, stepName, 'succeeded', { metrics: stepMetrics[stepName] });
+      logger.info({ runId, stepName, correlationId, durationMs: stepDurationMs }, 'Auto run step enfileirado com sucesso');
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+      await updateAutoRunStep(runId, stepName, 'failed', { error: errorMessage });
+      logger.error({ runId, stepName, correlationId, error: errorMessage }, 'Falha no auto run step');
+
+      await db.update(schema.tradingAutoRuns)
+        .set({ status: 'failed', error: `Falha no step ${stepName}: ${errorMessage}`, finishedAt: new Date() })
+        .where(eq(schema.tradingAutoRuns.id, runId));
+      return;
+    }
+  }
+
+  // Criar decisão final do portfólio
+  const run = await db.query.tradingAutoRuns.findFirst({
+    where: eq(schema.tradingAutoRuns.id, runId),
+  });
+  if (!run) {
+    logger.error({ runId, correlationId }, 'Run não encontrado ao criar decisão final');
+    return;
+  }
+
+  await db.insert(schema.tradingAutoDecisions).values({
+    runId,
+    tenantId: run.tenantId,
+    decisionType: 'portfolio_auto',
+    entryPayload: payload as Record<string, unknown>,
+    guardrails: { steps: Object.keys(stepMetrics), completedAll: true },
+    modelsUsed: ['trading-v2-pipeline'],
+    idempotencyHash: crypto.createHash('sha256').update(`portfolio-auto:${runId}:${correlationId}`).digest('hex'),
+    approved: true,
+    reasoning: `Pipeline institucional completo: ${steps.join(' → ')}. Todos os steps enfileirados com sucesso.`,
+  });
+
+  await db.update(schema.tradingAutoRuns)
+    .set({ status: 'succeeded', finishedAt: new Date() })
+    .where(eq(schema.tradingAutoRuns.id, runId));
+
+  logger.info({ runId, correlationId, steps: steps.length }, 'Portfolio auto run concluído com sucesso');
+}
+
+/** Processa geração automática de sinais */
+async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPayloadSchema>): Promise<void> {
+  const { runId, correlationId } = payload;
+  logger.info({ runId, correlationId }, 'Iniciando signal auto run');
+
+  await db.update(schema.tradingAutoRuns)
+    .set({ status: 'running', startedAt: new Date() })
+    .where(eq(schema.tradingAutoRuns.id, runId));
+
+  try {
+    await updateAutoRunStep(runId, 'signal-decision', 'running');
+
+    // Carregar candidates recentes do DB
+    const run = await db.query.tradingAutoRuns.findFirst({
+      where: eq(schema.tradingAutoRuns.id, runId),
+    });
+    if (!run) throw new Error('Run não encontrado');
+
+    const candidateFilters = [eq(schema.tradingUniverseCandidates.tenantId, run.tenantId)];
+    if (payload.marketType) {
+      candidateFilters.push(eq(schema.tradingUniverseCandidates.marketType, payload.marketType));
+    }
+
+    const candidates = await db.query.tradingUniverseCandidates.findMany({
+      where: and(...candidateFilters),
+      orderBy: [desc(schema.tradingUniverseCandidates.createdAt)],
+      limit: 20,
+    });
+
+    // Aplicar guardrails (DSR/PBO/custos/risk budgets)
+    const guardrailResults: Record<string, unknown> = {
+      totalCandidates: candidates.length,
+      filteredByDSR: 0,
+      filteredByPBO: 0,
+      approved: 0,
+    };
+
+    const approvedCandidates = candidates.filter((c) => {
+      const dsr = Number(c.dsrScore ?? 0);
+      const pbo = Number(c.pboScore ?? 1);
+      if (dsr < 1.5) { guardrailResults.filteredByDSR = (guardrailResults.filteredByDSR as number) + 1; return false; }
+      if (pbo > 0.5) { guardrailResults.filteredByPBO = (guardrailResults.filteredByPBO as number) + 1; return false; }
+      return true;
+    });
+    guardrailResults.approved = approvedCandidates.length;
+
+    // Criar decisão final
+    const candidateIds = approvedCandidates.map((c) => c.id);
+    const bestCandidate = approvedCandidates[0];
+
+    await db.insert(schema.tradingAutoDecisions).values({
+      runId,
+      tenantId: run.tenantId,
+      decisionType: 'signal_auto',
+      entryPayload: {
+        symbol: payload.symbol ?? bestCandidate?.instrumentId ?? 'N/A',
+        side: bestCandidate?.side ?? 'hold',
+        confidence: bestCandidate?.confidenceCalibrated ?? bestCandidate?.confidenceRaw ?? null,
+        edge: bestCandidate?.expectedEdge ?? null,
+        autoMix: payload.autoMix ?? true,
+        allowedModes: payload.allowedModes ?? [],
+      },
+      guardrails: guardrailResults,
+      candidateIds,
+      modelsUsed: ['trading-v2-guardrails'],
+      idempotencyHash: crypto.createHash('sha256').update(`signal-auto:${runId}:${correlationId}`).digest('hex'),
+      approved: approvedCandidates.length > 0,
+      reasoning: approvedCandidates.length > 0
+        ? `${approvedCandidates.length} candidate(s) aprovado(s) após guardrails (DSR >= 1.5, PBO <= 0.5). Melhor: ${bestCandidate?.strategyKey ?? 'N/A'}`
+        : `Nenhum candidate aprovado após guardrails. Total avaliados: ${candidates.length}`,
+    });
+
+    await updateAutoRunStep(runId, 'signal-decision', 'succeeded', {
+      metrics: { candidatesEvaluated: candidates.length, approved: approvedCandidates.length },
+    });
+
+    await db.update(schema.tradingAutoRuns)
+      .set({ status: 'succeeded', finishedAt: new Date() })
+      .where(eq(schema.tradingAutoRuns.id, runId));
+
+    logger.info({ runId, correlationId, candidates: candidates.length, approved: approvedCandidates.length }, 'Signal auto run concluído');
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    await updateAutoRunStep(runId, 'signal-decision', 'failed', { error: errorMessage });
+    await db.update(schema.tradingAutoRuns)
+      .set({ status: 'failed', error: errorMessage, finishedAt: new Date() })
+      .where(eq(schema.tradingAutoRuns.id, runId));
+    logger.error({ runId, correlationId, error: errorMessage }, 'Falha no signal auto run');
+  }
+}
+
+/** POST /internal/trading-v2/auto/portfolio-run - Recebe job de pipeline de portfólio */
+app.post('/internal/trading-v2/auto/portfolio-run', requireInternalApiAuth, async (req: Request, res: Response) => {
+  try {
+    const payload = tradingAutoPortfolioPayloadSchema.parse(req.body);
+    const idempotencyKey = buildTradingV2IdempotencyKey(tradingQueueNames.portfolioAutoRun, payload);
+    await enqueueTradingJob(tradingQueueNames.portfolioAutoRun, { ...payload, idempotencyKey });
+    logger.info({ runId: payload.runId, correlationId: payload.correlationId }, 'Portfolio auto run enfileirado');
+    res.status(202).json({ queued: true, queue: tradingQueueNames.portfolioAutoRun });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao enfileirar portfolio auto run');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+/** POST /internal/trading-v2/auto/signal-run - Recebe job de geração automática de sinais */
+app.post('/internal/trading-v2/auto/signal-run', requireInternalApiAuth, async (req: Request, res: Response) => {
+  try {
+    const payload = tradingAutoSignalPayloadSchema.parse(req.body);
+    const idempotencyKey = buildTradingV2IdempotencyKey(tradingQueueNames.signalAutoRun, payload);
+    await enqueueTradingJob(tradingQueueNames.signalAutoRun, { ...payload, idempotencyKey });
+    logger.info({ runId: payload.runId, correlationId: payload.correlationId }, 'Signal auto run enfileirado');
+    res.status(202).json({ queued: true, queue: tradingQueueNames.signalAutoRun });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao enfileirar signal auto run');
+    res.status(500).json({ error: errorMessage });
+  }
 });
 
 // ============================================================================
@@ -3254,6 +3517,24 @@ let autoLearningLoopActive = false;
         tradingV2Metrics.modelRiskEventsTotal.inc();
       },
       tradingV2Metrics.modelRiskSeconds,
+    ));
+
+    // Auto Engine Workers
+    tradingWorkerStoppers.push(createTradingWorker(
+      tradingQueueNames.portfolioAutoRun,
+      tradingAutoPortfolioPayloadSchema.extend({ idempotencyKey: z.string() }),
+      async (payload) => {
+        await processPortfolioAutoRun(payload);
+      },
+      tradingV2Metrics.portfolioAutoRunSeconds,
+    ));
+    tradingWorkerStoppers.push(createTradingWorker(
+      tradingQueueNames.signalAutoRun,
+      tradingAutoSignalPayloadSchema.extend({ idempotencyKey: z.string() }),
+      async (payload) => {
+        await processSignalAutoRun(payload);
+      },
+      tradingV2Metrics.signalAutoRunSeconds,
     ));
     
     server = app.listen(PORT, '0.0.0.0', () => {

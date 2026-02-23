@@ -81,3 +81,102 @@ export async function enqueueTradingV2Job(
   const body = await response.json() as { success: boolean; data: { queued: boolean; queue: string; idempotencyKey: string } };
   return body.data;
 }
+
+// ============================================================================
+// Trading V2 Auto Engine API
+// ============================================================================
+
+export interface TradingAutoRun {
+  id: string;
+  tenantId: string;
+  userId: string;
+  runType: 'signal_auto' | 'portfolio_auto';
+  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+  payload: Record<string, unknown>;
+  correlationId: string | null;
+  namespaceId: string | null;
+  error: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TradingAutoRunStep {
+  id: string;
+  runId: string;
+  stepName: string;
+  status: 'pending' | 'running' | 'succeeded' | 'failed' | 'skipped';
+  metrics: Record<string, unknown> | null;
+  error: string | null;
+  startedAt: string | null;
+  endedAt: string | null;
+  createdAt: string;
+}
+
+export interface TradingAutoDecision {
+  id: string;
+  runId: string;
+  tenantId: string;
+  decisionType: 'signal_auto' | 'portfolio_auto';
+  entryPayload: Record<string, unknown>;
+  exitPayload: Record<string, unknown> | null;
+  guardrails: Record<string, unknown> | null;
+  estimatedCosts: Record<string, unknown> | null;
+  candidateIds: string[];
+  modelsUsed: string[];
+  ragEvidenceIds: string[];
+  approved: boolean;
+  reasoning: string | null;
+  createdAt: string;
+}
+
+export interface TradingAutoRunDetail {
+  run: TradingAutoRun;
+  steps: TradingAutoRunStep[];
+  decisions: TradingAutoDecision[];
+}
+
+export async function startPortfolioAutoRun(payload: {
+  portfolioId: string;
+  marketType?: 'spot' | 'futures' | 'margin';
+  constraints?: Record<string, unknown>;
+  namespaceId?: string;
+}): Promise<{ runId: string }> {
+  const response = await apiRequest('POST', '/api/trading-v2/auto/portfolio/run', payload);
+  const body = await response.json() as { success: boolean; data: { runId: string } };
+  return body.data;
+}
+
+export async function startSignalAutoRun(payload: {
+  symbol?: string;
+  universeScope?: 'spot' | 'futures' | 'margin' | 'all';
+  marketType?: 'spot' | 'futures' | 'margin';
+  allowedModes?: string[];
+  autoMix?: boolean;
+  namespaceId?: string;
+}): Promise<{ runId: string }> {
+  const response = await apiRequest('POST', '/api/trading-v2/auto/signal/run', payload);
+  const body = await response.json() as { success: boolean; data: { runId: string } };
+  return body.data;
+}
+
+export async function getTradingAutoRuns(params: {
+  type?: 'signal_auto' | 'portfolio_auto';
+  status?: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+  limit?: number;
+} = {}): Promise<TradingAutoRun[]> {
+  const search = new URLSearchParams();
+  if (params.type) search.set('type', params.type);
+  if (params.status) search.set('status', params.status);
+  if (params.limit) search.set('limit', String(params.limit));
+  const response = await apiRequest('GET', `/api/trading-v2/auto/runs${search.toString() ? `?${search.toString()}` : ''}`);
+  const body = await response.json() as { success: boolean; data: TradingAutoRun[] };
+  return body.data ?? [];
+}
+
+export async function getTradingAutoRunDetail(runId: string): Promise<TradingAutoRunDetail> {
+  const response = await apiRequest('GET', `/api/trading-v2/auto/runs/${runId}`);
+  const body = await response.json() as { success: boolean; data: TradingAutoRunDetail };
+  return body.data;
+}
