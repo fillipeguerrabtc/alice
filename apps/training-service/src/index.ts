@@ -42,6 +42,7 @@ import {
   setupSwaggerUI,
   TRAINING_SERVICE_TAGS,
   requirePermission,
+  requireInternalHmacAuth,
   extractAuthContext,
   validateNamespaceTenantConsistency,
   validateTenantConsistency,
@@ -148,22 +149,8 @@ function readUuidFromUnknown(value: unknown): string | null {
     : null;
 }
 
-function requireInternalApiAuth(req: Request, res: Response, next: () => void): void {
-  if (!INTERNAL_API_SECRET) {
-    res.status(503).json({ error: 'INTERNAL_API_SECRET não configurado' });
-    return;
-  }
-  const secret = req.headers['x-internal-api-secret'];
-  if (typeof secret !== 'string' || secret !== INTERNAL_API_SECRET) {
-    res.status(401).json({ error: 'Token interno inválido' });
-    return;
-  }
-  next();
-}
-
 const PORT = parseEnvInt(process.env.PORT, 3004, 'PORT');
 const DATABASE_URL = process.env.DATABASE_URL;
-const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET;
 const corsOriginsEnv = process.env.CORS_ORIGINS;
 if (!corsOriginsEnv && process.env.NODE_ENV === 'production') {
   logger.error('CORS_ORIGINS é obrigatório em produção (Regra 6 - fail-fast)');
@@ -777,35 +764,35 @@ app.get('/ready', async (_req: Request, res: Response) => {
   }
 });
 
-app.post(['/internal/trading/universe/enqueue', '/internal/trading-v2/enqueue/universe-scan'], requireInternalApiAuth, async (req: Request, res: Response) => {
+app.post(['/internal/trading/universe/enqueue', '/internal/trading-v2/enqueue/universe-scan'], requireInternalHmacAuth(), async (req: Request, res: Response) => {
   const payload = tradingUniverseEnqueueSchema.parse(req.body);
   await enqueueTradingJob(tradingQueueNames.universe, payload);
   logger.info({ tenantId: payload.tenantId, instrumentId: payload.instrumentId, queue: tradingQueueNames.universe }, 'Trading V2 universe scan enfileirado');
   res.status(202).json({ queued: true, queue: tradingQueueNames.universe, idempotencyKey: payload.idempotencyKey });
 });
 
-app.post(['/internal/trading/backtest/enqueue', '/internal/trading-v2/enqueue/backtest'], requireInternalApiAuth, async (req: Request, res: Response) => {
+app.post(['/internal/trading/backtest/enqueue', '/internal/trading-v2/enqueue/backtest'], requireInternalHmacAuth(), async (req: Request, res: Response) => {
   const payload = tradingBacktestEnqueueSchema.parse(req.body);
   await enqueueTradingJob(tradingQueueNames.backtest, payload);
   logger.info({ tenantId: payload.tenantId, strategyKey: payload.strategyKey, queue: tradingQueueNames.backtest }, 'Trading V2 backtest enfileirado');
   res.status(202).json({ queued: true, queue: tradingQueueNames.backtest, idempotencyKey: payload.idempotencyKey });
 });
 
-app.post(['/internal/trading/calibration/enqueue', '/internal/trading-v2/enqueue/calibration'], requireInternalApiAuth, async (req: Request, res: Response) => {
+app.post(['/internal/trading/calibration/enqueue', '/internal/trading-v2/enqueue/calibration'], requireInternalHmacAuth(), async (req: Request, res: Response) => {
   const payload = tradingCalibrationEnqueueSchema.parse(req.body);
   await enqueueTradingJob(tradingQueueNames.calibration, payload);
   logger.info({ tenantId: payload.tenantId, strategyKey: payload.strategyKey, queue: tradingQueueNames.calibration }, 'Trading V2 calibration enfileirado');
   res.status(202).json({ queued: true, queue: tradingQueueNames.calibration, idempotencyKey: payload.idempotencyKey });
 });
 
-app.post(['/internal/trading/portfolio-rebalance/enqueue', '/internal/trading-v2/enqueue/portfolio-rebalance'], requireInternalApiAuth, async (req: Request, res: Response) => {
+app.post(['/internal/trading/portfolio-rebalance/enqueue', '/internal/trading-v2/enqueue/portfolio-rebalance'], requireInternalHmacAuth(), async (req: Request, res: Response) => {
   const payload = tradingRebalanceEnqueueSchema.parse(req.body);
   await enqueueTradingJob(tradingQueueNames.rebalance, payload);
   logger.info({ tenantId: payload.tenantId, portfolioId: payload.portfolioId, queue: tradingQueueNames.rebalance }, 'Trading V2 rebalance enfileirado');
   res.status(202).json({ queued: true, queue: tradingQueueNames.rebalance, idempotencyKey: payload.idempotencyKey });
 });
 
-app.post(['/internal/trading/model-risk/enqueue', '/internal/trading-v2/enqueue/model-risk'], requireInternalApiAuth, async (req: Request, res: Response) => {
+app.post(['/internal/trading/model-risk/enqueue', '/internal/trading-v2/enqueue/model-risk'], requireInternalHmacAuth(), async (req: Request, res: Response) => {
   const payload = tradingModelRiskEnqueueSchema.parse(req.body);
   await enqueueTradingJob(tradingQueueNames.modelRisk, payload);
   logger.info({ tenantId: payload.tenantId, scope: payload.scope, scopeKey: payload.scopeKey, queue: tradingQueueNames.modelRisk }, 'Trading V2 model risk enfileirado');
@@ -1032,7 +1019,7 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
 }
 
 /** POST /internal/trading-v2/auto/portfolio-run - Recebe job de pipeline de portfólio */
-app.post('/internal/trading-v2/auto/portfolio-run', requireInternalApiAuth, async (req: Request, res: Response) => {
+app.post('/internal/trading-v2/auto/portfolio-run', requireInternalHmacAuth(), async (req: Request, res: Response) => {
   try {
     const payload = tradingAutoPortfolioPayloadSchema.parse(req.body);
     const idempotencyKey = buildTradingV2IdempotencyKey(tradingQueueNames.portfolioAutoRun, payload);
@@ -1047,7 +1034,7 @@ app.post('/internal/trading-v2/auto/portfolio-run', requireInternalApiAuth, asyn
 });
 
 /** POST /internal/trading-v2/auto/signal-run - Recebe job de geração automática de sinais */
-app.post('/internal/trading-v2/auto/signal-run', requireInternalApiAuth, async (req: Request, res: Response) => {
+app.post('/internal/trading-v2/auto/signal-run', requireInternalHmacAuth(), async (req: Request, res: Response) => {
   try {
     const payload = tradingAutoSignalPayloadSchema.parse(req.body);
     const idempotencyKey = buildTradingV2IdempotencyKey(tradingQueueNames.signalAutoRun, payload);

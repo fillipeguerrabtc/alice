@@ -169,6 +169,81 @@ export function extractAuthContext(req: Request): AuthContext | undefined {
 }
 
 /**
+ * Middleware que requer autenticação interna via HMAC.
+ *
+ * Usa o mesmo esquema de assinatura gerado por generateInternalAuthHeaders.
+ * Anexa AuthContext em req.user para reutilizar middlewares RBAC.
+ */
+export function requireInternalHmacAuth() {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const internalSignature = req.headers['x-internal-signature'] as string;
+    const internalTimestamp = req.headers['x-internal-timestamp'] as string;
+    const internalUserId = req.headers['x-internal-user-id'] as string;
+    const internalTenantId = req.headers['x-internal-tenant-id'] as string | undefined;
+    const internalRole = req.headers['x-internal-role'] as Role;
+    const internalCustomRoleId = req.headers['x-internal-custom-role-id'] as string | undefined;
+    const correlationId = req.headers['x-correlation-id'] as string | undefined;
+
+    if (!internalSignature || !internalTimestamp || !internalUserId || !internalRole) {
+      logger.info({
+        path: req.path,
+        method: req.method,
+        ip: req.ip,
+        correlationId,
+        statusCode: 401,
+      }, 'Autenticação interna ausente');
+      res.status(401).json({ error: 'Autenticação interna necessária', code: 'INTERNAL_UNAUTHORIZED' });
+      return;
+    }
+
+    if (!/^\d+$/.test(internalTimestamp)) {
+      logger.info({
+        path: req.path,
+        method: req.method,
+        ip: req.ip,
+        correlationId,
+        statusCode: 401,
+      }, 'Timestamp interno inválido');
+      res.status(401).json({ error: 'Timestamp interno inválido', code: 'INTERNAL_UNAUTHORIZED' });
+      return;
+    }
+
+    const isValid = validateInternalToken(
+      internalSignature,
+      internalUserId,
+      internalTenantId,
+      internalRole,
+      internalCustomRoleId,
+      internalTimestamp
+    );
+
+    if (!isValid) {
+      logger.info({
+        userId: internalUserId,
+        role: internalRole,
+        path: req.path,
+        ip: req.ip,
+        correlationId,
+        statusCode: 401,
+      }, 'Falha na autenticação interna HMAC');
+      res.status(401).json({ error: 'Token interno inválido', code: 'INTERNAL_UNAUTHORIZED' });
+      return;
+    }
+
+    const auth: AuthContext = {
+      userId: internalUserId,
+      tenantId: internalTenantId,
+      role: internalRole,
+      customRoleId: internalCustomRoleId,
+    };
+
+    req.user = auth;
+    req.tenantId = auth.tenantId;
+    next();
+  };
+}
+
+/**
  * Middleware que requer autenticação
  * 
  * @param options - Opções de autorização
@@ -192,12 +267,14 @@ export function requireAuth(options?: AuthorizationOptions) {
         return next();
       }
 
-      logger.info({ 
-        path: req.path, 
-        method: req.method,
-        ip: req.ip,
-        statusCode: 401,
-      }, 'Acesso negado - usuário não autenticado');
+      if (options?.logUnauthorized ?? true) {
+        logger.info({
+          path: req.path,
+          method: req.method,
+          ip: req.ip,
+          statusCode: 401,
+        }, 'Acesso negado - usuário não autenticado');
+      }
 
       res.status(401).json({ 
         error: 'Autenticação necessária',
@@ -243,13 +320,15 @@ export function requirePermission(
         return next();
       }
 
-      logger.info({ 
-        path: req.path, 
-        method: req.method,
-        permission,
-        ip: req.ip,
-        statusCode: 401,
-      }, 'Acesso negado - usuário não autenticado');
+      if (options?.logUnauthorized ?? true) {
+        logger.info({
+          path: req.path,
+          method: req.method,
+          permission,
+          ip: req.ip,
+          statusCode: 401,
+        }, 'Acesso negado - usuário não autenticado');
+      }
 
       res.status(401).json({ 
         error: 'Autenticação necessária',
@@ -337,13 +416,15 @@ export function requireRole(
         return next();
       }
 
-      logger.info({ 
-        path: req.path, 
-        method: req.method,
-        requiredRole: minRole,
-        ip: req.ip,
-        statusCode: 401,
-      }, 'Acesso negado - usuário não autenticado');
+      if (options?.logUnauthorized ?? true) {
+        logger.info({
+          path: req.path,
+          method: req.method,
+          requiredRole: minRole,
+          ip: req.ip,
+          statusCode: 401,
+        }, 'Acesso negado - usuário não autenticado');
+      }
 
       res.status(401).json({ 
         error: 'Autenticação necessária',

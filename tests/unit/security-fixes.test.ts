@@ -432,6 +432,67 @@ describe('FIX 4 - HMAC Service-to-Service Auth', () => {
     });
   });
 
+  describe('Middleware requireInternalHmacAuth', () => {
+    const baseEnv = process.env.INTERNAL_API_SECRET;
+
+    beforeEach(() => {
+      process.env.INTERNAL_API_SECRET = 'test-secret';
+    });
+
+    afterEach(() => {
+      if (baseEnv) {
+        process.env.INTERNAL_API_SECRET = baseEnv;
+      } else {
+        delete process.env.INTERNAL_API_SECRET;
+      }
+    });
+
+    it('deve aceitar headers HMAC válidos e preencher req.user', async () => {
+      vi.resetModules();
+      const { generateInternalAuthHeaders, requireInternalHmacAuth } = await import('@alice/shared-utils');
+      const headers = generateInternalAuthHeaders({
+        userId: 'user-123',
+        tenantId: 'tenant-456',
+        role: 'admin',
+      });
+      const req = {
+        headers,
+        path: '/internal/test',
+        method: 'POST',
+        ip: '127.0.0.1',
+      } as unknown as import('express').Request;
+      const status = vi.fn().mockReturnThis();
+      const res = { status, json: vi.fn() } as unknown as import('express').Response;
+      const next = vi.fn();
+
+      requireInternalHmacAuth()(req, res, next);
+
+      expect(next).toHaveBeenCalled();
+      expect(req.user?.userId).toBe('user-123');
+      expect(req.user?.tenantId).toBe('tenant-456');
+    });
+
+    it('deve rejeitar quando headers não são enviados', async () => {
+      vi.resetModules();
+      const { requireInternalHmacAuth } = await import('@alice/shared-utils');
+      const req = {
+        headers: {},
+        path: '/internal/test',
+        method: 'POST',
+        ip: '127.0.0.1',
+      } as unknown as import('express').Request;
+      const status = vi.fn().mockReturnThis();
+      const json = vi.fn();
+      const res = { status, json } as unknown as import('express').Response;
+      const next = vi.fn();
+
+      requireInternalHmacAuth()(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(status).toHaveBeenCalledWith(401);
+    });
+  });
+
   describe('Validação de Timestamp (5 minutos)', () => {
     const MAX_TIMESTAMP_AGE_MS = 5 * 60 * 1000; // 5 minutos
 

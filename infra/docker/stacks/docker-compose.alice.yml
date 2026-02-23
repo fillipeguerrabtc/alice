@@ -24,7 +24,7 @@
 #   - gpu-llm - Qwen2.5 7B Instruct AWQ (LLM texto, contexto 6k)
 #   - gpu-embeddings - Qwen3-Embedding-0.6B INT8 (1024 dim)
 #
-#   GPU (SEMPRE ATIVO - modo simultâneo):
+#   GPU (SOB DEMANDA):
 #   - gpu-trainer - QLoRA (12GB)
 #
 # DEPENDÊNCIAS:
@@ -663,7 +663,7 @@ services:
   # GPU local é usada SOMENTE para:
   # - gpu-llm: LLM (texto)
   # - gpu-embeddings: embeddings (texto)
-  # - gpu-trainer: QLoRA (simultâneo)
+  # - gpu-trainer: QLoRA (sob demanda)
   #
   # Vision e geração de imagens são feitas via OpenAI API.
   #
@@ -690,10 +690,10 @@ services:
       - MODEL_NAME=${LLM_MODEL_NAME:-Qwen/Qwen2.5-7B-Instruct-AWQ}
       - QUANTIZATION=awq
       # Redução de KV cache para coexistência simultânea LLM + Embeddings + Trainer em 20GB.
-      - LLM_MAX_MODEL_LEN=${LLM_MAX_MODEL_LEN:-3072}
-      - LLM_GPU_MEMORY_UTILIZATION=${LLM_GPU_MEMORY_UTILIZATION:-0.30}
-      - LLM_MAX_NUM_BATCHED_TOKENS=${LLM_MAX_NUM_BATCHED_TOKENS:-768}
-      - LLM_MAX_NUM_SEQS=${LLM_MAX_NUM_SEQS:-4}
+      - LLM_MAX_MODEL_LEN=${LLM_MAX_MODEL_LEN:-4096}
+      - LLM_GPU_MEMORY_UTILIZATION=${LLM_GPU_MEMORY_UTILIZATION:-0.36}
+      - LLM_MAX_NUM_BATCHED_TOKENS=${LLM_MAX_NUM_BATCHED_TOKENS:-1024}
+      - LLM_MAX_NUM_SEQS=${LLM_MAX_NUM_SEQS:-8}
       - LLM_KV_CACHE_DTYPE=${LLM_KV_CACHE_DTYPE:-fp8}
       - LLM_KV_OFFLOADING_SIZE_GB=${LLM_KV_OFFLOADING_SIZE_GB:-0}
       - LLM_KV_OFFLOADING_BACKEND=${LLM_KV_OFFLOADING_BACKEND:-cpu}
@@ -782,12 +782,15 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # QLoRA Trainer - Fine-tuning (Simultâneo)
+  # QLoRA Trainer - Fine-tuning (Sob demanda)
   gpu-trainer:
     image: ${IMAGE_PREFIX}-qwen-trainer:${IMAGE_TAG:-latest}
     platform: linux/amd64
     container_name: gpu-trainer
-    restart: unless-stopped
+    # Subir manualmente quando necessário:
+    # docker compose --profile gpu-training up -d gpu-trainer
+    profiles: ["gpu-training"]
+    restart: "no"
     runtime: nvidia
     security_opt:
       - no-new-privileges:true

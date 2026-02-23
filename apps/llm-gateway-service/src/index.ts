@@ -307,6 +307,7 @@ app.post(
       high: GpuRequestPriority.HIGH,
       critical: GpuRequestPriority.CRITICAL,
     };
+    const inferenceStart = process.hrtime.bigint();
     const gpuResponse = await requestGpu({
       serviceType: GpuServiceType.LLM,
       endpoint: '/v1/chat/completions',
@@ -321,6 +322,10 @@ app.post(
       return;
     }
 
+    metrics.llm.inferenceDuration.observe(
+      { model, type: 'complete' },
+      Number(process.hrtime.bigint() - inferenceStart) / 1e9
+    );
     res.status(200).json(gpuResponse.data);
   })
 );
@@ -446,6 +451,20 @@ app.post(
       });
     }
 
+    const inferenceStart = process.hrtime.bigint();
+    const recordInference = () => {
+      metrics.llm.inferenceDuration.observe(
+        { model, type: 'stream' },
+        Number(process.hrtime.bigint() - inferenceStart) / 1e9
+      );
+    };
+    let streamErrorRecorded = false;
+    const recordStreamError = () => {
+      if (streamErrorRecorded) return;
+      streamErrorRecorded = true;
+      metrics.llm.requestsTotal.inc({ model, type: 'stream', status: 'error' });
+    };
+
     const gpuResponse = await requestGpuStream({
       serviceType: GpuServiceType.LLM,
       endpoint: '/v1/chat/completions',
@@ -463,6 +482,7 @@ app.post(
 
     if (!gpuResponse.ok || !gpuResponse.body) {
       const text = await gpuResponse.text().catch(() => '');
+      recordStreamError();
       res.status(502).json({ error: text || 'Erro no GPU Manager' });
       return;
     }
@@ -490,10 +510,12 @@ app.post(
           (res as unknown as { flush: () => void }).flush();
         }
       }
+      recordInference();
       res.end();
     };
     pump().catch((err) => {
       logger.error({ err }, 'Erro ao encaminhar stream');
+      recordStreamError();
       res.end();
     });
   })

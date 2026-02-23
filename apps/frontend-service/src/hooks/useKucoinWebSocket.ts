@@ -20,6 +20,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { frontendLogger } from '@/lib/logger';
+import { useAuth } from '@/hooks/use-auth';
 
 // ============================================================================
 // TIPOS
@@ -185,6 +186,8 @@ export function useKucoinWebSocket(
     onError,
   } = options;
 
+  const { isAuthenticated, isLoading: isAuthLoading } = useAuth();
+
   // State
   const [state, setState] = useState<WebSocketState>({
     connected: false,
@@ -245,6 +248,9 @@ export function useKucoinWebSocket(
 
   /** Busca token efêmero para autenticação WebSocket */
   const fetchWsToken = useCallback(async (): Promise<string | null> => {
+    if (isAuthLoading || !isAuthenticated) {
+      return null;
+    }
     // Usar cache se ainda válido (com margem de 10s)
     const cached = wsTokenRef.current;
     if (cached && cached.expiresAt > Date.now() + 10_000) {
@@ -264,7 +270,7 @@ export function useKucoinWebSocket(
       frontendLogger.warn('Falha ao buscar ws-token', { error: error instanceof Error ? error.message : String(error) });
       return null;
     }
-  }, []);
+  }, [isAuthenticated, isAuthLoading]);
 
   // Get WebSocket URL (com token quando disponível)
   const getWsUrl = useCallback((token: string | null) => {
@@ -438,6 +444,19 @@ export function useKucoinWebSocket(
 
   // Connect to WebSocket
   const connect = useCallback(async () => {
+    if (isAuthLoading) {
+      return;
+    }
+    if (!isAuthenticated) {
+      clearReconnect();
+      setState({
+        connected: false,
+        connecting: false,
+        error: 'Faça login para conexões em tempo real',
+        lastPing: null,
+      });
+      return;
+    }
     // CORREÇÃO 17/12/2025: Verificar CONNECTING além de OPEN para evitar conexões duplicadas
     if (wsRef.current?.readyState === WebSocket.OPEN || 
         wsRef.current?.readyState === WebSocket.CONNECTING) {
@@ -555,7 +574,7 @@ export function useKucoinWebSocket(
         // Bug: onclose dispara ASSINCRONAMENTE após ws.close(), então clearReconnect()
         // já rodou quando chegamos aqui. Se não verificarmos a flag, criamos um NOVO
         // timeout que causa reconexão indesejada e memory leaks em componentes desmontados
-        if (autoConnect && !isIntentionalDisconnectRef.current) {
+        if (autoConnect && isAuthenticated && !isIntentionalDisconnectRef.current) {
           if (reconnectAttemptRef.current >= MAX_RECONNECT_ATTEMPTS) {
             const degradedMessage = 'WebSocket em estado degradado após múltiplas falhas de reconexão';
             setState(prev => ({
@@ -591,7 +610,7 @@ export function useKucoinWebSocket(
         lastPing: null,
       });
     }
-  }, [getWsUrl, fetchWsToken, handleMessage, clearReconnect, clearPing, channels, symbol, interval, marketType, marginMode, orderBookDepth, autoConnect]);
+  }, [isAuthenticated, isAuthLoading, getWsUrl, fetchWsToken, handleMessage, clearReconnect, clearPing, channels, symbol, interval, marketType, marginMode, orderBookDepth, autoConnect]);
 
   // Disconnect from WebSocket
   const disconnect = useCallback(() => {
@@ -694,14 +713,18 @@ export function useKucoinWebSocket(
 
   // Auto-connect on mount
   useEffect(() => {
-    if (autoConnect) {
+    if (autoConnect && isAuthenticated && !isAuthLoading) {
       void connectRef.current();
+    }
+
+    if (autoConnect && !isAuthenticated && !isAuthLoading) {
+      disconnectRef.current();
     }
 
     return () => {
       disconnectRef.current();
     };
-  }, [autoConnect]);
+  }, [autoConnect, isAuthenticated, isAuthLoading]);
 
   const previousSubscriptionKeyRef = useRef<string | null>(null);
 

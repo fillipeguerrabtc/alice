@@ -140,6 +140,8 @@ export interface AuthorizationOptions {
   checkTenant?: boolean;
   /** Se deve permitir acesso sem autenticação (padrão: false) */
   allowAnonymous?: boolean;
+  /** Se deve registrar logs quando não autenticado (padrão: true) */
+  logUnauthorized?: boolean;
   /** Roles que podem acessar independente da permissão */
   bypassRoles?: Role[];
   /** Função customizada de verificação */

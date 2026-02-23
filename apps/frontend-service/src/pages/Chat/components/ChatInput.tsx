@@ -33,6 +33,7 @@ interface ChatInputProps {
   isMobile: boolean;
   acceptedTypes: string;
   focusNonce: number;
+  isDisabled?: boolean;
 }
 
 export function ChatInput({
@@ -52,6 +53,7 @@ export function ChatInput({
   isMobile,
   acceptedTypes,
   focusNonce,
+  isDisabled = false,
 }: ChatInputProps) {
   const { t } = useTranslation();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -62,11 +64,12 @@ export function ChatInput({
   const [userBlurred, setUserBlurred] = useState(false);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (isDisabled) return;
     if (!isMobile && e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       onSend();
     }
-  }, [isMobile, onSend]);
+  }, [isDisabled, isMobile, onSend]);
 
   const adjustTextareaHeight = useCallback(() => {
     if (textareaRef.current) {
@@ -76,11 +79,13 @@ export function ChatInput({
   }, [isMobile]);
 
   const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    if (isDisabled) return;
     onChange(e.target.value);
     adjustTextareaHeight();
-  }, [onChange, adjustTextareaHeight]);
+  }, [isDisabled, onChange, adjustTextareaHeight]);
 
   const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    if (isDisabled) return;
     const items = e.clipboardData?.items ? Array.from(e.clipboardData.items) : [];
     if (items.length === 0) return;
     const imageFiles = items
@@ -98,22 +103,22 @@ export function ChatInput({
   }, [adjustTextareaHeight, value]);
 
   useEffect(() => {
-    if (!isRecording) {
+    if (!isRecording && !isDisabled) {
       textareaRef.current?.focus();
     }
-  }, [isRecording]);
+  }, [isRecording, isDisabled]);
 
   useEffect(() => {
-    if (!userBlurred && !isRecording) {
+    if (!userBlurred && !isRecording && !isDisabled) {
       textareaRef.current?.focus();
     }
-  }, [isRecording, userBlurred, value]);
+  }, [isRecording, userBlurred, value, isDisabled]);
 
   useEffect(() => {
-    if (!userBlurred && !isRecording) {
+    if (!userBlurred && !isRecording && !isDisabled) {
       textareaRef.current?.focus();
     }
-  }, [focusNonce, isRecording, userBlurred]);
+  }, [focusNonce, isRecording, userBlurred, isDisabled]);
 
   const handleFileChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files ? Array.from(event.target.files) : [];
@@ -181,7 +186,7 @@ export function ChatInput({
                     variant="ghost"
                     size="icon"
                     className="h-9 w-9 md:h-8 md:w-8 shrink-0 touch-manipulation"
-                    disabled={isRecording}
+                    disabled={isRecording || isDisabled}
                     data-testid="button-attach-menu"
                   >
                     <Plus className="h-5 w-5 md:h-4 md:w-4" />
@@ -194,8 +199,10 @@ export function ChatInput({
               <DropdownMenuItem
                 onSelect={(event) => {
                   event.preventDefault();
+                  if (isDisabled) return;
                   cameraInputRef.current?.click();
                 }}
+                disabled={isDisabled}
               >
                 <Camera className="mr-2 h-4 w-4" />
                 {t('chat.openCamera')}
@@ -203,8 +210,10 @@ export function ChatInput({
               <DropdownMenuItem
                 onSelect={(event) => {
                   event.preventDefault();
+                  if (isDisabled) return;
                   galleryInputRef.current?.click();
                 }}
+                disabled={isDisabled}
               >
                 <ImageIcon className="mr-2 h-4 w-4" />
                 {t('chat.attachGallery')}
@@ -212,8 +221,10 @@ export function ChatInput({
               <DropdownMenuItem
                 onSelect={(event) => {
                   event.preventDefault();
+                  if (isDisabled) return;
                   fileInputRef.current?.click();
                 }}
+                disabled={isDisabled}
               >
                 <FileText className="mr-2 h-4 w-4" />
                 {t('chat.attachFile')}
@@ -239,7 +250,7 @@ export function ChatInput({
             }}
             placeholder={pendingMedia.length > 0 ? t('chat.placeholderWithMedia') : t('chat.placeholder')}
             className="flex-1 min-h-[40px] md:min-h-[36px] max-h-[120px] md:max-h-[200px] resize-none bg-transparent text-base md:text-sm leading-relaxed focus-visible:outline-none"
-            disabled={isRecording}
+            disabled={isRecording || isDisabled}
             data-testid="input-chat-message"
             autoComplete="off"
             autoCorrect="off"
@@ -271,7 +282,7 @@ export function ChatInput({
                   variant="ghost"
                   size="icon"
                   className="h-9 w-9 md:h-8 md:w-8 shrink-0 touch-manipulation"
-                  disabled={isRecordingDisabled}
+                  disabled={isRecordingDisabled || isDisabled}
                   onClick={onStartRecording}
                   data-testid="button-record-audio"
                 >
@@ -287,12 +298,12 @@ export function ChatInput({
                   <Button
                     type="button"
                     variant="destructive"
-                    size="icon"
-                    className="h-9 w-9 md:h-8 md:w-8 shrink-0 touch-manipulation"
-                    disabled={isStreaming}
-                    onClick={onStopRecording}
-                    data-testid="button-stop-recording"
-                  >
+                  size="icon"
+                  className="h-9 w-9 md:h-8 md:w-8 shrink-0 touch-manipulation"
+                  disabled={isStreaming || isDisabled}
+                  onClick={onStopRecording}
+                  data-testid="button-stop-recording"
+                >
                     <Square className="h-5 w-5 md:h-4 md:w-4" />
                   </Button>
                 </TooltipTrigger>
@@ -303,12 +314,12 @@ export function ChatInput({
                   <Button
                     type="button"
                     variant="default"
-                    size="icon"
-                    className="h-9 w-9 md:h-8 md:w-8 shrink-0 touch-manipulation"
-                    disabled={isStreaming}
-                    onClick={onSendRecording}
-                    data-testid="button-send-recording"
-                  >
+                  size="icon"
+                  className="h-9 w-9 md:h-8 md:w-8 shrink-0 touch-manipulation"
+                  disabled={isStreaming || isDisabled}
+                  onClick={onSendRecording}
+                  data-testid="button-send-recording"
+                >
                     <Send className="h-5 w-5 md:h-4 md:w-4" />
                   </Button>
                 </TooltipTrigger>
@@ -320,7 +331,7 @@ export function ChatInput({
             type="button"
             size="icon"
             className="h-9 w-9 md:h-8 md:w-8 shrink-0 rounded-full md:rounded-md touch-manipulation"
-            disabled={(!value.trim() && pendingMedia.length === 0) || isRecording}
+            disabled={isDisabled || (!value.trim() && pendingMedia.length === 0) || isRecording}
             onClick={onSend}
             data-testid="button-send-message"
           >
