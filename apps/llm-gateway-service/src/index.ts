@@ -452,9 +452,7 @@ app.post(
     }
 
     const inferenceStart = process.hrtime.bigint();
-    let streamCompleted = false;
     const recordInference = () => {
-      if (!streamCompleted) return;
       metrics.llm.inferenceDuration.observe(
         { model, type: 'stream' },
         Number(process.hrtime.bigint() - inferenceStart) / 1e9
@@ -506,7 +504,6 @@ app.post(
             (res as unknown as { flush: () => void }).flush();
           }
         }
-        streamCompleted = true;
         res.end();
       } finally {
         recordInference();
