@@ -72,7 +72,7 @@ import {
   cosineSimilarity,
 } from '@alice/shared-utils';
 import { trainingServicePaths, trainingServiceSchemas } from './openapi-specs.js';
-import { eq, and, or, desc, sql, isNull, not, inArray } from '@alice/database';
+import { eq, and, or, desc, sql, isNull, not, inArray, lte } from '@alice/database';
 import { z } from 'zod';
 import { getAllSystemConfig, setSystemConfig, getSystemConfig } from '@alice/database/system-config';
 
@@ -927,6 +927,159 @@ async function processPortfolioAutoRun(payload: z.infer<typeof tradingAutoPortfo
   logger.info({ runId, correlationId, steps: steps.length }, 'Portfolio auto run concluído com sucesso');
 }
 
+type AdaptiveThresholds = {
+  minDsr: number;
+  maxPbo: number;
+  liquidityBucket: 'HIGH_LIQUIDITY' | 'LOW_LIQUIDITY';
+  volatilityBucket: 'LOW_VOL' | 'HIGH_VOL';
+  regimeBucket: 'TREND' | 'RANGE';
+};
+
+function toFiniteNumber(value: unknown): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function inferDurationMinutesFromTimeframe(timeframe: string): number {
+  const normalized = timeframe.trim().toLowerCase();
+  if (normalized.endsWith('m')) return Math.max(1, Number.parseInt(normalized, 10));
+  if (normalized.endsWith('h')) return Math.max(1, Number.parseInt(normalized, 10)) * 60;
+  if (normalized.endsWith('d')) return Math.max(1, Number.parseInt(normalized, 10)) * 60 * 24;
+  return 60;
+}
+
+function resolveAdaptiveThresholds(candidate: typeof schema.tradingUniverseCandidates.$inferSelect): AdaptiveThresholds {
+  const riskFlags = Array.isArray(candidate.riskFlags)
+    ? candidate.riskFlags.map((flag) => String(flag))
+    : [];
+  const entryModel = (candidate.entryModel ?? {}) as Record<string, unknown>;
+  const liquidityProxy = toFiniteNumber(entryModel.liquidityProxy);
+  const lowLiquidityByDepth = riskFlags.includes('depth_drop');
+  const lowLiquidityBySpread = riskFlags.includes('spread_widening');
+  const isLowLiquidity = lowLiquidityByDepth || lowLiquidityBySpread || (liquidityProxy !== null && liquidityProxy < 0.45);
+
+  const timeframeMinutes = inferDurationMinutesFromTimeframe(String(candidate.timeframe));
+  const isHighVol = timeframeMinutes <= 5 || riskFlags.includes('high_volatility') || riskFlags.includes('volatility_spike');
+  const isTrend = riskFlags.includes('trend_following') || riskFlags.includes('momentum_alignment');
+
+  if (isLowLiquidity || isHighVol) {
+    return {
+      minDsr: 1.8,
+      maxPbo: 0.45,
+      liquidityBucket: 'LOW_LIQUIDITY',
+      volatilityBucket: 'HIGH_VOL',
+      regimeBucket: isTrend ? 'TREND' : 'RANGE',
+    };
+  }
+
+  return {
+    minDsr: 1.5,
+    maxPbo: 0.55,
+    liquidityBucket: 'HIGH_LIQUIDITY',
+    volatilityBucket: 'LOW_VOL',
+    regimeBucket: isTrend ? 'TREND' : 'RANGE',
+  };
+}
+
+async function resolveAutoDecisionEvidenceIds(params: {
+  tenantId: string;
+  asof: Date;
+  symbol?: string;
+  marketType?: 'spot' | 'futures' | 'margin';
+}): Promise<string[]> {
+  const signalFilters = [eq(schema.tradingSignals.tenantId, params.tenantId), lte(schema.tradingSignals.criadoEm, params.asof)];
+  if (params.symbol) {
+    signalFilters.push(eq(schema.tradingSignals.symbol, params.symbol));
+  }
+  if (params.marketType) {
+    signalFilters.push(eq(schema.tradingSignals.marketType, params.marketType));
+  }
+  const [signals, postmortems] = await Promise.all([
+    db.query.tradingSignals.findMany({
+      where: and(...signalFilters),
+      columns: { id: true },
+      orderBy: [desc(schema.tradingSignals.criadoEm)],
+      limit: 4,
+    }),
+    db.query.tradingPostmortems.findMany({
+      where: and(
+        eq(schema.tradingPostmortems.tenantId, params.tenantId),
+        lte(schema.tradingPostmortems.createdAt, params.asof),
+      ),
+      columns: { id: true },
+      orderBy: [desc(schema.tradingPostmortems.createdAt)],
+      limit: 3,
+    }),
+  ]);
+
+  return [
+    ...signals.map((row) => `signal:${row.id}`),
+    ...postmortems.map((row) => `postmortem:${row.id}`),
+  ];
+}
+
+async function autoValidateCandidateIfNeeded(params: {
+  run: typeof schema.tradingAutoRuns.$inferSelect;
+  payload: z.infer<typeof tradingAutoSignalPayloadSchema>;
+  candidate: typeof schema.tradingUniverseCandidates.$inferSelect;
+}): Promise<{
+  candidate: typeof schema.tradingUniverseCandidates.$inferSelect;
+  validationTriggered: boolean;
+  dsr: number | null;
+  pbo: number | null;
+}> {
+  const candidateDsr = toFiniteNumber(params.candidate.dsrScore);
+  const candidatePbo = toFiniteNumber(params.candidate.pboScore);
+  if (candidateDsr !== null && candidatePbo !== null) {
+    return { candidate: params.candidate, validationTriggered: false, dsr: candidateDsr, pbo: candidatePbo };
+  }
+
+  const asofTimestamp = params.run.createdAt?.toISOString() ?? new Date().toISOString();
+  const lookback = 180;
+  const operationIntent = params.candidate.operationIntent ?? 'intraday';
+  const backtest = await runBacktestWorker({
+    tenantId: params.run.tenantId,
+    namespaceId: params.payload.namespaceId ?? params.run.namespaceId ?? undefined,
+    instrumentId: params.candidate.instrumentId,
+    marketType: params.candidate.marketType,
+    strategyKey: params.candidate.strategyKey,
+    strategyVersion: params.candidate.strategyVersion,
+    operationIntent,
+    timeframe: params.candidate.timeframe,
+    lookback,
+    asofTimestamp,
+  });
+  await db.update(schema.tradingUniverseCandidates)
+    .set({
+      dsrScore: String(backtest.dsr),
+      pboScore: String(backtest.pbo),
+    })
+    .where(eq(schema.tradingUniverseCandidates.id, params.candidate.id));
+
+  await runCalibrationWorker({
+    tenantId: params.run.tenantId,
+    namespaceId: params.payload.namespaceId ?? params.run.namespaceId ?? undefined,
+    instrumentId: params.candidate.instrumentId,
+    marketType: params.candidate.marketType,
+    strategyKey: params.candidate.strategyKey,
+    strategyVersion: params.candidate.strategyVersion,
+    operationIntent,
+    timeframe: params.candidate.timeframe,
+    lookback,
+    asofTimestamp,
+  });
+
+  const refreshed = await db.query.tradingUniverseCandidates.findFirst({
+    where: eq(schema.tradingUniverseCandidates.id, params.candidate.id),
+  });
+  return {
+    candidate: refreshed ?? params.candidate,
+    validationTriggered: true,
+    dsr: backtest.dsr,
+    pbo: backtest.pbo,
+  };
+}
+
 /** Processa geração automática de sinais */
 async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPayloadSchema>): Promise<void> {
   const { runId, correlationId } = payload;
@@ -939,7 +1092,6 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
   try {
     await updateAutoRunStep(runId, 'signal-decision', 'running');
 
-    // Carregar candidates recentes do DB
     const run = await db.query.tradingAutoRuns.findFirst({
       where: eq(schema.tradingAutoRuns.id, runId),
     });
@@ -956,51 +1108,192 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
       limit: 20,
     });
 
-    // Aplicar guardrails (DSR/PBO/custos/risk budgets)
+    const validationTarget = candidates.find((candidate) => (
+      toFiniteNumber(candidate.dsrScore) === null || toFiniteNumber(candidate.pboScore) === null
+    ));
+    let validationTriggered = false;
+    let validatedCandidateId: string | null = null;
+    let validatedDsr: number | null = null;
+    let validatedPbo: number | null = null;
+    if (validationTarget) {
+      const validationResult = await autoValidateCandidateIfNeeded({ run, payload, candidate: validationTarget });
+      validationTriggered = validationResult.validationTriggered;
+      validatedCandidateId = validationResult.candidate.id;
+      validatedDsr = validationResult.dsr;
+      validatedPbo = validationResult.pbo;
+      if (validationResult.validationTriggered) {
+        const index = candidates.findIndex((candidate) => candidate.id === validationResult.candidate.id);
+        if (index >= 0) {
+          candidates[index] = validationResult.candidate;
+        }
+      }
+    }
+
     const guardrailResults: Record<string, unknown> = {
       totalCandidates: candidates.length,
       filteredByDSR: 0,
       filteredByPBO: 0,
+      filteredByLiquidity: 0,
+      unvalidated: 0,
       approved: 0,
+      thresholdsApplied: [] as Array<{
+        candidateId: string;
+        minDsr: number;
+        maxPbo: number;
+        liquidityBucket: string;
+        volatilityBucket: string;
+        regimeBucket: string;
+      }>,
     };
 
-    const approvedCandidates = candidates.filter((c) => {
-      const dsr = Number(c.dsrScore ?? 0);
-      const pbo = Number(c.pboScore ?? 1);
-      if (dsr < 1.5) { guardrailResults.filteredByDSR = (guardrailResults.filteredByDSR as number) + 1; return false; }
-      if (pbo > 0.5) { guardrailResults.filteredByPBO = (guardrailResults.filteredByPBO as number) + 1; return false; }
+    const approvedCandidates = candidates.filter((candidate) => {
+      const thresholds = resolveAdaptiveThresholds(candidate);
+      (guardrailResults.thresholdsApplied as Array<Record<string, unknown>>).push({
+        candidateId: candidate.id,
+        minDsr: thresholds.minDsr,
+        maxPbo: thresholds.maxPbo,
+        liquidityBucket: thresholds.liquidityBucket,
+        volatilityBucket: thresholds.volatilityBucket,
+        regimeBucket: thresholds.regimeBucket,
+      });
+
+      const dsr = toFiniteNumber(candidate.dsrScore);
+      const pbo = toFiniteNumber(candidate.pboScore);
+      if (dsr === null || pbo === null) {
+        guardrailResults.unvalidated = (guardrailResults.unvalidated as number) + 1;
+        return false;
+      }
+      if (dsr < thresholds.minDsr) {
+        guardrailResults.filteredByDSR = (guardrailResults.filteredByDSR as number) + 1;
+        return false;
+      }
+      if (pbo > thresholds.maxPbo) {
+        guardrailResults.filteredByPBO = (guardrailResults.filteredByPBO as number) + 1;
+        return false;
+      }
+      const riskFlags = Array.isArray(candidate.riskFlags)
+        ? candidate.riskFlags.map((flag) => String(flag))
+        : [];
+      if (riskFlags.includes('spread_widening') || riskFlags.includes('depth_drop')) {
+        guardrailResults.filteredByLiquidity = (guardrailResults.filteredByLiquidity as number) + 1;
+        return false;
+      }
       return true;
     });
     guardrailResults.approved = approvedCandidates.length;
 
-    // Criar decisão final
     const candidateIds = approvedCandidates.map((c) => c.id);
     const bestCandidate = approvedCandidates[0];
+    const candidateForReason = bestCandidate ?? candidates[0];
+    const thresholdsUsed = candidateForReason ? resolveAdaptiveThresholds(candidateForReason) : null;
+    const timeframe = String(candidateForReason?.timeframe ?? '5m');
+    const durationMinutes = inferDurationMinutesFromTimeframe(timeframe);
+    const entryModel = (candidateForReason?.entryModel ?? {}) as Record<string, unknown>;
+    const entry = toFiniteNumber(entryModel.entry);
+    const stop = toFiniteNumber(entryModel.stop);
+    const takeProfit = toFiniteNumber(entryModel.takeProfit);
+    const riskReward = entry !== null && stop !== null && takeProfit !== null && Math.abs(entry - stop) > 0
+      ? Math.abs((takeProfit - entry) / (entry - stop))
+      : null;
+
+    const instrumentSymbol = candidateForReason
+      ? await db.query.tradingInstruments.findFirst({
+        where: eq(schema.tradingInstruments.id, candidateForReason.instrumentId),
+        columns: { symbol: true },
+      })
+      : null;
+    const symbol = payload.symbol ?? instrumentSymbol?.symbol ?? null;
+    const ragEvidenceIds = await resolveAutoDecisionEvidenceIds({
+      tenantId: run.tenantId,
+      asof: run.createdAt ?? new Date(),
+      symbol: symbol ?? undefined,
+      marketType: payload.marketType ?? candidateForReason?.marketType,
+    });
+
+    const noTradeReasonCode = (() => {
+      if (candidates.length === 0) return 'NO_CANDIDATES';
+      if ((guardrailResults.unvalidated as number) > 0 && approvedCandidates.length === 0) return 'UNVALIDATED';
+      if ((guardrailResults.filteredByLiquidity as number) > 0) return 'LIQUIDITY_CONSTRAINT';
+      if ((guardrailResults.filteredByDSR as number) > 0 || (guardrailResults.filteredByPBO as number) > 0) return 'GUARDRAIL_BLOCKED';
+      return 'NO_EDGE';
+    })();
+    const noTradeReasonHuman = noTradeReasonCode === 'UNVALIDATED'
+      ? 'Candidate ainda sem validação estatística mínima (DSR/PBO).'
+      : noTradeReasonCode === 'LIQUIDITY_CONSTRAINT'
+        ? 'Sem liquidez mínima: spread alargado ou profundidade insuficiente.'
+        : noTradeReasonCode === 'GUARDRAIL_BLOCKED'
+          ? 'Guardrails bloquearam o trade por DSR/PBO fora da faixa.'
+          : noTradeReasonCode === 'NO_CANDIDATES'
+            ? 'Nenhum candidate disponível para o escopo atual.'
+            : 'Edge líquido insuficiente para execução segura.';
+    const nextAction = noTradeReasonCode === 'UNVALIDATED'
+      ? 'Rodar pipeline de backtest+calibration e aguardar próxima janela de mercado.'
+      : noTradeReasonCode === 'LIQUIDITY_CONSTRAINT'
+        ? 'Aguardar melhora de liquidez (spread/depth) e tentar novamente.'
+        : noTradeReasonCode === 'NO_CANDIDATES'
+          ? 'Executar universe scan para ampliar o conjunto de candidates.'
+          : 'Revisar thresholds e aguardar novas condições de regime.';
 
     await db.insert(schema.tradingAutoDecisions).values({
       runId,
       tenantId: run.tenantId,
       decisionType: 'signal_auto',
       entryPayload: {
-        symbol: payload.symbol ?? bestCandidate?.instrumentId ?? 'N/A',
+        operationIntent: 'auto',
+        symbol,
+        marketType: payload.marketType ?? candidateForReason?.marketType ?? null,
         side: bestCandidate?.side ?? 'hold',
-        confidence: bestCandidate?.confidenceCalibrated ?? bestCandidate?.confidenceRaw ?? null,
-        edge: bestCandidate?.expectedEdge ?? null,
+        timeframe,
+        horizon: `${durationMinutes}m`,
+        durationMinutes,
+        entry,
+        stop,
+        takeProfit,
+        invalidationConditions: Array.isArray(candidateForReason?.riskFlags)
+          ? candidateForReason.riskFlags
+          : [],
+        riskReward,
+        confidenceRaw: toFiniteNumber(candidateForReason?.confidenceRaw),
+        confidenceCalibrated: toFiniteNumber(candidateForReason?.confidenceCalibrated ?? candidateForReason?.confidenceRaw),
+        edgeNet: toFiniteNumber(candidateForReason?.expectedEdge),
+        costs: {
+          estimationMode: 'candidate_expected_edge_net',
+        },
+        noTradeReasonCode: bestCandidate ? null : noTradeReasonCode,
+        noTradeReasonHuman: bestCandidate ? null : noTradeReasonHuman,
+        nextAction: bestCandidate ? null : nextAction,
         autoMix: payload.autoMix ?? true,
         allowedModes: payload.allowedModes ?? [],
+        thresholdsUsed: thresholdsUsed
+          ? {
+            minDsr: thresholdsUsed.minDsr,
+            maxPbo: thresholdsUsed.maxPbo,
+            liquidityBucket: thresholdsUsed.liquidityBucket,
+            volatilityBucket: thresholdsUsed.volatilityBucket,
+            regimeBucket: thresholdsUsed.regimeBucket,
+          }
+          : null,
       },
       guardrails: guardrailResults,
       candidateIds,
       modelsUsed: ['trading-v2-guardrails'],
+      ragEvidenceIds,
       idempotencyHash: crypto.createHash('sha256').update(`signal-auto:${runId}:${correlationId}`).digest('hex'),
       approved: approvedCandidates.length > 0,
       reasoning: approvedCandidates.length > 0
-        ? `${approvedCandidates.length} candidate(s) aprovado(s) após guardrails (DSR >= 1.5, PBO <= 0.5). Melhor: ${bestCandidate?.strategyKey ?? 'N/A'}`
-        : `Nenhum candidate aprovado após guardrails. Total avaliados: ${candidates.length}`,
+        ? `${approvedCandidates.length} candidate(s) aprovado(s) após guardrails adaptativos. Melhor: ${bestCandidate?.strategyKey ?? 'N/A'} (${bestCandidate?.operationIntent ?? 'intraday'}).`
+        : `${noTradeReasonHuman} Total avaliados: ${candidates.length}.`,
     });
 
     await updateAutoRunStep(runId, 'signal-decision', 'succeeded', {
-      metrics: { candidatesEvaluated: candidates.length, approved: approvedCandidates.length },
+      metrics: {
+        candidatesEvaluated: candidates.length,
+        approved: approvedCandidates.length,
+        validationTriggered,
+        validatedCandidateId,
+        validatedDsr,
+        validatedPbo,
+      },
     });
 
     await db.update(schema.tradingAutoRuns)

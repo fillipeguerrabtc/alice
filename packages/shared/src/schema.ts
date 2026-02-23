@@ -3025,6 +3025,31 @@ export const tradingTradeTicksAgg = pgTable('trading_trade_ticks_agg', {
   ),
 }));
 
+export const tradingMicrostructureAgg = pgTable('trading_microstructure_agg', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  instrumentId: uuid('instrument_id').notNull().references(() => tradingInstruments.id),
+  marketType: tradingMarketTypeEnum('market_type').notNull(),
+  intervalSeconds: integer('interval_seconds').notNull(),
+  asofTs: timestamp('asof_ts').notNull(),
+  metrics: jsonb('metrics').$type<Record<string, unknown>>().notNull().default({}),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, (table) => ({
+  idxTradingMicrostructureAggLookup: index('idx_trading_microstructure_agg_lookup').on(
+    table.tenantId,
+    table.instrumentId,
+    table.marketType,
+    table.asofTs,
+  ),
+  uniqTradingMicrostructureAggWindow: uniqueIndex('uniq_trading_microstructure_agg_window').on(
+    table.tenantId,
+    table.instrumentId,
+    table.marketType,
+    table.intervalSeconds,
+    table.asofTs,
+  ),
+}));
+
 export const tradingStrategyRegistry = pgTable('trading_strategy_registry', {
   strategyKey: varchar('strategy_key', { length: 64 }).primaryKey(),
   version: integer('version').notNull(),
