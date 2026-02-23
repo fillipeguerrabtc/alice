@@ -15096,27 +15096,41 @@ app.get('/api/integrations/trading/signal-scheduler', requirePermission('integra
       .where(whereClause)
       .orderBy(desc(schema.tradingSignalSchedulers.criadoEm));
 
-    const data = schedulers.length > 0
-      ? schedulers
-      : [{
-          tenantId: authContext.tenantId,
-          marketType,
-          marginMode: 'cross',
-          intervalMinutes: 15,
-          interval: '5m',
-          symbols: [],
-          maxSignalsPerRun: 1,
-          techniques: DEFAULT_TRADING_TECHNIQUES,
-          ensembleConfig: DEFAULT_TRADING_ENSEMBLE_CONFIG,
-          arbitrageConfig: null,
-          enabled: false,
-          lastRunAt: null,
-          nextRunAt: null,
-          lastSuccessAt: null,
-          lastSignalId: null,
-          lastDurationMs: null,
-          lastError: null,
-        }];
+    let data: typeof schedulers;
+    if (schedulers.length > 0) {
+      const now = new Date();
+      const updated = await Promise.all(schedulers.map(async (scheduler) => {
+        if (scheduler.enabled && !scheduler.nextRunAt) {
+          const nextRunAt = new Date(now.getTime() + (scheduler.intervalMinutes ?? 15) * 60 * 1000);
+          await db.update(schema.tradingSignalSchedulers)
+            .set({ nextRunAt, atualizadoEm: now })
+            .where(eq(schema.tradingSignalSchedulers.id, scheduler.id));
+          return { ...scheduler, nextRunAt };
+        }
+        return scheduler;
+      }));
+      data = updated;
+    } else {
+      data = [{
+        tenantId: authContext.tenantId,
+        marketType,
+        marginMode: 'cross',
+        intervalMinutes: 15,
+        interval: '5m',
+        symbols: [],
+        maxSignalsPerRun: 1,
+        techniques: DEFAULT_TRADING_TECHNIQUES,
+        ensembleConfig: DEFAULT_TRADING_ENSEMBLE_CONFIG,
+        arbitrageConfig: null,
+        enabled: false,
+        lastRunAt: null,
+        nextRunAt: null,
+        lastSuccessAt: null,
+        lastSignalId: null,
+        lastDurationMs: null,
+        lastError: null,
+      }];
+    }
 
     res.json({ success: true, data });
   } catch (error) {
