@@ -756,6 +756,33 @@ function OrderStatusBadge({ status }: { status: string }) {
   );
 }
 
+function formatDecisionValue(value: unknown, depth = 0): string {
+  if (value == null) return '—';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) {
+    const items = value.slice(0, 4).map((entry) => formatDecisionValue(entry, depth + 1));
+    return `${items.join(', ')}${value.length > 4 ? '…' : ''}`;
+  }
+  if (typeof value === 'object') {
+    if (depth > 1) {
+      const keys = Object.keys(value as Record<string, unknown>);
+      return keys.length > 0 ? keys.slice(0, 4).join(', ') : '—';
+    }
+    const entries = Object.entries(value as Record<string, unknown>).slice(0, 4);
+    if (entries.length === 0) return '—';
+    return entries.map(([key, entry]) => `${key}: ${formatDecisionValue(entry, depth + 1)}`).join(', ');
+  }
+  return String(value);
+}
+
+function formatDecisionSummary(payload?: Record<string, unknown> | null): string | null {
+  if (!payload) return null;
+  const entries = Object.entries(payload).filter(([, value]) => value !== undefined).slice(0, 4);
+  if (entries.length === 0) return null;
+  return entries.map(([key, value]) => `${key}: ${formatDecisionValue(value)}`).join(' • ');
+}
+
 function CircuitBreakerStatus({ state, failures }: { state: string; failures: number }) {
   const getColor = () => {
     switch (state.toLowerCase()) {
@@ -4001,14 +4028,29 @@ function TradingContent() {
                           {step.error && <span className="text-red-500 truncate max-w-[200px]">{step.error}</span>}
                         </div>
                       ))}
-                      {Array.isArray(activeAutoRunDetail.decisions) && activeAutoRunDetail.decisions.length > 0 && (
-                        <div className="mt-2 border-t pt-2">
-                          <div className="font-medium">Decisão: {activeAutoRunDetail.decisions[0].approved ? 'Aprovada ✅' : 'Reprovada ❌'}</div>
-                          {activeAutoRunDetail.decisions[0].reasoning && (
-                            <div className="text-muted-foreground">{activeAutoRunDetail.decisions[0].reasoning}</div>
-                          )}
-                        </div>
-                      )}
+                      {Array.isArray(activeAutoRunDetail.decisions) && activeAutoRunDetail.decisions.length > 0 && (() => {
+                        const decision = activeAutoRunDetail.decisions[0];
+                        const entrySummary = formatDecisionSummary(decision.entryPayload);
+                        const guardrailsSummary = formatDecisionSummary(decision.guardrails);
+                        const costsSummary = formatDecisionSummary(decision.estimatedCosts);
+                        return (
+                          <div className="mt-2 border-t pt-2 space-y-1">
+                            <div className="font-medium">Decisão: {decision.approved ? 'Aprovada ✅' : 'No-trade ❌'}</div>
+                            {decision.reasoning && (
+                              <div className="text-muted-foreground">Motivo: {decision.reasoning}</div>
+                            )}
+                            {entrySummary && (
+                              <div><span className="font-medium">Entrada:</span> {entrySummary}</div>
+                            )}
+                            {guardrailsSummary && (
+                              <div><span className="font-medium">Guardrails:</span> {guardrailsSummary}</div>
+                            )}
+                            {costsSummary && (
+                              <div><span className="font-medium">Custos:</span> {costsSummary}</div>
+                            )}
+                          </div>
+                        );
+                      })()}
                       {activeAutoRunDetail.run.error && (
                         <div className="text-red-500 mt-1">{activeAutoRunDetail.run.error}</div>
                       )}
@@ -4107,20 +4149,29 @@ function TradingContent() {
                           <span>{step.stepName}: {step.status}</span>
                         </div>
                       ))}
-                      {Array.isArray(activeAutoRunDetail.decisions) && activeAutoRunDetail.decisions.length > 0 && (
-                        <div className="mt-2 border-t pt-2">
-                          <div className="font-medium">Decisão: {activeAutoRunDetail.decisions[0].approved ? 'Aprovada ✅' : 'Nenhum candidate aprovado ❌'}</div>
-                          {activeAutoRunDetail.decisions[0].reasoning && (
-                            <div className="text-muted-foreground">{activeAutoRunDetail.decisions[0].reasoning}</div>
-                          )}
-                          {activeAutoRunDetail.decisions[0].entryPayload && (
-                            <div className="mt-1">
-                              <span className="font-medium">Símbolo: </span>{String(activeAutoRunDetail.decisions[0].entryPayload.symbol ?? 'N/A')}
-                              <span className="ml-2 font-medium">Side: </span>{String(activeAutoRunDetail.decisions[0].entryPayload.side ?? 'N/A')}
-                            </div>
-                          )}
-                        </div>
-                      )}
+                      {Array.isArray(activeAutoRunDetail.decisions) && activeAutoRunDetail.decisions.length > 0 && (() => {
+                        const decision = activeAutoRunDetail.decisions[0];
+                        const entrySummary = formatDecisionSummary(decision.entryPayload);
+                        const guardrailsSummary = formatDecisionSummary(decision.guardrails);
+                        const costsSummary = formatDecisionSummary(decision.estimatedCosts);
+                        return (
+                          <div className="mt-2 border-t pt-2 space-y-1">
+                            <div className="font-medium">Decisão: {decision.approved ? 'Aprovada ✅' : 'No-trade ❌'}</div>
+                            {decision.reasoning && (
+                              <div className="text-muted-foreground">Motivo: {decision.reasoning}</div>
+                            )}
+                            {entrySummary && (
+                              <div><span className="font-medium">Entrada:</span> {entrySummary}</div>
+                            )}
+                            {guardrailsSummary && (
+                              <div><span className="font-medium">Guardrails:</span> {guardrailsSummary}</div>
+                            )}
+                            {costsSummary && (
+                              <div><span className="font-medium">Custos:</span> {costsSummary}</div>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </CardContent>
                   </Card>
                 )}
