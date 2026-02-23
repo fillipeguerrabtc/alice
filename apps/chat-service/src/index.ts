@@ -5860,16 +5860,17 @@ function shouldRequireTradingConfirmation(
   policy: ConversationApprovalPolicy
 ): boolean {
   const risk = getTradingCommandRisk(command);
+  const isRiskyCommand = risk === 'high';
   if (policy === 'always_confirm') {
     return true;
   }
   if (policy === 'confirm_risky') {
-    return risk === 'high';
+    return isRiskyCommand;
   }
   if (policy === 'never_confirm') {
-    return false;
+    return isRiskyCommand;
   }
-  return risk === 'high';
+  return isRiskyCommand;
 }
 
 function shouldRequireAgenticConfirmation(

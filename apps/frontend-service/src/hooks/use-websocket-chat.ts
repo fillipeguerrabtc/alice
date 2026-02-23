@@ -13,6 +13,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { frontendLogger } from '@/lib/logger';
+import { useAuth } from '@/contexts/AuthContext';
 
 // ============================================================================
 // CONFIGURAÇÃO DE RESILIÊNCIA (Regra 16 - Best Practices 2025)
@@ -259,6 +260,7 @@ export function useWebSocketChat(options: UseWebSocketChatOptions = {}): UseWebS
   
   // Merge user config with defaults
   const retryConfig: RetryConfig = { ...DEFAULT_RETRY_CONFIG, ...userRetryConfig };
+  const { isAuthenticated, isLoading: isAuthLoading } = useAuth();
   
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<Error | null>(null);
@@ -516,6 +518,9 @@ export function useWebSocketChat(options: UseWebSocketChatOptions = {}): UseWebS
       content: string; 
       mediaAttachments?: MediaAttachment[];
     }): Promise<string> => {
+      if (isAuthLoading || !isAuthenticated) {
+        throw new Error('Faça login para continuar');
+      }
       // Obter mensagens atuais do consumidor
       const currentMessages = getMessages?.() ?? [];
       
