@@ -109,6 +109,32 @@ function useIsMobile() {
   return isMobile;
 }
 
+/**
+ * Normaliza a rota do pathname removendo IDs dinâmicos (UUIDs, slugs numéricos, etc.)
+ * para que o contexto enviado ao backend seja estável e sem dados de usuário.
+ * Exemplos: /chat/uuid-aqui => /chat, /conversations/123 => /chat, /trading/XBTUSDTM => /trading
+ */
+const ROUTE_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ROUTE_NUMERIC_ID_PATTERN = /^\d+$/;
+const ROUTE_HEX_HASH_PATTERN = /^[0-9a-f]{24,}$/i;
+
+function normalizeRouteForContext(pathname: string): string {
+  if (!pathname) return '/chat';
+  const base = pathname.split('?')[0].split('#')[0];
+  // Mapear prefixos de conversa para /chat
+  if (/^\/chat(\/|$)/.test(base) || /^\/conversations(\/|$)/.test(base)) return '/chat';
+  if (/^\/trading(\/|$)/.test(base)) return '/trading';
+  if (/^\/demo-trading(\/|$)/.test(base)) return '/demo-trading';
+  // Caso genérico: remover segmentos que pareçam IDs (UUIDs, números puros, hashes hex longas)
+  const segments = base.split('/').filter(Boolean);
+  const filtered = segments.filter(
+    (seg) => !ROUTE_UUID_PATTERN.test(seg) &&
+             !ROUTE_NUMERIC_ID_PATTERN.test(seg) &&
+             !ROUTE_HEX_HASH_PATTERN.test(seg)
+  );
+  return filtered.length > 0 ? `/${filtered.join('/')}` : '/chat';
+}
+
 import {
   Message,
   MediaAttachment,
@@ -1304,7 +1330,7 @@ export default function Chat() {
       setMessages((prev) => [...prev, assistantMessage]);
 
       const pathname = (location as string) ?? '';
-      const resolvedRoute = pathname ? pathname.split('?')[0].split('#')[0] : '/chat';
+      const resolvedRoute = normalizeRouteForContext(pathname);
       let activeConversationId = conversationId;
       if (!activeConversationId) {
         const contextPayload: { agentId?: string; namespaceId?: string; context?: 'trading' | 'sales' | 'support' | 'cambio' | 'default'; route?: string } = {};
@@ -1387,6 +1413,7 @@ export default function Chat() {
         ...(content.trim().length > 0 ? { message: content } : {}),
         ...(mediaPayload && mediaPayload.length > 0 ? { mediaAttachments: mediaPayload } : {}),
         route: routeForContext,
+        approvalPolicy,
         agentRouting: {
           mode: currentRoutingMode,
           agentIds: currentRoutingMode === 'manual' ? currentRoutingAgentIds : [],
@@ -1587,6 +1614,43 @@ export default function Chat() {
                     const lastIdx = newMessages.length - 1;
                     if (lastIdx >= 0 && newMessages[lastIdx].role === 'assistant') {
                       newMessages[lastIdx] = { ...newMessages[lastIdx], content: fullContent };
+                    }
+                    return newMessages;
+                  });
+                  resetTimeout();
+                }
+
+                if (parsed.type === 'final_message' && typeof parsed.content === 'string') {
+                  fullContent = parsed.content;
+                  setMessages((prev) => {
+                    const newMessages = [...prev];
+                    const lastIdx = newMessages.length - 1;
+                    if (lastIdx >= 0 && newMessages[lastIdx].role === 'assistant') {
+                      newMessages[lastIdx] = { ...newMessages[lastIdx], content: fullContent };
+                    }
+                    return newMessages;
+                  });
+                  resetTimeout();
+                }
+
+                if (parsed.type === 'action_result' && parsed.data && typeof parsed.data === 'object') {
+                  // Injeta metadados de action_result na última mensagem assistant para ActionResultCard
+                  const actionData = parsed.data as Record<string, unknown>;
+                  setMessages((prev) => {
+                    const newMessages = [...prev];
+                    const lastIdx = newMessages.length - 1;
+                    if (lastIdx >= 0 && newMessages[lastIdx].role === 'assistant') {
+                      newMessages[lastIdx] = {
+                        ...newMessages[lastIdx],
+                        metadata: {
+                          ...(newMessages[lastIdx].metadata as Record<string, unknown> ?? {}),
+                          actionType: actionData.actionType,
+                          actionOperation: actionData.actionOperation,
+                          actionStatus: actionData.status,
+                          actionSummary: actionData.summary,
+                          actionResult: actionData.result,
+                        },
+                      };
                     }
                     return newMessages;
                   });

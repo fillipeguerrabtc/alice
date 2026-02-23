@@ -1,10 +1,20 @@
 import type { CandidateSignal, CostEstimate, TradingOperationIntent } from '../core/types.js';
 
+export interface GuardrailThresholdBucket {
+  dsrMin: number;
+  pboMax: number;
+}
+
 export interface IntentSelectionInput {
   candidates: CandidateSignal[];
   costsByInstrument: Record<string, CostEstimate>;
   allowedIntents: TradingOperationIntent[];
   crossExchangeEnabled: boolean;
+  /**
+   * Thresholds por intent — carregados do banco (trading_guardrail_thresholds).
+   * Se não fornecido, aplica os valores padrão conservadores.
+   */
+  guardrailsByIntent?: Partial<Record<TradingOperationIntent, GuardrailThresholdBucket>>;
 }
 
 export interface IntentSelectionResult {
@@ -16,8 +26,8 @@ export interface IntentSelectionResult {
   rejectedByGuardrails: number;
 }
 
-const DSR_MIN_THRESHOLD = 0;
-const PBO_MAX_THRESHOLD = 0.7;
+const DEFAULT_DSR_MIN = 0;
+const DEFAULT_PBO_MAX = 0.7;
 const SCORE_EDGE_MULTIPLIER = 10_000;
 const SCORE_CONFIDENCE_MULTIPLIER = 100;
 const SCORE_DSR_MULTIPLIER = 10;
@@ -56,10 +66,16 @@ function timeframeBias(timeframe: string): number {
   return 0;
 }
 
-function applyInstitutionalGuardrails(input: { edgeNet: number; dsrScore?: number | null; pboScore?: number | null }): boolean {
+function applyInstitutionalGuardrails(input: {
+  edgeNet: number;
+  dsrScore?: number | null;
+  pboScore?: number | null;
+  dsrMin: number;
+  pboMax: number;
+}): boolean {
   if (input.edgeNet <= 0) return false;
-  if ((input.dsrScore ?? DSR_MIN_THRESHOLD) < DSR_MIN_THRESHOLD) return false;
-  if ((input.pboScore ?? 1) > PBO_MAX_THRESHOLD) return false;
+  if ((input.dsrScore ?? input.dsrMin) < input.dsrMin) return false;
+  if ((input.pboScore ?? 1) > input.pboMax) return false;
   return true;
 }
 
@@ -82,9 +98,13 @@ export function selectAutoIntentCandidate(input: IntentSelectionInput): IntentSe
       continue;
     }
 
+    const bucket = input.guardrailsByIntent?.[candidate.operationIntent];
+    const dsrMin = bucket?.dsrMin ?? DEFAULT_DSR_MIN;
+    const pboMax = bucket?.pboMax ?? DEFAULT_PBO_MAX;
+
     const cost = input.costsByInstrument[candidate.instrumentId];
     const edgeNet = candidate.expectedEdge - ((cost?.totalBps ?? 0) / 10_000);
-    if (!applyInstitutionalGuardrails({ edgeNet, dsrScore: candidate.dsrScore, pboScore: candidate.pboScore })) {
+    if (!applyInstitutionalGuardrails({ edgeNet, dsrScore: candidate.dsrScore, pboScore: candidate.pboScore, dsrMin, pboMax })) {
       rejectedByGuardrails += 1;
       continue;
     }

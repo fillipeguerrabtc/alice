@@ -3840,6 +3840,54 @@ export type TradingAutoDecision = typeof tradingAutoDecisions.$inferSelect;
 export type InsertTradingAutoDecision = typeof tradingAutoDecisions.$inferInsert;
 
 // ============================================================================
+// TRADING GUARDRAIL THRESHOLDS
+// Thresholds institucionais DSR/PBO calibrados por bucket de mercado
+// (tenantId × marketType × intent × regime × liquidityTier)
+// Calibração via job assíncrono Redis queue com split temporal e embargo.
+// Ref: CLAUDE.md Regra 6 (Enterprise-grade, sem hardcode)
+// ============================================================================
+export const tradingMarketRegimeEnum = pgEnum('trading_market_regime', [
+  'low_vol_trend',
+  'high_vol_trend',
+  'low_vol_range',
+  'high_vol_range',
+  'unknown',
+]);
+
+export const tradingLiquidityTierEnum = pgEnum('trading_liquidity_tier', [
+  'high',
+  'medium',
+  'low',
+  'unknown',
+]);
+
+export const tradingGuardrailThresholds = pgTable('trading_guardrail_thresholds', {
+  id: uuid('id').primaryKey().defaultRandom().notNull(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  marketType: tradingMarketTypeEnum('market_type').notNull(),
+  intent: tradingOperationIntentEnum('intent').notNull(),
+  regime: tradingMarketRegimeEnum('regime').notNull().default('unknown'),
+  liquidityTier: tradingLiquidityTierEnum('liquidity_tier').notNull().default('unknown'),
+  /** Threshold mínimo de DSR (Deflated Sharpe Ratio); 0 = sem restrição */
+  dsrMin: numeric('dsr_min', { precision: 10, scale: 6 }).notNull().default('0'),
+  /** Threshold máximo de PBO (Probability of Backtest Overfitting); 1 = sem restrição */
+  pboMax: numeric('pbo_max', { precision: 10, scale: 6 }).notNull().default('0.7'),
+  /** Número mínimo de amostras exigidas na calibração */
+  minSamples: integer('min_samples').notNull().default(30),
+  /** Fonte da calibração: backtest_split | manual | bootstrap | default */
+  provenance: varchar('provenance', { length: 64 }).notNull().default('default'),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, (t) => ({
+  uqBucket: uniqueIndex('uq_trading_guardrail_thresholds_bucket')
+    .on(t.tenantId, t.marketType, t.intent, t.regime, t.liquidityTier),
+  idxTenant: index('idx_trading_guardrail_thresholds_tenant').on(t.tenantId),
+}));
+
+export type TradingGuardrailThreshold = typeof tradingGuardrailThresholds.$inferSelect;
+export type InsertTradingGuardrailThreshold = typeof tradingGuardrailThresholds.$inferInsert;
+
+// ============================================================================
 // TRADING LORA DATASET (Gate 2 - Fine-tuning do LLM de texto)
 // QLoRA fine-tuning para trading BTC (foco em Finanças/Trading/Matemática)
 // Infraestrutura para coleta de dados e treinamento LoRA para trading BTC

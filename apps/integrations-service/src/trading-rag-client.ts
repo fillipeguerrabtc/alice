@@ -183,6 +183,127 @@ export async function queryTradingRAGContext(params: {
 }
 
 /**
+ * Busca contexto RAG por intent/regime para o Auto Engine.
+ * Constrói query especializada combinando intent de operação e regime de mercado.
+ * Retorna learnings relevantes por estilo/padrão operacional.
+ *
+ * @param params Parâmetros da busca
+ * @returns Contexto RAG com evidências ou null
+ */
+export async function queryTradingRAGByIntentRegime(params: {
+  tenantId: string;
+  userId: string;
+  namespaceId?: string | null;
+  symbol: string;
+  marketType: string;
+  operationIntent: string;
+  regime: string;
+  additionalContext?: string;
+}): Promise<RAGTradingContext | null> {
+  const { tenantId, userId, namespaceId, symbol, marketType, operationIntent, regime, additionalContext } = params;
+
+  if (!namespaceId) {
+    ragQueryCounter.inc({ type: 'intent_regime', result: 'skipped' });
+    return null;
+  }
+
+  const queryParts = [
+    `Estratégia de trading: ${operationIntent}`,
+    `Regime de mercado: ${regime}`,
+    `Par: ${symbol}`,
+    `Mercado: ${marketType}`,
+  ];
+  if (additionalContext) {
+    queryParts.push(additionalContext);
+  }
+  const query = queryParts.join('. ');
+
+  const endTimer = ragQueryLatency.startTimer({ type: 'intent_regime' });
+  try {
+    const internalHeaders = generateInternalAuthHeaders({
+      userId,
+      tenantId,
+      role: 'admin' as Role,
+    });
+
+    const requestBody = {
+      query,
+      namespaceId,
+      limit: RAG_MAX_RESULTS,
+      minSimilarity: RAG_SIMILARITY_THRESHOLD,
+    };
+
+    const response = await fetch(`${RAG_SERVICE_URL}/api/rag/search`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...internalHeaders,
+      },
+      body: JSON.stringify(requestBody),
+      signal: AbortSignal.timeout(RAG_QUERY_TIMEOUT_MS),
+    });
+
+    endTimer();
+
+    if (!response.ok) {
+      ragQueryCounter.inc({ type: 'intent_regime', result: 'error' });
+      logger.warn({ status: response.status, symbol, operationIntent, regime }, 'Resposta não-OK do RAG para intent/regime');
+      return null;
+    }
+
+    const data = await response.json() as {
+      success?: boolean;
+      data?: Array<{
+        id?: string;
+        titulo?: string;
+        conteudo?: string;
+        similarity?: number;
+      }>;
+    };
+
+    const documents = data.data ?? [];
+    if (documents.length === 0) {
+      ragQueryCounter.inc({ type: 'intent_regime', result: 'empty' });
+      return null;
+    }
+
+    const context = documents
+      .map((doc) => doc.conteudo ?? '')
+      .filter((text) => text.length > 0)
+      .join('\n\n---\n\n');
+
+    const sources = documents.map((doc) => ({
+      documentId: doc.id ?? '',
+      titulo: doc.titulo,
+      similarity: doc.similarity ?? 0,
+    }));
+
+    ragQueryCounter.inc({ type: 'intent_regime', result: 'success' });
+    logger.debug({
+      tenantId,
+      symbol,
+      operationIntent,
+      regime,
+      documentCount: documents.length,
+    }, 'Contexto RAG por intent/regime obtido');
+
+    return {
+      context,
+      sources,
+      documentCount: documents.length,
+    };
+  } catch (error) {
+    endTimer();
+    ragQueryCounter.inc({ type: 'intent_regime', result: 'error' });
+    logger.warn(
+      { error: error instanceof Error ? error.message : String(error), symbol, operationIntent },
+      'Falha na busca RAG por intent/regime (não bloqueante)'
+    );
+    return null;
+  }
+}
+
+/**
  * Busca contexto RAG específico para post-mortem.
  * Procura learnings anteriores e padrões similares.
  *

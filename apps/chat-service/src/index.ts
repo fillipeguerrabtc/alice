@@ -3246,6 +3246,67 @@ function sanitizeConversationTitle(raw: string): string {
   return normalized.slice(0, TITLE_MAX_CHARS).trim();
 }
 
+/**
+ * Sanitiza a resposta do assistente removendo ruído sem danificar JSON/codeblocks.
+ * - Remove repetições exageradas de linha (mais de 3 ocorrências consecutivas da mesma linha)
+ * - Reduz múltiplas linhas em branco consecutivas a no máximo 2
+ * - Remove espaços/tabs desnecessários no final de linhas
+ * - NÃO altera conteúdo dentro de blocos de código (``` ... ```) ou JSON
+ */
+function sanitizeAssistantResponse(raw: string): string {
+  if (!raw || raw.trim().length === 0) return raw;
+
+  const lines = raw.split('\n');
+  const result: string[] = [];
+  let inCodeBlock = false;
+  let consecutiveBlankLines = 0;
+  let lastNonBlankLine: string | null = null;
+  let consecutiveRepeatCount = 0;
+  const MAX_BLANK_LINES = 2;
+  const MAX_LINE_REPEATS = 3;
+
+  for (const line of lines) {
+    const trimmedLine = line.trimEnd();
+    if (/^```/.test(trimmedLine)) {
+      inCodeBlock = !inCodeBlock;
+      result.push(trimmedLine);
+      consecutiveBlankLines = 0;
+      lastNonBlankLine = trimmedLine;
+      consecutiveRepeatCount = 1;
+      continue;
+    }
+
+    if (inCodeBlock) {
+      result.push(line);
+      continue;
+    }
+
+    if (trimmedLine.length === 0) {
+      consecutiveBlankLines++;
+      if (consecutiveBlankLines <= MAX_BLANK_LINES) {
+        result.push('');
+      }
+      continue;
+    }
+
+    consecutiveBlankLines = 0;
+
+    if (lastNonBlankLine !== null && trimmedLine === lastNonBlankLine) {
+      consecutiveRepeatCount++;
+      if (consecutiveRepeatCount > MAX_LINE_REPEATS) {
+        continue;
+      }
+    } else {
+      consecutiveRepeatCount = 1;
+    }
+
+    lastNonBlankLine = trimmedLine;
+    result.push(trimmedLine);
+  }
+
+  return result.join('\n').trimEnd();
+}
+
 async function generateConversationTitle(params: {
   userMessage: string;
   assistantResponse?: string | null;
@@ -8196,6 +8257,8 @@ const streamMessageSchema = z.object({
   namespaceId: z.string().uuid().optional(),
   /** Rota/pathname para resolução de contexto no LLM Gateway (ex: /chat, /trading) */
   route: z.string().min(1).max(200).optional(),
+  /** Política de aprovação do tenant para ações de baixo risco */
+  approvalPolicy: z.enum(['always_confirm', 'confirm_risky', 'never_confirm']).optional(),
   agentRouting: z.object({
     mode: z.enum(['auto', 'manual']),
     agentIds: z.array(z.string().uuid()).max(10).default([]),
@@ -8602,6 +8665,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     mediaAttachments,
     agentRouting,
     route: clientRoute,
+    approvalPolicy: requestApprovalPolicy,
   } = parseResult.data;
   const llmContextRoute = clientRoute && clientRoute.length > 0 ? clientRoute : '/chat';
   const userId = req.user?.userId;
@@ -8712,6 +8776,12 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     }
 
     const conversationState = await getOrCreateConversationState(conversationId);
+
+    // Persistir approvalPolicy enviada pelo frontend (E2E consistency)
+    if (requestApprovalPolicy && requestApprovalPolicy !== (conversationState.approvalPolicy ?? 'never_confirm')) {
+      await updateConversationState(conversationId, { approvalPolicy: requestApprovalPolicy });
+      conversationState.approvalPolicy = requestApprovalPolicy;
+    }
 
     if (agentRouting) {
       const requestedAgentIds = agentRouting.agentIds ?? [];
@@ -9357,6 +9427,10 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             if (!assistantPersisted && conversationId && userMessage) {
               assistantPersisted = true;
               if (assistantResponse.trim().length > 0) {
+                const sanitizedResponse = sanitizeAssistantResponse(assistantResponse);
+                if (sanitizedResponse !== assistantResponse) {
+                  res.write(`data: ${JSON.stringify({ type: 'final_message', content: sanitizedResponse })}\n\n`);
+                }
                 const persistStartedAt = Date.now();
                 emitAgentEvent({
                   phase: 'finalizing',
@@ -9365,11 +9439,11 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                   message: 'Persistindo resposta',
                   correlationId: conversationId ?? undefined,
                 });
-                const tokensUsed = calculateTokensUsed({ promptMessages: mediaMessages, responseText: assistantResponse });
+                const tokensUsed = calculateTokensUsed({ promptMessages: mediaMessages, responseText: sanitizedResponse });
                 const [assistantMessage] = await db.insert(schema.messages).values({
                   conversationId,
                   agentId: conversation?.agentId,
-                  conteudo: assistantResponse,
+                  conteudo: sanitizedResponse,
                   tipo: 'text',
                   isFromUser: false,
                   tokensUsados: tokensUsed ?? undefined,
@@ -9387,7 +9461,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                   await ensureConversationTitle({
                     conversationId,
                     userMessage: userContent,
-                    assistantResponse: assistantResponse,
+                    assistantResponse: sanitizedResponse,
                   });
                 } catch (titleError) {
                   logger.warn({ error: titleError, conversationId }, 'Falha ao aplicar título automático (stream mídia)');
@@ -9399,7 +9473,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                   profile: mediaProfile,
                   namespaceId: namespaceIdForMedia,
                   userMessage: userContent,
-                  assistantResponse: assistantResponse,
+                  assistantResponse: sanitizedResponse,
                 })) {
                   void collectTrainingSample({
                     tenantId,
@@ -9415,7 +9489,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                     },
                     messages: [
                       { role: 'user', content: userContent },
-                      { role: 'assistant', content: assistantResponse },
+                      { role: 'assistant', content: sanitizedResponse },
                     ],
                     userId,
                     role: streamUserRole,
@@ -10455,6 +10529,19 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
               })
               .where(eq(schema.conversations.id, conversationId));
 
+            // Emitir SSE estruturado type:"action_result" — frontend renderiza ActionResultCard
+            const actionResultPayload = redactSensitivePayload(integrationResult);
+            res.write(`data: ${JSON.stringify({
+              type: 'action_result',
+              data: {
+                actionRequestId: pendingAction.id,
+                actionType: pendingIntegration?.action ?? actionLabel,
+                actionOperation: pendingIntegration?.operation,
+                status: 'executed',
+                summary: payload.summary,
+                result: actionResultPayload,
+              },
+            })}\n\n`);
             res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
             res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
             res.write('data: [DONE]\n\n');
@@ -12444,6 +12531,10 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           if (!assistantPersisted && conversationId && userMessage) {
             assistantPersisted = true;
             if (assistantResponse.trim().length > 0) {
+              const sanitizedResponse = sanitizeAssistantResponse(assistantResponse);
+              if (sanitizedResponse !== assistantResponse) {
+                res.write(`data: ${JSON.stringify({ type: 'final_message', content: sanitizedResponse })}\n\n`);
+              }
               const persistStartedAt = Date.now();
               emitAgentEvent({
                 phase: 'finalizing',
@@ -12452,11 +12543,11 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                 message: 'Persistindo resposta',
                 correlationId: conversationId ?? undefined,
               });
-              const tokensUsed = calculateTokensUsed({ promptMessages: llmMessages, responseText: assistantResponse });
+              const tokensUsed = calculateTokensUsed({ promptMessages: llmMessages, responseText: sanitizedResponse });
               const [assistantMessage] = await db.insert(schema.messages).values({
                 conversationId,
                 agentId: conversation?.agentId,
-                conteudo: assistantResponse,
+                conteudo: sanitizedResponse,
                 tipo: 'text',
                 isFromUser: false,
                 tokensUsados: tokensUsed ?? undefined,
@@ -12474,7 +12565,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                 await ensureConversationTitle({
                   conversationId,
                   userMessage: userMessageContent,
-                  assistantResponse: assistantResponse,
+                  assistantResponse: sanitizedResponse,
                 });
               } catch (titleError) {
                 logger.warn({ error: titleError, conversationId }, 'Falha ao aplicar título automático (stream)');
@@ -12487,7 +12578,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                 profile: streamProfile,
                 namespaceId: conversation?.namespaceId || conversation?.agent?.namespaceId,
                 userMessage: userMessageContent,
-                assistantResponse: assistantResponse,
+                assistantResponse: sanitizedResponse,
               })) {
                 void collectTrainingSample({
                   tenantId,
@@ -12502,7 +12593,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                   },
                   messages: [
                     { role: 'user', content: userMessageContent },
-                    { role: 'assistant', content: assistantResponse },
+                    { role: 'assistant', content: sanitizedResponse },
                   ],
                   userId,
                   role: streamUserRole,
