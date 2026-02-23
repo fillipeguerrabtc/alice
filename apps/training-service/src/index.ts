@@ -916,10 +916,14 @@ async function processPortfolioAutoRun(payload: z.infer<typeof tradingAutoPortfo
   const run = await db.query.tradingAutoRuns.findFirst({
     where: eq(schema.tradingAutoRuns.id, runId),
   });
+  if (!run) {
+    logger.error({ runId, correlationId }, 'Run não encontrado ao criar decisão final');
+    return;
+  }
 
   await db.insert(schema.tradingAutoDecisions).values({
     runId,
-    tenantId: run?.tenantId ?? '',
+    tenantId: run.tenantId,
     decisionType: 'portfolio_auto',
     entryPayload: payload as Record<string, unknown>,
     guardrails: { steps: Object.keys(stepMetrics), completedAll: true },
@@ -1031,7 +1035,7 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
 app.post('/internal/trading-v2/auto/portfolio-run', requireInternalApiAuth, async (req: Request, res: Response) => {
   try {
     const payload = tradingAutoPortfolioPayloadSchema.parse(req.body);
-    const idempotencyKey = `portfolio-auto:${payload.runId}`;
+    const idempotencyKey = buildTradingV2IdempotencyKey(tradingQueueNames.portfolioAutoRun, payload);
     await enqueueTradingJob(tradingQueueNames.portfolioAutoRun, { ...payload, idempotencyKey });
     logger.info({ runId: payload.runId, correlationId: payload.correlationId }, 'Portfolio auto run enfileirado');
     res.status(202).json({ queued: true, queue: tradingQueueNames.portfolioAutoRun });
@@ -1046,7 +1050,7 @@ app.post('/internal/trading-v2/auto/portfolio-run', requireInternalApiAuth, asyn
 app.post('/internal/trading-v2/auto/signal-run', requireInternalApiAuth, async (req: Request, res: Response) => {
   try {
     const payload = tradingAutoSignalPayloadSchema.parse(req.body);
-    const idempotencyKey = `signal-auto:${payload.runId}`;
+    const idempotencyKey = buildTradingV2IdempotencyKey(tradingQueueNames.signalAutoRun, payload);
     await enqueueTradingJob(tradingQueueNames.signalAutoRun, { ...payload, idempotencyKey });
     logger.info({ runId: payload.runId, correlationId: payload.correlationId }, 'Signal auto run enfileirado');
     res.status(202).json({ queued: true, queue: tradingQueueNames.signalAutoRun });
