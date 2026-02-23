@@ -502,19 +502,16 @@ app.post(
 
     const reader = gpuResponse.body.getReader();
     const pump = async () => {
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          res.write(value);
-          if (typeof (res as unknown as { flush?: () => void }).flush === 'function') {
-            (res as unknown as { flush: () => void }).flush();
-          }
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        res.write(value);
+        if (typeof (res as unknown as { flush?: () => void }).flush === 'function') {
+          (res as unknown as { flush: () => void }).flush();
         }
-        res.end();
-      } finally {
-        recordInference();
       }
+      recordInference();
+      res.end();
     };
     pump().catch((err) => {
       logger.error({ err }, 'Erro ao encaminhar stream');
