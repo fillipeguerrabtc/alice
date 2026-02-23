@@ -851,6 +851,10 @@ function TradingContent() {
   const [tradingV2JobStatus, setTradingV2JobStatus] = useState<string>('');
   const [activeAutoRunId, setActiveAutoRunId] = useState<string | null>(null);
   const [controlMode, setControlMode] = useState<TradingControlMode>('manual');
+  // Controles do Signal Auto Run
+  const [autoMix, setAutoMix] = useState(true);
+  const [autoUniverseScope, setAutoUniverseScope] = useState<'futures' | 'spot' | 'margin' | 'all'>('futures');
+  const [allowedModes, setAllowedModes] = useState<string[]>([]);
   const [showNewOrderDialog, setShowNewOrderDialog] = useState(false);
   const [showOcoOrderDialog, setShowOcoOrderDialog] = useState(false);
   const [showRiskConfigDialog, setShowRiskConfigDialog] = useState(false);
@@ -2523,10 +2527,16 @@ function TradingContent() {
   // Mutation para Sinais IA (Auto) - usa endpoint auto engine
   const signalAutoRunMutation = useMutation({
     mutationFn: async () => {
+      const tradingNamespace = availableNamespaces.find(
+        (ns) => ns.slug === 'trading' || ns.nome?.toLowerCase().includes('trading')
+      );
       return startSignalAutoRun({
         symbol: requestSymbol || undefined,
         marketType: selectedMarketType,
-        autoMix: true,
+        universeScope: autoUniverseScope,
+        autoMix,
+        allowedModes: allowedModes.length > 0 ? allowedModes : undefined,
+        namespaceId: tradingNamespace?.id,
       });
     },
     onSuccess: (data) => {
@@ -4134,8 +4144,55 @@ function TradingContent() {
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="text-sm text-muted-foreground">
-                  Os sinais abaixo usam candidates recentes e guardrails (edge líquido, DSR/PBO e risco).
-                  Auto seleciona a melhor modalidade quando autoMix=true.
+                  O Auto Engine analisa microestrutura, arbitragem e contexto RAG por intent/regime para decidir se há trade.
+                  Quando <strong>Auto Mix</strong> está ativo, o motor seleciona automaticamente a melhor modalidade (scalping, arbitrage, carry…).
+                  Configure o escopo e as modalidades permitidas abaixo.
+                </div>
+                {/* Controles do Auto Run */}
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      id="auto-mix-switch"
+                      checked={autoMix}
+                      onCheckedChange={setAutoMix}
+                    />
+                    <Label htmlFor="auto-mix-switch" className="text-sm cursor-pointer">
+                      Auto Mix
+                    </Label>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">Escopo do universo</Label>
+                    <Select value={autoUniverseScope} onValueChange={(v) => setAutoUniverseScope(v as typeof autoUniverseScope)}>
+                      <SelectTrigger className="h-8 text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="futures">Futures</SelectItem>
+                        <SelectItem value="spot">Spot</SelectItem>
+                        <SelectItem value="margin">Margin</SelectItem>
+                        <SelectItem value="all">Todos</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">Modalidades permitidas</Label>
+                    <MultiSelectDropdown
+                      label="Modalidades"
+                      options={[
+                        { value: 'scalping', label: 'Scalping' },
+                        { value: 'arbitrage', label: 'Arbitrage' },
+                        { value: 'carry', label: 'Carry' },
+                        { value: 'swing', label: 'Swing' },
+                        { value: 'mean-reversion', label: 'Mean Reversion' },
+                        { value: 'trend', label: 'Trend' },
+                        { value: 'breakout', label: 'Breakout' },
+                      ]}
+                      selectedValues={allowedModes}
+                      onChange={setAllowedModes}
+                      placeholder={autoMix ? 'Todas (Auto Mix ativo)' : 'Selecionar…'}
+                      disabled={autoMix}
+                    />
+                  </div>
                 </div>
                 <div className="space-y-2">
                   {topTradingV2Candidates.slice(0, 5).map((candidate) => (

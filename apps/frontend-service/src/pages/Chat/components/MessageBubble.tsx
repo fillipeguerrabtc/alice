@@ -29,6 +29,9 @@ import { toast } from '@/hooks/use-toast';
 // AudioPlayer disponível via InlineMediaAttachment quando necessário
 // REMOVIDO 23/12/2025: VideoPlayer desabilitado (muito pesado para GPU)
 
+/** Número máximo de stream events exibidos simultaneamente no painel de progresso */
+const MAX_VISIBLE_STREAM_EVENTS = 8;
+
 const messageVariants = {
   hidden: { opacity: 0, y: 20, scale: 0.95 },
   visible: { 
@@ -59,7 +62,7 @@ export function MessageBubble({
   message, 
   isStreaming, 
   isLast,
-  streamEvents: _streamEvents,
+  streamEvents,
   typingSpeedMs,
   onRateImage,
   onFeedback,
@@ -318,7 +321,30 @@ export function MessageBubble({
           )}
 
           <div className="whitespace-pre-wrap text-sm leading-relaxed min-h-[1.25rem]">
-            {shouldShowThinking ? t('chat.thinking') : displayedContent}
+            {shouldShowThinking && streamEvents && streamEvents.length > 0 ? (
+              <div className="space-y-0.5 text-xs text-muted-foreground">
+                {streamEvents.slice(-MAX_VISIBLE_STREAM_EVENTS).map((ev) => (
+                  <div key={ev.id} className="flex items-center gap-1.5">
+                    <span className={cn(
+                      'inline-block h-1.5 w-1.5 rounded-full shrink-0',
+                      ev.status === 'success' ? 'bg-green-500' :
+                      ev.status === 'error' ? 'bg-red-500' :
+                      ev.status === 'in_progress' ? 'bg-yellow-500 animate-pulse' :
+                      'bg-muted-foreground/50'
+                    )} />
+                    <span className="truncate">{ev.message ?? ev.action}</span>
+                    {ev.durationMs != null && (
+                      <span className="shrink-0 text-muted-foreground/60">{ev.durationMs}ms</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : shouldShowThinking ? (
+              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-muted-foreground/50 animate-pulse" />
+                {t('chat.thinking')}
+              </span>
+            ) : displayedContent}
             {shouldShowTypingCursor && (
               <span className="inline-block w-2 h-4 ml-0.5 bg-current animate-pulse rounded-sm" />
             )}
