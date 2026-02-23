@@ -13263,6 +13263,228 @@ app.post('/internal/trading-v2/enqueue/model-risk', requirePermission('integrati
   res.status(202).json({ success: true, data: result });
 });
 
+// ============================================================================
+// TRADING V2 AUTO ENGINE - Execuções automáticas de portfólio e sinais IA
+// ============================================================================
+
+const tradingAutoPortfolioRunSchema = z.object({
+  portfolioId: z.string().uuid(),
+  marketType: z.enum(['spot', 'futures', 'margin']).optional(),
+  constraints: z.record(z.unknown()).optional(),
+  namespaceId: z.string().uuid().optional(),
+});
+
+const tradingAutoSignalRunSchema = z.object({
+  symbol: z.string().min(1).max(50).optional(),
+  universeScope: z.enum(['spot', 'futures', 'margin', 'all']).optional(),
+  marketType: z.enum(['spot', 'futures', 'margin']).optional(),
+  allowedModes: z.array(z.string().min(1).max(50)).optional(),
+  autoMix: z.boolean().optional().default(true),
+  namespaceId: z.string().uuid().optional(),
+});
+
+const tradingAutoRunsQuerySchema = z.object({
+  type: z.enum(['signal_auto', 'portfolio_auto']).optional(),
+  status: z.enum(['queued', 'running', 'succeeded', 'failed', 'cancelled']).optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+});
+
+/** POST /api/trading-v2/auto/portfolio/run - Inicia pipeline automático de portfólio */
+app.post('/api/trading-v2/auto/portfolio/run', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+    const parsed = tradingAutoPortfolioRunSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Payload inválido', details: parsed.error.flatten() });
+      return;
+    }
+    const correlationId = crypto.randomUUID();
+    const db = getDatabase();
+
+    // Criar run + steps em DB
+    const [run] = await db.insert(schema.tradingAutoRuns).values({
+      tenantId: authContext.tenantId,
+      userId: authContext.userId,
+      runType: 'portfolio_auto',
+      status: 'queued',
+      payload: parsed.data as Record<string, unknown>,
+      correlationId,
+      namespaceId: parsed.data.namespaceId ?? null,
+    }).returning();
+
+    const portfolioSteps: Array<typeof schema.tradingAutoStepNameEnum.enumValues[number]> = [
+      'universe-scan', 'backtest', 'calibration', 'model-risk', 'rebalance',
+    ];
+    await db.insert(schema.tradingAutoRunSteps).values(
+      portfolioSteps.map((stepName) => ({
+        runId: run.id,
+        stepName,
+        status: 'pending' as const,
+      })),
+    );
+
+    // Enfileirar job no training-service
+    const internalHeaders = generateInternalAuthHeaders({
+      userId: authContext.userId,
+      tenantId: authContext.tenantId,
+      role: 'operator',
+    });
+    const enqueueResponse = await fetch(`${TRAINING_SERVICE_URL_FINAL}/internal/trading-v2/auto/portfolio-run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...internalHeaders },
+      body: JSON.stringify({ runId: run.id, ...parsed.data, correlationId }),
+    });
+    if (!enqueueResponse.ok) {
+      const errorText = await enqueueResponse.text();
+      logger.error({ runId: run.id, status: enqueueResponse.status, errorText, correlationId }, 'Falha ao enfileirar portfolio-auto-run');
+      await db.update(schema.tradingAutoRuns).set({ status: 'failed', error: `Falha ao enfileirar: ${enqueueResponse.status}` }).where(eq(schema.tradingAutoRuns.id, run.id));
+      res.status(502).json({ error: 'Falha ao enfileirar job de portfólio automático' });
+      return;
+    }
+
+    logger.info({ runId: run.id, correlationId, tenantId: authContext.tenantId }, 'Portfolio auto run criado e enfileirado');
+    res.status(202).json({ success: true, data: { runId: run.id } });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao criar portfolio auto run');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+/** POST /api/trading-v2/auto/signal/run - Inicia geração automática de sinais */
+app.post('/api/trading-v2/auto/signal/run', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+    const parsed = tradingAutoSignalRunSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Payload inválido', details: parsed.error.flatten() });
+      return;
+    }
+    const correlationId = crypto.randomUUID();
+    const db = getDatabase();
+
+    const [run] = await db.insert(schema.tradingAutoRuns).values({
+      tenantId: authContext.tenantId,
+      userId: authContext.userId,
+      runType: 'signal_auto',
+      status: 'queued',
+      payload: parsed.data as Record<string, unknown>,
+      correlationId,
+      namespaceId: parsed.data.namespaceId ?? null,
+    }).returning();
+
+    await db.insert(schema.tradingAutoRunSteps).values({
+      runId: run.id,
+      stepName: 'signal-decision',
+      status: 'pending',
+    });
+
+    // Enfileirar job no training-service
+    const internalHeaders = generateInternalAuthHeaders({
+      userId: authContext.userId,
+      tenantId: authContext.tenantId,
+      role: 'operator',
+    });
+    const enqueueResponse = await fetch(`${TRAINING_SERVICE_URL_FINAL}/internal/trading-v2/auto/signal-run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...internalHeaders },
+      body: JSON.stringify({ runId: run.id, ...parsed.data, correlationId }),
+    });
+    if (!enqueueResponse.ok) {
+      const errorText = await enqueueResponse.text();
+      logger.error({ runId: run.id, status: enqueueResponse.status, errorText, correlationId }, 'Falha ao enfileirar signal-auto-run');
+      await db.update(schema.tradingAutoRuns).set({ status: 'failed', error: `Falha ao enfileirar: ${enqueueResponse.status}` }).where(eq(schema.tradingAutoRuns.id, run.id));
+      res.status(502).json({ error: 'Falha ao enfileirar job de sinal automático' });
+      return;
+    }
+
+    logger.info({ runId: run.id, correlationId, tenantId: authContext.tenantId }, 'Signal auto run criado e enfileirado');
+    res.status(202).json({ success: true, data: { runId: run.id } });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao criar signal auto run');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+/** GET /api/trading-v2/auto/runs - Lista runs automáticos por tenant */
+app.get('/api/trading-v2/auto/runs', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+    const queryResult = tradingAutoRunsQuerySchema.safeParse(req.query);
+    if (!queryResult.success) {
+      res.status(400).json({ error: 'Query inválida', details: queryResult.error.flatten() });
+      return;
+    }
+    const db = getDatabase();
+    const filters = [eq(schema.tradingAutoRuns.tenantId, authContext.tenantId)];
+    if (queryResult.data.type) {
+      filters.push(eq(schema.tradingAutoRuns.runType, queryResult.data.type));
+    }
+    if (queryResult.data.status) {
+      filters.push(eq(schema.tradingAutoRuns.status, queryResult.data.status));
+    }
+    const runs = await db.query.tradingAutoRuns.findMany({
+      where: and(...filters),
+      orderBy: [desc(schema.tradingAutoRuns.createdAt)],
+      limit: queryResult.data.limit ?? 20,
+    });
+    res.json({ success: true, data: runs });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao listar auto runs');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+/** GET /api/trading-v2/auto/runs/:id - Retorna run + steps + decisão final */
+app.get('/api/trading-v2/auto/runs/:id', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+    const idResult = z.string().uuid().safeParse(req.params.id);
+    if (!idResult.success) {
+      res.status(400).json({ error: 'ID inválido' });
+      return;
+    }
+    const db = getDatabase();
+    const run = await db.query.tradingAutoRuns.findFirst({
+      where: and(eq(schema.tradingAutoRuns.id, idResult.data), eq(schema.tradingAutoRuns.tenantId, authContext.tenantId)),
+    });
+    if (!run) {
+      res.status(404).json({ error: 'Run não encontrado' });
+      return;
+    }
+    const steps = await db.query.tradingAutoRunSteps.findMany({
+      where: eq(schema.tradingAutoRunSteps.runId, run.id),
+      orderBy: [asc(schema.tradingAutoRunSteps.createdAt)],
+    });
+    const decisions = await db.query.tradingAutoDecisions.findMany({
+      where: eq(schema.tradingAutoDecisions.runId, run.id),
+    });
+    res.json({ success: true, data: { run, steps, decisions } });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar auto run');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
 // GET /api/integrations/trading/signals - Lista sinais de trading ativos
 app.get('/api/integrations/trading/signals', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
   try {

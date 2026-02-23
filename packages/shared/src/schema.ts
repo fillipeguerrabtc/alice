@@ -3723,6 +3723,98 @@ export type TradingModelRiskEvent = typeof tradingModelRiskEvents.$inferSelect;
 export type InsertTradingModelRiskEvent = typeof tradingModelRiskEvents.$inferInsert;
 
 // ============================================================================
+// TRADING AUTO ENGINE (Auto Runs, Steps, Decisions)
+// Rastreamento de execuções automáticas (pipeline institucional de portfólio e sinais IA)
+// ============================================================================
+
+export const tradingAutoRunTypeEnum = pgEnum('trading_auto_run_type', [
+  'signal_auto',
+  'portfolio_auto',
+]);
+
+export const tradingAutoRunStatusEnum = pgEnum('trading_auto_run_status', [
+  'queued',
+  'running',
+  'succeeded',
+  'failed',
+  'cancelled',
+]);
+
+export const tradingAutoStepNameEnum = pgEnum('trading_auto_step_name', [
+  'universe-scan',
+  'backtest',
+  'calibration',
+  'model-risk',
+  'rebalance',
+  'signal-decision',
+]);
+
+export const tradingAutoStepStatusEnum = pgEnum('trading_auto_step_status', [
+  'pending',
+  'running',
+  'succeeded',
+  'failed',
+  'skipped',
+]);
+
+/** Rastreia execuções "Auto" (signal_auto | portfolio_auto) */
+export const tradingAutoRuns = pgTable('trading_auto_runs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  userId: uuid('user_id').notNull(),
+  runType: tradingAutoRunTypeEnum('run_type').notNull(),
+  status: tradingAutoRunStatusEnum('status').notNull().default('queued'),
+  payload: jsonb('payload').$type<Record<string, unknown>>().notNull().default({}),
+  correlationId: varchar('correlation_id', { length: 64 }),
+  namespaceId: uuid('namespace_id'),
+  error: text('error'),
+  startedAt: timestamp('started_at'),
+  finishedAt: timestamp('finished_at'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+/** Etapas por run (universe/backtest/calibration/model-risk/rebalance/signal-decision) */
+export const tradingAutoRunSteps = pgTable('trading_auto_run_steps', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  runId: uuid('run_id').notNull().references(() => tradingAutoRuns.id, { onDelete: 'cascade' }),
+  stepName: tradingAutoStepNameEnum('step_name').notNull(),
+  status: tradingAutoStepStatusEnum('status').notNull().default('pending'),
+  metrics: jsonb('metrics').$type<Record<string, unknown>>().default({}),
+  error: text('error'),
+  startedAt: timestamp('started_at'),
+  endedAt: timestamp('ended_at'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+/** Decisões finais (sinal/portfólio) com guardrails, custos, evidências */
+export const tradingAutoDecisions = pgTable('trading_auto_decisions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  runId: uuid('run_id').notNull().references(() => tradingAutoRuns.id, { onDelete: 'cascade' }),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  decisionType: tradingAutoRunTypeEnum('decision_type').notNull(),
+  entryPayload: jsonb('entry_payload').$type<Record<string, unknown>>().notNull().default({}),
+  exitPayload: jsonb('exit_payload').$type<Record<string, unknown>>().default({}),
+  guardrails: jsonb('guardrails').$type<Record<string, unknown>>().default({}),
+  estimatedCosts: jsonb('estimated_costs').$type<Record<string, unknown>>().default({}),
+  slippageEstimate: jsonb('slippage_estimate').$type<Record<string, unknown>>().default({}),
+  candidateIds: jsonb('candidate_ids').$type<string[]>().default([]),
+  modelsUsed: jsonb('models_used').$type<string[]>().default([]),
+  ragEvidenceIds: jsonb('rag_evidence_ids').$type<string[]>().default([]),
+  idempotencyHash: varchar('idempotency_hash', { length: 128 }),
+  approved: boolean('approved').notNull().default(false),
+  reasoning: text('reasoning'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export type TradingAutoRun = typeof tradingAutoRuns.$inferSelect;
+export type InsertTradingAutoRun = typeof tradingAutoRuns.$inferInsert;
+export type TradingAutoRunStep = typeof tradingAutoRunSteps.$inferSelect;
+export type InsertTradingAutoRunStep = typeof tradingAutoRunSteps.$inferInsert;
+export type TradingAutoDecision = typeof tradingAutoDecisions.$inferSelect;
+export type InsertTradingAutoDecision = typeof tradingAutoDecisions.$inferInsert;
+
+// ============================================================================
 // TRADING LORA DATASET (Gate 2 - Fine-tuning do LLM de texto)
 // QLoRA fine-tuning para trading BTC (foco em Finanças/Trading/Matemática)
 // Infraestrutura para coleta de dados e treinamento LoRA para trading BTC

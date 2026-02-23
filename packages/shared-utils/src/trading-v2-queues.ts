@@ -8,6 +8,8 @@ export const TRADING_V2_STREAMS = {
   calibration: 'alice:trading:v2:calibration',
   portfolioRebalance: 'alice:trading:v2:portfolio-rebalance',
   modelRisk: 'alice:trading:v2:model-risk',
+  portfolioAutoRun: 'alice:trading:v2:portfolio-auto-run',
+  signalAutoRun: 'alice:trading:v2:signal-auto-run',
 } as const;
 
 export type TradingV2StreamName = (typeof TRADING_V2_STREAMS)[keyof typeof TRADING_V2_STREAMS];
@@ -128,6 +130,22 @@ export function buildTradingV2IdempotencyKey(stream: TradingV2StreamName, payloa
       String(payload.asofTimestamp ?? 'unknown'),
       String(payload.policyVersion ?? 'unknown'),
       String((payload.allowedOperationIntents as string[] | undefined)?.join(',') ?? 'unknown'),
+    ].join(':');
+  }
+  if (stream === TRADING_V2_STREAMS.portfolioAutoRun) {
+    return [
+      tenantId,
+      'portfolio-auto',
+      String(payload.runId ?? 'unknown'),
+      String(payload.correlationId ?? 'unknown'),
+    ].join(':');
+  }
+  if (stream === TRADING_V2_STREAMS.signalAutoRun) {
+    return [
+      tenantId,
+      'signal-auto',
+      String(payload.runId ?? 'unknown'),
+      String(payload.correlationId ?? 'unknown'),
     ].join(':');
   }
   return [
