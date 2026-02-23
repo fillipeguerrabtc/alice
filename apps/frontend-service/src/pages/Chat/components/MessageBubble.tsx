@@ -260,6 +260,7 @@ export function MessageBubble({
 
   const shouldShowTypingCursor = isLast && message.role === 'assistant' && (isStreaming || displayedContent.length < (message.content ?? '').length);
   const shouldShowThinking = shouldShowTypingCursor && displayedContent.trim().length === 0;
+  const hasStreamEvents = Boolean(streamEvents && streamEvents.length > 0);
   const requiresConfirmation = Boolean(message.metadata?.requiresConfirmation);
   const shouldShowActionCard = Boolean(message.metadata?.actionType || message.metadata?.actionStatus || message.metadata?.actionResult);
 
@@ -322,7 +323,7 @@ export function MessageBubble({
 
           <div className="whitespace-pre-wrap text-sm leading-relaxed min-h-[1.25rem]">
             {/* Painel de etapas: visível durante todo o streaming (tokens + status lado a lado) */}
-            {isLast && isStreaming && message.role === 'assistant' && streamEvents && streamEvents.length > 0 && (
+            {isLast && isStreaming && message.role === 'assistant' && hasStreamEvents && (
               <div className="space-y-0.5 text-xs text-muted-foreground mb-2">
                 {streamEvents.slice(-MAX_VISIBLE_STREAM_EVENTS).map((ev) => (
                   <div key={ev.id} className="flex items-center gap-1.5">
@@ -341,7 +342,7 @@ export function MessageBubble({
                 ))}
               </div>
             )}
-            {shouldShowThinking && !(streamEvents && streamEvents.length > 0) ? (
+            {shouldShowThinking && !hasStreamEvents ? (
               <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <span className="inline-block h-1.5 w-1.5 rounded-full bg-muted-foreground/50 animate-pulse" />
                 {t('chat.thinking')}
