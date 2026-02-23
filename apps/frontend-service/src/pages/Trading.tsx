@@ -1247,6 +1247,20 @@ function TradingContent() {
     user?.tenantId,
   ]);
 
+  const runPortfolioAutoPipeline = useCallback(() => {
+    const jobs: Array<'universe-scan' | 'backtest' | 'calibration' | 'portfolio-rebalance' | 'model-risk'> = [
+      'universe-scan',
+      'backtest',
+      'calibration',
+      'portfolio-rebalance',
+      'model-risk',
+    ];
+    jobs.forEach((job, index) => {
+      window.setTimeout(() => enqueueTradingV2(job), index * 200);
+    });
+    setTradingV2JobStatus('Pipeline institucional enfileirado: universe-scan → backtest → calibration → rebalance → model-risk');
+  }, [enqueueTradingV2]);
+
   const {
     data: newsPresetsResponse,
   } = useQuery<{ success: boolean; data: TradingNewsPresetOption[] }>({
@@ -1805,12 +1819,15 @@ function TradingContent() {
     }
     return baseChannels;
   }, [wsEnabled, wsInterval]);
+  const [positionLiveQuotes, setPositionLiveQuotes] = useState<Record<string, number>>({});
 
   const {
     state: wsState,
     ticker: wsTicker,
     orderBook: wsOrderBook,
     klines: wsKlines,
+    subscribe: subscribePositionQuotes,
+    unsubscribe: unsubscribePositionQuotes,
   } = useKucoinWebSocket({
     symbol: wsEnabled ? requestSymbol : '',
     channels: wsChannels,
@@ -1822,6 +1839,17 @@ function TradingContent() {
     onError: (error) => {
       frontendLogger.warn('WebSocket KuCoin indisponível - fallback REST ativo', { error });
     },
+    onTicker: (data) => {
+      if (!isFuturesMarket) return;
+      const next = Number(data.price);
+      if (!Number.isFinite(next) || next <= 0) return;
+      const symbolKey = (data.symbol ?? '').toUpperCase();
+      if (!symbolKey) return;
+      setPositionLiveQuotes((prev) => {
+        if (prev[symbolKey] === next) return prev;
+        return { ...prev, [symbolKey]: next };
+      });
+    },
     onOrderUpdate: () => {
       void queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/orders'] });
       void queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/account'] });
@@ -1832,29 +1860,6 @@ function TradingContent() {
     },
     onBalance: () => {
       void queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/account'] });
-    },
-  });
-
-  const [positionLiveQuotes, setPositionLiveQuotes] = useState<Record<string, number>>({});
-  const {
-    state: positionQuotesWsState,
-    subscribe: subscribePositionQuotes,
-    unsubscribe: unsubscribePositionQuotes,
-  } = useKucoinWebSocket({
-    symbol: '',
-    channels: [],
-    autoConnect: isFuturesMarket && wsEnabled,
-    marketType: 'futures',
-    marginMode: 'cross',
-    onTicker: (data) => {
-      const next = Number(data.price);
-      if (!Number.isFinite(next) || next <= 0) return;
-      const symbolKey = (data.symbol ?? '').toUpperCase();
-      if (!symbolKey) return;
-      setPositionLiveQuotes((prev) => {
-        if (prev[symbolKey] === next) return prev;
-        return { ...prev, [symbolKey]: next };
-      });
     },
   });
 
@@ -2739,7 +2744,7 @@ function TradingContent() {
   // Subscrição de quotes de posições abertas (futures) para PnL em tempo real.
   // DEVE ficar antes dos early returns para não violar a Regra de Hooks do React.
   useEffect(() => {
-    if (!isFuturesMarket || !positionQuotesWsState.connected) return;
+    if (!isFuturesMarket || !wsState.connected) return;
     const activeSymbols = new Set(
       openFuturesPositions
         .map((position) => position.symbol.toUpperCase())
@@ -2755,7 +2760,7 @@ function TradingContent() {
         unsubscribePositionQuotes('ticker', symbol, undefined, 'futures', 'cross');
       });
     };
-  }, [isFuturesMarket, openFuturesPositions, positionQuotesWsState.connected, subscribePositionQuotes, unsubscribePositionQuotes]);
+  }, [isFuturesMarket, openFuturesPositions, wsState.connected, subscribePositionQuotes, unsubscribePositionQuotes]);
 
   // ============================================================================
   // RENDER - Loading State
@@ -3415,8 +3420,8 @@ function TradingContent() {
       <motion.div variants={itemVariants}>
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           {/* MOBILE-FIRST 12/01/2026: Tabs com scroll horizontal para caber em mobile */}
-          <div className="overflow-x-auto pb-2 -mx-2 px-2 md:overflow-visible md:mx-0 md:px-0">
-            <TabsList className="grid w-full grid-cols-3 gap-1 sm:grid-cols-6 lg:grid-cols-12">
+          <div className="overflow-x-auto pb-2 -mx-2 px-2 md:mx-0 md:px-0">
+            <TabsList className="flex min-w-max flex-nowrap items-center gap-1 whitespace-nowrap">
               <TabsTrigger value="overview" data-testid="tab-overview" className="whitespace-nowrap">
                 <BarChart3 className="h-4 w-4 md:mr-2" />
                 <span className="hidden md:inline">{t('trading.tabs.overview')}</span>
@@ -3918,6 +3923,7 @@ function TradingContent() {
                   </AlertDescription>
                 </Alert>
                 <div className="flex flex-wrap gap-2">
+                  <Button onClick={runPortfolioAutoPipeline} disabled={enqueueTradingV2Mutation.isPending}>Run Pipeline</Button>
                   <Button variant="secondary" onClick={() => enqueueTradingV2('universe-scan')} disabled={enqueueTradingV2Mutation.isPending}>Enqueue Universe</Button>
                   <Button variant="secondary" onClick={() => enqueueTradingV2('backtest')} disabled={enqueueTradingV2Mutation.isPending}>Enqueue Backtest</Button>
                   <Button variant="secondary" onClick={() => enqueueTradingV2('calibration')} disabled={enqueueTradingV2Mutation.isPending}>Enqueue Calibration</Button>
@@ -3991,7 +3997,16 @@ function TradingContent() {
                     </div>
                   ))}
                 </div>
-                <Button onClick={() => setActiveTab('signals')}>Ir para painel de sinais</Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    onClick={() => generateSignalMutation.mutate()}
+                    disabled={generateSignalMutation.isPending || isSignalArbitrageInvalid}
+                  >
+                    {generateSignalMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                    Rodar Auto agora
+                  </Button>
+                  <Button variant="outline" onClick={() => setActiveTab('signals')}>Ir para painel de sinais</Button>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
