@@ -13,7 +13,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { frontendLogger } from '@/lib/logger';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/hooks/use-auth';
 
 // ============================================================================
 // CONFIGURAÇÃO DE RESILIÊNCIA (Regra 16 - Best Practices 2025)
