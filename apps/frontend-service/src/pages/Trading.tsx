@@ -4035,7 +4035,7 @@ function TradingContent() {
                         const costsSummary = formatDecisionSummary(decision.estimatedCosts);
                         return (
                           <div className="mt-2 border-t pt-2 space-y-1">
-                            <div className="font-medium">Decisão: {decision.approved ? 'Aprovada ✅' : 'No trade ❌'}</div>
+                            <div className="font-medium">Decisão: {decision.approved ? 'Aprovada ✅' : 'Sem trade ❌'}</div>
                             {decision.reasoning && (
                               <div className="text-muted-foreground">Motivo: {decision.reasoning}</div>
                             )}
@@ -4156,7 +4156,7 @@ function TradingContent() {
                         const costsSummary = formatDecisionSummary(decision.estimatedCosts);
                         return (
                           <div className="mt-2 border-t pt-2 space-y-1">
-                            <div className="font-medium">Decisão: {decision.approved ? 'Aprovada ✅' : 'No trade ❌'}</div>
+                            <div className="font-medium">Decisão: {decision.approved ? 'Aprovada ✅' : 'Sem trade ❌'}</div>
                             {decision.reasoning && (
                               <div className="text-muted-foreground">Motivo: {decision.reasoning}</div>
                             )}

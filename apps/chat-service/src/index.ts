@@ -5856,8 +5856,11 @@ function shouldRequireTradingConfirmation(
   if (policy === 'always_confirm') {
     return true;
   }
-  if (policy === 'confirm_risky' || policy === 'never_confirm') {
+  if (policy === 'confirm_risky') {
     return risk === 'high';
+  }
+  if (policy === 'never_confirm') {
+    return false;
   }
   return risk === 'high';
 }

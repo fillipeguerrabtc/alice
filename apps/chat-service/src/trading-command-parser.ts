@@ -345,6 +345,7 @@ const TRADING_CONTEXT_KEYWORDS = [
   'análise', 'analise', 'analysis', 'sinal', 'sinais', 'indicadores', 'indicator',
 ];
 
+// Padrões PT-BR/EN para perguntas informativas sobre preço/cotação.
 const MARKET_INFO_PATTERNS = [
   /\bcota[çc][ãa]o\b/i,
   /\bquote\b/i,
