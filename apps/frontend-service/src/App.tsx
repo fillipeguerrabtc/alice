@@ -137,6 +137,8 @@ function Router() {
       <Route path="/login" component={LoginRedirect} />
       <Route path="/" component={Dashboard} />
       <Route path="/chat" component={Chat} />
+      {/* Redireciona /chat/ (trailing slash) para /chat - evita cair no NotFound */}
+      <Route path="/chat/">{() => <Redirect to="/chat" />}</Route>
       <Route path="/chat/:conversationId" component={Chat} />
       <Route path="/conversations" component={Conversations} />
       <Route path="/agents" component={Agents} />

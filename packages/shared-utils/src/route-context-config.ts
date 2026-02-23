@@ -15,7 +15,6 @@
 export const ROUTE_TO_CONTEXT: Record<string, string> = {
   '/': 'default',
   '/chat': 'default',
-  '/chat/:conversationId': 'default',
   '/conversations': 'default',
   '/agents': 'agents',
   '/takeover': 'trading',
@@ -38,7 +37,6 @@ export const ROUTE_TO_CONTEXT: Record<string, string> = {
 
 /** Rotas do App (ordem de match: mais específica primeiro) */
 export const APP_ROUTES = [
-  '/chat/:conversationId',
   '/chat',
   '/conversations',
   '/agents',
