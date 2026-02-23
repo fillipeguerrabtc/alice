@@ -345,6 +345,16 @@ const TRADING_CONTEXT_KEYWORDS = [
   'análise', 'analise', 'analysis', 'sinal', 'sinais', 'indicadores', 'indicator',
 ];
 
+const MARKET_INFO_PATTERNS = [
+  /\bcota[çc][ãa]o\b/i,
+  /\bquote\b/i,
+  /\bpre[çc]o\b/i,
+  /\bprice\b/i,
+  /\bquanto\s+(vale|est[aá])\b/i,
+  /\bvalor\s+do\b/i,
+  /\bmarket\s+price\b/i,
+];
+
 // ============================================================================
 // FUNÇÕES DE PARSE
 // ============================================================================
@@ -358,6 +368,10 @@ const TRADING_CONTEXT_KEYWORDS = [
 function hasTradingContext(text: string): boolean {
   const lowerText = text.toLowerCase();
   return TRADING_CONTEXT_KEYWORDS.some(keyword => lowerText.includes(keyword));
+}
+
+function isMarketInfoQuery(text: string): boolean {
+  return MARKET_INFO_PATTERNS.some((pattern) => pattern.test(text));
 }
 
 /**
@@ -647,6 +661,9 @@ export function parseTradingCommand(text: string): ParsedTradingCommand {
  * Verifica se o texto é um comando de trading
  */
 export function isTradingCommand(text: string): boolean {
+  if (isMarketInfoQuery(text)) {
+    return false;
+  }
   const parsed = parseTradingCommand(text);
   return parsed.isTrading && parsed.confidence >= 0.5;
 }

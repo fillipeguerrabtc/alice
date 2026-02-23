@@ -36,6 +36,17 @@ export function ActionResultCard({
   const [expanded, setExpanded] = useState(false);
   const hasResult = Boolean(actionResult && Object.keys(actionResult).length > 0);
   const statusLabel = actionStatus ?? 'pending';
+  const resultEntries = hasResult ? Object.entries(actionResult ?? {}) : [];
+  const formatValue = (value: unknown) => {
+    if (value == null) return '—';
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch {
+      return String(value);
+    }
+  };
 
   return (
     <Card className="mt-3 border bg-background/50 p-3">
@@ -60,9 +71,14 @@ export function ActionResultCard({
         </div>
       </div>
       {expanded && hasResult && (
-        <pre className="mt-3 rounded bg-muted/50 p-2 text-[11px] whitespace-pre-wrap">
-          {JSON.stringify(actionResult, null, 2)}
-        </pre>
+        <div className="mt-3 space-y-2 text-[11px]">
+          {resultEntries.map(([key, value]) => (
+            <div key={key} className="rounded bg-muted/50 p-2">
+              <div className="text-xs uppercase text-muted-foreground">{key}</div>
+              <div className="whitespace-pre-wrap break-words">{formatValue(value)}</div>
+            </div>
+          ))}
+        </div>
       )}
     </Card>
   );

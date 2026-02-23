@@ -3,6 +3,7 @@
  *
  * ABORDAGEM SIMPLES (menor latência):
  * - Troca apenas Embeddings ↔ Trainer (LLM permanece sempre ativo)
+ * - Em modo simultaneous, embeddings não são parados; trainer sobe apenas sob demanda
  * - VRAM: LLM ~6GB + Trainer ~12GB ≈ 18GB < 20GB (coexistência viável)
  *
  * Estados:
@@ -103,10 +104,6 @@ export function getOrchestratorState(): OrchestratorState {
  * Troca para modo treino (para embeddings, sobe trainer)
  */
 export async function switchToTraining(): Promise<void> {
-  if (GPU_ORCHESTRATION_MODE === 'simultaneous') {
-    logger.info({ orchestrationMode: GPU_ORCHESTRATION_MODE }, 'switchToTraining em modo simultâneo: no-op seguro');
-    return;
-  }
   if (currentState === 'training') {
     _lastTrainingActivityAt = Date.now();
     return;
@@ -116,11 +113,26 @@ export async function switchToTraining(): Promise<void> {
   }
 
   currentState = 'switching_to_training';
+  if (GPU_ORCHESTRATION_MODE === 'simultaneous') {
+    logger.info('Orquestrador: subindo trainer sob demanda (modo simultaneous)');
+    try {
+      await runCompose(['--profile', 'gpu-training', 'up', '-d', 'gpu-trainer'], 120000);
+      currentState = 'training';
+      _lastTrainingActivityAt = Date.now();
+      scheduleIdleReturn();
+      logger.info('Orquestrador: trainer ativo (modo simultaneous)');
+      return;
+    } catch (error) {
+      currentState = 'llm_embeddings';
+      scheduleIdleReturn();
+      throw error;
+    }
+  }
   logger.info('Orquestrador: trocando para modo treino (parando embeddings, subindo trainer)');
 
   try {
     await runCompose(['stop', 'gpu-embeddings'], 30000);
-    await runCompose(['up', '-d', 'gpu-trainer'], 120000);
+    await runCompose(['--profile', 'gpu-training', 'up', '-d', 'gpu-trainer'], 120000);
     currentState = 'training';
     _lastTrainingActivityAt = Date.now();
     scheduleIdleReturn();
@@ -136,10 +148,6 @@ export async function switchToTraining(): Promise<void> {
  * Volta para modo LLM+Embeddings (para trainer, sobe embeddings)
  */
 export async function switchToLlmEmbeddings(): Promise<void> {
-  if (GPU_ORCHESTRATION_MODE === 'simultaneous') {
-    logger.info({ orchestrationMode: GPU_ORCHESTRATION_MODE }, 'switchToLlmEmbeddings em modo simultâneo: no-op seguro');
-    return;
-  }
   if (currentState === 'llm_embeddings') return;
   if (currentState === 'switching_to_training' || currentState === 'switching_to_llm') {
     throw new Error('Troca em andamento');
@@ -147,10 +155,22 @@ export async function switchToLlmEmbeddings(): Promise<void> {
 
   currentState = 'switching_to_llm';
   cancelIdleReturn();
+  if (GPU_ORCHESTRATION_MODE === 'simultaneous') {
+    logger.info('Orquestrador: parando trainer (modo simultaneous)');
+    try {
+      await runCompose(['--profile', 'gpu-training', 'stop', 'gpu-trainer'], 60000);
+      currentState = 'llm_embeddings';
+      logger.info('Orquestrador: trainer parado (modo simultaneous)');
+      return;
+    } catch (error) {
+      currentState = 'training';
+      throw error;
+    }
+  }
   logger.info('Orquestrador: voltando para LLM+Embeddings (parando trainer, subindo embeddings)');
 
   try {
-    await runCompose(['stop', 'gpu-trainer'], 60000);
+    await runCompose(['--profile', 'gpu-training', 'stop', 'gpu-trainer'], 60000);
     await runCompose(['up', '-d', 'gpu-embeddings'], 120000);
     currentState = 'llm_embeddings';
     logger.info('Orquestrador: modo LLM+Embeddings ativo');

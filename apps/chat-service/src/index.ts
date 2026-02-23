@@ -5852,13 +5852,14 @@ function shouldRequireTradingConfirmation(
   command: ParsedTradingCommand,
   policy: ConversationApprovalPolicy
 ): boolean {
-  void getTradingCommandRisk(command);
-  void policy;
-  // Regra enterprise: qualquer operação de trading exige aprovação explícita.
-  if (command.type === 'generate_signal' || command.type === 'analysis') {
-    return false;
+  const risk = getTradingCommandRisk(command);
+  if (policy === 'always_confirm') {
+    return true;
   }
-  return true;
+  if (policy === 'confirm_risky' || policy === 'never_confirm') {
+    return risk === 'high';
+  }
+  return risk === 'high';
 }
 
 function shouldRequireAgenticConfirmation(
@@ -6957,7 +6958,7 @@ function verifyWsToken(token: string): { userId: string; tenantId: string; role:
   }
 }
 
-app.get('/api/chat/ws-token', requireAuth(), async (req: Request, res: Response) => {
+app.get('/api/chat/ws-token', requireAuth({ logUnauthorized: false }), async (req: Request, res: Response) => {
   try {
     const userId = (req as unknown as { userId?: string }).userId;
     const tenantId = (req as unknown as { tenantId?: string }).tenantId;
@@ -7579,9 +7580,38 @@ app.post('/api/chat/conversations', requireAuth(), requireSameTenant(getTenantId
   try {
     const body = createConversationSchema.parse(req.body);
 
-    // Reconhecimento automático: quando context é fornecido sem namespaceId/agentId
+    // Reconhecimento automático: quando route/context é fornecido sem namespaceId/agentId
     let agentId = body.agentId ?? undefined;
     let namespaceId = body.namespaceId ?? undefined;
+    if ((!agentId && !namespaceId) && body.route) {
+      const resolved = await resolveNamespaceByRoute(tenantId, body.route, {
+        getNamespaceBySlug: async (tId, slug) =>
+          db.query.namespaces.findFirst({
+            where: and(
+              eq(schema.namespaces.tenantId, tId),
+              eq(schema.namespaces.slug, slug),
+              eq(schema.namespaces.ativo, true)
+            ),
+            columns: { id: true, tenantId: true, contextoSistema: true },
+          }),
+        getNamespacesByTenant: async (tId) =>
+          db.query.namespaces.findMany({
+            where: and(eq(schema.namespaces.tenantId, tId), eq(schema.namespaces.ativo, true)),
+            columns: { id: true, slug: true, contextoSistema: true },
+          }),
+        getActiveAgentByNamespace: async (nsId) =>
+          db.query.agents.findFirst({
+            where: and(
+              eq(schema.agents.namespaceId, nsId),
+              eq(schema.agents.status, 'active')
+            ),
+            orderBy: [desc(schema.agents.atualizadoEm)],
+            columns: { id: true },
+          }),
+      });
+      if (resolved.namespaceId) namespaceId = resolved.namespaceId;
+      if (resolved.agentId) agentId = resolved.agentId;
+    }
     if ((!agentId && !namespaceId) && body.context) {
       const resolved = await resolveNamespaceByContext(tenantId, body.context as NamespaceContext, {
         getNamespaceBySlug: async (tId, slug) =>
@@ -10626,7 +10656,6 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                 actionResult: result,
               }),
               tradingCommand: tradingCommand,
-              tradingResult: result,
             },
           }).returning();
 
@@ -10907,7 +10936,6 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
               actionResult: result,
             }),
             tradingCommand: parsedCommand,
-            tradingResult: result,
           },
         }).returning();
 

@@ -47,6 +47,7 @@ export {
   requirePermission, 
   requireRole, 
   requireSameTenant,
+  requireInternalHmacAuth,
   extractAuthContext,
   checkPermission,
   checkPermissionDirect,

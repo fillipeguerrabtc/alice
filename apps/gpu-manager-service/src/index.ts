@@ -730,10 +730,10 @@ async function processGpuRequest(request: GpuRequest): Promise<GpuResponse> {
   
   try {
     // Orquestração (se disponível): TRAINING/EMBEDDINGS trocam containers conforme demanda
-    if (orchestratorAvailable && GPU_ORCHESTRATION_MODE === 'preemptive') {
+    if (orchestratorAvailable) {
       if (serviceType === GpuServiceType.TRAINING) {
         await switchToTraining();
-      } else if (serviceType === GpuServiceType.EMBEDDINGS && getOrchestratorState() === 'training') {
+      } else if (serviceType === GpuServiceType.EMBEDDINGS && getOrchestratorState() === 'training' && GPU_ORCHESTRATION_MODE === 'preemptive') {
         await switchToLlmEmbeddings();
       }
     }
@@ -895,7 +895,7 @@ async function startQueueWorker(): Promise<void> {
           const resultKey = `${REDIS_QUEUE_PREFIX}:result:${request.id}`;
           await redis.setEx(resultKey, 300, JSON.stringify(response)); // 5 min TTL
 
-          if (serviceType === GpuServiceType.TRAINING && response.success && orchestratorAvailable && GPU_ORCHESTRATION_MODE === 'preemptive') {
+          if (serviceType === GpuServiceType.TRAINING && response.success && orchestratorAvailable) {
             reportTrainingActivity();
           }
           logger.info({

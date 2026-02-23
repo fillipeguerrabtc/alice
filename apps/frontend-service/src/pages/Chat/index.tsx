@@ -551,13 +551,14 @@ function ConversationsList({
 
 export default function Chat() {
   const { t } = useTranslation();
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, isAuthenticated, isLoading: authLoading } = useAuth();
   const { conversationId } = useParams<{ conversationId?: string }>();
   const [location, navigate] = useLocation();
   const queryClientRef = useQueryClient();
   const { toast } = useToast();
   const isMobile = useIsMobile();
   const appVersion = __APP_VERSION__;
+  const showLoginBanner = !authLoading && !isAuthenticated;
   
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
@@ -1258,6 +1259,10 @@ export default function Chat() {
   }, [resolveStreamStatus]);
   const sendMessage = useMutation({
     mutationFn: async ({ content, mediaAttachments }: { content: string; mediaAttachments?: MediaAttachment[] }) => {
+      if (!isAuthenticated) {
+        toast({ title: 'Faça login para continuar', description: 'O chat em tempo real está disponível apenas para usuários autenticados.' });
+        return '';
+      }
       if (!ensureRoutingSelection()) {
         return '';
       }
@@ -1299,26 +1304,27 @@ export default function Chat() {
       setMessages((prev) => [...prev, assistantMessage]);
 
       const pathname = (location as string) ?? '';
+      const resolvedRoute = pathname.split('?')[0] || '/chat';
       let activeConversationId = conversationId;
       if (!activeConversationId) {
         const contextPayload: { agentId?: string; namespaceId?: string; context?: 'trading' | 'sales' | 'support' | 'cambio' | 'default'; route?: string } = {};
         if (currentRoutingMode === 'manual' && currentRoutingAgentIds.length === 1) {
           contextPayload.agentId = currentRoutingAgentIds[0];
         }
-        if (pathname.includes('/trading')) {
+        if (resolvedRoute.startsWith('/trading') || resolvedRoute.startsWith('/demo-trading')) {
           contextPayload.context = 'trading';
-          contextPayload.route = '/trading';
-        } else if (pathname.includes('/sales')) {
+          contextPayload.route = resolvedRoute;
+        } else if (resolvedRoute.startsWith('/sales')) {
           contextPayload.context = 'sales';
-          contextPayload.route = '/sales';
-        } else if (pathname.includes('/support')) {
+          contextPayload.route = resolvedRoute;
+        } else if (resolvedRoute.startsWith('/support')) {
           contextPayload.context = 'support';
-          contextPayload.route = '/support';
-        } else if (pathname.includes('/cambio')) {
+          contextPayload.route = resolvedRoute;
+        } else if (resolvedRoute.startsWith('/cambio')) {
           contextPayload.context = 'cambio';
-          contextPayload.route = '/cambio';
+          contextPayload.route = resolvedRoute;
         } else {
-          contextPayload.route = '/chat';
+          contextPayload.route = resolvedRoute;
         }
         const created = await createConversation.mutateAsync(Object.keys(contextPayload).length > 0 ? contextPayload : undefined);
         const nextConversationId = created.conversation.id;
@@ -1374,7 +1380,7 @@ export default function Chat() {
         )
         : undefined;
 
-      const routeForContext = pathname.startsWith('/trading') ? '/trading' : pathname.startsWith('/sales') ? '/sales' : pathname.startsWith('/support') ? '/support' : pathname.startsWith('/cambio') ? '/cambio' : '/chat';
+      const routeForContext = resolvedRoute;
 
       const payload = {
         conversationId: activeConversationId,
@@ -1951,6 +1957,10 @@ export default function Chat() {
   // Remove a última mensagem do assistente e reenvia a última mensagem do usuário
   const handleRegenerate = useCallback(() => {
     if (isStreaming || messages.length === 0) return;
+    if (!isAuthenticated) {
+      toast({ title: 'Faça login para continuar', description: 'O chat em tempo real está disponível apenas para usuários autenticados.' });
+      return;
+    }
 
     // Encontrar última mensagem do usuário (iterar de trás para frente)
     let lastUserMessageIndex = -1;
@@ -1975,7 +1985,7 @@ export default function Chat() {
         mediaAttachments: lastUserMessage.mediaAttachments,
       });
     }
-  }, [messages, isStreaming, sendMessage]);
+  }, [messages, isStreaming, sendMessage, isAuthenticated, toast]);
 
   const handleStopStreaming = useCallback(() => {
     if (!streamControllerRef.current) return;
@@ -1985,6 +1995,10 @@ export default function Chat() {
 
   const handleSend = useCallback(() => {
     if ((!input.trim() && pendingMedia.length === 0) || isRecording) return;
+    if (!isAuthenticated) {
+      toast({ title: 'Faça login para continuar', description: 'O chat em tempo real está disponível apenas para usuários autenticados.' });
+      return;
+    }
 
     autoScrollRef.current = true;
 
@@ -2005,7 +2019,7 @@ export default function Chat() {
     });
     setInput('');
     clearPendingMedia({ revokeBlobUrls: false });
-  }, [clearPendingMedia, handleStopStreaming, input, isRecording, isStreaming, pendingMedia, sendMessage]);
+  }, [clearPendingMedia, handleStopStreaming, input, isRecording, isStreaming, pendingMedia, sendMessage, isAuthenticated, toast]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -2376,6 +2390,15 @@ export default function Chat() {
           {/* Área de mensagens - responsiva */}
           <ScrollArea ref={scrollAreaRef} className="flex-1 p-2 md:p-4">
             <div ref={messagesContainerRef} className="min-h-full">
+              {showLoginBanner && (
+                <Alert variant="default" className="mb-3 border-amber-500/50 bg-amber-500/10">
+                  <Info className="h-4 w-4 text-amber-600" />
+                  <AlertTitle>Faça login para chat em tempo real</AlertTitle>
+                  <AlertDescription>
+                    Usuários anônimos não iniciam WebSocket nem streaming. Entre com sua conta para conversar em tempo real.
+                  </AlertDescription>
+                </Alert>
+              )}
               <AnimatePresence mode="popLayout">
                 {messages.length === 0 ? (
                   <WelcomeScreen />
@@ -2399,6 +2422,10 @@ export default function Chat() {
                         onRegenerate={handleRegenerate}
                         onQuickReply={(content) => {
                           if (isStreaming) return;
+                          if (!isAuthenticated) {
+                            toast({ title: 'Faça login para continuar', description: 'O chat em tempo real está disponível apenas para usuários autenticados.' });
+                            return;
+                          }
                           sendMessage.mutate({ content });
                         }}
                         selectionMode={messageSelectionMode}
@@ -2429,10 +2456,10 @@ export default function Chat() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
         >
-          <ChatInput
-            value={input}
-            onChange={setInput}
-            onSend={handleSend}
+            <ChatInput
+              value={input}
+              onChange={setInput}
+              onSend={handleSend}
             onFilesSelected={handleFileSelect}
             onStartRecording={handleStartRecording}
             onStopRecording={handleStopRecordingReview}
@@ -2442,11 +2469,12 @@ export default function Chat() {
             pendingMedia={pendingMedia}
             isStreaming={isStreaming}
             isRecording={isRecording}
-            isRecordingDisabled={isStreaming || isRecording || isRecordingStarting || isTranscribingRecording}
-            isMobile={isMobile}
-            acceptedTypes={[...ACCEPTED_TYPES.image, ...ACCEPTED_TYPES.audio].join(',')}
-            focusNonce={focusNonce}
-          />
+              isRecordingDisabled={isStreaming || isRecording || isRecordingStarting || isTranscribingRecording}
+              isMobile={isMobile}
+              acceptedTypes={[...ACCEPTED_TYPES.image, ...ACCEPTED_TYPES.audio].join(',')}
+              focusNonce={focusNonce}
+              isDisabled={showLoginBanner}
+            />
         </motion.form>
 
         <Dialog
