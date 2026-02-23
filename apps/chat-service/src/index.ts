@@ -5868,6 +5868,8 @@ function shouldRequireTradingConfirmation(
     return isRiskyCommand;
   }
   if (policy === 'never_confirm') {
+    // Regra de segurança: comandos de risco alto continuam exigindo confirmação explícita.
+    // "never_confirm" remove prompts para baixo/médio risco, mas não permite bypass de ações críticas.
     return isRiskyCommand;
   }
   return isRiskyCommand;
