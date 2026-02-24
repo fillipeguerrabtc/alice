@@ -264,6 +264,24 @@ export function MessageBubble({
   const requiresConfirmation = Boolean(message.metadata?.requiresConfirmation);
   const shouldShowActionCard = Boolean(message.metadata?.actionType || message.metadata?.actionStatus || message.metadata?.actionResult);
 
+  // Se há actionResult no metadata, exibir apenas o resumo humano; suprimir JSON bruto no texto
+  const sanitizedDisplayContent = (() => {
+    if (!shouldShowActionCard || !displayedContent) return displayedContent;
+    const trimmed = displayedContent.trim();
+    // Detectar JSON bruto via tentativa de parse; apenas suprimir objetos/arrays válidos
+    if ((trimmed.startsWith('{') || trimmed.startsWith('[')) && trimmed.length > 2) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (typeof parsed === 'object' && parsed !== null) {
+          return '';
+        }
+      } catch {
+        // Não é JSON válido — manter conteúdo original
+      }
+    }
+    return displayedContent;
+  })();
+
   return (
     <motion.div
       variants={messageVariants}
@@ -347,7 +365,7 @@ export function MessageBubble({
                 <span className="inline-block h-1.5 w-1.5 rounded-full bg-muted-foreground/50 animate-pulse" />
                 {t('chat.thinking')}
               </span>
-            ) : displayedContent}
+            ) : sanitizedDisplayContent}
             {shouldShowTypingCursor && (
               <span className="inline-block w-2 h-4 ml-0.5 bg-current animate-pulse rounded-sm" />
             )}
@@ -425,6 +443,7 @@ export function MessageBubble({
                     Biometria não cadastrada. Cadastre nas configurações para usar esta opção.
                   </p>
                 )}
+                {biometricOpen && (
                 <BiometricCapture
                   autoStart={true}
                   onCapture={handleBiometricCapture}
@@ -432,6 +451,7 @@ export function MessageBubble({
                     toast({ title: 'Falha na câmera', description: message, variant: 'destructive' });
                   }}
                 />
+                )}
               </div>
               {biometricPending && (
                 <p className="text-xs text-muted-foreground">Validando aprovação...</p>
