@@ -207,7 +207,7 @@ const COMMAND_PATTERNS: CommandPattern[] = [
     type: 'status',
     patterns: [
       /\b(status|situa[çc][ãa]o)\s+(do\s+)?(trading|opera[çc][õo]es?)\b/i,
-      /\bcomo\s+est[áa]\s+(o\s+)?(trading|mercado)\b/i,
+      /\bcomo\s+est[áa]\s+(o\s+)?(trading|bot|opera[çc][õo]es?)\b/i,
       /\b(mostrar?|mostre|ver|show)\s+(o\s+)?(status|resumo)\b/i,
     ],
   },

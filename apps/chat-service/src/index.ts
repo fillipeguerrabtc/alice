@@ -5944,6 +5944,14 @@ function shouldRequireTradingConfirmation(
   command: ParsedTradingCommand,
   policy: ConversationApprovalPolicy
 ): boolean {
+  // Comandos somente-leitura NUNCA exigem confirmação independente da policy
+  const readOnlyCommands: ReadonlySet<string> = new Set([
+    'status', 'positions', 'orders', 'analysis', 'generate_signal',
+  ]);
+  if (readOnlyCommands.has(command.type)) {
+    return false;
+  }
+
   const risk = getTradingCommandRisk(command);
   const isRiskyCommand = risk === 'high';
   if (policy === 'always_confirm') {
@@ -9006,12 +9014,19 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       res.write(`data: ${JSON.stringify({ type: 'conversation', conversationId })}\n\n`);
     }
 
+    // Flush SSE para entrega imediata de chunks ao cliente (streaming tipo ChatGPT)
+    const flushSSE = () => {
+      const flusher = (res as unknown as { flush?: () => void }).flush;
+      if (typeof flusher === 'function') flusher();
+    };
+
     const writeStatus = (stage: string) => {
       if (!res.headersSent) {
         res.flushHeaders();
       }
       if (!res.writableEnded) {
         res.write(`data: ${JSON.stringify({ type: 'status', stage })}\n\n`);
+        flushSSE();
       }
     };
 
@@ -9036,6 +9051,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         ...(payload ? { payload } : {}),
       };
       res.write(`data: ${JSON.stringify({ type: 'agent_event', data })}\n\n`);
+      flushSSE();
     };
 
     writeStatus('preparing');
@@ -9407,6 +9423,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             try {
               if (res.headersSent && !res.writableEnded) {
                 res.write(`data: ${JSON.stringify({ content })}\n\n`);
+                flushSSE();
               }
             } catch (writeError) {
               logger.warn({ error: writeError, conversationId }, 'Erro ao escrever chunk SSE (mídia) - cliente pode ter desconectado');
@@ -10807,6 +10824,17 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             })
             .where(eq(schema.conversations.id, conversationId));
 
+          res.write(`data: ${JSON.stringify({
+            type: 'action_result',
+            data: {
+              actionRequestId: pendingAction.id,
+              actionType: 'trading',
+              actionOperation: tradingCommand.type,
+              status: result.success ? 'executed' : 'failed',
+              summary: payload.summary ?? description,
+              result: redactSensitivePayload(result),
+            },
+          })}\n\n`);
           res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
           res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
           res.write('data: [DONE]\n\n');
@@ -11097,6 +11125,16 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           logger.warn({ error: titleError, conversationId }, 'Falha ao aplicar título automático (trading command)');
         }
 
+        res.write(`data: ${JSON.stringify({
+          type: 'action_result',
+          data: {
+            actionType: 'trading',
+            actionOperation: parsedCommand.type,
+            status: result.success ? 'executed' : 'failed',
+            summary: description,
+            result: redactSensitivePayload(result),
+          },
+        })}\n\n`);
         res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
         res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
         res.write('data: [DONE]\n\n');
@@ -12503,6 +12541,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           try {
             if (res.headersSent && !res.writableEnded) {
               res.write(`data: ${JSON.stringify({ content })}\n\n`);
+              flushSSE();
             } else {
               logger.debug({ conversationId: req.params.id }, 'Response fechada durante streaming SSE - ignorando chunk');
             }

@@ -1437,13 +1437,26 @@ export default function Chat() {
 
           const chunk = decoder.decode(value, { stream: true });
           buffer += chunk;
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
 
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              const data = line.slice(6).trim();
-              if (data === '[DONE]') continue;
+          // Parser SSE correto: eventos separados por \n\n, normaliza CRLF
+          const normalized = buffer.replace(/\r\n/g, '\n');
+          const events = normalized.split('\n\n');
+          // O último segmento pode estar incompleto; preservar no buffer
+          buffer = events.pop() || '';
+
+          for (const event of events) {
+            // Concatenar múltiplas linhas "data:" do mesmo evento
+            const dataLines: string[] = [];
+            for (const line of event.split('\n')) {
+              if (line.startsWith('data: ')) {
+                dataLines.push(line.slice(6));
+              } else if (line.startsWith('data:')) {
+                dataLines.push(line.slice(5));
+              }
+            }
+            if (dataLines.length === 0) continue;
+            const data = dataLines.join('\n').trim();
+            if (data === '[DONE]') continue;
 
               try {
                 const parsed = JSON.parse(data);
@@ -1659,7 +1672,6 @@ export default function Chat() {
               } catch {
                 // Ignorar erros de parse
               }
-            }
           }
         }
       } finally {
