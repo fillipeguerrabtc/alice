@@ -1439,12 +1439,13 @@ export default function Chat() {
           buffer += chunk;
 
           // Parser SSE correto: eventos separados por \n\n, normaliza CRLF
-          const normalized = buffer.replace(/\r\n/g, '\n');
-          const events = normalized.split('\n\n');
-          // O último segmento pode estar incompleto; preservar no buffer
-          buffer = events.pop() || '';
+          let normalizedBuffer = buffer.replace(/\r\n/g, '\n');
+          let separatorIndex = normalizedBuffer.indexOf('\n\n');
+          while (separatorIndex !== -1) {
+            const event = normalizedBuffer.slice(0, separatorIndex);
+            normalizedBuffer = normalizedBuffer.slice(separatorIndex + 2);
+            separatorIndex = normalizedBuffer.indexOf('\n\n');
 
-          for (const event of events) {
             // Concatenar múltiplas linhas "data:" do mesmo evento
             const dataLines: string[] = [];
             for (const line of event.split('\n')) {
@@ -1458,221 +1459,222 @@ export default function Chat() {
             const data = dataLines.join('\n').trim();
             if (data === '[DONE]') continue;
 
-              try {
-                const parsed = JSON.parse(data);
-                if (parsed.type === 'conversation' && parsed.conversationId && !conversationId) {
-                  navigate(`/chat/${parsed.conversationId}`);
-                  queryClientRef.invalidateQueries({ queryKey: ['/api/chat/conversations'] });
-                  resetTimeout();
-                }
-
-                if (parsed.type === 'status') {
-                  const label = resolveStreamStatus(parsed.stage);
-                  pushStreamEvent(createStatusEvent(parsed.stage, label));
-                  resetTimeout();
-                }
-
-                if (parsed.type === 'agent_event' && parsed.data) {
-                  pushStreamEvent(parsed.data as AgentEvent);
-                  resetTimeout();
-                }
-
-                if (parsed.type === 'llm_metadata' && parsed.usedFallback) {
-                  setLastResponseUsedFallback(true);
-                  resetTimeout();
-                }
-
-                if (parsed.type === 'agent_route' && parsed.agent) {
-                  const normalizedAgent = parsed.agent as Message['agent'];
-                  setMessages((prev) => {
-                    const newMessages = [...prev];
-                    const lastIdx = newMessages.length - 1;
-                    if (lastIdx >= 0 && newMessages[lastIdx].role === 'assistant') {
-                      newMessages[lastIdx] = { ...newMessages[lastIdx], agent: normalizedAgent };
-                    }
-                    return newMessages;
-                  });
-                  resetTimeout();
-                }
-
-                if (parsed.type === 'sources') {
-                  resetTimeout();
-                }
-
-                if (parsed.type === 'message_saved') {
-                  resetTimeout();
-                }
-
-                if (parsed.type === 'generated_image') {
-                  const serverMessage = (parsed.message && typeof parsed.message === 'object' ? parsed.message : {}) as {
-                    id?: string;
-                    conteudo?: string | null;
-                    criadoEm?: string | null;
-                    generatedImage?: Message['generatedImage'];
-                  };
-                  const normalizedMessage: Message = {
-                    id: serverMessage.id || crypto.randomUUID(),
-                    role: 'assistant',
-                    content: serverMessage.conteudo ?? '',
-                    createdAt: serverMessage.criadoEm || new Date().toISOString(),
-                    generatedImage: serverMessage.generatedImage ?? parsed.generatedImage,
-                  };
-                  setMessages((prev) => {
-                    const newMessages = [...prev];
-                    const lastIdx = newMessages.length - 1;
-                    if (lastIdx >= 0 && newMessages[lastIdx].role === 'assistant') {
-                      newMessages[lastIdx] = { ...newMessages[lastIdx], ...normalizedMessage };
-                    } else {
-                      newMessages.push(normalizedMessage);
-                    }
-                    return newMessages;
-                  });
-                  resetTimeout();
-                }
-
-                if (parsed.type === 'web_image_results' && parsed.message) {
-                  const normalizedMessage = normalizeServerMessage(parsed.message as ServerMessage);
-                  setMessages((prev) => {
-                    const newMessages = [...prev];
-                    const lastIdx = newMessages.length - 1;
-                    if (lastIdx >= 0 && newMessages[lastIdx].role === 'assistant') {
-                      newMessages[lastIdx] = { ...newMessages[lastIdx], ...normalizedMessage };
-                    } else {
-                      newMessages.push(normalizedMessage);
-                    }
-                    return newMessages;
-                  });
-                  resetTimeout();
-                }
-
-                if (parsed.type === 'media_uploaded' && Array.isArray(parsed.attachments)) {
-                  setMessages((prev) => {
-                    const newMessages = [...prev];
-                    const lastUserIndex = [...newMessages].reverse().findIndex((msg) => msg.role === 'user');
-                    if (lastUserIndex >= 0) {
-                      const targetIndex = newMessages.length - 1 - lastUserIndex;
-                      const target = newMessages[targetIndex];
-                      if (target?.mediaAttachments) {
-                        const updated: MediaAttachment[] = target.mediaAttachments.map((media) => {
-                          const serverAttachment = parsed.attachments.find((att: { id: string }) => att.id === media.id) as
-                            | {
-                                id: string;
-                                url?: string;
-                                thumbnailUrl?: string;
-                                processingStatus?: string;
-                                uploadId?: string;
-                                transcription?: string;
-                                visionDescription?: string;
-                                visionModel?: string;
-                              }
-                            | undefined;
-                          if (!serverAttachment) return media;
-                          if (media.url && media.url.startsWith('blob:') && serverAttachment.url && serverAttachment.url !== media.url) {
-                            URL.revokeObjectURL(media.url);
-                          }
-                          const resolvedStatus: MediaAttachment['status'] =
-                            serverAttachment.processingStatus === 'completed'
-                              ? 'ready'
-                              : serverAttachment.processingStatus === 'failed' || serverAttachment.processingStatus === 'error'
-                                ? 'error'
-                                : serverAttachment.processingStatus === 'uploading'
-                                  ? 'uploading'
-                                  : 'processing';
-                          return {
-                            ...media,
-                            url: serverAttachment.url ?? media.url,
-                            thumbnailUrl: serverAttachment.thumbnailUrl ?? media.thumbnailUrl,
-                            status: resolvedStatus,
-                            uploadId: serverAttachment.uploadId ?? media.uploadId,
-                            transcription: serverAttachment.transcription ?? media.transcription,
-                            visionDescription: serverAttachment.visionDescription ?? media.visionDescription,
-                            visionModel: serverAttachment.visionModel ?? media.visionModel,
-                          };
-                        });
-                        newMessages[targetIndex] = { ...target, mediaAttachments: updated };
-                      }
-                    }
-                    return newMessages;
-                  });
-                  resetTimeout();
-                }
-
-                if (parsed.error) {
-                  const errorMessage = typeof parsed.error === 'string' ? parsed.error : t('chat.streaming.error');
-                  setMessages((prev) => {
-                    const newMessages = [...prev];
-                    const lastIdx = newMessages.length - 1;
-                    if (lastIdx >= 0 && newMessages[lastIdx].role === 'assistant') {
-                      newMessages[lastIdx] = {
-                        ...newMessages[lastIdx],
-                        content: errorMessage,
-                      };
-                    } else {
-                      newMessages.push({
-                        id: crypto.randomUUID(),
-                        role: 'assistant',
-                        content: errorMessage,
-                        createdAt: new Date().toISOString(),
-                      });
-                    }
-                    return newMessages;
-                  });
-                  resetTimeout();
-                }
-
-                if (parsed.content) {
-                  fullContent += parsed.content;
-                  setMessages((prev) => {
-                    const newMessages = [...prev];
-                    const lastIdx = newMessages.length - 1;
-                    if (lastIdx >= 0 && newMessages[lastIdx].role === 'assistant') {
-                      newMessages[lastIdx] = { ...newMessages[lastIdx], content: fullContent };
-                    }
-                    return newMessages;
-                  });
-                  resetTimeout();
-                }
-
-                if (parsed.type === 'final_message' && typeof parsed.content === 'string') {
-                  fullContent = parsed.content;
-                  setMessages((prev) => {
-                    const newMessages = [...prev];
-                    const lastIdx = newMessages.length - 1;
-                    if (lastIdx >= 0 && newMessages[lastIdx].role === 'assistant') {
-                      newMessages[lastIdx] = { ...newMessages[lastIdx], content: fullContent };
-                    }
-                    return newMessages;
-                  });
-                  resetTimeout();
-                }
-
-                if (parsed.type === 'action_result' && parsed.data && typeof parsed.data === 'object') {
-                  // Injeta metadados de action_result na última mensagem assistant para ActionResultCard
-                  const actionData = parsed.data as Record<string, unknown>;
-                  setMessages((prev) => {
-                    const newMessages = [...prev];
-                    const lastIdx = newMessages.length - 1;
-                    if (lastIdx >= 0 && newMessages[lastIdx].role === 'assistant') {
-                      newMessages[lastIdx] = {
-                        ...newMessages[lastIdx],
-                        metadata: {
-                          ...(newMessages[lastIdx].metadata as Record<string, unknown> ?? {}),
-                          actionType: typeof actionData.actionType === 'string' ? actionData.actionType : undefined,
-                          actionOperation: typeof actionData.actionOperation === 'string' ? actionData.actionOperation : undefined,
-                          actionStatus: typeof actionData.status === 'string' ? actionData.status : undefined,
-                          actionSummary: typeof actionData.summary === 'string' ? actionData.summary : undefined,
-                          actionResult: actionData.result !== null && typeof actionData.result === 'object' ? actionData.result as Record<string, unknown> : undefined,
-                        },
-                      };
-                    }
-                    return newMessages;
-                  });
-                  resetTimeout();
-                }
-              } catch {
-                // Ignorar erros de parse
+            try {
+              const parsed = JSON.parse(data);
+              if (parsed.type === 'conversation' && parsed.conversationId && !conversationId) {
+                navigate(`/chat/${parsed.conversationId}`);
+                queryClientRef.invalidateQueries({ queryKey: ['/api/chat/conversations'] });
+                resetTimeout();
               }
+
+              if (parsed.type === 'status') {
+                const label = resolveStreamStatus(parsed.stage);
+                pushStreamEvent(createStatusEvent(parsed.stage, label));
+                resetTimeout();
+              }
+
+              if (parsed.type === 'agent_event' && parsed.data) {
+                pushStreamEvent(parsed.data as AgentEvent);
+                resetTimeout();
+              }
+
+              if (parsed.type === 'llm_metadata' && parsed.usedFallback) {
+                setLastResponseUsedFallback(true);
+                resetTimeout();
+              }
+
+              if (parsed.type === 'agent_route' && parsed.agent) {
+                const normalizedAgent = parsed.agent as Message['agent'];
+                setMessages((prev) => {
+                  const newMessages = [...prev];
+                  const lastIdx = newMessages.length - 1;
+                  if (lastIdx >= 0 && newMessages[lastIdx].role === 'assistant') {
+                    newMessages[lastIdx] = { ...newMessages[lastIdx], agent: normalizedAgent };
+                  }
+                  return newMessages;
+                });
+                resetTimeout();
+              }
+
+              if (parsed.type === 'sources') {
+                resetTimeout();
+              }
+
+              if (parsed.type === 'message_saved') {
+                resetTimeout();
+              }
+
+              if (parsed.type === 'generated_image') {
+                const serverMessage = (parsed.message && typeof parsed.message === 'object' ? parsed.message : {}) as {
+                  id?: string;
+                  conteudo?: string | null;
+                  criadoEm?: string | null;
+                  generatedImage?: Message['generatedImage'];
+                };
+                const normalizedMessage: Message = {
+                  id: serverMessage.id || crypto.randomUUID(),
+                  role: 'assistant',
+                  content: serverMessage.conteudo ?? '',
+                  createdAt: serverMessage.criadoEm || new Date().toISOString(),
+                  generatedImage: serverMessage.generatedImage ?? parsed.generatedImage,
+                };
+                setMessages((prev) => {
+                  const newMessages = [...prev];
+                  const lastIdx = newMessages.length - 1;
+                  if (lastIdx >= 0 && newMessages[lastIdx].role === 'assistant') {
+                    newMessages[lastIdx] = { ...newMessages[lastIdx], ...normalizedMessage };
+                  } else {
+                    newMessages.push(normalizedMessage);
+                  }
+                  return newMessages;
+                });
+                resetTimeout();
+              }
+
+              if (parsed.type === 'web_image_results' && parsed.message) {
+                const normalizedMessage = normalizeServerMessage(parsed.message as ServerMessage);
+                setMessages((prev) => {
+                  const newMessages = [...prev];
+                  const lastIdx = newMessages.length - 1;
+                  if (lastIdx >= 0 && newMessages[lastIdx].role === 'assistant') {
+                    newMessages[lastIdx] = { ...newMessages[lastIdx], ...normalizedMessage };
+                  } else {
+                    newMessages.push(normalizedMessage);
+                  }
+                  return newMessages;
+                });
+                resetTimeout();
+              }
+
+              if (parsed.type === 'media_uploaded' && Array.isArray(parsed.attachments)) {
+                setMessages((prev) => {
+                  const newMessages = [...prev];
+                  const lastUserIndex = [...newMessages].reverse().findIndex((msg) => msg.role === 'user');
+                  if (lastUserIndex >= 0) {
+                    const targetIndex = newMessages.length - 1 - lastUserIndex;
+                    const target = newMessages[targetIndex];
+                    if (target?.mediaAttachments) {
+                      const updated: MediaAttachment[] = target.mediaAttachments.map((media) => {
+                        const serverAttachment = parsed.attachments.find((att: { id: string }) => att.id === media.id) as
+                          | {
+                              id: string;
+                              url?: string;
+                              thumbnailUrl?: string;
+                              processingStatus?: string;
+                              uploadId?: string;
+                              transcription?: string;
+                              visionDescription?: string;
+                              visionModel?: string;
+                            }
+                          | undefined;
+                        if (!serverAttachment) return media;
+                        if (media.url && media.url.startsWith('blob:') && serverAttachment.url && serverAttachment.url !== media.url) {
+                          URL.revokeObjectURL(media.url);
+                        }
+                        const resolvedStatus: MediaAttachment['status'] =
+                          serverAttachment.processingStatus === 'completed'
+                            ? 'ready'
+                            : serverAttachment.processingStatus === 'failed' || serverAttachment.processingStatus === 'error'
+                              ? 'error'
+                              : serverAttachment.processingStatus === 'uploading'
+                                ? 'uploading'
+                                : 'processing';
+                        return {
+                          ...media,
+                          url: serverAttachment.url ?? media.url,
+                          thumbnailUrl: serverAttachment.thumbnailUrl ?? media.thumbnailUrl,
+                          status: resolvedStatus,
+                          uploadId: serverAttachment.uploadId ?? media.uploadId,
+                          transcription: serverAttachment.transcription ?? media.transcription,
+                          visionDescription: serverAttachment.visionDescription ?? media.visionDescription,
+                          visionModel: serverAttachment.visionModel ?? media.visionModel,
+                        };
+                      });
+                      newMessages[targetIndex] = { ...target, mediaAttachments: updated };
+                    }
+                  }
+                  return newMessages;
+                });
+                resetTimeout();
+              }
+
+              if (parsed.error) {
+                const errorMessage = typeof parsed.error === 'string' ? parsed.error : t('chat.streaming.error');
+                setMessages((prev) => {
+                  const newMessages = [...prev];
+                  const lastIdx = newMessages.length - 1;
+                  if (lastIdx >= 0 && newMessages[lastIdx].role === 'assistant') {
+                    newMessages[lastIdx] = {
+                      ...newMessages[lastIdx],
+                      content: errorMessage,
+                    };
+                  } else {
+                    newMessages.push({
+                      id: crypto.randomUUID(),
+                      role: 'assistant',
+                      content: errorMessage,
+                      createdAt: new Date().toISOString(),
+                    });
+                  }
+                  return newMessages;
+                });
+                resetTimeout();
+              }
+
+              if (parsed.content) {
+                fullContent += parsed.content;
+                setMessages((prev) => {
+                  const newMessages = [...prev];
+                  const lastIdx = newMessages.length - 1;
+                  if (lastIdx >= 0 && newMessages[lastIdx].role === 'assistant') {
+                    newMessages[lastIdx] = { ...newMessages[lastIdx], content: fullContent };
+                  }
+                  return newMessages;
+                });
+                resetTimeout();
+              }
+
+              if (parsed.type === 'final_message' && typeof parsed.content === 'string') {
+                fullContent = parsed.content;
+                setMessages((prev) => {
+                  const newMessages = [...prev];
+                  const lastIdx = newMessages.length - 1;
+                  if (lastIdx >= 0 && newMessages[lastIdx].role === 'assistant') {
+                    newMessages[lastIdx] = { ...newMessages[lastIdx], content: fullContent };
+                  }
+                  return newMessages;
+                });
+                resetTimeout();
+              }
+
+              if (parsed.type === 'action_result' && parsed.data && typeof parsed.data === 'object') {
+                // Injeta metadados de action_result na última mensagem assistant para ActionResultCard
+                const actionData = parsed.data as Record<string, unknown>;
+                setMessages((prev) => {
+                  const newMessages = [...prev];
+                  const lastIdx = newMessages.length - 1;
+                  if (lastIdx >= 0 && newMessages[lastIdx].role === 'assistant') {
+                    newMessages[lastIdx] = {
+                      ...newMessages[lastIdx],
+                      metadata: {
+                        ...(newMessages[lastIdx].metadata as Record<string, unknown> ?? {}),
+                        actionType: typeof actionData.actionType === 'string' ? actionData.actionType : undefined,
+                        actionOperation: typeof actionData.actionOperation === 'string' ? actionData.actionOperation : undefined,
+                        actionStatus: typeof actionData.status === 'string' ? actionData.status : undefined,
+                        actionSummary: typeof actionData.summary === 'string' ? actionData.summary : undefined,
+                        actionResult: actionData.result !== null && typeof actionData.result === 'object' ? actionData.result as Record<string, unknown> : undefined,
+                      },
+                    };
+                  }
+                  return newMessages;
+                });
+                resetTimeout();
+              }
+            } catch {
+              // Ignorar erros de parse
+            }
           }
+          buffer = normalizedBuffer;
         }
       } finally {
         clearTimeoutSafe();

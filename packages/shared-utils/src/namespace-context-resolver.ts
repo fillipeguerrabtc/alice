@@ -46,7 +46,7 @@ export interface NamespaceResolverGetters {
  * Parseia contextoSistema (JSON) do namespace.
  * Formato: {"routes": ["/trading", "/demo-trading"], "themes": ["trading", "btc"]}
  */
-function parseContextoSistema(raw: string | null | undefined): ContextoSistemaJson | null {
+export function parseContextoSistema(raw: string | null | undefined): ContextoSistemaJson | null {
   if (!raw || typeof raw !== 'string') return null;
   try {
     const parsed = JSON.parse(raw) as unknown;
