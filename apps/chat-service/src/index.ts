@@ -96,7 +96,7 @@ import {
   classificarConsultaAgentic,
 } from './rag-client.js';
 import type { MediaUploadResult, RAGContextResponse } from './rag-client.js';
-import { resolveNamespaceByContext, resolveNamespaceByRoute, type NamespaceContext } from '@alice/shared-utils';
+import { parseContextoSistema, resolveNamespaceByContext, resolveNamespaceByRoute, type NamespaceContext } from '@alice/shared-utils';
 import {
   initOrchestrator,
   getOrCreateConversationState,
@@ -1402,6 +1402,17 @@ const AGENTIC_TASK_TYPE_KEYWORDS: Record<AgenticTaskType, string[]> = {
   planning: ['planejamento', 'planejamento financeiro', 'plano', 'plan', 'roadmap', 'orcamento', 'orçamento'],
 };
 
+const AGENT_ROUTING_MANUAL_KEYWORDS_PATCH = [
+  'falar com',
+  'quero falar com',
+  'conversar com',
+  'me passe para',
+  'agente de',
+  'quero o agente',
+  'quero o agente de trading',
+  'trocar pro agente',
+];
+
 const DEFAULT_AGENTIC_DETECTORS: AgenticDetectors = {
   webSearch: {
     keywords: ['pesquisar', 'buscar', 'busque', 'procure', 'consulte', 'search', 'look up', 'google'],
@@ -1436,6 +1447,7 @@ const DEFAULT_AGENTIC_DETECTORS: AgenticDetectors = {
       'usar agentes',
       'fixar agente',
       'fixar agentes',
+      ...AGENT_ROUTING_MANUAL_KEYWORDS_PATCH,
       'colaborar com',
       'handoff para',
       'transferir para',
@@ -2651,6 +2663,8 @@ async function generateImageFromPrompt(input: ImageGenerationInput) {
  * Interface do agente para type safety no system prompt
  */
 interface AgentConfig {
+  nome?: string | null;
+  slug?: string | null;
   instrucoes?: string | null;
   personalidade?: string | null;
   modeloBase?: string | null;
@@ -2961,6 +2975,15 @@ function buildSystemPrompt(
       !prompt.toLowerCase().includes('idioma') &&
       !prompt.toLowerCase().includes('língua')) {
     prompt += `\n\nIMPORTANTE: Responda sempre no mesmo idioma da mensagem do usuário, sem misturar idiomas.`;
+  }
+
+  if (agent) {
+    const agentName = agent.nome?.trim() || agent.slug?.trim() || 'Agente';
+    const agentSlug = agent.slug?.trim();
+    const identityLabel = agentSlug && agentSlug !== agentName
+      ? `${agentName} (@${agentSlug})`
+      : agentName;
+    prompt = `IDENTIDADE DO AGENTE:\n- Você é ${identityLabel}\n\n${prompt}`;
   }
 
   return prompt;
@@ -4595,6 +4618,44 @@ async function resolveTenantDefaultNamespaceId(tenantId: string): Promise<string
   return fallback?.id ?? null;
 }
 
+function normalizeLlmContextRoute(route: string): string {
+  const trimmed = route.trim();
+  return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+}
+
+async function resolveLlmContextRoute(params: {
+  tenantId: string;
+  route?: string | null;
+  namespaceId?: string | null;
+  namespaceContext?: { slug?: string | null; contextoSistema?: string | null } | null;
+}): Promise<string> {
+  if (params.route && params.route.trim().length > 0) {
+    return normalizeLlmContextRoute(params.route);
+  }
+  const namespace = params.namespaceContext ?? (params.namespaceId
+    ? await db.query.namespaces.findFirst({
+      where: and(
+        eq(schema.namespaces.id, params.namespaceId),
+        eq(schema.namespaces.tenantId, params.tenantId)
+      ),
+      columns: { slug: true, contextoSistema: true },
+    })
+    : null);
+  if (namespace) {
+    const parsedContext = parseContextoSistema(namespace.contextoSistema);
+    const contextRoute = parsedContext?.routes
+      ?.map((route) => (typeof route === 'string' ? route.trim() : ''))
+      .find((route) => route.length > 0);
+    if (contextRoute) {
+      return normalizeLlmContextRoute(contextRoute);
+    }
+    if (namespace.slug && namespace.slug.trim().length > 0) {
+      return normalizeLlmContextRoute(namespace.slug);
+    }
+  }
+  return '/';
+}
+
 async function resolveAgentRoutingForMessage(params: {
   tenantId: string;
   conversationId: string;
@@ -4634,8 +4695,17 @@ async function resolveAgentRoutingForMessage(params: {
     },
   });
 
-  const command = parseAgentRoutingCommand(params.userMessage, params.agenticDetectors.agentRouting);
+  let command = parseAgentRoutingCommand(params.userMessage, params.agenticDetectors.agentRouting);
   const profile = detectContextProfile(params.userMessage);
+  const normalizedMessage = normalizeAgentToken(params.userMessage);
+  const hasExplicitAgentIntent = ['agente', 'falar com', 'conversar com']
+    .some((keyword) => normalizedMessage.includes(keyword));
+  if (command.action === 'none' && hasExplicitAgentIntent) {
+    const inferredAgents = matchAgentsFromMessageText(agents, params.userMessage);
+    if (inferredAgents.length > 0) {
+      command = { ...command, action: 'manual', isCommandOnly: false };
+    }
+  }
   const stateRouting = resolveRoutingStateFromMetadata(params.conversationState.metadata);
   let mode: AgentRoutingMode = stateRouting.mode;
   let manualAgentIds = [...stateRouting.agentIds];
@@ -8390,6 +8460,8 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
 
     const agentConfig: AgentConfig | null = activeAgent
       ? {
+          nome: activeAgent.nome,
+          slug: activeAgent.slug,
           instrucoes: activeAgent.instrucoes,
           personalidade: activeAgent.personalidade,
           modeloBase: activeAgent.modeloBase,
@@ -8677,7 +8749,6 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     route: clientRoute,
     approvalPolicy: requestApprovalPolicy,
   } = parseResult.data;
-  const llmContextRoute = clientRoute && clientRoute.length > 0 ? clientRoute : '/chat';
   const userId = req.user?.userId;
   const tenantId = req.tenantId;
 
@@ -8886,6 +8957,12 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       }
     }
 
+    const llmContextRoute = await resolveLlmContextRoute({
+      tenantId,
+      route: clientRoute,
+      namespaceId: activeNamespaceId ?? namespaceId ?? conversation?.namespaceId ?? conversation?.agent?.namespaceId ?? null,
+    });
+
     const agentPayload = activeAgent
       ? {
           id: activeAgent.id,
@@ -8904,6 +8981,8 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
 
     const agentConfigForPrompt: AgentConfig | null = activeAgent
       ? {
+          nome: activeAgent.nome,
+          slug: activeAgent.slug,
           instrucoes: activeAgent.instrucoes,
           personalidade: activeAgent.personalidade,
           modeloBase: activeAgent.modeloBase,
@@ -8918,6 +8997,18 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders();
+
+    // Flush SSE para entrega imediata de chunks ao cliente (streaming tipo ChatGPT)
+    const flushSSE = () => {
+      const flusher = (res as unknown as { flush?: () => void }).flush;
+      if (typeof flusher === 'function') flusher();
+    };
+
+    const writeContentChunk = (content: string) => {
+      if (res.writableEnded) return;
+      res.write(`data: ${JSON.stringify({ content })}\n\n`);
+      flushSSE();
+    };
 
     if (agentPayload) {
       res.write(`data: ${JSON.stringify({ type: 'agent_route', agent: agentPayload, mode: routingDecision.mode, source: routingDecision.source })}\n\n`);
@@ -8960,7 +9051,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         })
         .where(eq(schema.conversations.id, conversationId));
 
-      res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+      writeContentChunk(responseContent);
       res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
       res.write('data: [DONE]\n\n');
       res.end();
@@ -9015,12 +9106,6 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     if (conversationCreated && conversationId) {
       res.write(`data: ${JSON.stringify({ type: 'conversation', conversationId })}\n\n`);
     }
-
-    // Flush SSE para entrega imediata de chunks ao cliente (streaming tipo ChatGPT)
-    const flushSSE = () => {
-      const flusher = (res as unknown as { flush?: () => void }).flush;
-      if (typeof flusher === 'function') flusher();
-    };
 
     const writeStatus = (stage: string) => {
       if (!res.headersSent) {
@@ -9424,8 +9509,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             }
             try {
               if (res.headersSent && !res.writableEnded) {
-                res.write(`data: ${JSON.stringify({ content })}\n\n`);
-                flushSSE();
+                writeContentChunk(content);
               }
             } catch (writeError) {
               logger.warn({ error: writeError, conversationId }, 'Erro ao escrever chunk SSE (mídia) - cliente pode ter desconectado');
@@ -9673,7 +9757,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           logger.warn({ error: titleError, conversationId }, 'Falha ao aplicar título automático (greetings gate)');
         }
 
-        res.write(`data: ${JSON.stringify({ content: greetingResponse })}\n\n`);
+        writeContentChunk(greetingResponse);
         res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
         emitAgentEvent({
           phase: 'finalizing',
@@ -9755,7 +9839,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             logger.warn({ error: titleError, conversationId }, 'Falha ao aplicar título automático (reuse gate)');
           }
 
-          res.write(`data: ${JSON.stringify({ content: reuseResponse })}\n\n`);
+          writeContentChunk(reuseResponse);
           res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
           emitAgentEvent({
             phase: 'finalizing',
@@ -9874,7 +9958,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             assistantResponse: responseContent,
           });
 
-          res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+          writeContentChunk(responseContent);
           res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
           res.write('data: [DONE]\n\n');
           res.end();
@@ -9956,7 +10040,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             .set({ conteudo: fallbackContent })
             .where(eq(schema.messages.id, assistantMessage.id));
 
-          res.write(`data: ${JSON.stringify({ content: fallbackContent })}\n\n`);
+          writeContentChunk(fallbackContent);
           res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage.id })}\n\n`);
           res.write('data: [DONE]\n\n');
           res.end();
@@ -9994,7 +10078,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           },
         });
 
-        res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+        writeContentChunk(responseContent);
         res.write(`data: ${JSON.stringify({
           type: 'web_image_results',
           message: { ...assistantMessage, anexos: attachments },
@@ -10259,7 +10343,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             })
             .where(eq(schema.conversations.id, conversationId));
 
-          res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+          writeContentChunk(responseContent);
           res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
           res.write('data: [DONE]\n\n');
           res.end();
@@ -10321,7 +10405,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             })
             .where(eq(schema.conversations.id, conversationId));
 
-          res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+          writeContentChunk(responseContent);
           res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
           res.write('data: [DONE]\n\n');
           res.end();
@@ -10561,7 +10645,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                 result: actionResultPayload,
               },
             })}\n\n`);
-            res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+            writeContentChunk(responseContent);
             res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
             res.write('data: [DONE]\n\n');
             res.end();
@@ -10680,7 +10764,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
               })
               .where(eq(schema.conversations.id, conversationId));
 
-            res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+            writeContentChunk(responseContent);
             res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
             res.write('data: [DONE]\n\n');
             res.end();
@@ -10756,7 +10840,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             })
             .where(eq(schema.conversations.id, conversationId));
 
-          res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+          writeContentChunk(responseContent);
           res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
           res.write('data: [DONE]\n\n');
           res.end();
@@ -10837,7 +10921,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
               result: redactSensitivePayload(result),
             },
           })}\n\n`);
-          res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+          writeContentChunk(responseContent);
           res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
           res.write('data: [DONE]\n\n');
           res.end();
@@ -10897,7 +10981,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           })
           .where(eq(schema.conversations.id, conversationId));
 
-        res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+        writeContentChunk(responseContent);
         res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
         res.write('data: [DONE]\n\n');
         res.end();
@@ -10936,7 +11020,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           })
           .where(eq(schema.conversations.id, conversationId));
 
-        res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+        writeContentChunk(responseContent);
         res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
         res.write('data: [DONE]\n\n');
         res.end();
@@ -10970,7 +11054,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           })
           .where(eq(schema.conversations.id, conversationId));
 
-        res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+        writeContentChunk(responseContent);
         res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
         res.write('data: [DONE]\n\n');
         res.end();
@@ -11002,7 +11086,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             })
             .where(eq(schema.conversations.id, conversationId));
 
-          res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+          writeContentChunk(responseContent);
           res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
           res.write('data: [DONE]\n\n');
           res.end();
@@ -11060,7 +11144,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           })
           .where(eq(schema.conversations.id, conversationId));
 
-        res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+        writeContentChunk(responseContent);
         res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
         res.write('data: [DONE]\n\n');
         res.end();
@@ -11137,7 +11221,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             result: redactSensitivePayload(result),
           },
         })}\n\n`);
-        res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+        writeContentChunk(responseContent);
         res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
         res.write('data: [DONE]\n\n');
         res.end();
@@ -11187,7 +11271,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         })
         .where(eq(schema.conversations.id, conversationId));
 
-      res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+      writeContentChunk(responseContent);
       res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
       res.write('data: [DONE]\n\n');
       res.end();
@@ -11244,7 +11328,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           })
           .where(eq(schema.conversations.id, conversationId));
 
-        res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+        writeContentChunk(responseContent);
         res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
         res.write('data: [DONE]\n\n');
         res.end();
@@ -11306,7 +11390,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           })
           .where(eq(schema.conversations.id, conversationId));
 
-        res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+        writeContentChunk(responseContent);
         res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
         res.write('data: [DONE]\n\n');
         res.end();
@@ -11334,7 +11418,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         })
         .where(eq(schema.conversations.id, conversationId));
 
-      res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+      writeContentChunk(responseContent);
       res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
       res.write('data: [DONE]\n\n');
       res.end();
@@ -11394,7 +11478,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           })
           .where(eq(schema.conversations.id, conversationId));
 
-        res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+        writeContentChunk(responseContent);
         res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
         res.write('data: [DONE]\n\n');
         res.end();
@@ -11455,7 +11539,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           })
           .where(eq(schema.conversations.id, conversationId));
 
-        res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+        writeContentChunk(responseContent);
         res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
         res.write('data: [DONE]\n\n');
         res.end();
@@ -11519,7 +11603,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           })
           .where(eq(schema.conversations.id, conversationId));
 
-        res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+        writeContentChunk(responseContent);
         res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
         res.write('data: [DONE]\n\n');
         res.end();
@@ -11562,7 +11646,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         })
         .where(eq(schema.conversations.id, conversationId));
 
-      res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+      writeContentChunk(responseContent);
       res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
       res.write('data: [DONE]\n\n');
       res.end();
@@ -11655,7 +11739,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             })
             .where(eq(schema.conversations.id, conversationId));
 
-          res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+          writeContentChunk(responseContent);
           res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
           res.write('data: [DONE]\n\n');
           res.end();
@@ -11695,7 +11779,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           })
           .where(eq(schema.conversations.id, conversationId));
 
-        res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+        writeContentChunk(responseContent);
         res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
         res.write('data: [DONE]\n\n');
         res.end();
@@ -11819,7 +11903,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             })
             .where(eq(schema.conversations.id, conversationId));
 
-          res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+          writeContentChunk(responseContent);
           res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
           res.write('data: [DONE]\n\n');
           res.end();
@@ -11887,7 +11971,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         })
         .where(eq(schema.conversations.id, conversationId));
 
-      res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+      writeContentChunk(responseContent);
       res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
       res.write('data: [DONE]\n\n');
       res.end();
@@ -11932,7 +12016,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           })
           .where(eq(schema.conversations.id, conversationId));
 
-        res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+        writeContentChunk(responseContent);
         res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
         res.write('data: [DONE]\n\n');
         res.end();
@@ -11961,7 +12045,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           })
           .where(eq(schema.conversations.id, conversationId));
 
-        res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+        writeContentChunk(responseContent);
         res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
         res.write('data: [DONE]\n\n');
         res.end();
@@ -12039,7 +12123,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         })
         .where(eq(schema.conversations.id, conversationId));
 
-      res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+      writeContentChunk(responseContent);
       res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
       res.write('data: [DONE]\n\n');
       res.end();
@@ -12112,7 +12196,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             })
             .where(eq(schema.conversations.id, conversationId));
 
-          res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+          writeContentChunk(responseContent);
           res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
           res.write('data: [DONE]\n\n');
           res.end();
@@ -12189,7 +12273,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           })
           .where(eq(schema.conversations.id, conversationId));
 
-        res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+        writeContentChunk(responseContent);
         res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
         res.write('data: [DONE]\n\n');
         res.end();
@@ -12360,7 +12444,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           logger.warn({ error: titleError, conversationId }, 'Falha ao aplicar título automático (web indisponível)');
         }
 
-        res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+        writeContentChunk(responseContent);
         res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
         res.write('data: [DONE]\n\n');
         res.end();
@@ -12429,7 +12513,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             })
             .where(eq(schema.conversations.id, conversationId));
 
-          res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+          writeContentChunk(responseContent);
           res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
           res.write('data: [DONE]\n\n');
           res.end();
@@ -12542,7 +12626,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           // Se cliente desconectar durante streaming, erro não deve interromper processamento do stream
           try {
             if (res.headersSent && !res.writableEnded) {
-              res.write(`data: ${JSON.stringify({ content })}\n\n`);
+              writeContentChunk(content);
               flushSSE();
             } else {
               logger.debug({ conversationId: req.params.id }, 'Response fechada durante streaming SSE - ignorando chunk');
@@ -13766,6 +13850,8 @@ wss.on('connection', (ws, req) => {
 
         const agentConfigForPrompt: AgentConfig | null = activeAgent
           ? {
+              nome: activeAgent.nome,
+              slug: activeAgent.slug,
               instrucoes: activeAgent.instrucoes,
               personalidade: activeAgent.personalidade,
               modeloBase: activeAgent.modeloBase,
@@ -14341,6 +14427,12 @@ wss.on('connection', (ws, req) => {
           namespaceId: namespaceId || undefined,
           agentId: conversation?.agentId ?? undefined,
         });
+        const llmContextRoute = await resolveLlmContextRoute({
+          tenantId: safeTenantId,
+          route: null,
+          namespaceId: namespaceId ?? conversation?.agent?.namespaceId ?? null,
+          namespaceContext: conversation?.agent?.namespace ?? null,
+        });
         
         // BUG FIX 26/12/2025: Prefixado com _ - resultado não usado pois callback onDone usa responseText diretamente
         let _fullResponse = '';
@@ -14522,7 +14614,7 @@ wss.on('connection', (ws, req) => {
             },
             scopedLlmConfig, // BUG FIX 02/01/2026: Passar configuração do agente
             getAdaptiveGpuPriority('websocket', websocketProfile),
-            { route: '/chat', tenantId: safeTenantId, userId, conversationId, namespaceId: (namespaceId || conversation?.namespaceId || conversation?.agent?.namespaceId) ?? undefined, agentId: conversation?.agentId ?? undefined },
+            { route: llmContextRoute, tenantId: safeTenantId, userId, conversationId, namespaceId: (namespaceId || conversation?.namespaceId || conversation?.agent?.namespaceId) ?? undefined, agentId: conversation?.agentId ?? undefined },
             (meta) => {
               try {
                 if (ws.readyState === ws.OPEN && meta.usedFallback) {
@@ -14849,6 +14941,12 @@ wss.on('connection', (ws, req) => {
           namespaceId: namespaceId || undefined,
           agentId: conversation.agentId ?? undefined,
         });
+        const llmContextRoute = await resolveLlmContextRoute({
+          tenantId,
+          route: null,
+          namespaceId: namespaceId ?? conversation.agent?.namespaceId ?? null,
+          namespaceContext: conversation.agent?.namespace ?? null,
+        });
         
         // LLM texto (Qwen2.5 7B) é SOMENTE TEXTO
         // Não envia imagens diretamente - usa contexto RAG via OpenAI Vision + embeddings de texto
@@ -14946,7 +15044,7 @@ wss.on('connection', (ws, req) => {
             },
             scopedMediaLlmConfig, // BUG FIX 02/01/2026: Passar configuração do agente
             getAdaptiveGpuPriority('websocket-media', mediaProfile),
-            { route: '/chat', tenantId: mediaSafeTenantId, userId, conversationId: mediaMessage.conversationId, namespaceId: (conversation?.namespaceId ?? conversation?.agent?.namespaceId) ?? undefined, agentId: conversation?.agentId ?? undefined },
+            { route: llmContextRoute, tenantId: mediaSafeTenantId, userId, conversationId: mediaMessage.conversationId, namespaceId: (conversation?.namespaceId ?? conversation?.agent?.namespaceId) ?? undefined, agentId: conversation?.agentId ?? undefined },
             (meta) => {
               try {
                 if (ws.readyState === ws.OPEN && meta.usedFallback) {
@@ -17348,6 +17446,36 @@ function normalizeAgenticLinks(
     }));
 }
 
+function ensureAgentRoutingManualKeywords(detectors: AgenticDetectors): { detectors: AgenticDetectors; updated: boolean } {
+  const manualKeywords = [...detectors.agentRouting.manualKeywords];
+  const normalizedKeywords = new Set(
+    manualKeywords
+      .map((keyword) => normalizeRoutingKeyword(keyword ?? ''))
+      .filter((keyword): keyword is string => Boolean(keyword))
+  );
+  let updated = false;
+  for (const keyword of AGENT_ROUTING_MANUAL_KEYWORDS_PATCH) {
+    const normalized = normalizeRoutingKeyword(keyword);
+    if (!normalized || normalizedKeywords.has(normalized)) continue;
+    normalizedKeywords.add(normalized);
+    manualKeywords.push(keyword);
+    updated = true;
+  }
+  if (!updated) {
+    return { detectors, updated: false };
+  }
+  return {
+    detectors: {
+      ...detectors,
+      agentRouting: {
+        ...detectors.agentRouting,
+        manualKeywords,
+      },
+    },
+    updated: true,
+  };
+}
+
 async function getOrCreateAgenticSettings(tenantId: string) {
   const existing = await db.query.agenticSettings.findFirst({
     where: eq(schema.agenticSettings.tenantId, tenantId),
@@ -17356,19 +17484,24 @@ async function getOrCreateAgenticSettings(tenantId: string) {
     const detectorsRaw = existing.detectors ?? {};
     const detectorsEmpty = Object.keys(detectorsRaw).length === 0;
     const normalizedDetectors = normalizeAgenticDetectors(detectorsRaw);
-    if (detectorsEmpty) {
+    const { detectors: patchedDetectors, updated: detectorsPatched } = ensureAgentRoutingManualKeywords(normalizedDetectors);
+    if (detectorsEmpty || detectorsPatched) {
       await db.update(schema.agenticSettings)
         .set({
-          detectors: normalizedDetectors,
+          detectors: patchedDetectors,
           atualizadoEm: new Date(),
         })
         .where(eq(schema.agenticSettings.tenantId, tenantId));
-      logger.warn({ tenantId }, 'Agentic detectors vazios - defaults persistidos');
+      if (detectorsEmpty) {
+        logger.warn({ tenantId }, 'Agentic detectors vazios - defaults persistidos');
+      } else {
+        logger.info({ tenantId }, 'Agentic detectors atualizados com novos termos de roteamento');
+      }
     }
     return {
       ...existing,
       platformLinks: normalizeAgenticLinks(existing.platformLinks ?? []),
-      detectors: normalizedDetectors,
+      detectors: patchedDetectors,
     };
   }
   const [created] = await db.insert(schema.agenticSettings).values({

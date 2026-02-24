@@ -74,14 +74,14 @@ export function MessageBubble({
 }: MessageBubbleProps) {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
-  const [displayedContent, setDisplayedContent] = useState(message.content ?? '');
+  const [renderedText, setRenderedText] = useState(message.content ?? '');
   const [biometricOpen, setBiometricOpen] = useState(false);
   const [biometricPending, setBiometricPending] = useState(false);
   const [passwordApproval, setPasswordApproval] = useState('');
   const [biometricStatus, setBiometricStatus] = useState<{ enrolled?: boolean } | null>(null);
   const [biometricStatusLoading, setBiometricStatusLoading] = useState(false);
-  const latestTargetRef = useRef(message.content ?? '');
-  const displayedContentRef = useRef(displayedContent);
+  const fullTextRef = useRef(message.content ?? '');
+  const renderedTextRef = useRef(renderedText);
   const isUser = message.role === 'user';
   const canSelect = selectionMode && message.role !== 'system';
   const hasMediaAttachments = Boolean(message.mediaAttachments && message.mediaAttachments.length > 0);
@@ -101,7 +101,7 @@ export function MessageBubble({
   const assistantAvatarSrc = !isUser && isStreaming && (isLast || (message.content ?? '').length === 0)
     ? '/packman.gif'
     : (message.agent?.avatar || '/gato.gif');
-  const typingIntervalMs = Math.min(5000, Math.max(100, typingSpeedMs ?? 100));
+  const typingIntervalMs = Math.min(5000, Math.max(1, typingSpeedMs ?? 12));
   const handleCopy = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(message.content);
@@ -113,27 +113,27 @@ export function MessageBubble({
   }, [message.content]);
 
   useEffect(() => {
-    const target = message.content ?? '';
-    latestTargetRef.current = target;
+    const fullText = message.content ?? '';
+    fullTextRef.current = fullText;
 
-    displayedContentRef.current = displayedContent;
+    renderedTextRef.current = renderedText;
     const isAssistantLast = isLast && message.role === 'assistant';
     if (!isAssistantLast) {
-      setDisplayedContent(target);
-      displayedContentRef.current = target;
+      setRenderedText(fullText);
+      renderedTextRef.current = fullText;
       return;
     }
 
     // Se o conteúdo foi reescrito (não é prefixo do anterior), sincroniza imediatamente
-    if (!target.startsWith(displayedContent) || target.length < displayedContent.length) {
-      setDisplayedContent(target);
-      displayedContentRef.current = target;
+    if (!fullText.startsWith(renderedText) || fullText.length < renderedText.length) {
+      setRenderedText(fullText);
+      renderedTextRef.current = fullText;
       return;
     }
 
-    const shouldAnimate = isStreaming || displayedContent.length < target.length;
+    const shouldAnimate = isStreaming || renderedText.length < fullText.length;
     if (!shouldAnimate) {
-      setDisplayedContent(target);
+      setRenderedText(fullText);
       return;
     }
 
@@ -141,23 +141,23 @@ export function MessageBubble({
     let lastTick = 0;
 
     const stepTyping = (timestamp: number) => {
-      const currentTarget = latestTargetRef.current;
+      const currentTarget = fullTextRef.current;
       if (timestamp - lastTick < typingIntervalMs) {
         rafId = window.requestAnimationFrame(stepTyping);
         return;
       }
       lastTick = timestamp;
-      setDisplayedContent((prev) => {
+      setRenderedText((prev) => {
         let next = prev;
         if (!currentTarget.startsWith(prev)) {
           next = currentTarget;
         } else if (prev.length < currentTarget.length) {
           next = currentTarget.slice(0, prev.length + 1);
         }
-        displayedContentRef.current = next;
+        renderedTextRef.current = next;
         return next;
       });
-      const hasPendingChars = displayedContentRef.current.length < latestTargetRef.current.length;
+      const hasPendingChars = renderedTextRef.current.length < fullTextRef.current.length;
       if (hasPendingChars || isStreaming) {
         rafId = window.requestAnimationFrame(stepTyping);
       }
@@ -169,7 +169,7 @@ export function MessageBubble({
         window.cancelAnimationFrame(rafId);
       }
     };
-  }, [displayedContent, isLast, isStreaming, message.content, message.role, typingIntervalMs]);
+  }, [isLast, isStreaming, message.content, message.role, renderedText, typingIntervalMs]);
 
   const handleOpenBiometricApproval = async () => {
     setBiometricOpen(true);
@@ -258,16 +258,16 @@ export function MessageBubble({
     }
   };
 
-  const shouldShowTypingCursor = isLast && message.role === 'assistant' && (isStreaming || displayedContent.length < (message.content ?? '').length);
-  const shouldShowThinking = shouldShowTypingCursor && displayedContent.trim().length === 0;
+  const shouldShowTypingCursor = isLast && message.role === 'assistant' && (isStreaming || renderedText.length < (message.content ?? '').length);
+  const shouldShowThinking = shouldShowTypingCursor && renderedText.trim().length === 0;
   const hasStreamEvents = Boolean(streamEvents && streamEvents.length > 0);
   const requiresConfirmation = Boolean(message.metadata?.requiresConfirmation);
   const shouldShowActionCard = Boolean(message.metadata?.actionType || message.metadata?.actionStatus || message.metadata?.actionResult);
 
   // Se há actionResult no metadata, exibir apenas o resumo humano; suprimir JSON bruto no texto
   const sanitizedDisplayContent = (() => {
-    if (!shouldShowActionCard || !displayedContent) return displayedContent;
-    const trimmed = displayedContent.trim();
+    if (!shouldShowActionCard || !renderedText) return renderedText;
+    const trimmed = renderedText.trim();
     // Detectar JSON bruto via tentativa de parse; apenas suprimir objetos/arrays válidos
     if ((trimmed.startsWith('{') || trimmed.startsWith('[')) && trimmed.length > 2) {
       try {
@@ -279,7 +279,7 @@ export function MessageBubble({
         // Não é JSON válido — manter conteúdo original
       }
     }
-    return displayedContent;
+    return renderedText;
   })();
 
   return (
