@@ -268,9 +268,16 @@ export function MessageBubble({
   const sanitizedDisplayContent = (() => {
     if (!shouldShowActionCard || !displayedContent) return displayedContent;
     const trimmed = displayedContent.trim();
-    // Se o conteúdo começa com { ou [ indica JSON bruto — suprimir
-    if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
-      return '';
+    // Detectar JSON bruto via tentativa de parse; apenas suprimir objetos/arrays válidos
+    if ((trimmed.startsWith('{') || trimmed.startsWith('[')) && trimmed.length > 2) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (typeof parsed === 'object' && parsed !== null) {
+          return '';
+        }
+      } catch {
+        // Não é JSON válido — manter conteúdo original
+      }
     }
     return displayedContent;
   })();

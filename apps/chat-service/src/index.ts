@@ -5940,15 +5940,17 @@ function getTradingCommandRisk(command: ParsedTradingCommand): TradingCommandRis
   }
 }
 
+// Comandos somente-leitura que NUNCA exigem confirmação
+const READ_ONLY_TRADING_COMMANDS: ReadonlySet<string> = new Set([
+  'status', 'positions', 'orders', 'analysis', 'generate_signal',
+]);
+
 function shouldRequireTradingConfirmation(
   command: ParsedTradingCommand,
   policy: ConversationApprovalPolicy
 ): boolean {
   // Comandos somente-leitura NUNCA exigem confirmação independente da policy
-  const readOnlyCommands: ReadonlySet<string> = new Set([
-    'status', 'positions', 'orders', 'analysis', 'generate_signal',
-  ]);
-  if (readOnlyCommands.has(command.type)) {
+  if (READ_ONLY_TRADING_COMMANDS.has(command.type)) {
     return false;
   }
 
