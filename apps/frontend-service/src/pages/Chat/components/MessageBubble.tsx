@@ -325,7 +325,7 @@ export function MessageBubble({
             {/* Painel de etapas: visível durante todo o streaming (tokens + status lado a lado) */}
             {isLast && isStreaming && message.role === 'assistant' && hasStreamEvents && (
               <div className="space-y-0.5 text-xs text-muted-foreground mb-2">
-                {streamEvents.slice(-MAX_VISIBLE_STREAM_EVENTS).map((ev) => (
+                {(streamEvents ?? []).slice(-MAX_VISIBLE_STREAM_EVENTS).map((ev) => (
                   <div key={ev.id} className="flex items-center gap-1.5">
                     <span className={cn(
                       'inline-block h-1.5 w-1.5 rounded-full shrink-0',
