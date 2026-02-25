@@ -42,3 +42,9 @@ Este ciclo implementa correções reais de backend para os pontos críticos repo
 1. Reverter o commit desta implementação.
 2. Redeploy dos serviços alterados (`llm-gateway-service`, `chat-service`, `training-service`, `integrations-service`, frontend).
 3. Validar health checks e rotas principais de chat/trading.
+
+## Ajustes pós-review do Cursor (25/02/2026)
+- Corrigido risco de `ReferenceError` (temporal dead zone) no fluxo de regeneração do streaming, removendo shadowing de `streamProfile` no bloco de persistência.
+- Ajustado guardrail de identidade para evitar falso positivo por regex não ancorada; agora a detecção usa padrões ancorados por intenção e normalização de mensagem.
+- Ajustado guardrail para responder em inglês quando a pergunta de nome for em inglês, mantendo aderência à política de idioma do prompt do sistema.
+- Atualizado `TradingSignalMetadataSchema` com campos de rastreabilidade usados em `signal_auto` (`autoRunId`, `autoDecisionId`, `correlationId`, `noTradeReasonCode`).

@@ -3340,14 +3340,57 @@ function isCorruptedAssistantResponse(content: string): boolean {
   return maxRepeatedChars || excessiveNoiseRatio > 0.2 || repeatedWord;
 }
 
-function isAskingOwnName(message: string): boolean {
-  const normalized = message.toLowerCase();
-  return /qual\s+[ée]\s+meu\s+nome|como\s+v[oô]c[êe]\s+me\s+chama|what\s+is\s+my\s+name|do\s+you\s+know\s+my\s+name/.test(normalized);
+type IdentityQuestionLanguage = 'pt-BR' | 'en';
+
+function normalizeIdentityQuestion(message: string): string {
+  return message
+    .normalize('NFKC')
+    .toLowerCase()
+    .trim()
+    .replace(/[!?.,;:]+$/g, '')
+    .replace(/\s+/g, ' ');
 }
 
-function isAskingAgentName(message: string): boolean {
-  const normalized = message.toLowerCase();
-  return /qual\s+[ée]\s+seu\s+nome|quem\s+[ée]\s+voc[êe]|what\s+is\s+your\s+name|who\s+are\s+you/.test(normalized);
+function detectOwnNameQuestionLanguage(message: string): IdentityQuestionLanguage | null {
+  const normalized = normalizeIdentityQuestion(message);
+  const ptBrPatterns = [
+    /^qual [ée] meu nome$/u,
+    /^como voc[êe] me chama$/u,
+  ];
+  if (ptBrPatterns.some((pattern) => pattern.test(normalized))) {
+    return 'pt-BR';
+  }
+
+  const enPatterns = [
+    /^what(?:'s| is) my name$/u,
+    /^do you know my name$/u,
+  ];
+  if (enPatterns.some((pattern) => pattern.test(normalized))) {
+    return 'en';
+  }
+
+  return null;
+}
+
+function detectAgentNameQuestionLanguage(message: string): IdentityQuestionLanguage | null {
+  const normalized = normalizeIdentityQuestion(message);
+  const ptBrPatterns = [
+    /^qual [ée] seu nome$/u,
+    /^quem [ée] voc[êe]$/u,
+  ];
+  if (ptBrPatterns.some((pattern) => pattern.test(normalized))) {
+    return 'pt-BR';
+  }
+
+  const enPatterns = [
+    /^what(?:'s| is) your name$/u,
+    /^who are you$/u,
+  ];
+  if (enPatterns.some((pattern) => pattern.test(normalized))) {
+    return 'en';
+  }
+
+  return null;
 }
 
 async function enforceResponseGuardrails(params: {
@@ -3358,10 +3401,19 @@ async function enforceResponseGuardrails(params: {
   regenerate?: () => Promise<string>;
   correlationId?: string;
 }): Promise<string> {
-  if (isAskingOwnName(params.userMessage) && params.preferredName) {
+  const ownNameQuestionLanguage = detectOwnNameQuestionLanguage(params.userMessage);
+  if (ownNameQuestionLanguage && params.preferredName) {
+    if (ownNameQuestionLanguage === 'en') {
+      return `Your preferred name is ${params.preferredName}.`;
+    }
     return `Seu nome preferido é ${params.preferredName}.`;
   }
-  if (isAskingAgentName(params.userMessage) && params.agentName) {
+
+  const agentNameQuestionLanguage = detectAgentNameQuestionLanguage(params.userMessage);
+  if (agentNameQuestionLanguage && params.agentName) {
+    if (agentNameQuestionLanguage === 'en') {
+      return `My name is ${params.agentName}.`;
+    }
     return `Meu nome é ${params.agentName}.`;
   }
 
@@ -12785,11 +12837,11 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                 logger.warn({ error: titleError, conversationId }, 'Falha ao aplicar título automático (stream)');
               }
 
-              const streamProfile = detectContextProfile(userMessageContent);
+              const streamTrainingProfile = detectContextProfile(userMessageContent);
               const streamUserRole = req.user?.role as Role | undefined;
               // Auto-coleta: envia cada par user+assistant individualmente (contínuo). sentToTrainingAt é apenas para coleta manual.
               if (streamUserRole && shouldAutoCollectTraining({
-                profile: streamProfile,
+                profile: streamTrainingProfile,
                 namespaceId: conversation?.namespaceId || conversation?.agent?.namespaceId,
                 userMessage: userMessageContent,
                 assistantResponse: guardedResponse,

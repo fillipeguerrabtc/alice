@@ -2594,6 +2594,10 @@ export const TradingSignalMetadataSchema = z.object({
   agentId: z.string().uuid().optional(),              // Agente que gerou o sinal
   namespaceId: z.string().uuid().optional(),          // Namespace do agente
   generationSource: z.enum(['on_demand', 'scheduler', 'chat', 'auto']).optional(), // Origem do sinal
+  autoRunId: z.string().uuid().optional(),            // ID da execução automática
+  autoDecisionId: z.string().uuid().optional(),       // ID da decisão da execução automática
+  correlationId: z.string().optional(),               // Correlation ID da execução
+  noTradeReasonCode: z.string().optional(),           // Código estruturado de motivo para hold
   schedulerId: z.string().uuid().optional(),          // Scheduler responsável
   timeframes: z.array(z.string()).optional(),         // Timeframes usados na geração
   enabledIndicators: z.array(z.string()).optional(),  // Indicadores habilitados no perfil
