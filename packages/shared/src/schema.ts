@@ -2599,8 +2599,6 @@ export const TradingSignalMetadataSchema = z.object({
   correlationId: z.string().optional(),               // Correlation ID da execução
   noTradeReasonCode: z.string().optional(),           // Código estruturado de motivo para hold
   schedulerId: z.string().uuid().optional(),          // Scheduler responsável
-  autoRunId: z.string().uuid().optional(),
-  autoDecisionId: z.string().uuid().optional(),
   autoEngine: z.boolean().optional(),
   modelsUsed: z.array(z.string()).optional(),
   ragEvidenceIds: z.array(z.string()).optional(),
