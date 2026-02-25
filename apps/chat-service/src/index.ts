@@ -3329,6 +3329,29 @@ function sanitizeAssistantResponse(raw: string): string {
 
   return result.join('\n').trimEnd();
 }
+function hasRepeatedWordSequence(content: string, minConsecutiveRepeats: number): boolean {
+  const words = content.match(/\p{L}[\p{L}\p{M}]*/gu) ?? [];
+  if (words.length < minConsecutiveRepeats) {
+    return false;
+  }
+
+  let lastWord: string | null = null;
+  let repeatCount = 0;
+  for (const word of words) {
+    if (word === lastWord) {
+      repeatCount += 1;
+      if (repeatCount >= minConsecutiveRepeats) {
+        return true;
+      }
+      continue;
+    }
+
+    lastWord = word;
+    repeatCount = 1;
+  }
+
+  return false;
+}
 
 function isCorruptedAssistantResponse(content: string): boolean {
   const text = content.trim();
@@ -3336,7 +3359,7 @@ function isCorruptedAssistantResponse(content: string): boolean {
   const normalized = text.toLowerCase();
   const maxRepeatedChars = /(.)\1{14,}/u.test(normalized);
   const excessiveNoiseRatio = (normalized.match(/[^\p{L}\p{N}\s.,;:!?()\-"']/gu) ?? []).length / Math.max(normalized.length, 1);
-  const repeatedWord = /\b(\p{L}{2,})\b(?:\s+\1\b){5,}/giu.test(normalized);
+  const repeatedWord = hasRepeatedWordSequence(normalized, 6);
   return maxRepeatedChars || excessiveNoiseRatio > 0.2 || repeatedWord;
 }
 

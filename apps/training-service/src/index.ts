@@ -1221,19 +1221,24 @@ async function generateAndTagAutoSignal(params: {
     throw new Error('Integrations retornou sucesso sem signal id para signal_auto');
   }
 
-  const signal = await db.query.tradingSignals.findFirst({ where: eq(schema.tradingSignals.id, signalId) });
-  const currentMetadata = (signal?.metadata ?? {}) as Record<string, unknown>;
-  await db.update(schema.tradingSignals)
+  const [updatedSignal] = await db.update(schema.tradingSignals)
     .set({
-      metadata: {
-        ...currentMetadata,
-        generationSource: 'auto',
-        autoRunId: params.runId,
-        autoDecisionId: params.decisionId,
-        correlationId: params.correlationId,
-      } as schema.TradingSignalMetadata,
+      metadata: sql`
+        coalesce(${schema.tradingSignals.metadata}, '{}'::jsonb)
+        || ${JSON.stringify({
+          generationSource: 'auto',
+          autoRunId: params.runId,
+          autoDecisionId: params.decisionId,
+          correlationId: params.correlationId,
+        })}::jsonb
+      `,
     })
-    .where(eq(schema.tradingSignals.id, signalId));
+    .where(eq(schema.tradingSignals.id, signalId))
+    .returning({ id: schema.tradingSignals.id });
+
+  if (!updatedSignal) {
+    throw new Error(`Sinal ${signalId} não encontrado para marcar metadata de signal_auto`);
+  }
 }
 
 /** Processa geração automática de sinais */

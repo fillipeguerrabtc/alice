@@ -57,3 +57,7 @@ Este ciclo implementa correções reais de backend para os pontos críticos repo
 ## Ajustes adicionais pós-review (25/02/2026 - rodada 3)
 - Corrigido `signal_auto` para respeitar o `timeframe` real aprovado no candidate/decision durante a geração de sinal via integrations, removendo hardcode de `interval: '5m'`.
 - `generateAndTagAutoSignal` agora recebe `interval` por parâmetro e repassa o valor ao endpoint de geração, mantendo consistência entre análise aprovada e execução do sinal.
+
+## Ajustes adicionais pós-review (25/02/2026 - rodada 4)
+- Corrigida heurística de resposta corrompida para palavras repetidas com acentuação (PT-BR), removendo dependência de `\b` ASCII e adotando detecção Unicode-safe por sequência de palavras consecutivas.
+- Corrigida atualização de metadata em `generateAndTagAutoSignal` para evitar perda silenciosa de metadata original do sinal: a marcação de rastreabilidade agora usa merge JSONB atômico no banco (`coalesce(metadata, '{}') || patch`) sem depender de leitura prévia imediata.
