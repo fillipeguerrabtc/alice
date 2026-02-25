@@ -1,0 +1,44 @@
+# Relatório de Implementação — Correções Chat + Trading
+
+**Autor:** Fillipe Guerra  
+**Data:** 25 de Fevereiro de 2026
+
+## Resumo
+Este ciclo implementa correções reais de backend para os pontos críticos reportados: streaming SSE no gateway, consistência de identidade/nome no chat, guardrail de qualidade de resposta com regeneração controlada e persistência de histórico para `signal_auto`.
+
+## Causa raiz consolidada
+- O gateway LLM aplicava compressão global e timeouts curtos para streams longos.
+- O chat dependia apenas de prompt para nomes/identidade, sem validação pós-geração.
+- O fluxo `signal_auto` gravava decisão, mas não garantia persistência em `trading_signals` em todos os cenários.
+
+## Soluções implementadas
+1. **LLM Gateway (SSE realtime):**
+   - Compression desabilitada na rota `/api/llm/stream`.
+   - Headers SSE anti-buffer (`no-transform`, `X-Accel-Buffering: no`, `charset`).
+   - Timeouts do servidor ajustados para streams longos.
+   - Logs de início/TTFT/fim/desconexão com `correlationId`.
+
+2. **Chat Service (qualidade + nomes):**
+   - Guardrail pós-geração detectando conteúdo corrompido.
+   - Regeneração única com temperatura reduzida quando necessário.
+   - Regra determinística para resposta sobre nome do usuário (`preferredName`) e nome do agente.
+   - Reforço de identidade do agente no system prompt.
+
+3. **Training + Integrations (signal_auto):**
+   - `signal_auto` agora cria/atualiza histórico em `trading_signals`.
+   - Cenário aprovado: chama pipeline existente de geração de sinal via integrations e marca `generationSource=auto` com rastreabilidade (`autoRunId`, `autoDecisionId`, `correlationId`).
+   - Cenário sem trade: persiste sinal `hold` com razão estruturada.
+   - Idempotência por `autoRunId` no metadata para evitar duplicação em retry.
+
+4. **Frontend build:**
+   - Inclusão da dependência `@radix-ui/react-visually-hidden` no `package.json`.
+
+## Impacto
+- Streaming passa a chegar incremental no cliente com menor risco de buffering intermediário.
+- Redução de respostas incorretas sobre nomes/identidade.
+- Histórico de sinais passa a refletir todos os runs de `signal_auto`.
+
+## Plano de rollback
+1. Reverter o commit desta implementação.
+2. Redeploy dos serviços alterados (`llm-gateway-service`, `chat-service`, `training-service`, `integrations-service`, frontend).
+3. Validar health checks e rotas principais de chat/trading.

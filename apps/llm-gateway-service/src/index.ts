@@ -140,7 +140,18 @@ const app = express();
 app.use(createCorrelationMiddleware({ serviceName: 'llm-gateway' }));
 app.use(createSecurityMiddleware());
 app.use(cors({ origin: true }));
-app.use(compression());
+app.use(compression({
+  filter: (req, res) => {
+    const acceptHeader = req.headers.accept ?? '';
+    if (typeof acceptHeader === 'string' && acceptHeader.includes('text/event-stream')) {
+      return false;
+    }
+    if (req.path === '/api/llm/stream') {
+      return false;
+    }
+    return compression.filter(req, res);
+  },
+}));
 app.use(express.json({ limit: '1mb' }));
 
 // Prometheus: /metrics exposto antes do auth (scrape sem autenticação - rede interna)
@@ -452,6 +463,9 @@ app.post(
     }
 
     const inferenceStart = process.hrtime.bigint();
+    const streamStartAt = Date.now();
+    const correlationId = req.header('x-correlation-id') ?? req.header('x-request-id') ?? undefined;
+    logger.info({ correlationId, tenantId: context.tenantId, route: context.route, model }, 'Iniciando proxy de stream LLM');
     const recordInference = () => {
       metrics.llm.inferenceDuration.observe(
         { model, type: 'stream' },
@@ -487,9 +501,10 @@ app.post(
       return;
     }
 
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders();
 
     // Plano Enterprise: Enviar metadata de fallback antes do stream (banner no Chat)
@@ -501,20 +516,29 @@ app.post(
     }
 
     const reader = gpuResponse.body.getReader();
+    let firstChunkAt: number | null = null;
     const pump = async () => {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+        if (firstChunkAt === null) {
+          firstChunkAt = Date.now();
+          logger.info({ correlationId, ttftMs: firstChunkAt - streamStartAt, tenantId: context.tenantId }, 'Primeiro chunk recebido no stream LLM');
+        }
         res.write(value);
         if (typeof (res as unknown as { flush?: () => void }).flush === 'function') {
           (res as unknown as { flush: () => void }).flush();
         }
       }
       recordInference();
+      logger.info({ correlationId, tenantId: context.tenantId, durationMs: Date.now() - streamStartAt }, 'Stream LLM finalizado com sucesso');
       res.end();
     };
+    req.on('close', () => {
+      logger.info({ correlationId, tenantId: context.tenantId, durationMs: Date.now() - streamStartAt }, 'Conexão encerrada durante stream LLM');
+    });
     pump().catch((err) => {
-      logger.error({ err }, 'Erro ao encaminhar stream');
+      logger.error({ err, correlationId, tenantId: context.tenantId }, 'Erro ao encaminhar stream');
       recordStreamError();
       res.end();
     });
@@ -535,9 +559,9 @@ connectWithRetry()
     const server = app.listen(PORT, () => {
       logger.info({ port: PORT }, 'LLM Gateway Service iniciado');
     });
-    server.timeout = 30000; // 30s timeout para requisições (enterprise - alinhado aos demais serviços)
-    server.keepAliveTimeout = 65000; // 65s (maior que ALB timeout padrão de 60s)
-    server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
+    server.timeout = 120000; // 120s para chamadas longas de streaming SSE
+    server.keepAliveTimeout = 125000; // manter conexão ativa para stream contínuo
+    server.headersTimeout = 126000; // ligeiramente maior que keepAliveTimeout
     server.on('error', (err) => {
       logger.error({ err }, 'Erro ao iniciar servidor');
       process.exit(1);

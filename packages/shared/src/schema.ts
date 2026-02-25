@@ -2593,7 +2593,7 @@ export const TradingSignalMetadataSchema = z.object({
   approvalReason: z.string().optional(),              // Motivo da aprovação/rejeição
   agentId: z.string().uuid().optional(),              // Agente que gerou o sinal
   namespaceId: z.string().uuid().optional(),          // Namespace do agente
-  generationSource: z.enum(['on_demand', 'scheduler', 'chat']).optional(), // Origem do sinal
+  generationSource: z.enum(['on_demand', 'scheduler', 'chat', 'auto']).optional(), // Origem do sinal
   schedulerId: z.string().uuid().optional(),          // Scheduler responsável
   timeframes: z.array(z.string()).optional(),         // Timeframes usados na geração
   enabledIndicators: z.array(z.string()).optional(),  // Indicadores habilitados no perfil

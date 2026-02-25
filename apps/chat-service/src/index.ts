@@ -2983,7 +2983,7 @@ function buildSystemPrompt(
     const identityLabel = agentSlug && agentSlug !== agentName
       ? `${agentName} (@${agentSlug})`
       : agentName;
-    prompt = `IDENTIDADE DO AGENTE:\n- Você é ${identityLabel}\n\n${prompt}`;
+    prompt = `IDENTIDADE DO AGENTE:\n- Você é ${identityLabel}\n- Quando perguntarem seu nome, responda EXATAMENTE: "Meu nome é ${agentName}."\n- Nunca invente, altere ou renegocie sua identidade.\n\n${prompt}`;
   }
 
   return prompt;
@@ -3328,6 +3328,60 @@ function sanitizeAssistantResponse(raw: string): string {
   }
 
   return result.join('\n').trimEnd();
+}
+
+function isCorruptedAssistantResponse(content: string): boolean {
+  const text = content.trim();
+  if (!text) return true;
+  const normalized = text.toLowerCase();
+  const maxRepeatedChars = /(.)\1{14,}/u.test(normalized);
+  const excessiveNoiseRatio = (normalized.match(/[^\p{L}\p{N}\s.,;:!?()\-"']/gu) ?? []).length / Math.max(normalized.length, 1);
+  const repeatedWord = /\b(\p{L}{2,})\b(?:\s+\1\b){5,}/giu.test(normalized);
+  return maxRepeatedChars || excessiveNoiseRatio > 0.2 || repeatedWord;
+}
+
+function isAskingOwnName(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return /qual\s+[ée]\s+meu\s+nome|como\s+v[oô]c[êe]\s+me\s+chama|what\s+is\s+my\s+name|do\s+you\s+know\s+my\s+name/.test(normalized);
+}
+
+function isAskingAgentName(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return /qual\s+[ée]\s+seu\s+nome|quem\s+[ée]\s+voc[êe]|what\s+is\s+your\s+name|who\s+are\s+you/.test(normalized);
+}
+
+async function enforceResponseGuardrails(params: {
+  responseText: string;
+  userMessage: string;
+  preferredName: string | null;
+  agentName: string | null;
+  regenerate?: () => Promise<string>;
+  correlationId?: string;
+}): Promise<string> {
+  if (isAskingOwnName(params.userMessage) && params.preferredName) {
+    return `Seu nome preferido é ${params.preferredName}.`;
+  }
+  if (isAskingAgentName(params.userMessage) && params.agentName) {
+    return `Meu nome é ${params.agentName}.`;
+  }
+
+  const sanitized = sanitizeAssistantResponse(params.responseText);
+  if (!isCorruptedAssistantResponse(sanitized)) {
+    return sanitized;
+  }
+
+  if (!params.regenerate) {
+    logger.warn({ correlationId: params.correlationId }, 'Guardrail detectou resposta corrompida sem estratégia de regeneração');
+    return sanitized;
+  }
+
+  logger.warn({ correlationId: params.correlationId }, 'Guardrail detectou resposta corrompida; iniciando regeneração controlada');
+  const regenerated = sanitizeAssistantResponse(await params.regenerate());
+  if (isCorruptedAssistantResponse(regenerated)) {
+    logger.warn({ correlationId: params.correlationId }, 'Regeneração controlada retornou conteúdo potencialmente corrompido');
+    return sanitized;
+  }
+  return regenerated;
 }
 
 async function generateConversationTitle(params: {
@@ -8624,14 +8678,33 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
       scopedLlmConfig,
       getAdaptiveGpuPriority('sync', syncProfile)
     );
+    const assistantAgentName = activeAgent?.nome?.trim()
+      || conversation.agent?.nome?.trim()
+      || null;
+    const finalizedResponse = await enforceResponseGuardrails({
+      responseText: response as string,
+      userMessage: body.conteudo,
+      preferredName: nameContext.preferredName,
+      agentName: assistantAgentName,
+      correlationId: req.header('x-correlation-id') ?? undefined,
+      regenerate: async () => callLlamaAPI(
+        llmMessages,
+        false,
+        {
+          ...scopedLlmConfig,
+          temperature: Math.min(scopedLlmConfig.temperature ?? 0.7, 0.25),
+        },
+        getAdaptiveGpuPriority('sync', syncProfile)
+      ) as Promise<string>,
+    });
     const llmLatency = Date.now() - llmStartTime;
     const totalLatency = Date.now() - ragStartTime;
 
-    const tokensUsed = calculateTokensUsed({ promptMessages: llmMessages, responseText: response as string });
+    const tokensUsed = calculateTokensUsed({ promptMessages: llmMessages, responseText: finalizedResponse });
     const [assistantMessage] = await db.insert(schema.messages).values({
       conversationId: id,
       agentId: activeAgentId,
-      conteudo: response as string,
+      conteudo: finalizedResponse,
       tipo: 'text',
       isFromUser: false,
       latenciaMs: totalLatency,
@@ -8650,7 +8723,7 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
       await ensureConversationTitle({
         conversationId: id,
         userMessage: body.conteudo,
-        assistantResponse: response as string,
+        assistantResponse: finalizedResponse,
       });
     } catch (titleError) {
       logger.warn({ error: titleError, conversationId: id }, 'Falha ao aplicar título automático (sync)');
@@ -8661,7 +8734,7 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
       profile: syncProfile,
       namespaceId: activeNamespaceId || conversation.agent?.namespaceId,
       userMessage: body.conteudo,
-      assistantResponse: response as string,
+      assistantResponse: finalizedResponse,
     })) {
       void collectTrainingSample({
         tenantId,
@@ -8676,7 +8749,7 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
         },
         messages: [
           { role: 'user', content: body.conteudo },
-          { role: 'assistant', content: response as string },
+          { role: 'assistant', content: finalizedResponse },
         ],
         userId,
         role: userRole,
@@ -12656,9 +12729,25 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           if (!assistantPersisted && conversationId && userMessage) {
             assistantPersisted = true;
             if (assistantResponse.trim().length > 0) {
-              const sanitizedResponse = sanitizeAssistantResponse(assistantResponse);
-              if (sanitizedResponse !== assistantResponse) {
-                res.write(`data: ${JSON.stringify({ type: 'final_message', content: sanitizedResponse })}\n\n`);
+              const assistantAgentName = conversation?.agent?.nome?.trim() || null;
+              const guardedResponse = await enforceResponseGuardrails({
+                responseText: assistantResponse,
+                userMessage: userMessageContent,
+                preferredName: nameContext.preferredName,
+                agentName: assistantAgentName,
+                correlationId: conversationId ?? undefined,
+                regenerate: async () => callLlamaAPI(
+                  llmMessages,
+                  false,
+                  {
+                    ...scopedLlmConfig,
+                    temperature: Math.min(scopedLlmConfig.temperature ?? 0.7, 0.25),
+                  },
+                  getAdaptiveGpuPriority('sync', streamProfile)
+                ) as Promise<string>,
+              });
+              if (guardedResponse !== assistantResponse) {
+                res.write(`data: ${JSON.stringify({ type: 'final_message', content: guardedResponse })}\n\n`);
               }
               const persistStartedAt = Date.now();
               emitAgentEvent({
@@ -12668,11 +12757,11 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                 message: 'Persistindo resposta',
                 correlationId: conversationId ?? undefined,
               });
-              const tokensUsed = calculateTokensUsed({ promptMessages: llmMessages, responseText: sanitizedResponse });
+              const tokensUsed = calculateTokensUsed({ promptMessages: llmMessages, responseText: guardedResponse });
               const [assistantMessage] = await db.insert(schema.messages).values({
                 conversationId,
                 agentId: conversation?.agentId,
-                conteudo: sanitizedResponse,
+                conteudo: guardedResponse,
                 tipo: 'text',
                 isFromUser: false,
                 tokensUsados: tokensUsed ?? undefined,
@@ -12690,7 +12779,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                 await ensureConversationTitle({
                   conversationId,
                   userMessage: userMessageContent,
-                  assistantResponse: sanitizedResponse,
+                  assistantResponse: guardedResponse,
                 });
               } catch (titleError) {
                 logger.warn({ error: titleError, conversationId }, 'Falha ao aplicar título automático (stream)');
@@ -12703,7 +12792,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                 profile: streamProfile,
                 namespaceId: conversation?.namespaceId || conversation?.agent?.namespaceId,
                 userMessage: userMessageContent,
-                assistantResponse: sanitizedResponse,
+                assistantResponse: guardedResponse,
               })) {
                 void collectTrainingSample({
                   tenantId,
@@ -12718,7 +12807,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                   },
                   messages: [
                     { role: 'user', content: userMessageContent },
-                    { role: 'assistant', content: sanitizedResponse },
+                    { role: 'assistant', content: guardedResponse },
                   ],
                   userId,
                   role: streamUserRole,

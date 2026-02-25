@@ -70,6 +70,7 @@ import {
   Histogram as PromHistogram,
   computeSemHash,
   cosineSimilarity,
+  generateInternalAuthHeaders,
 } from '@alice/shared-utils';
 import { trainingServicePaths, trainingServiceSchemas } from './openapi-specs.js';
 import { eq, and, or, desc, sql, isNull, not, inArray, lte } from '@alice/database';
@@ -152,6 +153,11 @@ function readUuidFromUnknown(value: unknown): string | null {
 const PORT = parseEnvInt(process.env.PORT, 3004, 'PORT');
 const DATABASE_URL = process.env.DATABASE_URL;
 const RAG_SERVICE_URL = process.env.RAG_SERVICE_URL ?? 'http://alice-rag:3003';
+const INTEGRATIONS_SERVICE_URL = process.env.INTEGRATIONS_SERVICE_URL;
+if (!INTEGRATIONS_SERVICE_URL) {
+  throw new Error('INTEGRATIONS_SERVICE_URL é obrigatório (Regra 6 - fail-fast)');
+}
+const INTEGRATIONS_SERVICE_URL_FINAL = INTEGRATIONS_SERVICE_URL;
 const corsOriginsEnv = process.env.CORS_ORIGINS;
 if (!corsOriginsEnv && process.env.NODE_ENV === 'production') {
   logger.error('CORS_ORIGINS é obrigatório em produção (Regra 6 - fail-fast)');
@@ -1126,6 +1132,109 @@ async function autoValidateCandidateIfNeeded(params: {
   };
 }
 
+async function findAutoRunSignal(runId: string) {
+  const rows = await db.execute(sql<{ id: string }>`
+    SELECT id
+    FROM trading_signals
+    WHERE metadata ->> 'autoRunId' = ${runId}
+    ORDER BY criado_em DESC
+    LIMIT 1
+  `);
+  return rows.rows[0] ?? null;
+}
+
+async function persistNoTradeAutoSignal(params: {
+  run: typeof schema.tradingAutoRuns.$inferSelect;
+  runId: string;
+  decisionId: string;
+  symbol: string;
+  marketType: 'spot' | 'futures' | 'margin';
+  reasonCode: string;
+  reasonHuman: string;
+  correlationId: string;
+}): Promise<void> {
+  const existing = await findAutoRunSignal(params.runId);
+  if (existing) return;
+
+  await db.insert(schema.tradingSignals).values({
+    tenantId: params.run.tenantId,
+    signalType: 'hold',
+    symbol: params.symbol,
+    marketType: params.marketType,
+    confidence: 0,
+    metadata: {
+      generationSource: 'auto',
+      operationType: 'scalping',
+      tradeSummary: 'Signal auto concluiu sem entrada (hold).',
+      reasoning: params.reasonHuman,
+      validationStatus: 'validated',
+      approvalStatus: 'approved',
+      createdByUserId: params.run.userId ?? undefined,
+      autoRunId: params.runId,
+      autoDecisionId: params.decisionId,
+      correlationId: params.correlationId,
+      noTradeReasonCode: params.reasonCode,
+    } as schema.TradingSignalMetadata,
+  });
+}
+
+async function generateAndTagAutoSignal(params: {
+  run: typeof schema.tradingAutoRuns.$inferSelect;
+  runId: string;
+  decisionId: string;
+  symbol: string;
+  marketType: 'spot' | 'futures' | 'margin';
+  correlationId: string;
+}): Promise<void> {
+  const existing = await findAutoRunSignal(params.runId);
+  if (existing) return;
+
+  const internalHeaders = generateInternalAuthHeaders({
+    userId: params.run.userId,
+    tenantId: params.run.tenantId,
+    role: 'admin',
+  });
+
+  const response = await fetch(`${INTEGRATIONS_SERVICE_URL_FINAL}/api/integrations/trading/signals/generate`, {
+    method: 'POST',
+    headers: {
+      ...internalHeaders,
+      'Content-Type': 'application/json',
+      'x-correlation-id': params.correlationId,
+    },
+    body: JSON.stringify({
+      symbol: params.symbol,
+      interval: '5m',
+      marketType: params.marketType,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => '');
+    throw new Error(`Falha ao gerar sinal auto via integrations (${response.status}): ${errorText.slice(0, 200)}`);
+  }
+
+  const body = await response.json() as { data?: { id?: string } };
+  const signalId = body.data?.id;
+  if (!signalId) {
+    throw new Error('Integrations retornou sucesso sem signal id para signal_auto');
+  }
+
+  const signal = await db.query.tradingSignals.findFirst({ where: eq(schema.tradingSignals.id, signalId) });
+  const currentMetadata = (signal?.metadata ?? {}) as Record<string, unknown>;
+  await db.update(schema.tradingSignals)
+    .set({
+      metadata: {
+        ...currentMetadata,
+        generationSource: 'auto',
+        autoRunId: params.runId,
+        autoDecisionId: params.decisionId,
+        correlationId: params.correlationId,
+      } as schema.TradingSignalMetadata,
+    })
+    .where(eq(schema.tradingSignals.id, signalId));
+}
+
 /** Processa geração automática de sinais */
 async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPayloadSchema>): Promise<void> {
   const { runId, correlationId } = payload;
@@ -1285,7 +1394,7 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
     const noTradeReasonHuman = noTradeReasonHumanMap[noTradeReasonCode] ?? noTradeReasonHumanMap.NO_EDGE;
     const nextAction = nextActionMap[noTradeReasonCode] ?? nextActionMap.NO_EDGE;
 
-    await db.insert(schema.tradingAutoDecisions).values({
+    const [decision] = await db.insert(schema.tradingAutoDecisions).values({
       runId,
       tenantId: run.tenantId,
       decisionType: 'signal_auto',
@@ -1335,7 +1444,43 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
       reasoning: approvedCandidates.length > 0
         ? `${approvedCandidates.length} candidate(s) aprovado(s) após guardrails adaptativos. Melhor: ${bestCandidate?.strategyKey ?? 'N/A'} (${bestCandidate?.operationIntent ?? 'intraday'}).`
         : `${noTradeReasonHuman} Total avaliados: ${candidates.length}.`,
+    }).returning({ id: schema.tradingAutoDecisions.id });
+
+    const fallbackInstrument = await db.query.tradingInstruments.findFirst({
+      where: and(
+        eq(schema.tradingInstruments.tenantId, run.tenantId),
+        eq(schema.tradingInstruments.isActive, true),
+      ),
+      orderBy: [desc(schema.tradingInstruments.createdAt)],
+      columns: { symbol: true },
     });
+    const resolvedSymbol = symbol ?? fallbackInstrument?.symbol;
+    if (!resolvedSymbol) {
+      throw new Error('Signal auto run sem símbolo disponível para persistência de histórico');
+    }
+
+    const resolvedMarketType = payload.marketType ?? candidateForReason?.marketType ?? 'futures';
+    if (approvedCandidates.length > 0 && decision?.id) {
+      await generateAndTagAutoSignal({
+        run,
+        runId,
+        decisionId: decision.id,
+        symbol: resolvedSymbol,
+        marketType: resolvedMarketType,
+        correlationId,
+      });
+    } else if (decision?.id) {
+      await persistNoTradeAutoSignal({
+        run,
+        runId,
+        decisionId: decision.id,
+        symbol: resolvedSymbol,
+        marketType: resolvedMarketType,
+        reasonCode: noTradeReasonCode,
+        reasonHuman: noTradeReasonHuman,
+        correlationId,
+      });
+    }
 
     await updateAutoRunStep(runId, 'signal-decision', 'succeeded', {
       metrics: {
