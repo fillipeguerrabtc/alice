@@ -61,3 +61,7 @@ Este ciclo implementa correções reais de backend para os pontos críticos repo
 ## Ajustes adicionais pós-review (25/02/2026 - rodada 4)
 - Corrigida heurística de resposta corrompida para palavras repetidas com acentuação (PT-BR), removendo dependência de `\b` ASCII e adotando detecção Unicode-safe por sequência de palavras consecutivas.
 - Corrigida atualização de metadata em `generateAndTagAutoSignal` para evitar perda silenciosa de metadata original do sinal: a marcação de rastreabilidade agora usa merge JSONB atômico no banco (`coalesce(metadata, '{}') || patch`) sem depender de leitura prévia imediata.
+
+## Ajustes adicionais pós-review (25/02/2026 - rodada 5)
+- Ajustado guardrail de ruído para evitar falso positivo em respostas com muito código (regex/JSON/template literal): a heurística de `excessiveNoiseRatio` agora é desativada quando o conteúdo é detectado como code-heavy.
+- Removido `docs/PROMPT-COPILOT-CORRECOES-CHAT-TRADING-2026-02-25.md` por ser artefato operacional de geração de PR (prompt imperativo) e não documentação de produto/arquitetura, reduzindo risco de conteúdo obsoleto no diretório `docs/`.

@@ -3353,6 +3353,28 @@ function hasRepeatedWordSequence(content: string, minConsecutiveRepeats: number)
   return false;
 }
 
+
+function isLikelyCodeHeavyResponse(content: string): boolean {
+  const trimmed = content.trim();
+  if (!trimmed) return false;
+
+  if (/```[\s\S]*```/u.test(trimmed)) {
+    return true;
+  }
+
+  if (/^\s*[{[]/.test(trimmed) && /[}\]]\s*$/u.test(trimmed)) {
+    return true;
+  }
+
+  const specialTokens = (trimmed.match(/[{}[\]<>+=*@#$%&|~_/^`]/gu) ?? []).length;
+  const specialTokenRatio = specialTokens / Math.max(trimmed.length, 1);
+  if (specialTokenRatio > 0.2) {
+    return true;
+  }
+
+  return /(const|let|var|function|class|return|import|export|interface|type|=>|SELECT|INSERT|UPDATE|DELETE|CREATE\s+TABLE|FROM|WHERE)\b/iu.test(trimmed);
+}
+
 function isCorruptedAssistantResponse(content: string): boolean {
   const text = content.trim();
   if (!text) return true;
@@ -3360,7 +3382,9 @@ function isCorruptedAssistantResponse(content: string): boolean {
   const maxRepeatedChars = /(.)\1{14,}/u.test(normalized);
   const excessiveNoiseRatio = (normalized.match(/[^\p{L}\p{N}\s.,;:!?()\-"']/gu) ?? []).length / Math.max(normalized.length, 1);
   const repeatedWord = hasRepeatedWordSequence(normalized, 6);
-  return maxRepeatedChars || excessiveNoiseRatio > 0.2 || repeatedWord;
+  const shouldApplyNoiseHeuristic = !isLikelyCodeHeavyResponse(text);
+  const hasExcessiveNoise = shouldApplyNoiseHeuristic && excessiveNoiseRatio > 0.2;
+  return maxRepeatedChars || hasExcessiveNoise || repeatedWord;
 }
 
 type IdentityQuestionLanguage = 'pt-BR' | 'en';
