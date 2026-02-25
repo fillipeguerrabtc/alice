@@ -236,7 +236,7 @@ const GH_PAT = config.GH_PAT?.trim();
 // ============================================================================
 // TRADING SINAIS LLM - TIPOS E CONSTANTES
 // ============================================================================
-type TradingSignalGenerationSource = 'on_demand' | 'scheduler' | 'chat';
+type TradingSignalGenerationSource = 'on_demand' | 'scheduler' | 'chat' | 'auto';
 
 type TradingMarketType = 'futures' | 'spot' | 'margin';
 type TradingMarginMode = 'cross' | 'isolated';

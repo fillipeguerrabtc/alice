@@ -2980,15 +2980,11 @@ function buildSystemPrompt(
 
   if (agent) {
     const agentName = agent.nome?.trim() || agent.slug?.trim() || 'Agente';
-    const agentSlug = agent.slug?.trim() || 'sem-slug';
-    const agentDescription = agent.instrucoes?.trim() || 'Não informada';
-    prompt = `IDENTIDADE DO AGENTE:
-- Nome: ${agentName}
-- Slug: ${agentSlug}
-- Função: ${agentDescription}
-- Regras: seu nome é ${agentName}; não invente; se perguntarem, responda exatamente isso.
-
-${prompt}`;
+    const agentSlug = agent.slug?.trim();
+    const identityLabel = agentSlug && agentSlug !== agentName
+      ? `${agentName} (@${agentSlug})`
+      : agentName;
+    prompt = `IDENTIDADE DO AGENTE:\n- Você é ${identityLabel}\n- Quando perguntarem seu nome, responda EXATAMENTE: "Meu nome é ${agentName}."\n- Nunca invente, altere ou renegocie sua identidade.\n\n${prompt}`;
   }
 
   return prompt;
@@ -3341,6 +3337,169 @@ function sanitizeAssistantResponse(raw: string): string {
   }
 
   return result.join('\n').trimEnd();
+}
+function hasRepeatedWordSequence(content: string, minConsecutiveRepeats: number): boolean {
+  const words = content.match(/\p{L}[\p{L}\p{M}]*/gu) ?? [];
+  if (words.length < minConsecutiveRepeats) {
+    return false;
+  }
+
+  let lastWord: string | null = null;
+  let repeatCount = 0;
+  for (const word of words) {
+    if (word === lastWord) {
+      repeatCount += 1;
+      if (repeatCount >= minConsecutiveRepeats) {
+        return true;
+      }
+      continue;
+    }
+
+    lastWord = word;
+    repeatCount = 1;
+  }
+
+  return false;
+}
+
+
+function isLikelyCodeHeavyResponse(content: string): boolean {
+  const trimmed = content.trim();
+  if (!trimmed) return false;
+
+  if (/```[\s\S]*```/u.test(trimmed)) {
+    return true;
+  }
+
+  if (/^\s*[{[]/.test(trimmed) && /[}\]]\s*$/u.test(trimmed)) {
+    return true;
+  }
+
+  const specialTokens = (trimmed.match(/[{}[\]<>+=*@#$%&|~_/^`]/gu) ?? []).length;
+  const specialTokenRatio = specialTokens / Math.max(trimmed.length, 1);
+  if (specialTokenRatio > 0.2) {
+    return true;
+  }
+
+  return /(const|let|var|function|class|return|import|export|interface|type|=>|SELECT|INSERT|UPDATE|DELETE|CREATE\s+TABLE|FROM|WHERE)\b/iu.test(trimmed);
+}
+
+function isCorruptedAssistantResponse(content: string): boolean {
+  const text = content.trim();
+  if (!text) return true;
+  const normalized = text.toLowerCase();
+  const maxRepeatedChars = /(.)\1{14,}/u.test(normalized);
+  const excessiveNoiseRatio = (normalized.match(/[^\p{L}\p{N}\s.,;:!?()\-"']/gu) ?? []).length / Math.max(normalized.length, 1);
+  const repeatedWord = hasRepeatedWordSequence(normalized, 6);
+  const shouldApplyNoiseHeuristic = !isLikelyCodeHeavyResponse(text);
+  const hasExcessiveNoise = shouldApplyNoiseHeuristic && excessiveNoiseRatio > 0.2;
+  const hasRepeatedChars = shouldApplyNoiseHeuristic && maxRepeatedChars;
+  const hasRepeatedWords = shouldApplyNoiseHeuristic && repeatedWord;
+  return hasRepeatedChars || hasExcessiveNoise || hasRepeatedWords;
+}
+
+type IdentityQuestionLanguage = 'pt-BR' | 'en';
+
+function normalizeIdentityQuestion(message: string): string {
+  return message
+    .normalize('NFKC')
+    .toLowerCase()
+    .trim()
+    .replace(/[!?.,;:]+$/g, '')
+    .replace(/\s+/g, ' ');
+}
+
+function detectOwnNameQuestionLanguage(message: string): IdentityQuestionLanguage | null {
+  const normalized = normalizeIdentityQuestion(message);
+  const ptBrPatterns = [
+    /^qual [ée] (?:o\s+)?meu nome$/u,
+    /^como voc[êe] me chama$/u,
+  ];
+  if (ptBrPatterns.some((pattern) => pattern.test(normalized))) {
+    return 'pt-BR';
+  }
+
+  const enPatterns = [
+    /^what(?:'s| is) my name$/u,
+    /^do you know my name$/u,
+  ];
+  if (enPatterns.some((pattern) => pattern.test(normalized))) {
+    return 'en';
+  }
+
+  return null;
+}
+
+function detectAgentNameQuestionLanguage(message: string): IdentityQuestionLanguage | null {
+  const normalized = normalizeIdentityQuestion(message);
+  const ptBrPatterns = [
+    /^qual [ée] (?:o\s+)?seu nome$/u,
+    /^quem [ée] voc[êe]$/u,
+  ];
+  if (ptBrPatterns.some((pattern) => pattern.test(normalized))) {
+    return 'pt-BR';
+  }
+
+  const enPatterns = [
+    /^what(?:'s| is) your name$/u,
+    /^who are you$/u,
+  ];
+  if (enPatterns.some((pattern) => pattern.test(normalized))) {
+    return 'en';
+  }
+
+  return null;
+}
+
+async function enforceResponseGuardrails(params: {
+  responseText: string;
+  userMessage: string;
+  preferredName: string | null;
+  agentName: string | null;
+  regenerate?: () => Promise<string>;
+  correlationId?: string;
+}): Promise<string> {
+  const ownNameQuestionLanguage = detectOwnNameQuestionLanguage(params.userMessage);
+  if (ownNameQuestionLanguage && params.preferredName) {
+    if (ownNameQuestionLanguage === 'en') {
+      return `Your preferred name is ${params.preferredName}.`;
+    }
+    return `Seu nome preferido é ${params.preferredName}.`;
+  }
+
+  const agentNameQuestionLanguage = detectAgentNameQuestionLanguage(params.userMessage);
+  if (agentNameQuestionLanguage && params.agentName) {
+    if (agentNameQuestionLanguage === 'en') {
+      return `My name is ${params.agentName}.`;
+    }
+    return `Meu nome é ${params.agentName}.`;
+  }
+
+  const sanitized = sanitizeAssistantResponse(params.responseText);
+  if (!isCorruptedAssistantResponse(sanitized)) {
+    return sanitized;
+  }
+
+  if (!params.regenerate) {
+    logger.warn({ correlationId: params.correlationId }, 'Guardrail detectou resposta corrompida sem estratégia de regeneração');
+    return sanitized;
+  }
+
+  logger.warn({ correlationId: params.correlationId }, 'Guardrail detectou resposta corrompida; iniciando regeneração controlada');
+  let regeneratedRaw: string;
+  try {
+    regeneratedRaw = await params.regenerate();
+  } catch (regenerateError) {
+    logger.warn({ error: regenerateError, correlationId: params.correlationId }, 'Regeneração controlada falhou; mantendo resposta sanitizada original');
+    return sanitized;
+  }
+
+  const regenerated = sanitizeAssistantResponse(regeneratedRaw);
+  if (isCorruptedAssistantResponse(regenerated)) {
+    logger.warn({ correlationId: params.correlationId }, 'Regeneração controlada retornou conteúdo potencialmente corrompido');
+    return sanitized;
+  }
+  return regenerated;
 }
 
 async function generateConversationTitle(params: {
@@ -8638,13 +8797,35 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
       getAdaptiveGpuPriority('sync', syncProfile)
     );
     const llmLatency = Date.now() - llmStartTime;
+
+    const guardrailStartTime = Date.now();
+    const assistantAgentName = activeAgent?.nome?.trim()
+      || conversation.agent?.nome?.trim()
+      || null;
+    const finalizedResponse = await enforceResponseGuardrails({
+      responseText: response as string,
+      userMessage: body.conteudo,
+      preferredName: nameContext.preferredName,
+      agentName: assistantAgentName,
+      correlationId: req.header('x-correlation-id') ?? undefined,
+      regenerate: async () => callLlamaAPI(
+        llmMessages,
+        false,
+        {
+          ...scopedLlmConfig,
+          temperature: Math.min(scopedLlmConfig.temperature ?? 0.7, 0.25),
+        },
+        getAdaptiveGpuPriority('sync', syncProfile)
+      ) as Promise<string>,
+    });
+    const guardrailLatency = Date.now() - guardrailStartTime;
     const totalLatency = Date.now() - ragStartTime;
 
-    const tokensUsed = calculateTokensUsed({ promptMessages: llmMessages, responseText: response as string });
+    const tokensUsed = calculateTokensUsed({ promptMessages: llmMessages, responseText: finalizedResponse });
     const [assistantMessage] = await db.insert(schema.messages).values({
       conversationId: id,
       agentId: activeAgentId,
-      conteudo: response as string,
+      conteudo: finalizedResponse,
       tipo: 'text',
       isFromUser: false,
       latenciaMs: totalLatency,
@@ -8663,7 +8844,7 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
       await ensureConversationTitle({
         conversationId: id,
         userMessage: body.conteudo,
-        assistantResponse: response as string,
+        assistantResponse: finalizedResponse,
       });
     } catch (titleError) {
       logger.warn({ error: titleError, conversationId: id }, 'Falha ao aplicar título automático (sync)');
@@ -8674,7 +8855,7 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
       profile: syncProfile,
       namespaceId: activeNamespaceId || conversation.agent?.namespaceId,
       userMessage: body.conteudo,
-      assistantResponse: response as string,
+      assistantResponse: finalizedResponse,
     })) {
       void collectTrainingSample({
         tenantId,
@@ -8689,7 +8870,7 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
         },
         messages: [
           { role: 'user', content: body.conteudo },
-          { role: 'assistant', content: response as string },
+          { role: 'assistant', content: finalizedResponse },
         ],
         userId,
         role: userRole,
@@ -8700,6 +8881,7 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
       conversationId: id, 
       ragLatencyMs: ragLatency,
       llmLatencyMs: llmLatency,
+      guardrailLatencyMs: guardrailLatency,
       totalLatencyMs: totalLatency,
       usedRag: !!ragResult?.context,
     }, 'Mensagem processada com integração RAG');
@@ -9023,6 +9205,17 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       flushSSE();
     };
 
+
+    const safeWriteSseEvent = (payload: Record<string, unknown>): void => {
+      if (res.writableEnded) return;
+      try {
+        res.write(`data: ${JSON.stringify(payload)}\n\n`);
+        flushSSE();
+      } catch (writeError) {
+        logger.warn({ error: writeError, conversationId: req.params.id }, 'Erro ao escrever evento SSE - cliente pode ter desconectado');
+      }
+    };
+
     if (agentPayload) {
       res.write(`data: ${JSON.stringify({ type: 'agent_route', agent: agentPayload, mode: routingDecision.mode, source: routingDecision.source })}\n\n`);
     }
@@ -9065,7 +9258,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         .where(eq(schema.conversations.id, conversationId));
 
       writeContentChunk(responseContent);
-      res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+      safeWriteSseEvent({ type: 'message_saved', messageId: assistantMessage?.id });
       res.write('data: [DONE]\n\n');
       res.end();
       return;
@@ -9612,7 +9805,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                   }).catch((err) => logger.warn({ err, conversationId }, 'Falha na coleta automática de treinamento (stream mídia)'));
                 }
 
-                res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+                safeWriteSseEvent({ type: 'message_saved', messageId: assistantMessage?.id });
                 emitAgentEvent({
                   phase: 'finalizing',
                   action: 'persist_message',
@@ -12669,9 +12862,27 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           if (!assistantPersisted && conversationId && userMessage) {
             assistantPersisted = true;
             if (assistantResponse.trim().length > 0) {
-              const sanitizedResponse = sanitizeAssistantResponse(assistantResponse);
-              if (sanitizedResponse !== assistantResponse) {
-                res.write(`data: ${JSON.stringify({ type: 'final_message', content: sanitizedResponse })}\n\n`);
+              const assistantAgentName = activeAgent?.nome?.trim()
+                || conversation?.agent?.nome?.trim()
+                || null;
+              const guardedResponse = await enforceResponseGuardrails({
+                responseText: assistantResponse,
+                userMessage: userMessageContent,
+                preferredName: nameContext.preferredName,
+                agentName: assistantAgentName,
+                correlationId: conversationId ?? undefined,
+                regenerate: async () => callLlamaAPI(
+                  llmMessages,
+                  false,
+                  {
+                    ...scopedLlmConfig,
+                    temperature: Math.min(scopedLlmConfig.temperature ?? 0.7, 0.25),
+                  },
+                  getAdaptiveGpuPriority('sync', streamProfile)
+                ) as Promise<string>,
+              });
+              if (guardedResponse !== assistantResponse) {
+                safeWriteSseEvent({ type: 'final_message', content: guardedResponse });
               }
               const persistStartedAt = Date.now();
               emitAgentEvent({
@@ -12681,11 +12892,11 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                 message: 'Persistindo resposta',
                 correlationId: conversationId ?? undefined,
               });
-              const tokensUsed = calculateTokensUsed({ promptMessages: llmMessages, responseText: sanitizedResponse });
+              const tokensUsed = calculateTokensUsed({ promptMessages: llmMessages, responseText: guardedResponse });
               const [assistantMessage] = await db.insert(schema.messages).values({
                 conversationId,
                 agentId: conversation?.agentId,
-                conteudo: sanitizedResponse,
+                conteudo: guardedResponse,
                 tipo: 'text',
                 isFromUser: false,
                 tokensUsados: tokensUsed ?? undefined,
@@ -12703,20 +12914,20 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                 await ensureConversationTitle({
                   conversationId,
                   userMessage: userMessageContent,
-                  assistantResponse: sanitizedResponse,
+                  assistantResponse: guardedResponse,
                 });
               } catch (titleError) {
                 logger.warn({ error: titleError, conversationId }, 'Falha ao aplicar título automático (stream)');
               }
 
-              const streamProfile = detectContextProfile(userMessageContent);
+              const streamTrainingProfile = detectContextProfile(userMessageContent);
               const streamUserRole = req.user?.role as Role | undefined;
               // Auto-coleta: envia cada par user+assistant individualmente (contínuo). sentToTrainingAt é apenas para coleta manual.
               if (streamUserRole && shouldAutoCollectTraining({
-                profile: streamProfile,
+                profile: streamTrainingProfile,
                 namespaceId: conversation?.namespaceId || conversation?.agent?.namespaceId,
                 userMessage: userMessageContent,
-                assistantResponse: sanitizedResponse,
+                assistantResponse: guardedResponse,
               })) {
                 void collectTrainingSample({
                   tenantId,
@@ -12731,7 +12942,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                   },
                   messages: [
                     { role: 'user', content: userMessageContent },
-                    { role: 'assistant', content: sanitizedResponse },
+                    { role: 'assistant', content: guardedResponse },
                   ],
                   userId,
                   role: streamUserRole,

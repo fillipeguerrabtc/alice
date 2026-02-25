@@ -24,7 +24,7 @@ import crypto from 'crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createLogger } from '@alice/logger';
-import { getDatabase, getPool, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, validateEmbeddingDimension, EMBEDDING_DIMENSIONS } from '@alice/database';
+import { getDatabase, getPool, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, validateEmbeddingDimension, EMBEDDING_DIMENSIONS, withTenantContext } from '@alice/database';
 import { 
   createCorrelationMiddleware, 
   createSecurityMiddleware,
@@ -74,6 +74,7 @@ import {
   Histogram as PromHistogram,
   computeSemHash,
   cosineSimilarity,
+  generateInternalAuthHeaders,
 } from '@alice/shared-utils';
 import { trainingServicePaths, trainingServiceSchemas } from './openapi-specs.js';
 import { eq, and, or, desc, sql, isNull, not, inArray, lte } from '@alice/database';
@@ -157,6 +158,11 @@ function readUuidFromUnknown(value: unknown): string | null {
 const PORT = parseEnvInt(process.env.PORT, 3004, 'PORT');
 const DATABASE_URL = process.env.DATABASE_URL;
 const RAG_SERVICE_URL = process.env.RAG_SERVICE_URL ?? 'http://alice-rag:3003';
+const INTEGRATIONS_SERVICE_URL = process.env.INTEGRATIONS_SERVICE_URL;
+if (!INTEGRATIONS_SERVICE_URL) {
+  throw new Error('INTEGRATIONS_SERVICE_URL é obrigatório (Regra 6 - fail-fast)');
+}
+const INTEGRATIONS_SERVICE_URL_FINAL = INTEGRATIONS_SERVICE_URL;
 const corsOriginsEnv = process.env.CORS_ORIGINS;
 if (!corsOriginsEnv && process.env.NODE_ENV === 'production') {
   logger.error('CORS_ORIGINS é obrigatório em produção (Regra 6 - fail-fast)');
@@ -1142,82 +1148,125 @@ async function autoValidateCandidateIfNeeded(params: {
   };
 }
 
-type AutoLlmSignalDraft = {
-  signalType: 'entry_long' | 'entry_short' | 'hold';
-  confidence: number;
-  reasoning: string;
-  suggestedPrice?: number;
-  suggestedStopLoss?: number;
-  suggestedTakeProfit?: number;
-  suggestedSize?: number;
-  operationType?: string;
-  expectedDurationMinutes?: number;
-  marketCondition?: string;
-  riskScore?: number;
-  tradeSummary?: string;
-  motivators?: string[];
-  invalidationReasons?: string[];
-};
-
-function parseStructuredJsonFromContent(content: string): Record<string, unknown> {
-  const trimmed = content.trim();
-  try {
-    return JSON.parse(trimmed) as Record<string, unknown>;
-  } catch {
-    const start = trimmed.indexOf('{');
-    const end = trimmed.lastIndexOf('}');
-    if (start >= 0 && end > start) {
-      return JSON.parse(trimmed.slice(start, end + 1)) as Record<string, unknown>;
-    }
-    throw new Error('Resposta LLM sem JSON estruturado');
-  }
+async function findAutoRunSignal(params: { tenantId: string; runId: string }) {
+  return withTenantContext(params.tenantId, false, async (tenantDb) => {
+    const rows = await tenantDb.execute(sql<{ id: string }>`
+      SELECT id
+      FROM trading_signals
+      WHERE tenant_id = ${params.tenantId}
+        AND metadata ->> 'autoRunId' = ${params.runId}
+      ORDER BY criado_em DESC
+      LIMIT 1
+    `);
+    return rows.rows[0] ?? null;
+  });
 }
 
-function buildAutoSignalDraft(params: {
-  llmPayload: z.infer<typeof TRADING_LLM_SIGNAL_PARTIAL_SCHEMA>;
-  bestCandidate: typeof schema.tradingUniverseCandidates.$inferSelect | undefined;
-  entryModel: Record<string, unknown>;
-}): AutoLlmSignalDraft {
-  const candidateSide = String(params.bestCandidate?.side ?? 'hold');
-  const fallbackSignalType: AutoLlmSignalDraft['signalType'] = candidateSide === 'short'
-    ? 'entry_short'
-    : candidateSide === 'long'
-      ? 'entry_long'
-      : 'hold';
-  const llmSignalType = params.llmPayload.signalType === 'entry_short' || params.llmPayload.signalType === 'entry_long'
-    ? params.llmPayload.signalType
-    : 'hold';
-  const signalType: AutoLlmSignalDraft['signalType'] = llmSignalType ?? fallbackSignalType;
-  const baseEntry = toFiniteNumber(params.entryModel.entry);
-  const llmEntry = toFiniteNumber(params.llmPayload.suggestedPrice);
-  const tolerance = baseEntry && baseEntry > 0 ? baseEntry * 0.003 : null;
-  let suggestedPrice = llmEntry ?? baseEntry ?? undefined;
-  if (baseEntry && tolerance && suggestedPrice && Math.abs(suggestedPrice - baseEntry) > tolerance) {
-    suggestedPrice = baseEntry;
+async function persistNoTradeAutoSignal(params: {
+  run: typeof schema.tradingAutoRuns.$inferSelect;
+  runId: string;
+  decisionId: string;
+  symbol: string;
+  marketType: 'spot' | 'futures' | 'margin';
+  reasonCode: string;
+  reasonHuman: string;
+  correlationId: string;
+}): Promise<void> {
+  const existing = await findAutoRunSignal({ tenantId: params.run.tenantId, runId: params.runId });
+  if (existing) return;
+
+  await withTenantContext(params.run.tenantId, false, async (tenantDb) => {
+    await tenantDb.insert(schema.tradingSignals).values({
+      tenantId: params.run.tenantId,
+      signalType: 'hold',
+      symbol: params.symbol,
+      marketType: params.marketType,
+      confidence: 0,
+      metadata: {
+        generationSource: 'auto',
+        operationType: 'neutral',
+        tradeSummary: 'Signal auto concluiu sem entrada (hold).',
+        reasoning: params.reasonHuman,
+        validationStatus: 'validated',
+        approvalStatus: 'approved',
+        createdByUserId: params.run.userId ?? undefined,
+        autoRunId: params.runId,
+        autoDecisionId: params.decisionId,
+        correlationId: params.correlationId,
+        noTradeReasonCode: params.reasonCode,
+      } as schema.TradingSignalMetadata,
+    });
+  });
+}
+
+async function generateAndTagAutoSignal(params: {
+  run: typeof schema.tradingAutoRuns.$inferSelect;
+  runId: string;
+  decisionId: string;
+  symbol: string;
+  interval: string;
+  marketType: 'spot' | 'futures' | 'margin';
+  correlationId: string;
+}): Promise<void> {
+  const existing = await findAutoRunSignal({ tenantId: params.run.tenantId, runId: params.runId });
+  if (existing) return;
+
+  const internalHeaders = generateInternalAuthHeaders({
+    userId: params.run.userId,
+    tenantId: params.run.tenantId,
+    role: 'admin',
+  });
+
+  const response = await fetch(`${INTEGRATIONS_SERVICE_URL_FINAL}/api/integrations/trading/signals/generate`, {
+    method: 'POST',
+    headers: {
+      ...internalHeaders,
+      'Content-Type': 'application/json',
+      'x-correlation-id': params.correlationId,
+    },
+    body: JSON.stringify({
+      symbol: params.symbol,
+      interval: params.interval,
+      marketType: params.marketType,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => '');
+    throw new Error(`Falha ao gerar sinal auto via integrations (${response.status}): ${errorText.slice(0, 200)}`);
   }
-  const suggestedStopLoss = toFiniteNumber(params.llmPayload.suggestedStopLoss) ?? toFiniteNumber(params.entryModel.stop) ?? undefined;
-  const suggestedTakeProfit = toFiniteNumber(params.llmPayload.suggestedTakeProfit) ?? toFiniteNumber(params.entryModel.takeProfit) ?? undefined;
-  const suggestedSize = toFiniteNumber(params.llmPayload.suggestedSize) ?? 1;
-  const confidence = Math.min(1, Math.max(0, toFiniteNumber(params.llmPayload.confidence) ?? toFiniteNumber(params.bestCandidate?.confidenceCalibrated ?? params.bestCandidate?.confidenceRaw) ?? 0.5));
-  const reasoning = typeof params.llmPayload.reasoning === 'string' && params.llmPayload.reasoning.trim().length > 0
-    ? params.llmPayload.reasoning
-    : 'Plano gerado pelo Auto Engine';
-  return {
-    signalType,
-    confidence,
-    reasoning,
-    suggestedPrice,
-    suggestedStopLoss,
-    suggestedTakeProfit,
-    suggestedSize,
-    operationType: params.llmPayload.operationType,
-    expectedDurationMinutes: toFiniteNumber(params.llmPayload.expectedDurationMinutes) ?? undefined,
-    marketCondition: params.llmPayload.marketCondition ?? undefined,
-    riskScore: toFiniteNumber(params.llmPayload.riskScore) ?? undefined,
-    tradeSummary: params.llmPayload.tradeSummary ?? undefined,
-    motivators: params.llmPayload.motivators,
-    invalidationReasons: params.llmPayload.invalidationReasons,
-  };
+
+  const body = await response.json() as { data?: { id?: string } };
+  const signalId = body.data?.id;
+  if (!signalId) {
+    throw new Error('Integrations retornou sucesso sem signal id para signal_auto');
+  }
+
+  const updatedSignal = await withTenantContext(params.run.tenantId, false, async (tenantDb) => {
+    const [updated] = await tenantDb.update(schema.tradingSignals)
+      .set({
+        metadata: sql`
+          coalesce(${schema.tradingSignals.metadata}, '{}'::jsonb)
+          || ${JSON.stringify({
+            generationSource: 'auto',
+            autoRunId: params.runId,
+            autoDecisionId: params.decisionId,
+            correlationId: params.correlationId,
+          })}::jsonb
+        `,
+      })
+      .where(and(
+        eq(schema.tradingSignals.id, signalId),
+        eq(schema.tradingSignals.tenantId, params.run.tenantId),
+      ))
+      .returning({ id: schema.tradingSignals.id });
+
+    return updated ?? null;
+  });
+
+  if (!updatedSignal) {
+    throw new Error(`Sinal ${signalId} não encontrado para marcar metadata de signal_auto`);
+  }
 }
 
 /** Processa geração automática de sinais */
@@ -1379,15 +1428,7 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
     const noTradeReasonHuman = noTradeReasonHumanMap[noTradeReasonCode] ?? noTradeReasonHumanMap.NO_EDGE;
     const nextAction = nextActionMap[noTradeReasonCode] ?? nextActionMap.NO_EDGE;
 
-    const idempotencyHash = crypto.createHash('sha256').update(`signal-auto:${runId}:${correlationId}`).digest('hex');
-    const existingDecision = await db.query.tradingAutoDecisions.findFirst({
-      where: and(
-        eq(schema.tradingAutoDecisions.runId, runId),
-        eq(schema.tradingAutoDecisions.idempotencyHash, idempotencyHash),
-      ),
-    });
-
-    const baseDecision = {
+    const [decision] = await db.insert(schema.tradingAutoDecisions).values({
       runId,
       tenantId: run.tenantId,
       decisionType: 'signal_auto' as const,
@@ -1433,11 +1474,43 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
       reasoning: approvedCandidates.length > 0
         ? `${approvedCandidates.length} candidate(s) aprovado(s) após guardrails adaptativos. Melhor: ${bestCandidate?.strategyKey ?? 'N/A'} (${bestCandidate?.operationIntent ?? 'intraday'}).`
         : `${noTradeReasonHuman} Total avaliados: ${candidates.length}.`,
-    };
+    }).returning({ id: schema.tradingAutoDecisions.id });
 
-    const decision = existingDecision ?? (await db.insert(schema.tradingAutoDecisions).values(baseDecision).returning())[0];
-    if (!decision) {
-      throw new Error('Falha ao persistir decisão do auto engine');
+    const fallbackInstrument = await db.query.tradingInstruments.findFirst({
+      where: and(
+        eq(schema.tradingInstruments.tenantId, run.tenantId),
+        eq(schema.tradingInstruments.isActive, true),
+      ),
+      orderBy: [desc(schema.tradingInstruments.createdAt)],
+      columns: { symbol: true },
+    });
+    const resolvedSymbol = symbol ?? fallbackInstrument?.symbol;
+    if (!resolvedSymbol) {
+      throw new Error('Signal auto run sem símbolo disponível para persistência de histórico');
+    }
+
+    const resolvedMarketType = payload.marketType ?? candidateForReason?.marketType ?? 'futures';
+    if (approvedCandidates.length > 0 && decision?.id) {
+      await generateAndTagAutoSignal({
+        run,
+        runId,
+        decisionId: decision.id,
+        symbol: resolvedSymbol,
+        interval: timeframe,
+        marketType: resolvedMarketType,
+        correlationId,
+      });
+    } else if (decision?.id) {
+      await persistNoTradeAutoSignal({
+        run,
+        runId,
+        decisionId: decision.id,
+        symbol: resolvedSymbol,
+        marketType: resolvedMarketType,
+        reasonCode: noTradeReasonCode,
+        reasonHuman: noTradeReasonHuman,
+        correlationId,
+      });
     }
 
     await updateAutoRunStep(runId, 'signal-decision', 'succeeded', {
