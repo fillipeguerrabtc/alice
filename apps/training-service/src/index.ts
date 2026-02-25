@@ -1183,6 +1183,7 @@ async function generateAndTagAutoSignal(params: {
   runId: string;
   decisionId: string;
   symbol: string;
+  interval: string;
   marketType: 'spot' | 'futures' | 'margin';
   correlationId: string;
 }): Promise<void> {
@@ -1204,7 +1205,7 @@ async function generateAndTagAutoSignal(params: {
     },
     body: JSON.stringify({
       symbol: params.symbol,
-      interval: '5m',
+      interval: params.interval,
       marketType: params.marketType,
     }),
   });
@@ -1466,6 +1467,7 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
         runId,
         decisionId: decision.id,
         symbol: resolvedSymbol,
+        interval: timeframe,
         marketType: resolvedMarketType,
         correlationId,
       });

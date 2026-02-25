@@ -53,3 +53,7 @@ Este ciclo implementa correções reais de backend para os pontos críticos repo
 - Corrigido no fluxo de streaming o uso do nome do agente para guardrail de identidade, priorizando `activeAgent` (agente roteado) e mantendo fallback para `conversation.agent` quando necessário.
 - Corrigida a métrica de latência no fluxo sync: `llmLatencyMs` agora mede apenas a primeira chamada ao LLM; o tempo do guardrail/regeneração passou a ser exposto separadamente em `guardrailLatencyMs`.
 - Corrigido metadado de sinal `hold` em `signal_auto`: `operationType` alterado de `scalping` para `neutral`, alinhando semântica de no-trade com o schema de operação.
+
+## Ajustes adicionais pós-review (25/02/2026 - rodada 3)
+- Corrigido `signal_auto` para respeitar o `timeframe` real aprovado no candidate/decision durante a geração de sinal via integrations, removendo hardcode de `interval: '5m'`.
+- `generateAndTagAutoSignal` agora recebe `interval` por parâmetro e repassa o valor ao endpoint de geração, mantendo consistência entre análise aprovada e execução do sinal.
