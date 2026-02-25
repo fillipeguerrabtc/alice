@@ -65,3 +65,7 @@ Este ciclo implementa correções reais de backend para os pontos críticos repo
 ## Ajustes adicionais pós-review (25/02/2026 - rodada 5)
 - Ajustado guardrail de ruído para evitar falso positivo em respostas com muito código (regex/JSON/template literal): a heurística de `excessiveNoiseRatio` agora é desativada quando o conteúdo é detectado como code-heavy.
 - Removido `docs/PROMPT-COPILOT-CORRECOES-CHAT-TRADING-2026-02-25.md` por ser artefato operacional de geração de PR (prompt imperativo) e não documentação de produto/arquitetura, reduzindo risco de conteúdo obsoleto no diretório `docs/`.
+
+## Ajustes adicionais pós-review (25/02/2026 - rodada 6)
+- Ajustado `isCorruptedAssistantResponse` para também desativar a heurística de `maxRepeatedChars` quando o conteúdo é classificado como code-heavy, evitando falso positivo em separadores comuns de código (ex.: `====`, `----`).
+- Adicionado tratamento resiliente de erro na regeneração do guardrail (`try/catch`): em falha de rede/timeout/rate-limit do LLM, o fluxo mantém e persiste a resposta sanitizada original ao invés de abortar a persistência.

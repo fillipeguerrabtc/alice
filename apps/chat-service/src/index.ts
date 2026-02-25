@@ -3384,7 +3384,8 @@ function isCorruptedAssistantResponse(content: string): boolean {
   const repeatedWord = hasRepeatedWordSequence(normalized, 6);
   const shouldApplyNoiseHeuristic = !isLikelyCodeHeavyResponse(text);
   const hasExcessiveNoise = shouldApplyNoiseHeuristic && excessiveNoiseRatio > 0.2;
-  return maxRepeatedChars || hasExcessiveNoise || repeatedWord;
+  const hasRepeatedChars = shouldApplyNoiseHeuristic && maxRepeatedChars;
+  return hasRepeatedChars || hasExcessiveNoise || repeatedWord;
 }
 
 type IdentityQuestionLanguage = 'pt-BR' | 'en';
@@ -3475,7 +3476,15 @@ async function enforceResponseGuardrails(params: {
   }
 
   logger.warn({ correlationId: params.correlationId }, 'Guardrail detectou resposta corrompida; iniciando regeneração controlada');
-  const regenerated = sanitizeAssistantResponse(await params.regenerate());
+  let regeneratedRaw: string;
+  try {
+    regeneratedRaw = await params.regenerate();
+  } catch (regenerateError) {
+    logger.warn({ error: regenerateError, correlationId: params.correlationId }, 'Regeneração controlada falhou; mantendo resposta sanitizada original');
+    return sanitized;
+  }
+
+  const regenerated = sanitizeAssistantResponse(regeneratedRaw);
   if (isCorruptedAssistantResponse(regenerated)) {
     logger.warn({ correlationId: params.correlationId }, 'Regeneração controlada retornou conteúdo potencialmente corrompido');
     return sanitized;
