@@ -72,3 +72,9 @@ Este ciclo implementa correções reais de backend para os pontos críticos repo
 
 ## Ajustes adicionais pós-review (25/02/2026 - rodada 7)
 - Ajustada a heurística `repeatedWord` em `isCorruptedAssistantResponse` para respeitar o mesmo gate `shouldApplyNoiseHeuristic` usado nas demais heurísticas de ruído, evitando falso positivo em respostas code-heavy com termos repetidos válidos (ex.: CSS/JSON).
+
+## Ajustes adicionais pós-review (25/02/2026 - rodada 8)
+- Corrigido filtro de `compression` no `llm-gateway-service`: removida dependência direta de `compression.filter` e adicionado fallback seguro para evitar `TypeError` caso o helper não exista no pacote.
+- Ajustadas regex de identidade em PT-BR para aceitar frase natural com artigo (`qual é o meu nome` / `qual é o seu nome`) mantendo resposta determinística de identidade.
+- Corrigido fluxo stream no `chat-service` para proteger `final_message` e `message_saved` com escrita SSE segura, evitando perda de persistência quando cliente desconecta no fim da geração.
+- Corrigido `training-service` para executar insert/update de `trading_signals` no contexto de tenant (`withTenantContext`) e com `tenantId` no `where`, garantindo compatibilidade com RLS.

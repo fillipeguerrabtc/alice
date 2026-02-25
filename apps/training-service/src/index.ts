@@ -24,7 +24,7 @@ import crypto from 'crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createLogger } from '@alice/logger';
-import { getDatabase, getPool, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, validateEmbeddingDimension, EMBEDDING_DIMENSIONS } from '@alice/database';
+import { getDatabase, getPool, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, validateEmbeddingDimension, EMBEDDING_DIMENSIONS, withTenantContext } from '@alice/database';
 import { 
   createCorrelationMiddleware, 
   createSecurityMiddleware,
@@ -1156,25 +1156,27 @@ async function persistNoTradeAutoSignal(params: {
   const existing = await findAutoRunSignal(params.runId);
   if (existing) return;
 
-  await db.insert(schema.tradingSignals).values({
-    tenantId: params.run.tenantId,
-    signalType: 'hold',
-    symbol: params.symbol,
-    marketType: params.marketType,
-    confidence: 0,
-    metadata: {
-      generationSource: 'auto',
-      operationType: 'neutral',
-      tradeSummary: 'Signal auto concluiu sem entrada (hold).',
-      reasoning: params.reasonHuman,
-      validationStatus: 'validated',
-      approvalStatus: 'approved',
-      createdByUserId: params.run.userId ?? undefined,
-      autoRunId: params.runId,
-      autoDecisionId: params.decisionId,
-      correlationId: params.correlationId,
-      noTradeReasonCode: params.reasonCode,
-    } as schema.TradingSignalMetadata,
+  await withTenantContext(params.run.tenantId, false, async (tenantDb) => {
+    await tenantDb.insert(schema.tradingSignals).values({
+      tenantId: params.run.tenantId,
+      signalType: 'hold',
+      symbol: params.symbol,
+      marketType: params.marketType,
+      confidence: 0,
+      metadata: {
+        generationSource: 'auto',
+        operationType: 'neutral',
+        tradeSummary: 'Signal auto concluiu sem entrada (hold).',
+        reasoning: params.reasonHuman,
+        validationStatus: 'validated',
+        approvalStatus: 'approved',
+        createdByUserId: params.run.userId ?? undefined,
+        autoRunId: params.runId,
+        autoDecisionId: params.decisionId,
+        correlationId: params.correlationId,
+        noTradeReasonCode: params.reasonCode,
+      } as schema.TradingSignalMetadata,
+    });
   });
 }
 
@@ -1221,20 +1223,27 @@ async function generateAndTagAutoSignal(params: {
     throw new Error('Integrations retornou sucesso sem signal id para signal_auto');
   }
 
-  const [updatedSignal] = await db.update(schema.tradingSignals)
-    .set({
-      metadata: sql`
-        coalesce(${schema.tradingSignals.metadata}, '{}'::jsonb)
-        || ${JSON.stringify({
-          generationSource: 'auto',
-          autoRunId: params.runId,
-          autoDecisionId: params.decisionId,
-          correlationId: params.correlationId,
-        })}::jsonb
-      `,
-    })
-    .where(eq(schema.tradingSignals.id, signalId))
-    .returning({ id: schema.tradingSignals.id });
+  const updatedSignal = await withTenantContext(params.run.tenantId, false, async (tenantDb) => {
+    const [updated] = await tenantDb.update(schema.tradingSignals)
+      .set({
+        metadata: sql`
+          coalesce(${schema.tradingSignals.metadata}, '{}'::jsonb)
+          || ${JSON.stringify({
+            generationSource: 'auto',
+            autoRunId: params.runId,
+            autoDecisionId: params.decisionId,
+            correlationId: params.correlationId,
+          })}::jsonb
+        `,
+      })
+      .where(and(
+        eq(schema.tradingSignals.id, signalId),
+        eq(schema.tradingSignals.tenantId, params.run.tenantId),
+      ))
+      .returning({ id: schema.tradingSignals.id });
+
+    return updated ?? null;
+  });
 
   if (!updatedSignal) {
     throw new Error(`Sinal ${signalId} não encontrado para marcar metadata de signal_auto`);

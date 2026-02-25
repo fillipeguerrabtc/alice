@@ -3403,7 +3403,7 @@ function normalizeIdentityQuestion(message: string): string {
 function detectOwnNameQuestionLanguage(message: string): IdentityQuestionLanguage | null {
   const normalized = normalizeIdentityQuestion(message);
   const ptBrPatterns = [
-    /^qual [ée] meu nome$/u,
+    /^qual [ée] (?:o\s+)?meu nome$/u,
     /^como voc[êe] me chama$/u,
   ];
   if (ptBrPatterns.some((pattern) => pattern.test(normalized))) {
@@ -3424,7 +3424,7 @@ function detectOwnNameQuestionLanguage(message: string): IdentityQuestionLanguag
 function detectAgentNameQuestionLanguage(message: string): IdentityQuestionLanguage | null {
   const normalized = normalizeIdentityQuestion(message);
   const ptBrPatterns = [
-    /^qual [ée] seu nome$/u,
+    /^qual [ée] (?:o\s+)?seu nome$/u,
     /^quem [ée] voc[êe]$/u,
   ];
   if (ptBrPatterns.some((pattern) => pattern.test(normalized))) {
@@ -9196,6 +9196,17 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       flushSSE();
     };
 
+
+    const safeWriteSseEvent = (payload: Record<string, unknown>): void => {
+      if (res.writableEnded) return;
+      try {
+        res.write(`data: ${JSON.stringify(payload)}\n\n`);
+        flushSSE();
+      } catch (writeError) {
+        logger.warn({ error: writeError, conversationId: req.params.id }, 'Erro ao escrever evento SSE - cliente pode ter desconectado');
+      }
+    };
+
     if (agentPayload) {
       res.write(`data: ${JSON.stringify({ type: 'agent_route', agent: agentPayload, mode: routingDecision.mode, source: routingDecision.source })}\n\n`);
     }
@@ -9238,7 +9249,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         .where(eq(schema.conversations.id, conversationId));
 
       writeContentChunk(responseContent);
-      res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+      safeWriteSseEvent({ type: 'message_saved', messageId: assistantMessage?.id });
       res.write('data: [DONE]\n\n');
       res.end();
       return;
@@ -9785,7 +9796,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                   }).catch((err) => logger.warn({ err, conversationId }, 'Falha na coleta automática de treinamento (stream mídia)'));
                 }
 
-                res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+                safeWriteSseEvent({ type: 'message_saved', messageId: assistantMessage?.id });
                 emitAgentEvent({
                   phase: 'finalizing',
                   action: 'persist_message',
@@ -12862,7 +12873,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                 ) as Promise<string>,
               });
               if (guardedResponse !== assistantResponse) {
-                res.write(`data: ${JSON.stringify({ type: 'final_message', content: guardedResponse })}\n\n`);
+                safeWriteSseEvent({ type: 'final_message', content: guardedResponse });
               }
               const persistStartedAt = Date.now();
               emitAgentEvent({

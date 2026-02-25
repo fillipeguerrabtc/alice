@@ -140,6 +140,12 @@ const app = express();
 app.use(createCorrelationMiddleware({ serviceName: 'llm-gateway' }));
 app.use(createSecurityMiddleware());
 app.use(cors({ origin: true }));
+
+const defaultCompressionFilter: (req: Request, res: Response) => boolean =
+  typeof (compression as unknown as { filter?: (req: Request, res: Response) => boolean }).filter === 'function'
+    ? (compression as unknown as { filter: (req: Request, res: Response) => boolean }).filter
+    : () => true;
+
 app.use(compression({
   filter: (req, res) => {
     const acceptHeader = req.headers.accept ?? '';
@@ -149,7 +155,7 @@ app.use(compression({
     if (req.path === '/api/llm/stream') {
       return false;
     }
-    return compression.filter(req, res);
+    return defaultCompressionFilter(req, res);
   },
 }));
 app.use(express.json({ limit: '1mb' }));
