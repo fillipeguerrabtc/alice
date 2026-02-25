@@ -130,9 +130,10 @@ import {
   getTradingV2Rebalances,
   startPortfolioAutoRun,
   startSignalAutoRun,
+  getTradingAutoRuns,
   getTradingAutoRunDetail,
 } from '@/services/api/tradingV2';
-import type { TradingAutoRunDetail } from '@/services/api/tradingV2';
+import type { TradingAutoRun, TradingAutoRunDetail } from '@/services/api/tradingV2';
 import { 
   CandleChart, 
   OrderBookViz, 
@@ -402,6 +403,10 @@ interface TradingSignal {
   signalType: 'entry_long' | 'entry_short' | 'exit' | 'adjust_sl' | 'adjust_tp' | 'hold' | 'neutral';
   symbol: string;
   marketType: 'futures' | 'spot' | 'margin';
+  suggestedPrice?: number | null;
+  suggestedStopLoss?: number | null;
+  suggestedTakeProfit?: number | null;
+  suggestedSize?: number | null;
   confidence: number;
   reasoning: string | null;
   sourceModel: string | null;
@@ -1072,6 +1077,16 @@ function TradingContent() {
       if (status === 'succeeded' || status === 'failed' || status === 'cancelled') return false;
       return 3000; // poll a cada 3s enquanto ativo
     },
+  });
+
+  const {
+    data: signalAutoRuns = [],
+    refetch: refetchSignalAutoRuns,
+  } = useQuery<TradingAutoRun[]>({
+    queryKey: ['/api/trading-v2/auto/runs', 'signal_auto'],
+    queryFn: async () => getTradingAutoRuns({ type: 'signal_auto', limit: 30 }),
+    enabled: !!user?.id && csrfReady,
+    refetchInterval: 5000,
   });
 
   const enqueueTradingV2Mutation = useMutation({
@@ -2541,6 +2556,7 @@ function TradingContent() {
     },
     onSuccess: (data) => {
       setActiveAutoRunId(data.runId);
+      refetchSignalAutoRuns();
       toast({
         title: 'Signal Auto Run iniciado',
         description: `Run ${data.runId.slice(0, 8)}… enfileirado. Acompanhe o status na aba.`,
@@ -4214,6 +4230,31 @@ function TradingContent() {
                   </Button>
                   <Button variant="outline" onClick={() => setActiveTab('signals')}>Ir para painel de sinais</Button>
                 </div>
+                <div className="space-y-2">
+                  <div className="text-sm font-medium">Histórico de runs (últimos 30)</div>
+                  {signalAutoRuns.length === 0 ? (
+                    <div className="text-xs text-muted-foreground">Nenhum run encontrado.</div>
+                  ) : (
+                    <div className="max-h-52 overflow-y-auto border rounded">
+                      {signalAutoRuns.map((run) => {
+                        const payload = run.payload ?? {};
+                        const payloadSymbol = typeof payload.symbol === 'string' ? payload.symbol : '-';
+                        const payloadMarket = typeof payload.marketType === 'string' ? payload.marketType : '-';
+                        return (
+                          <button
+                            key={run.id}
+                            type="button"
+                            className={`w-full text-left px-3 py-2 border-b last:border-b-0 hover:bg-muted/40 ${activeAutoRunId === run.id ? 'bg-muted/50' : ''}`}
+                            onClick={() => setActiveAutoRunId(run.id)}
+                          >
+                            <div className="text-xs font-medium">{formatDateTime(run.createdAt, { locale, timeZone })} · {run.status}</div>
+                            <div className="text-xs text-muted-foreground">{payloadSymbol} · {payloadMarket} · {run.approved === null || run.approved === undefined ? 'Aprovação: n/a' : run.approved ? 'Aprovação: sim' : 'Aprovação: não'}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
                 {/* Status do Signal Auto Run */}
                 {activeAutoRunDetail && activeAutoRunDetail.run.runType === 'signal_auto' && (
                   <Card className="border-primary/30 mt-2">
@@ -4277,6 +4318,33 @@ function TradingContent() {
                             )}
                             {!decision.approved && nextAction && (
                               <div><span className="font-medium">Próxima ação:</span> {nextAction}</div>
+                            )}
+                            {decision.tradingSignalId && (
+                              <div className="pt-1">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    setSelectedSignalId(decision.tradingSignalId ?? null);
+                                    setActiveTab('signals');
+                                    refetchSignals();
+                                  }}
+                                >
+                                  Ver sinal gerado
+                                </Button>
+                                {(() => {
+                                  const linkedSignal = signals.find((signal) => signal.id === decision.tradingSignalId);
+                                  if (!linkedSignal) return null;
+                                  const hasInvalidEntryFields = (linkedSignal.signalType === 'entry_long' || linkedSignal.signalType === 'entry_short')
+                                    && (!Number.isFinite(linkedSignal.suggestedPrice ?? Number.NaN)
+                                      || !Number.isFinite(linkedSignal.suggestedStopLoss ?? Number.NaN)
+                                      || !Number.isFinite(linkedSignal.suggestedTakeProfit ?? Number.NaN)
+                                      || !Number.isFinite(linkedSignal.suggestedSize ?? Number.NaN));
+                                  return hasInvalidEntryFields ? (
+                                    <div className="text-amber-600 mt-1">Sinal inválido — bug: campos de entrada incompletos.</div>
+                                  ) : null;
+                                })()}
+                              </div>
                             )}
                           </div>
                         );

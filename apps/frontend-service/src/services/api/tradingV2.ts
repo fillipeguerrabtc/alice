@@ -95,6 +95,8 @@ export interface TradingAutoRun {
   payload: Record<string, unknown>;
   correlationId: string | null;
   namespaceId: string | null;
+  approved?: boolean | null;
+  tradingSignalId?: string | null;
   error: string | null;
   startedAt: string | null;
   finishedAt: string | null;
@@ -119,6 +121,7 @@ export interface TradingAutoDecision {
   runId: string;
   tenantId: string;
   decisionType: 'signal_auto' | 'portfolio_auto';
+  tradingSignalId?: string | null;
   entryPayload: Record<string, unknown>;
   exitPayload: Record<string, unknown> | null;
   guardrails: Record<string, unknown> | null;

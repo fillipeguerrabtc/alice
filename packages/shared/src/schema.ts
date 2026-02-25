@@ -2595,6 +2595,11 @@ export const TradingSignalMetadataSchema = z.object({
   namespaceId: z.string().uuid().optional(),          // Namespace do agente
   generationSource: z.enum(['on_demand', 'scheduler', 'chat']).optional(), // Origem do sinal
   schedulerId: z.string().uuid().optional(),          // Scheduler responsável
+  autoRunId: z.string().uuid().optional(),
+  autoDecisionId: z.string().uuid().optional(),
+  autoEngine: z.boolean().optional(),
+  modelsUsed: z.array(z.string()).optional(),
+  ragEvidenceIds: z.array(z.string()).optional(),
   timeframes: z.array(z.string()).optional(),         // Timeframes usados na geração
   enabledIndicators: z.array(z.string()).optional(),  // Indicadores habilitados no perfil
   dataSources: TradingProfileDataSourcesSchema.optional(), // Fontes de dados habilitadas
@@ -3772,6 +3777,8 @@ export const tradingAutoStepNameEnum = pgEnum('trading_auto_step_name', [
   'model-risk',
   'rebalance',
   'signal-decision',
+  'signal-llm',
+  'signal-persist',
 ]);
 
 export const tradingAutoStepStatusEnum = pgEnum('trading_auto_step_status', [
@@ -3826,6 +3833,7 @@ export const tradingAutoDecisions = pgTable('trading_auto_decisions', {
   candidateIds: jsonb('candidate_ids').$type<string[]>().default([]),
   modelsUsed: jsonb('models_used').$type<string[]>().default([]),
   ragEvidenceIds: jsonb('rag_evidence_ids').$type<string[]>().default([]),
+  tradingSignalId: uuid('trading_signal_id').references(() => tradingSignals.id, { onDelete: 'set null' }),
   idempotencyHash: varchar('idempotency_hash', { length: 128 }),
   approved: boolean('approved').notNull().default(false),
   reasoning: text('reasoning'),

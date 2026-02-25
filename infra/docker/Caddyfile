@@ -216,8 +216,13 @@ yesyoudeserve.duckdns.org, *.yesyoudeserve.duckdns.org {
 		# CORREÇÃO 02/02/2026: Streaming SSE pode durar mais em modo agentic/LLM.
 		# Ajuste de timeouts evita encerramento prematuro do stream pelo proxy.
 		handle /api/chat/stream {
+			header {
+				Cache-Control "no-cache, no-transform"
+				X-Accel-Buffering "no"
+			}
 			reverse_proxy alice-chat:3002 {
 				import proxy_headers
+				flush_interval -1
 				transport http {
 					dial_timeout 15s
 					read_timeout 5m
