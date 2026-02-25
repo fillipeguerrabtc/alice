@@ -22,7 +22,7 @@ import {
   GpuRequestPriority,
   getRedisClient,
 } from '@alice/shared-utils';
-import { callGatewayComplete, isGatewayConfigured } from './llm-gateway-client.js';
+import { callGatewayComplete, isGatewayConfigured } from '@alice/shared-utils';
 import type { TradingTechnique, TradingTechniqueScore } from '@alice/shared';
 import { TradingTechniqueSchema } from '@alice/shared';
 import { calculateTechniqueScores } from './technical-indicators.js';
