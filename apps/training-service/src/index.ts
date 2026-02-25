@@ -1164,7 +1164,7 @@ async function persistNoTradeAutoSignal(params: {
     confidence: 0,
     metadata: {
       generationSource: 'auto',
-      operationType: 'scalping',
+      operationType: 'neutral',
       tradeSummary: 'Signal auto concluiu sem entrada (hold).',
       reasoning: params.reasonHuman,
       validationStatus: 'validated',

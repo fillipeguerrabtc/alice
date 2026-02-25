@@ -8730,6 +8730,9 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
       scopedLlmConfig,
       getAdaptiveGpuPriority('sync', syncProfile)
     );
+    const llmLatency = Date.now() - llmStartTime;
+
+    const guardrailStartTime = Date.now();
     const assistantAgentName = activeAgent?.nome?.trim()
       || conversation.agent?.nome?.trim()
       || null;
@@ -8749,7 +8752,7 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
         getAdaptiveGpuPriority('sync', syncProfile)
       ) as Promise<string>,
     });
-    const llmLatency = Date.now() - llmStartTime;
+    const guardrailLatency = Date.now() - guardrailStartTime;
     const totalLatency = Date.now() - ragStartTime;
 
     const tokensUsed = calculateTokensUsed({ promptMessages: llmMessages, responseText: finalizedResponse });
@@ -8812,6 +8815,7 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
       conversationId: id, 
       ragLatencyMs: ragLatency,
       llmLatencyMs: llmLatency,
+      guardrailLatencyMs: guardrailLatency,
       totalLatencyMs: totalLatency,
       usedRag: !!ragResult?.context,
     }, 'Mensagem processada com integração RAG');
@@ -12781,7 +12785,9 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           if (!assistantPersisted && conversationId && userMessage) {
             assistantPersisted = true;
             if (assistantResponse.trim().length > 0) {
-              const assistantAgentName = conversation?.agent?.nome?.trim() || null;
+              const assistantAgentName = activeAgent?.nome?.trim()
+                || conversation?.agent?.nome?.trim()
+                || null;
               const guardedResponse = await enforceResponseGuardrails({
                 responseText: assistantResponse,
                 userMessage: userMessageContent,

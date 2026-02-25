@@ -48,3 +48,8 @@ Este ciclo implementa correções reais de backend para os pontos críticos repo
 - Ajustado guardrail de identidade para evitar falso positivo por regex não ancorada; agora a detecção usa padrões ancorados por intenção e normalização de mensagem.
 - Ajustado guardrail para responder em inglês quando a pergunta de nome for em inglês, mantendo aderência à política de idioma do prompt do sistema.
 - Atualizado `TradingSignalMetadataSchema` com campos de rastreabilidade usados em `signal_auto` (`autoRunId`, `autoDecisionId`, `correlationId`, `noTradeReasonCode`).
+
+## Ajustes adicionais pós-review (25/02/2026 - rodada 2)
+- Corrigido no fluxo de streaming o uso do nome do agente para guardrail de identidade, priorizando `activeAgent` (agente roteado) e mantendo fallback para `conversation.agent` quando necessário.
+- Corrigida a métrica de latência no fluxo sync: `llmLatencyMs` agora mede apenas a primeira chamada ao LLM; o tempo do guardrail/regeneração passou a ser exposto separadamente em `guardrailLatencyMs`.
+- Corrigido metadado de sinal `hold` em `signal_auto`: `operationType` alterado de `scalping` para `neutral`, alinhando semântica de no-trade com o schema de operação.
