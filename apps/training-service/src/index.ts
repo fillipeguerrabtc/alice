@@ -1656,9 +1656,9 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
         operationType: (autoSignalDraft.operationType as TradingSignalMetadata['operationType']) ?? 'neutral',
         expectedDurationMinutes: autoSignalDraft.expectedDurationMinutes ?? durationMinutes,
         expectedDurationLabel: `${durationMinutes}m`,
-        entryPrice: autoSignalDraft.suggestedPrice,
-        stopLoss: autoSignalDraft.suggestedStopLoss,
-        takeProfit: autoSignalDraft.suggestedTakeProfit,
+        entryPrice: autoSignalDraft.suggestedPrice ?? undefined,
+        stopLoss: autoSignalDraft.suggestedStopLoss ?? undefined,
+        takeProfit: autoSignalDraft.suggestedTakeProfit ?? undefined,
         riskReward: riskReward ?? undefined,
         motivators: autoSignalDraft.motivators ?? [],
         invalidationReasons: autoSignalDraft.invalidationReasons ?? [],
@@ -1676,7 +1676,7 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
 
       const signalValues: typeof schema.tradingSignals.$inferInsert = {
         tenantId: run.tenantId,
-        signalType: autoSignalDraft.signalType,
+        signalType: autoSignalDraft.signalType ?? 'hold',
         marketType: (payload.marketType ?? candidateForReason?.marketType ?? 'futures') as 'spot' | 'futures' | 'margin',
         symbol: symbol ?? 'BTC-USDT',
         suggestedPrice: autoSignalDraft.suggestedPrice,
