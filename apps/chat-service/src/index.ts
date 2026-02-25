@@ -3385,7 +3385,8 @@ function isCorruptedAssistantResponse(content: string): boolean {
   const shouldApplyNoiseHeuristic = !isLikelyCodeHeavyResponse(text);
   const hasExcessiveNoise = shouldApplyNoiseHeuristic && excessiveNoiseRatio > 0.2;
   const hasRepeatedChars = shouldApplyNoiseHeuristic && maxRepeatedChars;
-  return hasRepeatedChars || hasExcessiveNoise || repeatedWord;
+  const hasRepeatedWords = shouldApplyNoiseHeuristic && repeatedWord;
+  return hasRepeatedChars || hasExcessiveNoise || hasRepeatedWords;
 }
 
 type IdentityQuestionLanguage = 'pt-BR' | 'en';

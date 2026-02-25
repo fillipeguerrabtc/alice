@@ -69,3 +69,6 @@ Este ciclo implementa correções reais de backend para os pontos críticos repo
 ## Ajustes adicionais pós-review (25/02/2026 - rodada 6)
 - Ajustado `isCorruptedAssistantResponse` para também desativar a heurística de `maxRepeatedChars` quando o conteúdo é classificado como code-heavy, evitando falso positivo em separadores comuns de código (ex.: `====`, `----`).
 - Adicionado tratamento resiliente de erro na regeneração do guardrail (`try/catch`): em falha de rede/timeout/rate-limit do LLM, o fluxo mantém e persiste a resposta sanitizada original ao invés de abortar a persistência.
+
+## Ajustes adicionais pós-review (25/02/2026 - rodada 7)
+- Ajustada a heurística `repeatedWord` em `isCorruptedAssistantResponse` para respeitar o mesmo gate `shouldApplyNoiseHeuristic` usado nas demais heurísticas de ruído, evitando falso positivo em respostas code-heavy com termos repetidos válidos (ex.: CSS/JSON).
