@@ -57,7 +57,6 @@ import { getDatabase, schema, closeDatabasePool, isPoolHealthy, createDrizzleFea
 import { eq, desc, asc, sql, and, inArray, not, isNull, lte, lt, gte } from '@alice/database';
 import {
   tradingIntervalEnum,
-  TradingOperationTypeSchema,
   TradingProfileNewsConfigSchema,
   TradingEnsembleConfigSchema,
   TradingArbitrageConfigSchema,
@@ -121,7 +120,7 @@ import * as technicalIndicators from './technical-indicators.js';
 import { extractValuesFromLLMResponse, validateAndPersist } from './llm-validation.js';
 import type { ExtractedLLMValues } from './llm-validation.js';
 import { jsonrepair } from 'jsonrepair';
-import { callGatewayComplete, isGatewayConfigured, type GatewayCompleteResult } from './llm-gateway-client.js';
+import { callGatewayComplete, isGatewayConfigured, type GatewayCompleteResult } from '@alice/shared-utils';
 import { listTenantPortfolios } from './trading-v2/core/portfolio-api.js';
 import { getConnectedExchangesCount } from './trading-v2/core/market-adapters.js';
 import { buildDecisionPacket } from './trading-v2/core/decision-packet.js';
@@ -140,6 +139,9 @@ import {
   tradingModelRiskEnqueueSchema,
   tradingRebalanceEnqueueSchema,
   tradingUniverseEnqueueSchema,
+  TRADING_LLM_SIGNAL_JSON_SCHEMA,
+  TRADING_LLM_SIGNAL_SCHEMA,
+  TRADING_LLM_SIGNAL_PARTIAL_SCHEMA,
 } from '@alice/shared-utils';
 
 const logger = createLogger('integrations-service');
@@ -2156,171 +2158,8 @@ async function getOrCreateTradingProfile(tenantId: string, kind: TradingProfileK
   return created;
 }
 
-const TRADING_LLM_CITED_VALUES_SCHEMA = z.object({
-  rsi: z.number().optional(),
-  macdLine: z.number().optional(),
-  macdSignal: z.number().optional(),
-  macdHistogram: z.number().optional(),
-  ema9: z.number().optional(),
-  ema21: z.number().optional(),
-  ema50: z.number().optional(),
-  ema200: z.number().optional(),
-  sma20: z.number().optional(),
-  sma50: z.number().optional(),
-  sma200: z.number().optional(),
-  bollingerUpper: z.number().optional(),
-  bollingerMiddle: z.number().optional(),
-  bollingerLower: z.number().optional(),
-  bollingerPercentB: z.number().optional(),
-  atrValue: z.number().optional(),
-  atrPercentage: z.number().optional(),
-  stochasticK: z.number().optional(),
-  stochasticD: z.number().optional(),
-  adxValue: z.number().optional(),
-  pivotPoint: z.number().optional(),
-  resistance1: z.number().optional(),
-  resistance2: z.number().optional(),
-  resistance3: z.number().optional(),
-  support1: z.number().optional(),
-  support2: z.number().optional(),
-  support3: z.number().optional(),
-  volumeRatio: z.number().optional(),
-  currentPrice: z.number().optional(),
-}).partial().default({});
-
-const TRADING_LLM_SIGNAL_SCHEMA = z.object({
-  signalType: z.enum(['entry_long', 'entry_short', 'exit', 'adjust_sl', 'adjust_tp', 'hold', 'neutral']),
-  operationType: TradingOperationTypeSchema,
-  // CORREÇÃO: min(0) permite 0 para sinais neutros/hold (LLM retorna 0 quando não há duração estimada)
-  expectedDurationMinutes: z.number().int().min(0).max(43200),
-  confidence: z.number().min(0).max(1),
-  // CORREÇÃO: min(1) ao invés de min(20) — sinais neutros podem ter resumo curto; fallback gera default
-  tradeSummary: z.string().min(1),
-  motivators: z.array(z.string().min(2)).min(1),
-  invalidationReasons: z.array(z.string().min(2)).min(1),
-  reasoning: z.string().min(10),
-  timeframeUsed: TRADING_INTERVAL_ZOD.optional(),
-  citedValues: TRADING_LLM_CITED_VALUES_SCHEMA,
-  suggestedPrice: z.number().positive().optional(),
-  suggestedStopLoss: z.number().positive().optional(),
-  suggestedTakeProfit: z.number().positive().optional(),
-  suggestedSize: z.number().positive().optional(),
-  riskReward: z.number().positive().optional(),
-  marketCondition: z.string().min(3).optional(),
-  riskScore: z.number().min(0).max(100).optional(),
-});
-
-// CORREÇÃO CR1 (07/02/2026): Schema JSON com propriedades explícitas para citedValues.
-// Schema JSON para constrained decoding via vLLM 0.12.0 structured_outputs.
-// Backend: outlines (configurado via --guided-decoding-backend outlines no entrypoint.sh).
-// outlines suporta schemas complexos com múltiplas propriedades opcionais sem
-// problemas de compilação (diferente do xgrammar que falha com 2^N combinações).
-// strict:true REMOVIDO - campo OpenAI-only, vLLM ignora silenciosamente.
-// Ref: https://docs.vllm.ai/en/v0.12.0/features/structured_outputs/
-const TRADING_LLM_SIGNAL_JSON_SCHEMA = {
-  name: 'trading_llm_signal',
-  schema: {
-    type: 'object' as const,
-    additionalProperties: false,
-    required: [
-      'signalType',
-      'operationType',
-      'expectedDurationMinutes',
-      'confidence',
-      'tradeSummary',
-      'motivators',
-      'invalidationReasons',
-      'reasoning',
-      'citedValues',
-    ],
-    properties: {
-      signalType: {
-        type: 'string' as const,
-        enum: ['entry_long', 'entry_short', 'exit', 'adjust_sl', 'adjust_tp', 'hold', 'neutral'],
-      },
-      operationType: {
-        type: 'string' as const,
-        enum: ['scalping', 'swing', 'position', 'cash_and_carry', 'arbitrage', 'hedge', 'neutral'],
-      },
-      expectedDurationMinutes: { type: 'integer' as const },
-      confidence: { type: 'number' as const },
-      tradeSummary: { type: 'string' as const },
-      motivators: { type: 'array' as const, items: { type: 'string' as const } },
-      invalidationReasons: { type: 'array' as const, items: { type: 'string' as const } },
-      reasoning: { type: 'string' as const },
-      timeframeUsed: { type: 'string' as const },
-      citedValues: {
-        type: 'object' as const,
-        additionalProperties: false,
-        // Com backend outlines (--guided-decoding-backend outlines), additionalProperties:false
-        // funciona corretamente mesmo com 29 propriedades opcionais. Validação via Zod pós-parse.
-        properties: {
-          rsi: { type: 'number' as const },
-          macdLine: { type: 'number' as const },
-          macdSignal: { type: 'number' as const },
-          macdHistogram: { type: 'number' as const },
-          ema9: { type: 'number' as const },
-          ema21: { type: 'number' as const },
-          ema50: { type: 'number' as const },
-          ema200: { type: 'number' as const },
-          sma20: { type: 'number' as const },
-          sma50: { type: 'number' as const },
-          sma200: { type: 'number' as const },
-          bollingerUpper: { type: 'number' as const },
-          bollingerMiddle: { type: 'number' as const },
-          bollingerLower: { type: 'number' as const },
-          bollingerPercentB: { type: 'number' as const },
-          atrValue: { type: 'number' as const },
-          atrPercentage: { type: 'number' as const },
-          stochasticK: { type: 'number' as const },
-          stochasticD: { type: 'number' as const },
-          adxValue: { type: 'number' as const },
-          pivotPoint: { type: 'number' as const },
-          resistance1: { type: 'number' as const },
-          resistance2: { type: 'number' as const },
-          resistance3: { type: 'number' as const },
-          support1: { type: 'number' as const },
-          support2: { type: 'number' as const },
-          support3: { type: 'number' as const },
-          volumeRatio: { type: 'number' as const },
-          currentPrice: { type: 'number' as const },
-        },
-      },
-      suggestedPrice: { type: 'number' as const },
-      suggestedStopLoss: { type: 'number' as const },
-      suggestedTakeProfit: { type: 'number' as const },
-      suggestedSize: { type: 'number' as const },
-      riskReward: { type: 'number' as const },
-      marketCondition: { type: 'string' as const },
-      riskScore: { type: 'number' as const },
-    },
-  },
-};
-
-const TRADING_LLM_SIGNAL_PARTIAL_SCHEMA = z.object({
-  signalType: z.enum(['entry_long', 'entry_short', 'exit', 'adjust_sl', 'adjust_tp', 'hold', 'neutral']).optional(),
-  operationType: TradingOperationTypeSchema.optional(),
-  // CORREÇÃO: min(0) permite 0 para sinais neutros/hold (LLM retorna 0 quando não há duração estimada)
-  expectedDurationMinutes: z.number().int().min(0).max(43200).optional(),
-  confidence: z.number().min(0).max(1).optional(),
-  // CORREÇÃO: Aceita qualquer string (LLM pode retornar tradeSummary vazio para sinais neutros)
-  tradeSummary: z.string().optional(),
-  motivators: z.array(z.string().min(2)).optional(),
-  invalidationReasons: z.array(z.string().min(2)).optional(),
-  reasoning: z.string().min(5).optional(),
-  timeframeUsed: TRADING_INTERVAL_ZOD.optional(),
-  citedValues: TRADING_LLM_CITED_VALUES_SCHEMA,
-  suggestedPrice: z.number().positive().nullable().optional(),
-  suggestedStopLoss: z.number().positive().nullable().optional(),
-  suggestedTakeProfit: z.number().positive().nullable().optional(),
-  suggestedSize: z.number().positive().nullable().optional(),
-  riskReward: z.number().positive().nullable().optional(),
-  marketCondition: z.string().min(3).optional(),
-  riskScore: z.number().min(0).max(100).nullable().optional(),
-});
-
-type TradingLlmSignal = z.infer<typeof TRADING_LLM_SIGNAL_SCHEMA>;
-type TradingLlmSignalPartial = z.infer<typeof TRADING_LLM_SIGNAL_PARTIAL_SCHEMA>;
+type TradingLlmSignal = import('@alice/shared-utils').TradingLlmSignal;
+type TradingLlmSignalPartial = import('@alice/shared-utils').TradingLlmSignalPartial;
 
 const app = express();
 setPermissionResolver(async (auth: AuthContext) => {
@@ -10817,7 +10656,11 @@ function buildLlmSignalFromPartial(params: {
   const suggestedStopLoss = normalizeNullableNumber(params.partial.suggestedStopLoss) ?? params.tradePlan.stopLoss ?? undefined;
   const suggestedTakeProfit = normalizeNullableNumber(params.partial.suggestedTakeProfit) ?? params.tradePlan.takeProfit ?? undefined;
   const riskReward = normalizeNullableNumber(params.partial.riskReward) ?? params.tradePlan.riskReward ?? undefined;
-  const suggestedSize = normalizeNullableNumber(params.partial.suggestedSize);
+  const resolvedSignalType = params.partial.signalType ?? resolveSignalTypeFromAnalysis(params.analysis);
+  const suggestedSize = normalizeNullableNumber(params.partial.suggestedSize)
+    ?? (resolvedSignalType === 'entry_long' || resolvedSignalType === 'entry_short' || resolvedSignalType === 'adjust_sl' || resolvedSignalType === 'adjust_tp'
+      ? 1
+      : undefined);
   const riskScore = normalizeNullableNumber(params.partial.riskScore)
     ?? Math.round(confidence * 100);
   const citedValues = normalizeCitedValues(params.partial.citedValues as Record<string, unknown> | undefined);
@@ -10825,7 +10668,6 @@ function buildLlmSignalFromPartial(params: {
   const marketCondition = params.partial.marketCondition
     ?? (params.analysis.movingAverages?.trend ? `Tendência ${params.analysis.movingAverages.trend}` : undefined);
 
-  const resolvedSignalType = params.partial.signalType ?? resolveSignalTypeFromAnalysis(params.analysis);
   const isNeutralOrHold = resolvedSignalType === 'neutral' || resolvedSignalType === 'hold';
 
   // CORREÇÃO: expectedDurationMinutes pode ser 0 para sinais neutros/hold
@@ -12326,7 +12168,8 @@ async function generateTradingSignalFromLlm(params: {
     logger.warn({ tenantId: params.tenantId }, 'Agentic Trading desabilitado - gerando sinal sem execução automática');
   }
 
-  if (TRADING_MODE !== 'lab') {
+  const useLegacyInstitutionalFlow = TRADING_MODE !== 'lab' && process.env.TRADING_LEGACY_INSTITUTIONAL_FLOW === 'true';
+  if (useLegacyInstitutionalFlow) {
     const db = getDatabase();
     const marketType = params.marketType ?? 'futures';
     const recentCandidates = await db.query.tradingUniverseCandidates.findMany({
@@ -12489,7 +12332,7 @@ async function generateTradingSignalFromLlm(params: {
       if (!createResult.success || !createResult.data) {
         throw new Error(createResult.error || 'Falha ao persistir sinal institucional de portfólio');
       }
-      return { signal: createResult.data, validationId: crypto.randomUUID(), validationStatus: 'pending' };
+      return { signal: createResult.data as schema.TradingSignal, validationId: crypto.randomUUID(), validationStatus: 'pending' };
     }
 
     const selected = recentCandidates.find((candidate) => (instrumentById.get(candidate.instrumentId)?.symbol ?? '') === params.symbol) ?? recentCandidates[0];
@@ -12529,7 +12372,7 @@ async function generateTradingSignalFromLlm(params: {
       if (!createResult.success || !createResult.data) {
         throw new Error(createResult.error || 'Falha ao persistir sinal institucional');
       }
-      return { signal: createResult.data, validationId: crypto.randomUUID(), validationStatus: 'pending' };
+      return { signal: createResult.data as schema.TradingSignal, validationId: crypto.randomUUID(), validationStatus: 'pending' };
     }
   }
 
@@ -13411,11 +13254,11 @@ app.post('/api/trading-v2/auto/signal/run', requirePermission('integrations:trad
       namespaceId: parsed.data.namespaceId ?? null,
     }).returning();
 
-    await db.insert(schema.tradingAutoRunSteps).values({
-      runId: run.id,
-      stepName: 'signal-decision',
-      status: 'pending',
-    });
+    await db.insert(schema.tradingAutoRunSteps).values([
+      { runId: run.id, stepName: 'signal-decision', status: 'pending' },
+      { runId: run.id, stepName: 'signal-llm', status: 'pending' },
+      { runId: run.id, stepName: 'signal-persist', status: 'pending' },
+    ]);
 
     // Enfileirar job no training-service
     const internalHeaders = generateInternalAuthHeaders({
@@ -13473,7 +13316,22 @@ app.get('/api/trading-v2/auto/runs', requirePermission('integrations:trading:rea
       orderBy: [desc(schema.tradingAutoRuns.createdAt)],
       limit: queryResult.data.limit ?? 20,
     });
-    res.json({ success: true, data: runs });
+    const runIds = runs.map((run) => run.id);
+    const decisions = runIds.length > 0
+      ? await db.query.tradingAutoDecisions.findMany({
+        where: inArray(schema.tradingAutoDecisions.runId, runIds),
+      })
+      : [];
+    const decisionByRunId = new Map(decisions.map((decision) => [decision.runId, decision]));
+    const enrichedRuns = runs.map((run) => {
+      const decision = decisionByRunId.get(run.id);
+      return {
+        ...run,
+        approved: decision?.approved ?? null,
+        tradingSignalId: decision?.tradingSignalId ?? null,
+      };
+    });
+    res.json({ success: true, data: enrichedRuns });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao listar auto runs');
@@ -14803,7 +14661,8 @@ app.post('/api/integrations/trading/signals/generate', requirePermission('integr
   } catch (error) {
     if (sendKucoinErrorResponse(res, error)) return;
     if (error instanceof TradingConfigError) {
-      res.status(400).json({ error: error.message });
+      const statusCode = error.message.includes('TRADING_SCOPE_REQUIRED') ? 412 : 400;
+      res.status(statusCode).json({ error: error.message });
       return;
     }
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';

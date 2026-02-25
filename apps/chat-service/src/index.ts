@@ -82,6 +82,7 @@ import { createClient } from 'redis';
 import type { AgenticDetectors } from '@alice/shared';
 import { isTradingCommand } from './trading-command-parser.js';
 import { resolveModelWithAdapter } from './lora-adapter-resolver.js';
+import { resolvePreferredNameSources } from './user-name-utils.js';
 import { sliceConversationIntoWindows } from './training-utils.js';
 import { 
   buscarContextoRAG, 
@@ -3025,12 +3026,16 @@ async function getAssistantSettingsForTenant(tenantId?: string | null): Promise<
 }
 
 async function getUserById(userId: string, tenantId: string | null | undefined) {
-  return db.query.users.findFirst({
+  const user = await db.query.users.findFirst({
     where: and(
       eq(schema.users.id, userId),
       tenantId ? eq(schema.users.tenantId, tenantId) : sql`1=1`
     ),
   });
+  if (!user) {
+    logger.warn({ userId, tenantId }, 'Usuário não encontrado para userId/tenantId informado');
+  }
+  return user;
 }
 
 async function updateUserPreferences(
@@ -3073,13 +3078,17 @@ async function resolveUserNameContext(
     };
   }
   const prefs = (user.preferencias ?? {}) as UserPreferencesRecord;
-  const preferredName = normalizeUserName(
-    typeof user.preferredName === 'string' && user.preferredName.trim().length > 0
-      ? user.preferredName
-      : typeof prefs.preferredName === 'string'
-        ? prefs.preferredName
-        : ''
-  );
+  const preferredNameResolution = resolvePreferredNameSources({
+    preferredNameColumn: user.preferredName,
+    preferences: prefs,
+  });
+  if (preferredNameResolution.shouldBackfillPreferredName && preferredNameResolution.preferredNameFromPrefs) {
+    await db.update(schema.users)
+      .set({ preferredName: preferredNameResolution.preferredNameFromPrefs, updatedAt: new Date() })
+      .where(eq(schema.users.id, userId));
+    logger.info({ userId, tenantId, preferredName: preferredNameResolution.preferredNameFromPrefs }, 'Backfill de preferredName aplicado a partir de preferencias');
+  }
+  const preferredName = preferredNameResolution.preferredName;
   const suggestedName = typeof prefs.nameSuggested === 'string'
     ? normalizeUserName(prefs.nameSuggested)
     : buildLoginName({ firstName: user.firstName, lastName: user.lastName, email: user.email });

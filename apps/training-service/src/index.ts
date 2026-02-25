@@ -56,6 +56,10 @@ import {
   requestGpu,
   GpuServiceType,
   GpuRequestPriority,
+  callGatewayComplete,
+  isGatewayConfigured,
+  TRADING_LLM_SIGNAL_JSON_SCHEMA,
+  TRADING_LLM_SIGNAL_PARTIAL_SCHEMA,
   GPU_MANAGER_CONFIG,
   RedisStreamQueue,
   TRADING_V2_STREAMS,
@@ -76,6 +80,7 @@ import { trainingServicePaths, trainingServiceSchemas } from './openapi-specs.js
 import { eq, and, or, desc, sql, isNull, not, inArray, lte } from '@alice/database';
 import { z } from 'zod';
 import { getAllSystemConfig, setSystemConfig, getSystemConfig } from '@alice/database/system-config';
+import type { TradingSignalMetadata } from '@alice/shared';
 
 async function resolveMinOndemandDatasetSize(): Promise<number> {
   const v = await getSystemConfig('MIN_ONDEMAND_DATASET_SIZE');
@@ -381,6 +386,17 @@ const tradingV2Metrics = {
     name: 'trading_v2_signal_auto_run_seconds',
     help: 'Duração de processamento do worker de signal auto run',
     buckets: [0.1, 0.5, 1, 2, 5, 10, 30],
+    registers: [metrics.registry],
+  }),
+  signalAutoLlmStepSeconds: new PromHistogram({
+    name: 'trading_v2_signal_auto_llm_step_seconds',
+    help: 'Duração do step signal-llm do auto engine',
+    buckets: [0.1, 0.5, 1, 2, 5, 10, 30],
+    registers: [metrics.registry],
+  }),
+  signalAutoLlmFailuresTotal: new PromCounter({
+    name: 'trading_v2_signal_auto_llm_failures_total',
+    help: 'Total de falhas LLM no auto engine de sinais',
     registers: [metrics.registry],
   }),
 };
@@ -1415,7 +1431,7 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
     const [decision] = await db.insert(schema.tradingAutoDecisions).values({
       runId,
       tenantId: run.tenantId,
-      decisionType: 'signal_auto',
+      decisionType: 'signal_auto' as const,
       entryPayload: {
         operationIntent: 'auto',
         symbol,
@@ -1427,16 +1443,12 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
         entry,
         stop,
         takeProfit,
-        invalidationConditions: Array.isArray(candidateForReason?.riskFlags)
-          ? candidateForReason.riskFlags
-          : [],
+        invalidationConditions: Array.isArray(candidateForReason?.riskFlags) ? candidateForReason.riskFlags : [],
         riskReward,
         confidenceRaw: toFiniteNumber(candidateForReason?.confidenceRaw),
         confidenceCalibrated: toFiniteNumber(candidateForReason?.confidenceCalibrated ?? candidateForReason?.confidenceRaw),
         edgeNet: toFiniteNumber(candidateForReason?.expectedEdge),
-        costs: {
-          estimationMode: 'candidate_expected_edge_net',
-        },
+        costs: { estimationMode: 'candidate_expected_edge_net' },
         noTradeReasonCode: bestCandidate ? null : noTradeReasonCode,
         noTradeReasons: bestCandidate ? [] : noTradeReasons,
         noTradeReasonHuman: bestCandidate ? null : noTradeReasonHuman,
@@ -1457,7 +1469,7 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
       candidateIds,
       modelsUsed: ['trading-v2-guardrails'],
       ragEvidenceIds,
-      idempotencyHash: crypto.createHash('sha256').update(`signal-auto:${runId}:${correlationId}`).digest('hex'),
+      idempotencyHash,
       approved: approvedCandidates.length > 0,
       reasoning: approvedCandidates.length > 0
         ? `${approvedCandidates.length} candidate(s) aprovado(s) após guardrails adaptativos. Melhor: ${bestCandidate?.strategyKey ?? 'N/A'} (${bestCandidate?.operationIntent ?? 'intraday'}).`
@@ -1512,6 +1524,176 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
       },
     });
 
+    await updateAutoRunStep(runId, 'signal-llm', 'running');
+    const llmStepTimer = tradingV2Metrics.signalAutoLlmStepSeconds.startTimer();
+    const namespaceId = run.namespaceId ?? payload.namespaceId ?? null;
+    const trainingNamespaceId = namespaceId;
+    if (!trainingNamespaceId) {
+      throw new Error('TRADING_SCOPE_REQUIRED: Namespace Trading obrigatório para Auto Engine.');
+    }
+    const [trainingSummary] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(schema.trainingData)
+      .where(and(
+        eq(schema.trainingData.tenantId, run.tenantId),
+        eq(schema.trainingData.namespaceId, trainingNamespaceId),
+        eq(schema.trainingData.status, 'approved'),
+      ));
+    if (Number(trainingSummary?.count ?? 0) <= 0) {
+      throw new Error('TRADING_SCOPE_REQUIRED: Dataset aprovado de Trading é obrigatório para Auto Engine.');
+    }
+    const activeAdapter = await getActiveAdapter({ tenantId: run.tenantId, namespaceId: trainingNamespaceId });
+    if (!activeAdapter?.adapterPath) {
+      throw new Error('TRADING_SCOPE_REQUIRED: Adapter LoRA ativo obrigatório para Auto Engine.');
+    }
+
+    const llmPrompt = [
+      'Você é um engine institucional de trading.',
+      `Candidate side: ${String(bestCandidate?.side ?? 'hold')}`,
+      `Entry model base: ${JSON.stringify(entryModel)}`,
+      `Guardrails: ${JSON.stringify(guardrailResults)}`,
+      `No trade reason code: ${noTradeReasonCode}`,
+      `Evidence IDs: ${JSON.stringify(ragEvidenceIds)}`,
+      'Regra obrigatória: não invente preço. Use entryModel.entry e ajuste no máximo 0.3%.',
+      'Responda no JSON schema solicitado.',
+    ].join('\n');
+
+    const messages = [
+      { role: 'system' as const, content: 'Você gera plano de trade estruturado para Auto Engine.' },
+      { role: 'user' as const, content: llmPrompt },
+    ];
+
+    const configuredModel = process.env.TRADING_LLM_MODEL?.trim() || 'Qwen2.5-7B-Instruct-AWQ';
+    const loraModel = activeAdapter.adapterPath ? `${configuredModel}::${activeAdapter.adapterPath}` : configuredModel;
+    let llmRawContent = '';
+    if (isGatewayConfigured()) {
+      const gatewayResult = await callGatewayComplete({
+        messages,
+        config: {
+          model: loraModel,
+          temperature: 0.2,
+          maxTokens: 1200,
+        },
+        context: {
+          route: '/trading-v2/auto/signal',
+          tenantId: run.tenantId,
+          userId: run.userId,
+          namespaceId: trainingNamespaceId,
+        },
+        extraBody: {
+          response_format: {
+            type: 'json_schema',
+            json_schema: TRADING_LLM_SIGNAL_JSON_SCHEMA,
+          },
+        },
+        requestOptions: { timeout: 120000, priority: 'high' },
+      });
+      if (!gatewayResult.success || !gatewayResult.data) {
+        tradingV2Metrics.signalAutoLlmFailuresTotal.inc();
+        throw new Error(gatewayResult.error || 'Falha no llm-gateway-service');
+      }
+      const gatewayData = gatewayResult.data as { choices?: Array<{ message?: { content?: string } }> };
+      llmRawContent = String(gatewayData.choices?.[0]?.message?.content ?? '');
+      logger.info({ runId, decisionId: decision.id, model: loraModel, via: 'gateway', correlationId }, 'Signal Auto LLM executado');
+    } else {
+      const gpuResult = await requestGpu({
+        serviceType: GpuServiceType.LLM,
+        endpoint: '/v1/chat/completions',
+        method: 'POST',
+        priority: GpuRequestPriority.HIGH,
+        timeout: 120000,
+        body: {
+          model: loraModel,
+          messages,
+          response_format: { type: 'json_schema', json_schema: TRADING_LLM_SIGNAL_JSON_SCHEMA },
+          max_tokens: 1200,
+          temperature: 0.2,
+          stream: false,
+        },
+      });
+      if (!gpuResult.success || !gpuResult.data) {
+        tradingV2Metrics.signalAutoLlmFailuresTotal.inc();
+        throw new Error(gpuResult.error || 'Falha no gpu-manager LLM');
+      }
+      const gpuData = gpuResult.data as { choices?: Array<{ message?: { content?: string } }> };
+      llmRawContent = String(gpuData.choices?.[0]?.message?.content ?? '');
+      logger.info({ runId, decisionId: decision.id, model: loraModel, via: 'gpu-direct', correlationId }, 'Signal Auto LLM executado');
+    }
+
+    const llmPayload = TRADING_LLM_SIGNAL_PARTIAL_SCHEMA.parse(parseStructuredJsonFromContent(llmRawContent));
+    const autoSignalDraft = buildAutoSignalDraft({
+      llmPayload,
+      bestCandidate,
+      entryModel,
+    });
+    llmStepTimer();
+    await updateAutoRunStep(runId, 'signal-llm', 'succeeded', {
+      metrics: {
+        signalType: autoSignalDraft.signalType,
+        confidence: autoSignalDraft.confidence,
+        model: loraModel,
+      },
+    });
+
+    await updateAutoRunStep(runId, 'signal-persist', 'running');
+    if (decision.tradingSignalId) {
+      await updateAutoRunStep(runId, 'signal-persist', 'succeeded', {
+        metrics: { tradingSignalId: decision.tradingSignalId, deduplicated: true },
+      });
+    } else {
+      const signalMetadata: TradingSignalMetadata = {
+        confidence: autoSignalDraft.confidence,
+        reasoning: autoSignalDraft.reasoning,
+        operationType: (autoSignalDraft.operationType as TradingSignalMetadata['operationType']) ?? 'neutral',
+        expectedDurationMinutes: autoSignalDraft.expectedDurationMinutes ?? durationMinutes,
+        expectedDurationLabel: `${durationMinutes}m`,
+        entryPrice: autoSignalDraft.suggestedPrice,
+        stopLoss: autoSignalDraft.suggestedStopLoss,
+        takeProfit: autoSignalDraft.suggestedTakeProfit,
+        riskReward: riskReward ?? undefined,
+        motivators: autoSignalDraft.motivators ?? [],
+        invalidationReasons: autoSignalDraft.invalidationReasons ?? [],
+        marketCondition: autoSignalDraft.marketCondition,
+        riskScore: autoSignalDraft.riskScore,
+        tradeSummary: autoSignalDraft.tradeSummary ?? autoSignalDraft.reasoning,
+        generationSource: 'scheduler',
+        autoRunId: runId,
+        autoDecisionId: decision.id,
+        autoEngine: true,
+        modelsUsed: ['trading-v2-guardrails', loraModel],
+        ragEvidenceIds,
+        createdByUserId: run.userId,
+      };
+
+      const signalValues: typeof schema.tradingSignals.$inferInsert = {
+        tenantId: run.tenantId,
+        signalType: autoSignalDraft.signalType,
+        marketType: (payload.marketType ?? candidateForReason?.marketType ?? 'futures') as 'spot' | 'futures' | 'margin',
+        symbol: symbol ?? 'BTC-USDT',
+        suggestedPrice: autoSignalDraft.suggestedPrice,
+        suggestedStopLoss: autoSignalDraft.suggestedStopLoss,
+        suggestedTakeProfit: autoSignalDraft.suggestedTakeProfit,
+        suggestedSize: autoSignalDraft.suggestedSize,
+        confidence: autoSignalDraft.confidence,
+        metadata: signalMetadata,
+        isActive: true,
+      };
+      const [createdSignal] = await db.insert(schema.tradingSignals).values(signalValues).returning();
+      if (!createdSignal) {
+        throw new Error('Falha ao persistir trading_signal do auto engine');
+      }
+      await db.update(schema.tradingAutoDecisions)
+        .set({
+          tradingSignalId: createdSignal.id,
+          modelsUsed: ['trading-v2-guardrails', loraModel],
+        })
+        .where(eq(schema.tradingAutoDecisions.id, decision.id));
+      await updateAutoRunStep(runId, 'signal-persist', 'succeeded', {
+        metrics: { tradingSignalId: createdSignal.id },
+      });
+      logger.info({ runId, decisionId: decision.id, signalId: createdSignal.id, correlationId }, 'Signal Auto persistido em trading_signals');
+    }
+
     await db.update(schema.tradingAutoRuns)
       .set({ status: 'succeeded', finishedAt: new Date() })
       .where(eq(schema.tradingAutoRuns.id, runId));
@@ -1520,6 +1702,8 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     await updateAutoRunStep(runId, 'signal-decision', 'failed', { error: errorMessage });
+    await updateAutoRunStep(runId, 'signal-llm', 'failed', { error: errorMessage });
+    await updateAutoRunStep(runId, 'signal-persist', 'failed', { error: errorMessage });
     await db.update(schema.tradingAutoRuns)
       .set({ status: 'failed', error: errorMessage, finishedAt: new Date() })
       .where(eq(schema.tradingAutoRuns.id, runId));

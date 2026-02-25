@@ -95,8 +95,29 @@ export interface ChatMessage {
   // ATUALIZADO 23/12/2025: Removido 'video' (muito pesado para GPU)
   tipo?: 'text' | 'image' | 'audio' | 'mixed';
   anexos?: unknown[];
+  sources?: unknown[];
+  llmMetadata?: Record<string, unknown>;
   generatedImage?: GeneratedImageData;
   mediaAttachments?: MediaAttachment[];
+}
+
+interface StreamSsePayload {
+  content?: string;
+  type?: string;
+  messageId?: string;
+  generatedImage?: GeneratedImageData;
+  sources?: unknown[];
+  usedFallback?: boolean;
+}
+
+function parseSseEvents(chunk: string): { events: string[]; rest: string } {
+  const normalized = chunk.replace(/\r\n/g, '\n');
+  const parts = normalized.split('\n\n');
+  if (parts.length <= 1) {
+    return { events: [], rest: normalized };
+  }
+  const rest = parts.pop() ?? '';
+  return { events: parts, rest };
 }
 
 // Limites de arquivo (em bytes)
@@ -270,6 +291,7 @@ export function useWebSocketChat(options: UseWebSocketChatOptions = {}): UseWebS
   const abortControllerRef = useRef<AbortController | null>(null);
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const sseParseLogRef = useRef<{ count: number; windowStart: number }>({ count: 0, windowStart: 0 });
   const queryClient = useQueryClient();
   
   // Atualizar estado de conexão com callback
@@ -277,6 +299,21 @@ export function useWebSocketChat(options: UseWebSocketChatOptions = {}): UseWebS
     setConnectionState(state);
     onConnectionStateChange?.(state);
   }, [onConnectionStateChange]);
+
+  const logSseParseError = useCallback((payload: string, error: Error) => {
+    const now = Date.now();
+    const current = sseParseLogRef.current;
+    if (now - current.windowStart > 30000) {
+      current.windowStart = now;
+      current.count = 0;
+    }
+    if (current.count >= 5) return;
+    current.count += 1;
+    frontendLogger.warn('Falha ao parsear payload SSE', {
+      error: error.message,
+      sample: payload.slice(0, 200),
+    });
+  }, []);
   
   // Limpar timeouts/intervals ao desmontar
   useEffect(() => {
@@ -361,8 +398,9 @@ export function useWebSocketChat(options: UseWebSocketChatOptions = {}): UseWebS
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
       setIsStreaming(false);
+      updateConnectionState('disconnected');
     }
-  }, []);
+  }, [updateConnectionState]);
 
   // ============================================================================
   // FUNÇÃO DE STREAMING SSE COM RETRY (Regra 16 - Best Practices 2025)
@@ -382,21 +420,19 @@ export function useWebSocketChat(options: UseWebSocketChatOptions = {}): UseWebS
     
     try {
       updateConnectionState(attempt > 0 ? 'reconnecting' : 'connecting');
-      
-      // Fazer requisição SSE com timeout usando fetch diretamente
-      // (apiRequest não suporta abort signal)
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), SSE_TIMEOUT);
+      const timeoutSignal = AbortSignal.timeout(SSE_TIMEOUT);
+      const combinedSignal = AbortSignal.any([
+        abortControllerRef.current.signal,
+        timeoutSignal,
+      ]);
       
       const res = await fetch(`${API_BASE}/api/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
         credentials: 'include',
-        signal: controller.signal,
+        signal: combinedSignal,
       });
-      
-      clearTimeout(timeoutId);
       
       if (!res.ok) {
         throw new Error(`Erro na requisição SSE: ${res.status} ${res.statusText}`);
@@ -412,41 +448,65 @@ export function useWebSocketChat(options: UseWebSocketChatOptions = {}): UseWebS
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let fullContent = '';
+      let streamAssistantMessageId = assistantMessageId;
+      let buffer = '';
       
       // Processar stream de tokens
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n');
-        
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6);
-            if (data === '[DONE]') continue;
-            
-            try {
-              const parsed = JSON.parse(data);
-              if (parsed.content) {
-                fullContent += parsed.content;
-                // ATUALIZAR mensagem existente (não criar nova)
-                onMessageUpdated?.(assistantMessageId, { content: fullContent });
-              }
-              // Verificar se há imagem gerada
-              if (parsed.generatedImage) {
-                onMessageUpdated?.(assistantMessageId, { 
-                  content: fullContent,
-                  generatedImage: parsed.generatedImage,
-                });
-              }
-            } catch {
-              // Ignorar erros de parse de linhas inválidas
+        buffer += decoder.decode(value, { stream: true });
+        const { events, rest } = parseSseEvents(buffer);
+        buffer = rest;
+
+        for (const eventChunk of events) {
+          const dataLines = eventChunk
+            .split('\n')
+            .filter((line) => line.startsWith('data:'))
+            .map((line) => line.slice(5).trimStart());
+          if (dataLines.length === 0) continue;
+          const data = dataLines.join('\n');
+          if (data === '[DONE]') continue;
+          try {
+            const parsed = JSON.parse(data) as StreamSsePayload;
+            if (typeof parsed.messageId === 'string' && parsed.messageId.trim().length > 0) {
+              streamAssistantMessageId = parsed.messageId;
             }
+            if (typeof parsed.content === 'string') {
+              fullContent += parsed.content;
+              onMessageUpdated?.(streamAssistantMessageId, { content: fullContent });
+            }
+            if (parsed.type === 'final_message' && typeof parsed.content === 'string') {
+              fullContent = parsed.content;
+              onMessageUpdated?.(streamAssistantMessageId, { content: fullContent });
+            }
+            if (parsed.type === 'sources' && Array.isArray(parsed.sources)) {
+              onMessageUpdated?.(streamAssistantMessageId, { sources: parsed.sources });
+            }
+            if (parsed.type === 'llm_metadata') {
+              onMessageUpdated?.(streamAssistantMessageId, {
+                llmMetadata: { usedFallback: parsed.usedFallback === true },
+              });
+            }
+            if (parsed.type === 'message_saved' && typeof parsed.messageId === 'string') {
+              onMessageUpdated?.(streamAssistantMessageId, { id: parsed.messageId });
+            }
+            if (parsed.generatedImage) {
+              onMessageUpdated?.(streamAssistantMessageId, { 
+                content: fullContent,
+                generatedImage: parsed.generatedImage,
+              });
+            }
+          } catch (parseError) {
+            logSseParseError(data, parseError instanceof Error ? parseError : new Error(String(parseError)));
           }
         }
       }
       
+      const trailingChunk = decoder.decode();
+      if (trailingChunk) {
+        buffer += trailingChunk;
+      }
       updateConnectionState('disconnected');
       return fullContent;
       
@@ -463,7 +523,11 @@ export function useWebSocketChat(options: UseWebSocketChatOptions = {}): UseWebS
       
       // Se não é erro de rede ou atingiu max retries, propagar erro
       if (!isNetworkError || attempt >= retryConfig.maxRetries) {
-        updateConnectionState('failed');
+        if (error.name === 'AbortError') {
+          updateConnectionState('disconnected');
+        } else {
+          updateConnectionState('failed');
+        }
         throw error;
       }
       
@@ -479,8 +543,12 @@ export function useWebSocketChat(options: UseWebSocketChatOptions = {}): UseWebS
       
       // Tentar novamente
       return executeStreamWithRetry(payload, assistantMessageId, attempt + 1);
+    } finally {
+      if (attempt === 0) {
+        abortControllerRef.current = null;
+      }
     }
-  }, [retryConfig, onRetry, onMessageUpdated, updateConnectionState]);
+  }, [retryConfig, onRetry, onMessageUpdated, updateConnectionState, logSseParseError]);
   
   /**
    * Fallback para polling quando SSE não está disponível.
@@ -590,7 +658,7 @@ export function useWebSocketChat(options: UseWebSocketChatOptions = {}): UseWebS
       setError(err);
       onError?.(err);
       onStreamEnd?.();
-      updateConnectionState('failed');
+      updateConnectionState(err.name === 'AbortError' ? 'disconnected' : 'failed');
     },
   });
 
