@@ -82,6 +82,18 @@ import { z } from 'zod';
 import { getAllSystemConfig, setSystemConfig, getSystemConfig } from '@alice/database/system-config';
 import type { TradingSignalMetadata } from '@alice/shared';
 
+function parseStructuredJsonFromContent(content: string): unknown {
+  const trimmed = content.trim();
+  const stripped = trimmed.startsWith('```')
+    ? trimmed.replace(/^```[a-z]*\s*/i, '').replace(/```$/, '').trim()
+    : trimmed;
+  try {
+    return JSON.parse(stripped);
+  } catch {
+    throw new Error(`Conteúdo LLM não é JSON válido. Recebido: ${stripped.slice(0, 200)}`);
+  }
+}
+
 async function resolveMinOndemandDatasetSize(): Promise<number> {
   const v = await getSystemConfig('MIN_ONDEMAND_DATASET_SIZE');
   if (v) {
@@ -1427,6 +1439,7 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
     };
     const noTradeReasonHuman = noTradeReasonHumanMap[noTradeReasonCode] ?? noTradeReasonHumanMap.NO_EDGE;
     const nextAction = nextActionMap[noTradeReasonCode] ?? nextActionMap.NO_EDGE;
+    const idempotencyHash = crypto.createHash('sha256').update(`signal-auto:${runId}:${correlationId}`).digest('hex');
 
     const [decision] = await db.insert(schema.tradingAutoDecisions).values({
       runId,
@@ -1474,7 +1487,7 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
       reasoning: approvedCandidates.length > 0
         ? `${approvedCandidates.length} candidate(s) aprovado(s) após guardrails adaptativos. Melhor: ${bestCandidate?.strategyKey ?? 'N/A'} (${bestCandidate?.operationIntent ?? 'intraday'}).`
         : `${noTradeReasonHuman} Total avaliados: ${candidates.length}.`,
-    }).returning({ id: schema.tradingAutoDecisions.id });
+    }).returning({ id: schema.tradingAutoDecisions.id, tradingSignalId: schema.tradingAutoDecisions.tradingSignalId });
 
     const fallbackInstrument = await db.query.tradingInstruments.findFirst({
       where: and(
@@ -1621,11 +1634,7 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
     }
 
     const llmPayload = TRADING_LLM_SIGNAL_PARTIAL_SCHEMA.parse(parseStructuredJsonFromContent(llmRawContent));
-    const autoSignalDraft = buildAutoSignalDraft({
-      llmPayload,
-      bestCandidate,
-      entryModel,
-    });
+    const autoSignalDraft = llmPayload;
     llmStepTimer();
     await updateAutoRunStep(runId, 'signal-llm', 'succeeded', {
       metrics: {
