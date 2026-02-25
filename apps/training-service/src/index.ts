@@ -1132,15 +1132,18 @@ async function autoValidateCandidateIfNeeded(params: {
   };
 }
 
-async function findAutoRunSignal(runId: string) {
-  const rows = await db.execute(sql<{ id: string }>`
-    SELECT id
-    FROM trading_signals
-    WHERE metadata ->> 'autoRunId' = ${runId}
-    ORDER BY criado_em DESC
-    LIMIT 1
-  `);
-  return rows.rows[0] ?? null;
+async function findAutoRunSignal(params: { tenantId: string; runId: string }) {
+  return withTenantContext(params.tenantId, false, async (tenantDb) => {
+    const rows = await tenantDb.execute(sql<{ id: string }>`
+      SELECT id
+      FROM trading_signals
+      WHERE tenant_id = ${params.tenantId}
+        AND metadata ->> 'autoRunId' = ${params.runId}
+      ORDER BY criado_em DESC
+      LIMIT 1
+    `);
+    return rows.rows[0] ?? null;
+  });
 }
 
 async function persistNoTradeAutoSignal(params: {
@@ -1153,7 +1156,7 @@ async function persistNoTradeAutoSignal(params: {
   reasonHuman: string;
   correlationId: string;
 }): Promise<void> {
-  const existing = await findAutoRunSignal(params.runId);
+  const existing = await findAutoRunSignal({ tenantId: params.run.tenantId, runId: params.runId });
   if (existing) return;
 
   await withTenantContext(params.run.tenantId, false, async (tenantDb) => {
@@ -1189,7 +1192,7 @@ async function generateAndTagAutoSignal(params: {
   marketType: 'spot' | 'futures' | 'margin';
   correlationId: string;
 }): Promise<void> {
-  const existing = await findAutoRunSignal(params.runId);
+  const existing = await findAutoRunSignal({ tenantId: params.run.tenantId, runId: params.runId });
   if (existing) return;
 
   const internalHeaders = generateInternalAuthHeaders({

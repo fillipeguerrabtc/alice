@@ -78,3 +78,7 @@ Este ciclo implementa correções reais de backend para os pontos críticos repo
 - Ajustadas regex de identidade em PT-BR para aceitar frase natural com artigo (`qual é o meu nome` / `qual é o seu nome`) mantendo resposta determinística de identidade.
 - Corrigido fluxo stream no `chat-service` para proteger `final_message` e `message_saved` com escrita SSE segura, evitando perda de persistência quando cliente desconecta no fim da geração.
 - Corrigido `training-service` para executar insert/update de `trading_signals` no contexto de tenant (`withTenantContext`) e com `tenantId` no `where`, garantindo compatibilidade com RLS.
+
+## Ajustes adicionais pós-review (25/02/2026 - rodada 9)
+- Corrigida idempotência de `signal_auto` sob RLS: `findAutoRunSignal` passou a executar em `withTenantContext` e com filtro explícito por `tenant_id`, garantindo que retries enxerguem sinais já criados no mesmo tenant.
+- Chamadas de idempotência em `persistNoTradeAutoSignal` e `generateAndTagAutoSignal` foram atualizadas para enviar `tenantId` junto de `runId`, evitando falso negativo no check e duplicação de sinais.
