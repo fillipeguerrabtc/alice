@@ -13,7 +13,7 @@ import { getRedisClient } from './redis-cache-adapter.js';
 const logger = createLogger('llm-routing');
 
 const DEFAULT_CACHE_TTL_SECONDS = 60;
-const DEFAULT_TRAINING_SERVICE_URL = process.env.TRAINING_SERVICE_URL || 'http://alice-training:3004';
+const ENV_TRAINING_SERVICE_URL = process.env.TRAINING_SERVICE_URL?.trim() || null;
 const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET || '';
 const STRICT_BINDING_POLICY = process.env.LORA_STRICT_BINDING === 'true';
 
@@ -44,6 +44,14 @@ interface AdapterLookupOptions {
   trainingServiceUrl: string;
 }
 
+function resolveTrainingServiceUrl(trainingServiceUrl?: string): string {
+  const resolved = trainingServiceUrl?.trim() || ENV_TRAINING_SERVICE_URL;
+  if (!resolved) {
+    throw new Error('TRAINING_SERVICE_URL é obrigatório para roteamento LoRA (llm-routing)');
+  }
+  return resolved;
+}
+
 /**
  * Resolve modelo para chamada LLM:
  * - retorna adapterName quando existe adapter ativo no escopo;
@@ -59,7 +67,7 @@ export async function resolveLlmModelByScope(
   const adapter = await resolveActiveAdapterForScope(context, {
     cachePrefix: options.cachePrefix,
     cacheTtlSeconds: options.cacheTtlSeconds ?? DEFAULT_CACHE_TTL_SECONDS,
-    trainingServiceUrl: options.trainingServiceUrl ?? DEFAULT_TRAINING_SERVICE_URL,
+    trainingServiceUrl: resolveTrainingServiceUrl(options.trainingServiceUrl),
   });
 
   if (adapter) return adapter.adapterName;
@@ -113,9 +121,41 @@ export async function invalidateLlmAdapterCache(cachePrefix: string): Promise<vo
   if (!redis) return;
 
   try {
-    const keys = await redis.keys(`${cachePrefix}:*`);
-    if (keys.length > 0) {
-      await redis.del(keys);
+    let cursor = '0';
+    let matched = 0;
+    let deleted = 0;
+
+    do {
+      const scanResult = await redis.sendCommand([
+        'SCAN',
+        cursor,
+        'MATCH',
+        `${cachePrefix}:*`,
+        'COUNT',
+        '200',
+      ]);
+      if (!Array.isArray(scanResult) || scanResult.length < 2) {
+        break;
+      }
+
+      cursor = String(scanResult[0] ?? '0');
+      const keys = Array.isArray(scanResult[1])
+        ? scanResult[1].map((item) => String(item))
+        : [];
+      matched += keys.length;
+
+      if (keys.length > 0) {
+        const deletedCountRaw = await redis.sendCommand(['DEL', ...keys]);
+        const deletedCount = Number(deletedCountRaw);
+        if (Number.isFinite(deletedCount)) {
+          deleted += deletedCount;
+        }
+      }
+    } while (cursor !== '0');
+
+    logger.info({ cachePrefix, matched, deleted }, 'Cache de adapter LoRA invalidado via SCAN');
+    if (matched === 0) {
+      logger.debug({ cachePrefix }, 'Nenhuma chave de cache LoRA encontrada para invalidação');
     }
   } catch (error) {
     logger.warn(

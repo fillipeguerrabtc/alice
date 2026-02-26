@@ -62,7 +62,10 @@ interface TaskResult {
 // ============================================================================
 
 // URL do training-service para fine-tuning
-const TRAINING_SERVICE_URL = process.env.TRAINING_SERVICE_URL || 'http://alice-training:3004';
+const TRAINING_SERVICE_URL = process.env.TRAINING_SERVICE_URL?.trim();
+if (!TRAINING_SERVICE_URL) {
+  throw new Error('TRAINING_SERVICE_URL é obrigatório para learning-worker do rag-service');
+}
 
 // URL do embeddings GPU para geração de embeddings
 // GPU Manager Service gerencia embeddings localmente (Hetzner GEX44)

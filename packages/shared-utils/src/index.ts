@@ -40,6 +40,7 @@ export * from './llm-routing.js';
 export * from './llm/llm-gateway-client.js';
 export { TRADING_CHANNEL_PREFIX, TRADING_CHANNELS } from './trading-channels.js';
 export * from './trading-v2-queues.js';
+export * from './training-queues.js';
 export * from './trading-microstructure.js';
 export * from './trading/llm-signal-schema.js';
 

@@ -43,5 +43,16 @@ describe('resolvePreferredNameSources', () => {
     expect(result.preferredName).toBeNull();
     expect(result.shouldBackfillPreferredName).toBe(false);
   });
+
+  it('ignora displayName para evitar backfill indevido de preferredName', () => {
+    const result = resolvePreferredNameSources({
+      preferredNameColumn: null,
+      preferences: { displayName: 'Nome de Exibicao' },
+    });
+
+    expect(result.preferredName).toBeNull();
+    expect(result.preferredNameFromPrefs).toBeNull();
+    expect(result.shouldBackfillPreferredName).toBe(false);
+  });
 });
 

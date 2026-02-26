@@ -2032,6 +2032,7 @@ export const trainingData = pgTable(
     similarityScore: real("similarity_score"),
     usedInJobId: varchar("used_in_job_id", { length: 255 }),
     criadoEm: timestamp("criado_em").defaultNow(),
+    processedAt: timestamp("processed_at"),
     processadoEm: timestamp("processado_em"),
   },
   (table) => ({
@@ -2044,6 +2045,8 @@ export const trainingData = pgTable(
     idxTrainingInferredAgent: index("idx_training_inferred_agent").on(table.inferredAgentId),
     idxTrainingInferenceConfidence: index("idx_training_inference_confidence").on(table.inferenceConfidence),
     idxTrainingSemhash: index("idx_training_semhash").on(table.semhash),
+    trainingDataTenantSemhashIdx: index("training_data_tenant_semhash_idx").on(table.tenantId, table.semhash),
+    trainingDataProcessedAtIdx: index("training_data_processed_at_idx").on(table.processedAt),
     idxTrainingSource: index("idx_training_source").on(table.source),
     idxTrainingSourceType: index("idx_training_source_type").on(table.sourceType),
     idxTrainingSourceId: index("idx_training_source_id").on(table.sourceId),
@@ -5641,6 +5644,7 @@ export type InsertMediaUpload = typeof mediaUploads.$inferInsert;
 export const insertTrainingDataSchema: z.ZodType<unknown> = createInsertSchema(trainingData).omit({
   id: true,
   criadoEm: true,
+  processedAt: true,
   processadoEm: true,
 });
 

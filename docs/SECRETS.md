@@ -159,6 +159,7 @@ Este documento lista os secrets obrigatórios e opcionais usados no deploy enter
 | `ACME_DNS_PRECHECK_REQUIRE_ALL_RESOLVERS` | `true` exige sucesso em todos os resolvers DoH |
 | `ACME_DNS_PRECHECK_HOSTS` | Lista de hosts para checagem (override do Caddyfile) |
 | `LLM_GATEWAY_URL` | URL do LLM Gateway (ex: `http://alice-llm-gateway:3011`). Se definido, Chat/Integrations roteiam LLM via gateway. |
+| `TRAINING_SERVICE_URL` | URL interna do training-service (ex: `http://alice-training:3004`). Obrigatória para LoRA routing e workers dependentes. |
 | `DOCUMENT_MAX_CHUNKS` | Máximo de chunks por documento (default 50). Ver `docs/DEPLOYMENT.md`. |
 | `TRAINING_DOC_MAX_SAMPLES` | Máximo de chunks selecionados por doc para treino (default 50). |
 | `TRAINING_CONVERSATION_MAX_MESSAGES` | Máximo de mensagens por conversa na coleta (default 50). |

@@ -64,11 +64,14 @@ import {
   RedisStreamQueue,
   TRADING_V2_STREAMS,
   buildTradingV2IdempotencyKey,
+  buildTrainingIdempotencyKey,
   tradingUniverseEnqueueSchema,
   tradingBacktestEnqueueSchema,
   tradingCalibrationEnqueueSchema,
   tradingRebalanceEnqueueSchema,
   tradingModelRiskEnqueueSchema,
+  TRAINING_EMBEDDING_DEDUPE_QUEUE,
+  trainingEmbeddingDedupeQueuePayloadSchema,
   Gauge as PromGauge,
   Counter as PromCounter,
   Histogram as PromHistogram,
@@ -77,7 +80,7 @@ import {
   generateInternalAuthHeaders,
 } from '@alice/shared-utils';
 import { trainingServicePaths, trainingServiceSchemas } from './openapi-specs.js';
-import { eq, and, or, desc, sql, isNull, not, inArray, lte } from '@alice/database';
+import { eq, and, or, desc, sql, isNull, not, inArray, lte, ne } from '@alice/database';
 import { z } from 'zod';
 import { getAllSystemConfig, setSystemConfig, getSystemConfig } from '@alice/database/system-config';
 import type { TradingSignalMetadata } from '@alice/shared';
@@ -119,6 +122,8 @@ import { runBacktestWorker } from './trading-v2/jobs/backtest-worker.js';
 import { runCalibrationWorker } from './trading-v2/jobs/calibration-worker.js';
 import { runPortfolioRebalanceWorker } from './trading-v2/jobs/portfolio-rebalance-worker.js';
 import { runModelRiskWorker } from './trading-v2/jobs/model-risk-worker.js';
+import { TRAINING_DATA_SIMILARITY_THRESHOLD, TRAINING_EMBEDDING_DEDUPE_WORKER_POLL_INTERVAL_MS } from './training-data-constants.js';
+import { createTrainingEmbeddingDedupeWorker } from './workers/training-embedding-dedupe-worker.js';
 // Fine-tuning é executado localmente via GPU Manager Service (Regra 6 - sem stubs/migração)
 
 // Logger centralizado: JSON em produção, pino-pretty em desenvolvimento
@@ -342,6 +347,24 @@ const trainingPipelineMetrics = {
     labelNames: ['source_type'] as const,
     registers: [metrics.registry],
   }),
+  embeddingDedupeJobsTotal: new PromCounter({
+    name: 'alice_training_embedding_dedupe_jobs_total',
+    help: 'Total de jobs de embedding/dedupe processados pela fila',
+    labelNames: ['result'] as const,
+    registers: [metrics.registry],
+  }),
+  embeddingDedupeHitsTotal: new PromCounter({
+    name: 'alice_training_embedding_dedupe_hits_total',
+    help: 'Total de hits de deduplicação por método',
+    labelNames: ['method'] as const,
+    registers: [metrics.registry],
+  }),
+  embeddingDedupeDurationSeconds: new PromHistogram({
+    name: 'alice_training_embedding_dedupe_duration_seconds',
+    help: 'Duração de processamento dos jobs de embedding/dedupe',
+    buckets: [0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30],
+    registers: [metrics.registry],
+  }),
 };
 
 const tradingV2Metrics = {
@@ -514,6 +537,25 @@ async function enqueueTradingJob(
   });
   const idempotencyKey = buildTradingV2IdempotencyKey(queueName, payload);
   await queue.enqueue(redis, payload, idempotencyKey);
+}
+
+async function enqueueTrainingEmbeddingDedupeJob(payload: z.infer<typeof trainingEmbeddingDedupeQueuePayloadSchema>): Promise<boolean> {
+  const redis = getRedisClient();
+  if (!redis) {
+    throw new Error('Redis não disponível para fila de embedding/dedupe');
+  }
+
+  const queue = new RedisStreamQueue<z.infer<typeof trainingEmbeddingDedupeQueuePayloadSchema>>(
+    TRAINING_EMBEDDING_DEDUPE_QUEUE,
+    {
+      group: 'training-service',
+      consumer: `training-${process.pid}`,
+      maxRetries: 3,
+      autoClaimCount: 10,
+      streamMaxLen: 20_000,
+    }
+  );
+  return queue.enqueue(redis, payload, payload.idempotencyKey);
 }
 
 function createTradingWorker<T extends { idempotencyKey: string }>(
@@ -732,7 +774,7 @@ app.use(createSessionAuthMiddleware({
   publicPaths: ['/api/training/health', '/live', '/ready', '/metrics'],
 }));
 
-const SIMILARITY_THRESHOLD = 0.85;
+const SIMILARITY_THRESHOLD = TRAINING_DATA_SIMILARITY_THRESHOLD;
 // BUG FIX 26/12/2025: JOB_POLLING_INTERVAL_MS removido - fine-tuning em migração para Hetzner GPU
 
 function computeQualityScore(messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>): number {
@@ -1953,45 +1995,108 @@ app.post('/api/training/data', requirePermission('training:training_data:write')
         source_type: body.sourceType ?? 'unknown',
       });
     }
+    const sourceType = body.sourceType ?? 'manual';
     const semhash = computeSemHash(messagesText);
-    const embedding = await generateEmbedding(messagesText);
     const qualityScore = computeQualityScore(body.messages);
-
-    const existingData = await db.query.trainingData.findMany({
-      where: and(
-        eq(schema.trainingData.tenantId, resolvedTenantId),
-        inArray(schema.trainingData.status, ['pending', 'approved', 'used']),
-        not(isNull(schema.trainingData.embedding))
-      ),
+    const idempotencyKey = buildTrainingIdempotencyKey({
+      tenantId: resolvedTenantId,
+      sourceType,
+      sourceId: body.sourceId ?? null,
+      semhash,
     });
 
-    let isDuplicate = false;
-    let duplicateOfId: string | undefined;
-    let highestSimilarity = 0;
+    if (qualityScore < TRAINING_DATA_MIN_QUALITY) {
+      const reviewNotes = `Auto-rejeitado: qualidade ${qualityScore.toFixed(2)} abaixo do mínimo (${TRAINING_DATA_MIN_QUALITY}).`;
+      const processedAt = new Date();
+      const [trainingData] = await db.insert(schema.trainingData).values({
+        tenantId: resolvedTenantId,
+        namespaceId: effectiveNamespaceId,
+        agentId: effectiveAgentId,
+        conversationId: body.conversationId,
+        source: body.source,
+        sourceType,
+        sourceId: body.sourceId ?? null,
+        sourceMetadata: body.sourceMetadata ?? {},
+        inferredNamespaceId: scope.namespaceId,
+        inferredAgentId: scope.agentId,
+        inferredDomain: scope.domain,
+        inferenceConfidence: scope.confidence,
+        inferenceTrace: scope.trace,
+        scopeResolverVersion: 'v1',
+        profileVersion: 1,
+        needsHumanReview: scope.needsHumanReview,
+        quarantineReason: scope.needsHumanReview ? 'low_confidence_or_missing_namespace' : null,
+        scopeResolvedAt: new Date(),
+        quarantinedAt: scope.needsHumanReview ? new Date() : null,
+        messages: body.messages,
+        rating: body.rating,
+        qualityScore,
+        createdBy,
+        semhash,
+        embedding: null,
+        isDuplicate: false,
+        duplicateOfId: null,
+        similarityScore: null,
+        status: 'rejected',
+        reviewNotes: [reviewNotes, ...inferredStatusNotes].filter(Boolean).join(' | ') || null,
+        processedAt,
+        processadoEm: processedAt,
+      }).returning();
 
-    for (const existing of existingData) {
-      if (existing.semhash === semhash) {
-        isDuplicate = true;
-        duplicateOfId = existing.id;
-        highestSimilarity = 1.0;
-        break;
-      }
+      trainingPipelineMetrics.dataCollectedTotal.labels(sourceType, 'rejected').inc();
+      trainingPipelineMetrics.qualityScore.observe(qualityScore);
+      trainingPipelineMetrics.dataRejectedTotal.labels('quality', sourceType).inc();
 
-      if (existing.embedding) {
-        const similarity = cosineSimilarity(embedding, existing.embedding);
-        if (similarity > SIMILARITY_THRESHOLD && similarity > highestSimilarity) {
-          isDuplicate = true;
-          duplicateOfId = existing.id;
-          highestSimilarity = similarity;
-        }
-      }
+      logger.info({
+        trainingDataId: trainingData.id,
+        qualityScore,
+        queued: false,
+        idempotencyKey,
+      }, 'Dados de treinamento rejeitados por qualidade mínima');
+
+      return res.json({
+        trainingData,
+        queued: false,
+        idempotencyKey,
+        isDuplicate: false,
+        duplicateOfId: null,
+        similarityScore: null,
+      });
     }
 
-    const autoRejectedByQuality = !isDuplicate && qualityScore < TRAINING_DATA_MIN_QUALITY;
-    const status = isDuplicate || autoRejectedByQuality ? 'rejected' : 'pending';
-    const reviewNotes = autoRejectedByQuality
-      ? `Auto-rejeitado: qualidade ${qualityScore.toFixed(2)} abaixo do mínimo (${TRAINING_DATA_MIN_QUALITY}).`
-      : null;
+    const sameFingerprintConditions = [
+      eq(schema.trainingData.tenantId, resolvedTenantId),
+      eq(schema.trainingData.sourceType, sourceType),
+      eq(schema.trainingData.semhash, semhash),
+    ];
+    if (body.sourceId) {
+      sameFingerprintConditions.push(eq(schema.trainingData.sourceId, body.sourceId));
+    } else {
+      sameFingerprintConditions.push(isNull(schema.trainingData.sourceId));
+    }
+
+    const existingByFingerprint = await db.query.trainingData.findFirst({
+      where: and(...sameFingerprintConditions),
+      orderBy: [desc(schema.trainingData.criadoEm)],
+    });
+    if (existingByFingerprint) {
+      const alreadyProcessed = Boolean(existingByFingerprint.embedding && existingByFingerprint.processedAt);
+      logger.info({
+        trainingDataId: existingByFingerprint.id,
+        queued: !alreadyProcessed && existingByFingerprint.status === 'pending',
+        idempotencyKey,
+      }, 'Requisição idempotente detectada em training_data');
+
+      return res.json({
+        trainingData: existingByFingerprint,
+        queued: !alreadyProcessed && existingByFingerprint.status === 'pending',
+        idempotencyKey,
+        idempotencyHit: true,
+        isDuplicate: Boolean(existingByFingerprint.isDuplicate),
+        duplicateOfId: existingByFingerprint.duplicateOfId,
+        similarityScore: existingByFingerprint.similarityScore ?? null,
+      });
+    }
 
     const [trainingData] = await db.insert(schema.trainingData).values({
       tenantId: resolvedTenantId,
@@ -1999,7 +2104,7 @@ app.post('/api/training/data', requirePermission('training:training_data:write')
       agentId: effectiveAgentId,
       conversationId: body.conversationId,
       source: body.source,
-      sourceType: body.sourceType ?? 'manual',
+      sourceType,
       sourceId: body.sourceId ?? null,
       sourceMetadata: body.sourceMetadata ?? {},
       inferredNamespaceId: scope.namespaceId,
@@ -2018,29 +2123,81 @@ app.post('/api/training/data', requirePermission('training:training_data:write')
       qualityScore,
       createdBy,
       semhash,
-      embedding,
-      isDuplicate,
-      duplicateOfId,
-      similarityScore: highestSimilarity > 0 ? highestSimilarity : null,
-      status,
-      reviewNotes: [reviewNotes, ...inferredStatusNotes].filter(Boolean).join(' | ') || null,
+      embedding: null,
+      isDuplicate: false,
+      duplicateOfId: null,
+      similarityScore: null,
+      status: 'pending',
+      reviewNotes: inferredStatusNotes.filter(Boolean).join(' | ') || null,
     }).returning();
 
-    const sourceTypeMetric = body.sourceType ?? 'manual';
-    trainingPipelineMetrics.dataCollectedTotal.labels(sourceTypeMetric, status).inc();
+    const queuePayload = trainingEmbeddingDedupeQueuePayloadSchema.parse({
+      trainingDataId: trainingData.id,
+      tenantId: resolvedTenantId,
+      namespaceId: effectiveNamespaceId ?? undefined,
+      agentId: effectiveAgentId ?? undefined,
+      semhash,
+      sourceType,
+      sourceId: body.sourceId ?? undefined,
+      idempotencyKey,
+      createdAt: new Date().toISOString(),
+    });
+    const queued = await enqueueTrainingEmbeddingDedupeJob(queuePayload);
+
+    if (!queued) {
+      const processedAt = new Date();
+      const canonical = await db.query.trainingData.findFirst({
+        where: and(
+          ...sameFingerprintConditions,
+          ne(schema.trainingData.id, trainingData.id)
+        ),
+        orderBy: [desc(schema.trainingData.criadoEm)],
+      });
+      const [updatedDuplicate] = await db.update(schema.trainingData)
+        .set({
+          isDuplicate: true,
+          duplicateOfId: canonical?.id ?? null,
+          similarityScore: 1,
+          status: 'rejected',
+          reviewNotes: [
+            'Requisição idempotente duplicada: job já enfileirado para fingerprint idêntico.',
+            trainingData.reviewNotes,
+          ].filter(Boolean).join(' | '),
+          processedAt,
+          processadoEm: processedAt,
+        })
+        .where(eq(schema.trainingData.id, trainingData.id))
+        .returning();
+
+      trainingPipelineMetrics.dataCollectedTotal.labels(sourceType, 'rejected').inc();
+      trainingPipelineMetrics.dataRejectedTotal.labels('duplicate', sourceType).inc();
+      trainingPipelineMetrics.qualityScore.observe(qualityScore);
+      trainingPipelineMetrics.dataDuplicatesTotal.labels(sourceType).inc();
+
+      logger.info({
+        trainingDataId: updatedDuplicate.id,
+        queued: false,
+        idempotencyKey,
+      }, 'Requisição idempotente duplicada sem novo enqueue');
+
+      return res.json({
+        trainingData: updatedDuplicate,
+        queued: false,
+        idempotencyKey,
+        idempotencyHit: true,
+        isDuplicate: true,
+        duplicateOfId: updatedDuplicate.duplicateOfId,
+        similarityScore: updatedDuplicate.similarityScore,
+      });
+    }
+
+    trainingPipelineMetrics.dataCollectedTotal.labels(sourceType, 'pending').inc();
     trainingPipelineMetrics.qualityScore.observe(qualityScore);
-    if (isDuplicate) {
-      trainingPipelineMetrics.dataDuplicatesTotal.labels(sourceTypeMetric).inc();
-      trainingPipelineMetrics.dataRejectedTotal.labels('duplicate', sourceTypeMetric).inc();
-    }
-    if (autoRejectedByQuality) {
-      trainingPipelineMetrics.dataRejectedTotal.labels('quality', sourceTypeMetric).inc();
-    }
 
     logger.info({
       trainingDataId: trainingData.id, 
-      isDuplicate, 
-      similarity: highestSimilarity,
+      queued,
+      idempotencyKey,
       scope: {
         namespaceId: effectiveNamespaceId,
         agentId: effectiveAgentId,
@@ -2054,9 +2211,11 @@ app.post('/api/training/data', requirePermission('training:training_data:write')
 
     res.json({ 
       trainingData, 
-      isDuplicate,
-      duplicateOfId,
-      similarityScore: highestSimilarity,
+      queued,
+      idempotencyKey,
+      isDuplicate: false,
+      duplicateOfId: null,
+      similarityScore: null,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -2235,12 +2394,14 @@ app.patch('/api/training/data/:id/status', requirePermission('training:training_
       }
     }
 
+    const reviewedAt = new Date();
     const [updated] = await db.update(schema.trainingData)
       .set({ 
         status: status as 'approved' | 'rejected',
-        processadoEm: new Date(),
+        processadoEm: reviewedAt,
+        processedAt: reviewedAt,
         reviewedBy,
-        reviewedAt: new Date(),
+        reviewedAt,
         reviewNotes: reviewNotes ?? null,
         namespaceId: nextNamespaceId,
         agentId: nextAgentId,
@@ -3572,12 +3733,14 @@ app.post('/api/training/data/approve-batch', requirePermission('training:trainin
         continue;
       }
 
+      const reviewedAt = new Date();
       const [updated] = await db.update(schema.trainingData)
         .set({ 
           status: newStatus,
-          processadoEm: new Date(),
+          processadoEm: reviewedAt,
+          processedAt: reviewedAt,
           reviewedBy,
-          reviewedAt: new Date(),
+          reviewedAt,
           reviewNotes: reviewNotes ?? null,
           needsHumanReview: false,
           quarantineReason: null,
@@ -4424,6 +4587,27 @@ let autoLearningLoopActive = false;
     await initializeRedisCache();
     await initializeSessionAuthCache();
     logger.info('Auth cache (session-auth) inicializado');
+    tradingWorkerStoppers.push(
+      createTrainingEmbeddingDedupeWorker({
+        db,
+        logger,
+        metrics: {
+          jobsTotal: trainingPipelineMetrics.embeddingDedupeJobsTotal,
+          dedupeHitsTotal: trainingPipelineMetrics.embeddingDedupeHitsTotal,
+          durationSeconds: trainingPipelineMetrics.embeddingDedupeDurationSeconds,
+        },
+        pollIntervalMs: TRAINING_EMBEDDING_DEDUPE_WORKER_POLL_INTERVAL_MS,
+        similarityThreshold: SIMILARITY_THRESHOLD,
+        generateEmbedding,
+      })
+    );
+    logger.info(
+      {
+        queue: TRAINING_EMBEDDING_DEDUPE_QUEUE,
+        pollIntervalMs: TRAINING_EMBEDDING_DEDUPE_WORKER_POLL_INTERVAL_MS,
+      },
+      'Worker de embedding/dedupe inicializado'
+    );
     tradingWorkerStoppers.push(createTradingWorker(
       tradingQueueNames.universe,
       tradingUniverseEnqueueSchema,

@@ -83,6 +83,7 @@ import type { AgenticDetectors } from '@alice/shared';
 import { isTradingCommand } from './trading-command-parser.js';
 import { resolveModelWithAdapter } from './lora-adapter-resolver.js';
 import { resolvePreferredNameSources } from './user-name-utils.js';
+import { evaluateCorruptedAssistantResponse, type StreamCorruptionReason } from './stream-corruption-heuristics.js';
 import { sliceConversationIntoWindows } from './training-utils.js';
 import { 
   buscarContextoRAG, 
@@ -315,6 +316,13 @@ const conversationWindowsCreatedCounter = new PromCounter({
   name: 'alice_training_conversation_windows_created_total',
   help: 'Total de vezes que conversas longas foram fatiadas em múltiplas janelas (CONVERSATION_SLICE_SIZE)',
   labelNames: ['tenant_id'] as const,
+  registers: [metrics.registry],
+});
+
+const chatStreamSuppressionTotal = new PromCounter({
+  name: 'chat_stream_suppression_total',
+  help: 'Total de supressões de chunks SSE por detecção de corrupção',
+  labelNames: ['profile', 'reason'] as const,
   registers: [metrics.registry],
 });
 
@@ -3372,141 +3380,16 @@ function sanitizeAssistantResponse(raw: string): string {
 
   return result.join('\n').trimEnd();
 }
-function hasRepeatedWordSequence(content: string, minConsecutiveRepeats: number): boolean {
-  const words = content.match(/\p{L}[\p{L}\p{M}]*/gu) ?? [];
-  if (words.length < minConsecutiveRepeats) {
-    return false;
-  }
-
-  let lastWord: string | null = null;
-  let repeatCount = 0;
-  for (const word of words) {
-    if (word === lastWord) {
-      repeatCount += 1;
-      if (repeatCount >= minConsecutiveRepeats) {
-        return true;
-      }
-      continue;
-    }
-
-    lastWord = word;
-    repeatCount = 1;
-  }
-
-  return false;
+function resolveCorruptionProfile(profile: LlmContextProfile | undefined): 'default' | 'trading' {
+  return profile === 'trading' ? 'trading' : 'default';
 }
 
-function hasRepeatedTokenSequence(content: string, minConsecutiveRepeats: number): boolean {
-  const tokens = content.match(/[\p{L}\p{N}][\p{L}\p{N}\p{M}'-]*/gu) ?? [];
-  if (tokens.length < minConsecutiveRepeats) {
-    return false;
-  }
-
-  let lastToken: string | null = null;
-  let repeatCount = 0;
-  for (const rawToken of tokens) {
-    const token = rawToken.toLowerCase();
-    if (token === lastToken) {
-      repeatCount += 1;
-      if (repeatCount >= minConsecutiveRepeats) {
-        return true;
-      }
-      continue;
-    }
-
-    lastToken = token;
-    repeatCount = 1;
-  }
-
-  return false;
+function isCorruptedAssistantResponse(content: string, profile?: LlmContextProfile): boolean {
+  return evaluateCorruptedAssistantResponse(content, resolveCorruptionProfile(profile)).corrupted;
 }
 
-function hasDominantShortTokenLoop(content: string): boolean {
-  const tokens = content.match(/[\p{L}\p{N}][\p{L}\p{N}\p{M}'-]*/gu) ?? [];
-  if (tokens.length < 30) {
-    return false;
-  }
-
-  let dominantToken = '';
-  let dominantCount = 0;
-  const counts = new Map<string, number>();
-  for (const rawToken of tokens) {
-    const token = rawToken.toLowerCase();
-    const nextCount = (counts.get(token) ?? 0) + 1;
-    counts.set(token, nextCount);
-    if (nextCount > dominantCount) {
-      dominantCount = nextCount;
-      dominantToken = token;
-    }
-  }
-
-  if (!dominantToken) {
-    return false;
-  }
-  const dominanceRatio = dominantCount / tokens.length;
-  const isShortToken = dominantToken.length <= 2;
-  const isNumericToken = /^\d+$/u.test(dominantToken);
-  return dominanceRatio >= 0.32 && (isShortToken || isNumericToken);
-}
-
-function hasHighDigitNoise(content: string): boolean {
-  const normalized = content.toLowerCase();
-  if (normalized.length < 140) {
-    return false;
-  }
-
-  const digitCount = (normalized.match(/\d/gu) ?? []).length;
-  const digitRatio = digitCount / Math.max(normalized.length, 1);
-  if (digitRatio < 0.32) {
-    return false;
-  }
-
-  const tokens = normalized.match(/[\p{L}\p{N}][\p{L}\p{N}\p{M}'-]*/gu) ?? [];
-  if (tokens.length < 25) {
-    return false;
-  }
-  const uniqueTokenRatio = new Set(tokens).size / tokens.length;
-  return uniqueTokenRatio < 0.3;
-}
-
-
-function isLikelyCodeHeavyResponse(content: string): boolean {
-  const trimmed = content.trim();
-  if (!trimmed) return false;
-
-  if (/```[\s\S]*```/u.test(trimmed)) {
-    return true;
-  }
-
-  if (/^\s*[{[]/.test(trimmed) && /[}\]]\s*$/u.test(trimmed)) {
-    return true;
-  }
-
-  const specialTokens = (trimmed.match(/[{}[\]<>+=*@#$%&|~_/^`]/gu) ?? []).length;
-  const specialTokenRatio = specialTokens / Math.max(trimmed.length, 1);
-  if (specialTokenRatio > 0.2) {
-    return true;
-  }
-
-  return /(const|let|var|function|class|return|import|export|interface|type|=>|SELECT|INSERT|UPDATE|DELETE|CREATE\s+TABLE|FROM|WHERE)\b/iu.test(trimmed);
-}
-
-function isCorruptedAssistantResponse(content: string): boolean {
-  const text = content.trim();
-  if (!text) return true;
-  const normalized = text.toLowerCase();
-  const maxRepeatedChars = /(.)\1{14,}/u.test(normalized);
-  const excessiveNoiseRatio = (normalized.match(/[^\p{L}\p{N}\s.,;:!?()\-"']/gu) ?? []).length / Math.max(normalized.length, 1);
-  const repeatedWord = hasRepeatedWordSequence(normalized, 6);
-  const repeatedToken = hasRepeatedTokenSequence(normalized, 8);
-  const dominantShortTokenLoop = hasDominantShortTokenLoop(normalized);
-  const highDigitNoise = hasHighDigitNoise(normalized);
-  const shouldApplyNoiseHeuristic = !isLikelyCodeHeavyResponse(text);
-  const hasExcessiveNoise = shouldApplyNoiseHeuristic && excessiveNoiseRatio > 0.2;
-  const hasRepeatedChars = shouldApplyNoiseHeuristic && maxRepeatedChars;
-  const hasRepeatedWords = shouldApplyNoiseHeuristic && (repeatedWord || repeatedToken);
-  const hasDegenerateTokenLoop = shouldApplyNoiseHeuristic && (dominantShortTokenLoop || highDigitNoise);
-  return hasRepeatedChars || hasExcessiveNoise || hasRepeatedWords || hasDegenerateTokenLoop;
+function getCorruptionReason(content: string, profile?: LlmContextProfile): StreamCorruptionReason | null {
+  return evaluateCorruptedAssistantResponse(content, resolveCorruptionProfile(profile)).reason;
 }
 
 type IdentityQuestionLanguage = 'pt-BR' | 'en';
@@ -3623,8 +3506,9 @@ async function enforceResponseGuardrails(params: {
     return `Meu nome é ${params.agentName}.`;
   }
 
+  const responseProfile = detectContextProfile(params.userMessage);
   const sanitized = sanitizeAssistantResponse(params.responseText);
-  if (!isCorruptedAssistantResponse(sanitized)) {
+  if (!isCorruptedAssistantResponse(sanitized, responseProfile)) {
     return fixPreferredNameInDirectAddress(sanitized, params.preferredName);
   }
 
@@ -3643,7 +3527,7 @@ async function enforceResponseGuardrails(params: {
   }
 
   const regenerated = sanitizeAssistantResponse(regeneratedRaw);
-  if (isCorruptedAssistantResponse(regenerated)) {
+  if (isCorruptedAssistantResponse(regenerated, responseProfile)) {
     logger.warn({ correlationId: params.correlationId }, 'Regeneração controlada retornou conteúdo potencialmente corrompido; retornando fallback seguro');
     return buildGuardrailFallbackResponse(params.preferredName);
   }
@@ -10031,12 +9915,14 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           if (currentLength - lastCorruptionCheckLength < 120) return false;
           lastCorruptionCheckLength = currentLength;
           const partialSanitized = sanitizeAssistantResponse(assistantResponse);
-          if (!isCorruptedAssistantResponse(partialSanitized)) {
+          const corruptionReason = getCorruptionReason(partialSanitized, mediaProfile);
+          if (!corruptionReason) {
             return false;
           }
           suppressCorruptedStreamChunks = true;
+          chatStreamSuppressionTotal.inc({ profile: mediaProfile, reason: corruptionReason });
           logger.warn(
-            { conversationId, chars: currentLength },
+            { conversationId, chars: currentLength, profile: mediaProfile, reason: corruptionReason },
             'Fluxo de mídia detectou resposta degenerada; chunks serão suprimidos até finalização do guardrail'
           );
           emitAgentEvent({
@@ -10291,7 +10177,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           sanitizeAssistantResponse(greetingResponse),
           nameContext.preferredName
         );
-        if (isCorruptedAssistantResponse(greetingResponse)) {
+        if (isCorruptedAssistantResponse(greetingResponse, detectContextProfile(userMessageContent))) {
           logger.warn(
             { conversationId, cacheKey: cacheResult.cacheKey },
             'Resposta de greetings gate descartada por conteúdo degenerado'
@@ -10392,7 +10278,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             sanitizeAssistantResponse(reuseResponse),
             nameContext.preferredName
           );
-          if (isCorruptedAssistantResponse(reuseResponse)) {
+          if (isCorruptedAssistantResponse(reuseResponse, detectContextProfile(userMessageContent))) {
             logger.warn(
               { conversationId, reusedMessageId: assistantAfterLastUser.id },
               'Resposta de reuse gate descartada por conteúdo degenerado'
@@ -13231,12 +13117,14 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         if (currentLength - lastCorruptionCheckLength < 120) return false;
         lastCorruptionCheckLength = currentLength;
         const partialSanitized = sanitizeAssistantResponse(assistantResponse);
-        if (!isCorruptedAssistantResponse(partialSanitized)) {
+        const corruptionReason = getCorruptionReason(partialSanitized, streamProfile);
+        if (!corruptionReason) {
           return false;
         }
         suppressCorruptedStreamChunks = true;
+        chatStreamSuppressionTotal.inc({ profile: streamProfile, reason: corruptionReason });
         logger.warn(
-          { conversationId, chars: currentLength },
+          { conversationId, chars: currentLength, profile: streamProfile, reason: corruptionReason },
           'Fluxo de texto detectou resposta degenerada; chunks serão suprimidos até finalização do guardrail'
         );
         emitAgentEvent({

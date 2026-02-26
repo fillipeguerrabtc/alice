@@ -24,7 +24,6 @@ export function resolvePreferredNameSources(params: {
     params.preferences.nomePreferido,
     params.preferences.nome_preferido,
     params.preferences.namePreferred,
-    params.preferences.displayName,
   ].find((value) => typeof value === 'string');
   const preferredNameFromPrefs = normalizeUserNameValue(
     typeof rawPreferredFromPrefs === 'string' ? rawPreferredFromPrefs : ''

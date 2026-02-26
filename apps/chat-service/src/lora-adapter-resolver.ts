@@ -23,7 +23,10 @@ const loraResolveLatency = new Histogram({
 });
 
 const CACHE_TTL_SECONDS = 60;
-const TRAINING_SERVICE_URL = process.env.TRAINING_SERVICE_URL || 'http://alice-training:3004';
+const TRAINING_SERVICE_URL = process.env.TRAINING_SERVICE_URL?.trim();
+if (!TRAINING_SERVICE_URL) {
+  throw new Error('TRAINING_SERVICE_URL é obrigatório para resolver adapter LoRA no chat-service');
+}
 const STRICT_BINDING_POLICY = process.env.LORA_STRICT_BINDING === 'true';
 const CACHE_PREFIX = 'alice:chat:lora:active-adapter';
 
