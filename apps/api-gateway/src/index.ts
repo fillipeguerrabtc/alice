@@ -205,8 +205,30 @@ app.disable('x-powered-by');
 // Evita bypass de rate limiting (express-rate-limit 2025 best practice)
 app.set('trust proxy', 1);
 
+const defaultCompressionFilter: (req: Request, res: Response) => boolean =
+  typeof (compression as unknown as { filter?: (req: Request, res: Response) => boolean }).filter === 'function'
+    ? (compression as unknown as { filter: (req: Request, res: Response) => boolean }).filter
+    : () => true;
+
+function shouldBypassCompressionForSse(req: Request): boolean {
+  const acceptHeader = req.headers.accept ?? '';
+  const acceptsSse = typeof acceptHeader === 'string' && acceptHeader.includes('text/event-stream');
+  const isStreamPath = req.path.includes('/stream');
+  return acceptsSse || isStreamPath;
+}
+
 // PERFORMANCE: Compression para respostas HTTP (Express.js 2025 Best Practices)
-app.use(compression({ level: 6, threshold: 1024 }));
+app.use(compression({
+  level: 6,
+  threshold: 1024,
+  filter: (req, res) => {
+    if (shouldBypassCompressionForSse(req)) {
+      logger.debug({ path: req.path, accept: req.headers.accept ?? null }, 'Bypass de compression para SSE/stream no API Gateway');
+      return false;
+    }
+    return defaultCompressionFilter(req, res);
+  },
+}));
 
 // SEGURANÇA: Helmet centralizado com CSP (módulo @alice/shared-utils)
 // Express 5: usar type assertion para middleware de segurança
@@ -475,6 +497,24 @@ const createServiceProxy = (service: ServiceConfig): Options => ({
         path: (req as Request).path,
         method: (req as Request).method,
       }, 'Proxy request');
+    },
+    proxyRes: (proxyRes, req, res) => {
+      const request = req as Request;
+      const response = res as Response;
+      const contentTypeHeader = proxyRes.headers['content-type'];
+      const contentType = Array.isArray(contentTypeHeader) ? contentTypeHeader.join(';') : (contentTypeHeader ?? '');
+      const isSseResponse = (typeof contentType === 'string' && contentType.includes('text/event-stream'))
+        || shouldBypassCompressionForSse(request);
+
+      if (isSseResponse) {
+        response.setHeader('Cache-Control', 'no-cache, no-transform');
+        response.setHeader('Connection', 'keep-alive');
+        response.setHeader('X-Accel-Buffering', 'no');
+        logger.debug(
+          { service: service.name, path: request.path, contentType: typeof contentType === 'string' ? contentType : null },
+          'Headers anti-buffer aplicados para proxy SSE'
+        );
+      }
     },
     error: (err, _req, res) => {
       logger.error({ error: err, service: service.name }, 'Erro no proxy');

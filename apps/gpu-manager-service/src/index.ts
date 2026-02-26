@@ -946,8 +946,27 @@ function stopQueueWorker(): void {
 const app = express();
 const server = createServer(app);
 
+const defaultCompressionFilter: (req: Request, res: Response) => boolean =
+  typeof (compression as unknown as { filter?: (req: Request, res: Response) => boolean }).filter === 'function'
+    ? (compression as unknown as { filter: (req: Request, res: Response) => boolean }).filter
+    : () => true;
+
+function shouldBypassCompressionForGpuStream(req: Request): boolean {
+  const acceptHeader = req.headers.accept ?? '';
+  const acceptsSse = typeof acceptHeader === 'string' && acceptHeader.includes('text/event-stream');
+  return req.path === '/api/gpu/stream' || acceptsSse;
+}
+
 // Middleware
-app.use(compression());
+app.use(compression({
+  filter: (req, res) => {
+    if (shouldBypassCompressionForGpuStream(req)) {
+      logger.debug({ path: req.path, accept: req.headers.accept ?? null }, 'Bypass de compression para SSE no GPU Manager');
+      return false;
+    }
+    return defaultCompressionFilter(req, res);
+  },
+}));
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(createCorrelationMiddleware({ serviceName: 'gpu-manager' }));
@@ -1218,10 +1237,44 @@ app.post('/api/gpu/stream', requireInternalAuth, asyncHandler(async (req: Reques
       // São duas requisições HTTP diferentes => não há conflito de body consumido.
 
       // Proxy do stream diretamente para o cliente (chat-service fará fetch deste endpoint e fará proxy)
-      res.setHeader('Content-Type', 'text/event-stream');
-      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-cache, no-transform');
       res.setHeader('Connection', 'keep-alive');
+      res.setHeader('X-Accel-Buffering', 'no');
       res.flushHeaders();
+
+      const flushSseChunk = () => {
+        const flusher = (res as unknown as { flush?: () => void }).flush;
+        if (typeof flusher === 'function') flusher();
+      };
+
+      let heartbeatHandle: ReturnType<typeof setInterval> | null = setInterval(() => {
+        if (res.writableEnded) {
+          if (heartbeatHandle) {
+            clearInterval(heartbeatHandle);
+            heartbeatHandle = null;
+          }
+          return;
+        }
+        try {
+          res.write(':\n\n');
+          flushSseChunk();
+        } catch {
+          if (heartbeatHandle) {
+            clearInterval(heartbeatHandle);
+            heartbeatHandle = null;
+          }
+        }
+      }, 15000);
+
+      const clearHeartbeat = () => {
+        if (heartbeatHandle) {
+          clearInterval(heartbeatHandle);
+          heartbeatHandle = null;
+        }
+      };
+      res.on('close', clearHeartbeat);
+      res.on('finish', clearHeartbeat);
 
       // Pipe do stream (proxy direto)
       const reader = response.body.getReader();
@@ -1232,11 +1285,16 @@ app.post('/api/gpu/stream', requireInternalAuth, asyncHandler(async (req: Reques
           const { done, value } = await reader.read();
           if (done) break;
 
-          res.write(decoder.decode(value, { stream: true }));
+          const chunk = decoder.decode(value, { stream: true });
+          if (!chunk) continue;
+          res.write(chunk);
+          flushSseChunk();
         }
 
+        clearHeartbeat();
         res.end();
       } catch (error) {
+        clearHeartbeat();
         logger.error({ error }, 'Erro ao fazer proxy de stream');
         if (!res.headersSent) {
           res.status(500).json({ error: 'Erro ao fazer proxy de stream' });

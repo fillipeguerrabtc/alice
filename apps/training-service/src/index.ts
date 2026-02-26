@@ -2943,7 +2943,7 @@ app.post('/api/training/gpu-orchestrator/return', requirePermission('training:fi
       headers: { 'X-Internal-Api-Secret': INTERNAL_API_SECRET_ORCHESTRATOR, 'Content-Type': 'application/json' },
     });
     clearTimeout(t);
-    const data = (await r.json()).catch(() => ({})) as Record<string, unknown>;
+    const data = (await r.json().catch(() => ({}))) as Record<string, unknown>;
     res.status(r.status).json(data);
   } catch (err) {
     logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'Proxy gpu-orchestrator/return falhou');
@@ -2957,6 +2957,7 @@ app.post('/api/training/gpu-orchestrator/return', requirePermission('training:fi
 
 const bulkImportSchema = z.object({
   source: z.string().min(1).max(50),
+  sourceType: trainingSourceTypeSchema.optional(),
   namespaceId: z.string().uuid().optional(),
   agentId: z.string().uuid().optional(),
   domain: z.string().min(1).max(120).optional(),
@@ -2989,7 +2990,50 @@ app.post('/api/training/bulk-import', requirePermission('training:training_data:
       });
     }
 
-    const { source, namespaceId, agentId, domain, data, autoApprove } = validation.data;
+    const { source, sourceType, namespaceId, agentId, domain, data, autoApprove } = validation.data;
+    const sourceTypeForImport = sourceType ?? 'external';
+
+    if (namespaceId) {
+      try {
+        await validateNamespaceTenantConsistency(
+          namespaceId,
+          tenantId,
+          async (id) => getDatabase().query.namespaces.findFirst({
+            where: eq(schema.namespaces.id, id),
+            columns: { id: true, tenantId: true },
+          })
+        );
+      } catch (validationError) {
+        logger.warn({
+          tenantId,
+          namespaceId,
+          error: validationError instanceof Error ? validationError.message : String(validationError),
+        }, 'Bulk import rejeitado por namespace fora do tenant');
+        return res.status(403).json({ error: 'Namespace inválido para o tenant autenticado.' });
+      }
+    }
+
+    if (agentId) {
+      const agent = await db.query.agents.findFirst({
+        where: eq(schema.agents.id, agentId),
+        columns: { id: true, tenantId: true, namespaceId: true },
+      });
+      try {
+        validateTenantConsistency('agent', agent, tenantId, 'training_bulk_import');
+      } catch (validationError) {
+        logger.warn({
+          tenantId,
+          agentId,
+          error: validationError instanceof Error ? validationError.message : String(validationError),
+        }, 'Bulk import rejeitado por agente fora do tenant');
+        return res.status(403).json({ error: 'Agente inválido para o tenant autenticado.' });
+      }
+      if (namespaceId && agent?.namespaceId && agent.namespaceId !== namespaceId) {
+        logger.warn({ tenantId, agentId, namespaceId, agentNamespaceId: agent.namespaceId }, 'Bulk import rejeitado por inconsistência agentId/namespaceId');
+        return res.status(403).json({ error: 'O agente informado não pertence ao namespace selecionado.' });
+      }
+    }
+
     const importedIds: string[] = [];
     const duplicatesSkipped: number[] = [];
 
@@ -3025,19 +3069,22 @@ app.post('/api/training/bulk-import', requirePermission('training:training_data:
         namespaceId: namespaceId ?? null,
         agentId: agentId ?? null,
         domain: domain ?? null,
-        sourceType: 'external',
-        sourceMetadata: { bulkSource: source },
+        sourceType: sourceTypeForImport,
+        sourceMetadata: {
+          bulkSource: source,
+          bulkSourceType: sourceTypeForImport,
+        },
         messagesText: entry.messages.map((m) => m.content).join('\n'),
       });
       if (scope.needsHumanReview) {
         trainingPipelineMetrics.scopeQuarantineTotal.inc({
-          source_type: 'external',
+          source_type: sourceTypeForImport,
           reason: 'low_confidence_or_missing_namespace',
         });
       }
       if (scope.suggestedNewNamespace) {
         trainingPipelineMetrics.scopeSuggestedNewNamespaceTotal.inc({
-          source_type: 'external',
+          source_type: sourceTypeForImport,
         });
       }
       const autoRejectedByQuality = qualityScore < TRAINING_DATA_MIN_QUALITY;
@@ -3053,8 +3100,11 @@ app.post('/api/training/bulk-import', requirePermission('training:training_data:
         namespaceId: scope.namespaceId,
         agentId: scope.agentId,
         source: `bulk_import:${source}`,
-        sourceType: 'external',
-        sourceMetadata: { bulkSource: source },
+        sourceType: sourceTypeForImport,
+        sourceMetadata: {
+          bulkSource: source,
+          bulkSourceType: sourceTypeForImport,
+        },
         inferredNamespaceId: scope.namespaceId,
         inferredAgentId: scope.agentId,
         inferredDomain: scope.domain,
@@ -3080,7 +3130,11 @@ app.post('/api/training/bulk-import', requirePermission('training:training_data:
     }
 
     logger.info({
+      tenantId,
       source,
+      sourceType: sourceTypeForImport,
+      namespaceId: namespaceId ?? null,
+      agentId: agentId ?? null,
       totalReceived: data.length,
       imported: importedIds.length,
       duplicatesSkipped: duplicatesSkipped.length,
@@ -3091,6 +3145,7 @@ app.post('/api/training/bulk-import', requirePermission('training:training_data:
       success: true,
       imported: importedIds.length,
       duplicatesSkipped: duplicatesSkipped.length,
+      sourceType: sourceTypeForImport,
       ids: importedIds,
     });
   } catch (error) {

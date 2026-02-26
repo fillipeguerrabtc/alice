@@ -1047,9 +1047,27 @@ export default function Chat() {
 
   const [routingModeByConversation, setRoutingModeByConversation] = useState<Record<string, 'auto' | 'manual'>>({});
   const [routingAgentIdsByConversation, setRoutingAgentIdsByConversation] = useState<Record<string, string[]>>({});
+  const [routedAgentByConversation, setRoutedAgentByConversation] = useState<Record<string, Message['agent'] | null>>({});
+  const [routingSourceByConversation, setRoutingSourceByConversation] = useState<Record<string, string>>({});
+  const [routingDebugByConversation, setRoutingDebugByConversation] = useState<Record<string, {
+    selectedAgentId: string | null;
+    selectedNamespaceId: string | null;
+    score: number | null;
+    threshold: number | null;
+    profile: string | null;
+    source: string | null;
+    mode: 'auto' | 'manual' | null;
+  }>>({});
   const routingKey = conversationId ?? 'new';
   const routingMode = routingModeByConversation[routingKey] ?? 'auto';
   const routingAgentIds = routingAgentIdsByConversation[routingKey] ?? [];
+  const routedAgent = routedAgentByConversation[routingKey] ?? activeConversation?.agent ?? null;
+  const routingSource = routingSourceByConversation[routingKey] ?? 'none';
+  const routingDebug = routingDebugByConversation[routingKey] ?? null;
+  const routingLabel = routedAgent?.nome ?? (routingMode === 'manual' ? t('chat.routing.manual') : t('chat.routing.auto'));
+  const routingSourceLabel = routingSource === 'none'
+    ? (routingMode === 'manual' ? t('chat.routing.manual') : t('chat.routing.auto'))
+    : routingSource;
 
   const agentOptions = useMemo(() => {
     return (agentsData ?? []).map((agent) => ({
@@ -1068,6 +1086,14 @@ export default function Chat() {
       return { ...prev, [routingKey]: filtered };
     });
   }, [agentOptions, routingKey]);
+
+  useEffect(() => {
+    if (!conversationId || !activeConversation?.agent) return;
+    setRoutedAgentByConversation((prev) => {
+      if (prev[conversationId]?.id === activeConversation.agent?.id) return prev;
+      return { ...prev, [conversationId]: activeConversation.agent };
+    });
+  }, [conversationId, activeConversation]);
 
   const createConversation = useMutation({
     mutationFn: async (payload?: { agentId?: string; namespaceId?: string; context?: 'trading' | 'sales' | 'support' | 'cambio' | 'default'; route?: string }) => {
@@ -1213,6 +1239,19 @@ export default function Chat() {
     isStreaming,
   ]);
 
+  useEffect(() => {
+    if (!conversationId) return;
+    const lastAssistantWithAgent = [...messages]
+      .reverse()
+      .find((message) => message.role === 'assistant' && message.agent?.id);
+    if (!lastAssistantWithAgent?.agent) return;
+
+    setRoutedAgentByConversation((prev) => {
+      if (prev[conversationId]?.id === lastAssistantWithAgent.agent?.id) return prev;
+      return { ...prev, [conversationId]: lastAssistantWithAgent.agent ?? null };
+    });
+  }, [conversationId, messages]);
+
   const scrollToBottom = useCallback((behavior: ScrollBehavior) => {
     messagesEndRef.current?.scrollIntoView({ behavior });
   }, []);
@@ -1325,7 +1364,7 @@ export default function Chat() {
         role: 'assistant',
         content: '',
         createdAt: new Date().toISOString(),
-        agent: activeConversation?.agent ?? null,
+        agent: routedAgent ?? activeConversation?.agent ?? null,
       };
       setMessages((prev) => [...prev, assistantMessage]);
 
@@ -1363,6 +1402,21 @@ export default function Chat() {
         setRoutingAgentIdsByConversation((prev) => {
           const { [currentRoutingKey]: _removed, ...rest } = prev;
           return { ...rest, [nextConversationId]: currentRoutingAgentIds };
+        });
+        setRoutedAgentByConversation((prev) => {
+          const { [currentRoutingKey]: removedAgent, ...rest } = prev;
+          if (!removedAgent) return rest;
+          return { ...rest, [nextConversationId]: removedAgent };
+        });
+        setRoutingSourceByConversation((prev) => {
+          const { [currentRoutingKey]: removedSource, ...rest } = prev;
+          if (!removedSource) return rest;
+          return { ...rest, [nextConversationId]: removedSource };
+        });
+        setRoutingDebugByConversation((prev) => {
+          const { [currentRoutingKey]: removedDebug, ...rest } = prev;
+          if (!removedDebug) return rest;
+          return { ...rest, [nextConversationId]: removedDebug };
         });
       }
 
@@ -1461,6 +1515,7 @@ export default function Chat() {
 
             try {
               const parsed = JSON.parse(data);
+              const routingConversationKey = activeConversationId ?? conversationId ?? 'new';
               if (parsed.type === 'conversation' && parsed.conversationId && !conversationId) {
                 navigate(`/chat/${parsed.conversationId}`);
                 queryClientRef.invalidateQueries({ queryKey: ['/api/chat/conversations'] });
@@ -1485,6 +1540,8 @@ export default function Chat() {
 
               if (parsed.type === 'agent_route' && parsed.agent) {
                 const normalizedAgent = parsed.agent as Message['agent'];
+                const eventMode = parsed.mode === 'manual' ? 'manual' : 'auto';
+                const eventSource = typeof parsed.source === 'string' ? parsed.source : 'none';
                 setMessages((prev) => {
                   const newMessages = [...prev];
                   const lastIdx = newMessages.length - 1;
@@ -1493,6 +1550,45 @@ export default function Chat() {
                   }
                   return newMessages;
                 });
+                setRoutedAgentByConversation((prev) => ({ ...prev, [routingConversationKey]: normalizedAgent ?? null }));
+                setRoutingModeByConversation((prev) => ({ ...prev, [routingConversationKey]: eventMode }));
+                setRoutingSourceByConversation((prev) => ({ ...prev, [routingConversationKey]: eventSource }));
+                if (eventMode === 'manual' && normalizedAgent?.id) {
+                  setRoutingAgentIdsByConversation((prev) => ({ ...prev, [routingConversationKey]: [normalizedAgent.id] }));
+                }
+                resetTimeout();
+              }
+
+              if (parsed.type === 'routing_debug') {
+                const payload = parsed as {
+                  selected?: { agentId?: string | null; namespaceId?: string | null };
+                  score?: number;
+                  threshold?: number;
+                  profile?: string;
+                  source?: string;
+                  mode?: 'auto' | 'manual';
+                };
+                const resolvedMode: 'auto' | 'manual' | null =
+                  payload.mode === 'manual' || payload.mode === 'auto' ? payload.mode : null;
+                const resolvedSource = typeof payload.source === 'string' ? payload.source : null;
+                setRoutingDebugByConversation((prev) => ({
+                  ...prev,
+                  [routingConversationKey]: {
+                    selectedAgentId: payload.selected?.agentId ?? null,
+                    selectedNamespaceId: payload.selected?.namespaceId ?? null,
+                    score: typeof payload.score === 'number' ? payload.score : null,
+                    threshold: typeof payload.threshold === 'number' ? payload.threshold : null,
+                    profile: typeof payload.profile === 'string' ? payload.profile : null,
+                    source: resolvedSource,
+                    mode: resolvedMode,
+                  },
+                }));
+                if (resolvedMode) {
+                  setRoutingModeByConversation((prev) => ({ ...prev, [routingConversationKey]: resolvedMode }));
+                }
+                if (resolvedSource) {
+                  setRoutingSourceByConversation((prev) => ({ ...prev, [routingConversationKey]: resolvedSource }));
+                }
                 resetTimeout();
               }
 
@@ -2314,6 +2410,15 @@ export default function Chat() {
                   <SelectItem value="manual">{t('chat.routing.manual')}</SelectItem>
                 </SelectContent>
               </Select>
+              <Badge
+                variant="outline"
+                className="h-8 max-w-[220px] truncate"
+                title={routingDebug
+                  ? `source=${routingDebug.source ?? routingSourceLabel}; score=${routingDebug.score ?? '-'}; threshold=${routingDebug.threshold ?? '-'}`
+                  : routingSourceLabel}
+              >
+                {routingLabel}
+              </Badge>
               {routingMode === 'manual' && (
                 <div className="min-w-[220px]">
                   <MultiSelectDropdown
@@ -2405,6 +2510,13 @@ export default function Chat() {
                     <SelectItem value="manual">{t('chat.routing.manual')}</SelectItem>
                   </SelectContent>
                 </Select>
+                <Badge
+                  variant="outline"
+                  className="h-6 max-w-[120px] truncate text-[10px]"
+                  title={routingSourceLabel}
+                >
+                  {routingLabel}
+                </Badge>
                 {routingMode === 'manual' && (
                   <div className="min-w-[180px]">
                     <MultiSelectDropdown

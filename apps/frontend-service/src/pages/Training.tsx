@@ -210,8 +210,10 @@ interface BulkImportData {
 
 interface BulkImportResult {
   imported: number;
-  duplicates: number;
-  errors: Array<{ index: number; error: string }>;
+  duplicates?: number;
+  duplicatesSkipped?: number;
+  sourceType?: string;
+  errors?: Array<{ index: number; error: string }>;
 }
 
 const containerVariants = {
@@ -1761,9 +1763,30 @@ function BulkImportTab({ t }: { t: (key: string, options?: Record<string, unknow
   const [file, setFile] = useState<File | null>(null);
   const [parsedData, setParsedData] = useState<BulkImportEntry[]>([]);
   const [source, setSource] = useState('bulk-import');
+  const [namespaceId, setNamespaceId] = useState<string>('');
+  const [sourceType, setSourceType] = useState<string>('external');
   const [autoApprove, setAutoApprove] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const BULK_IMPORT_SOURCE_TYPES = [
+    'external',
+    'chat',
+    'trading_demo',
+    'trading_postmortem',
+    'trading_signal',
+    'trading_order',
+    'document',
+    'rag_document',
+    'rag_media',
+    'upload',
+    'manual',
+    'system',
+  ] as const;
+  const { data: namespacesData } = useQuery<Namespace[]>({
+    queryKey: ['/api/namespaces'],
+    staleTime: 1000 * 60,
+  });
+  const namespaces = namespacesData ?? [];
 
   // Schema Zod para validação enterprise (Regra 8)
   const BulkImportEntrySchema = z.object({
@@ -1785,22 +1808,27 @@ function BulkImportTab({ t }: { t: (key: string, options?: Record<string, unknow
       const res = await apiRequest('POST', '/api/training/bulk-import', {
         data: parsedData,
         source: source || 'bulk-import',
+        ...(namespaceId ? { namespaceId } : {}),
+        sourceType,
         autoApprove,
       });
       return res.json();
     },
     onSuccess: (result) => {
+      const duplicatesCount = result.duplicates ?? result.duplicatesSkipped ?? 0;
       queryClient.invalidateQueries({ queryKey: ['/api/training/data'] });
       toast({ 
         title: t('training.bulkImport.success.fullSuccess', { 
           imported: result.imported,
-          duplicates: result.duplicates,
+          duplicates: duplicatesCount,
         }),
       });
       // Limpar formulário após sucesso
       setFile(null);
       setParsedData([]);
       setSource('bulk-import');
+      setNamespaceId('');
+      setSourceType('external');
       setAutoApprove(false);
     },
     onError: (error) => {
@@ -1809,6 +1837,8 @@ function BulkImportTab({ t }: { t: (key: string, options?: Record<string, unknow
         error: error instanceof Error ? error.message : String(error),
         errorStack: error instanceof Error ? error.stack : undefined,
         source,
+        namespaceId: namespaceId || null,
+        sourceType,
         autoApprove,
         entriesCount: parsedData.length,
       });
@@ -2073,6 +2103,39 @@ function BulkImportTab({ t }: { t: (key: string, options?: Record<string, unknow
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSource(e.target.value)}
                   maxLength={50}
                 />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="import-namespace">Namespace</Label>
+                <Select value={namespaceId || '__none__'} onValueChange={(value) => setNamespaceId(value === '__none__' ? '' : value)}>
+                  <SelectTrigger id="import-namespace">
+                    <SelectValue placeholder="Selecionar namespace" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Sem namespace explícito</SelectItem>
+                    {namespaces.map((namespace) => (
+                      <SelectItem key={namespace.id} value={namespace.id}>
+                        {namespace.nome}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="import-source-type">Source Type</Label>
+                <Select value={sourceType} onValueChange={setSourceType}>
+                  <SelectTrigger id="import-source-type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {BULK_IMPORT_SOURCE_TYPES.map((type) => (
+                      <SelectItem key={type} value={type}>
+                        {type}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">

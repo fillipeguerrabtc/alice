@@ -1429,21 +1429,23 @@ const webSearch = (query: string, count?: number, options?: WebSearchOptions) =>
   webSearchClient.search(query, count, options);
 
 // ============================================================================
-// WORKERS (opcionais) - ativados se WORKER_TENANT_ID estiver definido
+// WORKERS (background)
+// - Embedding worker: inicia sempre que Redis estiver disponível
+// - Learning/Web Crawl workers: opcionais e tenant-scoped via WORKER_TENANT_ID
 // ============================================================================
 
 const WORKER_TENANT_ID = process.env.WORKER_TENANT_ID;
 
-if (WORKER_TENANT_ID) {
+function startTenantScopedWorkers(workerTenantId: string): void {
   startLearningWorker(db, {
-    tenantId: WORKER_TENANT_ID,
+    tenantId: workerTenantId,
     concurrency: WORKER_CONCURRENCY,
     pollIntervalMs: WORKER_POLL_MS,
     maxAttempts: WORKER_MAX_ATTEMPTS,
   });
 
   startWebCrawlWorker(db, {
-    tenantId: WORKER_TENANT_ID,
+    tenantId: workerTenantId,
     concurrency: WORKER_CONCURRENCY,
     pollIntervalMs: WORKER_POLL_MS,
     maxAttempts: WORKER_MAX_ATTEMPTS,
@@ -1451,13 +1453,33 @@ if (WORKER_TENANT_ID) {
     searxngKey: SEARXNG_SECRET_KEY,
   });
 
-  // Embedding Worker - GPU Dedicada 24/7 (Hetzner GEX44)
-  // Processa embeddings assíncronos via fila Redis
-  startEmbeddingWorker({ metrics });
+  logger.info({
+    tenantId: workerTenantId,
+    concurrency: WORKER_CONCURRENCY,
+    pollIntervalMs: WORKER_POLL_MS,
+    maxAttempts: WORKER_MAX_ATTEMPTS,
+  }, 'Workers tenant-scoped iniciados (learning + web-crawl)');
+}
 
-  logger.info({ tenantId: WORKER_TENANT_ID }, 'Workers multimodais iniciados (incluindo embedding-worker)');
-} else {
-  logger.info('Workers desativados: defina WORKER_TENANT_ID para habilitar processamento em background');
+function startEmbeddingWorkerWhenRedisReady(redisConnected: boolean): void {
+  if (!redisConnected) {
+    logger.warn('Embedding worker não iniciado: Redis indisponível');
+    return;
+  }
+
+  startEmbeddingWorker({ metrics });
+  void getEmbeddingWorkerStatus()
+    .then((status) => {
+      logger.info({
+        running: status.running,
+        queueSize: status.queueSize,
+        currentConcurrent: status.currentConcurrent,
+        processedCount: status.processedCount,
+      }, 'Embedding worker iniciado e status inicial coletado');
+    })
+    .catch((error) => {
+      logger.warn({ error }, 'Falha ao coletar status inicial do embedding worker');
+    });
 }
 
 // ============================================================================
@@ -4634,6 +4656,13 @@ registerShutdownCallback(
       } else {
         logger.warn('Redis cache não disponível - WebSocket funcionará sem Pub/Sub (modo desenvolvimento)');
       }
+    }
+
+    startEmbeddingWorkerWhenRedisReady(redisConnected);
+    if (WORKER_TENANT_ID) {
+      startTenantScopedWorkers(WORKER_TENANT_ID);
+    } else {
+      logger.info('Workers tenant-scoped desativados: defina WORKER_TENANT_ID para habilitar learning/web-crawl em background');
     }
 
     // Inicializar cache RAG (apenas se Redis distribuído estiver disponível)

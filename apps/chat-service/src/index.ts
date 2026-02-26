@@ -3451,6 +3451,36 @@ function detectAgentNameQuestionLanguage(message: string): IdentityQuestionLangu
   return null;
 }
 
+const DIRECT_ADDRESS_NON_NAME_TOKENS = new Set([
+  'tudo',
+  'pessoal',
+  'equipe',
+  'time',
+  'galera',
+  'amigo',
+  'amiga',
+]);
+
+function fixPreferredNameInDirectAddress(response: string, preferredName: string | null): string {
+  const resolvedPreferredName = normalizeUserName(preferredName ?? '');
+  if (!resolvedPreferredName) return response;
+
+  const greetingPattern = /\b(ol[áa]|oi|bom dia|boa tarde|boa noite)\b(\s*,?\s*)([\p{L}][\p{L}\p{M}'-]{1,59})/giu;
+  return response.replace(greetingPattern, (fullMatch, greeting: string, separator: string, rawName: string) => {
+    const candidateName = normalizeUserName(rawName);
+    if (!candidateName) return fullMatch;
+    if (DIRECT_ADDRESS_NON_NAME_TOKENS.has(candidateName.toLowerCase())) return fullMatch;
+
+    const normalizedCandidate = normalizeAgentToken(candidateName);
+    const normalizedPreferred = normalizeAgentToken(resolvedPreferredName);
+    if (!normalizedCandidate || !normalizedPreferred || normalizedCandidate === normalizedPreferred) {
+      return fullMatch;
+    }
+
+    return `${greeting}${separator}${resolvedPreferredName}`;
+  });
+}
+
 async function enforceResponseGuardrails(params: {
   responseText: string;
   userMessage: string;
@@ -3477,12 +3507,12 @@ async function enforceResponseGuardrails(params: {
 
   const sanitized = sanitizeAssistantResponse(params.responseText);
   if (!isCorruptedAssistantResponse(sanitized)) {
-    return sanitized;
+    return fixPreferredNameInDirectAddress(sanitized, params.preferredName);
   }
 
   if (!params.regenerate) {
     logger.warn({ correlationId: params.correlationId }, 'Guardrail detectou resposta corrompida sem estratégia de regeneração');
-    return sanitized;
+    return fixPreferredNameInDirectAddress(sanitized, params.preferredName);
   }
 
   logger.warn({ correlationId: params.correlationId }, 'Guardrail detectou resposta corrompida; iniciando regeneração controlada');
@@ -3491,15 +3521,15 @@ async function enforceResponseGuardrails(params: {
     regeneratedRaw = await params.regenerate();
   } catch (regenerateError) {
     logger.warn({ error: regenerateError, correlationId: params.correlationId }, 'Regeneração controlada falhou; mantendo resposta sanitizada original');
-    return sanitized;
+    return fixPreferredNameInDirectAddress(sanitized, params.preferredName);
   }
 
   const regenerated = sanitizeAssistantResponse(regeneratedRaw);
   if (isCorruptedAssistantResponse(regenerated)) {
     logger.warn({ correlationId: params.correlationId }, 'Regeneração controlada retornou conteúdo potencialmente corrompido');
-    return sanitized;
+    return fixPreferredNameInDirectAddress(sanitized, params.preferredName);
   }
-  return regenerated;
+  return fixPreferredNameInDirectAddress(regenerated, params.preferredName);
 }
 
 async function generateConversationTitle(params: {
@@ -4711,6 +4741,98 @@ function matchAgentsFromMessageText(agents: AgentRoutingRecord[], message: strin
   return matched;
 }
 
+const ROUTING_SWITCH_INTENT_KEYWORDS = [
+  'falar com',
+  'conversar com',
+  'quero falar com',
+  'quero conversar com',
+  'mudar para',
+  'trocar para',
+  'switch to',
+  'talk to',
+  'speak with',
+  'change to',
+  'change agent',
+] as const;
+
+const ROUTING_SWITCH_NOISE_TOKENS = new Set([
+  'a',
+  'o',
+  'as',
+  'os',
+  'de',
+  'do',
+  'da',
+  'dos',
+  'das',
+  'para',
+  'pro',
+  'pra',
+  'com',
+  'um',
+  'uma',
+  'favor',
+  'por',
+  'quero',
+  'pode',
+  'me',
+  'eu',
+  'agente',
+  'agent',
+  'to',
+  'the',
+  'with',
+  'please',
+]);
+
+function isSwitchOnlyCommandMessage(params: {
+  message: string;
+  routingDetectors: AgenticDetectors['agentRouting'];
+  agents: AgentRoutingRecord[];
+}): boolean {
+  const normalized = normalizeAgentToken(params.message.replace(AGENT_MENTION_REGEX, ' '));
+  if (!normalized) return true;
+
+  const routingKeywords = normalizeRoutingKeywords(params.routingDetectors);
+  const removableTerms = new Set<string>([
+    ...routingKeywords.allKeywords,
+    ...ROUTING_SWITCH_INTENT_KEYWORDS.map((keyword) => normalizeAgentToken(keyword)).filter(Boolean),
+  ]);
+
+  for (const agent of params.agents) {
+    const slug = normalizeAgentToken(agent.slug ?? '');
+    const name = normalizeAgentToken(agent.nome);
+    if (slug) {
+      removableTerms.add(slug);
+      for (const token of slug.split(' ')) {
+        if (token.length > 2) removableTerms.add(token);
+      }
+    }
+    if (name) {
+      removableTerms.add(name);
+      for (const token of name.split(' ')) {
+        if (token.length > 2) removableTerms.add(token);
+      }
+    }
+  }
+
+  const sortedTerms = Array.from(removableTerms).sort((a, b) => b.length - a.length);
+  let cleaned = normalized;
+  for (const term of sortedTerms) {
+    if (!term) continue;
+    const pattern = new RegExp(`(?:^|\\s)${escapeRegex(term)}(?:\\s|$)`, 'gi');
+    cleaned = cleaned.replace(pattern, ' ');
+  }
+
+  const remainingTokens = cleaned
+    .replace(/[^a-z0-9_-]+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter((token) => token.length > 1 && !ROUTING_SWITCH_NOISE_TOKENS.has(token));
+
+  return remainingTokens.length === 0;
+}
+
 function selectBestAgentFromPool(
   agents: AgentRoutingRecord[],
   userMessage: string,
@@ -4843,6 +4965,7 @@ async function resolveAgentRoutingForMessage(params: {
   mode: AgentRoutingMode;
   source: 'auto' | 'manual' | 'mention' | 'none';
   score: number;
+  threshold: number;
   profile: LlmContextProfile;
   commandResponse?: string;
   isCommandOnly: boolean;
@@ -4869,13 +4992,22 @@ async function resolveAgentRoutingForMessage(params: {
 
   let command = parseAgentRoutingCommand(params.userMessage, params.agenticDetectors.agentRouting);
   const profile = detectContextProfile(params.userMessage);
+  const routingThreshold = getRoutingThreshold(profile);
   const normalizedMessage = normalizeAgentToken(params.userMessage);
   const hasExplicitAgentIntent = ['agente', 'falar com', 'conversar com']
     .some((keyword) => normalizedMessage.includes(keyword));
   if (command.action === 'none' && hasExplicitAgentIntent) {
     const inferredAgents = matchAgentsFromMessageText(agents, params.userMessage);
     if (inferredAgents.length > 0) {
-      command = { ...command, action: 'manual', isCommandOnly: false };
+      command = {
+        ...command,
+        action: 'manual',
+        isCommandOnly: isSwitchOnlyCommandMessage({
+          message: params.userMessage,
+          routingDetectors: params.agenticDetectors.agentRouting,
+          agents: inferredAgents,
+        }),
+      };
     }
   }
   const stateRouting = resolveRoutingStateFromMetadata(params.conversationState.metadata);
@@ -4911,6 +5043,7 @@ async function resolveAgentRoutingForMessage(params: {
         mode: stateRouting.mode,
         source: 'manual',
         score: 0,
+        threshold: routingThreshold,
         profile,
         isCommandOnly: command.isCommandOnly,
         error: unknownTokens.length
@@ -4918,10 +5051,20 @@ async function resolveAgentRoutingForMessage(params: {
           : 'Nenhum agente encontrado para o comando informado.',
       };
     }
+    const resolvedCommandOnly = command.isCommandOnly || isSwitchOnlyCommandMessage({
+      message: params.userMessage,
+      routingDetectors: params.agenticDetectors.agentRouting,
+      agents: inferredAgents,
+    });
+    command = { ...command, isCommandOnly: resolvedCommandOnly };
     mode = 'manual';
     manualAgentIds = inferredAgents.map((agent) => agent.id);
     source = 'manual';
-    commandResponse = `Modo manual ativado. Agentes ativos: ${inferredAgents.map((agent) => agent.nome).join(', ')}.`;
+    if (resolvedCommandOnly && inferredAgents.length === 1) {
+      commandResponse = `Perfeito. Vou responder como ${inferredAgents[0].nome} a partir de agora.`;
+    } else {
+      commandResponse = `Modo manual ativado. Agentes ativos: ${inferredAgents.map((agent) => agent.nome).join(', ')}.`;
+    }
     await updateAgentRoutingMetadata({
       conversationId: params.conversationId,
       metadata: params.conversationState.metadata,
@@ -4958,8 +5101,7 @@ async function resolveAgentRoutingForMessage(params: {
 
   const isAutoMode = mode === 'auto' && source !== 'mention';
   if (isAutoMode) {
-    const threshold = getRoutingThreshold(profile);
-    if (!selectedAgent || score < threshold) {
+    if (!selectedAgent || score < routingThreshold) {
       selectedAgent = null;
       score = 0;
     }
@@ -4983,6 +5125,20 @@ async function resolveAgentRoutingForMessage(params: {
     }
   }
 
+  logger.info({
+    tenantId: params.tenantId,
+    conversationId: params.conversationId,
+    mode,
+    source,
+    profile,
+    score,
+    threshold: routingThreshold,
+    selectedAgentId: selectedAgent?.id ?? null,
+    selectedNamespaceId: namespaceId ?? null,
+    requestedNamespaceId: params.requestedNamespaceId ?? null,
+    commandOnly: command.isCommandOnly,
+  }, 'Agent routing decision');
+
   return {
     agent: selectedAgent,
     namespaceId,
@@ -4990,6 +5146,7 @@ async function resolveAgentRoutingForMessage(params: {
     mode,
     source,
     score,
+    threshold: routingThreshold,
     profile,
     commandResponse,
     isCommandOnly: command.isCommandOnly,
@@ -8684,7 +8841,7 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
     }
 
     if (routingDecision.commandResponse && routingDecision.isCommandOnly) {
-      const responseContent = routingDecision.commandResponse;
+      const responseContent = fixPreferredNameInDirectAddress(routingDecision.commandResponse, nameContext.preferredName);
       const [assistantMessage] = await db.insert(schema.messages).values({
         conversationId: id,
         agentId: activeAgentId,
@@ -9218,10 +9375,23 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
 
     if (agentPayload) {
       res.write(`data: ${JSON.stringify({ type: 'agent_route', agent: agentPayload, mode: routingDecision.mode, source: routingDecision.source })}\n\n`);
+      flushSSE();
     }
+    safeWriteSseEvent({
+      type: 'routing_debug',
+      selected: {
+        agentId: activeAgentId ?? null,
+        namespaceId: activeNamespaceId ?? null,
+      },
+      score: routingDecision.score,
+      threshold: routingDecision.threshold,
+      profile: routingDecision.profile,
+      source: routingDecision.source,
+      mode: routingDecision.mode,
+    });
 
     if (routingDecision.commandResponse && routingDecision.isCommandOnly) {
-      const responseContent = routingDecision.commandResponse;
+      const responseContent = fixPreferredNameInDirectAddress(routingDecision.commandResponse, nameContext.preferredName);
       const insertedUserMessages = await db.insert(schema.messages).values({
         conversationId,
         userId,
@@ -9736,7 +9906,10 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             if (!assistantPersisted && conversationId && userMessage) {
               assistantPersisted = true;
               if (assistantResponse.trim().length > 0) {
-                const sanitizedResponse = sanitizeAssistantResponse(assistantResponse);
+                const sanitizedResponse = fixPreferredNameInDirectAddress(
+                  sanitizeAssistantResponse(assistantResponse),
+                  nameContext.preferredName
+                );
                 if (sanitizedResponse !== assistantResponse) {
                   res.write(`data: ${JSON.stringify({ type: 'final_message', content: sanitizedResponse })}\n\n`);
                 }
@@ -14086,7 +14259,7 @@ wss.on('connection', (ws, req) => {
           : (conversation?.agent as AgentConfig | null);
 
         if (routingDecision.commandResponse && routingDecision.isCommandOnly) {
-          const responseContent = routingDecision.commandResponse;
+          const responseContent = fixPreferredNameInDirectAddress(routingDecision.commandResponse, nameContext.preferredName);
           const insertedUserMessages = await db.insert(schema.messages).values({
             conversationId,
             userId,
