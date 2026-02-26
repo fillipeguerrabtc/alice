@@ -238,6 +238,33 @@ try_local_retag() {
 #   extract_service_name "redis:7.4.7-alpine"  # → redis
 #   extract_service_name "quay.io/minio/minio:latest"  # → minio
 # ═══════════════════════════════════════════════════════════════════════
+# find_local_ref_by_digest() - Busca tag local com digest esperado (mesmo repo)
+# Usado pela lógica de manifesto quando a tag de destino ainda não existe.
+# Retorna via stdout um repo:tag local que já aponta para expected_digest.
+find_local_ref_by_digest() {
+  local repo="$1"
+  local expected_digest="$2"
+  local refs=""
+
+  refs=$(docker images "$repo" --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | \
+    grep -v ':<none>$' | sort -u || true)
+  if [ -z "$refs" ]; then
+    return 1
+  fi
+
+  while IFS= read -r ref; do
+    [ -z "$ref" ] && continue
+    local repo_digests=""
+    repo_digests=$(docker image inspect "$ref" --format '{{join .RepoDigests "\n"}}' 2>/dev/null || true)
+    if [ -n "$repo_digests" ] && echo "$repo_digests" | grep -Fq "@${expected_digest}"; then
+      echo "$ref"
+      return 0
+    fi
+  done <<< "$refs"
+
+  return 1
+}
+
 extract_service_name() {
   local image="$1"
   local repo="${image%:*}"
@@ -310,23 +337,37 @@ pull_if_needed() {
       "$_manifest_file" 2>/dev/null || echo "")
 
     if [ -n "$expected_digest" ] && [ "$expected_digest" != "null" ]; then
-      # Verificar digest local (RepoDigests[0] = digest do pull anterior)
+      # Verificar digest local da tag de destino (quando ja existe).
       local local_digest=""
+      local local_repo_digests=""
       if docker image inspect "$image" >/dev/null 2>&1; then
-        local_digest=$(docker image inspect "$image" \
-          --format '{{index .RepoDigests 0}}' 2>/dev/null | \
-          sed 's/.*@//' || echo "")
+        local_repo_digests=$(docker image inspect "$image" \
+          --format '{{join .RepoDigests "\n"}}' 2>/dev/null || echo "")
+        if [ -n "$local_repo_digests" ] && echo "$local_repo_digests" | grep -Fq "@$expected_digest"; then
+          echo "   SKIP (digest OK: ${expected_digest:0:19}...)"
+          return 0
+        fi
+        local_digest=$(echo "$local_repo_digests" | head -1 | sed 's/.*@//' || echo "")
       fi
 
-      if [ -n "$local_digest" ] && [ "$local_digest" = "$expected_digest" ]; then
-        echo "   ✅ SKIP (digest OK: ${expected_digest:0:19}...)"
+      # Se a tag alvo ainda nao existe, procurar outra tag local do mesmo repo
+      # com o digest esperado e retaggear localmente (sem download).
+      local matching_ref=""
+      matching_ref=$(find_local_ref_by_digest "$repo" "$expected_digest" || true)
+      if [ -n "$matching_ref" ]; then
+        if [ "$matching_ref" = "$image" ]; then
+          echo "   SKIP (digest OK: ${expected_digest:0:19}...)"
+        else
+          echo "   RETAG LOCAL (digest OK em $matching_ref -> $tag)"
+          docker tag "$matching_ref" "$image"
+        fi
         return 0
       fi
 
       if [ -n "$local_digest" ]; then
-        echo "   🔄 PULL (digest local ${local_digest:0:19}... ≠ manifesto ${expected_digest:0:19}...)"
+        echo "   PULL (digest local ${local_digest:0:19}... != manifesto ${expected_digest:0:19}...)"
       else
-        echo "   📥 PULL (sem digest local; esperado: ${expected_digest:0:19}...)"
+        echo "   PULL (sem digest local; esperado: ${expected_digest:0:19}...)"
       fi
       pull_with_retry "$image"
       return $?
