@@ -4,6 +4,17 @@
 # =============================================================================
 # GitHub Actions Workflow - Deploy Modular por Stack (Enterprise 2025)
 # =============================================================================
+#
+# SECRETS CONFIGURÁVEIS:
+#   A secret INTEGRATIONS_SERVICE_URL pode ser configurada no GitHub para
+#   sobrescrever a URL padrão da rede interna Docker.
+#   Configuração: Settings → Secrets and variables → Actions → New repository secret
+#   Nome: INTEGRATIONS_SERVICE_URL
+#   Valor padrão (se não configurada): http://alice-integrations:3005
+#   Quando configurar: ambientes com URL customizada ou acesso externo ao serviço
+#   Descrição: URL do serviço de integrações (Stripe, Twilio, Wise, KuCoin, ERPNext)
+#
+# =============================================================================
 # Descrição: Arquitetura totalmente modular com jobs independentes por stack
 #
 # ARQUITETURA ENTERPRISE (06/01/2026):
@@ -934,6 +945,8 @@ jobs:
           SECRET_ERPNEXT_API_KEY: ${{ secrets.ERPNEXT_API_KEY }}
           SECRET_ERPNEXT_API_SECRET: ${{ secrets.ERPNEXT_API_SECRET }}
           SECRET_GH_API_URL: ${{ secrets.GH_API_URL }}
+          # URL do serviço de integrações (configurar secret INTEGRATIONS_SERVICE_URL no GitHub)
+          SECRET_INTEGRATIONS_SERVICE_URL: ${{ secrets.INTEGRATIONS_SERVICE_URL }}
         run: |
           set -euo pipefail
           echo "📝 Gerando .env.prod para $STACK_NAME (versão: $DEPLOY_VERSION)..."
@@ -1029,6 +1042,13 @@ jobs:
           export ERPNEXT_API_SECRET_SECRET="${SECRET_ERPNEXT_API_SECRET}"
           export GH_API_URL_SECRET="${SECRET_GH_API_URL:-https://api.github.com}"
           # NOTA: OPENAI_ADMIN_KEY existe no GitHub mas não é usado pelo sistema atualmente
+          # URL do serviço de integrações (fallback para URL interna Docker se secret não configurada)
+          export INTEGRATIONS_SERVICE_URL="${SECRET_INTEGRATIONS_SERVICE_URL:-http://alice-integrations:3005}"
+          if [ -z "${SECRET_INTEGRATIONS_SERVICE_URL:-}" ]; then
+            echo "::warning::Secret INTEGRATIONS_SERVICE_URL não configurada. Usando padrão interno Docker: http://alice-integrations:3005"
+            echo "   Configure esta secret apenas se o serviço de integrações usar URL customizada ou acesso externo."
+            echo "   Configuração: Settings → Secrets and variables → Actions → New repository secret"
+          fi
           
           # Variável de input (não é secret)
           export PGBACKREST_ALLOW_STANZA_RESET="${{ github.event.inputs.pgbackrest_allow_stanza_reset || 'false' }}"
