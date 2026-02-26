@@ -70,6 +70,38 @@ function parseSimilarity(raw: unknown): number | null {
   return parsed;
 }
 
+async function queryNearestNeighborByCosine(
+  db: Database,
+  payload: { tenantId: string; trainingDataId: string },
+  embeddingVectorSql: string
+): Promise<{ id?: unknown; similarity?: unknown } | undefined> {
+  try {
+    const halfvecResult = await db.execute(sql`
+      SELECT id, 1 - (embedding <=> ${embeddingVectorSql}::halfvec) AS similarity
+      FROM training_data
+      WHERE tenant_id = ${payload.tenantId}::uuid
+        AND id <> ${payload.trainingDataId}::uuid
+        AND status IN ('pending', 'approved', 'used')
+        AND embedding IS NOT NULL
+      ORDER BY embedding <=> ${embeddingVectorSql}::halfvec
+      LIMIT 1
+    `);
+    return halfvecResult.rows[0] as { id?: unknown; similarity?: unknown } | undefined;
+  } catch {
+    const vectorResult = await db.execute(sql`
+      SELECT id, 1 - (embedding <=> ${embeddingVectorSql}::vector) AS similarity
+      FROM training_data
+      WHERE tenant_id = ${payload.tenantId}::uuid
+        AND id <> ${payload.trainingDataId}::uuid
+        AND status IN ('pending', 'approved', 'used')
+        AND embedding IS NOT NULL
+      ORDER BY embedding <=> ${embeddingVectorSql}::vector
+      LIMIT 1
+    `);
+    return vectorResult.rows[0] as { id?: unknown; similarity?: unknown } | undefined;
+  }
+}
+
 export function createTrainingEmbeddingDedupeWorker(
   params: CreateTrainingEmbeddingDedupeWorkerParams
 ): () => Promise<void> {
@@ -190,18 +222,11 @@ export function createTrainingEmbeddingDedupeWorker(
             dedupeMethod = 'semhash';
           } else {
             const embeddingVectorSql = toSql(embedding);
-            const knn = await params.db.execute(sql`
-              SELECT id, 1 - (embedding <=> ${embeddingVectorSql}::vector) AS similarity
-              FROM training_data
-              WHERE tenant_id = ${payload.tenantId}::uuid
-                AND id <> ${payload.trainingDataId}::uuid
-                AND status IN ('pending', 'approved', 'used')
-                AND embedding IS NOT NULL
-              ORDER BY embedding <=> ${embeddingVectorSql}::vector
-              LIMIT 1
-            `);
-
-            const nearest = knn.rows[0] as { id?: unknown; similarity?: unknown } | undefined;
+            const nearest = await queryNearestNeighborByCosine(
+              params.db,
+              { tenantId: payload.tenantId, trainingDataId: payload.trainingDataId },
+              embeddingVectorSql
+            );
             const nearestSimilarity = parseSimilarity(nearest?.similarity);
             if (nearest && typeof nearest.id === 'string' && nearestSimilarity !== null && nearestSimilarity >= params.similarityThreshold) {
               isDuplicate = true;
