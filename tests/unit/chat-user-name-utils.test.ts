@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { resolvePreferredNameSources } from '../../apps/chat-service/src/user-name-utils';
 
 describe('resolvePreferredNameSources', () => {
-  it('prioriza preferredName da coluna quando disponível', () => {
+  it('prioriza preferredName da coluna quando disponivel', () => {
     const result = resolvePreferredNameSources({
       preferredNameColumn: 'Alice',
       preferences: { preferredName: 'Outro Nome' },
@@ -12,18 +12,29 @@ describe('resolvePreferredNameSources', () => {
     expect(result.shouldBackfillPreferredName).toBe(false);
   });
 
-  it('usa preferredName das preferências e sinaliza backfill quando coluna está vazia', () => {
+  it('usa preferredName das preferencias e sinaliza backfill quando coluna esta vazia', () => {
     const result = resolvePreferredNameSources({
       preferredNameColumn: null,
-      preferences: { preferredName: 'João' },
+      preferences: { preferredName: 'Joao' },
     });
 
-    expect(result.preferredName).toBe('João');
-    expect(result.preferredNameFromPrefs).toBe('João');
+    expect(result.preferredName).toBe('Joao');
+    expect(result.preferredNameFromPrefs).toBe('Joao');
     expect(result.shouldBackfillPreferredName).toBe(true);
   });
 
-  it('retorna null quando nenhum nome válido foi informado', () => {
+  it('aceita chaves legadas nas preferencias do usuario', () => {
+    const result = resolvePreferredNameSources({
+      preferredNameColumn: null,
+      preferences: { preferred_name: 'Filipe' },
+    });
+
+    expect(result.preferredName).toBe('Filipe');
+    expect(result.preferredNameFromPrefs).toBe('Filipe');
+    expect(result.shouldBackfillPreferredName).toBe(true);
+  });
+
+  it('retorna null quando nenhum nome valido foi informado', () => {
     const result = resolvePreferredNameSources({
       preferredNameColumn: '  ',
       preferences: { preferredName: 'x' },
@@ -33,3 +44,4 @@ describe('resolvePreferredNameSources', () => {
     expect(result.shouldBackfillPreferredName).toBe(false);
   });
 });
+

@@ -3232,7 +3232,7 @@ function applyUserNameToGreeting(response: string, context: UserNameContext): st
   if (normalizedResponse.includes(name.toLowerCase())) {
     return response;
   }
-  return response.replace(/^(\s*(?:ol[áa]|oi|hello|hi)[^,!\n]*)/i, `$1, ${name}`);
+  return response.replace(/^(\s*(?:ol[áa]|oi|hello|hi|bom dia|boa tarde|boa noite)[^,!\n]*)/i, `$1, ${name}`);
 }
 
 // ============================================================================
@@ -6570,6 +6570,23 @@ const TRADING_INTERVAL_VALUES = [
 
 type TradingIntervalValue = typeof TRADING_INTERVAL_VALUES[number];
 
+const ENTERPRISE_SIGNAL_TECHNIQUES = [
+  'scalping',
+  'day_trade',
+  'swing',
+  'position',
+  'trend',
+  'mean_reversion',
+  'breakout',
+  'range',
+  'momentum',
+  'cash_and_carry',
+  'basis_trade',
+  'funding_arbitrage',
+  'grid_trading',
+  'market_making',
+] as const;
+
 function parseTradingIntervalsFromText(text: string): TradingIntervalValue[] {
   const normalized = text.toLowerCase();
   const intervals = new Set<TradingIntervalValue>();
@@ -6774,16 +6791,22 @@ async function executeTradingCommand(
         endpoint = '/api/integrations/trading/signals/generate';
         method = 'POST';
         {
-          const resolvedSymbol = command.symbol || await resolveDefaultSymbol(effectiveMarketType, effectiveMarginMode);
+          const hasUserSymbol = Boolean(command.symbol);
+          const resolvedSymbol = hasUserSymbol
+            ? (command.symbol || await resolveDefaultSymbol(effectiveMarketType, effectiveMarginMode))
+            : undefined;
           const timeframes = requestedTimeframes.length > 1 ? requestedTimeframes : undefined;
           const interval = requestedTimeframes.length === 1 ? requestedTimeframes[0] : undefined;
           body = {
-            symbol: resolvedSymbol || undefined,
+            symbol: hasUserSymbol ? resolvedSymbol || undefined : undefined,
             interval: interval ?? '5m',
             timeframes,
+            techniques: [...ENTERPRISE_SIGNAL_TECHNIQUES],
             dataSources,
             marketType: effectiveMarketType,
             marginMode: effectiveMarginMode,
+            scanUniverse: !hasUserSymbol,
+            maxAssets: !hasUserSymbol ? 50 : undefined,
           };
           if (agentId) {
             body.agentId = agentId;
@@ -9679,6 +9702,44 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     }).returning();
 
     const normalizeContent = (text: string) => text.trim().toLowerCase();
+    const normalizeForSemanticMatch = (text: string) => text
+      .normalize('NFD')
+      .replace(/\p{M}/gu, '')
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const SEMANTIC_STOPWORDS = new Set([
+      'a', 'o', 'os', 'as', 'de', 'do', 'da', 'dos', 'das', 'e', 'em', 'no', 'na', 'nos', 'nas',
+      'um', 'uma', 'uns', 'umas', 'que', 'para', 'por', 'com', 'sem', 'the', 'a', 'an', 'to', 'of',
+      'for', 'in', 'on', 'at', 'and', 'or',
+    ]);
+    const semanticTokenize = (text: string) => normalizeForSemanticMatch(text)
+      .split(' ')
+      .map((token) => token.trim())
+      .filter((token) => token.length > 1 && !SEMANTIC_STOPWORDS.has(token));
+    const isSemanticallyEquivalentUserMessage = (left: string, right: string) => {
+      const normalizedLeft = normalizeForSemanticMatch(left);
+      const normalizedRight = normalizeForSemanticMatch(right);
+      if (!normalizedLeft || !normalizedRight) return false;
+      if (normalizedLeft === normalizedRight) return true;
+      if (normalizedLeft.length >= 10 && normalizedRight.length >= 10) {
+        if (normalizedLeft.includes(normalizedRight) || normalizedRight.includes(normalizedLeft)) {
+          return true;
+        }
+      }
+      const leftTokens = semanticTokenize(left);
+      const rightTokens = semanticTokenize(right);
+      if (leftTokens.length === 0 || rightTokens.length === 0) return false;
+      const leftSet = new Set(leftTokens);
+      const rightSet = new Set(rightTokens);
+      let intersection = 0;
+      for (const token of leftSet) {
+        if (rightSet.has(token)) intersection += 1;
+      }
+      const union = new Set([...leftSet, ...rightSet]).size;
+      return union > 0 && (intersection / union) >= 0.82;
+    };
 
     if (hasMediaAttachments) {
       writeStatus('media');
@@ -10234,7 +10295,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         greetingResponse = appendNameConfirmationQuestion(greetingResponse, nameContext);
         greetingResponse = fixPreferredNameInDirectAddress(
           sanitizeAssistantResponse(greetingResponse),
-          nameContext.preferredName
+          nameContext.preferredName ?? nameContext.suggestedName
         );
         if (isCorruptedAssistantResponse(greetingResponse)) {
           logger.warn(
@@ -10328,14 +10389,14 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       const lastUserIndex = previousMessages.findIndex((msg) => msg.isFromUser);
       const lastUserInHistory = lastUserIndex >= 0 ? previousMessages[lastUserIndex] : undefined;
       if (lastUserInHistory?.conteudo &&
-          normalizeContent(lastUserInHistory.conteudo) === normalizeContent(userMessageContent)) {
+          isSemanticallyEquivalentUserMessage(lastUserInHistory.conteudo, userMessageContent)) {
         const assistantAfterLastUser = previousMessages.find((msg, idx) => idx < lastUserIndex && !msg.isFromUser);
         if (assistantAfterLastUser?.conteudo) {
           const reuseSeed = `${tenantId}:${userMessageContent}:${assistantAfterLastUser.id}`;
           let reuseResponse = buildReuseResponse(assistantAfterLastUser.conteudo, reuseSeed);
           reuseResponse = fixPreferredNameInDirectAddress(
             sanitizeAssistantResponse(reuseResponse),
-            nameContext.preferredName
+            nameContext.preferredName ?? nameContext.suggestedName
           );
           if (isCorruptedAssistantResponse(reuseResponse)) {
             logger.warn(
@@ -11709,6 +11770,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           const payload = result.data as {
             data?: { id?: string; signalType?: string; symbol?: string; confidence?: number };
             validationStatus?: string;
+            universeSelection?: { source?: string; symbolsEvaluated?: number };
           };
           const signal = payload?.data;
           const confidence = typeof signal?.confidence === 'number'
@@ -11716,9 +11778,12 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             : 'N/A';
           const validationStatus = payload?.validationStatus || 'pending';
           const signalId = signal?.id ? ` ID: ${signal.id}.` : '';
+          const universeNote = payload?.universeSelection?.source === 'universe_candidates'
+            ? ` Selecionado após varredura de ${payload?.universeSelection?.symbolsEvaluated ?? 0} ativos.`
+            : '';
           responseContent = `Sinal gerado${signal?.symbol ? ` para ${signal.symbol}` : ''}: ` +
             `${signal?.signalType || 'indefinido'} com confiança ${confidence}. ` +
-            `Validação: ${validationStatus}.${signalId}`;
+            `Validação: ${validationStatus}.${signalId}${universeNote}`;
         } else {
           responseContent = result.success
             ? `Comando de trading executado: ${description}.`
@@ -14865,6 +14930,10 @@ wss.on('connection', (ws, req) => {
           let cachedResponse = cacheResult.response;
           cachedResponse = applyUserNameToGreeting(cachedResponse, nameContext);
           cachedResponse = appendNameConfirmationQuestion(cachedResponse, nameContext);
+          cachedResponse = fixPreferredNameInDirectAddress(
+            sanitizeAssistantResponse(cachedResponse),
+            nameContext.preferredName ?? nameContext.suggestedName
+          );
           const inserted = await db.insert(schema.messages).values({
             conversationId,
             agentId: conversation?.agentId,

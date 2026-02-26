@@ -18,8 +18,16 @@ export function resolvePreferredNameSources(params: {
   shouldBackfillPreferredName: boolean;
 } {
   const preferredNameFromColumn = normalizeUserNameValue(params.preferredNameColumn ?? '');
+  const rawPreferredFromPrefs = [
+    params.preferences.preferredName,
+    params.preferences.preferred_name,
+    params.preferences.nomePreferido,
+    params.preferences.nome_preferido,
+    params.preferences.namePreferred,
+    params.preferences.displayName,
+  ].find((value) => typeof value === 'string');
   const preferredNameFromPrefs = normalizeUserNameValue(
-    typeof params.preferences.preferredName === 'string' ? params.preferences.preferredName : ''
+    typeof rawPreferredFromPrefs === 'string' ? rawPreferredFromPrefs : ''
   );
   return {
     preferredName: preferredNameFromColumn ?? preferredNameFromPrefs,

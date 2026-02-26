@@ -286,6 +286,11 @@ const TRADING_TECHNIQUE_KEYS = [
   'range',
   'momentum',
   'arbitrage_triangular',
+  'cash_and_carry',
+  'basis_trade',
+  'funding_arbitrage',
+  'grid_trading',
+  'market_making',
 ] as const;
 const TRADING_TECHNIQUE_ZOD = z.enum(TRADING_TECHNIQUE_KEYS);
 
@@ -314,6 +319,11 @@ const DEFAULT_TRADING_TECHNIQUES: TradingTechnique[] = [
   'breakout',
   'range',
   'momentum',
+  'cash_and_carry',
+  'basis_trade',
+  'funding_arbitrage',
+  'grid_trading',
+  'market_making',
 ];
 
 const DEFAULT_TRADING_ENSEMBLE_CONFIG: TradingEnsembleConfig = {
@@ -2584,7 +2594,7 @@ async function runDueSignalSchedulers(): Promise<void> {
       const ensembleConfig = (scheduler.ensembleConfig ?? profile.ensembleConfig) as TradingEnsembleConfig;
       const arbitrageConfig = (scheduler.arbitrageConfig ?? profile.arbitrageConfig) as TradingArbitrageConfig | undefined;
 
-      const maxSignals = Math.max(1, scheduler.maxSignalsPerRun ?? 1);
+      const maxSignals = Math.max(1, Math.min(symbols.length, scheduler.maxSignalsPerRun ?? symbols.length));
       const selectedSymbols = symbols.slice(0, maxSignals);
       let lastSignalId: string | null = null;
       const schedulerUserId = await resolveSchedulerUserId(scheduler.tenantId);
@@ -9497,6 +9507,91 @@ function normalizeSignalSymbols(rawSymbols: string[]): string[] {
   return Array.from(new Set(normalized));
 }
 
+type UniverseSymbolSelection = {
+  symbol: string;
+  source: 'requested' | 'universe_candidates' | 'default_symbol';
+  symbolsEvaluated: number;
+  candidatesEvaluated: number;
+};
+
+function scoreUniverseCandidate(candidate: {
+  expectedEdge: unknown;
+  confidenceCalibrated: unknown;
+  confidenceRaw: unknown;
+  dsrScore: unknown;
+  pboScore: unknown;
+  side: unknown;
+}): number {
+  const edge = Number(candidate.expectedEdge ?? 0);
+  const confidence = Number(candidate.confidenceCalibrated ?? candidate.confidenceRaw ?? 0);
+  const dsr = Number(candidate.dsrScore ?? 0);
+  const pbo = Number(candidate.pboScore ?? 1);
+  const side = String(candidate.side ?? '').toLowerCase();
+  const directionBias = side === 'long' || side === 'short' ? 35 : -50;
+  return (edge * 10000) + (confidence * 120) + (dsr * 25) - (pbo * 35) + directionBias;
+}
+
+async function selectSymbolFromUniverseCandidates(params: {
+  tenantId: string;
+  marketType: TradingMarketType;
+  maxAssets: number;
+}): Promise<UniverseSymbolSelection | null> {
+  const db = getDatabase();
+  const lookback = new Date(Date.now() - (24 * 60 * 60 * 1000));
+  const recentCandidates = await db.query.tradingUniverseCandidates.findMany({
+    where: and(
+      eq(schema.tradingUniverseCandidates.tenantId, params.tenantId),
+      eq(schema.tradingUniverseCandidates.marketType, params.marketType),
+      gte(schema.tradingUniverseCandidates.createdAt, lookback),
+    ),
+    orderBy: [desc(schema.tradingUniverseCandidates.createdAt)],
+    limit: 1000,
+  });
+  if (recentCandidates.length === 0) {
+    return null;
+  }
+
+  const instrumentIds = Array.from(new Set(recentCandidates.map((item) => item.instrumentId)));
+  const instruments = instrumentIds.length > 0
+    ? await db.query.tradingInstruments.findMany({
+      where: inArray(schema.tradingInstruments.id, instrumentIds),
+    })
+    : [];
+  const instrumentById = new Map(instruments.map((item) => [item.id, item.symbol]));
+
+  const bestBySymbol = new Map<string, { score: number; side: string }>();
+  for (const candidate of recentCandidates) {
+    const symbol = instrumentById.get(candidate.instrumentId);
+    if (!symbol) continue;
+    const score = scoreUniverseCandidate(candidate);
+    const side = String(candidate.side ?? '').toLowerCase();
+    const current = bestBySymbol.get(symbol);
+    if (!current || score > current.score) {
+      bestBySymbol.set(symbol, { score, side });
+    }
+  }
+
+  const ranked = Array.from(bestBySymbol.entries())
+    .map(([symbol, payload]) => ({ symbol, ...payload }))
+    .sort((a, b) => b.score - a.score);
+  if (ranked.length === 0) {
+    return null;
+  }
+
+  const cappedAssets = Math.max(1, Math.min(params.maxAssets, ranked.length));
+  const limited = ranked.slice(0, cappedAssets);
+  const directional = limited.find((entry) => (entry.side === 'long' || entry.side === 'short') && entry.score > 0);
+  const selected = directional ?? limited[0];
+  if (!selected) return null;
+
+  return {
+    symbol: selected.symbol,
+    source: 'universe_candidates',
+    symbolsEvaluated: limited.length,
+    candidatesEvaluated: recentCandidates.length,
+  };
+}
+
 function normalizeSymbolList(rawSymbols: string[], allowedSymbols: string[]): string[] {
   const normalized = rawSymbols
     .map((symbol) => symbol.trim().toUpperCase())
@@ -12751,11 +12846,47 @@ async function generateTradingSignalFromLlm(params: {
     symbol: params.symbol,
     marketType: params.marketType,
   }, 'Sinal de trading LLM parseado - método de parse utilizado');
-  const llmSignal = buildLlmSignalFromPartial({
+  let llmSignal = buildLlmSignalFromPartial({
     partial: llmSignalPartialResult.data,
     analysis: primaryAnalysis.analysis,
     tradePlan,
   });
+  let deterministicOverride: {
+    previousSignalType: schema.TradingSignal['signalType'];
+    overriddenSignalType: schema.TradingSignal['signalType'];
+    reason: string;
+  } | null = null;
+
+  const consensusDirectionalSignal: schema.TradingSignal['signalType'] | null = (
+    consensus.overallSignal === 'strong_buy' || consensus.overallSignal === 'buy'
+  )
+    ? 'entry_long'
+    : (consensus.overallSignal === 'strong_sell' || consensus.overallSignal === 'sell')
+      ? 'entry_short'
+      : null;
+  const llmNeutralOrHold = llmSignal.signalType === 'neutral' || llmSignal.signalType === 'hold';
+  const shouldPromoteDirectional = Boolean(
+    llmNeutralOrHold
+    && consensusDirectionalSignal
+    && consensus.isMajorityReached
+    && consensus.confidence >= 0.58
+    && ensembleResult.overallSignal !== 'neutral'
+  );
+  if (shouldPromoteDirectional && consensusDirectionalSignal) {
+    deterministicOverride = {
+      previousSignalType: llmSignal.signalType,
+      overriddenSignalType: consensusDirectionalSignal,
+      reason: `Consensus multi-timeframe ${consensus.overallSignal} com ${(consensus.confidence * 100).toFixed(0)}% de confiança`,
+    };
+    llmSignal = {
+      ...llmSignal,
+      signalType: consensusDirectionalSignal,
+      operationType: llmSignal.operationType === 'neutral' ? tradePlan.operationType : llmSignal.operationType,
+      suggestedSize: llmSignal.suggestedSize ?? 1,
+      tradeSummary: `${llmSignal.tradeSummary} Ajuste institucional aplicado para evitar over-neutralização.`,
+      reasoning: `${llmSignal.reasoning} Ajuste institucional: ${deterministicOverride.reason}.`,
+    };
+  }
   const durationLabel = formatDurationLabel(llmSignal.expectedDurationMinutes);
 
   const createResult = await kucoinService.createSignal(
@@ -12813,6 +12944,7 @@ async function generateTradingSignalFromLlm(params: {
           misalignedTimeframes: consensus.misalignedTimeframes,
           isMajorityReached: consensus.isMajorityReached,
         },
+        deterministicOverride,
         analysisMatrix: analysisMatrix.map((entry) => ({
           interval: entry.interval,
           analysis: entry.analysis,
@@ -14589,6 +14721,8 @@ app.post('/api/integrations/trading/signals/generate', requirePermission('integr
         temperature: z.number().min(0).max(2).optional(),
         maxTokens: z.number().min(256).max(4096).optional(),
       }).optional(),
+      scanUniverse: z.boolean().optional(),
+      maxAssets: z.number().int().min(1).max(200).optional(),
       consensus: z.object({
         rule: z.literal('majority').optional(),
         minAgree: z.number().min(1).optional(),
@@ -14623,12 +14757,35 @@ app.post('/api/integrations/trading/signals/generate', requirePermission('integr
     }
 
     const tradingAuth = { tenantId: authContext.tenantId, userId: authContext.userId };
-    const resolvedSymbol = await resolveTradingSymbolOrRespond(res, tradingAuth, parsed.data.symbol, {
+    const shouldScanUniverse = Boolean((parsed.data.scanUniverse ?? !parsed.data.symbol) && !parsed.data.symbol);
+    const maxAssets = parsed.data.maxAssets ?? 50;
+    let universeSelection: UniverseSymbolSelection | null = null;
+    let symbolHint = parsed.data.symbol;
+    if (shouldScanUniverse) {
+      universeSelection = await selectSymbolFromUniverseCandidates({
+        tenantId: authContext.tenantId,
+        marketType: marketType ?? 'futures',
+        maxAssets,
+      });
+      if (universeSelection?.symbol) {
+        symbolHint = universeSelection.symbol;
+      }
+    }
+
+    const resolvedSymbol = await resolveTradingSymbolOrRespond(res, tradingAuth, symbolHint, {
       required: false,
       marketType,
       marginMode,
     });
     if (!resolvedSymbol) return;
+    if (!universeSelection && !parsed.data.symbol) {
+      universeSelection = {
+        symbol: resolvedSymbol,
+        source: 'default_symbol',
+        symbolsEvaluated: 1,
+        candidatesEvaluated: 0,
+      };
+    }
     const consensusOverride = parsed.data.consensus
       ? { rule: 'majority' as const, minAgree: parsed.data.consensus.minAgree }
       : undefined;
@@ -14657,6 +14814,7 @@ app.post('/api/integrations/trading/signals/generate', requirePermission('integr
       data: mapTradingSignalForApi(result.signal),
       validationId: result.validationId,
       validationStatus: result.validationStatus,
+      universeSelection,
     });
   } catch (error) {
     if (sendKucoinErrorResponse(res, error)) return;
@@ -15704,6 +15862,8 @@ app.put('/api/integrations/trading/signal-scheduler', requirePermission('integra
     const nextRunAt = parsed.data.enabled
       ? new Date(now.getTime() + parsed.data.intervalMinutes * 60 * 1000)
       : null;
+    const resolvedMaxSignalsPerRun = parsed.data.maxSignalsPerRun
+      ?? Math.min(20, Math.max(1, normalizedSymbols.length));
     const techniques = parsed.data.techniques ?? null;
     const ensembleConfig = parsed.data.ensembleConfig ?? null;
     const arbitrageConfig = parsed.data.arbitrageConfig ?? null;
@@ -15721,7 +15881,7 @@ app.put('/api/integrations/trading/signal-scheduler', requirePermission('integra
         interval: parsed.data.interval,
         symbols: normalizedSymbols,
         enabled: parsed.data.enabled,
-        maxSignalsPerRun: parsed.data.maxSignalsPerRun ?? 1,
+        maxSignalsPerRun: resolvedMaxSignalsPerRun,
         techniques,
         ensembleConfig,
         arbitrageConfig,
@@ -15738,7 +15898,7 @@ app.put('/api/integrations/trading/signal-scheduler', requirePermission('integra
           interval: parsed.data.interval,
           symbols: normalizedSymbols,
           enabled: parsed.data.enabled,
-          maxSignalsPerRun: parsed.data.maxSignalsPerRun ?? 1,
+          maxSignalsPerRun: resolvedMaxSignalsPerRun,
           techniques,
           ensembleConfig,
           arbitrageConfig,
