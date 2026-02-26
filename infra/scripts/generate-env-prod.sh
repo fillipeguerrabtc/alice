@@ -851,6 +851,7 @@ echo "📄 Gerando arquivo .env.prod..."
   printf '# GPU Services (Hetzner GPU Server)\n'
   printf 'HF_TOKEN=%s\n' "${HF_TOKEN:-}"
   printf 'GPU_MANAGER_URL=http://alice-gpu-manager:3010\n'
+  printf 'INTEGRATIONS_SERVICE_URL=%s\n' "${INTEGRATIONS_SERVICE_URL:-http://alice-integrations:3005}"
   printf '\n'
   printf '# OpenAI (Vision + geração de imagens)\n'
   printf 'OPENAI_API_KEY=%s\n' "${OPENAI_API_KEY}"
