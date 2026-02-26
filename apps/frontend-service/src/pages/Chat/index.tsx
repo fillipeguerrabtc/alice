@@ -1358,9 +1358,7 @@ export default function Chat() {
       setIsStreaming(true);
       setStreamEvents([]);
       setLastResponseUsedFallback(false);
-      if (showStreamDiagnostics) {
-        pushStreamEvent(createStatusEvent('preparing'));
-      }
+      pushStreamEvent(createStatusEvent('preparing'));
 
       const assistantMessage: Message = {
         id: crypto.randomUUID(),
@@ -1527,17 +1525,13 @@ export default function Chat() {
               }
 
               if (parsed.type === 'status') {
-                if (showStreamDiagnostics) {
-                  const label = resolveStreamStatus(parsed.stage);
-                  pushStreamEvent(createStatusEvent(parsed.stage, label));
-                }
+                const label = resolveStreamStatus(parsed.stage);
+                pushStreamEvent(createStatusEvent(parsed.stage, label));
                 resetTimeout();
               }
 
               if (parsed.type === 'agent_event' && parsed.data) {
-                if (showStreamDiagnostics) {
-                  pushStreamEvent(parsed.data as AgentEvent);
-                }
+                pushStreamEvent(parsed.data as AgentEvent);
                 resetTimeout();
               }
 
@@ -2474,7 +2468,7 @@ export default function Chat() {
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => setShowStreamDiagnostics((prev) => !prev)}>
                     <AlertTriangle className="h-4 w-4 mr-2" />
-                    {showStreamDiagnostics ? 'Ocultar diagnóstico de stream' : 'Mostrar diagnóstico de stream'}
+                    {showStreamDiagnostics ? 'Ocultar detalhes técnicos do stream' : 'Mostrar detalhes técnicos do stream'}
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     onClick={() => setDeleteTargetId(conversationId)}
@@ -2575,7 +2569,7 @@ export default function Chat() {
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => setShowStreamDiagnostics((prev) => !prev)}>
                         <AlertTriangle className="h-4 w-4 mr-2" />
-                        {showStreamDiagnostics ? 'Ocultar diagnóstico de stream' : 'Mostrar diagnóstico de stream'}
+                        {showStreamDiagnostics ? 'Ocultar detalhes técnicos do stream' : 'Mostrar detalhes técnicos do stream'}
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         onClick={() => setDeleteTargetId(conversationId)}
@@ -2621,7 +2615,7 @@ export default function Chat() {
                         message={message}
                         isStreaming={isStreaming}
                         isLast={index === messages.length - 1}
-                        streamEvents={showStreamDiagnostics && isStreaming && index === messages.length - 1 ? streamEvents : null}
+                        streamEvents={isStreaming && index === messages.length - 1 ? streamEvents : null}
                         typingSpeedMs={typingSpeedMs}
                         onRateImage={handleRateImage}
                         onFeedback={handleFeedback}

@@ -3197,7 +3197,7 @@ function appendUserNamePolicy(
   context: UserNameContext,
   usage?: UserNameUsageContext
 ): string {
-  const name = context.preferredName || context.suggestedName;
+  const name = context.preferredName;
   if (!name) return prompt;
   const usageLines = [
     `Nome base: ${name}`,
@@ -3226,7 +3226,7 @@ function appendNameConfirmationQuestion(response: string, context: UserNameConte
 }
 
 function applyUserNameToGreeting(response: string, context: UserNameContext): string {
-  const name = context.preferredName || context.suggestedName;
+  const name = context.preferredName;
   if (!name) return response;
   const normalizedResponse = response.toLowerCase();
   if (normalizedResponse.includes(name.toLowerCase())) {
@@ -3261,21 +3261,51 @@ interface LLMResponse {
 // ============================================================================
 const TITLE_MAX_CHARS = 120;
 const TITLE_MIN_CHARS = 4;
-const TITLE_SYSTEM_PROMPT = `Você é um gerador de títulos de conversa.
-Gere um título curto, específico e relacionado ao conteúdo.
-Regras:
-- Responda SOMENTE com o título (sem aspas, sem emojis, sem lista).
-- Use a mesma língua da conversa.
-- Máximo de 8 palavras.`;
+const TITLE_MAX_WORDS = 14;
 
 function sanitizeConversationTitle(raw: string): string {
   const firstLine = raw.split('\n')[0] ?? '';
   const trimmed = firstLine.trim().replace(/^["'“”‘’]+|["'“”‘’]+$/g, '');
-  const normalized = trimmed.replace(/\s+/g, ' ').trim();
+  const normalized = trimmed
+    .replace(/[`*_~#>|]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
   if (normalized.length <= TITLE_MAX_CHARS) {
     return normalized;
   }
   return normalized.slice(0, TITLE_MAX_CHARS).trim();
+}
+
+function buildConversationTitleFromUserMessage(userMessage: string): string | null {
+  const normalized = userMessage
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!normalized) {
+    return null;
+  }
+
+  const tokens = normalized.split(' ').filter(Boolean);
+  const truncated = tokens.slice(0, TITLE_MAX_WORDS).join(' ');
+  const sanitized = sanitizeConversationTitle(truncated);
+  if (sanitized.length < TITLE_MIN_CHARS) {
+    return null;
+  }
+  return sanitized;
+}
+
+function sanitizeConversationalLine(line: string): string {
+  return line
+    .replace(/\s+([,;:!?])/g, '$1')
+    .replace(/,\s*,+/g, ', ')
+    .replace(/([,;:!?])\s*([,;:!?])+/g, '$1')
+    .replace(/\b([\p{L}\p{M}][\p{L}\p{M}'-]{1,})\b(\s+\1\b)+/giu, '$1')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
 }
 
 /**
@@ -3322,8 +3352,12 @@ function sanitizeAssistantResponse(raw: string): string {
     }
 
     consecutiveBlankLines = 0;
+    const normalizedLine = sanitizeConversationalLine(trimmedLine);
+    if (!normalizedLine) {
+      continue;
+    }
 
-    if (lastNonBlankLine !== null && trimmedLine === lastNonBlankLine) {
+    if (lastNonBlankLine !== null && normalizedLine === lastNonBlankLine) {
       consecutiveRepeatCount++;
       if (consecutiveRepeatCount > MAX_LINE_REPEATS) {
         continue;
@@ -3332,8 +3366,8 @@ function sanitizeAssistantResponse(raw: string): string {
       consecutiveRepeatCount = 1;
     }
 
-    lastNonBlankLine = trimmedLine;
-    result.push(trimmedLine);
+    lastNonBlankLine = normalizedLine;
+    result.push(normalizedLine);
   }
 
   return result.join('\n').trimEnd();
@@ -3625,37 +3659,7 @@ async function generateConversationTitle(params: {
     return null;
   }
 
-  const context = params.assistantResponse?.trim()
-    ? `${userMessage}\n\nResposta:\n${params.assistantResponse.trim()}`
-    : userMessage;
-
-  try {
-    const titleResponse = await callLlamaAPI(
-      [
-        { role: 'system', content: TITLE_SYSTEM_PROMPT },
-        { role: 'user', content: context },
-      ],
-      false,
-      {
-        temperature: 0.2,
-        maxTokens: 24,
-      },
-      getAdaptiveGpuPriority('title', 'general')
-    );
-    const rawTitle = String(titleResponse || '').trim();
-    if (!rawTitle || rawTitle === LLM_FALLBACK_MESSAGE) {
-      return null;
-    }
-
-    const sanitized = sanitizeConversationTitle(rawTitle);
-    if (sanitized.length < TITLE_MIN_CHARS) {
-      return null;
-    }
-    return sanitized;
-  } catch (error) {
-    logger.warn({ error }, 'Falha ao gerar título automático da conversa');
-    return null;
-  }
+  return buildConversationTitleFromUserMessage(userMessage);
 }
 
 async function ensureConversationTitle(params: {
@@ -3673,15 +3677,7 @@ async function ensureConversationTitle(params: {
       titulo: title,
       atualizadoEm: new Date(),
     })
-    .where(
-      and(
-        eq(schema.conversations.id, params.conversationId),
-        or(
-          sql`${schema.conversations.titulo} is null`,
-          eq(schema.conversations.titulo, 'Nova Conversa')
-        )
-      )
-    )
+    .where(eq(schema.conversations.id, params.conversationId))
     .returning();
 
   if (updated) {
@@ -9598,7 +9594,6 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     }
 
     const writeStatus = (stage: string) => {
-      if (!streamDiagnosticsEnabled) return;
       if (!res.headersSent) {
         res.flushHeaders();
       }
@@ -9616,13 +9611,12 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     };
 
     const emitAgentEvent = (event: Omit<AgentEvent, 'id' | 'ts' | 'payload'> & { payload?: unknown }) => {
-      if (!streamDiagnosticsEnabled) return;
       if (!res.headersSent) {
         res.flushHeaders();
       }
       if (res.writableEnded) return;
       const { payload: rawPayload, ...rest } = event;
-      const payload = redactSensitivePayload(rawPayload);
+      const payload = streamDiagnosticsEnabled ? redactSensitivePayload(rawPayload) : undefined;
       const data: AgentEvent = {
         id: crypto.randomUUID(),
         ts: new Date().toISOString(),
@@ -10295,7 +10289,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         greetingResponse = appendNameConfirmationQuestion(greetingResponse, nameContext);
         greetingResponse = fixPreferredNameInDirectAddress(
           sanitizeAssistantResponse(greetingResponse),
-          nameContext.preferredName ?? nameContext.suggestedName
+          nameContext.preferredName
         );
         if (isCorruptedAssistantResponse(greetingResponse)) {
           logger.warn(
@@ -10396,7 +10390,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           let reuseResponse = buildReuseResponse(assistantAfterLastUser.conteudo, reuseSeed);
           reuseResponse = fixPreferredNameInDirectAddress(
             sanitizeAssistantResponse(reuseResponse),
-            nameContext.preferredName ?? nameContext.suggestedName
+            nameContext.preferredName
           );
           if (isCorruptedAssistantResponse(reuseResponse)) {
             logger.warn(
@@ -14932,7 +14926,7 @@ wss.on('connection', (ws, req) => {
           cachedResponse = appendNameConfirmationQuestion(cachedResponse, nameContext);
           cachedResponse = fixPreferredNameInDirectAddress(
             sanitizeAssistantResponse(cachedResponse),
-            nameContext.preferredName ?? nameContext.suggestedName
+            nameContext.preferredName
           );
           const inserted = await db.insert(schema.messages).values({
             conversationId,
