@@ -1618,16 +1618,53 @@ app.use(createSessionAuthMiddleware({
 const CHUNK_SIZE = 1000;
 const CHUNK_OVERLAP = 200;
 function chunkText(text: string): string[] {
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (!normalized) return [];
   const chunks: string[] = [];
   let start = 0;
 
-  while (start < text.length) {
-    const end = Math.min(start + CHUNK_SIZE, text.length);
-    chunks.push(text.slice(start, end));
-    start = end - CHUNK_OVERLAP;
+  while (start < normalized.length) {
+    const end = Math.min(start + CHUNK_SIZE, normalized.length);
+    const chunk = normalized.slice(start, end).trim();
+    if (chunk.length > 0) {
+      chunks.push(chunk);
+    }
+    if (end >= normalized.length) {
+      break;
+    }
+    const nextStart = Math.max(0, end - CHUNK_OVERLAP);
+    if (nextStart <= start) {
+      break;
+    }
+    start = nextStart;
   }
 
   return chunks;
+}
+
+function isRawTextLikeDocumentMime(mimeType: string): boolean {
+  return mimeType.startsWith('text/')
+    || mimeType === 'application/json'
+    || mimeType === 'application/xml'
+    || mimeType === 'text/xml'
+    || mimeType === 'text/html';
+}
+
+async function extractTextFromUploadedDocument(file: Express.Multer.File): Promise<string> {
+  if (isRawTextLikeDocumentMime(file.mimetype)) {
+    return file.buffer.toString('utf-8');
+  }
+
+  const documentProcessor = getDocumentProcessor();
+  const result = await documentProcessor.processDocument(
+    file.buffer,
+    file.mimetype,
+    {
+      extractMetadata: false,
+      generateEmbeddings: false,
+    }
+  );
+  return result.fullText;
 }
 
 function hashContent(content: string): string {
@@ -2295,7 +2332,10 @@ app.post('/api/rag/documents/upload', requireAuth(), requirePermission('rag:docu
   }
 
   try {
-    const content = req.file.buffer.toString('utf-8');
+    const content = (await extractTextFromUploadedDocument(req.file)).trim();
+    if (!content) {
+      return res.status(400).json({ error: 'Não foi possível extrair texto útil do documento enviado' });
+    }
     const titulo = req.body.titulo || req.file.originalname;
     const namespaceId = req.body.namespaceId;
     if (!namespaceId) {

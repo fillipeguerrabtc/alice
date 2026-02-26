@@ -167,6 +167,39 @@ function readUuidFromUnknown(value: unknown): string | null {
     : null;
 }
 
+type RequestAuthContext = NonNullable<ReturnType<typeof extractAuthContext>>;
+
+function resolveAuthorizedTenantId(
+  req: Request,
+  requestedTenantId?: string | null
+): { ok: true; tenantId: string; authContext: RequestAuthContext } | { ok: false; status: number; error: string } {
+  const authContext = extractAuthContext(req);
+  if (!authContext) {
+    return { ok: false, status: 401, error: 'Autenticacao necessaria' };
+  }
+
+  const normalizedRequestedTenantId = typeof requestedTenantId === 'string' && requestedTenantId.trim().length > 0
+    ? requestedTenantId.trim()
+    : null;
+
+  if (authContext.role !== 'super_admin') {
+    if (!authContext.tenantId) {
+      return { ok: false, status: 403, error: 'Tenant nao identificado para o usuario autenticado' };
+    }
+    if (normalizedRequestedTenantId && normalizedRequestedTenantId !== authContext.tenantId) {
+      return { ok: false, status: 403, error: 'Acesso negado para tenant diferente do usuario autenticado' };
+    }
+    return { ok: true, tenantId: authContext.tenantId, authContext };
+  }
+
+  const superAdminTenantId = normalizedRequestedTenantId ?? authContext.tenantId ?? null;
+  if (!superAdminTenantId) {
+    return { ok: false, status: 400, error: 'tenantId obrigatorio para super_admin sem tenant vinculado' };
+  }
+
+  return { ok: true, tenantId: superAdminTenantId, authContext };
+}
+
 const PORT = parseEnvInt(process.env.PORT, 3004, 'PORT');
 const DATABASE_URL = process.env.DATABASE_URL;
 const RAG_SERVICE_URL = process.env.RAG_SERVICE_URL ?? 'http://alice-rag:3003';
@@ -1870,9 +1903,12 @@ const collectTrainingDataSchema = z.object({
 app.post('/api/training/data', requirePermission('training:training_data:write'), async (req: Request, res: Response) => {
   try {
     const body = collectTrainingDataSchema.parse(req.body);
-    const authContext = extractAuthContext(req);
-    const resolvedTenantId = authContext?.tenantId || body.tenantId;
-    const createdBy = authContext?.userId ?? undefined;
+    const tenantResolution = resolveAuthorizedTenantId(req, body.tenantId);
+    if (!tenantResolution.ok) {
+      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
+    }
+    const resolvedTenantId = tenantResolution.tenantId;
+    const createdBy = tenantResolution.authContext.userId ?? undefined;
 
     // SEGURANÇA: Validação cross-tenant - namespaceId/agentId do body devem pertencer ao tenant
     if (body.namespaceId) {
@@ -2023,6 +2059,9 @@ app.post('/api/training/data', requirePermission('training:training_data:write')
       similarityScore: highestSimilarity,
     });
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Payload invalido', details: error.flatten() });
+    }
     logger.error({ error }, 'Falha ao coletar dados de treinamento');
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
@@ -2037,7 +2076,12 @@ app.get('/api/training/data', requirePermission('training:training_data:read'), 
   const { status, namespaceId, agentId, inferredDomain, needsHumanReview, sourceType } = queryResult.data;
 
   try {
-    const conditions = [];
+    const tenantResolution = resolveAuthorizedTenantId(req);
+    if (!tenantResolution.ok) {
+      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
+    }
+
+    const conditions = [eq(schema.trainingData.tenantId, tenantResolution.tenantId)];
     if (status) conditions.push(eq(schema.trainingData.status, status as 'pending' | 'approved' | 'rejected' | 'used'));
     if (namespaceId) conditions.push(eq(schema.trainingData.namespaceId, namespaceId));
     if (agentId) conditions.push(eq(schema.trainingData.agentId, agentId));
@@ -2089,8 +2133,11 @@ app.patch('/api/training/data/:id/status', requirePermission('training:training_
     return res.status(400).json({ error: 'Status inválido', details: bodyResult.error.format() });
   }
   const { status, reviewNotes, overrideScope } = bodyResult.data;
-  const authContext = extractAuthContext(req);
-  const reviewedBy = authContext?.userId ?? undefined;
+  const tenantResolution = resolveAuthorizedTenantId(req);
+  if (!tenantResolution.ok) {
+    return res.status(tenantResolution.status).json({ error: tenantResolution.error });
+  }
+  const reviewedBy = tenantResolution.authContext.userId;
 
   try {
     const existing = await db.query.trainingData.findFirst({
@@ -2099,6 +2146,10 @@ app.patch('/api/training/data/:id/status', requirePermission('training:training_
 
     if (!existing) {
       return res.status(404).json({ error: 'Registro de treinamento não encontrado' });
+    }
+
+    if (existing.tenantId !== tenantResolution.tenantId) {
+      return res.status(403).json({ error: 'Registro de treinamento nao pertence ao tenant autenticado' });
     }
 
     if (!existing.namespaceId && status === 'approved' && !overrideScope?.namespaceId) {
@@ -2198,7 +2249,10 @@ app.patch('/api/training/data/:id/status', requirePermission('training:training_
         quarantineReason: null,
         quarantinedAt: null,
       })
-      .where(eq(schema.trainingData.id, id))
+      .where(and(
+        eq(schema.trainingData.id, id),
+        eq(schema.trainingData.tenantId, tenantResolution.tenantId)
+      ))
       .returning();
 
     trainingPipelineMetrics.reviewTotal.labels(status).inc();
@@ -2228,8 +2282,11 @@ app.patch('/api/training/data/:id/resolve-scope', requirePermission('training:tr
     return res.status(400).json({ error: 'Payload inválido', details: bodyResult.error.format() });
   }
 
-  const authContext = extractAuthContext(req);
-  const changedBy = authContext?.userId;
+  const tenantResolution = resolveAuthorizedTenantId(req);
+  if (!tenantResolution.ok) {
+    return res.status(tenantResolution.status).json({ error: tenantResolution.error });
+  }
+  const changedBy = tenantResolution.authContext.userId;
   if (!changedBy) {
     return res.status(403).json({ error: 'Usuário não identificado para resolver escopo' });
   }
@@ -2240,6 +2297,9 @@ app.patch('/api/training/data/:id/resolve-scope', requirePermission('training:tr
     });
     if (!existing) {
       return res.status(404).json({ error: 'Registro de treinamento não encontrado' });
+    }
+    if (existing.tenantId !== tenantResolution.tenantId) {
+      return res.status(403).json({ error: 'Registro de treinamento nao pertence ao tenant autenticado' });
     }
     if (!existing.tenantId) {
       return res.status(400).json({ error: 'Item sem tenant válido não pode ser resolvido' });
@@ -2295,7 +2355,10 @@ app.patch('/api/training/data/:id/resolve-scope', requirePermission('training:tr
         reviewedBy: changedBy,
         reviewedAt: new Date(),
       })
-      .where(eq(schema.trainingData.id, existing.id))
+      .where(and(
+        eq(schema.trainingData.id, existing.id),
+        eq(schema.trainingData.tenantId, tenantResolution.tenantId)
+      ))
       .returning();
 
     return res.json({ trainingData: updated });
@@ -2314,8 +2377,13 @@ app.get('/api/training/jobs', requirePermission('training:fine_tuning_jobs:read'
   const { tenantId } = queryResult.data;
 
   try {
+    const tenantResolution = resolveAuthorizedTenantId(req, tenantId);
+    if (!tenantResolution.ok) {
+      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
+    }
+
     const jobs = await db.query.fineTuningJobs.findMany({
-      where: tenantId ? eq(schema.fineTuningJobs.tenantId, tenantId) : undefined,
+      where: eq(schema.fineTuningJobs.tenantId, tenantResolution.tenantId),
       orderBy: [desc(schema.fineTuningJobs.criadoEm)],
       limit: 50,
     });
@@ -2352,6 +2420,11 @@ const createJobSchema = z.object({
 app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:start'), async (req: Request, res: Response) => {
   try {
     const body = createJobSchema.parse(req.body);
+    const tenantResolution = resolveAuthorizedTenantId(req, body.tenantId ?? null);
+    if (!tenantResolution.ok) {
+      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
+    }
+    const authorizedTenantId = tenantResolution.tenantId;
 
     const namespace = await db.query.namespaces.findFirst({
       where: eq(schema.namespaces.id, body.namespaceId),
@@ -2363,9 +2436,25 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
     if (body.tenantId && namespace.tenantId !== body.tenantId) {
       return res.status(403).json({ error: 'Namespace não pertence ao tenant informado' });
     }
-    const tenantId = body.tenantId ?? namespace.tenantId;
+    const tenantId = authorizedTenantId;
+    if (namespace.tenantId !== tenantId) {
+      return res.status(403).json({ error: 'Namespace nao pertence ao tenant autenticado' });
+    }
     if (!tenantId) {
       return res.status(400).json({ error: 'Tenant inválido para criação de job de treinamento' });
+    }
+
+    if (body.agentId) {
+      const agent = await db.query.agents.findFirst({
+        where: eq(schema.agents.id, body.agentId),
+        columns: { id: true, tenantId: true, namespaceId: true },
+      });
+      if (!agent || agent.tenantId !== tenantId) {
+        return res.status(403).json({ error: 'Agente invalido para o tenant autenticado' });
+      }
+      if (agent.namespaceId && agent.namespaceId !== namespace.id) {
+        return res.status(403).json({ error: 'Agente nao pertence ao namespace informado' });
+      }
     }
 
     const approvedConditions = [
@@ -2758,8 +2847,16 @@ app.get('/api/training/jobs/:id', requirePermission('training:fine_tuning_jobs:r
   const { id } = paramsResult.data;
 
   try {
+    const tenantResolution = resolveAuthorizedTenantId(req);
+    if (!tenantResolution.ok) {
+      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
+    }
+
     const job = await db.query.fineTuningJobs.findFirst({
-      where: eq(schema.fineTuningJobs.id, id),
+      where: and(
+        eq(schema.fineTuningJobs.id, id),
+        eq(schema.fineTuningJobs.tenantId, tenantResolution.tenantId)
+      ),
     });
 
     if (!job) {
@@ -2782,8 +2879,16 @@ app.delete('/api/training/jobs/:id', requirePermission('training:fine_tuning_job
   const { id } = paramsResult.data;
 
   try {
+    const tenantResolution = resolveAuthorizedTenantId(req);
+    if (!tenantResolution.ok) {
+      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
+    }
+
     const job = await db.query.fineTuningJobs.findFirst({
-      where: eq(schema.fineTuningJobs.id, id),
+      where: and(
+        eq(schema.fineTuningJobs.id, id),
+        eq(schema.fineTuningJobs.tenantId, tenantResolution.tenantId)
+      ),
     });
 
     if (!job) {
@@ -2809,7 +2914,10 @@ app.delete('/api/training/jobs/:id', requirePermission('training:fine_tuning_job
         status: 'cancelled',
         completadoEm: new Date(),
       })
-      .where(eq(schema.fineTuningJobs.id, id))
+      .where(and(
+        eq(schema.fineTuningJobs.id, id),
+        eq(schema.fineTuningJobs.tenantId, tenantResolution.tenantId)
+      ))
       .returning();
 
     logger.info({ jobId: id }, 'Job de fine-tuning cancelado');
@@ -2837,13 +2945,27 @@ app.post('/api/training/lora/activate/:jobId', requirePermission('training:fine_
   }
 
   try {
-    const authContext = extractAuthContext(req);
-    if (!authContext?.userId) {
+    const tenantResolution = resolveAuthorizedTenantId(req);
+    if (!tenantResolution.ok) {
+      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
+    }
+    if (!tenantResolution.authContext.userId) {
       return res.status(403).json({ error: 'Usuário não identificado para aprovação' });
     }
 
-    const result = await activateLoraAdapter(paramsResult.data.id, authContext.userId);
-    logger.info({ jobId: paramsResult.data.id, approvedBy: authContext.userId }, 'Adapter LoRA ativado via endpoint');
+    const loraJob = await db.query.loraJobs.findFirst({
+      where: and(
+        eq(schema.loraJobs.id, paramsResult.data.id),
+        eq(schema.loraJobs.tenantId, tenantResolution.tenantId)
+      ),
+      columns: { id: true },
+    });
+    if (!loraJob) {
+      return res.status(404).json({ error: 'Job LoRA nao encontrado para o tenant autenticado' });
+    }
+
+    const result = await activateLoraAdapter(paramsResult.data.id, tenantResolution.authContext.userId);
+    logger.info({ jobId: paramsResult.data.id, approvedBy: tenantResolution.authContext.userId }, 'Adapter LoRA ativado via endpoint');
     res.json(result);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
@@ -2868,7 +2990,15 @@ app.get('/api/training/lora/active', requirePermission('training:fine_tuning_job
     if (!parsed.success) {
       return res.status(400).json({ error: 'Parâmetros inválidos', details: parsed.error.format() });
     }
-    const active = await getActiveAdapter(parsed.data);
+    const tenantResolution = resolveAuthorizedTenantId(_req, parsed.data.tenantId ?? null);
+    if (!tenantResolution.ok) {
+      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
+    }
+    const active = await getActiveAdapter({
+      tenantId: tenantResolution.tenantId,
+      namespaceId: parsed.data.namespaceId,
+      agentId: parsed.data.agentId,
+    });
     res.json({ adapter: active });
   } catch (error) {
     logger.error({ error }, 'Falha ao consultar adapter ativo');
@@ -2891,7 +3021,15 @@ app.delete('/api/training/lora/active', requirePermission('training:fine_tuning_
     if (!parsed.success) {
       return res.status(400).json({ error: 'Payload inválido', details: parsed.error.format() });
     }
-    await deactivateLoraAdapter(parsed.data);
+    const tenantResolution = resolveAuthorizedTenantId(_req, parsed.data.tenantId ?? null);
+    if (!tenantResolution.ok) {
+      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
+    }
+    await deactivateLoraAdapter({
+      tenantId: tenantResolution.tenantId,
+      namespaceId: parsed.data.namespaceId,
+      agentId: parsed.data.agentId,
+    });
     res.json({ success: true, message: 'Adapter LoRA desativado. vLLM usará modelo base.' });
   } catch (error) {
     logger.error({ error }, 'Falha ao desativar adapter LoRA');
@@ -2971,16 +3109,16 @@ const bulkImportSchema = z.object({
   autoApprove: z.boolean().optional().default(false),
 });
 
-app.post('/api/training/bulk-import', requirePermission('training:training_data:create'), async (req: Request, res: Response) => {
+app.post('/api/training/bulk-import', requirePermission('training:training_data:write'), async (req: Request, res: Response) => {
   try {
-    const authContext = extractAuthContext(req);
+    const tenantResolution = resolveAuthorizedTenantId(req);
     
-    if (!authContext || !authContext.tenantId) {
+    if (!tenantResolution.ok) {
       logger.warn({ path: req.path }, 'Tentativa de bulk-import sem tenant válido');
       return res.status(403).json({ error: 'Tenant não identificado. Autenticação obrigatória.' });
     }
 
-    const tenantId = authContext.tenantId;
+    const tenantId = tenantResolution.tenantId;
     const validation = bulkImportSchema.safeParse(req.body);
 
     if (!validation.success) {
@@ -3372,7 +3510,10 @@ app.post('/api/training/webhook', async (req: Request, res: Response) => {
     } else if (event === 'feedback' && payload.conversationId) {
       await db.update(schema.trainingData)
         .set({ rating: payload.rating })
-        .where(eq(schema.trainingData.conversationId, payload.conversationId));
+        .where(and(
+          eq(schema.trainingData.conversationId, payload.conversationId),
+          eq(schema.trainingData.tenantId, tenantId)
+        ));
 
       logger.info({ conversationId: payload.conversationId, rating: payload.rating }, 'Feedback atualizado via webhook');
       res.json({ success: true });
@@ -3389,33 +3530,44 @@ app.post('/api/training/webhook', async (req: Request, res: Response) => {
 // APROVAÇÃO EM LOTE
 // ============================================================================
 
-app.post('/api/training/data/approve-batch', requirePermission('training:training_data:update'), async (req: Request, res: Response) => {
+app.post('/api/training/data/approve-batch', requirePermission('training:training_data:manage'), async (req: Request, res: Response) => {
   // OWASP API3 - Validação Zod obrigatória
   const parseResult = batchApproveSchema.safeParse(req.body);
   if (!parseResult.success) {
     return res.status(400).json({ error: 'Input inválido' });
   }
   const { ids, action, reviewNotes } = parseResult.data;
-  const authContext = extractAuthContext(req);
-  const reviewedBy = authContext?.userId ?? undefined;
+  const tenantResolution = resolveAuthorizedTenantId(req);
+  if (!tenantResolution.ok) {
+    return res.status(tenantResolution.status).json({ error: tenantResolution.error });
+  }
+  const reviewedBy = tenantResolution.authContext.userId;
 
   try {
     const newStatus = action === 'approve' ? 'approved' : 'rejected';
     let updatedCount = 0;
     let skippedByQuarantine = 0;
     let skippedByMissingNamespace = 0;
+    let skippedByTenantMismatch = 0;
 
     for (const id of ids) {
       const current = await db.query.trainingData.findFirst({
         where: eq(schema.trainingData.id, id),
-        columns: { needsHumanReview: true, namespaceId: true },
+        columns: { tenantId: true, needsHumanReview: true, namespaceId: true },
       });
+      if (!current) {
+        continue;
+      }
+      if (current.tenantId !== tenantResolution.tenantId) {
+        skippedByTenantMismatch += 1;
+        continue;
+      }
 
-      if (newStatus === 'approved' && current?.needsHumanReview) {
+      if (newStatus === 'approved' && current.needsHumanReview) {
         skippedByQuarantine += 1;
         continue;
       }
-      if (newStatus === 'approved' && !current?.namespaceId) {
+      if (newStatus === 'approved' && !current.namespaceId) {
         skippedByMissingNamespace += 1;
         continue;
       }
@@ -3431,7 +3583,10 @@ app.post('/api/training/data/approve-batch', requirePermission('training:trainin
           quarantineReason: null,
           quarantinedAt: null,
         })
-        .where(eq(schema.trainingData.id, id))
+        .where(and(
+          eq(schema.trainingData.id, id),
+          eq(schema.trainingData.tenantId, tenantResolution.tenantId)
+        ))
         .returning();
 
       if (updated) updatedCount++;
@@ -3442,10 +3597,10 @@ app.post('/api/training/data/approve-batch', requirePermission('training:trainin
     }
 
     logger.info(
-      { action, count: updatedCount, skippedByQuarantine, skippedByMissingNamespace },
+      { action, count: updatedCount, skippedByQuarantine, skippedByMissingNamespace, skippedByTenantMismatch },
       'Aprovação em lote concluída'
     );
-    res.json({ success: true, updated: updatedCount, skippedByQuarantine, skippedByMissingNamespace });
+    res.json({ success: true, updated: updatedCount, skippedByQuarantine, skippedByMissingNamespace, skippedByTenantMismatch });
   } catch (error) {
     logger.error({ error }, 'Falha na aprovação em lote');
     res.status(500).json({ error: 'Erro interno do servidor' });
@@ -3465,8 +3620,14 @@ app.get('/api/training/auto-learning/status', requirePermission('training:traini
   const { tenantId } = queryResult.data;
 
   try {
+    const tenantResolution = resolveAuthorizedTenantId(req, tenantId);
+    if (!tenantResolution.ok) {
+      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
+    }
+    const scopedTenantId = tenantResolution.tenantId;
+
     const modelVersions = await db.query.modelVersions.findMany({
-      where: tenantId ? eq(schema.modelVersions.tenantId, tenantId) : undefined,
+      where: eq(schema.modelVersions.tenantId, scopedTenantId),
       orderBy: [desc(schema.modelVersions.version)],
       limit: 10,
     });
@@ -3474,7 +3635,7 @@ app.get('/api/training/auto-learning/status', requirePermission('training:traini
     const activeVersion = modelVersions.find((v: typeof schema.modelVersions.$inferSelect) => v.isActive);
 
     const schedules = await db.query.autoLearningSchedule.findMany({
-      where: tenantId ? eq(schema.autoLearningSchedule.tenantId, tenantId) : undefined,
+      where: eq(schema.autoLearningSchedule.tenantId, scopedTenantId),
       orderBy: [desc(schema.autoLearningSchedule.scheduledFor)],
       limit: 5,
     });
@@ -3483,7 +3644,7 @@ app.get('/api/training/auto-learning/status', requirePermission('training:traini
       eq(schema.trainingData.status, 'approved'),
       isNull(schema.trainingData.usedInJobId),
     ];
-    if (tenantId) pendingDataConditions.push(eq(schema.trainingData.tenantId, tenantId));
+    pendingDataConditions.push(eq(schema.trainingData.tenantId, scopedTenantId));
     
     const pendingData = await db.select({ count: sql<number>`count(*)` })
       .from(schema.trainingData)
@@ -3493,7 +3654,7 @@ app.get('/api/training/auto-learning/status', requirePermission('training:traini
       eq(schema.generatedImages.approvedForTraining, true),
       eq(schema.generatedImages.usedInFineTuning, false),
     ];
-    if (tenantId) pendingImagesConditions.push(eq(schema.generatedImages.tenantId, tenantId));
+    pendingImagesConditions.push(eq(schema.generatedImages.tenantId, scopedTenantId));
     
     const pendingImages = await db.select({ count: sql<number>`count(*)` })
       .from(schema.generatedImages)
@@ -3538,29 +3699,35 @@ app.get('/api/training/stats', requirePermission('training:training_data:read'),
   const { tenantId } = queryResult.data;
 
   try {
+    const tenantResolution = resolveAuthorizedTenantId(req, tenantId);
+    if (!tenantResolution.ok) {
+      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
+    }
+    const scopedTenantId = tenantResolution.tenantId;
+
     const pendingConditions = [eq(schema.trainingData.status, 'pending')];
-    if (tenantId) pendingConditions.push(eq(schema.trainingData.tenantId, tenantId));
+    pendingConditions.push(eq(schema.trainingData.tenantId, scopedTenantId));
     
     const pendingCount = await db.select({ count: sql<number>`count(*)` })
       .from(schema.trainingData)
       .where(and(...pendingConditions));
 
     const approvedConditions = [eq(schema.trainingData.status, 'approved')];
-    if (tenantId) approvedConditions.push(eq(schema.trainingData.tenantId, tenantId));
+    approvedConditions.push(eq(schema.trainingData.tenantId, scopedTenantId));
     
     const approvedCount = await db.select({ count: sql<number>`count(*)` })
       .from(schema.trainingData)
       .where(and(...approvedConditions));
 
     const duplicateConditions = [eq(schema.trainingData.isDuplicate, true)];
-    if (tenantId) duplicateConditions.push(eq(schema.trainingData.tenantId, tenantId));
+    duplicateConditions.push(eq(schema.trainingData.tenantId, scopedTenantId));
     
     const duplicatesCount = await db.select({ count: sql<number>`count(*)` })
       .from(schema.trainingData)
       .where(and(...duplicateConditions));
 
     const jobConditions = [eq(schema.fineTuningJobs.status, 'completed')];
-    if (tenantId) jobConditions.push(eq(schema.fineTuningJobs.tenantId, tenantId));
+    jobConditions.push(eq(schema.fineTuningJobs.tenantId, scopedTenantId));
     
     const completedJobs = await db.select({ count: sql<number>`count(*)` })
       .from(schema.fineTuningJobs)
@@ -3627,9 +3794,15 @@ app.post('/api/training/schedule/configure', requirePermission('training:trainin
   
   try {
     // Verificar se já existe configuração
+    const tenantResolution = resolveAuthorizedTenantId(req, tenantId);
+    if (!tenantResolution.ok) {
+      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
+    }
+    const scopedTenantId = tenantResolution.tenantId;
+
     const existing = await db.query.autoLearningSchedule.findFirst({
       where: and(
-        eq(schema.autoLearningSchedule.tenantId, tenantId),
+        eq(schema.autoLearningSchedule.tenantId, scopedTenantId),
         eq(schema.autoLearningSchedule.scheduleType, scheduleType),
         eq(schema.autoLearningSchedule.status, 'scheduled')
       ),
@@ -3641,7 +3814,7 @@ app.post('/api/training/schedule/configure', requirePermission('training:trainin
         .set({ status: 'skipped' })
         .where(eq(schema.autoLearningSchedule.id, existing.id));
       
-      logger.info({ tenantId, scheduleType }, 'Schedule de treinamento desabilitado');
+      logger.info({ tenantId: scopedTenantId, scheduleType }, 'Schedule de treinamento desabilitado');
       return res.json({ success: true, action: 'disabled', scheduleId: existing.id });
     }
 
@@ -3667,7 +3840,7 @@ app.post('/api/training/schedule/configure', requirePermission('training:trainin
           .where(eq(schema.autoLearningSchedule.id, existing.id));
         
         logger.info({ 
-          tenantId, 
+          tenantId: scopedTenantId,
           scheduleType, 
           scheduledFor,
           scheduleId: existing.id,
@@ -3687,7 +3860,7 @@ app.post('/api/training/schedule/configure', requirePermission('training:trainin
       const scheduledFor = calculateNextScheduleDate(scheduleType, cronPattern);
       
       const [newSchedule] = await db.insert(schema.autoLearningSchedule).values({
-        tenantId,
+        tenantId: scopedTenantId,
         scheduleType,
         status: 'scheduled',
         scheduledFor,
@@ -3695,7 +3868,7 @@ app.post('/api/training/schedule/configure', requirePermission('training:trainin
       }).returning();
       
       logger.info({ 
-        tenantId, 
+        tenantId: scopedTenantId,
         scheduleType, 
         scheduledFor,
         scheduleId: newSchedule.id,
@@ -3733,9 +3906,15 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
   try {
     // Verificar se já existe treinamento em andamento (status 'training' ou 'preparing')
     // FIX Bug 1: Incluir 'preparing' na verificação (fase de preparação de dados)
+    const tenantResolution = resolveAuthorizedTenantId(req, tenantId);
+    if (!tenantResolution.ok) {
+      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
+    }
+    const scopedTenantId = tenantResolution.tenantId;
+
     const runningJobs = await db.query.fineTuningJobs.findMany({
       where: and(
-        eq(schema.fineTuningJobs.tenantId, tenantId),
+        eq(schema.fineTuningJobs.tenantId, scopedTenantId),
         or(
           eq(schema.fineTuningJobs.status, 'training'),
           eq(schema.fineTuningJobs.status, 'preparing')
@@ -3751,10 +3930,20 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
     }
 
     // Avaliar qualidade dos dados antes de iniciar (com escopo namespace quando informado).
+    if (namespaceId) {
+      const namespace = await db.query.namespaces.findFirst({
+        where: eq(schema.namespaces.id, namespaceId),
+        columns: { id: true, tenantId: true },
+      });
+      if (!namespace || namespace.tenantId !== scopedTenantId) {
+        return res.status(403).json({ error: 'Namespace nao pertence ao tenant autenticado' });
+      }
+    }
+
     const scheduleType = trainingType === 'full' ? 'complete_fine_tuning' : 'incremental_fine_tuning';
     const evaluation = await evaluateDataQuality(
       scheduleType,
-      tenantId,
+      scopedTenantId,
       undefined,
       namespaceId,
       false
@@ -3772,7 +3961,7 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
     // Criar job de fine-tuning on-demand
     // Usando campos existentes no schema: name, baseModel, trainingDataCount
     const [job] = await db.insert(schema.fineTuningJobs).values({
-      tenantId,
+      tenantId: scopedTenantId,
       name: description || `Treinamento ${trainingType} on-demand`,
       baseModel: GPU_MANAGER_CONFIG.models.llm,
       status: 'pending',
@@ -3780,7 +3969,7 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
     }).returning();
 
     // Iniciar Progressive LoRA (cria lora_jobs source=scheduled_run; execução em background)
-    const loraResult = await startProgressiveLoRA(tenantId, {
+    const loraResult = await startProgressiveLoRA(scopedTenantId, {
       includeImages,
       namespaceId,
     });
@@ -3818,7 +4007,7 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
     logger.info({
       jobId: job.id,
       loraJobId: loraResult.loraJobId,
-      tenantId,
+      tenantId: scopedTenantId,
       trainingType,
       dataCount: evaluation.dataCount,
       imageCount: evaluation.imageCount,
@@ -3854,13 +4043,17 @@ app.get('/api/training/run/status', requirePermission('training:training_data:re
   try {
     // Buscar jobs com status 'training' ou 'preparing' (em execução)
     // FIX Bug 1: Incluir 'preparing' na verificação (fase de preparação de dados)
+    const tenantResolution = resolveAuthorizedTenantId(req, tenantId);
+    if (!tenantResolution.ok) {
+      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
+    }
     const conditions = [
+      eq(schema.fineTuningJobs.tenantId, tenantResolution.tenantId),
       or(
         eq(schema.fineTuningJobs.status, 'training'),
         eq(schema.fineTuningJobs.status, 'preparing')
       )
     ];
-    if (tenantId) conditions.push(eq(schema.fineTuningJobs.tenantId, tenantId));
 
     const runningJobs = await db.query.fineTuningJobs.findMany({
       where: and(...conditions),
@@ -3915,11 +4108,13 @@ app.get('/api/training/run/history', requirePermission('training:training_data:r
   const { tenantId, limit } = queryResult.data;
 
   try {
-    const conditions = [];
-    if (tenantId) conditions.push(eq(schema.fineTuningJobs.tenantId, tenantId));
+    const tenantResolution = resolveAuthorizedTenantId(req, tenantId);
+    if (!tenantResolution.ok) {
+      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
+    }
 
     const jobs = await db.query.fineTuningJobs.findMany({
-      where: conditions.length > 0 ? and(...conditions) : undefined,
+      where: eq(schema.fineTuningJobs.tenantId, tenantResolution.tenantId),
       orderBy: [desc(schema.fineTuningJobs.criadoEm)],
       limit,
     });
@@ -3962,8 +4157,16 @@ app.delete('/api/training/run/cancel', requirePermission('training:training_data
   const { trainingRunId, reason } = parseResult.data;
 
   try {
+    const tenantResolution = resolveAuthorizedTenantId(req);
+    if (!tenantResolution.ok) {
+      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
+    }
+
     const job = await db.query.fineTuningJobs.findFirst({
-      where: eq(schema.fineTuningJobs.id, trainingRunId),
+      where: and(
+        eq(schema.fineTuningJobs.id, trainingRunId),
+        eq(schema.fineTuningJobs.tenantId, tenantResolution.tenantId)
+      ),
     });
 
     if (!job) {
@@ -3983,7 +4186,10 @@ app.delete('/api/training/run/cancel', requirePermission('training:training_data
         completadoEm: new Date(),
         errorMessage: reason || 'Cancelado pelo usuário',
       })
-      .where(eq(schema.fineTuningJobs.id, trainingRunId));
+      .where(and(
+        eq(schema.fineTuningJobs.id, trainingRunId),
+        eq(schema.fineTuningJobs.tenantId, tenantResolution.tenantId)
+      ));
 
     logger.info({ trainingRunId, reason }, 'Treinamento cancelado');
 
