@@ -131,7 +131,7 @@ export function MessageBubble({
       return;
     }
 
-    const shouldAnimate = isStreaming || renderedText.length < fullText.length;
+    const shouldAnimate = !isStreaming && renderedText.length < fullText.length;
     if (!shouldAnimate) {
       setRenderedText(fullText);
       return;

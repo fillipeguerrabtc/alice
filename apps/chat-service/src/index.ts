@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Chat Service - Alice Enterprise Platform
  * 
  * Serviço de chat com WebSocket tempo real e integração LLM via GPU Manager Service.
@@ -3362,6 +3362,79 @@ function hasRepeatedWordSequence(content: string, minConsecutiveRepeats: number)
   return false;
 }
 
+function hasRepeatedTokenSequence(content: string, minConsecutiveRepeats: number): boolean {
+  const tokens = content.match(/[\p{L}\p{N}][\p{L}\p{N}\p{M}'-]*/gu) ?? [];
+  if (tokens.length < minConsecutiveRepeats) {
+    return false;
+  }
+
+  let lastToken: string | null = null;
+  let repeatCount = 0;
+  for (const rawToken of tokens) {
+    const token = rawToken.toLowerCase();
+    if (token === lastToken) {
+      repeatCount += 1;
+      if (repeatCount >= minConsecutiveRepeats) {
+        return true;
+      }
+      continue;
+    }
+
+    lastToken = token;
+    repeatCount = 1;
+  }
+
+  return false;
+}
+
+function hasDominantShortTokenLoop(content: string): boolean {
+  const tokens = content.match(/[\p{L}\p{N}][\p{L}\p{N}\p{M}'-]*/gu) ?? [];
+  if (tokens.length < 30) {
+    return false;
+  }
+
+  let dominantToken = '';
+  let dominantCount = 0;
+  const counts = new Map<string, number>();
+  for (const rawToken of tokens) {
+    const token = rawToken.toLowerCase();
+    const nextCount = (counts.get(token) ?? 0) + 1;
+    counts.set(token, nextCount);
+    if (nextCount > dominantCount) {
+      dominantCount = nextCount;
+      dominantToken = token;
+    }
+  }
+
+  if (!dominantToken) {
+    return false;
+  }
+  const dominanceRatio = dominantCount / tokens.length;
+  const isShortToken = dominantToken.length <= 2;
+  const isNumericToken = /^\d+$/u.test(dominantToken);
+  return dominanceRatio >= 0.32 && (isShortToken || isNumericToken);
+}
+
+function hasHighDigitNoise(content: string): boolean {
+  const normalized = content.toLowerCase();
+  if (normalized.length < 140) {
+    return false;
+  }
+
+  const digitCount = (normalized.match(/\d/gu) ?? []).length;
+  const digitRatio = digitCount / Math.max(normalized.length, 1);
+  if (digitRatio < 0.32) {
+    return false;
+  }
+
+  const tokens = normalized.match(/[\p{L}\p{N}][\p{L}\p{N}\p{M}'-]*/gu) ?? [];
+  if (tokens.length < 25) {
+    return false;
+  }
+  const uniqueTokenRatio = new Set(tokens).size / tokens.length;
+  return uniqueTokenRatio < 0.3;
+}
+
 
 function isLikelyCodeHeavyResponse(content: string): boolean {
   const trimmed = content.trim();
@@ -3391,11 +3464,15 @@ function isCorruptedAssistantResponse(content: string): boolean {
   const maxRepeatedChars = /(.)\1{14,}/u.test(normalized);
   const excessiveNoiseRatio = (normalized.match(/[^\p{L}\p{N}\s.,;:!?()\-"']/gu) ?? []).length / Math.max(normalized.length, 1);
   const repeatedWord = hasRepeatedWordSequence(normalized, 6);
+  const repeatedToken = hasRepeatedTokenSequence(normalized, 8);
+  const dominantShortTokenLoop = hasDominantShortTokenLoop(normalized);
+  const highDigitNoise = hasHighDigitNoise(normalized);
   const shouldApplyNoiseHeuristic = !isLikelyCodeHeavyResponse(text);
   const hasExcessiveNoise = shouldApplyNoiseHeuristic && excessiveNoiseRatio > 0.2;
   const hasRepeatedChars = shouldApplyNoiseHeuristic && maxRepeatedChars;
-  const hasRepeatedWords = shouldApplyNoiseHeuristic && repeatedWord;
-  return hasRepeatedChars || hasExcessiveNoise || hasRepeatedWords;
+  const hasRepeatedWords = shouldApplyNoiseHeuristic && (repeatedWord || repeatedToken);
+  const hasDegenerateTokenLoop = shouldApplyNoiseHeuristic && (dominantShortTokenLoop || highDigitNoise);
+  return hasRepeatedChars || hasExcessiveNoise || hasRepeatedWords || hasDegenerateTokenLoop;
 }
 
 type IdentityQuestionLanguage = 'pt-BR' | 'en';
@@ -3481,6 +3558,13 @@ function fixPreferredNameInDirectAddress(response: string, preferredName: string
   });
 }
 
+const CORRUPTED_RESPONSE_FALLBACK_MESSAGE =
+  'Não consegui gerar uma resposta confiável nesta tentativa. Pode reenviar a pergunta que eu respondo novamente com precisão.';
+
+function buildGuardrailFallbackResponse(preferredName: string | null): string {
+  return fixPreferredNameInDirectAddress(CORRUPTED_RESPONSE_FALLBACK_MESSAGE, preferredName);
+}
+
 async function enforceResponseGuardrails(params: {
   responseText: string;
   userMessage: string;
@@ -3512,7 +3596,7 @@ async function enforceResponseGuardrails(params: {
 
   if (!params.regenerate) {
     logger.warn({ correlationId: params.correlationId }, 'Guardrail detectou resposta corrompida sem estratégia de regeneração');
-    return fixPreferredNameInDirectAddress(sanitized, params.preferredName);
+    return buildGuardrailFallbackResponse(params.preferredName);
   }
 
   logger.warn({ correlationId: params.correlationId }, 'Guardrail detectou resposta corrompida; iniciando regeneração controlada');
@@ -3520,14 +3604,14 @@ async function enforceResponseGuardrails(params: {
   try {
     regeneratedRaw = await params.regenerate();
   } catch (regenerateError) {
-    logger.warn({ error: regenerateError, correlationId: params.correlationId }, 'Regeneração controlada falhou; mantendo resposta sanitizada original');
-    return fixPreferredNameInDirectAddress(sanitized, params.preferredName);
+    logger.warn({ error: regenerateError, correlationId: params.correlationId }, 'Regeneração controlada falhou; retornando fallback seguro');
+    return buildGuardrailFallbackResponse(params.preferredName);
   }
 
   const regenerated = sanitizeAssistantResponse(regeneratedRaw);
   if (isCorruptedAssistantResponse(regenerated)) {
-    logger.warn({ correlationId: params.correlationId }, 'Regeneração controlada retornou conteúdo potencialmente corrompido');
-    return fixPreferredNameInDirectAddress(sanitized, params.preferredName);
+    logger.warn({ correlationId: params.correlationId }, 'Regeneração controlada retornou conteúdo potencialmente corrompido; retornando fallback seguro');
+    return buildGuardrailFallbackResponse(params.preferredName);
   }
   return fixPreferredNameInDirectAddress(regenerated, params.preferredName);
 }
@@ -8672,6 +8756,7 @@ const streamMessageSchema = z.object({
     mode: z.enum(['auto', 'manual']),
     agentIds: z.array(z.string().uuid()).max(10).default([]),
   }).optional(),
+  streamDiagnostics: z.boolean().optional().default(false),
   mediaAttachments: z.array(streamMediaAttachmentSchema).min(1).max(5).optional(),
 }).refine((data) => Boolean(data.message) || Boolean(data.messages?.length) || Boolean(data.mediaAttachments?.length), {
   message: 'Mensagem do usuário obrigatória',
@@ -9100,6 +9185,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     agentRouting,
     route: clientRoute,
     approvalPolicy: requestApprovalPolicy,
+    streamDiagnostics,
   } = parseResult.data;
   const userId = req.user?.userId;
   const tenantId = req.tenantId;
@@ -9145,6 +9231,11 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       return res.status(400).json({ error: 'Mensagem do usuário obrigatória' });
     }
     const userMessageContent = normalizedUserMessageContent;
+    const streamDiagnosticsEnabled = streamDiagnostics === true;
+    logger.info(
+      { conversationId: _conversationId ?? null, userId, streamDiagnosticsEnabled },
+      'Configuração de diagnóstico de stream recebida'
+    );
     const baseNameContext = await resolveUserNameContext(userId, tenantId);
     const nameContext = await handleUserNameUpdate({
       userId,
@@ -9484,6 +9575,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     }
 
     const writeStatus = (stage: string) => {
+      if (!streamDiagnosticsEnabled) return;
       if (!res.headersSent) {
         res.flushHeaders();
       }
@@ -9501,6 +9593,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     };
 
     const emitAgentEvent = (event: Omit<AgentEvent, 'id' | 'ts' | 'payload'> & { payload?: unknown }) => {
+      if (!streamDiagnosticsEnabled) return;
       if (!res.headersSent) {
         res.flushHeaders();
       }
@@ -9856,6 +9949,8 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         });
         let lastProgressAt = 0;
         let lastProgressChars = 0;
+        let suppressCorruptedStreamChunks = false;
+        let lastCorruptionCheckLength = 0;
         const emitWritingProgress = () => {
           const now = Date.now();
           const chars = assistantResponse.length;
@@ -9874,6 +9969,31 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             },
           });
         };
+        const shouldSuppressCorruptedChunks = () => {
+          const currentLength = assistantResponse.length;
+          if (suppressCorruptedStreamChunks) return true;
+          if (currentLength < 220) return false;
+          if (currentLength - lastCorruptionCheckLength < 120) return false;
+          lastCorruptionCheckLength = currentLength;
+          const partialSanitized = sanitizeAssistantResponse(assistantResponse);
+          if (!isCorruptedAssistantResponse(partialSanitized)) {
+            return false;
+          }
+          suppressCorruptedStreamChunks = true;
+          logger.warn(
+            { conversationId, chars: currentLength },
+            'Fluxo de mídia detectou resposta degenerada; chunks serão suprimidos até finalização do guardrail'
+          );
+          emitAgentEvent({
+            phase: 'llm',
+            action: 'writing',
+            status: 'error',
+            message: 'Fluxo detectou conteúdo inconsistente; aplicando proteção de resposta',
+            correlationId: conversationId ?? undefined,
+            payload: { chars: currentLength },
+          });
+          return true;
+        };
         await proxyStreamFromGpuManager(
           mediaMessages,
           (content) => {
@@ -9884,6 +10004,9 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
               emitWritingProgress();
             }
             try {
+              if (shouldSuppressCorruptedChunks()) {
+                return;
+              }
               if (res.headersSent && !res.writableEnded) {
                 writeContentChunk(content);
               }
@@ -9906,12 +10029,24 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             if (!assistantPersisted && conversationId && userMessage) {
               assistantPersisted = true;
               if (assistantResponse.trim().length > 0) {
-                const sanitizedResponse = fixPreferredNameInDirectAddress(
-                  sanitizeAssistantResponse(assistantResponse),
-                  nameContext.preferredName
-                );
-                if (sanitizedResponse !== assistantResponse) {
-                  res.write(`data: ${JSON.stringify({ type: 'final_message', content: sanitizedResponse })}\n\n`);
+                const guardedResponse = await enforceResponseGuardrails({
+                  responseText: assistantResponse,
+                  userMessage: userContent,
+                  preferredName: nameContext.preferredName,
+                  agentName: conversation?.agent?.nome?.trim() ?? null,
+                  correlationId: conversationId ?? undefined,
+                  regenerate: async () => callLlamaAPI(
+                    mediaMessages,
+                    false,
+                    {
+                      ...scopedLlmConfig,
+                      temperature: Math.min(scopedLlmConfig.temperature ?? 0.7, 0.25),
+                    },
+                    getAdaptiveGpuPriority('sync', mediaProfile)
+                  ) as Promise<string>,
+                });
+                if (guardedResponse !== assistantResponse) {
+                  res.write(`data: ${JSON.stringify({ type: 'final_message', content: guardedResponse })}\n\n`);
                 }
                 const persistStartedAt = Date.now();
                 emitAgentEvent({
@@ -9921,11 +10056,11 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                   message: 'Persistindo resposta',
                   correlationId: conversationId ?? undefined,
                 });
-                const tokensUsed = calculateTokensUsed({ promptMessages: mediaMessages, responseText: sanitizedResponse });
+                const tokensUsed = calculateTokensUsed({ promptMessages: mediaMessages, responseText: guardedResponse });
                 const [assistantMessage] = await db.insert(schema.messages).values({
                   conversationId,
                   agentId: conversation?.agentId,
-                  conteudo: sanitizedResponse,
+                  conteudo: guardedResponse,
                   tipo: 'text',
                   isFromUser: false,
                   tokensUsados: tokensUsed ?? undefined,
@@ -9943,7 +10078,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                   await ensureConversationTitle({
                     conversationId,
                     userMessage: userContent,
-                    assistantResponse: sanitizedResponse,
+                    assistantResponse: guardedResponse,
                   });
                 } catch (titleError) {
                   logger.warn({ error: titleError, conversationId }, 'Falha ao aplicar título automático (stream mídia)');
@@ -9955,7 +10090,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                   profile: mediaProfile,
                   namespaceId: namespaceIdForMedia,
                   userMessage: userContent,
-                  assistantResponse: sanitizedResponse,
+                  assistantResponse: guardedResponse,
                 })) {
                   void collectTrainingSample({
                     tenantId,
@@ -9971,7 +10106,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                     },
                     messages: [
                       { role: 'user', content: userContent },
-                      { role: 'assistant', content: sanitizedResponse },
+                      { role: 'assistant', content: guardedResponse },
                     ],
                     userId,
                     role: streamUserRole,
@@ -10097,6 +10232,23 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         );
         greetingResponse = applyUserNameToGreeting(greetingResponse, nameContext);
         greetingResponse = appendNameConfirmationQuestion(greetingResponse, nameContext);
+        greetingResponse = fixPreferredNameInDirectAddress(
+          sanitizeAssistantResponse(greetingResponse),
+          nameContext.preferredName
+        );
+        if (isCorruptedAssistantResponse(greetingResponse)) {
+          logger.warn(
+            { conversationId, cacheKey: cacheResult.cacheKey },
+            'Resposta de greetings gate descartada por conteúdo degenerado'
+          );
+          emitAgentEvent({
+            phase: 'planning',
+            action: 'greeting_compose',
+            status: 'error',
+            message: 'Resposta de saudação do cache descartada por inconsistência',
+            correlationId: conversationId ?? undefined,
+          });
+        } else {
         const persistStartedAt = Date.now();
         emitAgentEvent({
           phase: 'finalizing',
@@ -10159,6 +10311,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         res.write('data: [DONE]\n\n');
         res.end();
         return;
+        }
       }
 
       // ============================================================================
@@ -10179,68 +10332,86 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         const assistantAfterLastUser = previousMessages.find((msg, idx) => idx < lastUserIndex && !msg.isFromUser);
         if (assistantAfterLastUser?.conteudo) {
           const reuseSeed = `${tenantId}:${userMessageContent}:${assistantAfterLastUser.id}`;
-          const reuseResponse = buildReuseResponse(assistantAfterLastUser.conteudo, reuseSeed);
-          const persistStartedAt = Date.now();
-          emitAgentEvent({
-            phase: 'finalizing',
-            action: 'persist_message',
-            status: 'start',
-            message: 'Persistindo resposta reutilizada',
-            correlationId: conversationId ?? undefined,
-          });
-          const [assistantMessage] = await db.insert(schema.messages).values({
-            conversationId,
-            agentId: conversation?.agentId ?? undefined,
-            conteudo: reuseResponse,
-            tipo: 'text',
-            isFromUser: false,
-            metadata: {
-              source: 'reuse-gate',
-              reusedMessageId: assistantAfterLastUser.id,
-            },
-          }).returning();
-
-          await db.update(schema.conversations)
-            .set({
-              totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
-              ultimaMensagemEm: new Date(),
-              atualizadoEm: new Date(),
-            })
-            .where(eq(schema.conversations.id, conversationId));
-
-          try {
-            await ensureConversationTitle({
-              conversationId,
-              userMessage: userMessageContent,
-              assistantResponse: reuseResponse,
+          let reuseResponse = buildReuseResponse(assistantAfterLastUser.conteudo, reuseSeed);
+          reuseResponse = fixPreferredNameInDirectAddress(
+            sanitizeAssistantResponse(reuseResponse),
+            nameContext.preferredName
+          );
+          if (isCorruptedAssistantResponse(reuseResponse)) {
+            logger.warn(
+              { conversationId, reusedMessageId: assistantAfterLastUser.id },
+              'Resposta de reuse gate descartada por conteúdo degenerado'
+            );
+            emitAgentEvent({
+              phase: 'planning',
+              action: 'reuse_gate',
+              status: 'error',
+              message: 'Resposta reutilizada descartada por inconsistência',
+              correlationId: conversationId ?? undefined,
             });
-          } catch (titleError) {
-            logger.warn({ error: titleError, conversationId }, 'Falha ao aplicar título automático (reuse gate)');
-          }
+          } else {
+            const persistStartedAt = Date.now();
+            emitAgentEvent({
+              phase: 'finalizing',
+              action: 'persist_message',
+              status: 'start',
+              message: 'Persistindo resposta reutilizada',
+              correlationId: conversationId ?? undefined,
+            });
+            const [assistantMessage] = await db.insert(schema.messages).values({
+              conversationId,
+              agentId: conversation?.agentId ?? undefined,
+              conteudo: reuseResponse,
+              tipo: 'text',
+              isFromUser: false,
+              metadata: {
+                source: 'reuse-gate',
+                reusedMessageId: assistantAfterLastUser.id,
+              },
+            }).returning();
 
-          writeContentChunk(reuseResponse);
-          res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
-          emitAgentEvent({
-            phase: 'finalizing',
-            action: 'persist_message',
-            status: 'success',
-            message: 'Resposta reutilizada persistida',
-            durationMs: Date.now() - persistStartedAt,
-            correlationId: conversationId ?? undefined,
-            payload: {
-              messageId: assistantMessage?.id,
-            },
-          });
-          emitAgentEvent({
-            phase: 'finalizing',
-            action: 'finalizing',
-            status: 'success',
-            message: 'Resposta finalizada',
-            correlationId: conversationId ?? undefined,
-          });
-          res.write('data: [DONE]\n\n');
-          res.end();
-          return;
+            await db.update(schema.conversations)
+              .set({
+                totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+                ultimaMensagemEm: new Date(),
+                atualizadoEm: new Date(),
+              })
+              .where(eq(schema.conversations.id, conversationId));
+
+            try {
+              await ensureConversationTitle({
+                conversationId,
+                userMessage: userMessageContent,
+                assistantResponse: reuseResponse,
+              });
+            } catch (titleError) {
+              logger.warn({ error: titleError, conversationId }, 'Falha ao aplicar título automático (reuse gate)');
+            }
+
+            writeContentChunk(reuseResponse);
+            res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+            emitAgentEvent({
+              phase: 'finalizing',
+              action: 'persist_message',
+              status: 'success',
+              message: 'Resposta reutilizada persistida',
+              durationMs: Date.now() - persistStartedAt,
+              correlationId: conversationId ?? undefined,
+              payload: {
+                messageId: assistantMessage?.id,
+              },
+            });
+            emitAgentEvent({
+              phase: 'finalizing',
+              action: 'finalizing',
+              status: 'success',
+              message: 'Resposta finalizada',
+              correlationId: conversationId ?? undefined,
+            });
+            res.write('data: [DONE]\n\n');
+            res.end();
+            return;
+          }
         }
       }
       emitAgentEvent({
@@ -12974,6 +13145,8 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       });
       let lastProgressAt = 0;
       let lastProgressChars = 0;
+      let suppressCorruptedStreamChunks = false;
+      let lastCorruptionCheckLength = 0;
       const emitWritingProgress = () => {
         const now = Date.now();
         const chars = assistantResponse.length;
@@ -12992,6 +13165,31 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           },
         });
       };
+      const shouldSuppressCorruptedChunks = () => {
+        const currentLength = assistantResponse.length;
+        if (suppressCorruptedStreamChunks) return true;
+        if (currentLength < 220) return false;
+        if (currentLength - lastCorruptionCheckLength < 120) return false;
+        lastCorruptionCheckLength = currentLength;
+        const partialSanitized = sanitizeAssistantResponse(assistantResponse);
+        if (!isCorruptedAssistantResponse(partialSanitized)) {
+          return false;
+        }
+        suppressCorruptedStreamChunks = true;
+        logger.warn(
+          { conversationId, chars: currentLength },
+          'Fluxo de texto detectou resposta degenerada; chunks serão suprimidos até finalização do guardrail'
+        );
+        emitAgentEvent({
+          phase: 'llm',
+          action: 'writing',
+          status: 'error',
+          message: 'Fluxo detectou conteúdo inconsistente; aplicando proteção de resposta',
+          correlationId: conversationId ?? undefined,
+          payload: { chars: currentLength },
+        });
+        return true;
+      };
       await proxyStreamFromGpuManager(
         llmMessages,
         (content) => {
@@ -13004,6 +13202,9 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           // BUG FIX 25/12/2025: Envolver res.write() em try-catch para tratamento gracioso de clientes desconectados
           // Se cliente desconectar durante streaming, erro não deve interromper processamento do stream
           try {
+            if (shouldSuppressCorruptedChunks()) {
+              return;
+            }
             if (res.headersSent && !res.writableEnded) {
               writeContentChunk(content);
               flushSSE();
@@ -19413,3 +19614,4 @@ registerShutdownCallback(
   },
   { priority: ShutdownPriority.DATABASE }
 );
+

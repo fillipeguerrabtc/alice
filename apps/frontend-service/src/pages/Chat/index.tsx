@@ -590,6 +590,7 @@ export default function Chat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamEvents, setStreamEvents] = useState<AgentEvent[]>([]);
+  const [showStreamDiagnostics, setShowStreamDiagnostics] = useState(false);
   const [focusNonce, setFocusNonce] = useState(0);
   // Desktop: sidebar aberta por padrão | Mobile: fechada por padrão
   const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
@@ -1357,7 +1358,9 @@ export default function Chat() {
       setIsStreaming(true);
       setStreamEvents([]);
       setLastResponseUsedFallback(false);
-      pushStreamEvent(createStatusEvent('preparing'));
+      if (showStreamDiagnostics) {
+        pushStreamEvent(createStatusEvent('preparing'));
+      }
 
       const assistantMessage: Message = {
         id: crypto.randomUUID(),
@@ -1472,6 +1475,7 @@ export default function Chat() {
           mode: currentRoutingMode,
           agentIds: currentRoutingMode === 'manual' ? currentRoutingAgentIds : [],
         },
+        streamDiagnostics: showStreamDiagnostics,
       };
 
       const res = await apiRequest('POST', '/api/chat/stream', payload, { signal: controller.signal });
@@ -1523,13 +1527,17 @@ export default function Chat() {
               }
 
               if (parsed.type === 'status') {
-                const label = resolveStreamStatus(parsed.stage);
-                pushStreamEvent(createStatusEvent(parsed.stage, label));
+                if (showStreamDiagnostics) {
+                  const label = resolveStreamStatus(parsed.stage);
+                  pushStreamEvent(createStatusEvent(parsed.stage, label));
+                }
                 resetTimeout();
               }
 
               if (parsed.type === 'agent_event' && parsed.data) {
-                pushStreamEvent(parsed.data as AgentEvent);
+                if (showStreamDiagnostics) {
+                  pushStreamEvent(parsed.data as AgentEvent);
+                }
                 resetTimeout();
               }
 
@@ -2464,6 +2472,10 @@ export default function Chat() {
                     <Send className="h-4 w-4 mr-2" />
                     {t('chat.selection.sendSelected')}
                   </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setShowStreamDiagnostics((prev) => !prev)}>
+                    <AlertTriangle className="h-4 w-4 mr-2" />
+                    {showStreamDiagnostics ? 'Ocultar diagnóstico de stream' : 'Mostrar diagnóstico de stream'}
+                  </DropdownMenuItem>
                   <DropdownMenuItem
                     onClick={() => setDeleteTargetId(conversationId)}
                     className="text-destructive focus:text-destructive"
@@ -2561,6 +2573,10 @@ export default function Chat() {
                         <Send className="h-4 w-4 mr-2" />
                         {t('chat.selection.sendSelected')}
                       </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setShowStreamDiagnostics((prev) => !prev)}>
+                        <AlertTriangle className="h-4 w-4 mr-2" />
+                        {showStreamDiagnostics ? 'Ocultar diagnóstico de stream' : 'Mostrar diagnóstico de stream'}
+                      </DropdownMenuItem>
                       <DropdownMenuItem
                         onClick={() => setDeleteTargetId(conversationId)}
                         className="text-destructive focus:text-destructive"
@@ -2605,7 +2621,7 @@ export default function Chat() {
                         message={message}
                         isStreaming={isStreaming}
                         isLast={index === messages.length - 1}
-                        streamEvents={isStreaming && index === messages.length - 1 ? streamEvents : null}
+                        streamEvents={showStreamDiagnostics && isStreaming && index === messages.length - 1 ? streamEvents : null}
                         typingSpeedMs={typingSpeedMs}
                         onRateImage={handleRateImage}
                         onFeedback={handleFeedback}
