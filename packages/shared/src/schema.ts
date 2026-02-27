@@ -4865,6 +4865,14 @@ export interface AgenticDetectors {
     manualKeywords: string[];
     autoKeywords: string[];
   };
+  namespaceRouting: {
+    baseKeywords: string[];
+    perNamespace: Record<string, {
+      keywords: string[];
+      patterns: string[];
+    }>;
+    moduleBindings: Record<string, string[]>;
+  };
   grafana: {
     baseKeywords: string[];
     listDashboardsKeywords: string[];

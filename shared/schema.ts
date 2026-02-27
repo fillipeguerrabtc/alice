@@ -1302,6 +1302,77 @@ export const featureFlags = pgTable(
 );
 
 // ============================================================================
+// AGENTIC SETTINGS TYPES (Compatibilidade com imports @shared/schema)
+// ============================================================================
+
+export interface AgenticDetectorGroup {
+  keywords: string[];
+  patterns: string[];
+}
+
+export interface AgenticDetectors {
+  webSearch: AgenticDetectorGroup;
+  deepWeb: AgenticDetectorGroup;
+  webImageSearch: AgenticDetectorGroup;
+  imageGeneration: AgenticDetectorGroup;
+  trading: AgenticDetectorGroup;
+  agentRouting: {
+    manualKeywords: string[];
+    autoKeywords: string[];
+  };
+  namespaceRouting: {
+    baseKeywords: string[];
+    perNamespace: Record<string, {
+      keywords: string[];
+      patterns: string[];
+    }>;
+    moduleBindings: Record<string, string[]>;
+  };
+  grafana: {
+    baseKeywords: string[];
+    listDashboardsKeywords: string[];
+    updateDashboardKeywords: string[];
+    getDashboardKeywords: string[];
+  };
+  agenticTask: {
+    createKeywords: string[];
+    updateKeywords: string[];
+    intentKeywords: string[];
+    typeKeywords: {
+      document: string[];
+      report: string[];
+      accounting: string[];
+      planning: string[];
+    };
+  };
+  erp: {
+    baseKeywords: string[];
+    listItemsKeywords: string[];
+    listCustomersKeywords: string[];
+    listInvoicesKeywords: string[];
+    annualBillingKeywords: string[];
+    createCustomerKeywords: string[];
+    createInvoiceKeywords: string[];
+  };
+  payments: {
+    wiseKeywords: string[];
+    wiseRecipientsKeywords: string[];
+    wiseTransferKeywords: string[];
+    wiseExchangeKeywords: string[];
+    stripeKeywords: string[];
+    stripePaymentKeywords: string[];
+  };
+  stackOps: {
+    baseKeywords: string[];
+    deployKeywords: string[];
+    rollbackKeywords: string[];
+    dryRunKeywords: string[];
+    smartDeployKeywords: string[];
+    stackKeywords: string[];
+  };
+}
+
+// ============================================================================
 // RELATIONS
 // ============================================================================
 
