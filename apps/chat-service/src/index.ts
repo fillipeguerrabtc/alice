@@ -5917,90 +5917,65 @@ async function proxyStreamFromGpuManager(
   let buffer = '';
   let fullResponse = '';
   let onDoneCalled = false; // Guard para garantir que onDone seja chamado apenas uma vez
-  
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-      
-      // BUG FIX 25/12/2025: Flag para indicar que [DONE] foi encontrado
-      // Não retornar imediatamente - processar todas as linhas antes para não perder chunks
-      let foundDone = false;
-      // Plano Enterprise: evento alice_metadata (usado pelo Gateway para usedFallback)
-      let pendingEventType: string | null = null;
-      
-      for (const line of lines) {
-        if (line.startsWith('event: ')) {
-          pendingEventType = line.slice(7).trim();
-          continue;
-        }
-        if (line.startsWith('data: ')) {
-          const data = line.slice(6);
-          if (pendingEventType === 'alice_metadata' && onMetadata) {
-            try {
-              const meta = JSON.parse(data) as LlmStreamMetadata;
-              onMetadata(meta);
-            } catch {
-              // Ignorar parse inválido
-            }
-            pendingEventType = null;
-            continue;
-          }
-          pendingEventType = null;
-          if (data === '[DONE]') {
-            foundDone = true;
-            // Não retornar imediatamente - continuar processando linhas restantes
-            // para garantir que nenhum chunk seja perdido
-            continue;
-          }
-          
-          try {
-            const parsed = JSON.parse(data) as { choices?: Array<{ delta?: { content?: string } }> };
-            const content = parsed.choices?.[0]?.delta?.content;
-            if (content) {
-              // TTFT: observar apenas no primeiro token útil do stream
-              if (!observedTtft) {
-                const ttftSeconds = Number(process.hrtime.bigint() - startNs) / 1e9;
-                metrics.llm.ttftDuration.observe({ model, type: llmType }, ttftSeconds);
-                observedTtft = true;
-              }
-              fullResponse += content;
-              onChunk(content);
-            }
-          } catch {
-            // Ignorar erros de parse de linhas inválidas
-          }
-        }
+
+  interface ParsedSseEventBlock {
+    eventType: string | null;
+    data: string;
+  }
+
+  const normalizeSseLineEndings = (chunk: string): string => chunk.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+  const splitSseEvents = (
+    chunk: string,
+    flushRemainder = false
+  ): { events: string[]; rest: string } => {
+    const events: string[] = [];
+    let startIndex = 0;
+    let separatorIndex = chunk.indexOf('\n\n', startIndex);
+    while (separatorIndex !== -1) {
+      events.push(chunk.slice(startIndex, separatorIndex));
+      startIndex = separatorIndex + 2;
+      separatorIndex = chunk.indexOf('\n\n', startIndex);
+    }
+    const rest = chunk.slice(startIndex);
+    if (flushRemainder && rest.trim().length > 0) {
+      events.push(rest);
+      return { events, rest: '' };
+    }
+    return { events, rest };
+  };
+
+  const parseSseEventBlock = (rawEvent: string): ParsedSseEventBlock | null => {
+    const dataLines: string[] = [];
+    let eventType: string | null = null;
+    for (const line of rawEvent.split('\n')) {
+      if (!line || line.startsWith(':')) {
+        continue;
       }
-      
-      // Se [DONE] foi encontrado, chamar onDone e retornar após processar todas as linhas
-      if (foundDone) {
-        if (onDone && !onDoneCalled) {
-          onDoneCalled = true;
-          await onDone(fullResponse);
-        }
-        requestStatus = 'success';
-        if (!generatedTokensRecorded) {
-          recordLlmTokenUsage({
-            model,
-            promptTokens: 0,
-            generatedTokens: estimateTokensFromText(fullResponse),
-          });
-          generatedTokensRecorded = true;
-        }
-        metrics.llm.requestsTotal.inc({ model, type: llmType, status: requestStatus });
-        metrics.llm.inferenceDuration.observe({ model, type: llmType }, Number(process.hrtime.bigint() - startNs) / 1e9);
-        return fullResponse;
+      const separatorIndex = line.indexOf(':');
+      const field = separatorIndex >= 0 ? line.slice(0, separatorIndex) : line;
+      let value = separatorIndex >= 0 ? line.slice(separatorIndex + 1) : '';
+      if (value.startsWith(' ')) {
+        value = value.slice(1);
+      }
+      if (field === 'event') {
+        eventType = value.trim();
+        continue;
+      }
+      if (field === 'data') {
+        dataLines.push(value);
       }
     }
-    
-    // BUG FIX 25/12/2025: Aguardar callback async para evitar race conditions
-    // Callback pode fazer operações de banco de dados que precisam ser completadas
-    // BUG FIX 25/12/2025: Passar fullResponse como parâmetro para evitar closure sobre variável vazia
+    if (dataLines.length === 0) {
+      return null;
+    }
+    return {
+      eventType,
+      data: dataLines.join('\n'),
+    };
+  };
+
+  const finalizeSuccessfulStream = async (): Promise<string> => {
     if (onDone && !onDoneCalled) {
       onDoneCalled = true;
       await onDone(fullResponse);
@@ -6017,6 +5992,86 @@ async function proxyStreamFromGpuManager(
     metrics.llm.requestsTotal.inc({ model, type: llmType, status: requestStatus });
     metrics.llm.inferenceDuration.observe({ model, type: llmType }, Number(process.hrtime.bigint() - startNs) / 1e9);
     return fullResponse;
+  };
+
+  const processSseEvents = (eventBlocks: string[]): boolean => {
+    let foundDone = false;
+    for (const eventBlock of eventBlocks) {
+      const parsedEvent = parseSseEventBlock(eventBlock);
+      if (!parsedEvent) {
+        continue;
+      }
+      const trimmedData = parsedEvent.data.trim();
+      if (trimmedData.length === 0) {
+        continue;
+      }
+      if (trimmedData === '[DONE]') {
+        foundDone = true;
+        continue;
+      }
+      if (parsedEvent.eventType === 'alice_metadata' && onMetadata) {
+        try {
+          const meta = JSON.parse(trimmedData) as LlmStreamMetadata;
+          onMetadata(meta);
+        } catch (metadataError) {
+          logger.debug({ error: metadataError }, 'Falha ao parsear evento alice_metadata do stream LLM');
+        }
+        continue;
+      }
+      try {
+        const parsed = JSON.parse(trimmedData) as { choices?: Array<{ delta?: { content?: string } }> };
+        const content = parsed.choices?.[0]?.delta?.content;
+        if (content) {
+          // TTFT: observar apenas no primeiro token útil do stream
+          if (!observedTtft) {
+            const ttftSeconds = Number(process.hrtime.bigint() - startNs) / 1e9;
+            metrics.llm.ttftDuration.observe({ model, type: llmType }, ttftSeconds);
+            observedTtft = true;
+          }
+          fullResponse += content;
+          onChunk(content);
+        }
+      } catch (parseError) {
+        logger.debug(
+          {
+            error: parseError instanceof Error ? parseError.message : String(parseError),
+            dataPreview: trimmedData.slice(0, 240),
+          },
+          'Falha ao parsear evento data do stream LLM'
+        );
+      }
+    }
+    return foundDone;
+  };
+  
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const normalizedChunk = normalizeSseLineEndings(buffer);
+      const { events, rest } = splitSseEvents(normalizedChunk);
+      buffer = rest;
+      const foundDone = processSseEvents(events);
+
+      if (foundDone) {
+        return await finalizeSuccessfulStream();
+      }
+    }
+
+    const trailingChunk = decoder.decode();
+    if (trailingChunk) {
+      buffer += trailingChunk;
+    }
+    const normalizedTrailingChunk = normalizeSseLineEndings(buffer);
+    const { events: trailingEvents } = splitSseEvents(normalizedTrailingChunk, true);
+    const foundDoneInTrailing = processSseEvents(trailingEvents);
+    if (foundDoneInTrailing) {
+      return await finalizeSuccessfulStream();
+    }
+
+    return await finalizeSuccessfulStream();
   } catch (error) {
     logger.error({ error }, 'Erro ao fazer proxy de stream do GPU Manager Service');
     // BUG FIX 25/12/2025: Garantir que onDone seja chamado mesmo em caso de erro
@@ -9508,6 +9563,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     }
 
     const writeStatus = (stage: string) => {
+      if (!streamDiagnosticsEnabled) return;
       if (!res.headersSent) {
         res.flushHeaders();
       }
@@ -9525,6 +9581,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     };
 
     const emitAgentEvent = (event: Omit<AgentEvent, 'id' | 'ts' | 'payload'> & { payload?: unknown }) => {
+      if (!streamDiagnosticsEnabled) return;
       if (!res.headersSent) {
         res.flushHeaders();
       }
@@ -19664,4 +19721,3 @@ registerShutdownCallback(
   },
   { priority: ShutdownPriority.DATABASE }
 );
-

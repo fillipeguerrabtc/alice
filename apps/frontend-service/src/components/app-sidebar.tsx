@@ -81,6 +81,14 @@ const adminItems = [
   { title: 'Modo Agentic', url: '/agentic-config', icon: Shield },
 ];
 
+function buildChatUrlFromPath(pathname: string): string {
+  const normalizedPath = pathname.startsWith('/') ? pathname : `/${pathname}`;
+  if (/^\/chat(\/|$)/.test(normalizedPath)) {
+    return '/chat';
+  }
+  return `/chat?from=${encodeURIComponent(normalizedPath)}`;
+}
+
 /** Estatísticas de fallback LLM para badge no sidebar */
 interface FallbackStats {
   total: number;
@@ -100,6 +108,9 @@ interface UnmappedContext {
 export function AppSidebar() {
   const [location] = useLocation();
   const { user, logout } = useAuth();
+  const locationPathname = location.split('?')[0] || '/';
+  const currentPathname = window.location.pathname || locationPathname;
+  const chatUrl = buildChatUrlFromPath(currentPathname);
 
   const { data: fallbackStats } = useQuery<FallbackStats>({
     queryKey: ['/api/llm/fallback-stats'],
@@ -142,9 +153,9 @@ export function AppSidebar() {
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton
                     asChild
-                    isActive={location === item.url || (item.url !== '/' && location.startsWith(item.url))}
+                    isActive={locationPathname === item.url || (item.url !== '/' && locationPathname.startsWith(item.url))}
                   >
-                    <Link href={item.url} data-testid={`link-${item.title.toLowerCase()}`}>
+                    <Link href={item.url === '/chat' ? chatUrl : item.url} data-testid={`link-${item.title.toLowerCase()}`}>
                       <item.icon className="h-4 w-4" />
                       <span>{item.title}</span>
                     </Link>

@@ -1496,14 +1496,17 @@ interface ClassificationResult {
 }
 
 const WEB_SEARCH_KEYWORDS = [
-  'notícias', 'news', 'atualidades', 'hoje', 'ontem', 'recente',
-  'preço', 'cotação', 'valor atual', 'quanto custa',
-  'tempo', 'clima', 'previsão',
+  'noticias', 'news', 'atualidades', 'hoje', 'ontem', 'recente',
+  'preco', 'cotacao', 'valor atual', 'quanto custa',
+  'tempo', 'clima', 'previsao',
   'resultado', 'placar', 'jogo',
-  'lançamento', 'novo', 'última versão',
+  'lancamento', 'novo', 'ultima versao',
   'como fazer', 'tutorial', 'passo a passo',
   'onde encontrar', 'onde comprar', 'onde fica',
-  'quem é', 'biografia', 'história de',
+  'quem e', 'biografia', 'historia de',
+  'btc', 'bitcoin', 'bitcoi', 'eth', 'ethereum',
+  'crypto', 'criptomoeda', 'criptomoedas', 'cripto',
+  'price', 'quote', 'market cap', 'capitalizacao de mercado', 'mercado crypto',
 ];
 
 const DEEP_WEB_KEYWORDS = [
@@ -1512,27 +1515,29 @@ const DEEP_WEB_KEYWORDS = [
 
 const INTERNAL_KEYWORDS = [
   'nosso', 'nossa', 'empresa', 'produto',
-  'política', 'procedimento', 'processo interno',
-  'manual', 'documentação interna', 'wiki',
-  'funcionário', 'equipe', 'time',
+  'politica', 'procedimento', 'processo interno',
+  'manual', 'documentacao interna', 'wiki',
+  'funcionario', 'equipe', 'time',
   'projeto', 'sistema interno', 'ferramenta interna',
   'alice', 'plataforma',
 ];
 
 function classifyQuery(query: string): ClassificationResult {
-  const lowerQuery = query.toLowerCase();
-  const isDeepWebQuery = DEEP_WEB_KEYWORDS.some((keyword) => lowerQuery.includes(keyword));
-  
+  const normalizedQuery = query.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+  const isDeepWebQuery = DEEP_WEB_KEYWORDS.some((keyword) => normalizedQuery.includes(keyword));
+
   const webScore = WEB_SEARCH_KEYWORDS.reduce((score, keyword) => {
-    return lowerQuery.includes(keyword) ? score + 1 : score;
+    return normalizedQuery.includes(keyword) ? score + 1 : score;
   }, 0);
-  
+
   const internalScore = INTERNAL_KEYWORDS.reduce((score, keyword) => {
-    return lowerQuery.includes(keyword) ? score + 1 : score;
+    return normalizedQuery.includes(keyword) ? score + 1 : score;
   }, 0);
-  
-  const hasCurrentTimeReference = /(?:hoje|agora|atualmente|202\d)/i.test(query);
-  
+
+  const hasCurrentTimeReference = /(?:hoje|agora|atualmente|202\d)/i.test(normalizedQuery);
+  const hasPriceOrMarketSignal = /(?:\bcotacao\b|\bpreco\b|\bprice\b|\bquote\b|\bmarket cap\b|\bvalor atual\b|\bquanto custa\b)/i.test(normalizedQuery);
+  const hasCryptoSignal = /(?:\bbtc\b|\bbitcoin\b|\bbitcoi\b|\beth\b|\bethereum\b|\bcrypto\b|\bcriptomoeda\b|\bcriptomoedas\b|\bcripto\b)/i.test(normalizedQuery);
+
   if (isDeepWebQuery) {
     return {
       type: 'web',
@@ -1542,19 +1547,34 @@ function classifyQuery(query: string): ClassificationResult {
     };
   }
 
-  if (internalScore > 0 && webScore === 0) {
+  if (internalScore > 0 && webScore === 0 && !hasPriceOrMarketSignal && !hasCryptoSignal) {
     return {
       type: 'internal',
       confidence: 0.9,
-      reason: 'Query contém referências a documentos internos',
+      reason: 'Query contem referencias a documentos internos',
     };
   }
-  
+
+  if (hasPriceOrMarketSignal || hasCryptoSignal) {
+    if (internalScore > 0) {
+      return {
+        type: 'hybrid',
+        confidence: 0.82,
+        reason: 'Query de mercado/preco com contexto interno complementar',
+      };
+    }
+    return {
+      type: 'web',
+      confidence: 0.9,
+      reason: 'Query de cotacao/preco/mercado requer dados atualizados da web',
+    };
+  }
+
   if (webScore > 0 && internalScore === 0 && hasCurrentTimeReference) {
     return {
       type: 'web',
       confidence: 0.85,
-      reason: 'Query requer informações atualizadas da web',
+      reason: 'Query requer informacoes atualizadas da web',
     };
   }
 
@@ -1565,11 +1585,11 @@ function classifyQuery(query: string): ClassificationResult {
       reason: 'Query pode se beneficiar de ambas as fontes',
     };
   }
-  
+
   return {
     type: 'internal',
     confidence: 0.6,
-    reason: 'Consulta padrão para base de conhecimento interna',
+    reason: 'Consulta padrao para base de conhecimento interna',
   };
 }
 

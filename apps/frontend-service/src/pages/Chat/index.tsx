@@ -145,6 +145,7 @@ import {
   getMediaType,
   formatFileSize,
   AgentEvent,
+  MessageSources,
 } from './components/types';
 
 type AgentSummary = {
@@ -191,6 +192,71 @@ type AssistantSettingsPreview = {
     typingSpeedMs: number;
   };
 };
+
+const ISO_DATE_QUERY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+function isIsoDateQueryParam(value: string | null | undefined): value is string {
+  return typeof value === 'string' && ISO_DATE_QUERY_PATTERN.test(value);
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function normalizeWebSourceUrl(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return null;
+    }
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+function parseMessageSources(rawSources: unknown): MessageSources | null {
+  if (!isObjectRecord(rawSources)) {
+    return null;
+  }
+
+  const rawWeb = Array.isArray(rawSources.web) ? rawSources.web : [];
+  const rawInternal = Array.isArray(rawSources.internal) ? rawSources.internal : [];
+
+  const web: MessageSources['web'] = rawWeb
+    .map((item) => {
+      if (!isObjectRecord(item)) return null;
+      const title = typeof item.title === 'string' ? item.title.trim() : '';
+      const url = typeof item.url === 'string' ? normalizeWebSourceUrl(item.url) : null;
+      if (!url) return null;
+      return {
+        title: title.length > 0 ? title : url,
+        url,
+      };
+    })
+    .filter((item): item is MessageSources['web'][number] => item !== null);
+
+  const internal: MessageSources['internal'] = rawInternal
+    .map((item) => {
+      if (!isObjectRecord(item)) return null;
+      const documentId = typeof item.documentId === 'string' ? item.documentId.trim() : '';
+      if (!documentId) return null;
+      return {
+        documentId,
+        titulo: typeof item.titulo === 'string' && item.titulo.trim().length > 0 ? item.titulo.trim() : undefined,
+        similarity: typeof item.similarity === 'number' ? item.similarity : undefined,
+      };
+    })
+    .filter((item): item is MessageSources['internal'][number] => item !== null);
+
+  if (web.length === 0 && internal.length === 0) {
+    return null;
+  }
+
+  return { web, internal };
+}
 
 async function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -613,11 +679,23 @@ export default function Chat() {
   const [lastResponseUsedFallback, setLastResponseUsedFallback] = useState(false);
   const lastSelectedMessageIndex = useRef<number | null>(null);
 
+  const routeContextFromQuery = useMemo(() => {
+    const search = location.includes('?') ? location.split('?')[1] ?? '' : '';
+    const params = new URLSearchParams(search);
+    const fromParam = params.get('from');
+    if (!fromParam || isIsoDateQueryParam(fromParam)) {
+      return null;
+    }
+    return normalizeRouteForContext(fromParam);
+  }, [location]);
+
   const conversationFilter = useMemo(() => {
     const search = location.includes('?') ? location.split('?')[1] ?? '' : '';
     const params = new URLSearchParams(search);
-    const from = params.get('from') || undefined;
-    const to = params.get('to') || undefined;
+    const fromParam = params.get('from');
+    const toParam = params.get('to');
+    const from = isIsoDateQueryParam(fromParam) ? fromParam : undefined;
+    const to = isIsoDateQueryParam(toParam) ? toParam : undefined;
     return {
       from,
       to,
@@ -1356,9 +1434,13 @@ export default function Chat() {
 
       setMessages((prev) => [...prev, userMessage]);
       setIsStreaming(true);
-      setStreamEvents([]);
+      if (showStreamDiagnostics) {
+        setStreamEvents([]);
+      }
       setLastResponseUsedFallback(false);
-      pushStreamEvent(createStatusEvent('preparing'));
+      if (showStreamDiagnostics) {
+        pushStreamEvent(createStatusEvent('preparing'));
+      }
 
       const assistantMessage: Message = {
         id: crypto.randomUUID(),
@@ -1369,8 +1451,9 @@ export default function Chat() {
       };
       setMessages((prev) => [...prev, assistantMessage]);
 
-      const pathname = (location as string) ?? '';
-      const resolvedRoute = normalizeRouteForContext(pathname);
+      const pathname = window.location.pathname ?? '';
+      const resolvedRoute = routeContextFromQuery ?? normalizeRouteForContext(pathname);
+      const routeQuerySuffix = routeContextFromQuery ? `?from=${encodeURIComponent(routeContextFromQuery)}` : '';
       let activeConversationId = conversationId;
       if (!activeConversationId) {
         const contextPayload: { agentId?: string; namespaceId?: string; context?: 'trading' | 'sales' | 'support' | 'cambio' | 'default'; route?: string } = {};
@@ -1395,7 +1478,7 @@ export default function Chat() {
         const created = await createConversation.mutateAsync(Object.keys(contextPayload).length > 0 ? contextPayload : undefined);
         const nextConversationId = created.conversation.id;
         activeConversationId = nextConversationId;
-        navigate(`/chat/${nextConversationId}`);
+        navigate(`/chat/${nextConversationId}${routeQuerySuffix}`);
         setRoutingModeByConversation((prev) => {
           const { [currentRoutingKey]: _removed, ...rest } = prev;
           return { ...rest, [nextConversationId]: currentRoutingMode };
@@ -1495,7 +1578,7 @@ export default function Chat() {
           buffer += chunk;
 
           // Parser SSE correto: eventos separados por \n\n, normaliza CRLF
-          let normalizedBuffer = buffer.replace(/\r\n/g, '\n');
+          let normalizedBuffer = buffer.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
           let separatorIndex = normalizedBuffer.indexOf('\n\n');
           while (separatorIndex !== -1) {
             const event = normalizedBuffer.slice(0, separatorIndex);
@@ -1519,18 +1602,18 @@ export default function Chat() {
               const parsed = JSON.parse(data);
               const routingConversationKey = activeConversationId ?? conversationId ?? 'new';
               if (parsed.type === 'conversation' && parsed.conversationId && !conversationId) {
-                navigate(`/chat/${parsed.conversationId}`);
+                navigate(`/chat/${parsed.conversationId}${routeQuerySuffix}`);
                 queryClientRef.invalidateQueries({ queryKey: ['/api/chat/conversations'] });
                 resetTimeout();
               }
 
-              if (parsed.type === 'status') {
+              if (showStreamDiagnostics && parsed.type === 'status') {
                 const label = resolveStreamStatus(parsed.stage);
                 pushStreamEvent(createStatusEvent(parsed.stage, label));
                 resetTimeout();
               }
 
-              if (parsed.type === 'agent_event' && parsed.data) {
+              if (showStreamDiagnostics && parsed.type === 'agent_event' && parsed.data) {
                 pushStreamEvent(parsed.data as AgentEvent);
                 resetTimeout();
               }
@@ -1595,6 +1678,24 @@ export default function Chat() {
               }
 
               if (parsed.type === 'sources') {
+                const parsedSources = parseMessageSources((parsed as { sources?: unknown }).sources);
+                if (parsedSources) {
+                  setMessages((prev) => {
+                    const newMessages = [...prev];
+                    const lastIdx = newMessages.length - 1;
+                    if (lastIdx >= 0 && newMessages[lastIdx].role === 'assistant') {
+                      const metadata = newMessages[lastIdx].metadata ?? {};
+                      newMessages[lastIdx] = {
+                        ...newMessages[lastIdx],
+                        metadata: {
+                          ...metadata,
+                          sources: parsedSources,
+                        },
+                      };
+                    }
+                    return newMessages;
+                  });
+                }
                 resetTimeout();
               }
 
@@ -2615,7 +2716,8 @@ export default function Chat() {
                         message={message}
                         isStreaming={isStreaming}
                         isLast={index === messages.length - 1}
-                        streamEvents={isStreaming && index === messages.length - 1 ? streamEvents : null}
+                        showStreamDiagnostics={showStreamDiagnostics}
+                        streamEvents={showStreamDiagnostics && isStreaming && index === messages.length - 1 ? streamEvents : null}
                         typingSpeedMs={typingSpeedMs}
                         onRateImage={handleRateImage}
                         onFeedback={handleFeedback}

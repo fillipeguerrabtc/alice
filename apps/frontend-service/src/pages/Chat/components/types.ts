@@ -39,6 +39,22 @@ export interface MediaAttachment {
   file?: File;
 }
 
+export interface WebSourceLink {
+  title: string;
+  url: string;
+}
+
+export interface InternalSourceReference {
+  documentId: string;
+  titulo?: string;
+  similarity?: number;
+}
+
+export interface MessageSources {
+  web: WebSourceLink[];
+  internal: InternalSourceReference[];
+}
+
 export interface Message {
   id: string;
   role: 'user' | 'assistant' | 'system';
@@ -71,6 +87,7 @@ export interface Message {
     actionSummary?: string;
     actionStatus?: string;
     actionResult?: Record<string, unknown>;
+    sources?: MessageSources;
     requiresConfirmation?: boolean;
     [key: string]: unknown;
   };

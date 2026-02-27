@@ -18,11 +18,12 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { AgentEvent, Message } from './types';
+import { AgentEvent, Message, MessageSources } from './types';
 import { InlineImage } from './InlineImage';
 import { InlineMediaAttachment } from './InlineMediaAttachment';
 import { MessageActions } from './MessageActions';
 import { ActionResultCard } from './ActionResultCard';
+import { SourcesCard } from './SourcesCard';
 import { BiometricCapture } from '@/components/biometrics/BiometricCapture';
 import { apiRequest } from '@/lib/queryClient';
 import { toast } from '@/hooks/use-toast';
@@ -47,6 +48,7 @@ interface MessageBubbleProps {
   message: Message;
   isStreaming: boolean;
   isLast: boolean;
+  showStreamDiagnostics?: boolean;
   streamEvents?: AgentEvent[] | null;
   typingSpeedMs?: number;
   onRateImage?: (imageId: string, score: number) => void;
@@ -62,6 +64,7 @@ export function MessageBubble({
   message, 
   isStreaming, 
   isLast,
+  showStreamDiagnostics = false,
   streamEvents,
   typingSpeedMs,
   onRateImage,
@@ -263,6 +266,7 @@ export function MessageBubble({
   const hasStreamEvents = Boolean(streamEvents && streamEvents.length > 0);
   const requiresConfirmation = Boolean(message.metadata?.requiresConfirmation);
   const shouldShowActionCard = Boolean(message.metadata?.actionType || message.metadata?.actionStatus || message.metadata?.actionResult);
+  const messageSources = (message.metadata?.sources as MessageSources | undefined) ?? undefined;
 
   // Se há actionResult no metadata, exibir apenas o resumo humano; suprimir JSON bruto no texto
   const sanitizedDisplayContent = (() => {
@@ -341,7 +345,7 @@ export function MessageBubble({
 
           <div className="whitespace-pre-wrap text-sm leading-relaxed min-h-[1.25rem]">
             {/* Painel de etapas: visível durante todo o streaming (tokens + status lado a lado) */}
-            {isLast && isStreaming && message.role === 'assistant' && hasStreamEvents && (
+            {showStreamDiagnostics && isLast && isStreaming && message.role === 'assistant' && hasStreamEvents && (
               <div className="space-y-0.5 text-xs text-muted-foreground mb-2">
                 {(streamEvents ?? []).slice(-MAX_VISIBLE_STREAM_EVENTS).map((ev) => (
                   <div key={ev.id} className="flex items-center gap-1.5">
@@ -389,6 +393,8 @@ export function MessageBubble({
               actionResult={message.metadata?.actionResult as Record<string, unknown> | undefined}
             />
           )}
+
+          {messageSources && <SourcesCard sources={messageSources} />}
         </Card>
 
         {!isUser && requiresConfirmation && (
