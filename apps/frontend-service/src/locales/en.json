@@ -3238,6 +3238,108 @@
   "agenticConfig": {
     "title": "Agentic Mode",
     "subtitle": "Define execution scope, approvals, and operational references for agentic.",
+    "tabs": {
+      "overview": "Overview",
+      "web": "Web",
+      "images": "Images",
+      "tasks": "Tasks",
+      "routing": "Routing (Agents)",
+      "namespaces": "Namespaces",
+      "erpnext": "ERPNext",
+      "grafana": "Grafana",
+      "payments": "Payments",
+      "stackOps": "Stack Ops",
+      "links": "Links",
+      "trading": "Trading"
+    },
+    "moduleDescriptions": {
+      "overview": "Global toggles and approval requirements for critical actions.",
+      "web": "Tune web/deep web triggers and namespace scope for external search.",
+      "images": "Configure image search/generation triggers with namespace scope.",
+      "tasks": "Define triggers for creating/updating agentic tasks.",
+      "routing": "Customize manual/auto handoff and routing scope.",
+      "namespaces": "Manage per-namespace triggers for universal, future-proof routing.",
+      "erpnext": "Map ERP operations to detector triggers and namespaces.",
+      "grafana": "Control observability and dashboard operation triggers.",
+      "payments": "Tune financial operation triggers with namespace constraints.",
+      "stackOps": "Define deploy/rollback and stack operation triggers.",
+      "links": "Register official operational links used by agents.",
+      "trading": "Configure trading context and trigger signals."
+    },
+    "restoreModuleDefaults": "Restore module defaults",
+    "examplesTitle": "Ready examples",
+    "bestPracticesTitle": "Best practices",
+    "clearLinks": "Clear links",
+    "keywordErrors": {
+      "lineTooLong": "Line {{line}} exceeds 160 characters.",
+      "invalidRegex": "Invalid regex at line {{line}}. Use /.../flags format.",
+      "maxItemsExceeded": "Maximum limit reached: {{max}} items."
+    },
+    "namespaceBindings": {
+      "title": "Namespaces linked to this module",
+      "description": "Select which namespaces this module is allowed to trigger in chat."
+    },
+    "namespaces": {
+      "empty": "No active namespaces found.",
+      "baseKeywords": "Namespace base triggers",
+      "baseKeywordsPlaceholder": "namespace\narea\nteam\ndepartment",
+      "generateDefaults": "Generate defaults for this namespace",
+      "resetNamespaceDefaults": "Reset to defaults",
+      "namespaceKeywords": "Namespace keywords",
+      "namespaceKeywordsPlaceholder": "finance\nfinance squad\nfinance team",
+      "namespacePatterns": "Namespace patterns",
+      "namespacePatternsPlaceholder": "/\\bfinance team\\b/i"
+    },
+    "moduleHints": {
+      "overview": {
+        "examples": ["Enable web and ERP for commercial operations", "Require financial approval for payments"],
+        "practices": ["Review toggles per tenant before production", "Keep approval required for financial impact actions"]
+      },
+      "web": {
+        "examples": ["Search BTC price with sources", "Look up public regulatory references"],
+        "practices": ["Prioritize explicit search intent terms", "Keep regex patterns simple and auditable"]
+      },
+      "images": {
+        "examples": ["Search exchange logos", "Generate monthly report thumbnail"],
+        "practices": ["Use clear visual intent keywords", "Separate image search and generation trigger sets"]
+      },
+      "tasks": {
+        "examples": ["Create monthly finance report", "Update accounting planning document"],
+        "practices": ["Standardize create/update verbs", "Keep task-type keywords aligned with your workflow"]
+      },
+      "routing": {
+        "examples": ["Talk to payments agent", "Switch back to automatic routing"],
+        "practices": ["Use short, explicit handoff triggers", "Avoid overlap between manual and automatic terms"]
+      },
+      "namespaces": {
+        "examples": ["Map finance keywords to finance namespace", "Create patterns for observability squad"],
+        "practices": ["Use namespace slug/name as baseline", "Tune per namespace without breaking global fallback"]
+      },
+      "erpnext": {
+        "examples": ["List ERP customers and invoices", "Create customer and issue invoice"],
+        "practices": ["Use business terms the team already uses", "Review write-action keywords carefully"]
+      },
+      "grafana": {
+        "examples": ["List production dashboards", "Update API latency dashboard"],
+        "practices": ["Include incident and SLO terms", "Separate read and update command intent"]
+      },
+      "payments": {
+        "examples": ["Transfer via Wise to recipient", "Run Stripe refund flow"],
+        "practices": ["Use explicit financial action terms", "Keep approvals enabled for high-risk operations"]
+      },
+      "stackOps": {
+        "examples": ["Deploy alice stack", "Rollback production stack"],
+        "practices": ["Always include explicit stack target", "Run dry-run for critical changes"]
+      },
+      "links": {
+        "examples": ["Add official ERP portal", "Register main observability dashboard"],
+        "practices": ["Use only official and valid URLs", "Standardize tags by business domain"]
+      },
+      "trading": {
+        "examples": ["BTCUSDTM technical analysis 5m/15m", "Generate AI signal with risk confirmation"],
+        "practices": ["Include symbol and timeframe in prompts", "Require explicit confirmation before execution"]
+      }
+    },
     "tradingPromptsTitle": "Trading Agent prompt tips",
     "tradingPromptsDesc": "Use clear commands to trigger technical analysis, AI signals, and KuCoin operations.",
     "tradingPromptExamplesTitle": "Ready-to-use examples",

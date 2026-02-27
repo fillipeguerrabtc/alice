@@ -3295,6 +3295,108 @@
   "agenticConfig": {
     "title": "Modo Agentic",
     "subtitle": "Defina o escopo de execução, aprovações e referências operacionais do agentic.",
+    "tabs": {
+      "overview": "Visão Geral",
+      "web": "Web",
+      "images": "Imagens",
+      "tasks": "Tarefas",
+      "routing": "Roteamento (Agentes)",
+      "namespaces": "Namespaces",
+      "erpnext": "ERPNext",
+      "grafana": "Grafana",
+      "payments": "Pagamentos",
+      "stackOps": "Stack Ops",
+      "links": "Links",
+      "trading": "Trading"
+    },
+    "moduleDescriptions": {
+      "overview": "Configuração global de habilitações e aprovação de ações críticas.",
+      "web": "Ajuste gatilhos para web/deep web e relacione namespaces para pesquisas externas.",
+      "images": "Configure busca e geração de imagens com escopo por namespace.",
+      "tasks": "Defina gatilhos para criação/atualização de tarefas agentic.",
+      "routing": "Personalize handoff manual/automático e escopo de roteamento.",
+      "namespaces": "Configure gatilhos por namespace para roteamento universal e futuro-proof.",
+      "erpnext": "Mapeie comandos operacionais ERP para gatilhos e namespaces.",
+      "grafana": "Controle gatilhos de observabilidade e dashboards.",
+      "payments": "Ajuste gatilhos para operações financeiras com controle por namespace.",
+      "stackOps": "Defina gatilhos de deploy/rollback e stacks operacionais.",
+      "links": "Cadastre referências oficiais para execução segura pelos agentes.",
+      "trading": "Configure gatilhos e contexto do módulo de trading."
+    },
+    "restoreModuleDefaults": "Restaurar defaults deste módulo",
+    "examplesTitle": "Exemplos prontos",
+    "bestPracticesTitle": "Boas práticas",
+    "clearLinks": "Limpar links",
+    "keywordErrors": {
+      "lineTooLong": "Linha {{line}} ultrapassa 160 caracteres.",
+      "invalidRegex": "Regex inválida na linha {{line}}. Use formato /.../flags.",
+      "maxItemsExceeded": "Limite máximo atingido: {{max}} itens."
+    },
+    "namespaceBindings": {
+      "title": "Namespaces vinculados ao módulo",
+      "description": "Selecione os namespaces que este módulo pode acionar no chat."
+    },
+    "namespaces": {
+      "empty": "Nenhum namespace ativo encontrado.",
+      "baseKeywords": "Gatilhos base de namespace",
+      "baseKeywordsPlaceholder": "namespace\nárea\ntime\ndepartamento",
+      "generateDefaults": "Gerar defaults para este namespace",
+      "resetNamespaceDefaults": "Resetar para defaults",
+      "namespaceKeywords": "Keywords do namespace",
+      "namespaceKeywordsPlaceholder": "financeiro\nsquad financeiro\ntime financeiro",
+      "namespacePatterns": "Patterns do namespace",
+      "namespacePatternsPlaceholder": "/\\btime financeiro\\b/i"
+    },
+    "moduleHints": {
+      "overview": {
+        "examples": ["Habilitar web e ERP para operação comercial", "Exigir aprovação financeira para pagamentos"],
+        "practices": ["Revise toggles por tenant antes de liberar produção", "Mantenha aprovações para ações com impacto financeiro"]
+      },
+      "web": {
+        "examples": ["Pesquisar cotação do BTC com fontes", "Buscar referências públicas da CVM"],
+        "practices": ["Priorize termos de pesquisa explícitos", "Mantenha regex simples e auditáveis"]
+      },
+      "images": {
+        "examples": ["Buscar logos de corretoras", "Gerar thumbnail de relatório mensal"],
+        "practices": ["Use palavras-chave de intenção clara", "Separe busca de imagens e geração em listas específicas"]
+      },
+      "tasks": {
+        "examples": ["Criar relatório financeiro mensal", "Atualizar plano de contas da operação"],
+        "practices": ["Padronize verbos de criação e atualização", "Mantenha tipos de tarefas coerentes com seu processo"]
+      },
+      "routing": {
+        "examples": ["Falar com agente de pagamentos", "Voltar para roteamento automático"],
+        "practices": ["Defina gatilhos curtos para handoff", "Evite termos ambíguos entre manual e automático"]
+      },
+      "namespaces": {
+        "examples": ["Mapear keywords para namespace financeiro", "Criar patterns para squad de observabilidade"],
+        "practices": ["Use slug/nome do namespace como base", "Ajuste por namespace sem quebrar o fallback global"]
+      },
+      "erpnext": {
+        "examples": ["Listar clientes e faturas ERP", "Criar cliente e emitir fatura"],
+        "practices": ["Mantenha termos de negócio reais da equipe", "Revise palavras de escrita para evitar ações indevidas"]
+      },
+      "grafana": {
+        "examples": ["Listar dashboards de produção", "Atualizar painel de latência API"],
+        "practices": ["Inclua termos de incidente e SLO", "Diferencie comandos de leitura e atualização"]
+      },
+      "payments": {
+        "examples": ["Transferir via Wise para destinatário", "Executar refund no Stripe"],
+        "practices": ["Use gatilhos explícitos de ação financeira", "Preserve aprovação obrigatória para riscos maiores"]
+      },
+      "stackOps": {
+        "examples": ["Executar deploy da stack alice", "Realizar rollback em produção"],
+        "practices": ["Mantenha comandos com stack alvo explícita", "Use dry-run antes de mudanças críticas"]
+      },
+      "links": {
+        "examples": ["Adicionar portal ERP oficial", "Cadastrar dashboard principal da operação"],
+        "practices": ["Use somente URLs oficiais e válidas", "Padronize tags por domínio de negócio"]
+      },
+      "trading": {
+        "examples": ["Análise técnica BTCUSDTM 5m e 15m", "Gerar sinal IA com confirmação de risco"],
+        "practices": ["Inclua símbolo e timeframe na consulta", "Exija confirmação para execução operacional"]
+      }
+    },
     "tradingPromptsTitle": "Dicas de prompts para o Agente de Trading",
     "tradingPromptsDesc": "Use comandos objetivos para acionar análise técnica, sinais IA e operações na KuCoin.",
     "tradingPromptExamplesTitle": "Exemplos prontos",
