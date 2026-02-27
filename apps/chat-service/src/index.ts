@@ -1425,7 +1425,42 @@ const AGENT_ROUTING_MANUAL_KEYWORDS_PATCH = [
 
 const DEFAULT_AGENTIC_DETECTORS: AgenticDetectors = {
   webSearch: {
-    keywords: ['pesquisar', 'buscar', 'busque', 'procure', 'consulte', 'search', 'look up', 'google'],
+    keywords: [
+      'pesquisar',
+      'buscar',
+      'busque',
+      'procure',
+      'consulte',
+      'pesquisar na internet',
+      'pesquisar na web',
+      'procurar no google',
+      'fonte',
+      'fontes',
+      'referencia',
+      'referências',
+      'search',
+      'search online',
+      'look up',
+      'lookup',
+      'google',
+      'source',
+      'sources',
+      'reference',
+      'references',
+      'quote',
+      'price',
+      'market cap',
+      'btc',
+      'bitcoin',
+      'eth',
+      'ethereum',
+      'crypto',
+      'criptomoeda',
+      'cotacao',
+      'cotação',
+      'preco',
+      'preço',
+    ],
     patterns: EXPLICIT_WEB_REQUEST_PATTERNS.map((pattern) => pattern.toString()),
   },
   deepWeb: {
@@ -1433,11 +1468,26 @@ const DEFAULT_AGENTIC_DETECTORS: AgenticDetectors = {
     patterns: EXPLICIT_DEEP_WEB_PATTERNS.map((pattern) => pattern.toString()),
   },
   webImageSearch: {
-    keywords: ['imagens', 'fotos', 'figuras', 'google images', 'imagens na web', 'image search'],
+    keywords: [
+      'imagens',
+      'fotos',
+      'figuras',
+      'google images',
+      'imagens na web',
+      'image search',
+      'buscar logo',
+      'buscar banner',
+      'buscar thumbnail',
+      'buscar mockup',
+      'find logo',
+      'find banner',
+      'find thumbnail',
+      'find mockup',
+    ],
     patterns: IMAGE_SEARCH_PATTERNS.map((pattern) => pattern.toString()),
   },
   imageGeneration: {
-    keywords: [...IMAGE_KEYWORDS_PT, ...IMAGE_KEYWORDS_EN],
+    keywords: [...IMAGE_KEYWORDS_PT, ...IMAGE_KEYWORDS_EN, 'thumbnail', 'mockup', 'banner', 'poster', 'hero image', 'cover art'],
     patterns: IMAGE_GENERATION_PATTERNS.map((pattern) => pattern.toString()),
   },
   trading: {
@@ -1475,11 +1525,53 @@ const DEFAULT_AGENTIC_DETECTORS: AgenticDetectors = {
       'retomar auto',
     ],
   },
+  namespaceRouting: {
+    baseKeywords: [
+      'namespace',
+      'area',
+      'setor',
+      'time',
+      'departamento',
+      'squad',
+      'contexto',
+      'modulo',
+      'módulo',
+    ],
+    perNamespace: {},
+    moduleBindings: {
+      web: [],
+      images: [],
+      tasks: [],
+      routing: [],
+      erpnext: [],
+      grafana: [],
+      payments: [],
+      stackOps: [],
+      trading: [],
+    },
+  },
   grafana: {
-    baseKeywords: ['grafana', 'dashboard', 'painel', 'observability', 'observabilidade', 'monitoramento', 'metrics', 'métricas'],
-    listDashboardsKeywords: ['listar dashboards', 'listar painéis', 'dashboards', 'painéis', 'dashboard list', 'list dashboards'],
-    updateDashboardKeywords: ['atualizar dashboard', 'editar dashboard', 'update dashboard', 'edit dashboard'],
-    getDashboardKeywords: ['abrir dashboard', 'detalhar dashboard', 'ver dashboard', 'get dashboard'],
+    baseKeywords: [
+      'grafana',
+      'dashboard',
+      'painel',
+      'observability',
+      'observabilidade',
+      'monitoramento',
+      'metrics',
+      'métricas',
+      'alerta',
+      'incidente',
+      'latencia',
+      'latência',
+      '5xx',
+      'slo',
+      'erro',
+      'errors',
+    ],
+    listDashboardsKeywords: ['listar dashboards', 'listar painéis', 'dashboards', 'painéis', 'dashboard list', 'list dashboards', 'listar alertas'],
+    updateDashboardKeywords: ['atualizar dashboard', 'editar dashboard', 'update dashboard', 'edit dashboard', 'ajustar painel'],
+    getDashboardKeywords: ['abrir dashboard', 'detalhar dashboard', 'ver dashboard', 'get dashboard', 'mostrar painel', 'ver alerta'],
   },
   agenticTask: {
     createKeywords: AGENTIC_TASK_CREATE_KEYWORDS,
@@ -1493,10 +1585,26 @@ const DEFAULT_AGENTIC_DETECTORS: AgenticDetectors = {
     },
   },
   erp: {
-    baseKeywords: ['erp', 'erpnext', 'estoque', 'inventario', 'inventory', 'fatura', 'invoice', 'cliente', 'customer'],
-    listItemsKeywords: ['estoque', 'inventario', 'itens', 'items', 'inventory'],
-    listCustomersKeywords: ['clientes', 'customers'],
-    listInvoicesKeywords: ['faturas', 'invoices', 'invoice'],
+    baseKeywords: [
+      'erp',
+      'erpnext',
+      'estoque',
+      'inventario',
+      'inventory',
+      'fatura',
+      'invoice',
+      'cliente',
+      'customer',
+      'pedido',
+      'ordem',
+      'item',
+      'produto',
+      'nota fiscal',
+      'fiscal note',
+    ],
+    listItemsKeywords: ['estoque', 'inventario', 'itens', 'items', 'inventory', 'produto', 'produtos', 'sku'],
+    listCustomersKeywords: ['clientes', 'customers', 'contato', 'contact', 'account'],
+    listInvoicesKeywords: ['faturas', 'invoices', 'invoice', 'nota fiscal', 'nfs', 'billing'],
     annualBillingKeywords: [
       'faturamento anual',
       'receita anual',
@@ -1506,24 +1614,24 @@ const DEFAULT_AGENTIC_DETECTORS: AgenticDetectors = {
       'yearly revenue',
       'yearly billing',
     ],
-    createCustomerKeywords: ['criar cliente', 'cadastrar cliente', 'novo cliente'],
-    createInvoiceKeywords: ['criar fatura', 'emitir fatura', 'criar invoice', 'emitir invoice'],
+    createCustomerKeywords: ['criar cliente', 'cadastrar cliente', 'novo cliente', 'create customer', 'register customer'],
+    createInvoiceKeywords: ['criar fatura', 'emitir fatura', 'criar invoice', 'emitir invoice', 'gerar nota fiscal', 'create billing'],
   },
   payments: {
-    wiseKeywords: ['wise'],
-    wiseRecipientsKeywords: ['destinatario', 'recipient'],
-    wiseTransferKeywords: ['transferir', 'transferencia', 'transfer'],
-    wiseExchangeKeywords: ['câmbio', 'cambio', 'converter', 'conversao', 'conversão', 'exchange'],
-    stripeKeywords: ['stripe'],
-    stripePaymentKeywords: ['pagamento', 'payment'],
+    wiseKeywords: ['wise', 'transferência', 'transferencia', 'wire', 'remessa'],
+    wiseRecipientsKeywords: ['destinatario', 'recipient', 'recebedor', 'beneficiario', 'beneficiary'],
+    wiseTransferKeywords: ['transferir', 'transferencia', 'transfer', 'ted', 'pix', 'wire transfer'],
+    wiseExchangeKeywords: ['câmbio', 'cambio', 'converter', 'conversao', 'conversão', 'exchange', 'fx quote'],
+    stripeKeywords: ['stripe', 'invoice payment', 'charge', 'refund'],
+    stripePaymentKeywords: ['pagamento', 'payment', 'cobrança', 'charge', 'refund'],
   },
   stackOps: {
-    baseKeywords: ['deploy', 'rollback', 'stack'],
-    deployKeywords: ['deploy'],
-    rollbackKeywords: ['rollback'],
-    dryRunKeywords: ['dry run', 'dry-run'],
-    smartDeployKeywords: ['smart deploy', 'smart-deploy'],
-    stackKeywords: ['infra', 'alice', 'observability', 'erpnext', 'backup', 'all'],
+    baseKeywords: ['deploy', 'rollback', 'stack', 'pipeline', 'build', 'release', 'github actions', 'produção', 'producao'],
+    deployKeywords: ['deploy', 'deploy produção', 'deploy prod', 'release'],
+    rollbackKeywords: ['rollback', 'rollback prod', 'reverter deploy'],
+    dryRunKeywords: ['dry run', 'dry-run', 'simular deploy', 'preview deploy'],
+    smartDeployKeywords: ['smart deploy', 'smart-deploy', 'deploy inteligente'],
+    stackKeywords: ['infra', 'alice', 'observability', 'erpnext', 'backup', 'all', 'production', 'staging'],
   },
 };
 
@@ -1532,11 +1640,18 @@ const DETECTOR_ITEM_MAX_LENGTH = 160;
 
 function normalizeDetectorList(input: unknown): string[] {
   if (!Array.isArray(input)) return [];
-  return input
-    .map((value) => String(value ?? '').trim())
-    .filter((value) => value.length > 0)
-    .filter((value) => value.length <= DETECTOR_ITEM_MAX_LENGTH)
-    .slice(0, DETECTOR_LIST_MAX);
+  const unique = new Set<string>();
+  const normalized: string[] = [];
+  for (const value of input) {
+    const item = String(value ?? '').trim();
+    if (!item || item.length > DETECTOR_ITEM_MAX_LENGTH) continue;
+    const key = item.toLocaleLowerCase();
+    if (unique.has(key)) continue;
+    unique.add(key);
+    normalized.push(item);
+    if (normalized.length >= DETECTOR_LIST_MAX) break;
+  }
+  return normalized;
 }
 
 function normalizeDetectorGroup(
@@ -1546,6 +1661,69 @@ function normalizeDetectorGroup(
   return {
     keywords: normalizeDetectorList(input?.keywords ?? fallback.keywords),
     patterns: normalizeDetectorList(input?.patterns ?? fallback.patterns),
+  };
+}
+
+function normalizeNamespaceRoutingKey(value: string): string {
+  return normalizeAgentToken(value).replace(/\s+/g, '-');
+}
+
+const AGENTIC_MODULE_BINDING_KEYS = [
+  'web',
+  'images',
+  'tasks',
+  'routing',
+  'erpnext',
+  'grafana',
+  'payments',
+  'stackOps',
+  'trading',
+] as const;
+
+function normalizeNamespaceBindingList(input: unknown): string[] {
+  if (!Array.isArray(input)) return [];
+  const normalized: string[] = [];
+  const seen = new Set<string>();
+  for (const value of input) {
+    const slug = normalizeNamespaceRoutingKey(String(value ?? ''));
+    if (!slug || seen.has(slug)) continue;
+    seen.add(slug);
+    normalized.push(slug);
+    if (normalized.length >= DETECTOR_LIST_MAX) break;
+  }
+  return normalized;
+}
+
+function normalizeNamespaceRoutingDetectors(
+  input: Partial<AgenticDetectors['namespaceRouting']> | null | undefined
+): AgenticDetectors['namespaceRouting'] {
+  const baseKeywords = normalizeDetectorList(input?.baseKeywords ?? DEFAULT_AGENTIC_DETECTORS.namespaceRouting.baseKeywords);
+  const normalizedPerNamespace: Record<string, { keywords: string[]; patterns: string[] }> = {};
+  const normalizedModuleBindings: Record<string, string[]> = {};
+  const rawPerNamespace = input?.perNamespace;
+  const rawModuleBindings = input?.moduleBindings;
+  if (rawPerNamespace && typeof rawPerNamespace === 'object' && !Array.isArray(rawPerNamespace)) {
+    for (const [rawNamespace, config] of Object.entries(rawPerNamespace)) {
+      const namespaceKey = normalizeNamespaceRoutingKey(rawNamespace);
+      if (!namespaceKey) continue;
+      if (!config || typeof config !== 'object' || Array.isArray(config)) continue;
+      const record = config as { keywords?: unknown; patterns?: unknown };
+      normalizedPerNamespace[namespaceKey] = {
+        keywords: normalizeDetectorList(record.keywords),
+        patterns: normalizeDetectorList(record.patterns),
+      };
+    }
+  }
+  for (const moduleKey of AGENTIC_MODULE_BINDING_KEYS) {
+    const moduleValues = rawModuleBindings && typeof rawModuleBindings === 'object' && !Array.isArray(rawModuleBindings)
+      ? (rawModuleBindings as Record<string, unknown>)[moduleKey]
+      : undefined;
+    normalizedModuleBindings[moduleKey] = normalizeNamespaceBindingList(moduleValues);
+  }
+  return {
+    baseKeywords,
+    perNamespace: normalizedPerNamespace,
+    moduleBindings: normalizedModuleBindings,
   };
 }
 
@@ -1561,6 +1739,7 @@ function normalizeAgenticDetectors(detectors: Partial<AgenticDetectors> | null |
       manualKeywords: normalizeDetectorList(safe.agentRouting?.manualKeywords ?? DEFAULT_AGENTIC_DETECTORS.agentRouting.manualKeywords),
       autoKeywords: normalizeDetectorList(safe.agentRouting?.autoKeywords ?? DEFAULT_AGENTIC_DETECTORS.agentRouting.autoKeywords),
     },
+    namespaceRouting: normalizeNamespaceRoutingDetectors(safe.namespaceRouting),
     grafana: {
       baseKeywords: normalizeDetectorList(safe.grafana?.baseKeywords ?? DEFAULT_AGENTIC_DETECTORS.grafana.baseKeywords),
       listDashboardsKeywords: normalizeDetectorList(safe.grafana?.listDashboardsKeywords ?? DEFAULT_AGENTIC_DETECTORS.grafana.listDashboardsKeywords),
@@ -4426,9 +4605,178 @@ function getRoutingThreshold(profile: LlmContextProfile): number {
   return 0.12;
 }
 
+type AgenticModuleBindingKey = (typeof AGENTIC_MODULE_BINDING_KEYS)[number];
+
+function matchesKeywordListForRouting(message: string, keywords: string[]): boolean {
+  const normalizedMessage = normalizeAgentToken(message);
+  if (!normalizedMessage) return false;
+  return keywords.some((keyword) => {
+    const normalizedKeyword = normalizeRoutingKeyword(keyword);
+    return normalizedKeyword ? normalizedMessage.includes(normalizedKeyword) : false;
+  });
+}
+
+function detectAgenticModuleForRouting(message: string, detectors: AgenticDetectors): AgenticModuleBindingKey | null {
+  if (isTradingCommandWithDetectors(message, detectors)) {
+    return 'trading';
+  }
+  if (matchesDetector(message, detectors.webImageSearch) || matchesDetector(message, detectors.imageGeneration)) {
+    return 'images';
+  }
+  if (matchesDetector(message, detectors.webSearch) || matchesDetector(message, detectors.deepWeb)) {
+    return 'web';
+  }
+  if (matchesKeywordListForRouting(message, [
+    detectors.agenticTask.createKeywords,
+    detectors.agenticTask.updateKeywords,
+    detectors.agenticTask.intentKeywords,
+    detectors.agenticTask.typeKeywords.document,
+    detectors.agenticTask.typeKeywords.report,
+    detectors.agenticTask.typeKeywords.accounting,
+    detectors.agenticTask.typeKeywords.planning,
+  ].flat())) {
+    return 'tasks';
+  }
+  if (matchesKeywordListForRouting(message, [
+    detectors.agentRouting.manualKeywords,
+    detectors.agentRouting.autoKeywords,
+  ].flat())) {
+    return 'routing';
+  }
+  if (matchesKeywordListForRouting(message, [
+    detectors.erp.baseKeywords,
+    detectors.erp.listItemsKeywords,
+    detectors.erp.listCustomersKeywords,
+    detectors.erp.listInvoicesKeywords,
+    detectors.erp.annualBillingKeywords,
+    detectors.erp.createCustomerKeywords,
+    detectors.erp.createInvoiceKeywords,
+  ].flat())) {
+    return 'erpnext';
+  }
+  if (matchesKeywordListForRouting(message, [
+    detectors.grafana.baseKeywords,
+    detectors.grafana.listDashboardsKeywords,
+    detectors.grafana.getDashboardKeywords,
+    detectors.grafana.updateDashboardKeywords,
+  ].flat())) {
+    return 'grafana';
+  }
+  if (matchesKeywordListForRouting(message, [
+    detectors.payments.wiseKeywords,
+    detectors.payments.wiseRecipientsKeywords,
+    detectors.payments.wiseTransferKeywords,
+    detectors.payments.wiseExchangeKeywords,
+    detectors.payments.stripeKeywords,
+    detectors.payments.stripePaymentKeywords,
+  ].flat())) {
+    return 'payments';
+  }
+  if (matchesKeywordListForRouting(message, [
+    detectors.stackOps.baseKeywords,
+    detectors.stackOps.deployKeywords,
+    detectors.stackOps.rollbackKeywords,
+    detectors.stackOps.dryRunKeywords,
+    detectors.stackOps.smartDeployKeywords,
+    detectors.stackOps.stackKeywords,
+  ].flat())) {
+    return 'stackOps';
+  }
+  return null;
+}
+
+async function matchNamespaceByDetectors(params: {
+  tenantId: string;
+  message: string;
+  agenticDetectors: AgenticDetectors;
+}): Promise<{ namespaceId: string; score: number } | null> {
+  const normalizedMessage = normalizeAgentToken(params.message);
+  if (!normalizedMessage) return null;
+  const detectedModule = detectAgenticModuleForRouting(params.message, params.agenticDetectors);
+  const boundNamespaceSlugs = detectedModule
+    ? params.agenticDetectors.namespaceRouting.moduleBindings[detectedModule] ?? []
+    : [];
+  const normalizedBoundNamespaceSlugs = new Set(
+    boundNamespaceSlugs
+      .map((slug) => normalizeNamespaceRoutingKey(slug))
+      .filter((slug) => slug.length > 0)
+  );
+
+  const baseKeywords = params.agenticDetectors.namespaceRouting.baseKeywords
+    .map(normalizeRoutingKeyword)
+    .filter((keyword): keyword is string => Boolean(keyword));
+  const hasBaseKeyword = baseKeywords.some((keyword) => normalizedMessage.includes(keyword));
+
+  const namespaces = await db.query.namespaces.findMany({
+    where: and(
+      eq(schema.namespaces.tenantId, params.tenantId),
+      eq(schema.namespaces.ativo, true)
+    ),
+    columns: {
+      id: true,
+      nome: true,
+      slug: true,
+    },
+  });
+  const candidateNamespaces = normalizedBoundNamespaceSlugs.size > 0
+    ? namespaces.filter((namespace) => normalizedBoundNamespaceSlugs.has(normalizeNamespaceRoutingKey(namespace.slug)))
+    : namespaces;
+
+  let bestMatch: { namespaceId: string; score: number } | null = null;
+
+  for (const namespace of candidateNamespaces) {
+    const perNamespace = params.agenticDetectors.namespaceRouting.perNamespace;
+    const normalizedNamespaceSlug = normalizeNamespaceRoutingKey(namespace.slug);
+    const bySlug = perNamespace[normalizedNamespaceSlug];
+    const byName = perNamespace[normalizeNamespaceRoutingKey(namespace.nome)];
+    const namespaceConfig = bySlug ?? byName ?? { keywords: [], patterns: [] };
+
+    const terms = [namespace.nome, namespace.slug, ...namespaceConfig.keywords];
+    const normalizedTerms = new Set<string>();
+    let score = 0;
+
+    for (const term of terms) {
+      const normalizedTerm = normalizeRoutingKeyword(term);
+      if (!normalizedTerm || normalizedTerms.has(normalizedTerm)) continue;
+      normalizedTerms.add(normalizedTerm);
+      if (normalizedMessage.includes(normalizedTerm)) {
+        score += 1;
+      }
+    }
+
+    for (const pattern of namespaceConfig.patterns) {
+      const compiled = compileDetectorPattern(pattern);
+      if (compiled && compiled.test(params.message)) {
+        score += 1;
+      }
+    }
+
+    if (score > 0 && hasBaseKeyword) {
+      score += 0.5;
+    }
+    if (normalizedBoundNamespaceSlugs.has(normalizedNamespaceSlug)) {
+      score += 0.75;
+    }
+
+    if (!bestMatch || score > bestMatch.score) {
+      bestMatch = { namespaceId: namespace.id, score };
+    }
+  }
+
+  if (!bestMatch || bestMatch.score < 1) {
+    if (candidateNamespaces.length === 1 && normalizedBoundNamespaceSlugs.size > 0) {
+      return { namespaceId: candidateNamespaces[0].id, score: 1 };
+    }
+    return null;
+  }
+
+  return bestMatch;
+}
+
 async function resolveSemanticRoute(params: {
   tenantId: string;
   userMessage: string;
+  agenticDetectors: AgenticDetectors;
 }): Promise<{ agentId?: string; namespaceId?: string; score: number; source: 'agent' | 'namespace' | 'none'; profile: LlmContextProfile }> {
   const profile = detectContextProfile(params.userMessage);
   const threshold = getRoutingThreshold(profile);
@@ -4439,6 +4787,38 @@ async function resolveSemanticRoute(params: {
       eq(schema.agents.status, 'active')
     ),
   });
+
+  const namespaceDetectorMatch = await matchNamespaceByDetectors({
+    tenantId: params.tenantId,
+    message: params.userMessage,
+    agenticDetectors: params.agenticDetectors,
+  });
+  if (namespaceDetectorMatch) {
+    const namespaceAgents = agents.filter((agent) => agent.namespaceId === namespaceDetectorMatch.namespaceId);
+    let bestAgentInNamespace: { id: string; score: number } | null = null;
+    for (const agent of namespaceAgents) {
+      const text = buildRoutingText([
+        agent.nome,
+        agent.slug,
+        agent.descricao,
+        agent.personalidade,
+        agent.instrucoes,
+        agent.capacidades ? agent.capacidades.join(' ') : null,
+      ]);
+      if (!text) continue;
+      const score = computeRoutingScore(text, params.userMessage, profile);
+      if (!bestAgentInNamespace || score > bestAgentInNamespace.score) {
+        bestAgentInNamespace = { id: agent.id, score };
+      }
+    }
+    return {
+      agentId: bestAgentInNamespace?.id,
+      namespaceId: namespaceDetectorMatch.namespaceId,
+      score: namespaceDetectorMatch.score,
+      source: 'namespace',
+      profile,
+    };
+  }
 
   let bestAgent: { id: string; namespaceId?: string | null; score: number } | null = null;
   for (const agent of agents) {
@@ -5000,21 +5380,46 @@ async function resolveAgentRoutingForMessage(params: {
 
   if (command.action === 'manual') {
     const { matched, unknownTokens } = matchAgentsFromTokens(agents, command.tokens);
-    const inferredAgents = matched.length > 0 ? matched : matchAgentsFromMessageText(agents, params.userMessage);
+    let inferredAgents = matched.length > 0 ? matched : matchAgentsFromMessageText(agents, params.userMessage);
     if (!inferredAgents.length) {
-      return {
-        agent: null,
-        namespaceId: params.requestedNamespaceId ?? params.conversation.namespaceId ?? null,
-        mode: stateRouting.mode,
-        source: 'manual',
-        score: 0,
-        threshold: routingThreshold,
-        profile,
-        isCommandOnly: command.isCommandOnly,
-        error: unknownTokens.length
-          ? `Agente(s) não encontrado(s): ${unknownTokens.join(', ')}. Use @slug do agente.`
-          : 'Nenhum agente encontrado para o comando informado.',
-      };
+      const namespaceDetectorMatch = await matchNamespaceByDetectors({
+        tenantId: params.tenantId,
+        message: params.userMessage,
+        agenticDetectors: params.agenticDetectors,
+      });
+      if (namespaceDetectorMatch) {
+        const namespaceAgents = agents.filter((agent) => agent.namespaceId === namespaceDetectorMatch.namespaceId);
+        if (namespaceAgents.length > 0) {
+          const namespaceSelection = selectBestAgentFromPool(namespaceAgents, params.userMessage, profile);
+          inferredAgents = [namespaceSelection.agent ?? namespaceAgents[0]];
+        } else {
+          return {
+            agent: null,
+            namespaceId: namespaceDetectorMatch.namespaceId,
+            mode: stateRouting.mode,
+            source: 'manual',
+            score: namespaceDetectorMatch.score,
+            threshold: routingThreshold,
+            profile,
+            isCommandOnly: command.isCommandOnly,
+            error: 'Nenhum agente ativo disponível no namespace identificado.',
+          };
+        }
+      } else {
+        return {
+          agent: null,
+          namespaceId: params.requestedNamespaceId ?? params.conversation.namespaceId ?? null,
+          mode: stateRouting.mode,
+          source: 'manual',
+          score: 0,
+          threshold: routingThreshold,
+          profile,
+          isCommandOnly: command.isCommandOnly,
+          error: unknownTokens.length
+            ? `Agente(s) não encontrado(s): ${unknownTokens.join(', ')}. Use @slug do agente.`
+            : 'Nenhum agente encontrado para o comando informado.',
+        };
+      }
     }
     const resolvedCommandOnly = command.isCommandOnly || isSwitchOnlyCommandMessage({
       message: params.userMessage,
@@ -9257,6 +9662,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       const route = await resolveSemanticRoute({
         tenantId,
         userMessage: userMessageContent,
+        agenticDetectors,
       });
       const [created] = await db.insert(schema.conversations).values({
         tenantId,
@@ -18015,6 +18421,14 @@ const agenticDetectorsSchema = z.object({
     manualKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
     autoKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
   }).optional().default(DEFAULT_AGENTIC_DETECTORS.agentRouting),
+  namespaceRouting: z.object({
+    baseKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
+    perNamespace: z.record(z.object({
+      keywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
+      patterns: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
+    })),
+    moduleBindings: z.record(z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX)),
+  }).optional().default(DEFAULT_AGENTIC_DETECTORS.namespaceRouting),
   grafana: z.object({
     baseKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
     listDashboardsKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
@@ -18146,9 +18560,18 @@ async function getOrCreateAgenticSettings(tenantId: string) {
   if (existing) {
     const detectorsRaw = existing.detectors ?? {};
     const detectorsEmpty = Object.keys(detectorsRaw).length === 0;
+    const rawNamespaceRouting = (
+      typeof detectorsRaw === 'object' &&
+      detectorsRaw !== null &&
+      Object.prototype.hasOwnProperty.call(detectorsRaw, 'namespaceRouting')
+    )
+      ? (detectorsRaw as { namespaceRouting?: unknown }).namespaceRouting
+      : null;
+    const detectorsMissingNamespaceRouting = !rawNamespaceRouting || typeof rawNamespaceRouting !== 'object'
+      || !Object.prototype.hasOwnProperty.call(rawNamespaceRouting, 'moduleBindings');
     const normalizedDetectors = normalizeAgenticDetectors(detectorsRaw);
     const { detectors: patchedDetectors, updated: detectorsPatched } = ensureAgentRoutingManualKeywords(normalizedDetectors);
-    if (detectorsEmpty || detectorsPatched) {
+    if (detectorsEmpty || detectorsPatched || detectorsMissingNamespaceRouting) {
       await db.update(schema.agenticSettings)
         .set({
           detectors: patchedDetectors,
@@ -18157,6 +18580,8 @@ async function getOrCreateAgenticSettings(tenantId: string) {
         .where(eq(schema.agenticSettings.tenantId, tenantId));
       if (detectorsEmpty) {
         logger.warn({ tenantId }, 'Agentic detectors vazios - defaults persistidos');
+      } else if (detectorsMissingNamespaceRouting) {
+        logger.info({ tenantId }, 'Agentic detectors atualizados com namespaceRouting padrão');
       } else {
         logger.info({ tenantId }, 'Agentic detectors atualizados com novos termos de roteamento');
       }
