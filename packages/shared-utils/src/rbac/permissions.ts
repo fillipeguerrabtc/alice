@@ -179,6 +179,13 @@ export const PERMISSION_MAP: Record<string, Role[]> = {
   'integrations:trading:manage': ['super_admin', 'admin'],
 
   // ============================================================================
+  // OBSERVABILITY MODULE - Health, métricas, circuit breakers, logs
+  // ============================================================================
+  'observability:core:read': ['super_admin', 'admin', 'manager'],
+  'observability:core:admin': ['super_admin', 'admin'],
+  'observability:logs:write': ['super_admin', 'admin'],
+
+  // ============================================================================
   // IMAGE ANALYSIS MODULE - OpenAI Vision (Gate 2)
   // NOTA: Alice analisa e gera imagens via OpenAI. Permissões para upload/aprovação de imagens.
   // ============================================================================

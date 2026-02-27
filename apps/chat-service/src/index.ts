@@ -9,7 +9,7 @@
  */
 
 import express from 'express';
-import type { Request, Response } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import cors from 'cors';
@@ -51,6 +51,7 @@ import {
   requirePermission, 
   requireAuth,
   requireSameTenant,
+  requireInternalHmacAuth,
   generateInternalAuthHeaders,
   isInternalAuthEnabled,
   checkPermission,
@@ -856,7 +857,7 @@ const wss = new WebSocketServer({
     const wsToken = url.searchParams.get('token');
     
     if (wsToken) {
-      const tokenPayload = verifyWsToken(wsToken);
+      const tokenPayload = verifyWsToken(wsToken, 'ws');
       if (tokenPayload) {
         const authResult: WebSocketAuthResult = {
           authenticated: true,
@@ -7416,19 +7417,26 @@ app.get('/api/chat/version', (_req: Request, res: Response) => {
 
 const WS_TOKEN_SECRET = process.env.WS_TOKEN_SECRET || SESSION_SECRET;
 const WS_TOKEN_TTL_SECONDS = Number(process.env.WS_TOKEN_TTL_SECONDS ?? '60');
+type WsTokenAudience = 'ws' | 'ws-agent';
 
 /** Gera token HMAC efêmero para autenticação WebSocket */
-function generateWsToken(payload: { userId: string; tenantId: string; role: string }): string {
+function generateWsToken(
+  payload: { userId: string; tenantId: string; role: string },
+  aud: WsTokenAudience = 'ws'
+): string {
   const nonce = crypto.randomUUID();
   const exp = Math.floor(Date.now() / 1000) + WS_TOKEN_TTL_SECONDS;
-  const data = JSON.stringify({ ...payload, nonce, exp, aud: 'ws' });
+  const data = JSON.stringify({ ...payload, nonce, exp, aud });
   const signature = crypto.createHmac('sha256', WS_TOKEN_SECRET).update(data).digest('hex');
   // Codificar payload + assinatura em base64url
   return Buffer.from(`${data}.${signature}`).toString('base64url');
 }
 
 /** Valida token HMAC efêmero */
-function verifyWsToken(token: string): { userId: string; tenantId: string; role: string } | null {
+function verifyWsToken(
+  token: string,
+  expectedAud: WsTokenAudience = 'ws'
+): { userId: string; tenantId: string; role: string } | null {
   try {
     const decoded = Buffer.from(token, 'base64url').toString('utf-8');
     const dotIndex = decoded.lastIndexOf('.');
@@ -7442,8 +7450,8 @@ function verifyWsToken(token: string): { userId: string; tenantId: string; role:
       return null;
     }
 
-    const payload = JSON.parse(data) as { userId: string; tenantId: string; role: string; exp: number; aud: string };
-    if (payload.aud !== 'ws') return null;
+    const payload = JSON.parse(data) as { userId: string; tenantId: string; role: string; exp: number; aud: WsTokenAudience };
+    if (payload.aud !== expectedAud) return null;
     if (payload.exp < Math.floor(Date.now() / 1000)) return null;
 
     return { userId: payload.userId, tenantId: payload.tenantId, role: payload.role };
@@ -7453,6 +7461,9 @@ function verifyWsToken(token: string): { userId: string; tenantId: string; role:
 }
 
 const wsTokenAuth = requireAuth({ allowAnonymous: true, logUnauthorized: false });
+const wsTokenQuerySchema = z.object({
+  aud: z.enum(['ws', 'ws-agent']).default('ws'),
+});
 // Permite request anônima para logar 401 de forma explícita, sem spam.
 app.get('/api/chat/ws-token', wsTokenAuth, async (req: Request, res: Response) => {
   try {
@@ -7471,8 +7482,27 @@ app.get('/api/chat/ws-token', wsTokenAuth, async (req: Request, res: Response) =
       return;
     }
 
-    const token = generateWsToken({ userId, tenantId, role: role ?? 'viewer' });
-    res.json({ success: true, data: { token, expiresIn: WS_TOKEN_TTL_SECONDS } });
+    const queryParsed = wsTokenQuerySchema.safeParse(req.query);
+    if (!queryParsed.success) {
+      res.status(400).json({ error: 'Parametro aud invalido' });
+      return;
+    }
+
+    const aud = queryParsed.data.aud as WsTokenAudience;
+    const safeRole = (role ?? 'viewer') as Role;
+    if (aud === 'ws-agent') {
+      const permissionCheck = await checkPermission(
+        { userId, tenantId, role: safeRole },
+        'chat:takeover:write'
+      );
+      if (!permissionCheck.allowed) {
+        res.status(403).json({ error: 'Permissao insuficiente para ws-agent' });
+        return;
+      }
+    }
+
+    const token = generateWsToken({ userId, tenantId, role: safeRole }, aud);
+    res.json({ success: true, data: { token, expiresIn: WS_TOKEN_TTL_SECONDS, aud } });
   } catch (error) {
     logger.error({ error: error instanceof Error ? error.message : String(error) }, 'Erro ao gerar ws-token');
     res.status(500).json({ error: 'Erro ao gerar token WebSocket' });
@@ -15663,19 +15693,46 @@ server.on('upgrade', (request, socket, head) => {
 });
 
 agentWss.on('connection', async (ws, req) => {
+  if (!verifyWebSocketOrigin(req.headers.origin)) {
+    ws.close(4000, 'Origin nao permitido');
+    return;
+  }
+
   const urlParams = new URL(req.url || '', 'ws://localhost').searchParams;
-  const agentId = urlParams.get('agentId');
-  const claimedTenantId = urlParams.get('tenantId');
-  
-  if (!agentId) {
-    ws.close(4001, 'ID do agente necessário');
+  const wsToken = urlParams.get('token');
+  let tokenPayload = wsToken ? verifyWsToken(wsToken, 'ws-agent') : null;
+
+  // Compatibilidade: permite sessão autenticada (cookie) para clientes legados
+  // enquanto a migração para token efêmero ws-agent é concluída.
+  if (!tokenPayload) {
+    const sessionAuth = await authenticateWebSocketConnection(req.headers.cookie, req.headers.origin);
+    if (sessionAuth.authenticated && sessionAuth.userId && sessionAuth.tenantId) {
+      tokenPayload = {
+        userId: sessionAuth.userId,
+        tenantId: sessionAuth.tenantId,
+        role: sessionAuth.role ?? 'viewer',
+      };
+    }
+  }
+
+  if (!tokenPayload) {
+    ws.close(4001, 'Token ws-agent invalido ou expirado');
     return;
   }
-  
-  if (!claimedTenantId) {
-    ws.close(4002, 'Tenant ID obrigatório para conexão de agente');
+
+  const queryAgentId = urlParams.get('agentId');
+  const queryTenantId = urlParams.get('tenantId');
+  if (queryAgentId && queryAgentId !== tokenPayload.userId) {
+    ws.close(4002, 'agentId divergente do token');
     return;
   }
+  if (queryTenantId && queryTenantId !== tokenPayload.tenantId) {
+    ws.close(4003, 'tenantId divergente do token');
+    return;
+  }
+
+  const agentId = tokenPayload.userId;
+  const claimedTenantId = tokenPayload.tenantId;
   
   // ========================================================================
   // SEGURANÇA: Validar que o agente pertence ao tenant especificado
@@ -18533,6 +18590,48 @@ const notifyAgentSchema = z.object({
   priority: z.enum(['low', 'medium', 'high']).optional(),
 });
 
+const chatInternalReplayBlockedTotal = new PromCounter({
+  name: 'alice_chat_internal_replay_block_total',
+  help: 'Total de bloqueios por replay em rotas internas do chat-service',
+});
+
+const chatInternalIdempotencyKeys = new Map<string, number>();
+const CHAT_INTERNAL_IDEMPOTENCY_TTL_MS = 5 * 60 * 1000;
+const CHAT_INTERNAL_IDEMPOTENCY_CLEANUP_MS = 60 * 1000;
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, expiresAt] of chatInternalIdempotencyKeys.entries()) {
+    if (expiresAt <= now) {
+      chatInternalIdempotencyKeys.delete(key);
+    }
+  }
+}, CHAT_INTERNAL_IDEMPOTENCY_CLEANUP_MS);
+
+const internalIdempotencyHeaderSchema = z.object({
+  'x-idempotency-key': z.string().trim().min(16).max(128),
+});
+
+function requireInternalIdempotencyKey(req: Request, res: Response, next: NextFunction): void {
+  const parsed = internalIdempotencyHeaderSchema.safeParse(req.headers);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Header X-Idempotency-Key obrigatorio' });
+    return;
+  }
+
+  const key = parsed.data['x-idempotency-key'];
+  const now = Date.now();
+  const current = chatInternalIdempotencyKeys.get(key);
+  if (current && current > now) {
+    chatInternalReplayBlockedTotal.inc();
+    res.status(409).json({ error: 'Requisicao duplicada detectada', code: 'IDEMPOTENCY_REPLAY' });
+    return;
+  }
+
+  chatInternalIdempotencyKeys.set(key, now + CHAT_INTERNAL_IDEMPOTENCY_TTL_MS);
+  next();
+}
+
 /**
  * POST /api/chat/message
  * 
@@ -18546,7 +18645,7 @@ const notifyAgentSchema = z.object({
  * 
  * Usado pelo integrations-service para processar mensagens com LLM
  */
-app.post('/api/chat/message', asyncHandler(async (req: Request, res: Response) => {
+app.post('/api/chat/message', requireInternalHmacAuth(), requireInternalIdempotencyKey, asyncHandler(async (req: Request, res: Response) => {
   // OWASP API3 - Validação Zod obrigatória
   const parseResult = messageFromChannelSchema.safeParse(req.body);
   if (!parseResult.success) {
@@ -18826,7 +18925,7 @@ app.post('/api/chat/message', asyncHandler(async (req: Request, res: Response) =
  * - tenantId derivado da conversa (não confia no header X-Tenant-Id)
  * - Previne data leak cross-tenant
  */
-app.post('/api/chat/notify-agent', asyncHandler(async (req: Request, res: Response) => {
+app.post('/api/chat/notify-agent', requireInternalHmacAuth(), asyncHandler(async (req: Request, res: Response) => {
   // OWASP API3 - Validação Zod obrigatória
   const parseResult = notifyAgentSchema.safeParse(req.body);
   if (!parseResult.success) {

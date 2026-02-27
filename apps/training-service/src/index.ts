@@ -3472,6 +3472,28 @@ const webhookSchema = z.object({
   timestamp: z.string().optional(),
 });
 
+const webhookInternalHeadersSchema = z.object({
+  'x-webhook-secret': z.string().min(1),
+  'x-internal-signature': z.string().regex(/^[a-f0-9]{64}$/i),
+  'x-internal-timestamp': z.string().regex(/^\d+$/),
+  'x-internal-user-id': z.string().min(1),
+  'x-internal-tenant-id': z.string().uuid(),
+  'x-internal-role': z.string().min(1),
+  'x-internal-nonce': z.string().uuid(),
+});
+
+const webhookNonceStore = new Map<string, number>();
+const WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS = 300;
+const WEBHOOK_NONCE_TTL_MS = 10 * 60 * 1000;
+setInterval(() => {
+  const now = Date.now();
+  for (const [nonce, expiresAt] of webhookNonceStore.entries()) {
+    if (expiresAt <= now) {
+      webhookNonceStore.delete(nonce);
+    }
+  }
+}, 60_000);
+
 // OWASP API3 - Schema para aprovação em lote
 const batchApproveSchema = z.object({
   ids: z.array(z.string().uuid()).min(1).max(1000),
@@ -3510,42 +3532,67 @@ const trainingStatsQuerySchema = z.object({
 });
 
 app.post('/api/training/webhook', async (req: Request, res: Response) => {
-  const webhookSecret = req.headers['x-webhook-secret'] as string | undefined;
   const expectedSecret = process.env.TRAINING_WEBHOOK_SECRET;
 
   if (!expectedSecret) {
-    logger.error('TRAINING_WEBHOOK_SECRET não configurado - webhook desabilitado por segurança');
-    return res.status(503).json({ error: 'Webhook não configurado. Configure TRAINING_WEBHOOK_SECRET.' });
+    logger.error('TRAINING_WEBHOOK_SECRET nao configurado - webhook desabilitado por seguranca');
+    return res.status(503).json({ error: 'Webhook nao configurado. Configure TRAINING_WEBHOOK_SECRET.' });
   }
 
-  // SEGURANÇA: Usar timing-safe comparison para evitar timing attacks (OWASP)
-  // crypto.timingSafeEqual() previne que atacantes descubram o secret via análise de tempo de resposta
-  if (!webhookSecret) {
-    logger.warn({ hasSecret: false }, 'Tentativa de webhook sem secret');
-    return res.status(401).json({ error: 'Webhook secret ausente' });
+  const headersValidation = webhookInternalHeadersSchema.safeParse(req.headers);
+  if (!headersValidation.success) {
+    logger.warn({ issues: headersValidation.error.issues }, 'Webhook com headers internos invalidos');
+    return res.status(401).json({ error: 'Headers internos invalidos' });
   }
-  
-  // Converter para Buffer para timing-safe comparison
+
+  const {
+    'x-webhook-secret': webhookSecret,
+    'x-internal-signature': internalSignature,
+    'x-internal-timestamp': internalTimestamp,
+    'x-internal-user-id': internalUserId,
+    'x-internal-tenant-id': internalTenantId,
+    'x-internal-role': internalRole,
+    'x-internal-nonce': internalNonce,
+  } = headersValidation.data;
+
   const secretBuffer = Buffer.from(webhookSecret, 'utf-8');
   const expectedBuffer = Buffer.from(expectedSecret, 'utf-8');
-  
-  // Se tamanhos diferentes, ainda precisamos fazer comparação para manter tempo constante
-  // Mas retornamos erro após a comparação
   const lengthsMatch = secretBuffer.length === expectedBuffer.length;
-  const isValid = lengthsMatch && crypto.timingSafeEqual(
+  const secretValid = lengthsMatch && crypto.timingSafeEqual(
     secretBuffer,
     lengthsMatch ? expectedBuffer : Buffer.alloc(secretBuffer.length)
   );
-  
-  if (!isValid) {
-    logger.warn({ hasSecret: true }, 'Tentativa de webhook com secret inválido');
-    return res.status(401).json({ error: 'Webhook secret inválido' });
+
+  if (!secretValid) {
+    logger.warn({ hasSecret: true }, 'Tentativa de webhook com secret invalido');
+    return res.status(401).json({ error: 'Webhook secret invalido' });
   }
 
-  const tenantId = req.headers['x-tenant-id'] as string | undefined;
-  if (!tenantId) {
-    return res.status(400).json({ error: 'Header X-Tenant-ID obrigatório' });
+  const timestampNum = Number.parseInt(internalTimestamp, 10);
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  if (!Number.isFinite(timestampNum) || Math.abs(nowSeconds - timestampNum) > WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS) {
+    return res.status(401).json({ error: 'Timestamp interno invalido ou expirado' });
   }
+
+  const signaturePayload = `${internalUserId}:${internalTenantId}:${internalRole}:${internalNonce}:${internalTimestamp}`;
+  const expectedSignature = crypto
+    .createHmac('sha256', expectedSecret)
+    .update(signaturePayload)
+    .digest('hex');
+  const signatureValid = internalSignature.length === expectedSignature.length
+    && crypto.timingSafeEqual(Buffer.from(internalSignature, 'utf8'), Buffer.from(expectedSignature, 'utf8'));
+  if (!signatureValid) {
+    return res.status(401).json({ error: 'Assinatura interna invalida' });
+  }
+
+  const nonceKey = `${internalTenantId}:${internalNonce}`;
+  const nonceExpiry = webhookNonceStore.get(nonceKey);
+  if (nonceExpiry && nonceExpiry > Date.now()) {
+    return res.status(409).json({ error: 'Nonce ja utilizado (replay detectado)' });
+  }
+  webhookNonceStore.set(nonceKey, Date.now() + WEBHOOK_NONCE_TTL_MS);
+
+  const tenantId = internalTenantId;
 
   try {
     const validation = webhookSchema.safeParse(req.body);
@@ -4800,3 +4847,4 @@ let autoLearningLoopActive = false;
     process.exit(1);
   }
 })();
+

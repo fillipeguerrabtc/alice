@@ -22,6 +22,7 @@ import {
   createRateLimiter,
   createErrorHandler,
   createNotFoundHandler,
+  requirePermission,
   registerShutdownCallback,
   ShutdownPriority,
   setupSwaggerUI,
@@ -90,6 +91,34 @@ function requireInternalOrSessionAuth(req: Request, res: Response, next: NextFun
   }
 
   return requireInternalAuth(req, res, next);
+}
+
+const requireObservabilityReadPermission = requirePermission('observability:core:read');
+const requireObservabilityAdminPermission = requirePermission('observability:core:admin');
+const requireObservabilityLogsWritePermission = requirePermission('observability:logs:write');
+
+function requireObservabilityRead(req: Request, res: Response, next: NextFunction): void {
+  if (isInternalAuthValid(req)) {
+    next();
+    return;
+  }
+  void requireObservabilityReadPermission(req, res, next);
+}
+
+function requireObservabilityAdmin(req: Request, res: Response, next: NextFunction): void {
+  if (isInternalAuthValid(req)) {
+    next();
+    return;
+  }
+  void requireObservabilityAdminPermission(req, res, next);
+}
+
+function requireObservabilityLogsWrite(req: Request, res: Response, next: NextFunction): void {
+  if (isInternalAuthValid(req)) {
+    next();
+    return;
+  }
+  void requireObservabilityLogsWritePermission(req, res, next);
 }
 
 const PORT = process.env.PORT || 3007;
@@ -532,7 +561,7 @@ app.get('/ready', async (_req: Request, res: Response) => {
 });
 
 // Health check completo do stack
-app.get('/api/observability/health', async (_req: Request, res: Response) => {
+app.get('/api/observability/health', requireObservabilityRead, async (_req: Request, res: Response) => {
   try {
     const health = await checkAllServices();
     
@@ -551,7 +580,7 @@ app.get('/api/observability/health', async (_req: Request, res: Response) => {
 });
 
 // Status individual de cada serviço
-app.get('/api/observability/services/:name', async (req: Request, res: Response) => {
+app.get('/api/observability/services/:name', requireObservabilityRead, async (req: Request, res: Response) => {
   const { name } = req.params;
   
   const serviceConfig: Record<string, { url: string; healthPath: string }> = {
@@ -575,7 +604,7 @@ app.get('/api/observability/services/:name', async (req: Request, res: Response)
 });
 
 // Métricas agregadas via Prometheus (SSOT)
-app.get('/api/observability/metrics/services', async (_req: Request, res: Response) => {
+app.get('/api/observability/metrics/services', requireObservabilityRead, async (_req: Request, res: Response) => {
   try {
     const [
       upResult,
@@ -621,7 +650,7 @@ app.get('/api/observability/metrics/services', async (_req: Request, res: Respon
   }
 });
 
-app.get('/api/observability/metrics/circuit-breakers', async (_req: Request, res: Response) => {
+app.get('/api/observability/metrics/circuit-breakers', requireObservabilityRead, async (_req: Request, res: Response) => {
   try {
     const [stateResult, failuresResult, successesResult] = await Promise.all([
       queryPrometheus('alice_circuit_breaker_state{job="alice-services"}'),
@@ -691,7 +720,7 @@ app.get('/api/observability/metrics/circuit-breakers', async (_req: Request, res
   }
 });
 
-app.get('/api/observability/metrics/integrations', async (_req: Request, res: Response) => {
+app.get('/api/observability/metrics/integrations', requireObservabilityRead, async (_req: Request, res: Response) => {
   try {
     const [configuredResult, operationalResult] = await Promise.all([
       queryPrometheus('alice_integrations_configured'),
@@ -718,7 +747,7 @@ app.get('/api/observability/metrics/integrations', async (_req: Request, res: Re
   }
 });
 
-app.get('/api/observability/metrics/sla', async (req: Request, res: Response) => {
+app.get('/api/observability/metrics/sla', requireObservabilityRead, async (req: Request, res: Response) => {
   const tenantId = typeof req.query.tenantId === 'string'
     ? req.query.tenantId.trim()
     : typeof req.headers['x-tenant-id'] === 'string'
@@ -865,7 +894,7 @@ const frontendLogSchema = {
   }
 };
 
-app.post('/api/observability/logs', (req: Request, res: Response) => {
+app.post('/api/observability/logs', requireObservabilityLogsWrite, (req: Request, res: Response) => {
   try {
     const body = req.body;
     
@@ -893,7 +922,7 @@ app.post('/api/observability/logs', (req: Request, res: Response) => {
 });
 
 // Status dos circuit breakers (Regra 16 - Observability)
-app.get('/api/observability/circuit-breakers', (_req: Request, res: Response) => {
+app.get('/api/observability/circuit-breakers', requireObservabilityRead, (_req: Request, res: Response) => {
   const statuses = Array.from(circuitBreakers.entries()).map(([name, breaker]) => ({
     name,
     state: breaker.opened ? 'open' : breaker.halfOpen ? 'half-open' : 'closed',
@@ -920,7 +949,7 @@ app.get('/api/observability/circuit-breakers', (_req: Request, res: Response) =>
 });
 
 // URLs de acesso rápido
-app.get('/api/observability/urls', (_req: Request, res: Response) => {
+app.get('/api/observability/urls', requireObservabilityAdmin, (_req: Request, res: Response) => {
   res.json({
     prometheus: {
       internal: PROMETHEUS_URL,

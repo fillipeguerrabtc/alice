@@ -54,6 +54,11 @@ const postmortemDlqSize = new PromGauge({
   help: 'Tamanho atual da Dead Letter Queue',
 });
 
+const postmortemEnqueueUnavailableTotal = new PromCounter({
+  name: 'alice_postmortem_enqueue_unavailable_total',
+  help: 'Total de tentativas de enqueue de post-mortem sem Redis disponivel',
+});
+
 // ============================================================================
 // Constantes
 // ============================================================================
@@ -103,6 +108,15 @@ interface PostMortemJob {
   scheduledAt: string;
 }
 
+export class PostMortemQueueUnavailableError extends Error {
+  readonly code = 'POSTMORTEM_QUEUE_UNAVAILABLE';
+
+  constructor(message = 'Redis indisponivel para enfileirar post-mortem') {
+    super(message);
+    this.name = 'PostMortemQueueUnavailableError';
+  }
+}
+
 // ============================================================================
 // Estado do worker
 // ============================================================================
@@ -141,15 +155,13 @@ export async function enqueuePostMortem(params: {
 }): Promise<string> {
   const redis = getRedisClient();
   if (!redis) {
-    logger.warn('Redis não disponível - executando post-mortem sincronamente');
-    // Fallback síncrono se Redis não disponível
-    const result = await executePostMortem({
-      position: params.positionData,
-      indicators: params.indicators,
-      userId: params.userId,
-      namespaceId: params.namespaceId,
-    });
-    return result.id;
+    postmortemEnqueueUnavailableTotal.inc();
+    logger.error({
+      tenantId: params.positionData.tenantId,
+      positionId: params.positionData.id,
+      isDemo: params.positionData.isDemo,
+    }, 'Redis indisponivel - enqueue de post-mortem bloqueado (fail-closed)');
+    throw new PostMortemQueueUnavailableError();
   }
 
   const jobId = `pm-${params.positionData.id}-${Date.now()}`;
@@ -466,3 +478,4 @@ export async function retryDlqJob(jobId: string): Promise<boolean> {
   logger.info({ jobId }, 'Job movido da DLQ para fila principal');
   return true;
 }
+

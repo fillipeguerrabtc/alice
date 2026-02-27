@@ -4233,7 +4233,16 @@ app.get('/api/media/stats', requireAuth(), requireSameTenant(getTenantIdFromRequ
 // Servir arquivos de mídia (com verificação de tenant e autenticação)
 // SEGURANÇA: Requer autenticação e verifica que o usuário pertence ao tenant solicitado
 app.get('/api/media/files/:tenantId/:mediaType/:filename', requireAuth(), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
-  const { tenantId, mediaType, filename } = req.params;
+  const mediaPathParamsSchema = z.object({
+    tenantId: z.string().uuid(),
+    mediaType: z.enum(['image', 'audio', 'document']),
+    filename: z.string().regex(/^[A-Za-z0-9._-]{1,255}$/),
+  });
+  const paramsParsed = mediaPathParamsSchema.safeParse(req.params);
+  if (!paramsParsed.success) {
+    return res.status(400).json({ error: 'Parametros de caminho invalidos' });
+  }
+  const { tenantId, mediaType, filename } = paramsParsed.data;
   
   // SEGURANÇA: Validar que o tenantId da URL corresponde ao tenant do usuário autenticado
   if (req.tenantId && req.tenantId !== tenantId) {

@@ -8134,7 +8134,7 @@ app.post('/api/integrations/wise/oauth/refresh-user-token', requirePermission('i
 });
 
 // Status do Wise (não requer configuração para retornar status)
-app.get('/api/integrations/wise/status', (_req: Request, res: Response) => {
+app.get('/api/integrations/wise/status', requirePermission('integrations:wise:read'), (_req: Request, res: Response) => {
   const profileId = getProfileIdSafe();
   res.json({
     configured: isWiseConfigured(),
@@ -8332,11 +8332,24 @@ async function processMessageWithLLM(
   const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s para LLM processing
 
   try {
+    const internalHeaders = generateInternalAuthHeaders({
+      userId: 'integrations-service',
+      tenantId,
+      role: 'super_admin',
+    });
+    const correlationId = crypto.randomUUID();
+    const idempotencyKey = crypto
+      .createHash('sha256')
+      .update(`chat-message:${conversationId}:${message}`)
+      .digest('hex');
+
     const response = await fetch(`${CHAT_SERVICE_URL_FINAL}/api/chat/message`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(tenantId && { 'X-Tenant-Id': tenantId }),
+        'x-correlation-id': correlationId,
+        'x-idempotency-key': idempotencyKey,
+        ...internalHeaders,
       },
       body: JSON.stringify({
         conversationId,
@@ -8753,9 +8766,18 @@ app.post('/api/integrations/twilio/webhook/whatsapp', async (req: Request, res: 
       const notifyController = new AbortController();
       const notifyTimeoutId = setTimeout(() => notifyController.abort(), 5000);
       try {
+        const internalHeaders = generateInternalAuthHeaders({
+          userId: 'integrations-service',
+          tenantId: user.tenantId ?? undefined,
+          role: 'super_admin',
+        });
         await fetch(`${CHAT_SERVICE_URL_FINAL}/api/chat/notify-agent`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-correlation-id': crypto.randomUUID(),
+            ...internalHeaders,
+          },
           body: JSON.stringify({
             conversationId: conversation.id,
             type: 'new_message',
@@ -9090,7 +9112,7 @@ app.post('/api/integrations/twilio/send', requirePermission('integrations:twilio
  * Status da integração Twilio
  * Rota: GET /api/integrations/twilio/status
  */
-app.get('/api/integrations/twilio/status', (_req: Request, res: Response) => {
+app.get('/api/integrations/twilio/status', requirePermission('integrations:twilio:read'), (_req: Request, res: Response) => {
   const configured = !!(TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && TWILIO_WHATSAPP_NUMBER);
   res.json({
     configured,

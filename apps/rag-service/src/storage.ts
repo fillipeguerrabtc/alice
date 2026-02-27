@@ -120,6 +120,26 @@ class LocalStorageService implements StorageService {
     });
   }
 
+  private resolveSafeAbsolutePath(filePath: string): string {
+    if (!filePath || typeof filePath !== 'string') {
+      throw new Error('Caminho de arquivo invalido');
+    }
+    if (filePath.includes('\0')) {
+      throw new Error('Caminho de arquivo contem byte nulo');
+    }
+
+    const normalized = path.normalize(filePath);
+    const withoutLeadingSeparators = normalized.replace(/^[\\/]+/, '');
+    const absolutePath = path.resolve(this.baseDir, withoutLeadingSeparators);
+    const basePath = path.resolve(this.baseDir);
+
+    if (!absolutePath.startsWith(`${basePath}${path.sep}`) && absolutePath !== basePath) {
+      throw new Error('Path traversal detectado');
+    }
+
+    return absolutePath;
+  }
+
   /**
    * Garantir que um diretório existe, criando se necessário
    * Permissões enterprise: 750 (rwxr-x---) - owner/group rwx, outros sem acesso
@@ -174,7 +194,7 @@ class LocalStorageService implements StorageService {
    * Deletar arquivo do disco
    */
   async deleteFile(filePath: string): Promise<void> {
-    const absolutePath = path.join(this.baseDir, filePath);
+    const absolutePath = this.resolveSafeAbsolutePath(filePath);
     try {
       await fs.unlink(absolutePath);
       logger.info({ filePath }, 'Arquivo deletado');
@@ -200,7 +220,12 @@ class LocalStorageService implements StorageService {
    * Verificar se arquivo existe
    */
   async fileExists(filePath: string): Promise<boolean> {
-    const absolutePath = path.join(this.baseDir, filePath);
+    let absolutePath: string;
+    try {
+      absolutePath = this.resolveSafeAbsolutePath(filePath);
+    } catch {
+      return false;
+    }
     try {
       await fs.access(absolutePath);
       return true;
@@ -213,7 +238,7 @@ class LocalStorageService implements StorageService {
    * Ler arquivo do disco
    */
   async readFile(filePath: string): Promise<Buffer> {
-    const absolutePath = path.join(this.baseDir, filePath);
+    const absolutePath = this.resolveSafeAbsolutePath(filePath);
     return fs.readFile(absolutePath);
   }
 
@@ -221,7 +246,7 @@ class LocalStorageService implements StorageService {
    * Obter caminho absoluto do arquivo
    */
   getAbsolutePath(filePath: string): string {
-    return path.join(this.baseDir, filePath);
+    return this.resolveSafeAbsolutePath(filePath);
   }
 
   /**
