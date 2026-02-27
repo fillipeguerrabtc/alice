@@ -6,7 +6,8 @@ export type StreamCorruptionReason =
   | 'noise_ratio'
   | 'repeated_words'
   | 'token_loop'
-  | 'digit_noise';
+  | 'digit_noise'
+  | 'fragmented_tokens';
 
 export interface StreamCorruptionEvaluation {
   corrupted: boolean;
@@ -112,6 +113,39 @@ function hasHighDigitNoise(content: string): boolean {
   return uniqueTokenRatio < 0.3;
 }
 
+function hasFragmentedTokenNoise(content: string, profile: StreamCorruptionProfile): boolean {
+  const tokens = content.match(/[\p{L}\p{N}][\p{L}\p{N}\p{M}'-]*/gu) ?? [];
+  const minTokens = profile === 'trading' ? 35 : 24;
+  if (tokens.length < minTokens) {
+    return false;
+  }
+
+  let tinyOrNumeric = 0;
+  let longNumericChain = 0;
+  let maxNumericChain = 0;
+  for (const token of tokens) {
+    const normalized = token.toLowerCase();
+    const isNumeric = /^\d+$/u.test(normalized);
+    const isTinyToken = normalized.length <= 1;
+    const isTinyConnector = normalized.length <= 2 && /^(?:[a-z]|\d+)$/u.test(normalized);
+    if (isNumeric || isTinyToken || isTinyConnector) {
+      tinyOrNumeric += 1;
+    }
+    if (isNumeric || isTinyToken) {
+      longNumericChain += 1;
+      if (longNumericChain > maxNumericChain) {
+        maxNumericChain = longNumericChain;
+      }
+    } else {
+      longNumericChain = 0;
+    }
+  }
+
+  const tinyRatio = tinyOrNumeric / tokens.length;
+  const tinyRatioThreshold = profile === 'trading' ? 0.33 : 0.26;
+  return tinyRatio >= tinyRatioThreshold || maxNumericChain >= 8;
+}
+
 function isLikelyCodeHeavyResponse(content: string): boolean {
   const trimmed = content.trim();
   if (!trimmed) return false;
@@ -170,6 +204,10 @@ export function evaluateCorruptedAssistantResponse(
 
   if (profile !== 'trading' && shouldApplyNoiseHeuristic && hasHighDigitNoise(normalized)) {
     return { corrupted: true, reason: 'digit_noise' };
+  }
+
+  if (profile !== 'trading' && shouldApplyNoiseHeuristic && hasFragmentedTokenNoise(normalized, profile)) {
+    return { corrupted: true, reason: 'fragmented_tokens' };
   }
 
   return { corrupted: false, reason: null };

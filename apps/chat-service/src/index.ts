@@ -2902,7 +2902,8 @@ GUIDELINES DE COMPORTAMENTO:
 - Seja profissional, útil e objetiva
 - Se não souber algo, diga com transparência
 - Forneça informações precisas e relevantes
-- Mantenha tom respeitoso e positivo`;
+- Mantenha tom respeitoso e positivo
+- Revise ortografia e gramática antes de finalizar cada resposta`;
 
 const DEFAULT_TYPING_SPEED_MS = 100;
 
@@ -3088,17 +3089,30 @@ async function getUserLocaleContext(
   tenantId?: string | null
 ): Promise<UserLocaleContext | undefined> {
   if (!userId) return undefined;
-  const userProfile = await db.query.users.findFirst({
+  const getColumns = {
+    idioma: true,
+    timezone: true,
+    preferencias: true,
+  } as const;
+  let userProfile = await db.query.users.findFirst({
     where: and(
       eq(schema.users.id, userId),
       tenantId ? eq(schema.users.tenantId, tenantId) : sql`1=1`
     ),
-    columns: {
-      idioma: true,
-      timezone: true,
-      preferencias: true,
-    },
+    columns: getColumns,
   });
+  if (!userProfile && tenantId) {
+    userProfile = await db.query.users.findFirst({
+      where: eq(schema.users.id, userId),
+      columns: getColumns,
+    });
+    if (userProfile) {
+      logger.warn(
+        { userId, tenantId },
+        'Fallback de locale aplicado sem filtro de tenant (contexto multi-tenant/super-admin)'
+      );
+    }
+  }
   if (!userProfile) {
     return undefined;
   }
@@ -3214,12 +3228,23 @@ async function getAssistantSettingsForTenant(tenantId?: string | null): Promise<
 }
 
 async function getUserById(userId: string, tenantId: string | null | undefined) {
-  const user = await db.query.users.findFirst({
+  let user = await db.query.users.findFirst({
     where: and(
       eq(schema.users.id, userId),
       tenantId ? eq(schema.users.tenantId, tenantId) : sql`1=1`
     ),
   });
+  if (!user && tenantId) {
+    user = await db.query.users.findFirst({
+      where: eq(schema.users.id, userId),
+    });
+    if (user) {
+      logger.warn(
+        { userId, tenantId },
+        'Fallback de usuário aplicado sem filtro de tenant (contexto multi-tenant/super-admin)'
+      );
+    }
+  }
   if (!user) {
     logger.warn({ userId, tenantId }, 'Usuário não encontrado para userId/tenantId informado');
   }
@@ -10404,8 +10429,8 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         const shouldSuppressCorruptedChunks = () => {
           const currentLength = assistantResponse.length;
           if (suppressCorruptedStreamChunks) return true;
-          if (currentLength < 220) return false;
-          if (currentLength - lastCorruptionCheckLength < 120) return false;
+          if (currentLength < 140) return false;
+          if (currentLength - lastCorruptionCheckLength < 80) return false;
           lastCorruptionCheckLength = currentLength;
           const partialSanitized = sanitizeAssistantResponse(assistantResponse);
           const corruptionReason = getCorruptionReason(partialSanitized, mediaProfile);
@@ -10606,8 +10631,35 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             error: streamError instanceof Error ? streamError.message : String(streamError),
           },
         });
+        const fallbackMessage = fixPreferredNameInDirectAddress(LLM_FALLBACK_MESSAGE, nameContext.preferredName);
+        if (!assistantPersisted && conversationId && userMessage) {
+          assistantPersisted = true;
+          try {
+            const [assistantMessage] = await db.insert(schema.messages).values({
+              conversationId,
+              agentId: conversation?.agentId ?? undefined,
+              conteudo: fallbackMessage,
+              tipo: 'text',
+              isFromUser: false,
+            }).returning();
+
+            await db.update(schema.conversations)
+              .set({
+                totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+                ultimaMensagemEm: new Date(),
+                atualizadoEm: new Date(),
+              })
+              .where(eq(schema.conversations.id, conversationId));
+
+            safeWriteSseEvent({ type: 'final_message', content: fallbackMessage });
+            safeWriteSseEvent({ type: 'message_saved', messageId: assistantMessage?.id });
+          } catch (persistError) {
+            logger.error({ error: persistError, conversationId }, 'Falha ao persistir fallback de mídia após erro de stream');
+          }
+        }
         if (res.headersSent && !res.writableEnded) {
-          res.write(`data: ${JSON.stringify({ error: 'Erro ao processar mídia' })}\n\n`);
+          safeWriteSseEvent({ error: fallbackMessage });
+          res.write('data: [DONE]\n\n');
           res.end();
         }
       }
@@ -13606,8 +13658,8 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       const shouldSuppressCorruptedChunks = () => {
         const currentLength = assistantResponse.length;
         if (suppressCorruptedStreamChunks) return true;
-        if (currentLength < 220) return false;
-        if (currentLength - lastCorruptionCheckLength < 120) return false;
+        if (currentLength < 140) return false;
+        if (currentLength - lastCorruptionCheckLength < 80) return false;
         lastCorruptionCheckLength = currentLength;
         const partialSanitized = sanitizeAssistantResponse(assistantResponse);
         const corruptionReason = getCorruptionReason(partialSanitized, streamProfile);
@@ -13856,6 +13908,32 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           error: streamError instanceof Error ? streamError.message : String(streamError),
         },
       });
+      const fallbackMessage = fixPreferredNameInDirectAddress(LLM_FALLBACK_MESSAGE, nameContext.preferredName);
+      if (!assistantPersisted && conversationId && userMessage) {
+        assistantPersisted = true;
+        try {
+          const [assistantMessage] = await db.insert(schema.messages).values({
+            conversationId,
+            agentId: conversation?.agentId ?? undefined,
+            conteudo: fallbackMessage,
+            tipo: 'text',
+            isFromUser: false,
+          }).returning();
+
+          await db.update(schema.conversations)
+            .set({
+              totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+              ultimaMensagemEm: new Date(),
+              atualizadoEm: new Date(),
+            })
+            .where(eq(schema.conversations.id, conversationId));
+
+          safeWriteSseEvent({ type: 'final_message', content: fallbackMessage });
+          safeWriteSseEvent({ type: 'message_saved', messageId: assistantMessage?.id });
+        } catch (persistError) {
+          logger.error({ error: persistError, conversationId }, 'Falha ao persistir fallback de texto após erro de stream');
+        }
+      }
       // BUG FIX 25/12/2025: onDone já foi chamado no catch interno de proxyStreamFromGpuManager
       // Mas pode ter fechado a resposta com [DONE] ao invés de erro
       // Tentar enviar mensagem de erro apenas se resposta ainda estiver aberta
@@ -13863,7 +13941,8 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       // Para SSE, headers já foram enviados (linha 2000), então verificamos apenas se resposta não foi finalizada
       if (res.headersSent && !res.writableEnded) {
         try {
-          res.write(`data: ${JSON.stringify({ error: 'Erro ao processar mensagem' })}\n\n`);
+          safeWriteSseEvent({ error: fallbackMessage });
+          res.write('data: [DONE]\n\n');
           res.end();
         } catch (endError) {
           // Resposta já fechada (provavelmente por onDone), ignorar

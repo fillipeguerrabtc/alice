@@ -3902,7 +3902,7 @@ app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdF
 });
 
 // GET status de um upload específico
-app.get('/api/media/:id', requireAuth(), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
+app.get('/api/media/:id([0-9a-fA-F-]{36})', requireAuth(), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
   // OWASP API3: Validação Zod obrigatória de parâmetros de rota
   const paramsResult = uuidParamSchema.safeParse(req.params);
   if (!paramsResult.success) {

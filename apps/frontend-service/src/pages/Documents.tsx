@@ -1039,7 +1039,7 @@ export default function Documents() {
         </Tabs>
       </motion.div>
 
-      <ScrollArea className="flex-1 min-h-0 p-4">
+      <div className="flex-1 min-h-0 overflow-y-auto p-4">
         {activeTab === 'documents' && (
           <>
             {isLoading ? (
@@ -1157,7 +1157,7 @@ export default function Documents() {
             )}
           </>
         )}
-      </ScrollArea>
+      </div>
 
       {selectedDocument && (
         <DocumentViewer 
