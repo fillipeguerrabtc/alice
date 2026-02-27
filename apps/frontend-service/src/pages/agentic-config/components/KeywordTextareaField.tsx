@@ -48,7 +48,9 @@ export function KeywordTextareaField({
       control={control}
       name={name as Path<AgenticSettingsForm>}
       render={({ field }) => {
-        const value = Array.isArray(field.value) ? field.value : [];
+        const value = Array.isArray(field.value)
+          ? field.value.filter((item): item is string => typeof item === 'string')
+          : [];
         const counter = `${value.length}/${DETECTOR_LIST_MAX}`;
         const firstIssue = issues[0];
         const issueMessage = firstIssue ? formatKeywordIssue(firstIssue, t) : null;

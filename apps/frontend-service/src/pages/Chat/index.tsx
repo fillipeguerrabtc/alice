@@ -146,6 +146,7 @@ import {
   formatFileSize,
   AgentEvent,
   MessageSources,
+  InternalSourceReference,
 } from './components/types';
 
 type AgentSummary = {
@@ -238,7 +239,7 @@ function parseMessageSources(rawSources: unknown): MessageSources | null {
     })
     .filter((item): item is MessageSources['web'][number] => item !== null);
 
-  const internal: MessageSources['internal'] = rawInternal
+  const internalCandidates: Array<InternalSourceReference | null> = rawInternal
     .map((item) => {
       if (!isObjectRecord(item)) return null;
       const documentId = typeof item.documentId === 'string' ? item.documentId.trim() : '';
@@ -248,8 +249,9 @@ function parseMessageSources(rawSources: unknown): MessageSources | null {
         titulo: typeof item.titulo === 'string' && item.titulo.trim().length > 0 ? item.titulo.trim() : undefined,
         similarity: typeof item.similarity === 'number' ? item.similarity : undefined,
       };
-    })
-    .filter((item): item is MessageSources['internal'][number] => item !== null);
+    });
+  const internal: MessageSources['internal'] = internalCandidates
+    .filter((item): item is InternalSourceReference => item !== null);
 
   if (web.length === 0 && internal.length === 0) {
     return null;

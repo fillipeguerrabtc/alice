@@ -56,3 +56,22 @@ A página **Modo Agentic** foi refatorada para uma arquitetura modular com abas,
 4. `pnpm -w build`
 
 Todas concluídas com sucesso.
+
+## Hotfix de Build (Release)
+
+**Author:** Fillipe Guerra  
+**Data:** 27 de fevereiro de 2026
+
+- Corrigida tipagem de `sources.internal` no parser de SSE do Chat:
+  - arquivo: `apps/frontend-service/src/pages/Chat/index.tsx`
+  - remoção explícita de `null` com type predicate para `InternalSourceReference`.
+- Corrigida tipagem do editor de keywords para evitar união com arrays não-string:
+  - arquivo: `apps/frontend-service/src/pages/agentic-config/components/KeywordTextareaField.tsx`
+  - sanitização de `field.value` para `string[]` antes de `listToTextarea`.
+- Validação pós-correção:
+  1. `pnpm --filter @alice/frontend-service typecheck`
+  2. `pnpm --filter @alice/frontend-service build`
+  3. `pnpm -w typecheck`
+  4. `pnpm -w test`
+  5. `pnpm -w lint`
+  6. `pnpm -w build`
