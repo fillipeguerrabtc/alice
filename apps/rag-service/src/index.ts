@@ -57,6 +57,7 @@ import {
   GpuRequestPriority,
   generateInternalAuthHeaders,
   Role,
+  getCorrelationId,
 } from '@alice/shared-utils';
 import { ragServicePaths, ragServiceSchemas } from './openapi-specs.js';
 import { createLogger } from '@alice/logger';
@@ -82,6 +83,7 @@ import {
   isQueueAvailable,
   type EmbeddingJobType,
 } from './embedding-queue.js';
+import { enqueueDocumentProcessingJob } from './document-processing-queue.js';
 import { initEmbeddingWebSocket, closeEmbeddingWebSocket, getWebSocketStats } from './embedding-websocket.js';
 import { getAudioProcessor } from './audio-processor.js';
 import { getDocumentProcessor } from './document-processor.js';
@@ -118,6 +120,18 @@ type AuthUser = { id?: string; role?: 'super_admin' | string; tenantId?: string 
 function getAuthUser(req: Request): AuthUser {
   const typed = req as Request & { user?: AuthUser };
   return typed.user ?? {};
+}
+
+function getRequestCorrelationId(req: Request): string {
+  const header = req.headers['x-correlation-id'];
+  if (typeof header === 'string' && header.trim().length > 0) {
+    return header.trim();
+  }
+  const contextCorrelationId = getCorrelationId();
+  if (contextCorrelationId !== 'no-context') {
+    return contextCorrelationId;
+  }
+  return crypto.randomUUID();
 }
 
 type TrainingChunk = { id: string; conteudo: string; posicao: number };
@@ -2034,8 +2048,112 @@ app.post('/api/rag/documents/:id/send-to-training', requireAuth(), requirePermis
   }
 });
 
+app.get('/api/rag/documents/:id/status', requireAuth(), requirePermission('rag:documents:read'), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
+  const idValidation = z.object({ id: z.string().uuid('ID inválido') }).safeParse(req.params);
+  if (!idValidation.success) {
+    return res.status(400).json({ error: 'ID inválido', details: idValidation.error.format() });
+  }
+
+  const tenantId = req.tenantId;
+  if (!tenantId) {
+    return res.status(401).json({ error: 'Tenant não identificado' });
+  }
+
+  try {
+    const document = await db.query.documents.findFirst({
+      where: eq(schema.documents.id, idValidation.data.id),
+      with: { namespace: true },
+    });
+
+    if (!document || !document.namespace || document.namespace.tenantId !== tenantId) {
+      return res.status(404).json({ error: 'Documento não encontrado para este tenant' });
+    }
+
+    const metadataState = parseDocumentProcessingMetadata(document.metadata);
+    const processingStatus = document.processado
+      ? 'completed'
+      : metadataState.processingStatus;
+
+    return res.json({
+      processado: document.processado,
+      processingStatus,
+      processingError: metadataState.processingError,
+      processedAt: metadataState.processedAt,
+      chunksCount: metadataState.chunksCount,
+      sentToTrainingAt: document.sentToTrainingAt,
+    });
+  } catch (error) {
+    logger.error({ error, documentId: req.params.id }, 'Falha ao consultar status do documento');
+    return res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+app.post('/api/rag/documents/:id/reprocess', requireAuth(), requirePermission('rag:documents:write'), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
+  const idValidation = z.object({ id: z.string().uuid('ID inválido') }).safeParse(req.params);
+  if (!idValidation.success) {
+    return res.status(400).json({ error: 'ID inválido', details: idValidation.error.format() });
+  }
+
+  const tenantId = req.tenantId;
+  if (!tenantId) {
+    return res.status(401).json({ error: 'Tenant não identificado' });
+  }
+
+  try {
+    const document = await db.query.documents.findFirst({
+      where: eq(schema.documents.id, idValidation.data.id),
+      with: { namespace: true },
+    });
+
+    if (!document || !document.namespace || document.namespace.tenantId !== tenantId) {
+      return res.status(404).json({ error: 'Documento não encontrado para este tenant' });
+    }
+    if (!document.conteudo || document.conteudo.trim().length === 0) {
+      return res.status(422).json({ error: 'Documento sem conteúdo para reprocessamento' });
+    }
+
+    const correlationId = getRequestCorrelationId(req);
+    const metadataBase = typeof document.metadata === 'object' && document.metadata !== null
+      ? document.metadata as Record<string, unknown>
+      : {};
+
+    await db
+      .update(schema.documents)
+      .set({
+        processado: false,
+        metadata: {
+          ...metadataBase,
+          processingStatus: 'pending',
+          processingError: null,
+          reprocessRequestedAt: new Date().toISOString(),
+          correlationId,
+        },
+        atualizadoEm: new Date(),
+      })
+      .where(eq(schema.documents.id, document.id));
+
+    const jobId = await enqueueDocumentProcessingJob(
+      {
+        jobId: crypto.randomUUID(),
+        tenantId,
+        documentId: document.id,
+        namespaceId: document.namespaceId || document.namespace.id,
+        priority: 5,
+        correlationId,
+        attempts: 0,
+      },
+      { force: true }
+    );
+
+    return res.json({ jobId });
+  } catch (error) {
+    logger.error({ error, documentId: req.params.id }, 'Falha ao solicitar reprocessamento do documento');
+    return res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
 const createDocumentSchema = z.object({
-  namespaceId: z.string().uuid().optional(),
+  namespaceId: z.string().uuid(),
   titulo: z.string().min(1),
   conteudo: z.string().min(1),
   tipo: z.string().optional(),
@@ -2063,6 +2181,34 @@ async function assertNamespaceOwnership(namespaceId: string | undefined, tenantI
   if (!namespace || namespace.tenantId !== tenantId) {
     throw new Error('Namespace inválido ou não pertence ao tenant');
   }
+}
+
+function parseDocumentProcessingMetadata(metadata: unknown): {
+  processingStatus: 'pending' | 'processing' | 'failed' | 'completed';
+  processingError: string | null;
+  processedAt: string | null;
+  chunksCount: number | null;
+} {
+  const base = typeof metadata === 'object' && metadata !== null && !Array.isArray(metadata)
+    ? metadata as Record<string, unknown>
+    : {};
+
+  const statusFromMetadata = typeof base.processingStatus === 'string'
+    ? base.processingStatus
+    : undefined;
+  const validStatuses = new Set(['pending', 'processing', 'failed', 'completed']);
+  const normalizedStatus = validStatuses.has(statusFromMetadata || '')
+    ? statusFromMetadata as 'pending' | 'processing' | 'failed' | 'completed'
+    : 'pending';
+
+  return {
+    processingStatus: normalizedStatus,
+    processingError: typeof base.processingError === 'string' ? base.processingError : null,
+    processedAt: typeof base.processedAt === 'string' ? base.processedAt : null,
+    chunksCount: typeof base.chunksCount === 'number' && Number.isFinite(base.chunksCount)
+      ? base.chunksCount
+      : null,
+  };
 }
 
 async function rebuildDocumentEmbeddings(params: {
@@ -2151,7 +2297,11 @@ app.post('/api/rag/documents', requireAuth(), requirePermission('rag:documents:w
   }
 
   try {
-    const body = createDocumentSchema.parse(req.body);
+    const bodyResult = createDocumentSchema.safeParse(req.body);
+    if (!bodyResult.success) {
+      return res.status(400).json({ error: 'Parâmetros inválidos', details: bodyResult.error.format() });
+    }
+    const body = bodyResult.data;
     await assertNamespaceOwnership(body.namespaceId, tenantId);
 
     const hashConteudo = hashContent(body.conteudo);
@@ -2172,14 +2322,7 @@ app.post('/api/rag/documents', requireAuth(), requirePermission('rag:documents:w
       });
     }
 
-    const documentEmbedding = await generateEmbedding(body.conteudo.slice(0, 2000));
-    
-    // Validar dimensão antes de salvar (Enterprise-Grade - Regra 6)
-    validateEmbeddingDimension(documentEmbedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
-
-    // MULTI-TENANCY: Documento associado ao tenant via namespaceId
-    // namespaceId deve pertencer ao tenant do usuário (validado pelo backend)
-    // Gate 2: Embeddings de TEXTO são SSOT no Qdrant (PostgreSQL mantém apenas conteúdo/metadados).
+    const correlationId = getRequestCorrelationId(req);
     const [document] = await db.insert(schema.documents).values({
       namespaceId: body.namespaceId,
       titulo: body.titulo,
@@ -2188,102 +2331,37 @@ app.post('/api/rag/documents', requireAuth(), requirePermission('rag:documents:w
       fonte: body.fonte,
       urlOrigem: body.urlOrigem,
       hashConteudo,
-      // embedding OMITIDO - texto vai para Qdrant (SSOT)
+      metadata: {
+        sourceType: 'api_create',
+        processingStatus: 'pending',
+        correlationId,
+        createdAt: new Date().toISOString(),
+      },
       processado: false,
     }).returning();
-    
-    // Armazenar embedding do documento inteiro no Qdrant para busca semântica
-    if (documentEmbedding.length > 0 && isQdrantConfigured()) {
-      await upsertPoints(TEXT_COLLECTION_NAME, [{
-        id: `document-${document.id}`,
-        vector: documentEmbedding,
-        payload: {
-          type: 'document',
-          documentId: document.id,
-          titulo: body.titulo,
-          tenantId: tenantId,
-          namespaceId: body.namespaceId,
-          fonte: body.fonte,
-          urlOrigem: body.urlOrigem,
-          conteudoPreview: body.conteudo.slice(0, 500),
-          criadoEm: new Date().toISOString(),
-        },
-      }]);
-      logger.debug({ documentId: document.id }, 'Embedding de documento inserido no Qdrant');
-    }
 
-    const chunks = chunkText(body.conteudo);
-    
-    // Gate 2: Inserir chunks no PostgreSQL (conteúdo) e no Qdrant (vetores)
-    // PostgreSQL: Persistência relacional e backup
-    // Qdrant: Busca semântica vetorial (1024 dim - Qwen3-Embedding-0.6B)
-    const qdrantPoints = [];
-    const createdChunks: Array<{ id: string; conteudo: string; posicao: number }> = [];
-    
-    for (let i = 0; i < chunks.length; i++) {
-      const embedding = await generateEmbedding(chunks[i]);
-      
-      // Validar dimensão antes de salvar (Enterprise-Grade - Regra 6)
-      validateEmbeddingDimension(embedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
-      
-      // Inserir no PostgreSQL (persistência relacional - SEM embedding)
-      // Gate 2: Embeddings de texto vão APENAS para Qdrant (PostgreSQL armazena somente conteúdo/metadata)
-      const [chunk] = await db.insert(schema.documentChunks).values({
-        documentId: document.id,
-        conteudo: chunks[i],
-        posicao: i,
-        // embedding OMITIDO - texto usa Qdrant (SSOT)
-      }).returning();
+    const jobId = await enqueueDocumentProcessingJob({
+      jobId: crypto.randomUUID(),
+      tenantId,
+      documentId: document.id,
+      namespaceId: body.namespaceId,
+      priority: 5,
+      correlationId,
+      attempts: 0,
+    });
 
-      createdChunks.push({ id: chunk.id, conteudo: chunks[i], posicao: i });
-      
-      // Preparar ponto para Qdrant (busca vetorial - 1024 dim)
-      qdrantPoints.push({
-        id: chunk.id,
-        vector: embedding,
-        payload: {
-          type: 'document_chunk',
-          documentId: document.id,
-          conteudo: chunks[i],
-          posicao: i,
-          tenantId: tenantId,
-          namespaceId: body.namespaceId,
-          document_id: document.id,
-          document_titulo: body.titulo,
-          document_namespaceId: body.namespaceId,
-          criadoEm: new Date().toISOString(),
-        }
-      });
-    }
-    
-    // Inserir todos os chunks no Qdrant em batch (performance enterprise)
-    if (qdrantPoints.length > 0 && isQdrantConfigured()) {
-      await upsertPoints(TEXT_COLLECTION_NAME, qdrantPoints);
-      logger.info({ documentId: document.id, pointsInserted: qdrantPoints.length }, 'Chunks inseridos no Qdrant');
-    }
+    logger.info({
+      documentId: document.id,
+      tenantId,
+      namespaceId: body.namespaceId ?? null,
+      correlationId,
+      jobId,
+    }, 'Documento criado e enfileirado para processamento assíncrono');
 
-    await db.update(schema.documents)
-      .set({ processado: true })
-      .where(eq(schema.documents.id, document.id));
-
-    const resolvedNamespaceId = body.namespaceId ?? null;
-    if (resolvedNamespaceId) {
-      const user = getAuthUser(req);
-      await collectTrainingFromDocumentChunks({
-        tenantId,
-        namespaceId: resolvedNamespaceId,
-        documentId: document.id,
-        titulo: body.titulo,
-        chunks: createdChunks,
-        userId: user.id,
-        role: user.role,
-      });
-    } else {
-      logger.warn({ documentId: document.id }, 'Documento criado sem namespaceId - coleta de training ignorada');
-    }
-
-    logger.info({ documentId: document.id, chunks: chunks.length }, 'Documento processado');
-    res.json({ document, chunksCreated: chunks.length });
+    res.status(202).json({
+      documentId: document.id,
+      jobId,
+    });
   } catch (error) {
     logger.error({ error }, 'Falha ao criar documento');
     res.status(500).json({ error: 'Erro interno do servidor' });
@@ -2395,6 +2473,9 @@ app.post('/api/rag/documents/upload', requireAuth(), requirePermission('rag:docu
   if (!req.file) {
     return res.status(400).json({ error: 'Nenhum arquivo enviado' });
   }
+  if (!req.tenantId) {
+    return res.status(401).json({ error: 'Tenant não identificado' });
+  }
 
   // Validação de segurança enterprise unificada (Regra 16)
   const validation = validateDocumentUpload(req.file);
@@ -2417,14 +2498,11 @@ app.post('/api/rag/documents/upload', requireAuth(), requirePermission('rag:docu
     if (!namespaceId) {
       return res.status(400).json({ error: 'Namespace obrigatório' });
     }
-    await assertNamespaceOwnership(namespaceId, req.tenantId as string);
+    await assertNamespaceOwnership(namespaceId, req.tenantId);
 
     const hashConteudo = hashContent(content);
-
-    const documentEmbedding = await generateEmbedding(content.slice(0, 2000));
-    
-    // Validar dimensão antes de salvar (Enterprise-Grade - Regra 6)
-    validateEmbeddingDimension(documentEmbedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
+    const correlationId = getRequestCorrelationId(req);
+    const user = getAuthUser(req);
 
     // MULTI-TENANCY: Documento associado ao tenant via namespaceId
     // namespaceId deve pertencer ao tenant do usuário (validado pelo backend)
@@ -2435,103 +2513,43 @@ app.post('/api/rag/documents/upload', requireAuth(), requirePermission('rag:docu
       conteudo: content,
       tipo: req.file.mimetype,
       hashConteudo,
-      // embedding OMITIDO - texto vai para Qdrant (SSOT)
+      metadata: {
+        sourceType: 'ui_upload',
+        originalFilename: req.file.originalname,
+        mimeType: req.file.mimetype,
+        fileSize: req.file.size,
+        uploadedAt: new Date().toISOString(),
+        uploadedByUserId: user.id ?? null,
+        correlationId,
+        processingStatus: 'pending',
+      },
       processado: false,
     }).returning();
-    
-    // Armazenar embedding do documento inteiro no Qdrant para busca semântica
-    if (documentEmbedding.length > 0 && isQdrantConfigured()) {
-      await upsertPoints(TEXT_COLLECTION_NAME, [{
-        id: `document-${document.id}`,
-        vector: documentEmbedding,
-        payload: {
-          type: 'document',
-          documentId: document.id,
-          titulo: titulo,
-          tenantId: req.tenantId,
-          namespaceId: namespaceId,
-          nomeArquivo: req.file?.originalname,
-          tipoArquivo: req.file?.mimetype,
-          conteudoPreview: content.slice(0, 500),
-          criadoEm: new Date().toISOString(),
-        },
-      }]);
-      logger.debug({ documentId: document.id }, 'Embedding de documento inserido no Qdrant');
-    }
 
-    const chunks = chunkText(content);
-    
-    // Gate 2: Inserir chunks no PostgreSQL (conteúdo) e no Qdrant (vetores)
-    // PostgreSQL: Persistência relacional e backup
-    // Qdrant: Busca semântica vetorial (1024 dim - Qwen3-Embedding-0.6B)
-    const qdrantPoints = [];
-    const createdChunks: Array<{ id: string; conteudo: string; posicao: number }> = [];
-    
-    for (let i = 0; i < chunks.length; i++) {
-      const embedding = await generateEmbedding(chunks[i]);
-      
-      // Validar dimensão antes de salvar (Enterprise-Grade - Regra 6)
-      validateEmbeddingDimension(embedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
-      
-      // Inserir no PostgreSQL (persistência relacional - SEM embedding)
-      // Gate 2: Embeddings de texto vão APENAS para Qdrant (PostgreSQL armazena somente conteúdo/metadata)
-      const [chunk] = await db.insert(schema.documentChunks).values({
-        documentId: document.id,
-        conteudo: chunks[i],
-        posicao: i,
-        // embedding OMITIDO - texto usa Qdrant (SSOT)
-      }).returning();
-
-      createdChunks.push({ id: chunk.id, conteudo: chunks[i], posicao: i });
-      
-      // Preparar ponto para Qdrant (busca vetorial - 1024 dim)
-      qdrantPoints.push({
-        id: chunk.id,
-        vector: embedding,
-        payload: {
-          type: 'document_chunk',
-          documentId: document.id,
-          conteudo: chunks[i],
-          posicao: i,
-          tenantId: req.tenantId,
-          namespaceId: namespaceId,
-          document_id: document.id,
-          document_titulo: titulo,
-          document_nomeArquivo: req.file?.originalname,
-          document_namespaceId: namespaceId,
-          criadoEm: new Date().toISOString(),
-        }
-      });
-    }
-    
-    // Inserir todos os chunks no Qdrant em batch (performance enterprise)
-    if (qdrantPoints.length > 0 && isQdrantConfigured()) {
-      await upsertPoints(TEXT_COLLECTION_NAME, qdrantPoints);
-      logger.info({ documentId: document.id, pointsInserted: qdrantPoints.length }, 'Chunks inseridos no Qdrant');
-    }
-
-    await db.update(schema.documents)
-      .set({ processado: true })
-      .where(eq(schema.documents.id, document.id));
-
-    // Invalidação de cache RAG: documento novo altera resultados de busca/contexto
-    if (req.tenantId) {
-      await invalidateRagCachesForTenant(req.tenantId);
-    }
-
-    const user = getAuthUser(req);
-    await collectTrainingFromDocumentChunks({
-      tenantId: req.tenantId as string,
-      namespaceId,
+    const jobId = await enqueueDocumentProcessingJob({
+      jobId: crypto.randomUUID(),
+      tenantId: req.tenantId,
       documentId: document.id,
-      titulo,
-      chunks: createdChunks,
-      userId: user.id,
-      role: user.role,
+      namespaceId,
+      priority: 5,
+      correlationId,
+      attempts: 0,
     });
 
-    logger.info({ documentId: document.id, filename: req.file?.originalname }, 'Arquivo enviado e processado');
-    res.json({ document, chunksCreated: chunks.length });
+    logger.info({
+      documentId: document.id,
+      tenantId: req.tenantId,
+      namespaceId,
+      filename: req.file?.originalname,
+      correlationId,
+      jobId,
+    }, 'Arquivo enviado e enfileirado para processamento assíncrono');
+
+    res.status(202).json({
+      documentId: document.id,
+      jobId,
+      status: 'queued',
+    });
   } catch (error) {
     logger.error({ error }, 'Falha ao enviar documento');
     res.status(500).json({ error: 'Erro interno do servidor' });

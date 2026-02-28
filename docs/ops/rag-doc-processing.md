@@ -34,3 +34,28 @@ Capacidades implementadas:
   - remocao + upsert de pontos no Qdrant;
   - atualizacao de status em `documents.metadata`.
 - Invalidacao de cache RAG ao final de cada job (sucesso ou falha).
+
+## ETAPA 2 - Endpoints de Documentos com Enqueue e Status Real
+
+Implementacoes realizadas no `apps/rag-service/src/index.ts`:
+
+- `POST /api/rag/documents/upload`
+  - removeu processamento sincrono de chunks/embeddings no request;
+  - persiste documento com `processado=false` e `metadata.processingStatus='pending'`;
+  - inclui metadados de upload (`sourceType`, `originalFilename`, `mimeType`, `fileSize`, `uploadedAt`, `uploadedByUserId`, `correlationId`);
+  - enfileira job de documento e retorna `202` com `{ documentId, jobId, status: "queued" }`.
+- `POST /api/rag/documents`
+  - persiste documento com `processado=false` e `metadata.sourceType='api_create'`;
+  - enfileira job e retorna `202` com `{ documentId, jobId }`.
+- `GET /api/rag/documents/:id/status`
+  - retorna estado real: `processado`, `processingStatus`, `processingError`, `processedAt`, `chunksCount`, `sentToTrainingAt`;
+  - validacao de tenant pelo namespace do documento.
+- `POST /api/rag/documents/:id/reprocess`
+  - reseta metadata para `pending`, limpa erro e grava `reprocessRequestedAt`;
+  - reenfileira com `force=true` para sobrescrever dedupe quando solicitado;
+  - retorna `{ jobId }`.
+
+Regras aplicadas:
+
+- Validacao com Zod nos endpoints novos.
+- Autorizacao por permissoes existentes (`rag:documents:read`, `rag:documents:write`, `rag:documents:upload`).
