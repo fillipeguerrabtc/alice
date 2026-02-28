@@ -2778,6 +2778,28 @@ app.delete('/api/rag/documents/:id', requireAuth(), requirePermission('rag:docum
       return res.status(404).json({ error: 'Documento não encontrado ou acesso negado' });
     }
     
+    if (isQdrantConfigured()) {
+      try {
+        await deletePointsByFilter(TEXT_COLLECTION_NAME, {
+          must: [
+            { key: 'tenantId', match: { value: tenantId } },
+            { key: 'documentId', match: { value: id } },
+            { key: 'type', match: { value: 'document_chunk' } },
+          ],
+        });
+      } catch (qdrantError) {
+        logger.error(
+          {
+            error: qdrantError,
+            tenantId,
+            documentId: id,
+          },
+          'Falha ao excluir embeddings do documento no Qdrant'
+        );
+        return res.status(502).json({ error: 'Falha ao excluir embeddings do documento' });
+      }
+    }
+
     await db.delete(schema.documentChunks)
       .where(eq(schema.documentChunks.documentId, id));
 

@@ -59,3 +59,17 @@ Regras aplicadas:
 
 - Validacao com Zod nos endpoints novos.
 - Autorizacao por permissoes existentes (`rag:documents:read`, `rag:documents:write`, `rag:documents:upload`).
+
+## ETAPA 3 - Limpeza de Embeddings no Delete de Documento
+
+Implementacoes realizadas no `apps/rag-service/src/index.ts`:
+
+- `DELETE /api/rag/documents/:id`
+  - antes de excluir no PostgreSQL, remove pontos no Qdrant via filtro:
+    - `tenantId`
+    - `documentId`
+    - `type = document_chunk`
+  - se a exclusao no Qdrant falhar:
+    - registra log estruturado com `tenantId` e `documentId`;
+    - retorna erro HTTP para evitar inconsistencia silenciosa.
+  - mantida invalidacao de cache RAG ao final do fluxo de exclusao.
