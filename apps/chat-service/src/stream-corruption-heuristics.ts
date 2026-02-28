@@ -7,7 +7,8 @@ export type StreamCorruptionReason =
   | 'repeated_words'
   | 'token_loop'
   | 'digit_noise'
-  | 'fragmented_tokens';
+  | 'fragmented_tokens'
+  | 'linguistic_noise';
 
 export interface StreamCorruptionEvaluation {
   corrupted: boolean;
@@ -146,6 +147,60 @@ function hasFragmentedTokenNoise(content: string, profile: StreamCorruptionProfi
   return tinyRatio >= tinyRatioThreshold || maxNumericChain >= 8;
 }
 
+function hasLinguisticNoise(content: string, profile: StreamCorruptionProfile): boolean {
+  if (profile === 'trading') {
+    return false;
+  }
+
+  const rawTokens = content
+    .split(/\s+/u)
+    .map((token) => token.trim())
+    .filter(Boolean)
+    .map((token) => token.replace(/^[\s"'`([{<]+|[\s"'`)\]}>.,;:!?]+$/gu, ''))
+    .filter((token) => token.length >= 4);
+
+  if (rawTokens.length < 18) {
+    return false;
+  }
+
+  let suspicious = 0;
+  let eligible = 0;
+  for (const token of rawTokens) {
+    const normalized = token.toLowerCase();
+    if (
+      normalized.startsWith('http') ||
+      normalized.includes('://') ||
+      normalized.includes('@') ||
+      normalized.includes('.com') ||
+      normalized.includes('.org') ||
+      normalized.includes('.net') ||
+      normalized.includes('.br')
+    ) {
+      continue;
+    }
+
+    eligible += 1;
+
+    const hasLetterDigitMix = /(?=.*\p{L})(?=.*\d)/u.test(normalized);
+    const hasInvalidSymbolsInside = /[^\p{L}\p{N}\p{M}'-]/u.test(normalized);
+    const hasLongConsonantChain = /[bcdfghjklmnpqrstvwxyzç]{5,}/iu.test(normalized);
+    const lettersOnly = normalized.replace(/[^\p{L}\p{M}]/gu, '');
+    const hasNoVowel = lettersOnly.length >= 5 && !/[aeiouáàâãéêíóôõúü]/iu.test(lettersOnly);
+    const hasBurstRepeat = /(.)\1{3,}/u.test(normalized);
+
+    if (hasLetterDigitMix || hasInvalidSymbolsInside || hasLongConsonantChain || hasNoVowel || hasBurstRepeat) {
+      suspicious += 1;
+    }
+  }
+
+  if (eligible < 16) {
+    return false;
+  }
+
+  const suspiciousRatio = suspicious / eligible;
+  return suspiciousRatio >= 0.24;
+}
+
 function isLikelyCodeHeavyResponse(content: string): boolean {
   const trimmed = content.trim();
   if (!trimmed) return false;
@@ -208,6 +263,10 @@ export function evaluateCorruptedAssistantResponse(
 
   if (profile !== 'trading' && shouldApplyNoiseHeuristic && hasFragmentedTokenNoise(normalized, profile)) {
     return { corrupted: true, reason: 'fragmented_tokens' };
+  }
+
+  if (shouldApplyNoiseHeuristic && hasLinguisticNoise(normalized, profile)) {
+    return { corrupted: true, reason: 'linguistic_noise' };
   }
 
   return { corrupted: false, reason: null };

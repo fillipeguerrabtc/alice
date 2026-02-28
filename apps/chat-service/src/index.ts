@@ -10585,13 +10585,27 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                   },
                 });
               } else {
+                logger.warn({ conversationId }, 'Stream de mídia finalizou sem conteúdo útil; persistindo fallback seguro');
+                const fallbackMessage = fixPreferredNameInDirectAddress(LLM_FALLBACK_MESSAGE, nameContext.preferredName);
+                assistantPersisted = true;
+                const [assistantMessage] = await db.insert(schema.messages).values({
+                  conversationId,
+                  agentId: conversation?.agentId ?? undefined,
+                  conteudo: fallbackMessage,
+                  tipo: 'text',
+                  isFromUser: false,
+                }).returning();
+
                 await db.update(schema.conversations)
                   .set({
-                    totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 1`,
+                    totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
                     ultimaMensagemEm: new Date(),
                     atualizadoEm: new Date(),
                   })
                   .where(eq(schema.conversations.id, conversationId));
+
+                safeWriteSseEvent({ type: 'final_message', content: fallbackMessage });
+                safeWriteSseEvent({ type: 'message_saved', messageId: assistantMessage?.id });
               }
             }
 
@@ -13828,9 +13842,20 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                 },
               });
             } else {
+              logger.warn({ conversationId }, 'Stream de texto finalizou sem conteúdo útil; persistindo fallback seguro');
+              const fallbackMessage = fixPreferredNameInDirectAddress(LLM_FALLBACK_MESSAGE, nameContext.preferredName);
+              assistantPersisted = true;
+              const [assistantMessage] = await db.insert(schema.messages).values({
+                conversationId,
+                agentId: conversation?.agentId ?? undefined,
+                conteudo: fallbackMessage,
+                tipo: 'text',
+                isFromUser: false,
+              }).returning();
+
               await db.update(schema.conversations)
                 .set({
-                  totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 1`,
+                  totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
                   ultimaMensagemEm: new Date(),
                   atualizadoEm: new Date(),
                 })
@@ -13840,11 +13865,14 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                 await ensureConversationTitle({
                   conversationId,
                   userMessage: userMessageContent,
-                  assistantResponse: assistantResponse,
+                  assistantResponse: fallbackMessage,
                 });
               } catch (titleError) {
-                logger.warn({ error: titleError, conversationId }, 'Falha ao aplicar título automático (stream sem resposta)');
+                logger.warn({ error: titleError, conversationId }, 'Falha ao aplicar título automático (stream fallback por resposta vazia)');
               }
+
+              safeWriteSseEvent({ type: 'final_message', content: fallbackMessage });
+              safeWriteSseEvent({ type: 'message_saved', messageId: assistantMessage?.id });
             }
           }
 

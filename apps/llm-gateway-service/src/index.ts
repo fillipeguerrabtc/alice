@@ -200,6 +200,7 @@ app.post(
     const temperature = config?.temperature ?? 0.7;
     const maxTokens = config?.maxTokens ?? 2048;
     const isTradingRoute = context.route.startsWith('/trading');
+    const scopeExplicitlyProvided = Boolean(context.namespaceId || context.agentId);
     let namespaceId = context.namespaceId ?? null;
     let agentId = context.agentId ?? null;
     let contextoInferido = 'default';
@@ -237,6 +238,12 @@ app.post(
       namespaceId = resolved.namespaceId;
       agentId = resolved.agentId;
       contextoInferido = resolved.context;
+    }
+    const useBaseModelForDefaultContext = !scopeExplicitlyProvided && contextoInferido === 'default';
+    if (useBaseModelForDefaultContext) {
+      namespaceId = null;
+      agentId = null;
+      logger.debug({ tenantId: context.tenantId, route: context.route }, 'Contexto default sem escopo explícito: usando modelo base sem adapter');
     }
 
     const baseModel = config?.model ?? DEFAULT_MODEL;
@@ -287,7 +294,7 @@ app.post(
       return;
     }
     const adapterEncontrado = model !== baseModel;
-    const motivoFallback = !adapterEncontrado
+    const motivoFallback = !adapterEncontrado && !useBaseModelForDefaultContext
       ? (!namespaceId && !agentId ? 'namespace_unmapped' : 'adapter_missing')
       : null;
     if (motivoFallback) {
@@ -359,6 +366,7 @@ app.post(
     const temperature = config?.temperature ?? 0.7;
     const maxTokens = config?.maxTokens ?? 2048;
     const isTradingRoute = context.route.startsWith('/trading');
+    const scopeExplicitlyProvided = Boolean(context.namespaceId || context.agentId);
     let namespaceId = context.namespaceId ?? null;
     let agentId = context.agentId ?? null;
     let contextoInferido = 'default';
@@ -396,6 +404,12 @@ app.post(
       namespaceId = resolved.namespaceId;
       agentId = resolved.agentId;
       contextoInferido = resolved.context;
+    }
+    const useBaseModelForDefaultContext = !scopeExplicitlyProvided && contextoInferido === 'default';
+    if (useBaseModelForDefaultContext) {
+      namespaceId = null;
+      agentId = null;
+      logger.debug({ tenantId: context.tenantId, route: context.route }, 'Contexto default sem escopo explícito: usando modelo base sem adapter');
     }
 
     const baseModel = config?.model ?? DEFAULT_MODEL;
@@ -446,7 +460,7 @@ app.post(
       return;
     }
     const adapterEncontrado = model !== baseModel;
-    const motivoFallback = !adapterEncontrado
+    const motivoFallback = !adapterEncontrado && !useBaseModelForDefaultContext
       ? (!namespaceId && !agentId ? 'namespace_unmapped' : 'adapter_missing')
       : null;
     if (motivoFallback) {
@@ -514,7 +528,7 @@ app.post(
     res.flushHeaders();
 
     // Plano Enterprise: Enviar metadata de fallback antes do stream (banner no Chat)
-    const usedFallback = !namespaceId;
+    const usedFallback = !namespaceId && !useBaseModelForDefaultContext;
     const metadataEvent = `event: alice_metadata\ndata: ${JSON.stringify({ usedFallback })}\n\n`;
     res.write(metadataEvent);
     if (typeof (res as unknown as { flush?: () => void }).flush === 'function') {
