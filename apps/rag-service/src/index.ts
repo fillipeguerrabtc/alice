@@ -14,7 +14,7 @@
  */
 
 import express from 'express';
-import type { Request, Response } from 'express';
+import type { NextFunction, Request, Response } from 'express';
 import http from 'http';
 import cors from 'cors';
 // helmet aplicado via createSecurityMiddleware de @alice/shared-utils
@@ -3902,9 +3902,16 @@ app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdF
 });
 
 // GET status de um upload específico
-app.get('/api/media/:id([0-9a-fA-F-]{36})', requireAuth(), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
+app.get('/api/media/:id', requireAuth(), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response, next: NextFunction) => {
+  // Express 5 (path-to-regexp v8) não suporta regex inline em rotas.
+  // Para evitar conflito com /api/media/uploads|stats|health, delegamos quando :id não parece UUID.
+  const idCandidate = typeof req.params.id === 'string' ? req.params.id : '';
+  if (!/^[0-9a-fA-F-]{36}$/u.test(idCandidate)) {
+    return next();
+  }
+
   // OWASP API3: Validação Zod obrigatória de parâmetros de rota
-  const paramsResult = uuidParamSchema.safeParse(req.params);
+  const paramsResult = uuidParamSchema.safeParse({ id: idCandidate });
   if (!paramsResult.success) {
     return res.status(400).json({ error: 'ID inválido', details: paramsResult.error.format() });
   }
