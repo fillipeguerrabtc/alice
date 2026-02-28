@@ -38,6 +38,7 @@ import {
   FileAudio,
   ExternalLink,
   GraduationCap,
+  RotateCcw,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
@@ -78,7 +79,19 @@ interface Document {
   urlOrigem: string | null;
   processado: boolean;
   criadoEm: string;
+  atualizadoEm?: string;
   namespaceId: string | null;
+  sentToTrainingAt?: string | null;
+  metadata?: {
+    processingStatus?: 'pending' | 'processing' | 'failed' | 'completed';
+    processingError?: string | null;
+    processedAt?: string | null;
+    chunksCount?: number | null;
+    sourceType?: string;
+    originalFilename?: string;
+    uploadedAt?: string;
+    uploadedByUserId?: string | null;
+  } | null;
 }
 
 interface DocumentsResponse {
@@ -110,6 +123,29 @@ interface MediaUploadsResponse {
   pagination: { limit: number; offset: number; total: number };
 }
 
+type DocumentProcessingStatus = 'pending' | 'processing' | 'failed' | 'completed';
+
+function getDocumentProcessingStatus(document: Document): DocumentProcessingStatus {
+  const metadataStatus = document.metadata?.processingStatus;
+  if (document.processado) {
+    return 'completed';
+  }
+  if (
+    metadataStatus === 'pending' ||
+    metadataStatus === 'processing' ||
+    metadataStatus === 'failed' ||
+    metadataStatus === 'completed'
+  ) {
+    return metadataStatus;
+  }
+  return 'pending';
+}
+
+function getDocumentProcessingError(document: Document): string | null {
+  const error = document.metadata?.processingError;
+  return typeof error === 'string' && error.trim().length > 0 ? error : null;
+}
+
 const containerVariants = {
   hidden: { opacity: 0 },
   visible: {
@@ -132,6 +168,10 @@ function DocumentCard({
   document, 
   onView, 
   onDelete,
+  onReprocess,
+  onSendToTraining,
+  isReprocessing,
+  isSendingToTraining,
   viewMode,
   namespaceName,
   t,
@@ -141,6 +181,10 @@ function DocumentCard({
   document: Document;
   onView: () => void;
   onDelete: () => void;
+  onReprocess?: () => void;
+  onSendToTraining?: () => void;
+  isReprocessing: boolean;
+  isSendingToTraining: boolean;
   viewMode: 'grid' | 'list';
   namespaceName?: string;
   t: (key: string, options?: Record<string, unknown>) => string;
@@ -155,6 +199,56 @@ function DocumentCard({
 
   const FileIcon = getFileIcon(document.tipo);
   const truncatedContent = document.conteudo?.slice(0, 150) + (document.conteudo?.length > 150 ? '...' : '') || '';
+  const processingStatus = getDocumentProcessingStatus(document);
+  const processingError = getDocumentProcessingError(document);
+  const canReprocess = processingStatus === 'failed' && Boolean(onReprocess);
+  const canSendToTraining = document.processado && !document.sentToTrainingAt && Boolean(onSendToTraining);
+  const statusConfig = (() => {
+    if (processingStatus === 'processing') {
+      return {
+        icon: Loader2,
+        label: t('documents.status.processing'),
+        className: 'bg-blue-500/10 text-blue-600',
+      };
+    }
+    if (processingStatus === 'failed') {
+      return {
+        icon: AlertCircle,
+        label: t('documents.status.failed'),
+        className: 'bg-red-500/10 text-red-600',
+      };
+    }
+    if (processingStatus === 'completed') {
+      return {
+        icon: CheckCircle2,
+        label: t('documents.status.completed'),
+        className: 'bg-green-500/10 text-green-600',
+      };
+    }
+    return {
+      icon: Clock,
+      label: t('documents.status.waiting'),
+      className: 'bg-amber-500/10 text-amber-600',
+    };
+  })();
+  const StatusIcon = statusConfig.icon;
+  const statusBadge = (
+    <Badge variant="outline" className={cn('shrink-0', statusConfig.className)}>
+      <StatusIcon
+        className={cn(
+          'h-3 w-3 mr-1',
+          processingStatus === 'processing' && 'animate-spin'
+        )}
+      />
+      {statusConfig.label}
+    </Badge>
+  );
+  const statusBadgeWithError = processingStatus === 'failed' && processingError ? (
+    <Tooltip>
+      <TooltipTrigger asChild>{statusBadge}</TooltipTrigger>
+      <TooltipContent className="max-w-sm break-words">{processingError}</TooltipContent>
+    </Tooltip>
+  ) : statusBadge;
 
   if (viewMode === 'list') {
     return (
@@ -166,17 +260,12 @@ function DocumentCard({
             </div>
             
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="font-medium truncate">{document.titulo}</h3>
-                {document.processado ? (
-                  <Badge variant="outline" className="bg-green-500/10 text-green-600 shrink-0">
-                    <CheckCircle2 className="h-3 w-3 mr-1" />
-                    {t('documents.status.processed')}
-                  </Badge>
-                ) : (
-                  <Badge variant="outline" className="bg-amber-500/10 text-amber-600 shrink-0">
-                    <Clock className="h-3 w-3 mr-1" />
-                    {t('documents.status.pending')}
+                {statusBadgeWithError}
+                {document.sentToTrainingAt && (
+                  <Badge variant="secondary" className="bg-green-500/10 text-green-600 shrink-0">
+                    {t('documents.media.sentToTraining')}
                   </Badge>
                 )}
               </div>
@@ -188,7 +277,39 @@ function DocumentCard({
               )}
             </div>
 
-            <div className="flex items-center gap-1 shrink-0">
+            <div className="flex items-center gap-1 shrink-0 flex-wrap justify-end">
+              {canReprocess && onReprocess && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onReprocess}
+                  disabled={isReprocessing}
+                  data-testid={`button-reprocess-doc-${document.id}`}
+                >
+                  {isReprocessing ? (
+                    <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                  ) : (
+                    <RotateCcw className="h-3 w-3 mr-1" />
+                  )}
+                  {t('documents.actions.reprocess')}
+                </Button>
+              )}
+              {canSendToTraining && onSendToTraining && (
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={onSendToTraining}
+                  disabled={isSendingToTraining}
+                  data-testid={`button-send-to-training-doc-${document.id}`}
+                >
+                  {isSendingToTraining ? (
+                    <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                  ) : (
+                    <GraduationCap className="h-3 w-3 mr-1" />
+                  )}
+                  {t('documents.media.sendToTraining')}
+                </Button>
+              )}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button variant="ghost" size="icon" onClick={onView} data-testid={`button-view-doc-${document.id}`}>
@@ -221,17 +342,14 @@ function DocumentCard({
             <div className="p-2 rounded-lg bg-primary/10">
               <FileIcon className="h-5 w-5 text-primary" />
             </div>
-            {document.processado ? (
-              <Badge variant="outline" className="bg-green-500/10 text-green-600">
-                <CheckCircle2 className="h-3 w-3 mr-1" />
-                {t('documents.status.ok')}
-              </Badge>
-            ) : (
-              <Badge variant="outline" className="bg-amber-500/10 text-amber-600">
-                <Clock className="h-3 w-3 mr-1" />
-                {t('documents.status.pending')}
-              </Badge>
-            )}
+            <div className="flex items-center gap-1 flex-wrap justify-end">
+              {statusBadgeWithError}
+              {document.sentToTrainingAt && (
+                <Badge variant="secondary" className="bg-green-500/10 text-green-600">
+                  {t('documents.media.sentToTraining')}
+                </Badge>
+              )}
+            </div>
           </div>
           <CardTitle className="text-base mt-3 line-clamp-1">{document.titulo}</CardTitle>
           <CardDescription className="line-clamp-2 text-xs">{truncatedContent}</CardDescription>
@@ -258,7 +376,41 @@ function DocumentCard({
           </div>
         </CardContent>
 
-        <CardFooter className="pt-2 gap-1">
+        <CardFooter className="pt-2 gap-1 flex-wrap">
+          {canReprocess && onReprocess && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1"
+              onClick={onReprocess}
+              disabled={isReprocessing}
+              data-testid={`button-reprocess-doc-${document.id}`}
+            >
+              {isReprocessing ? (
+                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+              ) : (
+                <RotateCcw className="h-3 w-3 mr-1" />
+              )}
+              {t('documents.actions.reprocess')}
+            </Button>
+          )}
+          {canSendToTraining && onSendToTraining && (
+            <Button
+              variant="default"
+              size="sm"
+              className="flex-1"
+              onClick={onSendToTraining}
+              disabled={isSendingToTraining}
+              data-testid={`button-send-to-training-doc-${document.id}`}
+            >
+              {isSendingToTraining ? (
+                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+              ) : (
+                <GraduationCap className="h-3 w-3 mr-1" />
+              )}
+              {t('documents.media.sendToTraining')}
+            </Button>
+          )}
           <Button variant="outline" size="sm" className="flex-1" onClick={onView} data-testid={`button-view-doc-${document.id}`}>
             <Eye className="h-3 w-3 mr-1" />
             {t('documents.actions.view')}
@@ -373,6 +525,37 @@ function DocumentViewer({
   timeZone: string;
 }) {
   const formattedDate = formatDateTime(document.criadoEm, { locale, timeZone });
+  const processingStatus = getDocumentProcessingStatus(document);
+  const processingError = getDocumentProcessingError(document);
+  const statusConfig = (() => {
+    if (processingStatus === 'processing') {
+      return {
+        icon: Loader2,
+        label: t('documents.status.processing'),
+        className: 'bg-blue-500/10 text-blue-600',
+      };
+    }
+    if (processingStatus === 'failed') {
+      return {
+        icon: AlertCircle,
+        label: t('documents.status.failed'),
+        className: 'bg-red-500/10 text-red-600',
+      };
+    }
+    if (processingStatus === 'completed') {
+      return {
+        icon: CheckCircle2,
+        label: t('documents.status.completed'),
+        className: 'bg-green-500/10 text-green-600',
+      };
+    }
+    return {
+      icon: Clock,
+      label: t('documents.status.waiting'),
+      className: 'bg-amber-500/10 text-amber-600',
+    };
+  })();
+  const StatusIcon = statusConfig.icon;
   
   return (
     <Dialog open onOpenChange={onClose}>
@@ -388,15 +571,13 @@ function DocumentViewer({
         </DialogHeader>
 
         <div className="flex gap-2 flex-wrap">
-          {document.processado ? (
-            <Badge className="bg-green-500/10 text-green-600">
-              <CheckCircle2 className="h-3 w-3 mr-1" />
-              {t('documents.status.processedWithEmbeddings')}
-            </Badge>
-          ) : (
-            <Badge className="bg-amber-500/10 text-amber-600">
-              <Clock className="h-3 w-3 mr-1" />
-              {t('documents.status.awaitingProcessing')}
+          <Badge className={statusConfig.className}>
+            <StatusIcon className={cn('h-3 w-3 mr-1', processingStatus === 'processing' && 'animate-spin')} />
+            {statusConfig.label}
+          </Badge>
+          {document.sentToTrainingAt && (
+            <Badge variant="secondary" className="bg-green-500/10 text-green-600">
+              {t('documents.media.sentToTraining')}
             </Badge>
           )}
           {document.tipo && (
@@ -411,6 +592,11 @@ function DocumentViewer({
             </Badge>
           )}
         </div>
+        {processingStatus === 'failed' && processingError && (
+          <p className="text-sm text-red-600 break-words">
+            {processingError}
+          </p>
+        )}
 
         <ScrollArea className="flex-1 min-h-0 border rounded-lg p-4 bg-muted/30">
           <pre className="whitespace-pre-wrap text-sm font-mono">{document.conteudo}</pre>
@@ -757,23 +943,58 @@ export default function Documents() {
     },
   });
 
+  const reprocessDocumentMutation = useMutation({
+    mutationFn: async (documentId: string) => {
+      const response = await apiRequest('POST', `/api/rag/documents/${documentId}/reprocess`, {});
+      return response.json() as Promise<{ jobId: string }>;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/rag/documents'] });
+      toast({ title: t('documents.success.reprocessQueued') });
+    },
+    onError: (error) => {
+      const message = error instanceof Error ? error.message : t('documents.errors.reprocessFailed');
+      toast({ title: message, variant: 'destructive' });
+    },
+  });
+
+  const sendDocumentToTrainingMutation = useMutation({
+    mutationFn: async (documentId: string) => {
+      const response = await apiRequest('POST', `/api/rag/documents/${documentId}/send-to-training`, {});
+      return response.json() as Promise<{ success: boolean; message?: string }>;
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/rag/documents'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/training/data'] });
+      toast({
+        title: t('documents.success.sentToTraining'),
+        description: result.message,
+      });
+    },
+    onError: (error) => {
+      const message = error instanceof Error ? error.message : t('documents.errors.sendToTrainingFailed');
+      toast({ title: message, variant: 'destructive' });
+    },
+  });
+
   const documents = data?.documents || [];
   
   const filteredDocuments = documents.filter(doc => {
+    const processingStatus = getDocumentProcessingStatus(doc);
     const matchesSearch = doc.titulo.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           (doc.conteudo?.toLowerCase().includes(searchQuery.toLowerCase()) || false);
     
     const matchesStatus = filterStatus === 'all' ||
-                          (filterStatus === 'processed' && doc.processado) ||
-                          (filterStatus === 'pending' && !doc.processado);
+                          (filterStatus === 'processed' && processingStatus === 'completed') ||
+                          (filterStatus === 'pending' && processingStatus !== 'completed');
     
     return matchesSearch && matchesStatus;
   });
 
   const stats = {
     total: documents.length,
-    processed: documents.filter(d => d.processado).length,
-    pending: documents.filter(d => !d.processado).length,
+    processed: documents.filter((document) => getDocumentProcessingStatus(document) === 'completed').length,
+    pending: documents.filter((document) => getDocumentProcessingStatus(document) !== 'completed').length,
   };
   const isNamespaceReady = selectedNamespaceId !== '' && activeNamespaces.length > 0;
 
@@ -1067,6 +1288,16 @@ export default function Documents() {
                             namespaceName={doc.namespaceId ? namespaceMap.get(doc.namespaceId) : undefined}
                             onView={() => setSelectedDocument(doc)}
                             onDelete={() => setDeleteDocument(doc)}
+                            onReprocess={() => reprocessDocumentMutation.mutate(doc.id)}
+                            onSendToTraining={() => sendDocumentToTrainingMutation.mutate(doc.id)}
+                            isReprocessing={
+                              reprocessDocumentMutation.isPending &&
+                              reprocessDocumentMutation.variables === doc.id
+                            }
+                            isSendingToTraining={
+                              sendDocumentToTrainingMutation.isPending &&
+                              sendDocumentToTrainingMutation.variables === doc.id
+                            }
                             t={t}
                             locale={locale}
                             timeZone={timeZone}

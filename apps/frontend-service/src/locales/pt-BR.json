@@ -728,6 +728,10 @@
       "processed": "Processado",
       "pending": "Pendente",
       "ok": "OK",
+      "waiting": "Aguardando",
+      "processing": "Processando...",
+      "failed": "Falhou",
+      "completed": "Processado",
       "processedWithEmbeddings": "Processado com embeddings",
       "awaitingProcessing": "Aguardando processamento"
     },
@@ -735,6 +739,7 @@
       "view": "Visualizar",
       "delete": "Excluir",
       "close": "Fechar",
+      "reprocess": "Reprocessar",
       "retry": "Tentar novamente",
       "cancel": "Cancelar"
     },
@@ -783,10 +788,14 @@
       "loadFailedDesc": "Não foi possível carregar a lista de documentos. Tente novamente mais tarde.",
       "uploadFailed": "Falha ao enviar documento",
       "namespaceRequired": "Selecione um namespace antes de enviar o documento",
-      "deleteFailed": "Erro ao excluir documento"
+      "deleteFailed": "Erro ao excluir documento",
+      "reprocessFailed": "Falha ao solicitar reprocessamento",
+      "sendToTrainingFailed": "Falha ao enviar documento para treinamento"
     },
     "success": {
       "uploaded": "Documento enviado com sucesso",
+      "reprocessQueued": "Documento enfileirado para reprocessamento",
+      "sentToTraining": "Documento enviado para treinamento",
       "deleted": "Documento excluído com sucesso"
     },
     "uploadedBy": "Enviado por"

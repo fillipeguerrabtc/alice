@@ -704,6 +704,10 @@
       "processed": "Processed",
       "pending": "Pending",
       "ok": "OK",
+      "waiting": "Waiting",
+      "processing": "Processing...",
+      "failed": "Failed",
+      "completed": "Processed",
       "processedWithEmbeddings": "Processed with embeddings",
       "awaitingProcessing": "Awaiting processing"
     },
@@ -711,6 +715,7 @@
       "view": "View",
       "delete": "Delete",
       "close": "Close",
+      "reprocess": "Reprocess",
       "retry": "Try again",
       "cancel": "Cancel"
     },
@@ -759,11 +764,15 @@
       "loadFailedDesc": "Could not load the document list. Please try again later.",
       "uploadFailed": "Failed to upload document",
       "namespaceRequired": "Select a namespace before uploading the document",
-      "deleteFailed": "Error deleting document"
+      "deleteFailed": "Error deleting document",
+      "reprocessFailed": "Failed to request document reprocessing",
+      "sendToTrainingFailed": "Failed to send document to training"
     },
     "success": {
       "uploaded": "Document uploaded successfully",
-      "deleted": "Document deleted successfully"
+      "deleted": "Document deleted successfully",
+      "reprocessQueued": "Document queued for reprocessing",
+      "sentToTraining": "Document sent to training"
     }
   },
   "integrations": {

@@ -73,3 +73,31 @@ Implementacoes realizadas no `apps/rag-service/src/index.ts`:
     - registra log estruturado com `tenantId` e `documentId`;
     - retorna erro HTTP para evitar inconsistencia silenciosa.
   - mantida invalidacao de cache RAG ao final do fluxo de exclusao.
+
+## ETAPA 4 - Frontend com Status Real, Reprocessar e Enviar ao Treinamento
+
+Implementacoes realizadas no `apps/frontend-service/src/pages/Documents.tsx`:
+
+- Expansao do tipo `Document` para suportar:
+  - `sentToTrainingAt`;
+  - `metadata.processingStatus`, `metadata.processingError`, `metadata.processedAt`, `metadata.chunksCount`;
+  - `metadata.sourceType`, `metadata.originalFilename`, `metadata.uploadedAt`, `metadata.uploadedByUserId`.
+- Status real no card e viewer de documento:
+  - `pending` -> "Aguardando";
+  - `processing` -> "Processando...";
+  - `failed` -> "Falhou" (com tooltip e erro visivel);
+  - `completed` (ou `processado=true`) -> "Processado".
+- Acao "Reprocessar" para documentos com falha:
+  - chama `POST /api/rag/documents/:id/reprocess`;
+  - exibe feedback e faz refetch via React Query.
+- Acao "Enviar para treinamento" para documentos:
+  - habilitada apenas quando `document.processado === true` e `sentToTrainingAt == null`;
+  - chama `POST /api/rag/documents/:id/send-to-training`;
+  - exibe toast de sucesso e refetch de documentos/training data.
+
+Implementacoes de i18n:
+
+- Novas chaves adicionadas em:
+  - `apps/frontend-service/src/locales/pt-BR.json`
+  - `apps/frontend-service/src/locales/en.json`
+- Inclui labels para status detalhado, acao de reprocessamento e mensagens de sucesso/erro.
