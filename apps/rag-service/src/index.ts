@@ -72,6 +72,10 @@ import { getStorageService } from './storage.js';
 import { getImageProcessor, getVisionCircuitBreakerStatus } from './image-processor.js';
 import { startEmbeddingWorker, getEmbeddingWorkerStatus } from './workers/embedding-worker.js';
 import {
+  startDocumentProcessingWorker,
+  getDocumentProcessingWorkerStatus,
+} from './workers/document-processing-worker.js';
+import {
   enqueueEmbeddingJob,
   getEmbeddingJobStatus,
   getEmbeddingQueueStats,
@@ -905,6 +909,24 @@ function parseEnvFloat(envValue: string | undefined, defaultValue: number, varNa
 const WORKER_POLL_MS = parseEnvInt(process.env.WORKER_POLL_MS, 3000, 'WORKER_POLL_MS');
 const WORKER_CONCURRENCY = parseEnvInt(process.env.WORKER_CONCURRENCY, 2, 'WORKER_CONCURRENCY');
 const WORKER_MAX_ATTEMPTS = parseEnvInt(process.env.WORKER_MAX_ATTEMPTS, 3, 'WORKER_MAX_ATTEMPTS');
+const DOC_PROCESS_MAX_ATTEMPTS = parseEnvInt(process.env.DOC_PROCESS_MAX_ATTEMPTS, 3, 'DOC_PROCESS_MAX_ATTEMPTS');
+const DOC_CHUNK_SIZE_CHARS = parseEnvInt(process.env.DOC_CHUNK_SIZE_CHARS, 1000, 'DOC_CHUNK_SIZE_CHARS');
+const DOC_CHUNK_OVERLAP_CHARS_RAW = parseEnvInt(process.env.DOC_CHUNK_OVERLAP_CHARS, 200, 'DOC_CHUNK_OVERLAP_CHARS');
+const DOC_CHUNK_MAX_CHUNKS = parseEnvInt(process.env.DOC_CHUNK_MAX_CHUNKS, 200, 'DOC_CHUNK_MAX_CHUNKS');
+const DOC_CHUNK_OVERLAP_CHARS = Math.min(
+  DOC_CHUNK_OVERLAP_CHARS_RAW,
+  Math.max(1, DOC_CHUNK_SIZE_CHARS - 1)
+);
+if (DOC_CHUNK_OVERLAP_CHARS_RAW >= DOC_CHUNK_SIZE_CHARS) {
+  logger.warn(
+    {
+      DOC_CHUNK_OVERLAP_CHARS: DOC_CHUNK_OVERLAP_CHARS_RAW,
+      DOC_CHUNK_SIZE_CHARS,
+      adjustedOverlap: DOC_CHUNK_OVERLAP_CHARS,
+    },
+    'DOC_CHUNK_OVERLAP_CHARS ajustado para manter overlap menor que chunk size'
+  );
+}
 
 const TRAINING_SERVICE_URL = process.env.TRAINING_SERVICE_URL;
 const TRAINING_DOC_AUTO_COLLECT = parseEnvBool(
@@ -1480,6 +1502,39 @@ function startEmbeddingWorkerWhenRedisReady(redisConnected: boolean): void {
     })
     .catch((error) => {
       logger.warn({ error }, 'Falha ao coletar status inicial do embedding worker');
+    });
+}
+
+function startDocumentProcessingWorkerWhenRedisReady(redisConnected: boolean): void {
+  if (!redisConnected) {
+    logger.warn('Document processing worker nao iniciado: Redis indisponivel');
+    return;
+  }
+
+  startDocumentProcessingWorker({
+    db,
+    maxAttempts: DOC_PROCESS_MAX_ATTEMPTS,
+    chunkSizeChars: DOC_CHUNK_SIZE_CHARS,
+    overlapChars: DOC_CHUNK_OVERLAP_CHARS,
+    maxChunks: DOC_CHUNK_MAX_CHUNKS,
+    invalidateRagCacheForTenant: invalidateRagCachesForTenant,
+  });
+
+  void getDocumentProcessingWorkerStatus()
+    .then((status) => {
+      logger.info({
+        running: status.running,
+        queueSize: status.queueSize,
+        processedCount: status.processedCount,
+        failedCount: status.failedCount,
+        maxAttempts: DOC_PROCESS_MAX_ATTEMPTS,
+        chunkSizeChars: DOC_CHUNK_SIZE_CHARS,
+        overlapChars: DOC_CHUNK_OVERLAP_CHARS,
+        maxChunks: DOC_CHUNK_MAX_CHUNKS,
+      }, 'Document processing worker iniciado e status inicial coletado');
+    })
+    .catch((error) => {
+      logger.warn({ error }, 'Falha ao coletar status inicial do document processing worker');
     });
 }
 
@@ -4739,6 +4794,7 @@ registerShutdownCallback(
     }
 
     startEmbeddingWorkerWhenRedisReady(redisConnected);
+    startDocumentProcessingWorkerWhenRedisReady(redisConnected);
     if (WORKER_TENANT_ID) {
       startTenantScopedWorkers(WORKER_TENANT_ID);
     } else {
