@@ -97,7 +97,7 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
               <ThemeToggle />
             </div>
           </header>
-          <main className="flex-1 overflow-auto">
+          <main className="flex-1 min-h-0 overflow-auto">
             {children}
           </main>
         </div>

@@ -49,6 +49,7 @@ interface MessageBubbleProps {
   message: Message;
   isStreaming: boolean;
   isLast: boolean;
+  streamStatusLabel?: string | null;
   showStreamDiagnostics?: boolean;
   streamEvents?: AgentEvent[] | null;
   typingSpeedMs?: number;
@@ -65,6 +66,7 @@ export function MessageBubble({
   message, 
   isStreaming, 
   isLast,
+  streamStatusLabel = null,
   showStreamDiagnostics = false,
   streamEvents,
   typingSpeedMs,
@@ -349,6 +351,10 @@ export function MessageBubble({
                 <InlineMediaAttachment key={media.id} media={media} />
               ))}
             </div>
+          )}
+
+          {!isUser && isLast && isStreaming && streamStatusLabel && (
+            <p className="mb-1 text-[11px] text-muted-foreground">{streamStatusLabel}</p>
           )}
 
           <div className="whitespace-pre-wrap text-sm leading-relaxed min-h-[1.25rem]">

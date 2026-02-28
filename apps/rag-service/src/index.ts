@@ -82,6 +82,7 @@ import { initEmbeddingWebSocket, closeEmbeddingWebSocket, getWebSocketStats } fr
 import { getAudioProcessor } from './audio-processor.js';
 import { getDocumentProcessor } from './document-processor.js';
 import { createWebSearchClient, WebSearchOptions, WebSearchResult } from './web-search.js';
+import { sanitizeWebSnippet } from './web-sanitize.js';
 import { createLearningTask, dequeueNextLearningTask, updateLearningTaskStatus } from './learning-orchestrator.js';
 import { startLearningWorker } from './workers/learning-worker.js';
 import { startWebCrawlWorker } from './workers/web-crawl-worker.js';
@@ -2969,7 +2970,10 @@ function buildAgenticContext(
     web.forEach((result, i) => {
       parts.push(`### ${i + 1}. ${result.title}`);
       parts.push(`Fonte: ${result.url}`);
-      parts.push(result.description);
+      const sanitizedDescription = sanitizeWebSnippet(result.description);
+      if (sanitizedDescription) {
+        parts.push(sanitizedDescription);
+      }
       parts.push('');
     });
   }

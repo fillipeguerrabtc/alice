@@ -1,6 +1,7 @@
 import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS, instrumentCircuitBreaker } from '@alice/shared-utils';
 import type { AliceMetrics } from '@alice/shared-utils';
 import { Logger } from 'pino';
+import { sanitizeWebSnippet } from './web-sanitize.js';
 
 export interface WebSearchResult {
   title: string;
@@ -160,12 +161,16 @@ export function createWebSearchClient({
       return results
         .filter((r) => Boolean(r.url))
         .slice(0, normalizedCount)
-        .map((r) => ({
-          title: r.title || 'Sem título',
-          url: r.url as string,
-          description: r.content || r.snippet || '',
-          snippet: r.snippet || r.content || '',
-        }));
+        .map((r) => {
+          const rawDescription = r.content || r.snippet || '';
+          const rawSnippet = r.snippet || r.content || '';
+          return {
+            title: r.title || 'Sem título',
+            url: r.url as string,
+            description: sanitizeWebSnippet(rawDescription),
+            snippet: sanitizeWebSnippet(rawSnippet),
+          };
+        });
     } finally {
       clearTimeout(timeout);
     }

@@ -10,6 +10,7 @@ export type StreamCorruptionReason =
   | 'token_loop'
   | 'digit_noise'
   | 'alphanumeric_noise'
+  | 'css_style_leak'
   | 'fragmented_tokens'
   | 'linguistic_noise';
 
@@ -249,6 +250,18 @@ function hasFragmentedTokenNoise(content: string, profile: StreamCorruptionProfi
   return tinyRatio >= tinyRatioThreshold || maxNumericChain >= 8;
 }
 
+function hasCssStyleLeakSoup(content: string): boolean {
+  const semicolonSoupPattern = /(?:;|:)\s*(?:r?red|blue|green|#(?:[0-9a-f]{3,6}))\b/giu;
+  const semicolonSoupMatches = content.match(semicolonSoupPattern) ?? [];
+  if (semicolonSoupMatches.length >= 6) {
+    return true;
+  }
+
+  const cssDeclarationPattern = /(?:color|background-color|font-size|font-weight)\s*:\s*[^;]{1,30};?/giu;
+  const cssDeclarationMatches = content.match(cssDeclarationPattern) ?? [];
+  return cssDeclarationMatches.length >= 4;
+}
+
 function hasLinguisticNoise(content: string, profile: StreamCorruptionProfile): boolean {
   if (profile === 'trading') {
     return false;
@@ -344,6 +357,10 @@ export function evaluateCorruptedAssistantResponse(
   const minimumLengthForNoise = profile === 'trading' ? 320 : 1;
   if (shouldApplyNoiseHeuristic && normalized.length >= minimumLengthForNoise && excessiveNoiseRatio > extremeNoiseThreshold) {
     return { corrupted: true, reason: 'noise_ratio' };
+  }
+
+  if (shouldApplyNoiseHeuristic && hasCssStyleLeakSoup(normalized)) {
+    return { corrupted: true, reason: 'css_style_leak' };
   }
 
   const minWordRepeats = profile === 'trading' ? 8 : 6;

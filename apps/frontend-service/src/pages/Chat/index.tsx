@@ -657,6 +657,7 @@ export default function Chat() {
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [streamStatusLabel, setStreamStatusLabel] = useState<string | null>(null);
   const [streamEvents, setStreamEvents] = useState<AgentEvent[]>([]);
   const [showStreamDiagnostics, setShowStreamDiagnostics] = useState(false);
   const [focusNonce, setFocusNonce] = useState(0);
@@ -1380,6 +1381,8 @@ export default function Chat() {
         return t('chat.streaming.status.llm');
       case 'writing':
         return t('chat.streaming.status.writing');
+      case 'refining':
+        return t('chat.streaming.status.refining');
       case 'preparing':
       default:
         return t('chat.streaming.status.preparing');
@@ -1436,6 +1439,7 @@ export default function Chat() {
 
       setMessages((prev) => [...prev, userMessage]);
       setIsStreaming(true);
+      setStreamStatusLabel(null);
       if (showStreamDiagnostics) {
         setStreamEvents([]);
       }
@@ -1652,9 +1656,12 @@ export default function Chat() {
                 resetTimeout();
               }
 
-              if (showStreamDiagnostics && parsed.type === 'status') {
+              if (parsed.type === 'status' && typeof parsed.stage === 'string' && parsed.stage.trim().length > 0) {
                 const label = resolveStreamStatus(parsed.stage);
-                pushStreamEvent(createStatusEvent(parsed.stage, label));
+                setStreamStatusLabel(label);
+                if (showStreamDiagnostics) {
+                  pushStreamEvent(createStatusEvent(parsed.stage, label));
+                }
                 resetTimeout();
               }
 
@@ -1913,6 +1920,7 @@ export default function Chat() {
         flushPendingContent();
         clearTimeoutSafe();
         streamControllerRef.current = null;
+        setStreamStatusLabel(null);
       }
 
       setIsStreaming(false);
@@ -1924,6 +1932,7 @@ export default function Chat() {
       if (isAbort && stopRequestedRef.current) {
         stopRequestedRef.current = false;
         setIsStreaming(false);
+        setStreamStatusLabel(null);
         return;
       }
       const errorMessage = isAbort ? t('chat.streaming.timeout') : t('chat.streaming.error');
@@ -1943,6 +1952,7 @@ export default function Chat() {
         return newMessages;
       });
       setIsStreaming(false);
+      setStreamStatusLabel(null);
     },
   });
 
@@ -2753,6 +2763,7 @@ export default function Chat() {
                         isLast={index === messages.length - 1}
                         showStreamDiagnostics={showStreamDiagnostics}
                         streamEvents={showStreamDiagnostics && isStreaming && index === messages.length - 1 ? streamEvents : null}
+                        streamStatusLabel={isStreaming && index === messages.length - 1 && message.role === 'assistant' ? streamStatusLabel : null}
                         typingSpeedMs={typingSpeedMs}
                         onRateImage={handleRateImage}
                         onFeedback={handleFeedback}

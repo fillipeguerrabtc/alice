@@ -395,6 +395,7 @@
         "ragWeb": "Buscando na web e deep web",
         "llm": "Gerando resposta",
         "writing": "Escrevendo resposta",
+        "refining": "Refinando resposta",
         "finalizing": "Finalizando resposta"
       }
     },

@@ -370,6 +370,7 @@
         "ragWeb": "Searching the web and deep web",
         "llm": "Generating response",
         "writing": "Writing response",
+        "refining": "Refining response",
         "finalizing": "Finalizing response"
       }
     },

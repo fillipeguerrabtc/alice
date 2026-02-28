@@ -3680,13 +3680,18 @@ function fixPreferredNameInDirectAddress(response: string, preferredName: string
   });
 }
 
+function finalizeGuardrailResponse(response: string, preferredName: string | null): string {
+  const sanitized = sanitizeAssistantResponse(response);
+  return fixPreferredNameInDirectAddress(sanitized, preferredName);
+}
+
 const CORRUPTED_RESPONSE_FALLBACK_MESSAGE =
   'Não consegui gerar uma resposta confiável nesta tentativa. Pode reenviar a pergunta que eu respondo novamente com precisão.';
 const GUARDRAIL_REGENERATION_INSTRUCTION =
   'REGERACAO OBRIGATORIA: responda em PT-BR com texto limpo, sem caracteres aleatorios e sem repeticoes degeneradas.';
 
 function buildGuardrailFallbackResponse(preferredName: string | null): string {
-  return fixPreferredNameInDirectAddress(CORRUPTED_RESPONSE_FALLBACK_MESSAGE, preferredName);
+  return finalizeGuardrailResponse(CORRUPTED_RESPONSE_FALLBACK_MESSAGE, preferredName);
 }
 
 function buildGuardrailRegenerationMessages(messages: LLMMessage[]): LLMMessage[] {
@@ -3729,23 +3734,23 @@ async function enforceResponseGuardrails(params: {
   const ownNameQuestionLanguage = detectOwnNameQuestionLanguage(params.userMessage);
   if (ownNameQuestionLanguage && params.preferredName) {
     if (ownNameQuestionLanguage === 'en') {
-      return `Your preferred name is ${params.preferredName}.`;
+      return finalizeGuardrailResponse(`Your preferred name is ${params.preferredName}.`, params.preferredName);
     }
-    return `Seu nome preferido é ${params.preferredName}.`;
+    return finalizeGuardrailResponse(`Seu nome preferido é ${params.preferredName}.`, params.preferredName);
   }
 
   const agentNameQuestionLanguage = detectAgentNameQuestionLanguage(params.userMessage);
   if (agentNameQuestionLanguage && params.agentName) {
     if (agentNameQuestionLanguage === 'en') {
-      return `My name is ${params.agentName}.`;
+      return finalizeGuardrailResponse(`My name is ${params.agentName}.`, params.preferredName);
     }
-    return `Meu nome é ${params.agentName}.`;
+    return finalizeGuardrailResponse(`Meu nome é ${params.agentName}.`, params.preferredName);
   }
 
   const responseProfile = detectContextProfile(params.userMessage);
-  const sanitized = sanitizeAssistantResponse(params.responseText);
-  if (!isCorruptedAssistantResponse(sanitized, responseProfile)) {
-    return fixPreferredNameInDirectAddress(sanitized, params.preferredName);
+  const finalizedResponse = finalizeGuardrailResponse(params.responseText, params.preferredName);
+  if (!isCorruptedAssistantResponse(finalizedResponse, responseProfile)) {
+    return finalizedResponse;
   }
 
   if (!params.regenerate) {
@@ -3762,12 +3767,12 @@ async function enforceResponseGuardrails(params: {
     return buildGuardrailFallbackResponse(params.preferredName);
   }
 
-  const regenerated = sanitizeAssistantResponse(regeneratedRaw);
+  const regenerated = finalizeGuardrailResponse(regeneratedRaw, params.preferredName);
   if (isCorruptedAssistantResponse(regenerated, responseProfile)) {
     logger.warn({ correlationId: params.correlationId }, 'Regeneração controlada retornou conteúdo potencialmente corrompido; retornando fallback seguro');
     return buildGuardrailFallbackResponse(params.preferredName);
   }
-  return fixPreferredNameInDirectAddress(regenerated, params.preferredName);
+  return regenerated;
 }
 
 async function generateConversationTitle(params: {
@@ -10052,14 +10057,11 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     }
 
     const writeStatus = (stage: string) => {
-      if (!streamDiagnosticsEnabled) return;
+      if (!stage || stage.trim().length === 0) return;
       if (!res.headersSent) {
         res.flushHeaders();
       }
-      if (!res.writableEnded) {
-        res.write(`data: ${JSON.stringify({ type: 'status', stage })}\n\n`);
-        flushSSE();
-      }
+      safeWriteSseEvent({ type: 'status', stage });
     };
 
     const resolvePhaseForStage = (stage: string): AgentEvent['phase'] => {
@@ -10399,7 +10401,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       recordRagRelevance(tenantId, ragResult);
       if (ragResult?.context) {
         systemPrompt += formatarContextoParaLLM(ragResult);
-        res.write(`data: ${JSON.stringify({ type: 'sources', sources: { internal: ragResult.sources || [] } })}\n\n`);
+        safeWriteSseEvent({ type: 'sources', sources: { internal: ragResult.sources || [] } });
       }
 
       writeStatus('prompt');
@@ -10464,7 +10466,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         });
         let lastProgressAt = 0;
         let lastProgressChars = 0;
-        let suppressCorruptedStreamChunks = false;
+        let refiningStatusEmitted = false;
         let lastCorruptionCheckLength = 0;
         const emitWritingProgress = () => {
           const now = Date.now();
@@ -10484,32 +10486,32 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             },
           });
         };
-        const shouldSuppressCorruptedChunks = () => {
+        const detectCorruptedStreamContent = () => {
           const currentLength = assistantResponse.length;
-          if (suppressCorruptedStreamChunks) return true;
-          if (currentLength < 140) return false;
-          if (currentLength - lastCorruptionCheckLength < 80) return false;
+          if (refiningStatusEmitted) return;
+          if (currentLength < 140) return;
+          if (currentLength - lastCorruptionCheckLength < 80) return;
           lastCorruptionCheckLength = currentLength;
           const partialSanitized = sanitizeAssistantResponse(assistantResponse);
           const corruptionReason = getCorruptionReason(partialSanitized, mediaProfile);
           if (!corruptionReason) {
-            return false;
+            return;
           }
-          suppressCorruptedStreamChunks = true;
+          refiningStatusEmitted = true;
           chatStreamSuppressionTotal.inc({ profile: mediaProfile, reason: corruptionReason });
           logger.warn(
             { conversationId, chars: currentLength, profile: mediaProfile, reason: corruptionReason },
-            'Fluxo de mídia detectou resposta degenerada; chunks serão suprimidos até finalização do guardrail'
+            'Fluxo de mídia detectou resposta degenerada; manter stream ativo e aplicar refinamento final'
           );
+          writeStatus('refining');
           emitAgentEvent({
             phase: 'llm',
             action: 'writing',
-            status: 'error',
-            message: 'Fluxo detectou conteúdo inconsistente; aplicando proteção de resposta',
+            status: 'in_progress',
+            message: 'Fluxo detectou conteúdo inconsistente; refinamento final em andamento',
             correlationId: conversationId ?? undefined,
             payload: { chars: currentLength },
           });
-          return true;
         };
         await proxyStreamFromGpuManager(
           mediaMessages,
@@ -10519,11 +10521,9 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             }
             if (content) {
               emitWritingProgress();
+              detectCorruptedStreamContent();
             }
             try {
-              if (shouldSuppressCorruptedChunks()) {
-                return;
-              }
               if (res.headersSent && !res.writableEnded) {
                 writeContentChunk(content);
               }
@@ -10560,7 +10560,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                   ) as Promise<string>,
                 });
                 if (guardedResponse !== assistantResponse) {
-                  res.write(`data: ${JSON.stringify({ type: 'final_message', content: guardedResponse })}\n\n`);
+                  safeWriteSseEvent({ type: 'final_message', content: guardedResponse });
                 }
                 const persistStartedAt = Date.now();
                 emitAgentEvent({
@@ -13669,7 +13669,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     });
 
     if (ragSources.length > 0 || webSources.length > 0) {
-      res.write(`data: ${JSON.stringify({ type: 'sources', sources: { internal: ragSources, web: webSources } })}\n\n`);
+      safeWriteSseEvent({ type: 'sources', sources: { internal: ragSources, web: webSources } });
     }
 
     // BUG FIX 25/12/2025: Usar função auxiliar para proxy de stream do GPU Manager Service
@@ -13704,7 +13704,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       });
       let lastProgressAt = 0;
       let lastProgressChars = 0;
-      let suppressCorruptedStreamChunks = false;
+      let refiningStatusEmitted = false;
       let lastCorruptionCheckLength = 0;
       const emitWritingProgress = () => {
         const now = Date.now();
@@ -13724,32 +13724,32 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           },
         });
       };
-      const shouldSuppressCorruptedChunks = () => {
+      const detectCorruptedStreamContent = () => {
         const currentLength = assistantResponse.length;
-        if (suppressCorruptedStreamChunks) return true;
-        if (currentLength < 140) return false;
-        if (currentLength - lastCorruptionCheckLength < 80) return false;
+        if (refiningStatusEmitted) return;
+        if (currentLength < 140) return;
+        if (currentLength - lastCorruptionCheckLength < 80) return;
         lastCorruptionCheckLength = currentLength;
         const partialSanitized = sanitizeAssistantResponse(assistantResponse);
         const corruptionReason = getCorruptionReason(partialSanitized, streamProfile);
         if (!corruptionReason) {
-          return false;
+          return;
         }
-        suppressCorruptedStreamChunks = true;
+        refiningStatusEmitted = true;
         chatStreamSuppressionTotal.inc({ profile: streamProfile, reason: corruptionReason });
         logger.warn(
           { conversationId, chars: currentLength, profile: streamProfile, reason: corruptionReason },
-          'Fluxo de texto detectou resposta degenerada; chunks serão suprimidos até finalização do guardrail'
+          'Fluxo de texto detectou resposta degenerada; manter stream ativo e aplicar refinamento final'
         );
+        writeStatus('refining');
         emitAgentEvent({
           phase: 'llm',
           action: 'writing',
-          status: 'error',
-          message: 'Fluxo detectou conteúdo inconsistente; aplicando proteção de resposta',
+          status: 'in_progress',
+          message: 'Fluxo detectou conteúdo inconsistente; refinamento final em andamento',
           correlationId: conversationId ?? undefined,
           payload: { chars: currentLength },
         });
-        return true;
       };
       await proxyStreamFromGpuManager(
         llmMessages,
@@ -13759,13 +13759,11 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           }
           if (content) {
             emitWritingProgress();
+            detectCorruptedStreamContent();
           }
           // BUG FIX 25/12/2025: Envolver res.write() em try-catch para tratamento gracioso de clientes desconectados
           // Se cliente desconectar durante streaming, erro não deve interromper processamento do stream
           try {
-            if (shouldSuppressCorruptedChunks()) {
-              return;
-            }
             if (res.headersSent && !res.writableEnded) {
               writeContentChunk(content);
               flushSSE();
