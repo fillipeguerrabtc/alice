@@ -3682,9 +3682,40 @@ function fixPreferredNameInDirectAddress(response: string, preferredName: string
 
 const CORRUPTED_RESPONSE_FALLBACK_MESSAGE =
   'Não consegui gerar uma resposta confiável nesta tentativa. Pode reenviar a pergunta que eu respondo novamente com precisão.';
+const GUARDRAIL_REGENERATION_INSTRUCTION =
+  'REGERACAO OBRIGATORIA: responda em PT-BR com texto limpo, sem caracteres aleatorios e sem repeticoes degeneradas.';
 
 function buildGuardrailFallbackResponse(preferredName: string | null): string {
   return fixPreferredNameInDirectAddress(CORRUPTED_RESPONSE_FALLBACK_MESSAGE, preferredName);
+}
+
+function buildGuardrailRegenerationMessages(messages: LLMMessage[]): LLMMessage[] {
+  const systemIndex = messages.findIndex((message) => message.role === 'system');
+  if (systemIndex === -1) {
+    return [{ role: 'system', content: GUARDRAIL_REGENERATION_INSTRUCTION }, ...messages];
+  }
+
+  const existingSystemMessage = messages[systemIndex];
+  if (existingSystemMessage.content.includes(GUARDRAIL_REGENERATION_INSTRUCTION)) {
+    return messages;
+  }
+
+  return messages.map((message, index) => {
+    if (index !== systemIndex) {
+      return message;
+    }
+    return {
+      ...message,
+      content: `${message.content}\n\n${GUARDRAIL_REGENERATION_INSTRUCTION}`,
+    };
+  });
+}
+
+function buildGuardrailRegenerationConfig(config: LLMConfig): LLMConfig {
+  return {
+    ...config,
+    temperature: Math.min(config.temperature ?? 0.7, 0.2),
+  };
 }
 
 async function enforceResponseGuardrails(params: {
@@ -9469,12 +9500,9 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
       agentName: assistantAgentName,
       correlationId: req.header('x-correlation-id') ?? undefined,
       regenerate: async () => callLlamaAPI(
-        llmMessages,
+        buildGuardrailRegenerationMessages(llmMessages),
         false,
-        {
-          ...scopedLlmConfig,
-          temperature: Math.min(scopedLlmConfig.temperature ?? 0.7, 0.25),
-        },
+        buildGuardrailRegenerationConfig(scopedLlmConfig),
         getAdaptiveGpuPriority('sync', syncProfile)
       ) as Promise<string>,
     });
@@ -9865,6 +9893,36 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       const flusher = (res as unknown as { flush?: () => void }).flush;
       if (typeof flusher === 'function') flusher();
     };
+
+    let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+    const clearHeartbeat = () => {
+      if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+        heartbeatInterval = null;
+      }
+    };
+    const writeSseComment = (comment: string) => {
+      if (res.writableEnded) return;
+      try {
+        res.write(`:${comment}\n\n`);
+        flushSSE();
+      } catch (error) {
+        clearHeartbeat();
+        logger.debug({ error, conversationId: req.params.id }, 'Falha ao enviar comentário SSE');
+      }
+    };
+
+    writeSseComment('ok');
+    heartbeatInterval = setInterval(() => {
+      if (res.writableEnded) {
+        clearHeartbeat();
+        return;
+      }
+      writeSseComment(' ping');
+    }, 15000);
+    res.on('close', clearHeartbeat);
+    res.on('finish', clearHeartbeat);
+    res.on('error', clearHeartbeat);
 
     const writeContentChunk = (content: string) => {
       if (res.writableEnded) return;
@@ -10495,12 +10553,9 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                   agentName: conversation?.agent?.nome?.trim() ?? null,
                   correlationId: conversationId ?? undefined,
                   regenerate: async () => callLlamaAPI(
-                    mediaMessages,
+                    buildGuardrailRegenerationMessages(mediaMessages),
                     false,
-                    {
-                      ...scopedLlmConfig,
-                      temperature: Math.min(scopedLlmConfig.temperature ?? 0.7, 0.25),
-                    },
+                    buildGuardrailRegenerationConfig(scopedLlmConfig),
                     getAdaptiveGpuPriority('sync', mediaProfile)
                   ) as Promise<string>,
                 });
@@ -13752,12 +13807,9 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                 agentName: assistantAgentName,
                 correlationId: conversationId ?? undefined,
                 regenerate: async () => callLlamaAPI(
-                  llmMessages,
+                  buildGuardrailRegenerationMessages(llmMessages),
                   false,
-                  {
-                    ...scopedLlmConfig,
-                    temperature: Math.min(scopedLlmConfig.temperature ?? 0.7, 0.25),
-                  },
+                  buildGuardrailRegenerationConfig(scopedLlmConfig),
                   getAdaptiveGpuPriority('sync', streamProfile)
                 ) as Promise<string>,
               });

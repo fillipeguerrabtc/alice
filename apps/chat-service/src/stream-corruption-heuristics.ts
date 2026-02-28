@@ -5,8 +5,11 @@ export type StreamCorruptionReason =
   | 'repeated_chars'
   | 'noise_ratio'
   | 'repeated_words'
+  | 'repeated_short_pairs'
+  | 'short_word_run'
   | 'token_loop'
   | 'digit_noise'
+  | 'alphanumeric_noise'
   | 'fragmented_tokens'
   | 'linguistic_noise';
 
@@ -92,6 +95,105 @@ function hasDominantShortTokenLoop(content: string, profile: StreamCorruptionPro
   const isNumericToken = /^\d+$/u.test(dominantToken);
   const dominanceThreshold = profile === 'trading' ? 0.46 : 0.32;
   return dominanceRatio >= dominanceThreshold && (isShortToken || isNumericToken);
+}
+
+function hasRecurringShortRepeatPairs(content: string, profile: StreamCorruptionProfile): boolean {
+  const words = (content.match(/\p{L}[\p{L}\p{M}]*/gu) ?? []).map((word) => word.toLowerCase());
+  if (words.length < 16) {
+    return false;
+  }
+
+  let repeatedPairs = 0;
+  for (let i = 0; i < words.length - 1; i += 1) {
+    const current = words[i];
+    if (current.length > 2) {
+      continue;
+    }
+    if (current === words[i + 1]) {
+      repeatedPairs += 1;
+      i += 1;
+    }
+  }
+
+  const threshold = profile === 'trading' ? 5 : 3;
+  return repeatedPairs >= threshold;
+}
+
+function hasExcessiveShortWordRuns(content: string, profile: StreamCorruptionProfile): boolean {
+  const words = (content.match(/\p{L}[\p{L}\p{M}]*/gu) ?? []).map((word) => word.toLowerCase());
+  if (words.length < 22) {
+    return false;
+  }
+
+  let maxRun = 0;
+  let currentRun = 0;
+  let shortWordCount = 0;
+
+  for (const word of words) {
+    const isShortWord = word.length <= 2;
+    if (isShortWord) {
+      shortWordCount += 1;
+      currentRun += 1;
+      if (currentRun > maxRun) {
+        maxRun = currentRun;
+      }
+    } else {
+      currentRun = 0;
+    }
+  }
+
+  const shortWordRatio = shortWordCount / words.length;
+  const runThreshold = profile === 'trading' ? 10 : 7;
+  const ratioThreshold = profile === 'trading' ? 0.56 : 0.42;
+  return maxRun >= runThreshold || (maxRun >= 5 && shortWordRatio >= ratioThreshold);
+}
+
+const SAFE_ALPHANUMERIC_PATTERNS = [
+  /^(?:gpt|qwen)-?\d+(?:\.\d+)?$/iu,
+  /^(?:v|m|h|s|x)\d{1,4}$/iu,
+  /^(?:mp|rtx)\d{2,5}$/iu,
+  /^(?:btc|eth|usdt|brl|usd)\d{0,4}$/iu,
+];
+
+function hasSuspiciousAlphanumericTokens(content: string, profile: StreamCorruptionProfile): boolean {
+  const tokens = content
+    .split(/\s+/u)
+    .map((token) => token.trim().replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ''))
+    .filter((token) => token.length >= 4)
+    .map((token) => token.toLowerCase());
+
+  if (tokens.length < 14) {
+    return false;
+  }
+
+  let suspicious = 0;
+  let alphanumericTokens = 0;
+  for (const token of tokens) {
+    const hasLetterDigitMix = /(?=.*\p{L})(?=.*\d)/u.test(token);
+    if (!hasLetterDigitMix) {
+      continue;
+    }
+    alphanumericTokens += 1;
+
+    if (SAFE_ALPHANUMERIC_PATTERNS.some((pattern) => pattern.test(token))) {
+      continue;
+    }
+
+    const hasDigitsInsideWord = /\p{L}\d+\p{L}/u.test(token);
+    const startsWithNoisePattern = /^[a-z]{1,3}\d{2,}[a-z]{1,4}$/iu.test(token);
+    const alternatingSegments = /(?:\d+[a-z]{2,}\d+|[a-z]{2,}\d+[a-z]{2,}\d+)/iu.test(token);
+    if (hasDigitsInsideWord || startsWithNoisePattern || alternatingSegments) {
+      suspicious += 1;
+    }
+  }
+
+  if (alphanumericTokens === 0) {
+    return false;
+  }
+  const suspiciousRatio = suspicious / alphanumericTokens;
+  const minSuspiciousTokens = profile === 'trading' ? 3 : 2;
+  const ratioThreshold = profile === 'trading' ? 0.55 : 0.4;
+  return suspicious >= minSuspiciousTokens && suspiciousRatio >= ratioThreshold;
 }
 
 function hasHighDigitNoise(content: string): boolean {
@@ -252,9 +354,21 @@ export function evaluateCorruptedAssistantResponse(
     return { corrupted: true, reason: 'repeated_words' };
   }
 
+  if (shouldApplyNoiseHeuristic && hasRecurringShortRepeatPairs(normalized, profile)) {
+    return { corrupted: true, reason: 'repeated_short_pairs' };
+  }
+
+  if (shouldApplyNoiseHeuristic && hasExcessiveShortWordRuns(normalized, profile)) {
+    return { corrupted: true, reason: 'short_word_run' };
+  }
+
   const dominantShortTokenLoop = hasDominantShortTokenLoop(normalized, profile);
   if (shouldApplyNoiseHeuristic && dominantShortTokenLoop) {
     return { corrupted: true, reason: 'token_loop' };
+  }
+
+  if (shouldApplyNoiseHeuristic && hasSuspiciousAlphanumericTokens(normalized, profile)) {
+    return { corrupted: true, reason: 'alphanumeric_noise' };
   }
 
   if (profile !== 'trading' && shouldApplyNoiseHeuristic && hasHighDigitNoise(normalized)) {

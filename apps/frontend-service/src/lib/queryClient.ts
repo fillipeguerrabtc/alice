@@ -35,6 +35,13 @@ export function getCsrfToken(): string | null {
   return csrfToken;
 }
 
+export interface ApiRequestOptions {
+  signal?: AbortSignal;
+  tenantId?: string;
+  headers?: Record<string, string>;
+  cache?: RequestCache;
+}
+
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const text = await res.text();
@@ -63,7 +70,7 @@ export async function apiRequest(
   method: string,
   url: string,
   data?: unknown,
-  options?: { signal?: AbortSignal; tenantId?: string }
+  options?: ApiRequestOptions
 ): Promise<Response> {
   const headers: Record<string, string> = {};
   
@@ -80,6 +87,10 @@ export async function apiRequest(
   if (options?.tenantId) {
     headers['X-Tenant-Id'] = options.tenantId;
   }
+
+  if (options?.headers) {
+    Object.assign(headers, options.headers);
+  }
   
   const res = await fetch(`${API_BASE}${url}`, {
     method,
@@ -87,6 +98,7 @@ export async function apiRequest(
     body: data ? JSON.stringify(data) : undefined,
     credentials: 'include',
     signal: options?.signal,
+    cache: options?.cache,
   });
 
   await throwIfResNotOk(res);

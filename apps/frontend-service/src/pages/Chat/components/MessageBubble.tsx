@@ -8,12 +8,13 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { Copy, Check } from 'lucide-react';
+import { Copy, Check, ChevronDown } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -83,6 +84,7 @@ export function MessageBubble({
   const [passwordApproval, setPasswordApproval] = useState('');
   const [biometricStatus, setBiometricStatus] = useState<{ enrolled?: boolean } | null>(null);
   const [biometricStatusLoading, setBiometricStatusLoading] = useState(false);
+  const [streamDetailsOpen, setStreamDetailsOpen] = useState(false);
   const fullTextRef = useRef(message.content ?? '');
   const renderedTextRef = useRef(renderedText);
   const isUser = message.role === 'user';
@@ -174,6 +176,12 @@ export function MessageBubble({
     };
   }, [isLast, isStreaming, message.content, message.role, renderedText, typingIntervalMs]);
 
+  useEffect(() => {
+    if (!isStreaming) {
+      setStreamDetailsOpen(false);
+    }
+  }, [isStreaming, message.id]);
+
   const handleOpenBiometricApproval = async () => {
     setBiometricOpen(true);
     setBiometricStatusLoading(true);
@@ -262,7 +270,6 @@ export function MessageBubble({
   };
 
   const shouldShowTypingCursor = isLast && message.role === 'assistant' && (isStreaming || renderedText.length < (message.content ?? '').length);
-  const shouldShowThinking = shouldShowTypingCursor && renderedText.trim().length === 0;
   const hasStreamEvents = Boolean(streamEvents && streamEvents.length > 0);
   const requiresConfirmation = Boolean(message.metadata?.requiresConfirmation);
   const shouldShowActionCard = Boolean(message.metadata?.actionType || message.metadata?.actionStatus || message.metadata?.actionResult);
@@ -285,6 +292,7 @@ export function MessageBubble({
     }
     return renderedText;
   })();
+  const shouldShowStreamingPlaceholder = shouldShowTypingCursor && sanitizedDisplayContent.trim().length === 0;
 
   return (
     <motion.div
@@ -344,9 +352,26 @@ export function MessageBubble({
           )}
 
           <div className="whitespace-pre-wrap text-sm leading-relaxed min-h-[1.25rem]">
-            {/* Painel de etapas: visível durante todo o streaming (tokens + status lado a lado) */}
-            {showStreamDiagnostics && isLast && isStreaming && message.role === 'assistant' && hasStreamEvents && (
-              <div className="space-y-0.5 text-xs text-muted-foreground mb-2">
+            {sanitizedDisplayContent}
+            {shouldShowStreamingPlaceholder && <span className="sr-only">{t('chat.thinking')}</span>}
+            {shouldShowTypingCursor && (
+              <span className="ml-0.5 inline-block animate-pulse align-middle text-base leading-none">▍</span>
+            )}
+          </div>
+
+          {showStreamDiagnostics && isLast && isStreaming && message.role === 'assistant' && hasStreamEvents && (
+            <Collapsible
+              open={streamDetailsOpen}
+              onOpenChange={setStreamDetailsOpen}
+              className="mt-2 rounded-md border border-border/60 p-2"
+            >
+              <CollapsibleTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-7 w-full justify-between px-2 text-xs">
+                  Detalhes do stream
+                  <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', streamDetailsOpen && 'rotate-180')} />
+                </Button>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="mt-2 space-y-1 text-xs text-muted-foreground">
                 {(streamEvents ?? []).slice(-MAX_VISIBLE_STREAM_EVENTS).map((ev) => (
                   <div key={ev.id} className="flex items-center gap-1.5">
                     <span className={cn(
@@ -362,19 +387,10 @@ export function MessageBubble({
                     )}
                   </div>
                 ))}
-              </div>
-            )}
-            {shouldShowThinking && !hasStreamEvents ? (
-              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <span className="inline-block h-1.5 w-1.5 rounded-full bg-muted-foreground/50 animate-pulse" />
-                {t('chat.thinking')}
-              </span>
-            ) : sanitizedDisplayContent}
-            {shouldShowTypingCursor && (
-              <span className="inline-block w-2 h-4 ml-0.5 bg-current animate-pulse rounded-sm" />
-            )}
-          </div>
-          
+              </CollapsibleContent>
+            </Collapsible>
+          )}
+
           {message.generatedImage && (
             <div className={cn(message.content && "mt-3")}>
               <InlineImage 

@@ -633,7 +633,7 @@ export default function Documents() {
   const [activeTab, setActiveTab] = useState<'documents' | 'media'>('documents');
   const [searchQuery, setSearchQuery] = useState('');
   const [mediaSearchQuery, setMediaSearchQuery] = useState('');
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
   const [filterStatus, setFilterStatus] = useState<'all' | 'processed' | 'pending'>('all');
   const [filterMediaType, setFilterMediaType] = useState<'all' | 'image' | 'audio'>('all');
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
@@ -644,6 +644,7 @@ export default function Documents() {
   const [sendTrainingDialogOpen, setSendTrainingDialogOpen] = useState(false);
   const [selectedMediaForTraining, setSelectedMediaForTraining] = useState<MediaUpload | null>(null);
   const [selectedTrainingNamespaceId, setSelectedTrainingNamespaceId] = useState<string>('');
+  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
 
   const { data, isLoading, error } = useQuery<DocumentsResponse>({
     queryKey: ['/api/rag/documents'],
@@ -699,6 +700,7 @@ export default function Documents() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/rag/documents'] });
+      setUploadDialogOpen(false);
       toast({ title: t('documents.success.uploaded') });
     },
     onError: (error) => {
@@ -840,11 +842,11 @@ export default function Documents() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <Tabs
         value={activeTab}
         onValueChange={(v) => setActiveTab(v as 'documents' | 'media')}
-        className="flex flex-1 min-h-0 flex-col"
+        className="flex flex-1 min-h-0 flex-col overflow-hidden"
       >
         <motion.div
           initial={{ opacity: 0, y: -20 }}
@@ -892,13 +894,17 @@ export default function Documents() {
 
         <TabsContent
           value="documents"
-          className="mt-0 h-full flex-1 min-h-0 p-4 data-[state=active]:flex data-[state=active]:flex-col"
+          className="mt-0 h-full flex-1 min-h-0 overflow-hidden p-4 data-[state=active]:flex data-[state=active]:flex-col"
         >
-          <div className="grid grid-cols-1 lg:grid-cols-[420px_minmax(0,1fr)] gap-4 h-full min-h-0">
+          <div className="grid h-full min-h-0 grid-cols-1 gap-4 lg:grid-cols-[360px_minmax(0,1fr)]">
             <div className="flex min-h-0 min-w-0 flex-col gap-4">
               <Card className="min-w-0">
-                <CardContent className="p-4">
-                  <div className="mb-4 flex flex-col gap-3">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium">{t('documents.uploadDocument')}</CardTitle>
+                  <CardDescription>{t('documents.namespace.helper')}</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex flex-col gap-3">
                     <div className="flex items-center gap-2">
                       <Layers className="h-4 w-4 text-muted-foreground" />
                       <span className="text-sm font-medium">{t('documents.namespace.label')}</span>
@@ -925,14 +931,26 @@ export default function Documents() {
                         ))}
                       </SelectContent>
                     </Select>
-                    <p className="text-xs text-muted-foreground">{t('documents.namespace.helper')}</p>
+                    <Button
+                      type="button"
+                      className="w-full"
+                      onClick={() => setUploadDialogOpen(true)}
+                      disabled={!isNamespaceReady || uploadMutation.isPending}
+                      data-testid="button-open-upload-dialog"
+                    >
+                      {uploadMutation.isPending ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Upload className="mr-2 h-4 w-4" />
+                      )}
+                      {t('documents.uploadDocument')}
+                    </Button>
+                    <p className="text-xs text-muted-foreground">
+                      {selectedNamespaceId
+                        ? `${t('documents.namespace.label')}: ${namespaceMap.get(selectedNamespaceId) ?? '-'}`
+                        : t('documents.uploadZone.selectNamespaceFirst')}
+                    </p>
                   </div>
-                  <UploadZone
-                    onUpload={(file) => uploadMutation.mutate(file)}
-                    isUploading={uploadMutation.isPending}
-                    disabled={!isNamespaceReady}
-                    t={t}
-                  />
                 </CardContent>
               </Card>
 
@@ -956,7 +974,7 @@ export default function Documents() {
               </Card>
             </div>
 
-            <div className="flex flex-col min-h-0 min-w-0">
+            <div className="flex min-h-0 min-w-0 flex-col">
               <Card className="flex min-h-[320px] min-w-0 flex-1 flex-col lg:min-h-0">
                 <CardHeader className="shrink-0 gap-3">
                   <div className="flex flex-wrap items-center gap-2">
@@ -1004,7 +1022,7 @@ export default function Documents() {
                   </div>
                 </CardHeader>
 
-                <CardContent className="flex-1 min-h-0 overflow-y-auto">
+                <CardContent className="min-h-0 flex-1 overflow-y-auto">
                   {isLoading ? (
                     <div
                       className={cn(
@@ -1065,7 +1083,7 @@ export default function Documents() {
 
         <TabsContent
           value="media"
-          className="mt-0 h-full flex-1 min-h-0 p-4 data-[state=active]:flex data-[state=active]:flex-col"
+          className="mt-0 h-full flex-1 min-h-0 overflow-hidden p-4 data-[state=active]:flex data-[state=active]:flex-col"
         >
           <div className="grid grid-cols-1 lg:grid-cols-[420px_minmax(0,1fr)] gap-4 h-full min-h-0">
             <div className="flex min-h-0 min-w-0 flex-col gap-4">
@@ -1235,6 +1253,28 @@ export default function Documents() {
           </div>
         </TabsContent>
       </Tabs>
+
+      <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>{t('documents.uploadDocument')}</DialogTitle>
+            <DialogDescription>{t('documents.uploadZone.supportedTypes')}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              {selectedNamespaceId
+                ? `${t('documents.namespace.label')}: ${namespaceMap.get(selectedNamespaceId) ?? '-'}`
+                : t('documents.uploadZone.selectNamespaceFirst')}
+            </p>
+            <UploadZone
+              onUpload={(file) => uploadMutation.mutate(file)}
+              isUploading={uploadMutation.isPending}
+              disabled={!isNamespaceReady}
+              t={t}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {selectedDocument && (
         <DocumentViewer 

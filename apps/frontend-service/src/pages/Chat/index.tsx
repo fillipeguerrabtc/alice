@@ -1561,15 +1561,57 @@ export default function Chat() {
         streamDiagnostics: showStreamDiagnostics,
       };
 
-      const res = await apiRequest('POST', '/api/chat/stream', payload, { signal: controller.signal });
+      const res = await apiRequest('POST', '/api/chat/stream', payload, {
+        signal: controller.signal,
+        headers: {
+          Accept: 'text/event-stream',
+          'Cache-Control': 'no-cache',
+        },
+        cache: 'no-store',
+      });
 
       if (!res.body) throw new Error('No response body');
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let fullContent = '';
+      let pendingContent = '';
+      let contentFlushRafId: number | null = null;
       let buffer = '';
       resetTimeout();
+
+      const applyAssistantContent = (nextContent: string) => {
+        setMessages((prev) => {
+          const newMessages = [...prev];
+          const lastIdx = newMessages.length - 1;
+          if (lastIdx >= 0 && newMessages[lastIdx].role === 'assistant') {
+            newMessages[lastIdx] = { ...newMessages[lastIdx], content: nextContent };
+          }
+          return newMessages;
+        });
+      };
+
+      const flushPendingContent = () => {
+        if (!pendingContent) return;
+        fullContent += pendingContent;
+        pendingContent = '';
+        applyAssistantContent(fullContent);
+      };
+
+      const schedulePendingContentFlush = () => {
+        if (contentFlushRafId !== null) return;
+        contentFlushRafId = window.requestAnimationFrame(() => {
+          contentFlushRafId = null;
+          flushPendingContent();
+        });
+      };
+
+      const cancelPendingContentFlush = () => {
+        if (contentFlushRafId !== null) {
+          window.cancelAnimationFrame(contentFlushRafId);
+          contentFlushRafId = null;
+        }
+      };
 
       try {
         while (true) {
@@ -1578,6 +1620,7 @@ export default function Chat() {
 
           const chunk = decoder.decode(value, { stream: true });
           buffer += chunk;
+          resetTimeout();
 
           // Parser SSE correto: eventos separados por \n\n, normaliza CRLF
           let normalizedBuffer = buffer.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
@@ -1822,29 +1865,17 @@ export default function Chat() {
                 resetTimeout();
               }
 
-              if (parsed.content) {
-                fullContent += parsed.content;
-                setMessages((prev) => {
-                  const newMessages = [...prev];
-                  const lastIdx = newMessages.length - 1;
-                  if (lastIdx >= 0 && newMessages[lastIdx].role === 'assistant') {
-                    newMessages[lastIdx] = { ...newMessages[lastIdx], content: fullContent };
-                  }
-                  return newMessages;
-                });
+              if (typeof parsed.content === 'string' && parsed.content.length > 0) {
+                pendingContent += parsed.content;
+                schedulePendingContentFlush();
                 resetTimeout();
               }
 
               if (parsed.type === 'final_message' && typeof parsed.content === 'string') {
+                cancelPendingContentFlush();
+                pendingContent = '';
                 fullContent = parsed.content;
-                setMessages((prev) => {
-                  const newMessages = [...prev];
-                  const lastIdx = newMessages.length - 1;
-                  if (lastIdx >= 0 && newMessages[lastIdx].role === 'assistant') {
-                    newMessages[lastIdx] = { ...newMessages[lastIdx], content: fullContent };
-                  }
-                  return newMessages;
-                });
+                applyAssistantContent(fullContent);
                 resetTimeout();
               }
 
@@ -1878,6 +1909,8 @@ export default function Chat() {
           buffer = normalizedBuffer;
         }
       } finally {
+        cancelPendingContentFlush();
+        flushPendingContent();
         clearTimeoutSafe();
         streamControllerRef.current = null;
       }
