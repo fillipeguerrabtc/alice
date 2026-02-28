@@ -1874,6 +1874,7 @@ app.get('/api/rag/documents', requireAuth(), requirePermission('rag:documents:re
   const tenantId = req.tenantId;
   
   // OWASP API3: Validação de query params
+  const correlationId = getRequestCorrelationId(req);
   const queryResult = documentsQuerySchema.safeParse(req.query);
   if (!queryResult.success) {
     return res.status(400).json({ error: 'Parâmetros inválidos', details: queryResult.error.format() });
@@ -1897,7 +1898,7 @@ app.get('/api/rag/documents', requireAuth(), requirePermission('rag:documents:re
 
     res.json({ documents: tenantDocuments });
   } catch (error) {
-    logger.error({ error }, 'Falha ao buscar documentos');
+    logger.error({ error, tenantId, namespaceId, correlationId }, 'Falha ao buscar documentos');
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
@@ -1922,6 +1923,7 @@ app.post('/api/rag/documents/:id/send-to-training', requireAuth(), requirePermis
     return res.status(400).json({ error: 'ID inválido', details: idValidation.error.format() });
   }
 
+  const correlationId = getRequestCorrelationId(req);
   const bodyValidation = promoteDocumentToTrainingSchema.safeParse(req.body ?? {});
   if (!bodyValidation.success) {
     return res.status(400).json({ error: 'Parâmetros inválidos', details: bodyValidation.error.format() });
@@ -2030,6 +2032,7 @@ app.post('/api/rag/documents/:id/send-to-training', requireAuth(), requirePermis
       sent: result.sent,
       failed: result.failed,
       selectedChunkIds: result.selectedChunkIds,
+      correlationId,
     }, 'Documento promovido para treinamento com seleção de chunks relevantes');
 
     return res.json({
@@ -2043,7 +2046,7 @@ app.post('/api/rag/documents/:id/send-to-training', requireAuth(), requirePermis
       message: `${result.sent} dataset(s) gerado(s) para aprovação na página Training`,
     });
   } catch (error) {
-    logger.error({ error, documentId: req.params.id }, 'Falha ao promover documento para treinamento');
+    logger.error({ error, documentId: req.params.id, tenantId, correlationId }, 'Falha ao promover documento para treinamento');
     return res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
@@ -2083,7 +2086,7 @@ app.get('/api/rag/documents/:id/status', requireAuth(), requirePermission('rag:d
       sentToTrainingAt: document.sentToTrainingAt,
     });
   } catch (error) {
-    logger.error({ error, documentId: req.params.id }, 'Falha ao consultar status do documento');
+    logger.error({ error, documentId: req.params.id, tenantId, correlationId: getRequestCorrelationId(req) }, 'Falha ao consultar status do documento');
     return res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
@@ -2147,7 +2150,7 @@ app.post('/api/rag/documents/:id/reprocess', requireAuth(), requirePermission('r
 
     return res.json({ jobId });
   } catch (error) {
-    logger.error({ error, documentId: req.params.id }, 'Falha ao solicitar reprocessamento do documento');
+    logger.error({ error, documentId: req.params.id, tenantId, correlationId: getRequestCorrelationId(req) }, 'Falha ao solicitar reprocessamento do documento');
     return res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
@@ -2363,7 +2366,7 @@ app.post('/api/rag/documents', requireAuth(), requirePermission('rag:documents:w
       jobId,
     });
   } catch (error) {
-    logger.error({ error }, 'Falha ao criar documento');
+    logger.error({ error, tenantId, correlationId: getRequestCorrelationId(req) }, 'Falha ao criar documento');
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
@@ -2484,6 +2487,7 @@ app.post('/api/rag/documents/upload', requireAuth(), requirePermission('rag:docu
       filename: req.file.originalname,
       mimeType: req.file.mimetype,
       error: validation.error,
+      correlationId: getRequestCorrelationId(req),
     }, 'Upload de documento rejeitado por validação de segurança');
     return res.status(400).json({ error: validation.error });
   }
@@ -2551,7 +2555,7 @@ app.post('/api/rag/documents/upload', requireAuth(), requirePermission('rag:docu
       status: 'queued',
     });
   } catch (error) {
-    logger.error({ error }, 'Falha ao enviar documento');
+    logger.error({ error, tenantId: req.tenantId, correlationId: getRequestCorrelationId(req) }, 'Falha ao enviar documento');
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
@@ -2765,6 +2769,7 @@ app.delete('/api/rag/documents/:id', requireAuth(), requirePermission('rag:docum
   
   // SEGURANÇA: Usar req.tenantId populado pelo middleware (RLS Enterprise)
   const tenantId = req.tenantId;
+  const correlationId = getRequestCorrelationId(req);
 
   try {
     // MULTI-TENANCY: Verificar se documento pertence ao tenant via namespace
@@ -2793,6 +2798,7 @@ app.delete('/api/rag/documents/:id', requireAuth(), requirePermission('rag:docum
             error: qdrantError,
             tenantId,
             documentId: id,
+            correlationId,
           },
           'Falha ao excluir embeddings do documento no Qdrant'
         );
@@ -2811,10 +2817,10 @@ app.delete('/api/rag/documents/:id', requireAuth(), requirePermission('rag:docum
       await invalidateRagCachesForTenant(tenantId);
     }
 
-    logger.info({ documentId: id, tenantId }, 'Documento excluído');
+    logger.info({ documentId: id, tenantId, correlationId }, 'Documento excluído');
     res.json({ success: true });
   } catch (error) {
-    logger.error({ error }, 'Falha ao excluir documento');
+    logger.error({ error, documentId: id, tenantId, correlationId }, 'Falha ao excluir documento');
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });

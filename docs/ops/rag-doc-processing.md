@@ -114,3 +114,52 @@ Implementacoes realizadas no `apps/frontend-service/src/pages/Documents.tsx`:
 Resultado esperado:
 
 - Documentos longos podem ser rolados ate o final no modal sem truncamento visual.
+
+## ETAPA 6 - Validacao E2E e Observabilidade
+
+Hardening de logs no `apps/rag-service/src/index.ts`:
+
+- Endpoints de documentos com logs estruturados incluindo `correlationId`:
+  - listagem de documentos;
+  - envio para treinamento;
+  - status;
+  - reprocessamento;
+  - criacao via JSON;
+  - upload de arquivo;
+  - exclusao com limpeza no Qdrant.
+- Worker de documentos mantido com logs estruturados por:
+  - `jobId`, `tenantId`, `documentId`, `namespaceId`, `correlationId`, `attempt`.
+
+Visibilidade de falhas de processamento:
+
+- Em erro de embeddings/Qdrant no worker:
+  - `documents.processado` permanece `false`;
+  - `documents.metadata.processingStatus = 'failed'`;
+  - `documents.metadata.processingError` recebe mensagem sanitizada.
+- Recuperacao:
+  - usar `POST /api/rag/documents/:id/reprocess` para reenfileirar.
+
+## Status de Processamento
+
+- `pending`: documento enfileirado e aguardando worker.
+- `processing`: worker executando chunking/embeddings/persistencia.
+- `failed`: processamento falhou; erro disponivel em `processingError`.
+- `completed`: processamento concluido; documento apto para RAG e treinamento.
+
+## Checklist Manual E2E
+
+1. Upload de documento
+   - confirmar retorno `202` com `documentId` e `jobId`.
+   - confirmar transicao visual: `pending -> processing -> completed`.
+2. Busca RAG
+   - executar consulta em namespace do documento.
+   - confirmar retorno de chunks do documento processado.
+3. Envio para treinamento
+   - no documento `completed`, acionar "Enviar para treinamento".
+   - confirmar criacao de dados pendentes na pagina Training.
+4. Falha e reprocessamento
+   - em documento `failed`, acionar "Reprocessar".
+   - confirmar novo fluxo: `pending -> processing -> completed`.
+5. Exclusao de documento
+   - deletar documento.
+   - confirmar ausencia no PostgreSQL e ausencia de chunks no resultado RAG (sem ghost embeddings).
