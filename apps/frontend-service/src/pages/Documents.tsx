@@ -312,7 +312,7 @@ function UploadZone({
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       className={cn(
-        'border-2 border-dashed rounded-lg p-8 text-center transition-colors',
+        'border-2 border-dashed rounded-lg p-5 sm:p-6 text-center transition-colors',
         isDragging ? 'border-primary bg-primary/5' : 'border-muted-foreground/25 hover:border-primary/50',
         (isUploading || disabled) && 'opacity-50 pointer-events-none'
       )}
@@ -632,6 +632,7 @@ export default function Documents() {
   
   const [activeTab, setActiveTab] = useState<'documents' | 'media'>('documents');
   const [searchQuery, setSearchQuery] = useState('');
+  const [mediaSearchQuery, setMediaSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [filterStatus, setFilterStatus] = useState<'all' | 'processed' | 'pending'>('all');
   const [filterMediaType, setFilterMediaType] = useState<'all' | 'image' | 'audio'>('all');
@@ -777,6 +778,15 @@ export default function Documents() {
   const mediaUploads = (mediaData?.uploads ?? []).filter(
     (u): u is MediaUpload => (u.mediaType === 'image' || u.mediaType === 'audio')
   );
+  const filteredMediaUploads = mediaUploads.filter((media) => {
+    if (!mediaSearchQuery.trim()) return true;
+    const search = mediaSearchQuery.toLowerCase();
+    return (
+      media.originalFilename.toLowerCase().includes(search) ||
+      (media.llmDescription?.toLowerCase().includes(search) ?? false) ||
+      (media.transcription?.toLowerCase().includes(search) ?? false)
+    );
+  });
   const mediaStats = { total: mediaUploads.length };
 
   const handleViewMedia = useCallback((media: MediaUpload) => {
@@ -830,44 +840,46 @@ export default function Documents() {
   }
 
   return (
-    <div className="flex flex-col h-full min-h-0">
-      <motion.div 
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="p-4 border-b bg-background/95 backdrop-blur shrink-0"
+    <div className="flex h-full min-h-0 flex-col">
+      <Tabs
+        value={activeTab}
+        onValueChange={(v) => setActiveTab(v as 'documents' | 'media')}
+        className="flex flex-1 min-h-0 flex-col"
       >
-        <div className="flex items-center justify-between gap-4 mb-4 flex-wrap">
-          <div>
-            <h1 className="text-2xl font-bold" data-testid="text-documents-title">
-              {t('documents.title')}
-            </h1>
-            <p className="text-muted-foreground text-sm">
-              {t('documents.subtitle')}
-            </p>
-          </div>
-          
-          <div className="flex items-center gap-2 flex-wrap">
-            {activeTab === 'documents' && (
-              <>
-                <Badge variant="secondary" className="gap-1">
-                  <Layers className="h-3 w-3" />
-                  {t('documents.stats.documentsCount', { count: stats.total })}
-                </Badge>
-                <Badge variant="outline" className="bg-green-500/10 text-green-600 gap-1">
-                  <CheckCircle2 className="h-3 w-3" />
-                  {t('documents.stats.processedCount', { count: stats.processed })}
-                </Badge>
-              </>
-            )}
-            {activeTab === 'media' && (
-              <Badge variant="secondary" className="gap-1">
-                {t('documents.media.statsCount', { count: mediaStats.total })}
-              </Badge>
-            )}
-          </div>
-        </div>
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="shrink-0 border-b bg-background/95 p-4 backdrop-blur"
+        >
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-bold" data-testid="text-documents-title">
+                {t('documents.title')}
+              </h1>
+              <p className="text-sm text-muted-foreground">{t('documents.subtitle')}</p>
+            </div>
 
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'documents' | 'media')} className="mb-4">
+            <div className="flex flex-wrap items-center gap-2">
+              {activeTab === 'documents' && (
+                <>
+                  <Badge variant="secondary" className="gap-1">
+                    <Layers className="h-3 w-3" />
+                    {t('documents.stats.documentsCount', { count: stats.total })}
+                  </Badge>
+                  <Badge variant="outline" className="gap-1 bg-green-500/10 text-green-600">
+                    <CheckCircle2 className="h-3 w-3" />
+                    {t('documents.stats.processedCount', { count: stats.processed })}
+                  </Badge>
+                </>
+              )}
+              {activeTab === 'media' && (
+                <Badge variant="secondary" className="gap-1">
+                  {t('documents.media.statsCount', { count: mediaStats.total })}
+                </Badge>
+              )}
+            </div>
+          </div>
+
           <TabsList className="grid w-full max-w-[280px] grid-cols-2">
             <TabsTrigger value="documents" data-testid="tab-documents">
               {t('documents.tabs.documents')}
@@ -876,288 +888,353 @@ export default function Documents() {
               {t('documents.tabs.media')}
             </TabsTrigger>
           </TabsList>
+        </motion.div>
 
-          <TabsContent value="documents" className="mt-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-          <Card className="col-span-1 md:col-span-2">
-            <CardContent className="p-4">
-              <div className="flex flex-col gap-3 mb-4">
-                <div className="flex items-center gap-2">
-                  <Layers className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm font-medium">{t('documents.namespace.label')}</span>
-                </div>
-                <Select
-                  value={selectedNamespaceId}
-                  onValueChange={setSelectedNamespaceId}
-                  disabled={isLoadingNamespaces || activeNamespaces.length === 0}
-                >
-                  <SelectTrigger className="w-full" data-testid="select-namespace">
-                    <SelectValue
-                      placeholder={
-                        activeNamespaces.length === 0
-                          ? t('documents.namespace.empty')
-                          : t('documents.namespace.placeholder')
-                      }
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {activeNamespaces.map((namespace) => (
-                      <SelectItem key={namespace.id} value={namespace.id}>
-                        {namespace.nome}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">{t('documents.namespace.helper')}</p>
-              </div>
-              <UploadZone 
-                onUpload={(file) => uploadMutation.mutate(file)} 
-                isUploading={uploadMutation.isPending}
-                disabled={!isNamespaceReady}
-                t={t}
-              />
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">{t('documents.stats.title')}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <div className="flex justify-between text-sm">
-                <span>{t('documents.stats.processed')}</span>
-                <span className="font-medium">{stats.processed}/{stats.total}</span>
-              </div>
-              <Progress value={(stats.processed / Math.max(stats.total, 1)) * 100} className="h-2" />
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>{t('documents.stats.pendingCount', { count: stats.pending })}</span>
-                <span>{Math.round((stats.processed / Math.max(stats.total, 1)) * 100)}%</span>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+        <TabsContent
+          value="documents"
+          className="mt-0 h-full flex-1 min-h-0 p-4 data-[state=active]:flex data-[state=active]:flex-col"
+        >
+          <div className="grid grid-cols-1 lg:grid-cols-[420px_minmax(0,1fr)] gap-4 h-full min-h-0">
+            <div className="flex min-h-0 min-w-0 flex-col gap-4">
+              <Card className="min-w-0">
+                <CardContent className="p-4">
+                  <div className="mb-4 flex flex-col gap-3">
+                    <div className="flex items-center gap-2">
+                      <Layers className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm font-medium">{t('documents.namespace.label')}</span>
+                    </div>
+                    <Select
+                      value={selectedNamespaceId}
+                      onValueChange={setSelectedNamespaceId}
+                      disabled={isLoadingNamespaces || activeNamespaces.length === 0}
+                    >
+                      <SelectTrigger className="w-full" data-testid="select-namespace">
+                        <SelectValue
+                          placeholder={
+                            activeNamespaces.length === 0
+                              ? t('documents.namespace.empty')
+                              : t('documents.namespace.placeholder')
+                          }
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {activeNamespaces.map((namespace) => (
+                          <SelectItem key={namespace.id} value={namespace.id}>
+                            {namespace.nome}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">{t('documents.namespace.helper')}</p>
+                  </div>
+                  <UploadZone
+                    onUpload={(file) => uploadMutation.mutate(file)}
+                    isUploading={uploadMutation.isPending}
+                    disabled={!isNamespaceReady}
+                    t={t}
+                  />
+                </CardContent>
+              </Card>
 
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="relative flex-1 min-w-[200px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder={t('documents.search.placeholder')}
-              value={searchQuery}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
-              className="pl-9"
-              data-testid="input-search-documents"
-            />
-          </div>
-          
-          <Select value={filterStatus} onValueChange={(v: string) => setFilterStatus(v as typeof filterStatus)}>
-            <SelectTrigger className="w-[160px]" data-testid="select-filter-status">
-              <Filter className="h-4 w-4 mr-2" />
-              <SelectValue placeholder={t('documents.search.filter')} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{t('documents.search.all')}</SelectItem>
-              <SelectItem value="processed">{t('documents.search.processed')}</SelectItem>
-              <SelectItem value="pending">{t('documents.search.pending')}</SelectItem>
-            </SelectContent>
-          </Select>
-
-          <div className="flex border rounded-lg">
-            <Button
-              variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
-              size="icon"
-              onClick={() => setViewMode('grid')}
-              data-testid="button-view-grid"
-            >
-              <Grid className="h-4 w-4" />
-            </Button>
-            <Button
-              variant={viewMode === 'list' ? 'secondary' : 'ghost'}
-              size="icon"
-              onClick={() => setViewMode('list')}
-              data-testid="button-view-list"
-            >
-              <List className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-          </TabsContent>
-
-          <TabsContent value="media" className="mt-4">
-            <div className="flex flex-col gap-4 mb-4">
-              <div className="flex flex-wrap items-center gap-4">
-                <div className="flex items-center gap-2">
-                  <Layers className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm font-medium">{t('documents.namespace.label')}</span>
-                </div>
-                <Select
-                  value={selectedNamespaceId || '__all__'}
-                  onValueChange={(v) => setSelectedNamespaceId(v === '__all__' ? '' : v)}
-                  disabled={isLoadingNamespaces || activeNamespaces.length === 0}
-                >
-                  <SelectTrigger className="w-[220px]" data-testid="select-media-namespace">
-                    <SelectValue placeholder={t('documents.namespace.placeholder')} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__all__">{t('documents.search.all')}</SelectItem>
-                    {activeNamespaces.map((ns) => (
-                      <SelectItem key={ns.id} value={ns.id}>{ns.nome}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Select value={filterMediaType} onValueChange={(v: string) => setFilterMediaType(v as typeof filterMediaType)}>
-                  <SelectTrigger className="w-[140px]" data-testid="select-media-type">
-                    <Filter className="h-4 w-4 mr-2" />
-                    <SelectValue placeholder={t('documents.media.filterType')} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">{t('documents.media.filterAll')}</SelectItem>
-                    <SelectItem value="image">{t('documents.media.filterImage')}</SelectItem>
-                    <SelectItem value="audio">{t('documents.media.filterAudio')}</SelectItem>
-                  </SelectContent>
-                </Select>
-                <div className="flex border rounded-lg">
-                  <Button
-                    variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
-                    size="icon"
-                    onClick={() => setViewMode('grid')}
-                    data-testid="button-view-media-grid"
-                  >
-                    <Grid className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant={viewMode === 'list' ? 'secondary' : 'ghost'}
-                    size="icon"
-                    onClick={() => setViewMode('list')}
-                    data-testid="button-view-media-list"
-                  >
-                    <List className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
+              <Card className="min-w-0">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium">{t('documents.stats.title')}</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span>{t('documents.stats.processed')}</span>
+                    <span className="font-medium">
+                      {stats.processed}/{stats.total}
+                    </span>
+                  </div>
+                  <Progress value={(stats.processed / Math.max(stats.total, 1)) * 100} className="h-2" />
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>{t('documents.stats.pendingCount', { count: stats.pending })}</span>
+                    <span>{Math.round((stats.processed / Math.max(stats.total, 1)) * 100)}%</span>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
-          </TabsContent>
-        </Tabs>
-      </motion.div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto p-4">
-        {activeTab === 'documents' && (
-          <>
-            {isLoading ? (
-              <div className={cn(
-                'gap-4',
-                viewMode === 'grid' ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4' : 'flex flex-col'
-              )}>
-                {Array.from({ length: 8 }).map((_, i) => (
-                  <Skeleton key={i} className={viewMode === 'grid' ? 'h-48' : 'h-20'} />
-                ))}
-              </div>
-            ) : filteredDocuments.length === 0 ? (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="flex flex-col items-center justify-center h-64 text-center"
-              >
-                <FileText className="h-12 w-12 text-muted-foreground/50 mb-4" />
-                <h3 className="font-medium mb-1">
-                  {searchQuery ? t('documents.empty.noResults') : t('documents.empty.noDocuments')}
-                </h3>
-                <p className="text-sm text-muted-foreground max-w-md">
-                  {searchQuery 
-                    ? t('documents.empty.tryOtherTerms') 
-                    : t('documents.empty.uploadToStart')}
-                </p>
-              </motion.div>
-            ) : (
-              <motion.div
-                variants={containerVariants}
-                initial="hidden"
-                animate="visible"
-                className={cn(
-                  'gap-4',
-                  viewMode === 'grid' ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4' : 'flex flex-col'
-                )}
-              >
-                <AnimatePresence>
-                  {filteredDocuments.map((doc) => (
-                    <DocumentCard
-                      key={doc.id}
-                      document={doc}
-                      viewMode={viewMode}
-                      namespaceName={doc.namespaceId ? namespaceMap.get(doc.namespaceId) : undefined}
-                      onView={() => setSelectedDocument(doc)}
-                      onDelete={() => setDeleteDocument(doc)}
-                      t={t}
-                      locale={locale}
-                      timeZone={timeZone}
-                    />
-                  ))}
-                </AnimatePresence>
-              </motion.div>
-            )}
-          </>
-        )}
-        {activeTab === 'media' && (
-          <>
-            {isLoadingMedia ? (
-              <div className={cn(
-                'gap-4',
-                viewMode === 'grid' ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4' : 'flex flex-col'
-              )}>
-                {Array.from({ length: 8 }).map((_, i) => (
-                  <Skeleton key={i} className={viewMode === 'grid' ? 'h-48' : 'h-20'} />
-                ))}
-              </div>
-            ) : mediaUploads.length === 0 ? (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="flex flex-col items-center justify-center h-64 text-center"
-              >
-                <ImageIcon className="h-12 w-12 text-muted-foreground/50 mb-4" />
-                <h3 className="font-medium mb-1">{t('documents.media.empty')}</h3>
-                <p className="text-sm text-muted-foreground max-w-md">
-                  {t('documents.media.emptyDesc')}
-                </p>
-              </motion.div>
-            ) : (
-              <motion.div
-                variants={containerVariants}
-                initial="hidden"
-                animate="visible"
-                className={cn(
-                  'gap-4',
-                  viewMode === 'grid' ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4' : 'flex flex-col'
-                )}
-              >
-                <AnimatePresence>
-                  {mediaUploads.map((media) => {
-                    const canPromote =
-                      media.processingStatus === 'completed' &&
-                      Boolean(media.namespaceId) &&
-                      !media.approvedForTraining;
-                    return (
-                      <MediaCard
-                        key={media.id}
-                        media={media}
-                        viewMode={viewMode}
-                        namespaceName={media.namespaceId ? namespaceMap.get(media.namespaceId) : undefined}
-                        onView={() => handleViewMedia(media)}
-                        onDelete={() => setDeleteMedia(media)}
-                        onSendToTraining={canPromote ? () => openSendToTrainingDialog(media) : undefined}
-                        canPromote={canPromote}
-                        isSending={sendToTrainingMutation.isPending && sendToTrainingMutation.variables?.mediaUploadId === media.id}
-                        t={t}
-                        locale={locale}
-                        timeZone={timeZone}
+            <div className="flex flex-col min-h-0 min-w-0">
+              <Card className="flex min-h-[320px] min-w-0 flex-1 flex-col lg:min-h-0">
+                <CardHeader className="shrink-0 gap-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="relative min-w-[200px] flex-1">
+                      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        placeholder={t('documents.search.placeholder')}
+                        value={searchQuery}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
+                        className="pl-9"
+                        data-testid="input-search-documents"
                       />
-                    );
-                  })}
-                </AnimatePresence>
-              </motion.div>
-            )}
-          </>
-        )}
-      </div>
+                    </div>
+
+                    <Select value={filterStatus} onValueChange={(v: string) => setFilterStatus(v as typeof filterStatus)}>
+                      <SelectTrigger className="w-[160px]" data-testid="select-filter-status">
+                        <Filter className="mr-2 h-4 w-4" />
+                        <SelectValue placeholder={t('documents.search.filter')} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">{t('documents.search.all')}</SelectItem>
+                        <SelectItem value="processed">{t('documents.search.processed')}</SelectItem>
+                        <SelectItem value="pending">{t('documents.search.pending')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+
+                    <div className="flex rounded-lg border">
+                      <Button
+                        variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
+                        size="icon"
+                        onClick={() => setViewMode('grid')}
+                        data-testid="button-view-grid"
+                      >
+                        <Grid className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant={viewMode === 'list' ? 'secondary' : 'ghost'}
+                        size="icon"
+                        onClick={() => setViewMode('list')}
+                        data-testid="button-view-list"
+                      >
+                        <List className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+
+                <CardContent className="flex-1 min-h-0 overflow-y-auto">
+                  {isLoading ? (
+                    <div
+                      className={cn(
+                        'gap-4',
+                        viewMode === 'grid' ? 'grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3' : 'flex flex-col'
+                      )}
+                    >
+                      {Array.from({ length: 8 }).map((_, i) => (
+                        <Skeleton key={i} className={viewMode === 'grid' ? 'h-48' : 'h-20'} />
+                      ))}
+                    </div>
+                  ) : filteredDocuments.length === 0 ? (
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="flex h-64 flex-col items-center justify-center text-center"
+                    >
+                      <FileText className="mb-4 h-12 w-12 text-muted-foreground/50" />
+                      <h3 className="mb-1 font-medium">
+                        {searchQuery ? t('documents.empty.noResults') : t('documents.empty.noDocuments')}
+                      </h3>
+                      <p className="max-w-md text-sm text-muted-foreground">
+                        {searchQuery ? t('documents.empty.tryOtherTerms') : t('documents.empty.uploadToStart')}
+                      </p>
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      variants={containerVariants}
+                      initial="hidden"
+                      animate="visible"
+                      className={cn(
+                        'gap-4',
+                        viewMode === 'grid' ? 'grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3' : 'flex flex-col'
+                      )}
+                    >
+                      <AnimatePresence>
+                        {filteredDocuments.map((doc) => (
+                          <DocumentCard
+                            key={doc.id}
+                            document={doc}
+                            viewMode={viewMode}
+                            namespaceName={doc.namespaceId ? namespaceMap.get(doc.namespaceId) : undefined}
+                            onView={() => setSelectedDocument(doc)}
+                            onDelete={() => setDeleteDocument(doc)}
+                            t={t}
+                            locale={locale}
+                            timeZone={timeZone}
+                          />
+                        ))}
+                      </AnimatePresence>
+                    </motion.div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </TabsContent>
+
+        <TabsContent
+          value="media"
+          className="mt-0 h-full flex-1 min-h-0 p-4 data-[state=active]:flex data-[state=active]:flex-col"
+        >
+          <div className="grid grid-cols-1 lg:grid-cols-[420px_minmax(0,1fr)] gap-4 h-full min-h-0">
+            <div className="flex min-h-0 min-w-0 flex-col gap-4">
+              <Card className="min-w-0">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium">{t('documents.namespace.label')}</CardTitle>
+                  <CardDescription>{t('documents.namespace.helper')}</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <Select
+                    value={selectedNamespaceId || '__all__'}
+                    onValueChange={(v) => setSelectedNamespaceId(v === '__all__' ? '' : v)}
+                    disabled={isLoadingNamespaces || activeNamespaces.length === 0}
+                  >
+                    <SelectTrigger className="w-full" data-testid="select-media-namespace">
+                      <SelectValue placeholder={t('documents.namespace.placeholder')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all__">{t('documents.search.all')}</SelectItem>
+                      {activeNamespaces.map((ns) => (
+                        <SelectItem key={ns.id} value={ns.id}>
+                          {ns.nome}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </CardContent>
+              </Card>
+
+              <Card className="min-w-0">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium">{t('documents.stats.title')}</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span>{t('documents.media.statsCount', { count: mediaStats.total })}</span>
+                    <span className="font-medium">{mediaStats.total}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {selectedNamespaceId
+                      ? t('documents.namespace.label') + `: ${namespaceMap.get(selectedNamespaceId) ?? '-'}`
+                      : t('documents.search.all')}
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="flex flex-col min-h-0 min-w-0">
+              <Card className="flex min-h-[320px] min-w-0 flex-1 flex-col lg:min-h-0">
+                <CardHeader className="shrink-0 gap-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="relative min-w-[200px] flex-1">
+                      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        placeholder={t('documents.search.placeholder')}
+                        value={mediaSearchQuery}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMediaSearchQuery(e.target.value)}
+                        className="pl-9"
+                        data-testid="input-search-media"
+                      />
+                    </div>
+
+                    <Select
+                      value={filterMediaType}
+                      onValueChange={(v: string) => setFilterMediaType(v as typeof filterMediaType)}
+                    >
+                      <SelectTrigger className="w-[160px]" data-testid="select-media-type">
+                        <Filter className="mr-2 h-4 w-4" />
+                        <SelectValue placeholder={t('documents.media.filterType')} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">{t('documents.media.filterAll')}</SelectItem>
+                        <SelectItem value="image">{t('documents.media.filterImage')}</SelectItem>
+                        <SelectItem value="audio">{t('documents.media.filterAudio')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+
+                    <div className="flex rounded-lg border">
+                      <Button
+                        variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
+                        size="icon"
+                        onClick={() => setViewMode('grid')}
+                        data-testid="button-view-media-grid"
+                      >
+                        <Grid className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant={viewMode === 'list' ? 'secondary' : 'ghost'}
+                        size="icon"
+                        onClick={() => setViewMode('list')}
+                        data-testid="button-view-media-list"
+                      >
+                        <List className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+
+                <CardContent className="flex-1 min-h-0 overflow-y-auto">
+                  {isLoadingMedia ? (
+                    <div
+                      className={cn(
+                        'gap-4',
+                        viewMode === 'grid' ? 'grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3' : 'flex flex-col'
+                      )}
+                    >
+                      {Array.from({ length: 8 }).map((_, i) => (
+                        <Skeleton key={i} className={viewMode === 'grid' ? 'h-48' : 'h-20'} />
+                      ))}
+                    </div>
+                  ) : filteredMediaUploads.length === 0 ? (
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="flex h-64 flex-col items-center justify-center text-center"
+                    >
+                      <ImageIcon className="mb-4 h-12 w-12 text-muted-foreground/50" />
+                      <h3 className="mb-1 font-medium">
+                        {mediaSearchQuery ? t('documents.empty.noResults') : t('documents.media.empty')}
+                      </h3>
+                      <p className="max-w-md text-sm text-muted-foreground">
+                        {mediaSearchQuery ? t('documents.empty.tryOtherTerms') : t('documents.media.emptyDesc')}
+                      </p>
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      variants={containerVariants}
+                      initial="hidden"
+                      animate="visible"
+                      className={cn(
+                        'gap-4',
+                        viewMode === 'grid' ? 'grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3' : 'flex flex-col'
+                      )}
+                    >
+                      <AnimatePresence>
+                        {filteredMediaUploads.map((media) => {
+                          const canPromote =
+                            media.processingStatus === 'completed' &&
+                            Boolean(media.namespaceId) &&
+                            !media.approvedForTraining;
+                          return (
+                            <MediaCard
+                              key={media.id}
+                              media={media}
+                              viewMode={viewMode}
+                              namespaceName={media.namespaceId ? namespaceMap.get(media.namespaceId) : undefined}
+                              onView={() => handleViewMedia(media)}
+                              onDelete={() => setDeleteMedia(media)}
+                              onSendToTraining={canPromote ? () => openSendToTrainingDialog(media) : undefined}
+                              canPromote={canPromote}
+                              isSending={
+                                sendToTrainingMutation.isPending &&
+                                sendToTrainingMutation.variables?.mediaUploadId === media.id
+                              }
+                              t={t}
+                              locale={locale}
+                              timeZone={timeZone}
+                            />
+                          );
+                        })}
+                      </AnimatePresence>
+                    </motion.div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </TabsContent>
+      </Tabs>
 
       {selectedDocument && (
         <DocumentViewer 
