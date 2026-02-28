@@ -101,3 +101,16 @@ Implementacoes de i18n:
   - `apps/frontend-service/src/locales/pt-BR.json`
   - `apps/frontend-service/src/locales/en.json`
 - Inclui labels para status detalhado, acao de reprocessamento e mensagens de sucesso/erro.
+
+## ETAPA 5 - Correcao de Scroll no Viewer de Documento
+
+Implementacoes realizadas no `apps/frontend-service/src/pages/Documents.tsx`:
+
+- `DocumentViewer`:
+  - `DialogContent` com altura fixa `h-[80vh]` para garantir area previsivel de leitura;
+  - substituicao de `ScrollArea` por container com `overflow-auto` real no corpo do documento;
+  - manutencao de `min-h-0` no layout flex para evitar bloqueio de rolagem.
+
+Resultado esperado:
+
+- Documentos longos podem ser rolados ate o final no modal sem truncamento visual.

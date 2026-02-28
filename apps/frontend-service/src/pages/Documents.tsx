@@ -44,7 +44,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Progress } from '@/components/ui/progress';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -559,7 +558,7 @@ function DocumentViewer({
   
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-3xl max-h-[80vh] overflow-hidden flex flex-col min-h-0">
+      <DialogContent className="max-w-3xl h-[80vh] overflow-hidden flex flex-col min-h-0">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileText className="h-5 w-5 text-primary" />
@@ -598,9 +597,9 @@ function DocumentViewer({
           </p>
         )}
 
-        <ScrollArea className="flex-1 min-h-0 border rounded-lg p-4 bg-muted/30">
+        <div className="flex-1 min-h-0 overflow-auto border rounded-lg p-4 bg-muted/30">
           <pre className="whitespace-pre-wrap text-sm font-mono">{document.conteudo}</pre>
-        </ScrollArea>
+        </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose} data-testid="button-close-viewer">
