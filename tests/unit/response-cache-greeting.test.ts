@@ -6,6 +6,10 @@ describe('response-cache isGreeting', () => {
     expect(isGreeting('Boa tarde, tudo bem?')).toBe(true);
   });
 
+  it('detecta "tudo bem com você?"', () => {
+    expect(isGreeting('tudo bem com você?')).toBe(true);
+  });
+
   it('detecta saudacao simples em ingles', () => {
     expect(isGreeting('Hello!')).toBe(true);
   });

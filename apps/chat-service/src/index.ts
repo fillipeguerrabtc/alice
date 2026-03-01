@@ -118,10 +118,7 @@ import {
 // - GPU local: LLM Texto (Qwen2.5 7B AWQ) + Embeddings (Qwen3-Embedding-0.6B)
 // - OpenAI API: Vision (gpt-4.1), ASR (gpt-4o-transcribe), Geração de imagens (gpt-image-1)
 import { initTradingOrchestrator } from './trading-orchestrator.js';
-// CORREÇÃO 19/12/2025: Remover imports não utilizados (no-unused-vars)
-// isGreeting, getCacheMetrics, isCacheOperational estão disponíveis no módulo
-// mas são usados internamente via checkResponseCache
-import { checkResponseCache } from './response-cache.js';
+import { checkResponseCache, isGreeting as isGreetingMessage } from './response-cache.js';
 
 // Logger centralizado: JSON em produção, pino-pretty em desenvolvimento
 const logger = createLogger('chat-service');
@@ -4923,6 +4920,10 @@ async function resolveSemanticRoute(params: {
   agenticDetectors: AgenticDetectors;
 }): Promise<{ agentId?: string; namespaceId?: string; score: number; source: 'agent' | 'namespace' | 'none'; profile: LlmContextProfile }> {
   const profile = detectContextProfile(params.userMessage);
+  const hasMention = /@[a-z0-9][a-z0-9_-]{1,48}/iu.test(params.userMessage);
+  if (!hasMention && isGreetingMessage(params.userMessage)) {
+    return { score: 0, source: 'none', profile };
+  }
   const threshold = getRoutingThreshold(profile);
 
   const agents = await db.query.agents.findMany({
@@ -5504,6 +5505,25 @@ async function resolveAgentRoutingForMessage(params: {
   let manualAgentIds = [...stateRouting.agentIds];
   let source: 'auto' | 'manual' | 'mention' | 'none' = 'none';
   let commandResponse: string | undefined;
+  const greetingMessage = isGreetingMessage(params.userMessage);
+  if (
+    greetingMessage &&
+    command.action === 'none' &&
+    mode === 'auto' &&
+    manualAgentIds.length === 0 &&
+    !params.conversation.agentId
+  ) {
+    return {
+      agent: null,
+      namespaceId: params.requestedNamespaceId ?? params.conversation.namespaceId ?? null,
+      mode,
+      source: 'none',
+      score: 0,
+      threshold: routingThreshold,
+      profile,
+      isCommandOnly: false,
+    };
+  }
 
   if (command.action === 'auto') {
     mode = 'auto';
