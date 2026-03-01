@@ -739,6 +739,9 @@
       "view": "Visualizar",
       "delete": "Excluir",
       "close": "Fechar",
+      "edit": "Editar",
+      "save": "Salvar",
+      "processNow": "Processar",
       "reprocess": "Reprocessar",
       "retry": "Tentar novamente",
       "cancel": "Cancelar"
@@ -790,10 +793,12 @@
       "namespaceRequired": "Selecione um namespace antes de enviar o documento",
       "deleteFailed": "Erro ao excluir documento",
       "reprocessFailed": "Falha ao solicitar reprocessamento",
+      "saveFailed": "Falha ao salvar documento",
       "sendToTrainingFailed": "Falha ao enviar documento para treinamento"
     },
     "success": {
       "uploaded": "Documento enviado com sucesso",
+      "savedQueued": "Documento salvo e enfileirado para processamento",
       "reprocessQueued": "Documento enfileirado para reprocessamento",
       "sentToTraining": "Documento enviado para treinamento",
       "deleted": "Documento excluído com sucesso"

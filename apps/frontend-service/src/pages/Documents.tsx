@@ -14,7 +14,7 @@
  * Data: 11 de Fevereiro de 2026
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -43,6 +43,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Progress } from '@/components/ui/progress';
@@ -200,7 +201,10 @@ function DocumentCard({
   const truncatedContent = document.conteudo?.slice(0, 150) + (document.conteudo?.length > 150 ? '...' : '') || '';
   const processingStatus = getDocumentProcessingStatus(document);
   const processingError = getDocumentProcessingError(document);
-  const canReprocess = processingStatus === 'failed' && Boolean(onReprocess);
+  const canProcess = Boolean(onReprocess) && (processingStatus === 'pending' || processingStatus === 'failed');
+  const processActionLabel = processingStatus === 'pending'
+    ? t('documents.actions.processNow')
+    : t('documents.actions.reprocess');
   const canSendToTraining = document.processado && !document.sentToTrainingAt && Boolean(onSendToTraining);
   const statusConfig = (() => {
     if (processingStatus === 'processing') {
@@ -277,7 +281,7 @@ function DocumentCard({
             </div>
 
             <div className="flex items-center gap-1 shrink-0 flex-wrap justify-end">
-              {canReprocess && onReprocess && (
+              {canProcess && onReprocess && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -290,7 +294,7 @@ function DocumentCard({
                   ) : (
                     <RotateCcw className="h-3 w-3 mr-1" />
                   )}
-                  {t('documents.actions.reprocess')}
+                  {processActionLabel}
                 </Button>
               )}
               {canSendToTraining && onSendToTraining && (
@@ -376,7 +380,7 @@ function DocumentCard({
         </CardContent>
 
         <CardFooter className="pt-2 gap-1 flex-wrap">
-          {canReprocess && onReprocess && (
+          {canProcess && onReprocess && (
             <Button
               variant="outline"
               size="sm"
@@ -390,7 +394,7 @@ function DocumentCard({
               ) : (
                 <RotateCcw className="h-3 w-3 mr-1" />
               )}
-              {t('documents.actions.reprocess')}
+              {processActionLabel}
             </Button>
           )}
           {canSendToTraining && onSendToTraining && (
@@ -523,9 +527,46 @@ function DocumentViewer({
   locale: string;
   timeZone: string;
 }) {
+  const queryClient = useQueryClient();
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedTitle, setEditedTitle] = useState(document.titulo);
+  const [editedContent, setEditedContent] = useState(document.conteudo ?? '');
   const formattedDate = formatDateTime(document.criadoEm, { locale, timeZone });
   const processingStatus = getDocumentProcessingStatus(document);
   const processingError = getDocumentProcessingError(document);
+  const canSave = editedTitle.trim().length > 0 && editedContent.trim().length > 0;
+
+  useEffect(() => {
+    setIsEditing(false);
+    setEditedTitle(document.titulo);
+    setEditedContent(document.conteudo ?? '');
+  }, [document.id, document.titulo, document.conteudo]);
+
+  const saveDocumentMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest('PATCH', `/api/rag/documents/${document.id}`, {
+        titulo: editedTitle.trim(),
+        conteudo: editedContent,
+      });
+      return response.json() as Promise<{ documentId: string; jobId: string }>;
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['/api/rag/documents'] });
+      toast({ title: t('documents.success.savedQueued') });
+      onClose();
+    },
+    onError: (error) => {
+      const message = error instanceof Error ? error.message : t('documents.errors.saveFailed');
+      toast({ title: message, variant: 'destructive' });
+    },
+  });
+
+  const handleCancelEditing = () => {
+    setIsEditing(false);
+    setEditedTitle(document.titulo);
+    setEditedContent(document.conteudo ?? '');
+  };
+
   const statusConfig = (() => {
     if (processingStatus === 'processing') {
       return {
@@ -597,11 +638,59 @@ function DocumentViewer({
           </p>
         )}
 
-        <div className="flex-1 min-h-0 overflow-auto border rounded-lg p-4 bg-muted/30">
-          <pre className="whitespace-pre-wrap text-sm font-mono">{document.conteudo}</pre>
-        </div>
+        {isEditing ? (
+          <div className="flex-1 min-h-0 overflow-auto border rounded-lg p-4 bg-muted/30 space-y-3">
+            <Input
+              value={editedTitle}
+              onChange={(event) => setEditedTitle(event.target.value)}
+              disabled={saveDocumentMutation.isPending}
+              data-testid={`input-edit-document-title-${document.id}`}
+            />
+            <Textarea
+              value={editedContent}
+              onChange={(event) => setEditedContent(event.target.value)}
+              className="min-h-[420px] resize-y font-mono text-sm"
+              disabled={saveDocumentMutation.isPending}
+              data-testid={`textarea-edit-document-content-${document.id}`}
+            />
+          </div>
+        ) : (
+          <div className="flex-1 min-h-0 overflow-auto border rounded-lg p-4 bg-muted/30">
+            <pre className="whitespace-pre-wrap text-sm font-mono">{document.conteudo}</pre>
+          </div>
+        )}
 
-        <DialogFooter>
+        <DialogFooter className="gap-2">
+          {isEditing ? (
+            <>
+              <Button
+                variant="outline"
+                onClick={handleCancelEditing}
+                disabled={saveDocumentMutation.isPending}
+                data-testid={`button-cancel-edit-document-${document.id}`}
+              >
+                {t('documents.actions.cancel')}
+              </Button>
+              <Button
+                onClick={() => saveDocumentMutation.mutate()}
+                disabled={!canSave || saveDocumentMutation.isPending}
+                data-testid={`button-save-document-${document.id}`}
+              >
+                {saveDocumentMutation.isPending && (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                )}
+                {t('documents.actions.save')}
+              </Button>
+            </>
+          ) : (
+            <Button
+              variant="outline"
+              onClick={() => setIsEditing(true)}
+              data-testid={`button-edit-document-${document.id}`}
+            >
+              {t('documents.actions.edit')}
+            </Button>
+          )}
           <Button variant="outline" onClick={onClose} data-testid="button-close-viewer">
             {t('documents.actions.close')}
           </Button>
@@ -834,6 +923,11 @@ export default function Documents() {
   const { data, isLoading, error } = useQuery<DocumentsResponse>({
     queryKey: ['/api/rag/documents'],
     staleTime: 1000 * 60,
+    refetchInterval: (query) => {
+      const documentsData = (query.state.data as DocumentsResponse | undefined)?.documents ?? [];
+      const hasPendingDocuments = documentsData.some((document) => getDocumentProcessingStatus(document) !== 'completed');
+      return hasPendingDocuments ? 3000 : false;
+    },
     enabled: !!user, // Só executar após autenticação
   });
 

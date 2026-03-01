@@ -715,6 +715,9 @@
       "view": "View",
       "delete": "Delete",
       "close": "Close",
+      "edit": "Edit",
+      "save": "Save",
+      "processNow": "Process now",
       "reprocess": "Reprocess",
       "retry": "Try again",
       "cancel": "Cancel"
@@ -766,11 +769,13 @@
       "namespaceRequired": "Select a namespace before uploading the document",
       "deleteFailed": "Error deleting document",
       "reprocessFailed": "Failed to request document reprocessing",
+      "saveFailed": "Failed to save document",
       "sendToTrainingFailed": "Failed to send document to training"
     },
     "success": {
       "uploaded": "Document uploaded successfully",
       "deleted": "Document deleted successfully",
+      "savedQueued": "Document saved and queued for processing",
       "reprocessQueued": "Document queued for reprocessing",
       "sentToTraining": "Document sent to training"
     }

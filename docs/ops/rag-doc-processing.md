@@ -1,7 +1,7 @@
 # Processamento Assincrono de Documentos RAG
 
 Autor: Fillipe Guerra  
-Data: 28 de Fevereiro de 2026
+Data: 1 de Marco de 2026
 
 ## ETAPA 1 - Fila Redis e Worker de Documentos
 
@@ -163,3 +163,72 @@ Visibilidade de falhas de processamento:
 5. Exclusao de documento
    - deletar documento.
    - confirmar ausencia no PostgreSQL e ausencia de chunks no resultado RAG (sem ghost embeddings).
+
+## ETAPA 7 - Confiabilidade e observabilidade enterprise (01/03/2026)
+
+Implementacoes realizadas no `apps/rag-service/src/index.ts` e `apps/rag-service/src/document-processing-queue.ts`:
+
+- Falha de enqueue agora nao deixa documento preso em `pending`:
+  - `POST /api/rag/documents`
+  - `POST /api/rag/documents/upload`
+  - `PATCH /api/rag/documents/:id`
+  - Em falha de fila, documento e atualizado para:
+    - `processado = false`
+    - `metadata.processingStatus = 'failed'`
+    - `metadata.processingError = <erro sanitizado>`
+    - `metadata.enqueueFailedAt = <ISO datetime>`
+  - Resposta HTTP passa a ser `503` com `{ documentId, error, details }`.
+
+- `PATCH /api/rag/documents/:id` virou assincro:
+  - Removeu rebuild pesado de embeddings na request.
+  - Atualiza documento para `pending` + `processingRequestedAt`.
+  - Enfileira job com `force=true` e prioridade `5`.
+  - Retorna `202` com `{ documentId, jobId }`.
+
+- Health e diagnostico operacional:
+  - `GET /api/rag/health` inclui:
+    - `redis.available`
+    - `documentProcessingWorker` (status consolidado do worker)
+  - Novo endpoint:
+    - `GET /api/rag/workers/document-processing`
+    - protegido por `requireAuth + rag:documents:read + requireSameTenant`
+    - retorna `{ redisAvailable, workerStatus }`.
+
+- Reconciler automatico para pendentes stale:
+  - Ciclo de 30s.
+  - Seleciona ate 50 documentos `pending/processing` com `atualizadoEm` antigo (>2 min).
+  - Faz join com namespace para obter `tenantId`.
+  - Se nao houver job indexado no Redis, reenqueue com `force=true`.
+  - Logs estruturados com `documentId`, `tenantId`, `namespaceId`, `correlationId`, `jobId`.
+
+- `document-processing-queue.ts`:
+  - Novo helper `getDocumentProcessingJobIdForDocument(documentId)`.
+
+- Higiene de contexto web no agentic:
+  - `buildAgenticContext` nao injeta mais `Fonte: <url>` no corpo enviado ao LLM.
+  - URLs continuam no payload estruturado de `sources.web`.
+
+## ETAPA 8 - UX de documentos e processamento assincro no frontend (01/03/2026)
+
+Implementacoes realizadas no `apps/frontend-service/src/pages/Documents.tsx`:
+
+- Acao de processamento para documentos pendentes:
+  - Botao dinamico:
+    - `pending` -> "Processar"
+    - `failed` -> "Reprocessar"
+  - Usa o mesmo endpoint de reprocessamento com enqueue forcado.
+
+- Viewer com edicao completa:
+  - Modo `Editar` com `Input` (titulo) e `Textarea` (conteudo).
+  - Acao `Salvar` chama `PATCH /api/rag/documents/:id`.
+  - Documento salvo volta para `pending` e e enfileirado.
+  - Lista de documentos e invalidada apos sucesso.
+
+- Auto-refresh de status:
+  - React Query faz `refetchInterval=3000` enquanto existir documento nao `completed`.
+  - Intervalo e desativado quando todos estiverem `completed`.
+
+- i18n atualizado:
+  - chaves adicionadas em `pt-BR` e `en` para:
+    - `processNow`, `edit`, `save`
+    - mensagens de sucesso/erro para salvar e enfileirar.
