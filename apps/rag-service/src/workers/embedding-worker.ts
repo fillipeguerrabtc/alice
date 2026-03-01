@@ -99,7 +99,8 @@ async function callGpuBatchApi(params: GpuBatchParams): Promise<GpuResponse> {
   // ARQUITETURA ENTERPRISE (25/12/2025): Usar GPU Manager Service para batch
   const gpuResponse = await requestGpu({
     serviceType: GpuServiceType.EMBEDDINGS,
-    endpoint: '/embed/batch',
+    // gpu-embeddings aceita batch no endpoint /embed/text via body.texts[]
+    endpoint: '/embed/text',
     method: 'POST',
     priority: GpuRequestPriority.MEDIUM,
     timeout: GPU_TIMEOUT_MS * 2, // Batch leva mais tempo

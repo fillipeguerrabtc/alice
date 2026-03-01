@@ -159,7 +159,8 @@ async function generateEmbeddingsInBatches(chunks: string[]): Promise<{ embeddin
     const batch = chunks.slice(i, i + EMBEDDING_BATCH_SIZE);
     const gpuResponse = await requestGpu({
       serviceType: GpuServiceType.EMBEDDINGS,
-      endpoint: '/embed/batch',
+      // gpu-embeddings aceita batch no mesmo endpoint /embed/text via body.texts[]
+      endpoint: '/embed/text',
       method: 'POST',
       priority: GpuRequestPriority.MEDIUM,
       timeout: EMBEDDING_TIMEOUT_MS,
