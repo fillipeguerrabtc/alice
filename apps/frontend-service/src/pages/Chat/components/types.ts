@@ -102,6 +102,7 @@ export interface Message {
   agent?: {
     id: string;
     nome: string;
+    preferredName?: string | null;
     slug?: string | null;
     avatar?: string | null;
   } | null;
@@ -115,6 +116,7 @@ export interface Conversation {
   agent?: {
     id: string;
     nome: string;
+    preferredName?: string | null;
     slug?: string | null;
     avatar?: string | null;
   } | null;

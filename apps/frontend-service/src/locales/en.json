@@ -494,6 +494,8 @@
     },
     "form": {
       "name": "Name",
+      "preferredName": "Preferred Name",
+      "preferredNameDesc": "How the agent should introduce itself in conversations.",
       "slug": "Slug",
       "slugDesc": "Unique identifier (lowercase letters, numbers and hyphens)",
       "description": "Description",
@@ -525,6 +527,7 @@
     },
     "placeholders": {
       "name": "E.g.: Sales Assistant",
+      "preferredName": "E.g.: Alice Sales",
       "slug": "sales-assistant",
       "description": "Brief description of the agent's purpose and function",
       "avatar": "https://example.com/avatar.png",

@@ -95,7 +95,7 @@ export function MessageBubble({
   const hasTextContent = Boolean(message.content && message.content.trim().length > 0);
   const hasGeneratedImage = Boolean(message.generatedImage);
   const isMediaOnly = hasMediaAttachments && !hasTextContent && !hasGeneratedImage;
-  const assistantDisplayName = message.agent?.nome?.trim() || t('chat.agent.fallbackName');
+  const assistantDisplayName = message.agent?.preferredName?.trim() || message.agent?.nome?.trim() || t('chat.agent.fallbackName');
   const userDisplayName = (() => {
     if (message.user?.preferredName) return message.user.preferredName;
     const firstName = message.user?.firstName?.trim() ?? '';

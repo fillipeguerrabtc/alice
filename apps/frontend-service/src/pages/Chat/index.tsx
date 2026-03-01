@@ -152,6 +152,7 @@ import {
 type AgentSummary = {
   id: string;
   nome: string;
+  preferredName?: string | null;
   slug?: string | null;
   status?: string | null;
 };
@@ -1146,7 +1147,7 @@ export default function Chat() {
   const routedAgent = routedAgentByConversation[routingKey] ?? activeConversation?.agent ?? null;
   const routingSource = routingSourceByConversation[routingKey] ?? 'none';
   const routingDebug = routingDebugByConversation[routingKey] ?? null;
-  const routingLabel = routedAgent?.nome ?? (routingMode === 'manual' ? t('chat.routing.manual') : t('chat.routing.auto'));
+  const routingLabel = routedAgent?.preferredName ?? routedAgent?.nome ?? (routingMode === 'manual' ? t('chat.routing.manual') : t('chat.routing.auto'));
   const routingSourceLabel = routingSource === 'none'
     ? (routingMode === 'manual' ? t('chat.routing.manual') : t('chat.routing.auto'))
     : routingSource;
@@ -1154,7 +1155,7 @@ export default function Chat() {
   const agentOptions = useMemo(() => {
     return (agentsData ?? []).map((agent) => ({
       value: agent.id,
-      label: `${agent.nome}${agent.slug ? ` (@${agent.slug})` : ''}`,
+      label: `${agent.preferredName ?? agent.nome}${agent.slug ? ` (@${agent.slug})` : ''}`,
     }));
   }, [agentsData]);
 

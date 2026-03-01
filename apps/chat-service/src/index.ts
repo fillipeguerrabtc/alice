@@ -1188,6 +1188,7 @@ async function ensureCambioResources(): Promise<void> {
           tenantId: tenant.id,
           namespaceId: cambioNamespace?.id ?? undefined,
           nome: 'Agente Câmbio',
+          preferredName: 'Agente Câmbio',
           slug: 'agente-cambio',
           descricao: 'Especialista em câmbio Wise, cotações e conversões de moedas.',
           personalidade: 'Preciso, objetivo e orientado a conformidade.',
@@ -2850,6 +2851,7 @@ async function generateImageFromPrompt(input: ImageGenerationInput) {
  */
 interface AgentConfig {
   nome?: string | null;
+  preferredName?: string | null;
   slug?: string | null;
   instrucoes?: string | null;
   personalidade?: string | null;
@@ -3188,7 +3190,7 @@ function buildSystemPrompt(
   }
 
   if (agent) {
-    const agentName = agent.nome?.trim() || agent.slug?.trim() || 'Agente';
+    const agentName = agent.preferredName?.trim() || agent.nome?.trim() || agent.slug?.trim() || 'Agente';
     const agentSlug = agent.slug?.trim();
     const identityLabel = agentSlug && agentSlug !== agentName
       ? `${agentName} (@${agentSlug})`
@@ -4944,6 +4946,7 @@ async function resolveSemanticRoute(params: {
     for (const agent of namespaceAgents) {
       const text = buildRoutingText([
         agent.nome,
+        agent.preferredName,
         agent.slug,
         agent.descricao,
         agent.personalidade,
@@ -4969,6 +4972,7 @@ async function resolveSemanticRoute(params: {
   for (const agent of agents) {
     const text = buildRoutingText([
       agent.nome,
+      agent.preferredName,
       agent.slug,
       agent.descricao,
       agent.personalidade,
@@ -5046,6 +5050,7 @@ async function resolveSemanticRoute(params: {
     for (const agent of namespaceAgents) {
       const text = buildRoutingText([
         agent.nome,
+        agent.preferredName,
         agent.slug,
         agent.descricao,
         agent.personalidade,
@@ -5075,6 +5080,7 @@ type AgentRoutingMode = 'auto' | 'manual';
 type AgentRoutingRecord = {
   id: string;
   nome: string;
+  preferredName?: string | null;
   slug?: string | null;
   avatar?: string | null;
   namespaceId?: string | null;
@@ -5092,6 +5098,19 @@ type AgentRoutingCommand = {
 };
 
 const AGENT_MENTION_REGEX = /@([a-z0-9][a-z0-9_-]{1,48})/gi;
+
+function resolveAgentDisplayName(agent: {
+  nome?: string | null;
+  preferredName?: string | null;
+  slug?: string | null;
+}): string {
+  const preferred = agent.preferredName?.trim();
+  if (preferred) return preferred;
+  const name = agent.nome?.trim();
+  if (name) return name;
+  const slug = agent.slug?.trim();
+  return slug || 'Agente';
+}
 
 function normalizeAgentToken(value: string): string {
   return value
@@ -5185,6 +5204,10 @@ function buildAgentLookup(agents: AgentRoutingRecord[]) {
     if (nameKey) {
       nameMap.set(nameKey, agent);
     }
+    const preferredNameKey = normalizeAgentToken(agent.preferredName ?? '');
+    if (preferredNameKey) {
+      nameMap.set(preferredNameKey, agent);
+    }
   }
   return { slugMap, nameMap };
 }
@@ -5221,9 +5244,11 @@ function matchAgentsFromMessageText(agents: AgentRoutingRecord[], message: strin
   for (const agent of agents) {
     const slugKey = agent.slug ? normalizeAgentToken(agent.slug) : '';
     const nameKey = normalizeAgentToken(agent.nome);
+    const preferredNameKey = normalizeAgentToken(agent.preferredName ?? '');
     const matchesSlug = matchesToken(slugKey);
     const matchesName = matchesToken(nameKey);
-    if (!matchesSlug && !matchesName) continue;
+    const matchesPreferredName = matchesToken(preferredNameKey);
+    if (!matchesSlug && !matchesName && !matchesPreferredName) continue;
     if (seen.has(agent.id)) continue;
     seen.add(agent.id);
     matched.push(agent);
@@ -5292,6 +5317,7 @@ function isSwitchOnlyCommandMessage(params: {
   for (const agent of params.agents) {
     const slug = normalizeAgentToken(agent.slug ?? '');
     const name = normalizeAgentToken(agent.nome);
+    const preferredName = normalizeAgentToken(agent.preferredName ?? '');
     if (slug) {
       removableTerms.add(slug);
       for (const token of slug.split(' ')) {
@@ -5301,6 +5327,12 @@ function isSwitchOnlyCommandMessage(params: {
     if (name) {
       removableTerms.add(name);
       for (const token of name.split(' ')) {
+        if (token.length > 2) removableTerms.add(token);
+      }
+    }
+    if (preferredName) {
+      removableTerms.add(preferredName);
+      for (const token of preferredName.split(' ')) {
         if (token.length > 2) removableTerms.add(token);
       }
     }
@@ -5332,6 +5364,7 @@ function selectBestAgentFromPool(
   for (const agent of agents) {
     const text = buildRoutingText([
       agent.nome,
+      agent.preferredName,
       agent.slug,
       agent.instrucoes,
       agent.personalidade,
@@ -5469,6 +5502,7 @@ async function resolveAgentRoutingForMessage(params: {
     columns: {
       id: true,
       nome: true,
+      preferredName: true,
       slug: true,
       avatar: true,
       namespaceId: true,
@@ -5595,9 +5629,9 @@ async function resolveAgentRoutingForMessage(params: {
     manualAgentIds = inferredAgents.map((agent) => agent.id);
     source = 'manual';
     if (resolvedCommandOnly && inferredAgents.length === 1) {
-      commandResponse = `Perfeito. Vou responder como ${inferredAgents[0].nome} a partir de agora.`;
+      commandResponse = `Perfeito. Vou responder como ${resolveAgentDisplayName(inferredAgents[0])} a partir de agora.`;
     } else {
-      commandResponse = `Modo manual ativado. Agentes ativos: ${inferredAgents.map((agent) => agent.nome).join(', ')}.`;
+      commandResponse = `Modo manual ativado. Agentes ativos: ${inferredAgents.map((agent) => resolveAgentDisplayName(agent)).join(', ')}.`;
     }
     await updateAgentRoutingMetadata({
       conversationId: params.conversationId,
@@ -8493,6 +8527,7 @@ app.get('/api/chat/conversations', requireAuth(), requireSameTenant(getTenantIdF
           columns: {
             id: true,
             nome: true,
+            preferredName: true,
             avatar: true,
             slug: true,
           },
@@ -8877,6 +8912,7 @@ app.get('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenant
           columns: {
             id: true,
             nome: true,
+            preferredName: true,
             avatar: true,
             slug: true,
           },
@@ -9432,6 +9468,7 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
     const agentConfig: AgentConfig | null = activeAgent
       ? {
           nome: activeAgent.nome,
+          preferredName: activeAgent.preferredName,
           slug: activeAgent.slug,
           instrucoes: activeAgent.instrucoes,
           personalidade: activeAgent.personalidade,
@@ -9509,6 +9546,7 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
         ? {
             id: activeAgent.id,
             nome: activeAgent.nome,
+            preferredName: activeAgent.preferredName,
             avatar: activeAgent.avatar,
             slug: activeAgent.slug,
           }
@@ -9516,6 +9554,7 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
           ? {
               id: conversation.agent.id,
               nome: conversation.agent.nome,
+              preferredName: conversation.agent.preferredName,
               avatar: conversation.agent.avatar,
               slug: conversation.agent.slug,
             }
@@ -9598,7 +9637,9 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
     const llmLatency = Date.now() - llmStartTime;
 
     const guardrailStartTime = Date.now();
-    const assistantAgentName = activeAgent?.nome?.trim()
+    const assistantAgentName = activeAgent?.preferredName?.trim()
+      || activeAgent?.nome?.trim()
+      || conversation.agent?.preferredName?.trim()
       || conversation.agent?.nome?.trim()
       || null;
     const finalizedResponse = await enforceResponseGuardrails({
@@ -9697,6 +9738,7 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
       ? {
           id: activeAgent.id,
           nome: activeAgent.nome,
+          preferredName: activeAgent.preferredName,
           avatar: activeAgent.avatar,
           slug: activeAgent.slug,
         }
@@ -9704,6 +9746,7 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
         ? {
             id: conversation.agent.id,
             nome: conversation.agent.nome,
+            preferredName: conversation.agent.preferredName,
             avatar: conversation.agent.avatar,
             slug: conversation.agent.slug,
           }
@@ -9965,6 +10008,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       ? {
           id: activeAgent.id,
           nome: activeAgent.nome,
+          preferredName: activeAgent.preferredName,
           avatar: activeAgent.avatar,
           slug: activeAgent.slug,
         }
@@ -9972,6 +10016,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         ? {
             id: conversation.agent.id,
             nome: conversation.agent.nome,
+            preferredName: conversation.agent.preferredName,
             avatar: conversation.agent.avatar,
             slug: conversation.agent.slug,
           }
@@ -9980,6 +10025,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     const agentConfigForPrompt: AgentConfig | null = activeAgent
       ? {
           nome: activeAgent.nome,
+          preferredName: activeAgent.preferredName,
           slug: activeAgent.slug,
           instrucoes: activeAgent.instrucoes,
           personalidade: activeAgent.personalidade,
@@ -10653,7 +10699,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                   responseText: assistantResponse,
                   userMessage: userContent,
                   preferredName: nameContext.preferredName,
-                  agentName: conversation?.agent?.nome?.trim() ?? null,
+                  agentName: conversation?.agent?.preferredName?.trim() || conversation?.agent?.nome?.trim() || null,
                   correlationId: conversationId ?? undefined,
                   regenerate: async () => callLlamaAPI(
                     buildGuardrailRegenerationMessages(mediaMessages),
@@ -13898,7 +13944,9 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           if (!assistantPersisted && conversationId && userMessage) {
             assistantPersisted = true;
             if (assistantResponse.trim().length > 0) {
-              const assistantAgentName = activeAgent?.nome?.trim()
+              const assistantAgentName = activeAgent?.preferredName?.trim()
+                || activeAgent?.nome?.trim()
+                || conversation?.agent?.preferredName?.trim()
                 || conversation?.agent?.nome?.trim()
                 || null;
               const guardedResponse = await enforceResponseGuardrails({
@@ -15125,6 +15173,7 @@ wss.on('connection', (ws, req) => {
           ? {
               id: activeAgent.id,
               nome: activeAgent.nome,
+              preferredName: activeAgent.preferredName,
               avatar: activeAgent.avatar,
               slug: activeAgent.slug,
             }
@@ -15132,6 +15181,7 @@ wss.on('connection', (ws, req) => {
             ? {
                 id: conversation.agent.id,
                 nome: conversation.agent.nome,
+                preferredName: conversation.agent.preferredName,
                 avatar: conversation.agent.avatar,
                 slug: conversation.agent.slug,
               }
@@ -15149,6 +15199,7 @@ wss.on('connection', (ws, req) => {
         const agentConfigForPrompt: AgentConfig | null = activeAgent
           ? {
               nome: activeAgent.nome,
+              preferredName: activeAgent.preferredName,
               slug: activeAgent.slug,
               instrucoes: activeAgent.instrucoes,
               personalidade: activeAgent.personalidade,

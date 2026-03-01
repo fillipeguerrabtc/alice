@@ -519,6 +519,8 @@
     },
     "form": {
       "name": "Nome",
+      "preferredName": "Nome Preferido",
+      "preferredNameDesc": "Como o agente deve se apresentar nas conversas.",
       "slug": "Slug",
       "slugDesc": "Identificador único (letras minúsculas, números e hífens)",
       "description": "Descrição",
@@ -550,6 +552,7 @@
     },
     "placeholders": {
       "name": "Ex: Assistente de Vendas",
+      "preferredName": "Ex: Alice Comercial",
       "slug": "assistente-vendas",
       "description": "Descrição breve do propósito e função do agente",
       "avatar": "https://exemplo.com/avatar.png",

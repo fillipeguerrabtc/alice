@@ -100,6 +100,7 @@ interface Agent {
   tenantId: string | null;
   namespaceId: string | null;
   nome: string;
+  preferredName: string | null;
   slug: string;
   descricao: string | null;
   avatar: string | null;
@@ -186,6 +187,7 @@ const statusOptions = ['active', 'training', 'paused', 'deprecated'] as const;
  */
 interface AgentFormData {
   nome: string;
+  preferredName?: string | null;
   slug: string;
   status: typeof statusOptions[number];
   descricao?: string | null;
@@ -208,6 +210,7 @@ function buildAgentFormSchema(opts: {
 }): z.ZodType<AgentFormData> {
   return z.object({
     nome: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres').max(255),
+    preferredName: z.string().min(2, 'Nome preferido deve ter pelo menos 2 caracteres').max(120).optional().nullable(),
     slug: z
       .string()
       .min(2, 'Slug deve ter pelo menos 2 caracteres')
@@ -317,6 +320,7 @@ export default function Agents() {
     resolver: asResolver<AgentFormData>(zodResolver(agentFormSchema)),
     defaultValues: {
       nome: "",
+      preferredName: null,
       slug: "",
       status: "active",
       descricao: "",
@@ -348,6 +352,7 @@ export default function Agents() {
     mutationFn: async (data: AgentFormData) => {
       const payload = {
         ...data,
+        preferredName: data.preferredName || null,
         avatar: data.avatar || null,
         descricao: data.descricao || null,
         instrucoes: data.instrucoes || null,
@@ -381,6 +386,7 @@ export default function Agents() {
     mutationFn: async ({ id, data }: { id: string; data: Partial<AgentFormData> }) => {
       const payload = {
         ...data,
+        preferredName: data.preferredName || null,
         avatar: data.avatar || null,
         descricao: data.descricao || null,
         instrucoes: data.instrucoes || null,
@@ -451,6 +457,7 @@ export default function Agents() {
     setActiveTab('basic');
     form.reset({
       nome: "",
+      preferredName: null,
       slug: "",
       status: "active",
       descricao: "",
@@ -478,6 +485,7 @@ export default function Agents() {
     if (firstField) {
       const fieldTabMap: Partial<Record<keyof AgentFormData, string>> = {
         nome: 'basic',
+        preferredName: 'basic',
         slug: 'basic',
         status: 'basic',
         descricao: 'basic',
@@ -510,6 +518,7 @@ export default function Agents() {
     }
     form.reset({
       nome: agent.nome,
+      preferredName: agent.preferredName || null,
       slug: agent.slug,
       descricao: agent.descricao || "",
       avatar: agent.avatar || "",
@@ -600,6 +609,7 @@ export default function Agents() {
           {agents.map((agent) => {
             const statusInfo = getStatusInfo(agent.status || 'active');
             const StatusIcon = statusInfo.icon;
+            const displayName = agent.preferredName || agent.nome;
 
             return (
               <Card
@@ -618,7 +628,7 @@ export default function Agents() {
                       {agent.avatar ? (
                         <img 
                           src={agent.avatar} 
-                          alt={agent.nome} 
+                          alt={displayName} 
                           className="h-10 w-10 rounded-lg object-cover"
                         />
                       ) : (
@@ -675,7 +685,7 @@ export default function Agents() {
                     </div>
                   </div>
                   
-                  <h3 className="font-semibold text-lg text-foreground mb-1">{agent.nome}</h3>
+                  <h3 className="font-semibold text-lg text-foreground mb-1">{displayName}</h3>
                   <p className="text-xs text-muted-foreground font-mono mb-2">@{agent.slug}</p>
                   <p className="text-sm text-muted-foreground line-clamp-2 min-h-[2.5rem]">
                     {agent.descricao || agent.instrucoes?.substring(0, 100) || t('agents.noDescription')}
@@ -806,6 +816,27 @@ export default function Agents() {
                                 data-testid="input-agente-nome"
                               />
                             </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="preferredName"
+                        render={({ field }: { field: ControllerRenderProps<AgentFormData, 'preferredName'> }) => (
+                          <FormItem>
+                            <FormLabel>{t('agents.form.preferredName')}</FormLabel>
+                            <FormControl>
+                              <Input
+                                placeholder={t('agents.placeholders.preferredName')}
+                                {...field}
+                                value={field.value || ''}
+                                onChange={(event) => field.onChange(event.target.value.length > 0 ? event.target.value : null)}
+                                data-testid="input-agente-preferred-name"
+                              />
+                            </FormControl>
+                            <FormDescription>{t('agents.form.preferredNameDesc')}</FormDescription>
                             <FormMessage />
                           </FormItem>
                         )}
