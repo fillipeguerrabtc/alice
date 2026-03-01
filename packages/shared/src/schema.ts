@@ -1005,6 +1005,7 @@ export const agents = pgTable(
       onDelete: "cascade",
     }),
     nome: varchar("nome", { length: 255 }).notNull(),
+    preferredName: varchar("preferred_name", { length: 120 }),
     slug: varchar("slug", { length: 100 }).notNull(),
     descricao: text("descricao"),
     avatar: text("avatar"),

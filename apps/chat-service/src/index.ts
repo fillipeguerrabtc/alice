@@ -18554,6 +18554,7 @@ const agentModelNameSchema = z.enum([
 
 const createAgentSchema = z.object({
   nome: z.string().min(2, 'Nome deve ter no mínimo 2 caracteres').max(255),
+  preferredName: z.string().min(2).max(120).optional().nullable(),
   slug: z.string().min(2).max(100).regex(/^[a-z0-9-]+$/, 'Slug deve conter apenas letras minúsculas, números e hífens'),
   descricao: z.string().max(2000).optional().nullable(),
   personalidade: z.string().max(5000).optional().nullable(),
@@ -19143,6 +19144,7 @@ app.post('/api/agents', requireAuth(), requireSameTenant(getTenantIdFromRequest)
     const [agent] = await db.insert(schema.agents).values({
       tenantId,
       nome: data.nome,
+      preferredName: data.preferredName,
       slug: data.slug,
       descricao: data.descricao,
       personalidade: data.personalidade,
