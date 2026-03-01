@@ -1817,7 +1817,7 @@ function matchesDetector(message: string, detector: AgenticDetectors['webSearch'
 function isTradingCommandWithDetectors(message: string, detectors: AgenticDetectors): boolean {
   const hasCustomDetectors = detectors.trading.keywords.length > 0 || detectors.trading.patterns.length > 0;
   if (!hasCustomDetectors) {
-    return false;
+    return isTradingCommand(message);
   }
   if (!matchesDetector(message, detectors.trading)) {
     return false;

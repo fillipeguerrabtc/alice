@@ -86,6 +86,37 @@ describe('parseTradingCommand', () => {
       expect(result.type).toBe('generate_signal');
     });
 
+    it('deve reconhecer pedido de scalping como generate_signal', () => {
+      const result = parseTradingCommand('verifique principais criptos e veja se temos oportunidades de scalping agora');
+      expect(result.type).toBe('generate_signal');
+      expect(result.isTrading).toBe(true);
+      expect(isTradingCommand('verifique principais criptos e veja se temos oportunidades de scalping agora')).toBe(true);
+    });
+
+    it('deve reconhecer tecnica generica com contexto de trading (swing trade)', () => {
+      const message = 'quero oportunidades de swing trade para crypto hoje';
+      const result = parseTradingCommand(message);
+      expect(result.type).toBe('generate_signal');
+      expect(result.isTrading).toBe(true);
+      expect(isTradingCommand(message)).toBe(true);
+    });
+
+    it('deve reconhecer tecnica generica com contexto de trading (day trade)', () => {
+      const message = 'analise btc e mostre setups de day trade';
+      const result = parseTradingCommand(message);
+      expect(result.type).toBe('generate_signal');
+      expect(result.isTrading).toBe(true);
+      expect(isTradingCommand(message)).toBe(true);
+    });
+
+    it('nao deve classificar pedido generico sem contexto de trading', () => {
+      const message = 'quais oportunidades de carreira existem hoje?';
+      const result = parseTradingCommand(message);
+      expect(result.type).toBe('unknown');
+      expect(result.isTrading).toBe(false);
+      expect(isTradingCommand(message)).toBe(false);
+    });
+
     it('deve reconhecer "análise técnica" como analysis', () => {
       const result = parseTradingCommand('análise técnica do btc');
       expect(result.type).toBe('analysis');
