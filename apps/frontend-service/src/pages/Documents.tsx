@@ -1208,10 +1208,10 @@ export default function Documents() {
 
         <TabsContent
           value="documents"
-          className="mt-0 flex-1 min-h-0 p-4 data-[state=active]:flex data-[state=active]:flex-col"
+          className="mt-0 p-4"
         >
-          <div className="grid min-h-0 grid-cols-1 gap-4 lg:grid-cols-[360px_minmax(0,1fr)]">
-            <div className="flex min-h-0 min-w-0 flex-col gap-4">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[360px_minmax(0,1fr)]">
+            <div className="flex min-w-0 flex-col gap-4">
               <Card className="min-w-0">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-sm font-medium">{t('documents.uploadDocument')}</CardTitle>
@@ -1288,8 +1288,8 @@ export default function Documents() {
               </Card>
             </div>
 
-            <div className="flex min-h-0 min-w-0 flex-col">
-              <Card className="flex min-h-[320px] min-w-0 flex-1 flex-col lg:min-h-0">
+            <div className="flex min-w-0 flex-col">
+              <Card className="min-w-0">
                 <CardHeader className="shrink-0 gap-3">
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="relative min-w-[200px] flex-1">
@@ -1336,7 +1336,7 @@ export default function Documents() {
                   </div>
                 </CardHeader>
 
-                <CardContent className="min-h-0 flex-1 overflow-y-auto">
+                <CardContent>
                   {isLoading ? (
                     <div
                       className={cn(
@@ -1407,10 +1407,10 @@ export default function Documents() {
 
         <TabsContent
           value="media"
-          className="mt-0 flex-1 min-h-0 p-4 data-[state=active]:flex data-[state=active]:flex-col"
+          className="mt-0 p-4"
         >
-          <div className="grid grid-cols-1 lg:grid-cols-[420px_minmax(0,1fr)] gap-4 min-h-0">
-            <div className="flex min-h-0 min-w-0 flex-col gap-4">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[420px_minmax(0,1fr)]">
+            <div className="flex min-w-0 flex-col gap-4">
               <Card className="min-w-0">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-sm font-medium">{t('documents.namespace.label')}</CardTitle>
@@ -1455,8 +1455,8 @@ export default function Documents() {
               </Card>
             </div>
 
-            <div className="flex flex-col min-h-0 min-w-0">
-              <Card className="flex min-h-[320px] min-w-0 flex-1 flex-col lg:min-h-0">
+            <div className="flex min-w-0 flex-col">
+              <Card className="min-w-0">
                 <CardHeader className="shrink-0 gap-3">
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="relative min-w-[200px] flex-1">
@@ -1506,7 +1506,7 @@ export default function Documents() {
                   </div>
                 </CardHeader>
 
-                <CardContent className="flex-1 min-h-0 overflow-y-auto">
+                <CardContent>
                   {isLoadingMedia ? (
                     <div
                       className={cn(
