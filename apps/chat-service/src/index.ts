@@ -3180,6 +3180,16 @@ function buildSystemPrompt(
     prompt += `\n\nIMPORTANTE: Responda sempre no mesmo idioma da mensagem do usuário, sem misturar idiomas.`;
   }
 
+  if (!prompt.toLowerCase().includes('não inclua urls no corpo')
+      && !prompt.toLowerCase().includes('nao inclua urls no corpo')
+      && !prompt.toLowerCase().includes('não escreva "fonte')
+      && !prompt.toLowerCase().includes('nao escreva "fonte')) {
+    prompt += '\n\nPOLÍTICA DE FONTES:\n'
+      + '- Não inclua URLs no corpo da resposta.\n'
+      + '- Não escreva "Fonte: ..." no texto.\n'
+      + '- As fontes serão exibidas separadamente pela interface.';
+  }
+
   if (agent) {
     const agentName = agent.nome?.trim() || agent.slug?.trim() || 'Agente';
     const agentSlug = agent.slug?.trim();
@@ -3660,12 +3670,78 @@ const DIRECT_ADDRESS_NON_NAME_TOKENS = new Set([
   'amiga',
 ]);
 
+function normalizeComparableNameToken(name: string): string {
+  return normalizeAgentToken(name)
+    .replace(/[_\s-]+/g, '')
+    .trim();
+}
+
+function computeLevenshteinDistance(source: string, target: string): number {
+  if (source === target) return 0;
+  if (source.length === 0) return target.length;
+  if (target.length === 0) return source.length;
+
+  const previous = Array.from({ length: target.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= source.length; i += 1) {
+    let diagonal = previous[0];
+    previous[0] = i;
+    for (let j = 1; j <= target.length; j += 1) {
+      const up = previous[j];
+      const left = previous[j - 1];
+      const substitutionCost = source[i - 1] === target[j - 1] ? 0 : 1;
+      previous[j] = Math.min(
+        previous[j] + 1,
+        left + 1,
+        diagonal + substitutionCost,
+      );
+      diagonal = up;
+    }
+  }
+  return previous[target.length];
+}
+
+function areNamesLikelyVariants(candidateName: string, preferredName: string): boolean {
+  const normalizedCandidate = normalizeComparableNameToken(candidateName);
+  const normalizedPreferred = normalizeComparableNameToken(preferredName);
+  if (!normalizedCandidate || !normalizedPreferred) return false;
+  if (normalizedCandidate === normalizedPreferred) return true;
+
+  const lengthDiff = Math.abs(normalizedCandidate.length - normalizedPreferred.length);
+  if (lengthDiff > 2) return false;
+  if (normalizedCandidate.startsWith(normalizedPreferred) || normalizedPreferred.startsWith(normalizedCandidate)) {
+    return true;
+  }
+
+  const allowedDistance = normalizedPreferred.length <= 6 ? 1 : 2;
+  return computeLevenshteinDistance(normalizedCandidate, normalizedPreferred) <= allowedDistance;
+}
+
+function replaceLikelyWrongNameNearGreetingStart(response: string, preferredName: string): string {
+  const nearStartPattern = /(^[\s\S]{0,120}?\b(?:ol[áa]|oi|bom\s+di\w{0,6}|boa\s+tard\w{0,6}|boa\s+noit\w{0,6})\b[^,\n]{0,80},\s*)([\p{L}][\p{L}\p{M}'-]{1,59})/iu;
+  const match = nearStartPattern.exec(response);
+  if (!match) return response;
+
+  const rawName = match[2];
+  const candidateName = normalizeUserName(rawName);
+  if (!candidateName) return response;
+  if (DIRECT_ADDRESS_NON_NAME_TOKENS.has(candidateName.toLowerCase())) return response;
+  if (!areNamesLikelyVariants(candidateName, preferredName)) return response;
+
+  const normalizedCandidate = normalizeAgentToken(candidateName);
+  const normalizedPreferred = normalizeAgentToken(preferredName);
+  if (!normalizedCandidate || !normalizedPreferred || normalizedCandidate === normalizedPreferred) {
+    return response;
+  }
+
+  return response.replace(nearStartPattern, `$1${preferredName}`);
+}
+
 function fixPreferredNameInDirectAddress(response: string, preferredName: string | null): string {
   const resolvedPreferredName = normalizeUserName(preferredName ?? '');
   if (!resolvedPreferredName) return response;
 
-  const greetingPattern = /\b(ol[áa]|oi|bom dia|boa tarde|boa noite)\b(\s*,?\s*)([\p{L}][\p{L}\p{M}'-]{1,59})/giu;
-  return response.replace(greetingPattern, (fullMatch, greeting: string, separator: string, rawName: string) => {
+  const greetingPattern = /\b(ol[áa]|oi|bom\s+di\w{0,6}|boa\s+tard\w{0,6}|boa\s+noit\w{0,6})\b(\s*,?\s*)([\p{L}][\p{L}\p{M}'-]{1,59})/giu;
+  const replacedByGreetingRule = response.replace(greetingPattern, (fullMatch, greeting: string, separator: string, rawName: string) => {
     const candidateName = normalizeUserName(rawName);
     if (!candidateName) return fullMatch;
     if (DIRECT_ADDRESS_NON_NAME_TOKENS.has(candidateName.toLowerCase())) return fullMatch;
@@ -3678,6 +3754,12 @@ function fixPreferredNameInDirectAddress(response: string, preferredName: string
 
     return `${greeting}${separator}${resolvedPreferredName}`;
   });
+
+  if (replacedByGreetingRule !== response) {
+    return replacedByGreetingRule;
+  }
+
+  return replaceLikelyWrongNameNearGreetingStart(replacedByGreetingRule, resolvedPreferredName);
 }
 
 function finalizeGuardrailResponse(response: string, preferredName: string | null): string {
@@ -3748,9 +3830,10 @@ async function enforceResponseGuardrails(params: {
   }
 
   const responseProfile = detectContextProfile(params.userMessage);
-  const finalizedResponse = finalizeGuardrailResponse(params.responseText, params.preferredName);
-  if (!isCorruptedAssistantResponse(finalizedResponse, responseProfile)) {
-    return finalizedResponse;
+  const trimmedResponse = params.responseText.trim();
+  const directAddressFixed = fixPreferredNameInDirectAddress(trimmedResponse, params.preferredName);
+  if (!isCorruptedAssistantResponse(directAddressFixed, responseProfile)) {
+    return directAddressFixed;
   }
 
   if (!params.regenerate) {
@@ -10559,7 +10642,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                     getAdaptiveGpuPriority('sync', mediaProfile)
                   ) as Promise<string>,
                 });
-                if (guardedResponse !== assistantResponse) {
+                if (guardedResponse !== assistantResponse.trim()) {
                   safeWriteSseEvent({ type: 'final_message', content: guardedResponse });
                 }
                 const persistStartedAt = Date.now();
@@ -13811,7 +13894,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                   getAdaptiveGpuPriority('sync', streamProfile)
                 ) as Promise<string>,
               });
-              if (guardedResponse !== assistantResponse) {
+              if (guardedResponse !== assistantResponse.trim()) {
                 safeWriteSseEvent({ type: 'final_message', content: guardedResponse });
               }
               const persistStartedAt = Date.now();

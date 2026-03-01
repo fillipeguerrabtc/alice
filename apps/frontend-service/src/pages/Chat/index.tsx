@@ -1580,7 +1580,7 @@ export default function Chat() {
       const decoder = new TextDecoder();
       let fullContent = '';
       let pendingContent = '';
-      let contentFlushRafId: number | null = null;
+      let contentFlushTimerId: number | null = null;
       let buffer = '';
       resetTimeout();
 
@@ -1603,17 +1603,17 @@ export default function Chat() {
       };
 
       const schedulePendingContentFlush = () => {
-        if (contentFlushRafId !== null) return;
-        contentFlushRafId = window.requestAnimationFrame(() => {
-          contentFlushRafId = null;
+        if (contentFlushTimerId !== null) return;
+        contentFlushTimerId = window.setTimeout(() => {
+          contentFlushTimerId = null;
           flushPendingContent();
-        });
+        }, 30);
       };
 
       const cancelPendingContentFlush = () => {
-        if (contentFlushRafId !== null) {
-          window.cancelAnimationFrame(contentFlushRafId);
-          contentFlushRafId = null;
+        if (contentFlushTimerId !== null) {
+          window.clearTimeout(contentFlushTimerId);
+          contentFlushTimerId = null;
         }
       };
 
