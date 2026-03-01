@@ -60,6 +60,7 @@ import {
   getCorrelationId,
   isRedisAvailable,
 } from '@alice/shared-utils';
+import type { AuthContext } from '@alice/shared-utils';
 import { ragServicePaths, ragServiceSchemas } from './openapi-specs.js';
 import { createLogger } from '@alice/logger';
 
@@ -119,11 +120,18 @@ interface MulterRequest extends Request {
   file?: Express.Multer.File;
 }
 
-type AuthUser = { id?: string; role?: 'super_admin' | string; tenantId?: string };
+type AuthUser = Partial<Pick<AuthContext, 'userId' | 'role' | 'tenantId' | 'customRoleId'>>;
 
 function getAuthUser(req: Request): AuthUser {
-  const typed = req as Request & { user?: AuthUser };
-  return typed.user ?? {};
+  const typed = req as Request & { user?: AuthContext };
+  const user = typed.user;
+  if (!user) return {};
+  return {
+    userId: user.userId,
+    role: user.role,
+    tenantId: user.tenantId,
+    customRoleId: user.customRoleId ?? undefined,
+  };
 }
 
 function getRequestCorrelationId(req: Request): string {
@@ -155,6 +163,7 @@ async function collectTrainingFromDocumentChunks(params: {
   chunks: TrainingChunk[];
   userId?: string;
   role?: string;
+  customRoleId?: string;
   force?: boolean;
   selection?: TrainingChunkSelectionOptions;
   profile?: {
@@ -186,6 +195,7 @@ async function collectTrainingFromDocumentChunks(params: {
     userId: params.userId ?? 'system',
     tenantId: params.tenantId,
     role: (params.role as Role) || 'operator',
+    customRoleId: params.customRoleId,
   });
 
   let sent = 0;
@@ -277,6 +287,7 @@ async function collectTrainingFromMediaUpload(params: {
   content: string;
   userId?: string;
   role?: string;
+  customRoleId?: string;
 }): Promise<{ sent: boolean; trainingDataId?: string }> {
   if (!TRAINING_SERVICE_URL) {
     logger.warn({ mediaUploadId: params.mediaUploadId }, 'TRAINING_SERVICE_URL ausente - promoção de mídia para treinamento desabilitada');
@@ -291,6 +302,7 @@ async function collectTrainingFromMediaUpload(params: {
     userId: params.userId ?? 'system',
     tenantId: params.tenantId,
     role: (params.role as Role) || 'operator',
+    customRoleId: params.customRoleId,
   });
 
   const promptPrefix = params.mediaType === 'image'
@@ -2124,8 +2136,9 @@ app.post('/api/rag/documents/:id/send-to-training', requireAuth(), requirePermis
       documentId: document.id,
       titulo: document.titulo,
       chunks: chunks.map((chunk) => ({ id: chunk.id, conteudo: chunk.conteudo, posicao: chunk.posicao })),
-      userId: user.id,
+      userId: user.userId,
       role: user.role,
+      customRoleId: user.customRoleId,
       force: true,
       selection: {
         maxSamples: bodyValidation.data.maxSamples,
@@ -2683,7 +2696,7 @@ app.post('/api/rag/documents/upload', requireAuth(), requirePermission('rag:docu
         mimeType: req.file.mimetype,
         fileSize: req.file.size,
         uploadedAt: new Date().toISOString(),
-        uploadedByUserId: user.id ?? null,
+        uploadedByUserId: user.userId ?? null,
         correlationId,
         processingStatus: 'pending',
       },
@@ -3345,7 +3358,7 @@ app.post('/api/learning/tasks', requireAuth(), requireSameTenant(getTenantIdFrom
         parametros: body.parametros,
         maxTentativas: body.maxTentativas,
         agendadoPara: body.agendadoPara ? new Date(body.agendadoPara) : null,
-        criadoPor: user.id ?? null,
+        criadoPor: user.userId ?? null,
       })
     );
 
@@ -4461,8 +4474,9 @@ app.post('/api/media/uploads/:id/send-to-training', requireAuth(), requirePermis
       mediaType: upload.mediaType as 'image' | 'audio',
       originalFilename: upload.originalFilename,
       content: content.trim(),
-      userId: user.id,
+      userId: user.userId,
       role: user.role,
+      customRoleId: user.customRoleId,
     });
 
     if (!result.sent) {
@@ -4816,7 +4830,7 @@ app.post('/api/rag/embeddings/queue',
       const jobId = await enqueueEmbeddingJob({
         type: body.type,
         tenantId,
-        userId: getAuthUser(req).id,
+        userId: getAuthUser(req).userId,
         priority: body.priority ?? 5,
         input: {
           text: body.text,
