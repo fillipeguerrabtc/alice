@@ -58,6 +58,7 @@ import {
   generateInternalAuthHeaders,
   Role,
   getCorrelationId,
+  isRedisAvailable,
 } from '@alice/shared-utils';
 import { ragServicePaths, ragServiceSchemas } from './openapi-specs.js';
 import { createLogger } from '@alice/logger';
@@ -83,7 +84,10 @@ import {
   isQueueAvailable,
   type EmbeddingJobType,
 } from './embedding-queue.js';
-import { enqueueDocumentProcessingJob } from './document-processing-queue.js';
+import {
+  enqueueDocumentProcessingJob,
+  getDocumentProcessingJobIdForDocument,
+} from './document-processing-queue.js';
 import { initEmbeddingWebSocket, closeEmbeddingWebSocket, getWebSocketStats } from './embedding-websocket.js';
 import { getAudioProcessor } from './audio-processor.js';
 import { getDocumentProcessor } from './document-processor.js';
@@ -927,6 +931,9 @@ const DOC_PROCESS_MAX_ATTEMPTS = parseEnvInt(process.env.DOC_PROCESS_MAX_ATTEMPT
 const DOC_CHUNK_SIZE_CHARS = parseEnvInt(process.env.DOC_CHUNK_SIZE_CHARS, 1000, 'DOC_CHUNK_SIZE_CHARS');
 const DOC_CHUNK_OVERLAP_CHARS_RAW = parseEnvInt(process.env.DOC_CHUNK_OVERLAP_CHARS, 200, 'DOC_CHUNK_OVERLAP_CHARS');
 const DOC_CHUNK_MAX_CHUNKS = parseEnvInt(process.env.DOC_CHUNK_MAX_CHUNKS, 200, 'DOC_CHUNK_MAX_CHUNKS');
+const DOCUMENT_PROCESSING_RECONCILER_INTERVAL_MS = 30_000;
+const DOCUMENT_PROCESSING_RECONCILER_STALE_MS = 2 * 60_000;
+const DOCUMENT_PROCESSING_RECONCILER_BATCH_SIZE = 50;
 const DOC_CHUNK_OVERLAP_CHARS = Math.min(
   DOC_CHUNK_OVERLAP_CHARS_RAW,
   Math.max(1, DOC_CHUNK_SIZE_CHARS - 1)
@@ -1472,6 +1479,7 @@ const webSearch = (query: string, count?: number, options?: WebSearchOptions) =>
 // ============================================================================
 
 const WORKER_TENANT_ID = process.env.WORKER_TENANT_ID;
+let documentProcessingReconcilerTimer: NodeJS.Timeout | null = null;
 
 function startTenantScopedWorkers(workerTenantId: string): void {
   startLearningWorker(db, {
@@ -1550,6 +1558,122 @@ function startDocumentProcessingWorkerWhenRedisReady(redisConnected: boolean): v
     .catch((error) => {
       logger.warn({ error }, 'Falha ao coletar status inicial do document processing worker');
     });
+}
+
+async function reconcileStaleDocumentProcessingDocuments(): Promise<void> {
+  if (!isRedisAvailable()) {
+    return;
+  }
+
+  const staleCutoff = new Date(Date.now() - DOCUMENT_PROCESSING_RECONCILER_STALE_MS);
+  const staleDocuments = await db
+    .select({
+      documentId: schema.documents.id,
+      namespaceId: schema.documents.namespaceId,
+      tenantId: schema.namespaces.tenantId,
+      updatedAt: schema.documents.atualizadoEm,
+    })
+    .from(schema.documents)
+    .leftJoin(schema.namespaces, eq(schema.documents.namespaceId, schema.namespaces.id))
+    .where(and(
+      eq(schema.documents.processado, false),
+      sql`${schema.documents.atualizadoEm} < ${staleCutoff}`,
+      sql`(${schema.documents.metadata}->>'processingStatus' = 'pending' OR ${schema.documents.metadata}->>'processingStatus' = 'processing')`
+    ))
+    .orderBy(asc(schema.documents.atualizadoEm))
+    .limit(DOCUMENT_PROCESSING_RECONCILER_BATCH_SIZE);
+
+  if (staleDocuments.length === 0) {
+    return;
+  }
+
+  logger.info({
+    staleDocuments: staleDocuments.length,
+    staleCutoff: staleCutoff.toISOString(),
+  }, 'Reconciler de documentos identificou itens pendentes/stale');
+
+  for (const staleDocument of staleDocuments) {
+    const correlationId = crypto.randomUUID();
+    const { documentId, namespaceId, tenantId, updatedAt } = staleDocument;
+
+    if (!documentId || !namespaceId || !tenantId) {
+      logger.warn({
+        documentId,
+        namespaceId,
+        tenantId,
+        updatedAt,
+        correlationId,
+      }, 'Reconciler ignorou documento sem namespace/tenant valido');
+      continue;
+    }
+
+    try {
+      const indexedJobId = await getDocumentProcessingJobIdForDocument(documentId);
+      if (indexedJobId) {
+        continue;
+      }
+
+      const jobId = await enqueueDocumentProcessingJob({
+        jobId: crypto.randomUUID(),
+        tenantId,
+        documentId,
+        namespaceId,
+        priority: 5,
+        correlationId,
+        attempts: 0,
+      }, { force: true });
+
+      logger.info({
+        documentId,
+        tenantId,
+        namespaceId,
+        correlationId,
+        jobId,
+      }, 'Reconciler reenfileirou documento stale sem job ativo');
+    } catch (error) {
+      logger.error({
+        error,
+        documentId,
+        tenantId,
+        namespaceId,
+        correlationId,
+      }, 'Falha ao reenfileirar documento stale no reconciler');
+    }
+  }
+}
+
+function stopDocumentProcessingReconciler(): void {
+  if (documentProcessingReconcilerTimer) {
+    clearInterval(documentProcessingReconcilerTimer);
+    documentProcessingReconcilerTimer = null;
+    logger.info('Reconciler de documentos parado');
+  }
+}
+
+function startDocumentProcessingReconcilerWhenRedisReady(redisConnected: boolean): void {
+  if (!redisConnected) {
+    logger.warn('Reconciler de documentos nao iniciado: Redis indisponivel');
+    return;
+  }
+  if (documentProcessingReconcilerTimer) {
+    return;
+  }
+
+  documentProcessingReconcilerTimer = setInterval(() => {
+    void reconcileStaleDocumentProcessingDocuments().catch((error) => {
+      logger.error({ error }, 'Falha no ciclo do reconciler de documentos');
+    });
+  }, DOCUMENT_PROCESSING_RECONCILER_INTERVAL_MS);
+
+  logger.info({
+    intervalMs: DOCUMENT_PROCESSING_RECONCILER_INTERVAL_MS,
+    staleThresholdMs: DOCUMENT_PROCESSING_RECONCILER_STALE_MS,
+    batchSize: DOCUMENT_PROCESSING_RECONCILER_BATCH_SIZE,
+  }, 'Reconciler de documentos iniciado');
+
+  void reconcileStaleDocumentProcessingDocuments().catch((error) => {
+    logger.error({ error }, 'Falha no bootstrap do reconciler de documentos');
+  });
 }
 
 // ============================================================================
@@ -1705,33 +1829,6 @@ app.use(createSessionAuthMiddleware({
   publicPaths: ['/api/rag/health', '/live', '/ready', '/metrics'],
 }));
 
-const CHUNK_SIZE = 1000;
-const CHUNK_OVERLAP = 200;
-function chunkText(text: string): string[] {
-  const normalized = text.replace(/\s+/g, ' ').trim();
-  if (!normalized) return [];
-  const chunks: string[] = [];
-  let start = 0;
-
-  while (start < normalized.length) {
-    const end = Math.min(start + CHUNK_SIZE, normalized.length);
-    const chunk = normalized.slice(start, end).trim();
-    if (chunk.length > 0) {
-      chunks.push(chunk);
-    }
-    if (end >= normalized.length) {
-      break;
-    }
-    const nextStart = Math.max(0, end - CHUNK_OVERLAP);
-    if (nextStart <= start) {
-      break;
-    }
-    start = nextStart;
-  }
-
-  return chunks;
-}
-
 function isRawTextLikeDocumentMime(mimeType: string): boolean {
   return mimeType.startsWith('text/')
     || mimeType === 'application/json'
@@ -1764,6 +1861,13 @@ function hashContent(content: string): string {
 app.get('/api/rag/health', async (_req: Request, res: Response) => {
   const circuitState = gpuManagerEmbeddingsBreaker.opened ? 'open' : (gpuManagerEmbeddingsBreaker.halfOpen ? 'half-open' : 'closed');
   const qdrantStatus = getQdrantCircuitBreakerStatus();
+  const redisAvailable = isRedisAvailable();
+  let documentProcessingWorker = {
+    running: false,
+    processedCount: 0,
+    failedCount: 0,
+    queueSize: 0,
+  };
 
   // Verificar saúde do Qdrant (assíncrono)
   let qdrantHealthy = false;
@@ -1774,6 +1878,12 @@ app.get('/api/rag/health', async (_req: Request, res: Response) => {
     } catch {
       qdrantHealthy = false;
     }
+  }
+
+  try {
+    documentProcessingWorker = await getDocumentProcessingWorkerStatus();
+  } catch (error) {
+    logger.warn({ error }, 'Falha ao coletar status do document processing worker no health');
   }
 
   res.json({
@@ -1810,7 +1920,24 @@ app.get('/api/rag/health', async (_req: Request, res: Response) => {
       enabled: webSearchClient.isEnabled(),
       searxngUrl: SEARXNG_URL,
     },
+    redis: {
+      available: redisAvailable,
+    },
+    documentProcessingWorker,
   });
+});
+
+app.get('/api/rag/workers/document-processing', requireAuth(), requirePermission('rag:documents:read'), requireSameTenant(getTenantIdFromRequest), async (_req: Request, res: Response) => {
+  try {
+    const workerStatus = await getDocumentProcessingWorkerStatus();
+    return res.json({
+      redisAvailable: isRedisAvailable(),
+      workerStatus,
+    });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao consultar status do worker de processamento de documentos');
+    return res.status(500).json({ error: 'Erro interno do servidor' });
+  }
 });
 
 // ============================================================================
@@ -2192,9 +2319,7 @@ function parseDocumentProcessingMetadata(metadata: unknown): {
   processedAt: string | null;
   chunksCount: number | null;
 } {
-  const base = typeof metadata === 'object' && metadata !== null && !Array.isArray(metadata)
-    ? metadata as Record<string, unknown>
-    : {};
+  const base = toDocumentMetadataObject(metadata);
 
   const statusFromMetadata = typeof base.processingStatus === 'string'
     ? base.processingStatus
@@ -2214,81 +2339,48 @@ function parseDocumentProcessingMetadata(metadata: unknown): {
   };
 }
 
-async function rebuildDocumentEmbeddings(params: {
-  tenantId: string;
+function toDocumentMetadataObject(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+  return { ...(value as Record<string, unknown>) };
+}
+
+function normalizeProcessingQueueError(error: unknown): string {
+  const rawMessage = error instanceof Error ? error.message : String(error);
+  const sanitized = rawMessage.replace(/\s+/g, ' ').trim();
+  return sanitized.length > 0
+    ? sanitized.slice(0, 500)
+    : 'Falha ao enfileirar processamento do documento';
+}
+
+async function markDocumentQueueFailure(params: {
   documentId: string;
-  namespaceId?: string | null;
-  titulo: string;
-  conteudo: string;
-  fonte?: string | null;
-  urlOrigem?: string | null;
-}): Promise<number> {
-  const content = params.conteudo;
-  const chunks = chunkText(content);
-  const qdrantPoints: Array<{ id: string; vector: number[]; payload: Record<string, unknown> }> = [];
+  correlationId: string;
+  details: string;
+}): Promise<void> {
+  const current = await db.query.documents.findFirst({
+    where: eq(schema.documents.id, params.documentId),
+    columns: { id: true, metadata: true },
+  });
 
-  await db.delete(schema.documentChunks)
-    .where(eq(schema.documentChunks.documentId, params.documentId));
-
-  for (let i = 0; i < chunks.length; i += 1) {
-    const embedding = await generateEmbedding(chunks[i]);
-    validateEmbeddingDimension(embedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
-    const [chunk] = await db.insert(schema.documentChunks).values({
-      documentId: params.documentId,
-      conteudo: chunks[i],
-      posicao: i,
-    }).returning();
-
-    qdrantPoints.push({
-      id: chunk.id,
-      vector: embedding,
-      payload: {
-        type: 'document_chunk',
-        documentId: params.documentId,
-        conteudo: chunks[i],
-        posicao: i,
-        tenantId: params.tenantId,
-        namespaceId: params.namespaceId ?? null,
-        document_id: params.documentId,
-        document_titulo: params.titulo,
-        document_namespaceId: params.namespaceId ?? null,
-        criadoEm: new Date().toISOString(),
-      },
-    });
+  if (!current) {
+    return;
   }
 
-  if (isQdrantConfigured()) {
-    await deletePointsByFilter(TEXT_COLLECTION_NAME, {
-      must: [
-        { key: 'tenantId', match: { value: params.tenantId } },
-        { key: 'documentId', match: { value: params.documentId } },
-      ],
-    });
-
-    const documentEmbedding = await generateEmbedding(content.slice(0, 2000));
-    validateEmbeddingDimension(documentEmbedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
-
-    await upsertPoints(TEXT_COLLECTION_NAME, [
-      {
-        id: `document-${params.documentId}`,
-        vector: documentEmbedding,
-        payload: {
-          type: 'document',
-          documentId: params.documentId,
-          titulo: params.titulo,
-          tenantId: params.tenantId,
-          namespaceId: params.namespaceId ?? null,
-          fonte: params.fonte ?? null,
-          urlOrigem: params.urlOrigem ?? null,
-          conteudoPreview: content.slice(0, 500),
-          criadoEm: new Date().toISOString(),
-        },
+  await db.update(schema.documents)
+    .set({
+      processado: false,
+      metadata: {
+        ...toDocumentMetadataObject(current.metadata),
+        processingStatus: 'failed',
+        processingError: params.details,
+        correlationId: params.correlationId,
+        enqueueFailedAt: new Date().toISOString(),
       },
-      ...qdrantPoints,
-    ]);
-  }
-
-  return chunks.length;
+      atualizadoEm: new Date(),
+    })
+    .where(eq(schema.documents.id, current.id));
 }
 
 app.post('/api/rag/documents', requireAuth(), requirePermission('rag:documents:write'), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
@@ -2343,15 +2435,46 @@ app.post('/api/rag/documents', requireAuth(), requirePermission('rag:documents:w
       processado: false,
     }).returning();
 
-    const jobId = await enqueueDocumentProcessingJob({
-      jobId: crypto.randomUUID(),
-      tenantId,
-      documentId: document.id,
-      namespaceId: body.namespaceId,
-      priority: 5,
-      correlationId,
-      attempts: 0,
-    });
+    let jobId: string;
+    try {
+      jobId = await enqueueDocumentProcessingJob({
+        jobId: crypto.randomUUID(),
+        tenantId,
+        documentId: document.id,
+        namespaceId: body.namespaceId,
+        priority: 5,
+        correlationId,
+        attempts: 0,
+      });
+    } catch (enqueueError) {
+      const details = normalizeProcessingQueueError(enqueueError);
+      try {
+        await markDocumentQueueFailure({
+          documentId: document.id,
+          correlationId,
+          details,
+        });
+      } catch (markFailureError) {
+        logger.error({
+          error: markFailureError,
+          documentId: document.id,
+          tenantId,
+          correlationId,
+        }, 'Falha ao persistir status failed apos erro de enqueue (create)');
+      }
+      logger.error({
+        error: enqueueError,
+        documentId: document.id,
+        tenantId,
+        namespaceId: body.namespaceId,
+        correlationId,
+      }, 'Falha ao enfileirar processamento de documento criado via API');
+      return res.status(503).json({
+        documentId: document.id,
+        error: 'Falha ao enfileirar processamento',
+        details,
+      });
+    }
 
     logger.info({
       documentId: document.id,
@@ -2422,11 +2545,18 @@ app.patch('/api/rag/documents/:id', requireAuth(), requirePermission('rag:docume
       return res.status(400).json({ error: 'Conteúdo do documento é obrigatório' });
     }
 
+    const correlationId = getRequestCorrelationId(req);
     const titulo = body.titulo ?? existing.titulo;
     const tipo = body.tipo ?? existing.tipo ?? undefined;
     const fonte = body.fonte ?? existing.fonte ?? undefined;
     const urlOrigem = body.urlOrigem ?? existing.urlOrigem ?? undefined;
     const hashConteudo = hashContent(conteudo);
+    const metadataBase = toDocumentMetadataObject(existing.metadata);
+    const processingRequestedAt = new Date().toISOString();
+
+    if (!resolvedNamespaceId) {
+      return res.status(422).json({ error: 'Documento sem namespace nao pode ser processado' });
+    }
 
     await db.update(schema.documents)
       .set({
@@ -2438,35 +2568,65 @@ app.patch('/api/rag/documents/:id', requireAuth(), requirePermission('rag:docume
         urlOrigem,
         hashConteudo,
         processado: false,
+        metadata: {
+          ...metadataBase,
+          processingStatus: 'pending',
+          processingError: null,
+          processingRequestedAt,
+          correlationId,
+        },
         atualizadoEm: new Date(),
       })
       .where(eq(schema.documents.id, id));
 
-    const chunksCreated = await rebuildDocumentEmbeddings({
-      tenantId,
+    let jobId: string;
+    try {
+      jobId = await enqueueDocumentProcessingJob({
+        jobId: crypto.randomUUID(),
+        tenantId,
+        documentId: id,
+        namespaceId: resolvedNamespaceId,
+        priority: 5,
+        correlationId,
+        attempts: 0,
+      }, { force: true });
+    } catch (enqueueError) {
+      const details = normalizeProcessingQueueError(enqueueError);
+      try {
+        await markDocumentQueueFailure({
+          documentId: id,
+          correlationId,
+          details,
+        });
+      } catch (markFailureError) {
+        logger.error({
+          error: markFailureError,
+          documentId: id,
+          tenantId,
+          correlationId,
+        }, 'Falha ao persistir status failed apos erro de enqueue (patch)');
+      }
+      logger.error({
+        error: enqueueError,
+        documentId: id,
+        tenantId,
+        namespaceId: resolvedNamespaceId,
+        correlationId,
+      }, 'Falha ao enfileirar processamento de documento atualizado');
+      return res.status(503).json({
+        documentId: id,
+        error: 'Falha ao enfileirar processamento',
+        details,
+      });
+    }
+
+    return res.status(202).json({
       documentId: id,
-      namespaceId: resolvedNamespaceId,
-      titulo,
-      conteudo,
-      fonte,
-      urlOrigem,
-    });
-
-    await db.update(schema.documents)
-      .set({ processado: true, atualizadoEm: new Date() })
-      .where(eq(schema.documents.id, id));
-
-    const updated = await db.query.documents.findFirst({
-      where: eq(schema.documents.id, id),
-    });
-
-    res.json({
-      document: updated ?? existing,
-      chunksCreated,
+      jobId,
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Erro interno do servidor';
-    logger.error({ error }, 'Falha ao atualizar documento');
+    logger.error({ error, documentId: id, tenantId, correlationId: getRequestCorrelationId(req) }, 'Falha ao atualizar documento');
     res.status(500).json({ error: errorMessage });
   }
 });
@@ -2530,15 +2690,47 @@ app.post('/api/rag/documents/upload', requireAuth(), requirePermission('rag:docu
       processado: false,
     }).returning();
 
-    const jobId = await enqueueDocumentProcessingJob({
-      jobId: crypto.randomUUID(),
-      tenantId: req.tenantId,
-      documentId: document.id,
-      namespaceId,
-      priority: 5,
-      correlationId,
-      attempts: 0,
-    });
+    let jobId: string;
+    try {
+      jobId = await enqueueDocumentProcessingJob({
+        jobId: crypto.randomUUID(),
+        tenantId: req.tenantId,
+        documentId: document.id,
+        namespaceId,
+        priority: 5,
+        correlationId,
+        attempts: 0,
+      });
+    } catch (enqueueError) {
+      const details = normalizeProcessingQueueError(enqueueError);
+      try {
+        await markDocumentQueueFailure({
+          documentId: document.id,
+          correlationId,
+          details,
+        });
+      } catch (markFailureError) {
+        logger.error({
+          error: markFailureError,
+          documentId: document.id,
+          tenantId: req.tenantId,
+          correlationId,
+        }, 'Falha ao persistir status failed apos erro de enqueue (upload)');
+      }
+      logger.error({
+        error: enqueueError,
+        documentId: document.id,
+        tenantId: req.tenantId,
+        namespaceId,
+        filename: req.file?.originalname,
+        correlationId,
+      }, 'Falha ao enfileirar processamento de documento enviado por upload');
+      return res.status(503).json({
+        documentId: document.id,
+        error: 'Falha ao enfileirar processamento',
+        details,
+      });
+    }
 
     logger.info({
       documentId: document.id,
@@ -3070,7 +3262,6 @@ function buildAgenticContext(
     parts.push('\n## Resultados da Web\n');
     web.forEach((result, i) => {
       parts.push(`### ${i + 1}. ${result.title}`);
-      parts.push(`Fonte: ${result.url}`);
       const sanitizedDescription = sanitizeWebSnippet(result.description);
       if (sanitizedDescription) {
         parts.push(sanitizedDescription);
@@ -4757,6 +4948,14 @@ registerShutdownCallback(
   { priority: ShutdownPriority.DATABASE }
 );
 
+registerShutdownCallback(
+  'rag-document-processing-reconciler',
+  async () => {
+    stopDocumentProcessingReconciler();
+  },
+  { priority: ShutdownPriority.BACKGROUND_JOBS }
+);
+
 // CORREÇÃO 23/12/2025: Inicializar Redis cache ANTES de iniciar o servidor
 // Evita race condition onde clientes WebSocket podem conectar antes do Redis estar pronto
 // O embedding-websocket usa getRedisClient() que precisa do cliente inicializado
@@ -4841,6 +5040,7 @@ registerShutdownCallback(
 
     startEmbeddingWorkerWhenRedisReady(redisConnected);
     startDocumentProcessingWorkerWhenRedisReady(redisConnected);
+    startDocumentProcessingReconcilerWhenRedisReady(redisConnected);
     if (WORKER_TENANT_ID) {
       startTenantScopedWorkers(WORKER_TENANT_ID);
     } else {

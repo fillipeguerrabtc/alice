@@ -311,6 +311,21 @@ export async function getDocumentProcessingJobState(jobId: string): Promise<Docu
   return parseJob(raw);
 }
 
+export async function getDocumentProcessingJobIdForDocument(documentId: string): Promise<string | null> {
+  const client = getRedisClient();
+  if (!client) {
+    return null;
+  }
+
+  const normalizedDocumentId = documentId.trim();
+  if (!normalizedDocumentId) {
+    return null;
+  }
+
+  const jobId = await client.get(getDocumentIndexKey(normalizedDocumentId));
+  return typeof jobId === 'string' && jobId.trim().length > 0 ? jobId : null;
+}
+
 export async function getDocumentProcessingQueueSize(): Promise<number> {
   const client = getRedisClient();
   if (!client) {
