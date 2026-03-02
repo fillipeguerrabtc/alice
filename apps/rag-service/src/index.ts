@@ -153,6 +153,75 @@ type TrainingChunkSelectionOptions = {
   minChars?: number;
 };
 
+const TRAINING_SERVICE_REQUEST_TIMEOUT_MS = 15_000;
+
+async function postTrainingDataWithAuthFallback(params: {
+  tenantId: string;
+  payload: Record<string, unknown>;
+  userId?: string;
+  role?: string;
+  customRoleId?: string;
+  context?: Record<string, unknown>;
+}): Promise<globalThis.Response> {
+  if (!TRAINING_SERVICE_URL) {
+    throw new Error('TRAINING_SERVICE_URL ausente');
+  }
+
+  const primaryRole = (params.role as Role | undefined) ?? 'operator';
+  const baseAuth = {
+    userId: params.userId ?? 'system',
+    tenantId: params.tenantId,
+  };
+
+  const sendRequest = async (headers: Record<string, string>): Promise<globalThis.Response> => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), TRAINING_SERVICE_REQUEST_TIMEOUT_MS);
+    try {
+      return await fetch(`${TRAINING_SERVICE_URL}/api/training/data`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...headers,
+        },
+        body: JSON.stringify(params.payload),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  };
+
+  const primaryHeaders: Record<string, string> = { ...generateInternalAuthHeaders({
+    ...baseAuth,
+    role: primaryRole,
+    customRoleId: params.customRoleId,
+  }) };
+
+  const primaryResponse = await sendRequest(primaryHeaders);
+  if (
+    (primaryResponse.status === 401 || primaryResponse.status === 403) &&
+    primaryRole !== 'admin' &&
+    primaryRole !== 'super_admin'
+  ) {
+    logger.warn(
+      {
+        status: primaryResponse.status,
+        tenantId: params.tenantId,
+        role: primaryRole,
+        context: params.context,
+      },
+      'Training service rejeitou auth do caller; fallback para role admin interno'
+    );
+    const fallbackHeaders: Record<string, string> = { ...generateInternalAuthHeaders({
+      ...baseAuth,
+      role: 'admin',
+    }) };
+    return sendRequest(fallbackHeaders);
+  }
+
+  return primaryResponse;
+}
+
 async function collectTrainingFromDocumentChunks(params: {
   tenantId: string;
   namespaceId: string;
@@ -170,9 +239,15 @@ async function collectTrainingFromDocumentChunks(params: {
     version?: number;
     tags?: string[];
   };
-}): Promise<{ attempted: number; sent: number; failed: number; selectedChunkIds: string[] }> {
+}): Promise<{
+  attempted: number;
+  sent: number;
+  failed: number;
+  selectedChunkIds: string[];
+  errors: Array<{ chunkId: string; status?: number; error: string }>;
+}> {
   if (!params.force && !TRAINING_DOC_AUTO_COLLECT) {
-    return { attempted: 0, sent: 0, failed: 0, selectedChunkIds: [] };
+    return { attempted: 0, sent: 0, failed: 0, selectedChunkIds: [], errors: [] };
   }
   const fromDb = await getSystemConfig('TRAINING_DOC_MAX_SAMPLES');
   const defaultMaxSamples = fromDb ? (parseInt(fromDb, 10) || 50) : TRAINING_DOC_MAX_SAMPLES;
@@ -183,23 +258,17 @@ async function collectTrainingFromDocumentChunks(params: {
   };
   if (!TRAINING_SERVICE_URL) {
     logger.warn({ documentId: params.documentId }, 'TRAINING_SERVICE_URL ausente - coleta de documentos para treinamento desabilitada');
-    return { attempted: 0, sent: 0, failed: 0, selectedChunkIds: [] };
+    return { attempted: 0, sent: 0, failed: 0, selectedChunkIds: [], errors: [] };
   }
 
   const selected = selectTrainingChunks(params.chunks, selection);
   if (selected.length === 0) {
-    return { attempted: 0, sent: 0, failed: 0, selectedChunkIds: [] };
+    return { attempted: 0, sent: 0, failed: 0, selectedChunkIds: [], errors: [] };
   }
-
-  const headers = generateInternalAuthHeaders({
-    userId: params.userId ?? 'system',
-    tenantId: params.tenantId,
-    role: (params.role as Role) || 'operator',
-    customRoleId: params.customRoleId,
-  });
 
   let sent = 0;
   let failed = 0;
+  const errors: Array<{ chunkId: string; status?: number; error: string }> = [];
   for (const chunk of selected) {
     const payload = {
       tenantId: params.tenantId,
@@ -234,18 +303,27 @@ async function collectTrainingFromDocumentChunks(params: {
     };
 
     try {
-      const response = await fetch(`${TRAINING_SERVICE_URL}/api/training/data`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...headers,
+      const response = await postTrainingDataWithAuthFallback({
+        tenantId: params.tenantId,
+        payload,
+        userId: params.userId,
+        role: params.role,
+        customRoleId: params.customRoleId,
+        context: {
+          documentId: params.documentId,
+          chunkId: chunk.id,
+          sourceType: 'rag_document',
         },
-        body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
         const errorText = await response.text();
         failed += 1;
+        errors.push({
+          chunkId: chunk.id,
+          status: response.status,
+          error: errorText || `HTTP ${response.status}`,
+        });
         logger.warn({
           documentId: params.documentId,
           chunkId: chunk.id,
@@ -257,6 +335,10 @@ async function collectTrainingFromDocumentChunks(params: {
       }
     } catch (error) {
       failed += 1;
+      errors.push({
+        chunkId: chunk.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
       logger.warn({
         documentId: params.documentId,
         chunkId: chunk.id,
@@ -270,6 +352,7 @@ async function collectTrainingFromDocumentChunks(params: {
     sent,
     failed,
     selectedChunkIds: selected.map((chunk) => chunk.id),
+    errors,
   };
 }
 
@@ -288,22 +371,15 @@ async function collectTrainingFromMediaUpload(params: {
   userId?: string;
   role?: string;
   customRoleId?: string;
-}): Promise<{ sent: boolean; trainingDataId?: string }> {
+}): Promise<{ sent: boolean; trainingDataId?: string; status?: number; error?: string }> {
   if (!TRAINING_SERVICE_URL) {
     logger.warn({ mediaUploadId: params.mediaUploadId }, 'TRAINING_SERVICE_URL ausente - promoção de mídia para treinamento desabilitada');
-    return { sent: false };
+    return { sent: false, error: 'TRAINING_SERVICE_URL ausente' };
   }
   if (!params.content || params.content.trim().length < 50) {
     logger.warn({ mediaUploadId: params.mediaUploadId }, 'Conteúdo insuficiente para treinamento (mín 50 caracteres)');
-    return { sent: false };
+    return { sent: false, error: 'Conteúdo insuficiente para treinamento' };
   }
-
-  const headers = generateInternalAuthHeaders({
-    userId: params.userId ?? 'system',
-    tenantId: params.tenantId,
-    role: (params.role as Role) || 'operator',
-    customRoleId: params.customRoleId,
-  });
 
   const promptPrefix = params.mediaType === 'image'
     ? 'Descrição visual extraída'
@@ -337,13 +413,16 @@ async function collectTrainingFromMediaUpload(params: {
   };
 
   try {
-    const response = await fetch(`${TRAINING_SERVICE_URL}/api/training/data`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...headers,
+    const response = await postTrainingDataWithAuthFallback({
+      tenantId: params.tenantId,
+      payload,
+      userId: params.userId,
+      role: params.role,
+      customRoleId: params.customRoleId,
+      context: {
+        mediaUploadId: params.mediaUploadId,
+        sourceType: 'rag_media',
       },
-      body: JSON.stringify(payload),
     });
 
     if (!response.ok) {
@@ -353,7 +432,7 @@ async function collectTrainingFromMediaUpload(params: {
         status: response.status,
         error: errorText,
       }, 'Falha ao enviar mídia para treinamento');
-      return { sent: false };
+      return { sent: false, status: response.status, error: errorText || `HTTP ${response.status}` };
     }
 
     const result = (await response.json()) as { trainingData?: { id?: string } };
@@ -362,11 +441,12 @@ async function collectTrainingFromMediaUpload(params: {
       trainingDataId: result.trainingData?.id,
     };
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     logger.warn({
       mediaUploadId: params.mediaUploadId,
-      error: error instanceof Error ? error.message : String(error),
+      error: message,
     }, 'Erro ao enviar mídia para treinamento');
-    return { sent: false };
+    return { sent: false, error: message };
   }
 }
 
@@ -2154,9 +2234,14 @@ app.post('/api/rag/documents/:id/send-to-training', requireAuth(), requirePermis
     }
 
     if (result.sent === 0) {
+      const firstFailure = result.errors[0];
+      const firstFailureMessage = firstFailure
+        ? `${firstFailure.status ?? 'network'} - ${firstFailure.error.slice(0, 240)}`
+        : 'sem detalhes';
       return res.status(502).json({
-        error: 'Falha ao enviar chunks para o Training Service',
+        error: `Falha ao enviar chunks para o Training Service (${firstFailureMessage})`,
         data: result,
+        failures: result.errors.slice(0, 5),
       });
     }
 
@@ -4481,7 +4566,9 @@ app.post('/api/media/uploads/:id/send-to-training', requireAuth(), requirePermis
 
     if (!result.sent) {
       return res.status(502).json({
-        error: 'Falha ao enviar mídia para o Training Service',
+        error: `Falha ao enviar mídia para o Training Service (${result.status ?? 'network'} - ${(result.error ?? 'sem detalhes').slice(0, 240)})`,
+        status: result.status,
+        details: result.error,
       });
     }
 

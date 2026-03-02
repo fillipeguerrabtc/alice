@@ -63,28 +63,104 @@ function readKeywords(value: unknown): string[] {
   return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
 }
 
+function inferDomainByHeuristicText(text: string): { domain: string; confidence: number; detail: Record<string, unknown> } {
+  const tradingTerms = [
+    'trading',
+    'trade',
+    'market',
+    'mercado',
+    'futures',
+    'spot',
+    'btc',
+    'eth',
+    'alavancagem',
+    'leverage',
+    'stop loss',
+    'take profit',
+    'candles',
+    'order book',
+    'kucoin',
+    'binance',
+    'derivativos',
+  ];
+  const matchedTerms = tradingTerms.filter((term) => text.includes(term));
+  if (matchedTerms.length > 0) {
+    return {
+      domain: 'trading-geral',
+      confidence: Math.min(0.62, 0.45 + matchedTerms.length * 0.03),
+      detail: {
+        reason: 'heuristic_trading_fallback',
+        matchedTerms: matchedTerms.slice(0, 10),
+      },
+    };
+  }
+
+  return {
+    domain: 'geral',
+    confidence: 0.4,
+    detail: {
+      reason: 'heuristic_general_fallback',
+    },
+  };
+}
+
 async function inferDomainFromProfiles(input: ScopeResolverInput, rawText: string): Promise<{ domain: string | null; confidence: number; detail: Record<string, unknown> }> {
   const text = normalizeText(rawText);
   if (!text) return { domain: null, confidence: 0, detail: { reason: 'empty_text' } };
 
   const db = getDatabase();
-  const profiles = await db.query.trainingDatasetProfiles.findMany({
-    where: and(
-      eq(schema.trainingDatasetProfiles.tenantId, input.tenantId),
-      eq(schema.trainingDatasetProfiles.isActive, true)
-    ),
-    columns: {
-      id: true,
-      domain: true,
-      namespaceId: true,
-      agentId: true,
-      keywords: true,
-      exclusions: true,
-    },
-  });
+  let profiles: Array<{
+    id: string;
+    domain: string;
+    namespaceId: string | null;
+    agentId: string | null;
+    keywords: unknown;
+    exclusions: unknown;
+  }> = [];
+  try {
+    profiles = await db.query.trainingDatasetProfiles.findMany({
+      where: and(
+        eq(schema.trainingDatasetProfiles.tenantId, input.tenantId),
+        eq(schema.trainingDatasetProfiles.isActive, true)
+      ),
+      columns: {
+        id: true,
+        domain: true,
+        namespaceId: true,
+        agentId: true,
+        keywords: true,
+        exclusions: true,
+      },
+    });
+  } catch (error) {
+    logger.warn(
+      {
+        tenantId: input.tenantId,
+        error: error instanceof Error ? error.message : String(error),
+      },
+      'Falha ao consultar trainingDatasetProfiles para inferência de domínio'
+    );
+    const heuristic = inferDomainByHeuristicText(text);
+    return {
+      domain: heuristic.domain,
+      confidence: heuristic.confidence,
+      detail: {
+        reason: 'profiles_lookup_failed',
+        ...heuristic.detail,
+      },
+    };
+  }
 
   if (profiles.length === 0) {
-    return { domain: null, confidence: 0, detail: { reason: 'no_active_profiles' } };
+    const heuristic = inferDomainByHeuristicText(text);
+    return {
+      domain: heuristic.domain,
+      confidence: heuristic.confidence,
+      detail: {
+        reason: 'no_active_profiles',
+        ...heuristic.detail,
+      },
+    };
   }
 
   const ranked = profiles.map((profile) => {
@@ -112,11 +188,13 @@ async function inferDomainFromProfiles(input: ScopeResolverInput, rawText: strin
   ranked.sort((a, b) => b.rawScore - a.rawScore);
   const winner = ranked[0];
   if (!winner || winner.rawScore <= 0) {
+    const heuristic = inferDomainByHeuristicText(text);
     return {
-      domain: null,
-      confidence: 0,
+      domain: heuristic.domain,
+      confidence: heuristic.confidence,
       detail: {
         reason: 'no_keyword_match',
+        ...heuristic.detail,
       },
     };
   }
@@ -410,7 +488,11 @@ export async function resolveScope(input: ScopeResolverInput): Promise<ScopeReso
   if (!namespaceId && (domain || (input.messagesText ?? '').trim().length > 0)) {
     const normalizedDomain = (domain ?? 'conhecimento').replace(/[^a-z0-9_-]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase();
     const name = normalizedDomain.length > 0 ? normalizedDomain : 'conhecimento';
-    const theme = domain ? `Domínio sugerido: ${domain}` : 'Domínio não identificado';
+    const theme = domain
+      ? (domain.toLowerCase().includes('trading')
+          ? `Domínio sugerido: Trading (${domain})`
+          : `Domínio sugerido: ${domain}`)
+      : 'Domínio não identificado';
     suggestedNewNamespace = { name, theme };
   }
 

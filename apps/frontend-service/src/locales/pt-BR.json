@@ -1802,6 +1802,24 @@
       "confirm": "Confirmar",
       "saving": "Salvando..."
     },
+    "batchSelection": {
+      "selectAllFiltered": "Selecionar pendentes filtrados",
+      "selected": "{{count}} dataset(s) selecionado(s)",
+      "filteredPending": "{{count}} pendente(s) no filtro atual",
+      "approveSelected": "Aprovar selecionados",
+      "rejectSelected": "Rejeitar selecionados",
+      "approveTitle": "Aprovar datasets selecionados",
+      "rejectTitle": "Rejeitar datasets selecionados",
+      "dialogDescApprove": "Confirme a aprovação em lote dos datasets selecionados.",
+      "dialogDescReject": "Confirme a rejeição em lote dos datasets selecionados.",
+      "notes": "Motivo (opcional)",
+      "notesPlaceholder": "Descreva o motivo da ação em lote",
+      "confirm": "Confirmar lote",
+      "saving": "Aplicando...",
+      "emptySelection": "Selecione ao menos um dataset pendente.",
+      "successTitle": "Revisão em lote concluída",
+      "successDesc": "Atualizados: {{updated}} | Quarentena: {{skippedByQuarantine}} | Sem namespace: {{skippedByMissingNamespace}} | Outro tenant: {{skippedByTenantMismatch}}"
+    },
     "optionsHelp": {
       "title": "Diferença entre as opções de treinamento",
       "onDemand": "Treino on-demand: executa imediatamente um treinamento incremental ou completo usando dados do chat (Dados tab). Usa o mesmo modelo base do LLM (Qwen2.5 7B).",

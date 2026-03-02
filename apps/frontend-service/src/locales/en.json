@@ -1751,6 +1751,24 @@
       "confirm": "Confirm",
       "saving": "Saving..."
     },
+    "batchSelection": {
+      "selectAllFiltered": "Select filtered pending",
+      "selected": "{{count}} dataset(s) selected",
+      "filteredPending": "{{count}} pending in current filter",
+      "approveSelected": "Approve selected",
+      "rejectSelected": "Reject selected",
+      "approveTitle": "Approve selected datasets",
+      "rejectTitle": "Reject selected datasets",
+      "dialogDescApprove": "Confirm batch approval for selected datasets.",
+      "dialogDescReject": "Confirm batch rejection for selected datasets.",
+      "notes": "Reason (optional)",
+      "notesPlaceholder": "Describe the batch action reason",
+      "confirm": "Confirm batch",
+      "saving": "Applying...",
+      "emptySelection": "Select at least one pending dataset.",
+      "successTitle": "Batch review completed",
+      "successDesc": "Updated: {{updated}} | Quarantine: {{skippedByQuarantine}} | Missing namespace: {{skippedByMissingNamespace}} | Other tenant: {{skippedByTenantMismatch}}"
+    },
     "optionsHelp": {
       "title": "Difference between training options",
       "onDemand": "On-demand training: runs immediately an incremental or complete training using chat data (Data tab). Uses the same base LLM model (Qwen2.5 7B).",

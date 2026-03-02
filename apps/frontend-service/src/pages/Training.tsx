@@ -22,7 +22,7 @@
  * Data: 16 de Janeiro de 2026
  */
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
@@ -86,6 +86,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { apiRequest } from '@/lib/queryClient';
 import { cn, formatDate, formatDateTime } from '@/lib/utils';
@@ -270,13 +271,29 @@ function getJobStatusBadge(status: FineTuningJob['status'], t: (key: string) => 
   }
 }
 
-function TrainingDataCard({ data, namespaceName, onApprove, onReject, onResolveScope, isPending, t, locale, timeZone }: {
+function TrainingDataCard({
+  data,
+  namespaceName,
+  onApprove,
+  onReject,
+  onResolveScope,
+  isPending,
+  isSelected,
+  onSelectionChange,
+  selectionDisabled,
+  t,
+  locale,
+  timeZone,
+}: {
   data: TrainingData; 
   namespaceName?: string | null;
   onApprove: () => void;
   onReject: () => void;
   onResolveScope: () => void;
   isPending: boolean;
+  isSelected?: boolean;
+  onSelectionChange?: (checked: boolean) => void;
+  selectionDisabled?: boolean;
   t: (key: string, options?: Record<string, unknown>) => string;
   locale: string;
   timeZone: string;
@@ -290,6 +307,14 @@ function TrainingDataCard({ data, namespaceName, onApprove, onReject, onResolveS
         <CardHeader className="pb-2">
           <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-start sm:justify-between">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
+              {data.status === 'pending' && onSelectionChange && (
+                <Checkbox
+                  checked={isSelected}
+                  onCheckedChange={(checked) => onSelectionChange(Boolean(checked))}
+                  disabled={selectionDisabled || isPending}
+                  aria-label={`Selecionar dataset ${data.id}`}
+                />
+              )}
               <MessageSquare className="h-4 w-4 text-primary" />
               <span className="max-w-full truncate text-sm font-medium">{data.source}</span>
               {data.sourceType && (
@@ -2346,6 +2371,10 @@ export default function Training() {
   const [showOnDemandRun, setShowOnDemandRun] = useState(false);
   const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
   const [reviewTarget, setReviewTarget] = useState<{ id: string; status: 'approved' | 'rejected'; entry: TrainingData } | null>(null);
+  const [selectedDataIds, setSelectedDataIds] = useState<Set<string>>(new Set());
+  const [batchReviewDialogOpen, setBatchReviewDialogOpen] = useState(false);
+  const [batchReviewAction, setBatchReviewAction] = useState<'approve' | 'reject'>('approve');
+  const [batchReviewNotes, setBatchReviewNotes] = useState('');
 
   const [resolveScopeDialogOpen, setResolveScopeDialogOpen] = useState(false);
   const [resolveScopeEntry, setResolveScopeEntry] = useState<TrainingData | null>(null);
@@ -2570,6 +2599,51 @@ export default function Training() {
     },
   });
 
+  const updateStatusBatch = useMutation({
+    mutationFn: async ({
+      ids,
+      action,
+      reviewNotes,
+    }: {
+      ids: string[];
+      action: 'approve' | 'reject';
+      reviewNotes?: string;
+    }) => {
+      const response = await apiRequest('POST', '/api/training/data/approve-batch', {
+        ids,
+        action,
+        reviewNotes,
+      });
+      return response.json() as Promise<{
+        success: boolean;
+        updated: number;
+        skippedByQuarantine: number;
+        skippedByMissingNamespace: number;
+        skippedByTenantMismatch: number;
+      }>;
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/training/data'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/datasets'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/datasets/stats'] });
+      setBatchReviewDialogOpen(false);
+      setBatchReviewNotes('');
+      setSelectedDataIds(new Set());
+      toast({
+        title: t('training.batchSelection.successTitle'),
+        description: t('training.batchSelection.successDesc', {
+          updated: result.updated,
+          skippedByQuarantine: result.skippedByQuarantine,
+          skippedByMissingNamespace: result.skippedByMissingNamespace,
+          skippedByTenantMismatch: result.skippedByTenantMismatch,
+        }),
+      });
+    },
+    onError: () => {
+      toast({ title: t('training.errors.updateStatus'), variant: 'destructive' });
+    },
+  });
+
   const createNamespaceMutation = useMutation({
     mutationFn: async (data: { nome: string; slug: string; descricao?: string }) => {
       const res = await apiRequest('POST', '/api/namespaces', data);
@@ -2682,6 +2756,85 @@ export default function Training() {
   });
 
   /** Filtros ativos na aba Data: quando true, cards devem refletir contagens filtradas (consistência UX). */
+  const allPendingIds = useMemo(
+    () => new Set(allData.filter((entry) => entry.status === 'pending').map((entry) => entry.id)),
+    [allData],
+  );
+
+  const filteredPendingIds = useMemo(
+    () => filteredData.filter((entry) => entry.status === 'pending').map((entry) => entry.id),
+    [filteredData],
+  );
+
+  const filteredSelectedPendingCount = filteredPendingIds.filter((id) => selectedDataIds.has(id)).length;
+  const totalSelectedPendingCount = Array.from(selectedDataIds).filter((id) => allPendingIds.has(id)).length;
+  const reviewMutationPending = updateStatus.isPending || updateStatusBatch.isPending;
+
+  useEffect(() => {
+    setSelectedDataIds((prev) => {
+      let changed = false;
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (allPendingIds.has(id)) {
+          next.add(id);
+        } else {
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [allPendingIds]);
+
+  const toggleSelectData = useCallback((id: string, checked: boolean) => {
+    setSelectedDataIds((prev) => {
+      const next = new Set(prev);
+      if (checked) {
+        next.add(id);
+      } else {
+        next.delete(id);
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleSelectAllFilteredPending = useCallback((checked: boolean) => {
+    setSelectedDataIds((prev) => {
+      const next = new Set(prev);
+      for (const id of filteredPendingIds) {
+        if (checked) {
+          next.add(id);
+        } else {
+          next.delete(id);
+        }
+      }
+      return next;
+    });
+  }, [filteredPendingIds]);
+
+  const openBatchReviewDialog = useCallback((action: 'approve' | 'reject') => {
+    const selectedIds = Array.from(selectedDataIds).filter((id) => allPendingIds.has(id));
+    if (selectedIds.length === 0) {
+      toast({ title: t('training.batchSelection.emptySelection'), variant: 'destructive' });
+      return;
+    }
+    setBatchReviewAction(action);
+    setBatchReviewNotes('');
+    setBatchReviewDialogOpen(true);
+  }, [allPendingIds, selectedDataIds, t]);
+
+  const confirmBatchReview = useCallback(() => {
+    const selectedIds = Array.from(selectedDataIds).filter((id) => allPendingIds.has(id));
+    if (selectedIds.length === 0) {
+      toast({ title: t('training.batchSelection.emptySelection'), variant: 'destructive' });
+      return;
+    }
+    updateStatusBatch.mutate({
+      ids: selectedIds,
+      action: batchReviewAction,
+      reviewNotes: batchReviewNotes.trim().length > 0 ? batchReviewNotes.trim() : undefined,
+    });
+  }, [allPendingIds, batchReviewAction, batchReviewNotes, selectedDataIds, t, updateStatusBatch]);
+
   const filtersActive =
     statusFilter !== 'all' ||
     namespaceFilter !== 'all' ||
@@ -3070,6 +3223,57 @@ export default function Training() {
             </span>
           </div>
 
+          {(filteredPendingIds.length > 0 || totalSelectedPendingCount > 0) && (
+            <div className="px-4 pt-4">
+              <div className="flex flex-wrap items-center gap-3 rounded-md border p-3">
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    checked={
+                      filteredPendingIds.length === 0
+                        ? false
+                        : filteredSelectedPendingCount === 0
+                          ? false
+                          : filteredSelectedPendingCount === filteredPendingIds.length
+                            ? true
+                            : 'indeterminate'
+                    }
+                    onCheckedChange={(checked) => toggleSelectAllFilteredPending(Boolean(checked))}
+                    disabled={filteredPendingIds.length === 0 || reviewMutationPending}
+                    aria-label={t('training.batchSelection.selectAllFiltered')}
+                  />
+                  <span className="text-sm font-medium">
+                    {t('training.batchSelection.selected', { count: totalSelectedPendingCount })}
+                  </span>
+                </div>
+                <span className="text-xs text-muted-foreground">
+                  {t('training.batchSelection.filteredPending', { count: filteredPendingIds.length })}
+                </span>
+                <div className="ml-auto flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-green-600"
+                    onClick={() => openBatchReviewDialog('approve')}
+                    disabled={totalSelectedPendingCount === 0 || reviewMutationPending}
+                  >
+                    <ThumbsUp className="mr-1 h-3 w-3" />
+                    {t('training.batchSelection.approveSelected')}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-red-600"
+                    onClick={() => openBatchReviewDialog('reject')}
+                    disabled={totalSelectedPendingCount === 0 || reviewMutationPending}
+                  >
+                    <ThumbsDown className="mr-1 h-3 w-3" />
+                    {t('training.batchSelection.rejectSelected')}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="px-4 pt-4">
             <Alert>
               <Info className="h-4 w-4" />
@@ -3109,7 +3313,14 @@ export default function Training() {
                     key={data.id}
                     data={data}
                     namespaceName={data.namespaceId ? namespacesById.get(data.namespaceId) : null}
-                    isPending={updateStatus.isPending}
+                    isPending={reviewMutationPending}
+                    isSelected={selectedDataIds.has(data.id)}
+                    onSelectionChange={
+                      data.status === 'pending'
+                        ? (checked) => toggleSelectData(data.id, checked)
+                        : undefined
+                    }
+                    selectionDisabled={reviewMutationPending}
                     onApprove={() => openReviewDialog(data, 'approved')}
                     onReject={() => openReviewDialog(data, 'rejected')}
                     onResolveScope={() => handleResolveScope(data)}
@@ -3477,6 +3688,58 @@ export default function Training() {
                   <Play className="h-4 w-4 mr-2" />
                   {t('training.autoLearning.startOnDemand')}
                 </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={batchReviewDialogOpen}
+        onOpenChange={(open) => {
+          setBatchReviewDialogOpen(open);
+          if (!open) {
+            setBatchReviewNotes('');
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {batchReviewAction === 'approve'
+                ? t('training.batchSelection.approveTitle')
+                : t('training.batchSelection.rejectTitle')}
+            </DialogTitle>
+            <DialogDescription>
+              {batchReviewAction === 'approve'
+                ? t('training.batchSelection.dialogDescApprove')
+                : t('training.batchSelection.dialogDescReject')}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2 py-2">
+            <Label htmlFor="batch-review-notes">{t('training.batchSelection.notes')}</Label>
+            <Input
+              id="batch-review-notes"
+              value={batchReviewNotes}
+              onChange={(event) => setBatchReviewNotes(event.target.value)}
+              placeholder={t('training.batchSelection.notesPlaceholder')}
+            />
+            <p className="text-xs text-muted-foreground">
+              {t('training.batchSelection.selected', { count: totalSelectedPendingCount })}
+            </p>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setBatchReviewDialogOpen(false)}>
+              {t('training.createJob.cancel')}
+            </Button>
+            <Button onClick={confirmBatchReview} disabled={totalSelectedPendingCount === 0 || updateStatusBatch.isPending}>
+              {updateStatusBatch.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  {t('training.batchSelection.saving')}
+                </>
+              ) : (
+                <>{t('training.batchSelection.confirm')}</>
               )}
             </Button>
           </DialogFooter>
