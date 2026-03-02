@@ -130,6 +130,10 @@ export const UserPreferenciasSchema = z.object({
     push: z.boolean().optional(),
     sound: z.boolean().optional(),
   }).optional(),
+  training: z.object({
+    allowTrainingUsage: z.boolean().optional(),
+    allowAutoCollect: z.boolean().optional(),
+  }).optional(),
   dashboardLayout: z.enum(["compact", "comfortable", "spacious"]).optional(),
   sidebarCollapsed: z.boolean().optional(),
   defaultNamespace: z.string().uuid().optional(),
@@ -152,6 +156,105 @@ export const NamespaceConfiguracoesSchema = z.object({
   imageGenEnabled: z.boolean().optional(),
 }).passthrough();
 export type NamespaceConfiguracoes = z.infer<typeof NamespaceConfiguracoesSchema>;
+
+// --- Namespace Profile Config (Training Auto Collect Governance) ---
+export const NamespaceProfileAutoCollectSchema = z.object({
+  enabled: z.boolean(),
+  requiresUserConsent: z.boolean(),
+  sampling: z.object({
+    enabled: z.boolean(),
+    rate: z.number().min(0).max(1),
+    deterministicKey: z.enum(['semhash', 'conversationId', 'messagePairHash']),
+  }).passthrough(),
+  caps: z.object({
+    dailyTenantCap: z.number().int().positive(),
+    dailyNamespaceCap: z.number().int().positive(),
+    dailyUserCap: z.number().int().positive(),
+  }).passthrough(),
+  minChars: z.object({
+    user: z.number().int().nonnegative(),
+    assistant: z.number().int().nonnegative(),
+  }).passthrough(),
+  alwaysNeedsHumanReview: z.boolean(),
+  rejectIfDuplicate: z.boolean().optional(),
+}).passthrough();
+
+export const NamespaceProfilePrivacyRuleSchema = z.object({
+  id: z.string().min(1).max(120),
+  action: z.enum(['redact', 'quarantine', 'reject']),
+  pattern: z.string().min(1).max(2000),
+  flags: z.string().max(16).optional(),
+  replacement: z.string().max(500).optional(),
+  label: z.string().max(120).optional(),
+}).passthrough();
+
+export const NamespaceProfilePrivacySchema = z.object({
+  enabled: z.boolean(),
+  rules: z.array(NamespaceProfilePrivacyRuleSchema),
+  logRedactionSummary: z.boolean(),
+}).passthrough();
+
+export const NamespaceProfileQualitySchema = z.object({
+  enabled: z.boolean(),
+  minScore: z.number().min(0).max(1),
+  autoRejectBelowMin: z.boolean(),
+  ruleBased: z.object({
+    enabled: z.boolean(),
+    weights: z.record(z.string(), z.number()),
+    requiredPatterns: z.array(z.string()).optional(),
+    bannedPatterns: z.array(z.string()).optional(),
+  }).passthrough(),
+  llmJudge: z.object({
+    enabled: z.boolean(),
+    model: z.string().min(1).max(255),
+    temperature: z.number().min(0).max(2),
+    maxTokens: z.number().int().positive(),
+    promptSystemConfigKey: z.string().min(1).max(128),
+    schemaVersion: z.string().min(1).max(64),
+  }).passthrough(),
+}).passthrough();
+
+export const NamespaceProfileDedupeSchema = z.object({
+  scope: z.enum(['tenant', 'namespace']),
+  similarityThreshold: z.number().min(0).max(1),
+}).passthrough();
+
+export const NamespaceProfileHistorySchema = z.object({
+  relevanceThreshold: z.number().min(0).max(1),
+  alwaysIncludeCount: z.number().int().nonnegative(),
+  minMessages: z.number().int().nonnegative(),
+  fallbackEnabled: z.boolean(),
+  searchLimit: z.number().int().positive(),
+  searchTokenBudget: z.number().int().positive(),
+  searchConversationsLimit: z.number().int().positive(),
+}).passthrough();
+
+export const NamespaceProfileSlaSchema = z.object({
+  syncSeconds: z.number().int().positive(),
+  streamSeconds: z.number().int().positive(),
+  websocketSeconds: z.number().int().positive(),
+  websocketMediaSeconds: z.number().int().positive(),
+  externalSeconds: z.number().int().positive(),
+  titleSeconds: z.number().int().positive(),
+}).passthrough();
+
+export const NamespaceProfileRoutingSchema = z.object({
+  threshold: z.number().min(0).max(1),
+  gpuPriority: z.enum(['high', 'medium', 'low']),
+  promptTokenBudget: z.number().int().positive(),
+}).passthrough();
+
+export const NamespaceProfileConfigSchema = z.object({
+  autoCollect: NamespaceProfileAutoCollectSchema,
+  privacy: NamespaceProfilePrivacySchema,
+  quality: NamespaceProfileQualitySchema,
+  dedupe: NamespaceProfileDedupeSchema,
+  history: NamespaceProfileHistorySchema,
+  sla: NamespaceProfileSlaSchema,
+  routing: NamespaceProfileRoutingSchema,
+}).passthrough();
+
+export type NamespaceProfileConfig = z.infer<typeof NamespaceProfileConfigSchema>;
 
 // --- Métricas de Agente ---
 export const AgentMetricasSchema = z.object({
@@ -2059,6 +2162,31 @@ export const trainingData = pgTable(
     idxTrainingSource: index("idx_training_source").on(table.source),
     idxTrainingSourceType: index("idx_training_source_type").on(table.sourceType),
     idxTrainingSourceId: index("idx_training_source_id").on(table.sourceId),
+  })
+);
+
+export const namespaceProfiles = pgTable(
+  "namespace_profiles",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").notNull().references(() => tenants.id),
+    namespaceId: uuid("namespace_id").notNull().references(() => namespaces.id, { onDelete: "cascade" }),
+    version: integer("version").notNull().default(1),
+    isActive: boolean("is_active").notNull().default(true),
+    autoCollectEnabled: boolean("auto_collect_enabled").notNull().default(true),
+    config: jsonb("config").$type<NamespaceProfileConfig>().notNull().default({} as NamespaceProfileConfig),
+    criadoEm: timestamp("criado_em").defaultNow(),
+    atualizadoEm: timestamp("atualizado_em").defaultNow(),
+  },
+  (table) => ({
+    uniqueNamespaceProfilesTenantNamespace: uniqueIndex("uniq_namespace_profiles_tenant_namespace").on(
+      table.tenantId,
+      table.namespaceId
+    ),
+    idxNamespaceProfilesTenant: index("idx_namespace_profiles_tenant").on(table.tenantId),
+    idxNamespaceProfilesNamespace: index("idx_namespace_profiles_namespace").on(table.namespaceId),
+    idxNamespaceProfilesAutoCollect: index("idx_namespace_profiles_auto_collect").on(table.autoCollectEnabled),
+    idxNamespaceProfilesActive: index("idx_namespace_profiles_active").on(table.isActive),
   })
 );
 
@@ -5037,6 +5165,7 @@ export const tenantsRelations = relations(tenants, ({ many }) => ({
   users: many(users),
   userGroups: many(userGroups),
   namespaces: many(namespaces),
+  namespaceProfiles: many(namespaceProfiles),
   agents: many(agents),
   conversations: many(conversations),
   integrations: many(integrations),
@@ -5150,10 +5279,25 @@ export const namespacesRelations = relations(namespaces, ({ one, many }) => ({
     fields: [namespaces.tenantId],
     references: [tenants.id],
   }),
+  profile: one(namespaceProfiles, {
+    fields: [namespaces.id],
+    references: [namespaceProfiles.namespaceId],
+  }),
   agents: many(agents),
   conversations: many(conversations),
   documents: many(documents),
   learningTasks: many(learningTasks),
+}));
+
+export const namespaceProfilesRelations = relations(namespaceProfiles, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [namespaceProfiles.tenantId],
+    references: [tenants.id],
+  }),
+  namespace: one(namespaces, {
+    fields: [namespaceProfiles.namespaceId],
+    references: [namespaces.id],
+  }),
 }));
 
 export const agentsRelations = relations(agents, ({ one, many }) => ({
@@ -5574,6 +5718,8 @@ export type UsageMetric = typeof usageMetrics.$inferSelect;
 
 export type TrainingData = typeof trainingData.$inferSelect;
 export type InsertTrainingData = typeof trainingData.$inferInsert;
+export type NamespaceProfile = typeof namespaceProfiles.$inferSelect;
+export type InsertNamespaceProfile = typeof namespaceProfiles.$inferInsert;
 export type TrainingDatasetProfile = typeof trainingDatasetProfiles.$inferSelect;
 export type InsertTrainingDatasetProfile = typeof trainingDatasetProfiles.$inferInsert;
 export type TrainingScopeOverride = typeof trainingScopeOverrides.$inferSelect;
@@ -5663,6 +5809,12 @@ export const insertTrainingDataSchema: z.ZodType<unknown> = createInsertSchema(t
   criadoEm: true,
   processedAt: true,
   processadoEm: true,
+});
+
+export const insertNamespaceProfileSchema: z.ZodType<unknown> = createInsertSchema(namespaceProfiles).omit({
+  id: true,
+  criadoEm: true,
+  atualizadoEm: true,
 });
 
 export const insertTrainingDatasetProfileSchema: z.ZodType<unknown> = createInsertSchema(trainingDatasetProfiles).omit({

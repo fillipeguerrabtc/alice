@@ -65,13 +65,16 @@ import {
   TRADING_V2_STREAMS,
   buildTradingV2IdempotencyKey,
   buildTrainingIdempotencyKey,
+  buildNamespaceProfileReconcileIdempotencyKey,
   tradingUniverseEnqueueSchema,
   tradingBacktestEnqueueSchema,
   tradingCalibrationEnqueueSchema,
   tradingRebalanceEnqueueSchema,
   tradingModelRiskEnqueueSchema,
   TRAINING_EMBEDDING_DEDUPE_QUEUE,
+  TRAINING_NAMESPACE_PROFILE_RECONCILE_QUEUE,
   trainingEmbeddingDedupeQueuePayloadSchema,
+  trainingNamespaceProfileReconcileQueuePayloadSchema,
   Gauge as PromGauge,
   Counter as PromCounter,
   Histogram as PromHistogram,
@@ -124,6 +127,7 @@ import { runPortfolioRebalanceWorker } from './trading-v2/jobs/portfolio-rebalan
 import { runModelRiskWorker } from './trading-v2/jobs/model-risk-worker.js';
 import { TRAINING_DATA_SIMILARITY_THRESHOLD, TRAINING_EMBEDDING_DEDUPE_WORKER_POLL_INTERVAL_MS } from './training-data-constants.js';
 import { createTrainingEmbeddingDedupeWorker } from './workers/training-embedding-dedupe-worker.js';
+import { createNamespaceProfileReconcileWorker } from './workers/namespace-profile-reconcile-worker.js';
 // Fine-tuning é executado localmente via GPU Manager Service (Regra 6 - sem stubs/migração)
 
 // Logger centralizado: JSON em produção, pino-pretty em desenvolvimento
@@ -370,6 +374,28 @@ const trainingPipelineMetrics = {
     buckets: [0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30],
     registers: [metrics.registry],
   }),
+  namespaceProfileReconcileJobsTotal: new PromCounter({
+    name: 'alice_training_namespace_profile_reconcile_jobs_total',
+    help: 'Total de jobs de reconciliação de namespace_profiles processados pela fila',
+    labelNames: ['result'] as const,
+    registers: [metrics.registry],
+  }),
+  namespaceProfileReconcileCreatedTotal: new PromCounter({
+    name: 'alice_training_namespace_profile_reconcile_created_total',
+    help: 'Total de namespace_profiles criados automaticamente pelo reconcile',
+    registers: [metrics.registry],
+  }),
+  namespaceProfileReconcileMissingTotal: new PromCounter({
+    name: 'alice_training_namespace_profile_reconcile_missing_total',
+    help: 'Total de namespaces detectados sem namespace_profile no reconcile',
+    registers: [metrics.registry],
+  }),
+  namespaceProfileReconcileDurationSeconds: new PromHistogram({
+    name: 'alice_training_namespace_profile_reconcile_duration_seconds',
+    help: 'Duração de processamento dos jobs de reconciliação de namespace_profiles',
+    buckets: [0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30],
+    registers: [metrics.registry],
+  }),
 };
 
 const tradingV2Metrics = {
@@ -489,9 +515,15 @@ const TRAINING_METRICS_INTERVAL_MS = parseEnvInt(
   60000,
   'TRAINING_METRICS_INTERVAL_MS'
 );
+const NAMESPACE_PROFILE_RECONCILE_INTERVAL_MS = parseEnvInt(
+  process.env.NAMESPACE_PROFILE_RECONCILE_INTERVAL_MS,
+  600_000,
+  'NAMESPACE_PROFILE_RECONCILE_INTERVAL_MS'
+);
 const TRADING_WORKER_POLL_INTERVAL_MS = 250;
 
 let trainingMetricsInterval: NodeJS.Timeout | null = null;
+let namespaceProfileReconcileInterval: NodeJS.Timeout | null = null;
 const tradingWorkerStoppers: Array<() => Promise<void>> = [];
 
 function sleep(ms: number): Promise<void> {
@@ -561,6 +593,61 @@ async function enqueueTrainingEmbeddingDedupeJob(payload: z.infer<typeof trainin
     }
   );
   return queue.enqueue(redis, payload, payload.idempotencyKey);
+}
+
+async function enqueueNamespaceProfileReconcileJob(payload: z.infer<typeof trainingNamespaceProfileReconcileQueuePayloadSchema>): Promise<boolean> {
+  const redis = getRedisClient();
+  if (!redis) {
+    throw new Error('Redis não disponível para fila de reconciliação de namespace_profiles');
+  }
+
+  const queue = new RedisStreamQueue<z.infer<typeof trainingNamespaceProfileReconcileQueuePayloadSchema>>(
+    TRAINING_NAMESPACE_PROFILE_RECONCILE_QUEUE,
+    {
+      group: 'training-service',
+      consumer: `training-${process.pid}`,
+      maxRetries: 3,
+      autoClaimCount: 10,
+      streamMaxLen: 5_000,
+    }
+  );
+  return queue.enqueue(redis, payload, payload.idempotencyKey);
+}
+
+function startNamespaceProfileReconcileScheduler(): void {
+  const scheduleTick = async () => {
+    const runId = crypto.randomUUID();
+    const payload = trainingNamespaceProfileReconcileQueuePayloadSchema.parse({
+      runId,
+      idempotencyKey: buildNamespaceProfileReconcileIdempotencyKey({ runId }),
+      createdAt: new Date().toISOString(),
+    });
+    const enqueued = await enqueueNamespaceProfileReconcileJob(payload);
+    logger.info(
+      {
+        queue: TRAINING_NAMESPACE_PROFILE_RECONCILE_QUEUE,
+        runId,
+        enqueued,
+      },
+      'Tick de reconciliação de namespace_profiles processado'
+    );
+  };
+
+  void scheduleTick().catch((error: unknown) => {
+    logger.warn(
+      { error: error instanceof Error ? error.message : String(error) },
+      'Falha no tick inicial de reconciliação de namespace_profiles'
+    );
+  });
+
+  namespaceProfileReconcileInterval = setInterval(() => {
+    void scheduleTick().catch((error: unknown) => {
+      logger.warn(
+        { error: error instanceof Error ? error.message : String(error) },
+        'Falha no tick agendado de reconciliação de namespace_profiles'
+      );
+    });
+  }, NAMESPACE_PROFILE_RECONCILE_INTERVAL_MS);
 }
 
 function createTradingWorker<T extends { idempotencyKey: string }>(
@@ -4660,6 +4747,26 @@ let autoLearningLoopActive = false;
     await initializeSessionAuthCache();
     logger.info('Auth cache (session-auth) inicializado');
     tradingWorkerStoppers.push(
+      createNamespaceProfileReconcileWorker({
+        db,
+        logger,
+        metrics: {
+          jobsTotal: trainingPipelineMetrics.namespaceProfileReconcileJobsTotal,
+          reconcileCreatedTotal: trainingPipelineMetrics.namespaceProfileReconcileCreatedTotal,
+          reconcileMissingTotal: trainingPipelineMetrics.namespaceProfileReconcileMissingTotal,
+          durationSeconds: trainingPipelineMetrics.namespaceProfileReconcileDurationSeconds,
+        },
+        pollIntervalMs: Math.min(NAMESPACE_PROFILE_RECONCILE_INTERVAL_MS, 30_000),
+      })
+    );
+    logger.info(
+      {
+        queue: TRAINING_NAMESPACE_PROFILE_RECONCILE_QUEUE,
+        intervalMs: NAMESPACE_PROFILE_RECONCILE_INTERVAL_MS,
+      },
+      'Worker de reconciliação de namespace_profiles inicializado'
+    );
+    tradingWorkerStoppers.push(
       createTrainingEmbeddingDedupeWorker({
         db,
         logger,
@@ -4753,6 +4860,11 @@ let autoLearningLoopActive = false;
 
       startTrainingMetricsScheduler();
       logger.info({ intervalMs: TRAINING_METRICS_INTERVAL_MS }, 'Scheduler de métricas de training iniciado');
+      startNamespaceProfileReconcileScheduler();
+      logger.info(
+        { intervalMs: NAMESPACE_PROFILE_RECONCILE_INTERVAL_MS },
+        'Scheduler de reconciliação de namespace_profiles iniciado'
+      );
 
       autoLearningLoopActive = true;
       void (async () => {
@@ -4845,6 +4957,17 @@ let autoLearningLoopActive = false;
         if (trainingMetricsInterval) {
           clearInterval(trainingMetricsInterval);
           trainingMetricsInterval = null;
+        }
+      },
+      { priority: ShutdownPriority.BACKGROUND_JOBS }
+    );
+
+    registerShutdownCallback(
+      'training-namespace-profile-reconcile-scheduler',
+      async () => {
+        if (namespaceProfileReconcileInterval) {
+          clearInterval(namespaceProfileReconcileInterval);
+          namespaceProfileReconcileInterval = null;
         }
       },
       { priority: ShutdownPriority.BACKGROUND_JOBS }

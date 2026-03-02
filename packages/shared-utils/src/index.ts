@@ -34,6 +34,7 @@ export * from './route-context-config.js';
 export * from './qdrant-client.js';
 export * from './gpu-client.js';
 export * from './training-dedup.js';
+export * from './training-auto-collect.js';
 export * from './session-auth.js';
 export * from './llm-models.js';
 export * from './llm-routing.js';
@@ -41,6 +42,7 @@ export * from './llm/llm-gateway-client.js';
 export { TRADING_CHANNEL_PREFIX, TRADING_CHANNELS } from './trading-channels.js';
 export * from './trading-v2-queues.js';
 export * from './training-queues.js';
+export * from './privacy.js';
 export * from './trading-microstructure.js';
 export * from './trading/llm-signal-schema.js';
 
