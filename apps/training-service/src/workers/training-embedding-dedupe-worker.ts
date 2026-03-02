@@ -43,6 +43,7 @@ interface CreateTrainingEmbeddingDedupeWorkerParams {
 const TRAINING_DATA_ACTIVE_STATUSES = ['pending', 'approved', 'used'] as const;
 const PROCESSING_LOCK_TTL_SECONDS = 600;
 const QUEUE_STREAM_MAX_LEN = 20_000;
+type EmbeddingColumnType = 'halfvec' | 'vector';
 
 const trainingDataMessageSchema = z.object({
   role: z.enum(['user', 'assistant', 'system']),
@@ -100,6 +101,44 @@ async function queryNearestNeighborByCosine(
     `);
     return vectorResult.rows[0] as { id?: unknown; similarity?: unknown } | undefined;
   }
+}
+
+let cachedTrainingEmbeddingColumnType: EmbeddingColumnType | null = null;
+
+async function resolveTrainingEmbeddingColumnType(db: Database): Promise<EmbeddingColumnType> {
+  if (cachedTrainingEmbeddingColumnType) {
+    return cachedTrainingEmbeddingColumnType;
+  }
+
+  const result = await db.execute(sql`
+    SELECT format_type(a.atttypid, a.atttypmod) AS embedding_type
+    FROM pg_attribute a
+    JOIN pg_class c ON c.oid = a.attrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND c.relname = 'training_data'
+      AND a.attname = 'embedding'
+      AND a.attnum > 0
+      AND NOT a.attisdropped
+    LIMIT 1
+  `);
+
+  const embeddingTypeRaw = result.rows[0]?.embedding_type;
+  if (typeof embeddingTypeRaw !== 'string') {
+    throw new Error('Coluna training_data.embedding não encontrada no PostgreSQL');
+  }
+
+  if (embeddingTypeRaw.startsWith('halfvec')) {
+    cachedTrainingEmbeddingColumnType = 'halfvec';
+    return cachedTrainingEmbeddingColumnType;
+  }
+
+  if (embeddingTypeRaw.startsWith('vector')) {
+    cachedTrainingEmbeddingColumnType = 'vector';
+    return cachedTrainingEmbeddingColumnType;
+  }
+
+  throw new Error(`Tipo não suportado para training_data.embedding: ${embeddingTypeRaw}`);
 }
 
 export function createTrainingEmbeddingDedupeWorker(
@@ -237,22 +276,24 @@ export function createTrainingEmbeddingDedupeWorker(
           }
 
           const processedAt = new Date();
-          await params.db
-            .update(schema.trainingData)
-            .set({
-              embedding,
-              isDuplicate,
-              duplicateOfId,
-              similarityScore,
-              processedAt,
-              processadoEm: processedAt,
-            })
-            .where(
-              and(
-                eq(schema.trainingData.id, payload.trainingDataId),
-                eq(schema.trainingData.tenantId, payload.tenantId)
-              )
-            );
+          const embeddingColumnType = await resolveTrainingEmbeddingColumnType(params.db);
+          const embeddingVectorSql = toSql(embedding);
+          const embeddingValueSql = embeddingColumnType === 'halfvec'
+            ? sql`${embeddingVectorSql}::halfvec`
+            : sql`${embeddingVectorSql}::vector`;
+
+          await params.db.execute(sql`
+            UPDATE training_data
+            SET
+              embedding = ${embeddingValueSql},
+              is_duplicate = ${isDuplicate},
+              duplicate_of_id = ${duplicateOfId},
+              similarity_score = ${similarityScore},
+              processed_at = ${processedAt},
+              processado_em = ${processedAt}
+            WHERE id = ${payload.trainingDataId}::uuid
+              AND tenant_id = ${payload.tenantId}::uuid
+          `);
 
           params.metrics.dedupeHitsTotal.inc({ method: dedupeMethod });
           params.metrics.jobsTotal.inc({ result: 'success' });

@@ -206,6 +206,11 @@ function resolveAuthorizedTenantId(
 }
 
 const PORT = parseEnvInt(process.env.PORT, 3004, 'PORT');
+const TRAINING_HTTP_SERVER_TIMEOUT_MS = parseEnvInt(
+  process.env.TRAINING_HTTP_SERVER_TIMEOUT_MS,
+  600000,
+  'TRAINING_HTTP_SERVER_TIMEOUT_MS'
+);
 const DATABASE_URL = process.env.DATABASE_URL;
 const RAG_SERVICE_URL = process.env.RAG_SERVICE_URL ?? 'http://alice-rag:3003';
 const INTEGRATIONS_SERVICE_URL = process.env.INTEGRATIONS_SERVICE_URL;
@@ -4783,9 +4788,19 @@ let autoLearningLoopActive = false;
     });
 
     // SEGURANÇA: Timeouts para prevenir conexões pendentes (Node.js 20 LTS Best Practices)
-    server.timeout = 30000; // 30s timeout para requisições
+    // Bulk import pode processar centenas de entradas e exceder 30s.
+    // Em produção, 30s causava socket close no upstream e 502 no Caddy (EOF).
+    server.timeout = TRAINING_HTTP_SERVER_TIMEOUT_MS;
     server.keepAliveTimeout = 65000; // 65s (maior que ALB timeout padrão de 60s)
     server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
+    logger.info(
+      {
+        serverTimeoutMs: TRAINING_HTTP_SERVER_TIMEOUT_MS,
+        keepAliveTimeoutMs: server.keepAliveTimeout,
+        headersTimeoutMs: server.headersTimeout,
+      },
+      'Timeouts HTTP do training-service configurados'
+    );
     
     // ============================================================================
     // GRACEFUL SHUTDOWN (Enterprise-Grade - Regra 16 CLAUDE.md)

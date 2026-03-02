@@ -410,6 +410,8 @@ services:
       QDRANT_API_KEY: ${QDRANT_API_KEY}
       REDIS_URL: redis://:${REDIS_PASSWORD}@alice-redis:6379
       MIN_ONDEMAND_DATASET_SIZE: ${MIN_ONDEMAND_DATASET_SIZE:-10}
+      # Bulk import pode levar >30s em lotes grandes; evita 502 por timeout upstream.
+      TRAINING_HTTP_SERVER_TIMEOUT_MS: ${TRAINING_HTTP_SERVER_TIMEOUT_MS:-600000}
     # NOTA: postgres, alice-qdrant, alice-redis estão no stack infra
     depends_on:
       gpu-manager:

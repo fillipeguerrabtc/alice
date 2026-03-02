@@ -82,6 +82,14 @@ const bytea = customType<{ data: Buffer; driverData: Buffer }>({
 // NOTA: Novos embeddings de texto devem ir para Qdrant (1024 dim)
 const vector = textVector;
 
+// Training data dedupe pipeline (async worker) usa embeddings de texto 1024 dim.
+// Mantido separado do alias legado para evitar alterar outros domínios sem migração explícita.
+const trainingVector1024 = customType<{ data: number[]; driverData: number[] }>({
+  dataType() {
+    return 'halfvec(1024)';
+  },
+});
+
 // BIOMETRIA: embeddings faciais (face_recognition) usam 128 dimensões
 // Deve mapear para vector(128) no PostgreSQL (pgvector)
 const biometricsVector128 = customType<{ data: number[]; driverData: number[] }>({
@@ -2027,7 +2035,7 @@ export const trainingData = pgTable(
     reviewedAt: timestamp("reviewed_at"),
     reviewNotes: text("review_notes"),
     semhash: varchar("semhash", { length: 64 }),
-    embedding: vector("embedding"),
+    embedding: trainingVector1024("embedding"),
     isDuplicate: boolean("is_duplicate").default(false),
     duplicateOfId: uuid("duplicate_of_id"),
     similarityScore: real("similarity_score"),

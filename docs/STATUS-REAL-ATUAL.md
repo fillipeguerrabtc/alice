@@ -1,14 +1,15 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 **Autor:** Fillipe Guerra  
-**Data:** 11 de Fevereiro de 2026  
+**Data:** 02 de Março de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 11.0 - Configurações do Sistema editáveis via UI
+**Versão:** 11.1 - Hardening do pipeline de embedding em Training
 
 ---
 
 - **Configurações do Sistema editáveis via UI:** Página Configurações do Sistema (menu lateral) permite alterar limites de treinamento em tempo real. Valores gravados no PostgreSQL (tabela `system_config`) têm precedência sobre variáveis de ambiente. Chaves: DOCUMENT_MAX_CHUNKS, TRAINING_DOC_MAX_SAMPLES, TRAINING_CONVERSATION_MAX_MESSAGES, CONVERSATION_SLICE_SIZE, MIN_ONDEMAND_DATASET_SIZE, maxSeqLen. Cache 60s invalidado no save; alterações aplicadas imediatamente nos serviços (RAG, Chat, Training). API GET/PATCH `/api/training/system-config` com RBAC (`config:system:read` / `config:system:write`). (11/02/2026)
 - **Hardening Chat/Trading (23/02/2026):** Autenticação interna HMAC unificada entre serviços, GPU trainer sob demanda via profile `gpu-training`, chat sem login não abre WebSocket e exibe aviso, métricas de erro SSE + auto-runs e latência do LLM Gateway observadas em Prometheus.
+- **Training Embedding/Dedupe (02/03/2026):** correção da causa raiz de falha no import JSONL com worker assíncrono: escrita de embedding em `training_data` agora usa literal vetorial SQL (`toSql`) com cast correto (`halfvec`/`vector`) e resolução dinâmica do tipo da coluna. Migração `0091_training_data_embedding_1024_halfvec.sql` alinha `training_data.embedding` para `halfvec(1024)` e força reprocessamento assíncrono de embeddings antigos/incompatíveis.
 
 ---
 
