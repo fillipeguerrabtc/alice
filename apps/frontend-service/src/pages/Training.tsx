@@ -238,13 +238,13 @@ const itemVariants = {
 function getStatusBadge(status: TrainingData['status'], t: (key: string) => string) {
   switch (status) {
     case 'pending':
-      return <Badge variant="outline" className="bg-amber-500/10 text-amber-600"><Clock className="h-3 w-3 mr-1" />{t('training.status.pending')}</Badge>;
+      return <Badge variant="outline" className="shrink-0 whitespace-nowrap bg-amber-500/10 text-amber-600"><Clock className="h-3 w-3 mr-1" />{t('training.status.pending')}</Badge>;
     case 'approved':
-      return <Badge variant="outline" className="bg-green-500/10 text-green-600"><CheckCircle2 className="h-3 w-3 mr-1" />{t('training.status.approved')}</Badge>;
+      return <Badge variant="outline" className="shrink-0 whitespace-nowrap bg-green-500/10 text-green-600"><CheckCircle2 className="h-3 w-3 mr-1" />{t('training.status.approved')}</Badge>;
     case 'rejected':
-      return <Badge variant="outline" className="bg-red-500/10 text-red-600"><XCircle className="h-3 w-3 mr-1" />{t('training.status.rejected')}</Badge>;
+      return <Badge variant="outline" className="shrink-0 whitespace-nowrap bg-red-500/10 text-red-600"><XCircle className="h-3 w-3 mr-1" />{t('training.status.rejected')}</Badge>;
     case 'used':
-      return <Badge variant="outline" className="bg-blue-500/10 text-blue-600"><Zap className="h-3 w-3 mr-1" />{t('training.status.used')}</Badge>;
+      return <Badge variant="outline" className="shrink-0 whitespace-nowrap bg-blue-500/10 text-blue-600"><Zap className="h-3 w-3 mr-1" />{t('training.status.used')}</Badge>;
     default:
       return null;
   }
@@ -286,29 +286,31 @@ function TrainingDataCard({ data, namespaceName, onApprove, onReject, onResolveS
 
   return (
     <motion.div variants={itemVariants}>
-      <Card className="hover-elevate">
+      <Card className="h-full hover-elevate">
         <CardHeader className="pb-2">
-          <div className="flex items-start justify-between gap-2">
-            <div className="flex items-center gap-2">
+          <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
               <MessageSquare className="h-4 w-4 text-primary" />
-              <span className="text-sm font-medium">{data.source}</span>
+              <span className="max-w-full truncate text-sm font-medium">{data.source}</span>
               {data.sourceType && (
-                <Badge variant="outline" className="text-xs">
+                <Badge variant="outline" className="max-w-full text-xs">
                   {data.sourceType}
                 </Badge>
               )}
               {namespaceName && (
-                <Badge variant="secondary" className="text-xs">
+                <Badge variant="secondary" className="max-w-full text-xs">
                   {namespaceName}
                 </Badge>
               )}
               {data.needsHumanReview && (
-                <Badge variant="destructive" className="text-xs">
+                <Badge variant="destructive" className="max-w-full text-xs">
                   Quarentena de escopo
                 </Badge>
               )}
             </div>
-            {getStatusBadge(data.status, t)}
+            <div className="w-full sm:w-auto">
+              {getStatusBadge(data.status, t)}
+            </div>
           </div>
           <CardDescription className="text-xs">
             {formatDateTime(data.criadoEm, { locale, timeZone })}
