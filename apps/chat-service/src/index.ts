@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Chat Service - Alice Enterprise Platform
  * 
  * Serviço de chat com WebSocket tempo real e integração LLM via GPU Manager Service.
@@ -71,8 +71,13 @@ import {
   PERMISSION_MAP,
   type AgentEvent,
   redactSensitivePayload,
+  getRedisClient,
   Gauge as PromGauge,
   Counter as PromCounter,
+  computeSemHash,
+  deterministicSample,
+  buildDailyCapKey,
+  incrementWithDailyCap,
 } from '@alice/shared-utils';
 import type { AuthContext } from '@alice/shared-utils';
 import type { Role } from '@alice/shared-utils';
@@ -81,11 +86,17 @@ import { z } from 'zod';
 import { ProxyAgent } from 'undici';
 import { createClient } from 'redis';
 import type { AgenticDetectors } from '@alice/shared';
+import { NamespaceProfileConfigSchema, type NamespaceProfileConfig } from '@alice/shared';
 import { isTradingCommand } from './trading-command-parser.js';
 import { resolveModelWithAdapter } from './lora-adapter-resolver.js';
 import { resolvePreferredNameSources } from './user-name-utils.js';
 import { evaluateCorruptedAssistantResponse, type StreamCorruptionReason } from './stream-corruption-heuristics.js';
 import { sliceConversationIntoWindows } from './training-utils.js';
+import {
+  ensureNamespaceProfile,
+  resolveNamespaceProfileRuntime,
+  updateNamespaceProfile,
+} from './namespace-profiles.js';
 import { 
   buscarContextoRAG, 
   buscarContextoAgentic,
@@ -328,6 +339,13 @@ const chatSseErrorsTotal = new PromCounter({
   name: 'alice_chat_sse_errors_total',
   help: 'Total de erros durante streaming SSE do chat',
   labelNames: ['tenant_id'] as const,
+  registers: [metrics.registry],
+});
+
+const trainingAutoCollectAttemptTotal = new PromCounter({
+  name: 'alice_training_auto_collect_attempt_total',
+  help: 'Total de tentativas de auto-coleta por motivo de decisão',
+  labelNames: ['reason'] as const,
   registers: [metrics.registry],
 });
 
@@ -1173,7 +1191,10 @@ async function ensureCambioResources(): Promise<void> {
           ativo: true,
         }).returning();
         cambioNamespace = createdNamespace;
+        await ensureNamespaceProfile(db, { tenantId: tenant.id, namespaceId: createdNamespace.id });
         logger.info({ tenantId: tenant.id }, 'Namespace Câmbio criado automaticamente');
+      } else {
+        await ensureNamespaceProfile(db, { tenantId: tenant.id, namespaceId: cambioNamespace.id });
       }
 
       const cambioAgent = await db.query.agents.findFirst({
@@ -3828,7 +3849,7 @@ async function enforceResponseGuardrails(params: {
     return finalizeGuardrailResponse(`Meu nome é ${params.agentName}.`, params.preferredName);
   }
 
-  const responseProfile = detectContextProfile(params.userMessage);
+  const responseProfile = resolveContextProfile(params.userMessage);
   const trimmedResponse = params.responseText.trim();
   const directAddressFixed = fixPreferredNameInDirectAddress(trimmedResponse, params.preferredName);
   if (!isCorruptedAssistantResponse(directAddressFixed, responseProfile)) {
@@ -4024,7 +4045,8 @@ type LlmSource =
   | 'external-channel'
   | 'title';
 
-type LlmContextProfile = 'trading' | 'general' | 'analysis' | 'cambio';
+type LlmContextProfile = string;
+type RuntimeChatKnobs = Pick<NamespaceProfileConfig, 'history' | 'sla' | 'routing'>;
 
 const MIN_LLM_OUTPUT_TOKENS = parseEnvInt(
   process.env.LLM_MIN_OUTPUT_TOKENS,
@@ -4076,30 +4098,15 @@ const CHAT_HISTORY_FETCH_LIMIT = parseEnvInt(
   10,
   'CHAT_HISTORY_FETCH_LIMIT'
 );
-const CHAT_HISTORY_ALWAYS_INCLUDE_TRADING = parseEnvInt(
-  process.env.CHAT_HISTORY_ALWAYS_INCLUDE_TRADING,
-  6,
-  'CHAT_HISTORY_ALWAYS_INCLUDE_TRADING'
-);
 const CHAT_HISTORY_ALWAYS_INCLUDE_GENERAL = parseEnvInt(
   process.env.CHAT_HISTORY_ALWAYS_INCLUDE_GENERAL,
   4,
   'CHAT_HISTORY_ALWAYS_INCLUDE_GENERAL'
 );
-const CHAT_HISTORY_MIN_MESSAGES_TRADING = parseEnvNonNegativeInt(
-  process.env.CHAT_HISTORY_MIN_MESSAGES_TRADING,
-  0,
-  'CHAT_HISTORY_MIN_MESSAGES_TRADING'
-);
 const CHAT_HISTORY_MIN_MESSAGES_GENERAL = parseEnvNonNegativeInt(
   process.env.CHAT_HISTORY_MIN_MESSAGES_GENERAL,
   0,
   'CHAT_HISTORY_MIN_MESSAGES_GENERAL'
-);
-const CHAT_HISTORY_RELEVANCE_THRESHOLD_TRADING = parseEnvFloat(
-  process.env.CHAT_HISTORY_RELEVANCE_THRESHOLD_TRADING,
-  0.08,
-  'CHAT_HISTORY_RELEVANCE_THRESHOLD_TRADING'
 );
 const CHAT_HISTORY_RELEVANCE_THRESHOLD_GENERAL = parseEnvFloat(
   process.env.CHAT_HISTORY_RELEVANCE_THRESHOLD_GENERAL,
@@ -4110,16 +4117,6 @@ const CHAT_HISTORY_FALLBACK_ENABLED = parseEnvBool(
   process.env.CHAT_HISTORY_FALLBACK_ENABLED,
   false,
   'CHAT_HISTORY_FALLBACK_ENABLED'
-);
-const CHAT_HISTORY_SEARCH_LIMIT = parseEnvInt(
-  process.env.CHAT_HISTORY_SEARCH_LIMIT,
-  200,
-  'CHAT_HISTORY_SEARCH_LIMIT'
-);
-const CHAT_HISTORY_SEARCH_TOKEN_BUDGET = parseEnvInt(
-  process.env.CHAT_HISTORY_SEARCH_TOKEN_BUDGET,
-  1200,
-  'CHAT_HISTORY_SEARCH_TOKEN_BUDGET'
 );
 const CHAT_HISTORY_SEARCH_CONVERSATIONS_LIMIT = parseEnvInt(
   process.env.CHAT_HISTORY_SEARCH_CONVERSATIONS_LIMIT,
@@ -4206,8 +4203,8 @@ const SLA_SECONDS_MEDIA = parseEnvInt(process.env.SLA_SECONDS_MEDIA, 18, 'SLA_SE
 const SLA_SECONDS_EXTERNAL = parseEnvInt(process.env.SLA_SECONDS_EXTERNAL, 20, 'SLA_SECONDS_EXTERNAL');
 const SLA_SECONDS_TITLE = parseEnvInt(process.env.SLA_SECONDS_TITLE, 6, 'SLA_SECONDS_TITLE');
 
-function getSlaTargetSeconds(source: LlmSource, profile: LlmContextProfile): number {
-  const base = (() => {
+function getSlaTargetSeconds(source: LlmSource, knobs?: RuntimeChatKnobs): number {
+  const fallback = (() => {
     switch (source) {
       case 'stream':
         return SLA_SECONDS_STREAM;
@@ -4224,42 +4221,26 @@ function getSlaTargetSeconds(source: LlmSource, profile: LlmContextProfile): num
         return SLA_SECONDS_SYNC;
     }
   })();
-
-  if (profile === 'trading') {
-    return Math.max(6, Math.floor(base * 0.8));
+  const sla = knobs?.sla;
+  if (!sla) return fallback;
+  switch (source) {
+    case 'stream':
+      return sla.streamSeconds;
+    case 'websocket':
+      return sla.websocketSeconds;
+    case 'websocket-media':
+      return sla.websocketMediaSeconds;
+    case 'external-channel':
+      return sla.externalSeconds;
+    case 'title':
+      return sla.titleSeconds;
+    case 'sync':
+    default:
+      return sla.syncSeconds;
   }
-  if (profile === 'cambio') {
-    return Math.max(6, Math.floor(base * 0.9));
-  }
-  if (profile === 'analysis') {
-    return Math.min(30, Math.ceil(base * 1.2));
-  }
-  return base;
 }
 
-function detectContextProfile(userMessage: string): LlmContextProfile {
-  const normalized = userMessage.toLowerCase();
-  const cambioKeywords = [
-    'câmbio', 'cambio', 'wise', 'remessa', 'remessas',
-    'converter', 'conversao', 'conversão', 'cotação', 'cotacao',
-  ];
-  if (
-    cambioKeywords.some((k) => normalized.includes(k))
-    || ((normalized.includes('converter') || normalized.includes('conversao') || normalized.includes('conversão'))
-      && (normalized.includes('moeda') || normalized.includes('currency')))
-  ) {
-    return 'cambio';
-  }
-  const tradingKeywords = [
-    'buy', 'sell', 'long', 'short', 'btc', 'eth', 'alavancagem', 'stop loss',
-    'take profit', 'kucoin', 'futuros', 'ordem', 'limit', 'market', 'scalping',
-  ];
-  if (tradingKeywords.some((k) => normalized.includes(k))) {
-    return 'trading';
-  }
-  if (normalized.length > 1200 || /analis|estrat|relat|compar|detalh/.test(normalized)) {
-    return 'analysis';
-  }
+function resolveContextProfile(_userMessage: string): LlmContextProfile {
   return 'general';
 }
 
@@ -4472,25 +4453,31 @@ async function fetchUserMemoryHistory(params: {
   return normalizeStoredMessages(messages);
 }
 
-function getPromptTokenBudget(source: LlmSource, profile: LlmContextProfile): number {
-  const slaSeconds = getSlaTargetSeconds(source, profile);
+function getPromptTokenBudget(source: LlmSource, knobs?: RuntimeChatKnobs): number {
+  const slaSeconds = getSlaTargetSeconds(source, knobs);
   const budget = Math.floor(slaSeconds * 120);
-  if (profile === 'trading') {
-    return Math.min(2800, Math.max(900, Math.floor(budget * 0.75)));
-  }
-  if (profile === 'cambio') {
-    return Math.min(3000, Math.max(1100, Math.floor(budget * 0.9)));
-  }
-  if (profile === 'analysis') {
-    return Math.min(3600, Math.max(1400, Math.floor(budget * 1.1)));
+  const configured = knobs?.routing?.promptTokenBudget;
+  if (typeof configured === 'number' && configured > 0) {
+    return Math.max(600, Math.min(configured, budget));
   }
   return Math.min(3200, Math.max(1200, budget));
 }
 
-function getGpuPriority(source: LlmSource, profile: LlmContextProfile): GpuRequestPriority {
-  if (profile === 'trading') {
-    return GpuRequestPriority.CRITICAL;
+function mapGpuPriority(value: NamespaceProfileConfig['routing']['gpuPriority'] | undefined): GpuRequestPriority | null {
+  switch (value) {
+    case 'low':
+      return GpuRequestPriority.LOW;
+    case 'medium':
+      return GpuRequestPriority.MEDIUM;
+    case 'high':
+      return GpuRequestPriority.HIGH;
+    default:
+      return null;
   }
+}
+
+function getGpuPriority(source: LlmSource, knobs?: RuntimeChatKnobs): GpuRequestPriority {
+  const configuredPriority = mapGpuPriority(knobs?.routing?.gpuPriority);
   switch (source) {
     case 'title':
       return GpuRequestPriority.LOW;
@@ -4502,12 +4489,12 @@ function getGpuPriority(source: LlmSource, profile: LlmContextProfile): GpuReque
       return GpuRequestPriority.CRITICAL;
     case 'sync':
     default:
-      return GpuRequestPriority.CRITICAL;
+      return configuredPriority ?? GpuRequestPriority.CRITICAL;
   }
 }
 
-function getAdaptiveGpuPriority(source: LlmSource, profile: LlmContextProfile): GpuRequestPriority {
-  const base = getGpuPriority(source, profile);
+function getAdaptiveGpuPriority(source: LlmSource, knobs?: RuntimeChatKnobs): GpuRequestPriority {
+  const base = getGpuPriority(source, knobs);
   if (base === GpuRequestPriority.CRITICAL) return base;
   if (gpuManagerBreaker.opened || gpuManagerBreaker.halfOpen) {
     if (source === 'title') return GpuRequestPriority.LOW;
@@ -4586,29 +4573,18 @@ function computeDynamicMaxTokens(baseMax: number, promptTokens: number): number 
 function applyDynamicTokenBudget(
   llmConfig: LLMConfig,
   llmMessages: LLMMessage[],
-  context: { conversationId?: string; source: LlmSource; profile: LlmContextProfile }
+  context: { conversationId?: string; source: LlmSource; profile: LlmContextProfile; knobs?: RuntimeChatKnobs }
 ): LLMConfig {
   const baseMaxTokens = llmConfig.maxTokens ?? DEFAULT_LLM_CONFIG.maxTokens;
   const baseTemperature = llmConfig.temperature ?? DEFAULT_LLM_CONFIG.temperature;
   const promptTokens = estimateTokensFromMessages(llmMessages);
-  const slaSeconds = getSlaTargetSeconds(context.source, context.profile);
+  const slaSeconds = getSlaTargetSeconds(context.source, context.knobs);
   const slaMaxTokens = Math.max(MIN_LLM_OUTPUT_TOKENS, Math.floor(slaSeconds * LLM_TOKENS_PER_SECOND));
   const dynamicMaxTokens = Math.min(
     computeDynamicMaxTokens(baseMaxTokens, promptTokens),
     slaMaxTokens
   );
-  const adjustedTemperature = (() => {
-    if (context.profile === 'trading') {
-      return Math.min(baseTemperature, 0.3);
-    }
-    if (context.profile === 'cambio') {
-      return Math.min(baseTemperature, 0.5);
-    }
-    if (context.profile === 'analysis') {
-      return Math.min(baseTemperature, 0.6);
-    }
-    return baseTemperature;
-  })();
+  const adjustedTemperature = baseTemperature;
 
   if (dynamicMaxTokens !== baseMaxTokens) {
     logger.info({
@@ -4714,37 +4690,15 @@ function buildRoutingText(parts: Array<string | null | undefined>): string {
   return parts.filter(Boolean).join(' ');
 }
 
-const ROUTING_TRADING_KEYWORDS = [
-  'trading', 'trade', 'finanças', 'finance', 'investimento', 'invest', 'portfolio',
-  'ações', 'stocks', 'futuros', 'futures', 'alavancagem', 'leverage', 'kucoin',
-  'order', 'ordem', 'stop loss', 'take profit', 'btc', 'eth', 'market', 'limit',
-] as const;
-
-const ROUTING_CAMBIO_KEYWORDS = [
-  'câmbio', 'cambio', 'wise', 'remessa', 'remessas', 'converter', 'conversao', 'conversão',
-  'cotacao', 'cotação', 'moeda', 'currency', 'exchange', 'fx',
-] as const;
-
-function computeRoutingScore(text: string, userMessage: string, profile: LlmContextProfile): number {
-  const base = computeRelevanceScore(text, userMessage);
-  const normalized = text.toLowerCase();
-  if (profile === 'trading') {
-    const hasTradingKeyword = ROUTING_TRADING_KEYWORDS.some((k) => normalized.includes(k));
-    const boost = hasTradingKeyword ? 0.06 : 0;
-    return Math.min(1, base + boost);
-  }
-  if (profile === 'cambio') {
-    const hasCambioKeyword = ROUTING_CAMBIO_KEYWORDS.some((k) => normalized.includes(k));
-    const boost = hasCambioKeyword ? 0.05 : 0;
-    return Math.min(1, base + boost);
-  }
-  return base;
+function computeRoutingScore(text: string, userMessage: string): number {
+  return computeRelevanceScore(text, userMessage);
 }
 
-function getRoutingThreshold(profile: LlmContextProfile): number {
-  if (profile === 'trading') return 0.06;
-  if (profile === 'cambio') return 0.08;
-  if (profile === 'analysis') return 0.1;
+function getRoutingThreshold(knobs?: RuntimeChatKnobs): number {
+  const configured = knobs?.routing?.threshold;
+  if (typeof configured === 'number' && configured >= 0 && configured <= 1) {
+    return configured;
+  }
   return 0.12;
 }
 
@@ -4920,13 +4874,18 @@ async function resolveSemanticRoute(params: {
   tenantId: string;
   userMessage: string;
   agenticDetectors: AgenticDetectors;
+  namespaceId?: string | null;
 }): Promise<{ agentId?: string; namespaceId?: string; score: number; source: 'agent' | 'namespace' | 'none'; profile: LlmContextProfile }> {
-  const profile = detectContextProfile(params.userMessage);
+  const profile = resolveContextProfile(params.userMessage);
   const hasMention = /@[a-z0-9][a-z0-9_-]{1,48}/iu.test(params.userMessage);
   if (!hasMention && isGreetingMessage(params.userMessage)) {
     return { score: 0, source: 'none', profile };
   }
-  const threshold = getRoutingThreshold(profile);
+  const runtimeProfile = await resolveNamespaceProfileRuntime(db, {
+    tenantId: params.tenantId,
+    namespaceId: params.namespaceId ?? null,
+  });
+  const threshold = getRoutingThreshold(runtimeProfile.config);
 
   const agents = await db.query.agents.findMany({
     where: and(
@@ -4954,7 +4913,7 @@ async function resolveSemanticRoute(params: {
         agent.capacidades ? agent.capacidades.join(' ') : null,
       ]);
       if (!text) continue;
-      const score = computeRoutingScore(text, params.userMessage, profile);
+      const score = computeRoutingScore(text, params.userMessage);
       if (!bestAgentInNamespace || score > bestAgentInNamespace.score) {
         bestAgentInNamespace = { id: agent.id, score };
       }
@@ -4980,7 +4939,7 @@ async function resolveSemanticRoute(params: {
       agent.capacidades ? agent.capacidades.join(' ') : null,
     ]);
     if (!text) continue;
-    const score = computeRoutingScore(text, params.userMessage, profile);
+    const score = computeRoutingScore(text, params.userMessage);
     if (!bestAgent || score > bestAgent.score) {
       bestAgent = { id: agent.id, namespaceId: agent.namespaceId, score };
     }
@@ -5004,7 +4963,7 @@ async function resolveSemanticRoute(params: {
           namespace.contextoSistema,
         ]);
         if (!text) continue;
-        const score = computeRoutingScore(text, params.userMessage, profile);
+        const score = computeRoutingScore(text, params.userMessage);
         if (!bestNamespace || score > bestNamespace.score) {
           bestNamespace = { id: namespace.id, score };
         }
@@ -5038,7 +4997,7 @@ async function resolveSemanticRoute(params: {
       namespace.contextoSistema,
     ]);
     if (!text) continue;
-    const score = computeRoutingScore(text, params.userMessage, profile);
+    const score = computeRoutingScore(text, params.userMessage);
     if (!bestNamespace || score > bestNamespace.score) {
       bestNamespace = { id: namespace.id, score };
     }
@@ -5058,7 +5017,7 @@ async function resolveSemanticRoute(params: {
         agent.capacidades ? agent.capacidades.join(' ') : null,
       ]);
       if (!text) continue;
-      const score = computeRoutingScore(text, params.userMessage, profile);
+      const score = computeRoutingScore(text, params.userMessage);
       if (!bestAgentInNamespace || score > bestAgentInNamespace.score) {
         bestAgentInNamespace = { id: agent.id, score };
       }
@@ -5357,8 +5316,7 @@ function isSwitchOnlyCommandMessage(params: {
 
 function selectBestAgentFromPool(
   agents: AgentRoutingRecord[],
-  userMessage: string,
-  profile: LlmContextProfile
+  userMessage: string
 ): { agent: AgentRoutingRecord | null; score: number } {
   let best: { agent: AgentRoutingRecord; score: number } | null = null;
   for (const agent of agents) {
@@ -5370,7 +5328,7 @@ function selectBestAgentFromPool(
       agent.personalidade,
     ]);
     if (!text) continue;
-    const score = computeRoutingScore(text, userMessage, profile);
+    const score = computeRoutingScore(text, userMessage);
     if (!best || score > best.score) {
       best = { agent, score };
     }
@@ -5515,8 +5473,12 @@ async function resolveAgentRoutingForMessage(params: {
   });
 
   let command = parseAgentRoutingCommand(params.userMessage, params.agenticDetectors.agentRouting);
-  const profile = detectContextProfile(params.userMessage);
-  const routingThreshold = getRoutingThreshold(profile);
+  const profile = resolveContextProfile(params.userMessage);
+  const routingProfile = await resolveNamespaceProfileRuntime(db, {
+    tenantId: params.tenantId,
+    namespaceId: params.requestedNamespaceId ?? params.conversation.namespaceId ?? params.conversation.agent?.namespaceId ?? null,
+  });
+  const routingThreshold = getRoutingThreshold(routingProfile.config);
   const normalizedMessage = normalizeAgentToken(params.userMessage);
   const hasExplicitAgentIntent = ['agente', 'falar com', 'conversar com']
     .some((keyword) => normalizedMessage.includes(keyword));
@@ -5588,7 +5550,7 @@ async function resolveAgentRoutingForMessage(params: {
       if (namespaceDetectorMatch) {
         const namespaceAgents = agents.filter((agent) => agent.namespaceId === namespaceDetectorMatch.namespaceId);
         if (namespaceAgents.length > 0) {
-          const namespaceSelection = selectBestAgentFromPool(namespaceAgents, params.userMessage, profile);
+          const namespaceSelection = selectBestAgentFromPool(namespaceAgents, params.userMessage);
           inferredAgents = [namespaceSelection.agent ?? namespaceAgents[0]];
         } else {
           return {
@@ -5663,7 +5625,7 @@ async function resolveAgentRoutingForMessage(params: {
     poolAgents = agents;
   }
 
-  const selection = selectBestAgentFromPool(poolAgents, params.userMessage, profile);
+  const selection = selectBestAgentFromPool(poolAgents, params.userMessage);
   let selectedAgent = selection.agent;
   let score = selection.score;
 
@@ -5834,37 +5796,166 @@ function buildTrainingMessagesFromStored(
   return { messages: trainingMessages };
 }
 
-function shouldAutoCollectTraining(params: {
-  profile: LlmContextProfile;
+type AutoCollectDecision = {
+  allowed: boolean;
+  reason:
+    | 'accepted'
+    | 'disabled_global'
+    | 'missing_namespace'
+    | 'missing_content'
+    | 'profile_disabled'
+    | 'min_chars'
+    | 'consent_opt_out'
+    | 'sampling_skipped'
+    | 'cap_exceeded'
+    | 'redis_unavailable'
+    | 'error';
+  semhash?: string;
+  profileVersion?: number;
+  samplingRate?: number;
+  caps?: {
+    dailyTenantCap: number;
+    dailyNamespaceCap: number;
+    dailyUserCap: number;
+  };
+};
+
+async function shouldAutoCollectTrainingWithProfile(params: {
+  tenantId: string;
   namespaceId?: string | null;
+  conversationId?: string;
+  userId: string;
   userMessage: string;
   assistantResponse: string;
-}): boolean {
-  if (!TRAINING_AUTO_COLLECT_CHAT) return false;
-  if (!params.namespaceId) return false;
-  if (params.profile !== 'trading') return false;
-  if (params.userMessage.trim().length === 0 || params.assistantResponse.trim().length === 0) return false;
-  return true;
+}): Promise<AutoCollectDecision> {
+  if (!TRAINING_AUTO_COLLECT_CHAT) return { allowed: false, reason: 'disabled_global' };
+  if (!params.namespaceId) return { allowed: false, reason: 'missing_namespace' };
+
+  const userText = params.userMessage.trim();
+  const assistantText = params.assistantResponse.trim();
+  if (!userText || !assistantText) {
+    return { allowed: false, reason: 'missing_content' };
+  }
+
+  try {
+    const runtimeProfile = await resolveNamespaceProfileRuntime(db, {
+      tenantId: params.tenantId,
+      namespaceId: params.namespaceId,
+    });
+
+    if (!runtimeProfile.isActive || !runtimeProfile.autoCollectEnabled || !runtimeProfile.config.autoCollect.enabled) {
+      return { allowed: false, reason: 'profile_disabled' };
+    }
+
+    const minCharsUser = runtimeProfile.config.autoCollect.minChars.user;
+    const minCharsAssistant = runtimeProfile.config.autoCollect.minChars.assistant;
+    if (userText.length < minCharsUser || assistantText.length < minCharsAssistant) {
+      return { allowed: false, reason: 'min_chars' };
+    }
+
+    if (runtimeProfile.config.autoCollect.requiresUserConsent) {
+      const userRecord = await db.query.users.findFirst({
+        where: and(
+          eq(schema.users.id, params.userId),
+          eq(schema.users.tenantId, params.tenantId)
+        ),
+        columns: { preferencias: true },
+      });
+      const preferences = (userRecord?.preferencias ?? {}) as {
+        training?: { allowTrainingUsage?: boolean; allowAutoCollect?: boolean };
+      };
+      const allowTrainingUsage = preferences.training?.allowTrainingUsage;
+      const allowAutoCollect = preferences.training?.allowAutoCollect;
+      if (allowTrainingUsage === false || allowAutoCollect === false) {
+        return { allowed: false, reason: 'consent_opt_out' };
+      }
+    }
+
+    const semhash = computeSemHash(`${userText}\n${assistantText}`);
+    if (runtimeProfile.config.autoCollect.sampling.enabled) {
+      const deterministicKey = runtimeProfile.config.autoCollect.sampling.deterministicKey;
+      const sampleSeed = (() => {
+        if (deterministicKey === 'conversationId') {
+          return params.conversationId ?? semhash;
+        }
+        if (deterministicKey === 'messagePairHash') {
+          return computeSemHash(`${params.tenantId}:${params.namespaceId}:${userText}:${assistantText}`);
+        }
+        return semhash;
+      })();
+      const sampled = deterministicSample(sampleSeed, runtimeProfile.config.autoCollect.sampling.rate);
+      if (!sampled) {
+        return { allowed: false, reason: 'sampling_skipped', semhash };
+      }
+    }
+
+    const redis = getRedisClient();
+    if (!redis) {
+      return { allowed: false, reason: 'redis_unavailable', semhash };
+    }
+
+    const dateISO = new Date().toISOString();
+    const tenantCap = await incrementWithDailyCap(
+      redis,
+      buildDailyCapKey({ tenantId: params.tenantId, dateISO }),
+      runtimeProfile.config.autoCollect.caps.dailyTenantCap
+    );
+    if (!tenantCap.allowed) {
+      return { allowed: false, reason: 'cap_exceeded', semhash };
+    }
+
+    const namespaceCap = await incrementWithDailyCap(
+      redis,
+      buildDailyCapKey({ tenantId: params.tenantId, namespaceId: params.namespaceId, dateISO }),
+      runtimeProfile.config.autoCollect.caps.dailyNamespaceCap
+    );
+    if (!namespaceCap.allowed) {
+      return { allowed: false, reason: 'cap_exceeded', semhash };
+    }
+
+    const userCap = await incrementWithDailyCap(
+      redis,
+      buildDailyCapKey({ tenantId: params.tenantId, namespaceId: params.namespaceId, userId: params.userId, dateISO }),
+      runtimeProfile.config.autoCollect.caps.dailyUserCap
+    );
+    if (!userCap.allowed) {
+      return { allowed: false, reason: 'cap_exceeded', semhash };
+    }
+
+    return {
+      allowed: true,
+      reason: 'accepted',
+      semhash,
+      profileVersion: runtimeProfile.version,
+      samplingRate: runtimeProfile.config.autoCollect.sampling.rate,
+      caps: runtimeProfile.config.autoCollect.caps,
+    };
+  } catch (error) {
+    logger.error(
+      {
+        error: error instanceof Error ? error.message : String(error),
+        tenantId: params.tenantId,
+        namespaceId: params.namespaceId,
+        userId: params.userId,
+      },
+      'Falha ao avaliar auto-coleta por namespace profile'
+    );
+    return { allowed: false, reason: 'error' };
+  }
 }
 
 function buildHistoryMessages(
   history: StoredMessage[],
   maxTokens: number,
   userMessage: string,
-  profile: LlmContextProfile
+  knobs?: RuntimeChatKnobs
 ): LLMMessage[] {
   if (maxTokens <= 0) return [];
   const selected: LLMMessage[] = [];
   let totalTokens = 0;
-  const relevanceThreshold = profile === 'trading'
-    ? CHAT_HISTORY_RELEVANCE_THRESHOLD_TRADING
-    : CHAT_HISTORY_RELEVANCE_THRESHOLD_GENERAL;
-  const alwaysIncludeCount = profile === 'trading'
-    ? CHAT_HISTORY_ALWAYS_INCLUDE_TRADING
-    : CHAT_HISTORY_ALWAYS_INCLUDE_GENERAL;
-  const minMessages = profile === 'trading'
-    ? CHAT_HISTORY_MIN_MESSAGES_TRADING
-    : CHAT_HISTORY_MIN_MESSAGES_GENERAL;
+  const relevanceThreshold = knobs?.history?.relevanceThreshold ?? CHAT_HISTORY_RELEVANCE_THRESHOLD_GENERAL;
+  const alwaysIncludeCount = knobs?.history?.alwaysIncludeCount ?? CHAT_HISTORY_ALWAYS_INCLUDE_GENERAL;
+  const minMessages = knobs?.history?.minMessages ?? CHAT_HISTORY_MIN_MESSAGES_GENERAL;
   const normalizedUser = userMessage.trim().toLowerCase();
 
   for (let i = 0; i < history.length; i += 1) {
@@ -5892,7 +5983,8 @@ function buildHistoryMessages(
     totalTokens += tokens;
   }
 
-  if (selected.length === 0 && CHAT_HISTORY_FALLBACK_ENABLED && history.length > 0) {
+  const fallbackEnabled = knobs?.history?.fallbackEnabled ?? CHAT_HISTORY_FALLBACK_ENABLED;
+  if (selected.length === 0 && fallbackEnabled && history.length > 0) {
     const fallback = history[0];
     const fallbackContent = fallback.conteudo?.trim();
     if (fallbackContent) {
@@ -5914,13 +6006,13 @@ function buildPromptMessages(params: {
   userMessage: string;
   history: StoredMessage[];
   source: LlmSource;
+  knobs?: RuntimeChatKnobs;
 }): LLMMessage[] {
-  const profile = detectContextProfile(params.userMessage);
-  const maxPromptTokens = getPromptTokenBudget(params.source, profile);
+  const maxPromptTokens = getPromptTokenBudget(params.source, params.knobs);
   const systemTokens = estimateTokensFromText(params.systemPrompt);
   const userTokens = estimateTokensFromText(params.userMessage);
   const remaining = Math.max(0, maxPromptTokens - systemTokens - userTokens);
-  const historyMessages = buildHistoryMessages(params.history, remaining, params.userMessage, profile);
+  const historyMessages = buildHistoryMessages(params.history, remaining, params.userMessage, params.knobs);
 
   const messages: LLMMessage[] = [
     { role: 'system', content: params.systemPrompt },
@@ -9589,17 +9681,22 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
       }, 'Contexto RAG injetado no prompt');
     }
 
+    const syncRuntimeProfile = await resolveNamespaceProfileRuntime(db, {
+      tenantId,
+      namespaceId: activeNamespaceId ?? conversation.namespaceId ?? conversation.agent?.namespaceId ?? null,
+    });
+
     if (isMemorySearchIntent(body.conteudo)) {
       const memoryHistory = await fetchUserMemoryHistory({
         userId,
         tenantId,
         conversationId: id,
-        limit: CHAT_HISTORY_SEARCH_LIMIT,
+        limit: syncRuntimeProfile.config.history.searchLimit,
       });
       const memoryBlock = buildMemorySearchBlock(
         memoryHistory,
         body.conteudo,
-        CHAT_HISTORY_SEARCH_TOKEN_BUDGET
+        syncRuntimeProfile.config.history.searchTokenBudget
       );
       if (memoryBlock) {
         systemPrompt += `\n\nHISTÓRICO RELEVANTE (memória solicitada):\n${memoryBlock}`;
@@ -9612,14 +9709,14 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
       userMessage: body.conteudo,
       history: historyForPrompt,
       source: 'sync',
+      knobs: syncRuntimeProfile.config,
     });
 
     // BUG FIX 02/01/2026: Extrair configuração LLM do agente para uso nas chamadas
-    const syncProfile = detectContextProfile(body.conteudo);
     const llmConfig = applyDynamicTokenBudget(
       getAgentLLMConfig(agentConfig),
       llmMessages,
-      { conversationId: id, source: 'sync', profile: syncProfile }
+      { conversationId: id, source: 'sync', profile: resolveContextProfile(body.conteudo), knobs: syncRuntimeProfile.config }
     );
     const scopedLlmConfig = await applyScopedAdapterToConfig(llmConfig, {
       tenantId,
@@ -9632,7 +9729,7 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
       llmMessages,
       false,
       scopedLlmConfig,
-      getAdaptiveGpuPriority('sync', syncProfile)
+      getAdaptiveGpuPriority('sync', syncRuntimeProfile.config)
     );
     const llmLatency = Date.now() - llmStartTime;
 
@@ -9652,7 +9749,7 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
         buildGuardrailRegenerationMessages(llmMessages),
         false,
         buildGuardrailRegenerationConfig(scopedLlmConfig),
-        getAdaptiveGpuPriority('sync', syncProfile)
+        getAdaptiveGpuPriority('sync', syncRuntimeProfile.config)
       ) as Promise<string>,
     });
     const guardrailLatency = Date.now() - guardrailStartTime;
@@ -9687,13 +9784,18 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
       logger.warn({ error: titleError, conversationId: id }, 'Falha ao aplicar título automático (sync)');
     }
 
-    // Auto-coleta: envia cada par user+assistant individualmente (contínuo). sentToTrainingAt é apenas para coleta manual (conversa inteira).
-    if (shouldAutoCollectTraining({
-      profile: syncProfile,
+    const autoCollectDecision = await shouldAutoCollectTrainingWithProfile({
+      tenantId,
       namespaceId: activeNamespaceId || conversation.agent?.namespaceId,
+      conversationId: id,
+      userId,
       userMessage: body.conteudo,
       assistantResponse: finalizedResponse,
-    })) {
+    });
+    trainingAutoCollectAttemptTotal.inc({ reason: autoCollectDecision.reason });
+
+    // Auto-coleta: envia cada par user+assistant individualmente (contínuo). sentToTrainingAt é apenas para coleta manual (conversa inteira).
+    if (autoCollectDecision.allowed) {
       void collectTrainingSample({
         tenantId,
         namespaceId: (activeNamespaceId || conversation.agent?.namespaceId) as string,
@@ -9703,6 +9805,14 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
         sourceId: id,
         sourceMetadata: {
           mode: 'auto',
+          collector: {
+            kind: 'auto',
+            namespaceProfileVersion: autoCollectDecision.profileVersion ?? 1,
+            samplingRate: autoCollectDecision.samplingRate ?? 1,
+            caps: autoCollectDecision.caps ?? null,
+            policyTraceId: crypto.randomUUID(),
+          },
+          messagePairSemhash: autoCollectDecision.semhash ?? null,
           agentId: activeAgentId ?? null,
         },
         messages: [
@@ -9867,6 +9977,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         tenantId,
         userMessage: userMessageContent,
         agenticDetectors,
+        namespaceId: namespaceId ?? null,
       });
       const [created] = await db.insert(schema.conversations).values({
         tenantId,
@@ -10567,11 +10678,16 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           visionSummaries: visionSummaries.length,
         },
       });
+      const mediaRuntimeProfile = await resolveNamespaceProfileRuntime(db, {
+        tenantId,
+        namespaceId: namespaceIdForMedia ?? null,
+      });
       const mediaMessages = buildPromptMessages({
         systemPrompt,
         userMessage: userContent,
         history: storedPreviousMessages,
         source: 'stream',
+        knobs: mediaRuntimeProfile.config,
       });
       emitAgentEvent({
         phase: 'planning',
@@ -10590,11 +10706,11 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       try {
         writeStatus('llm');
         const llmStartAt = Date.now();
-        const mediaProfile = detectContextProfile(userContent);
+        const mediaProfile = resolveContextProfile(userContent);
         const llmConfig = applyDynamicTokenBudget(
           getAgentLLMConfig(agent),
           mediaMessages,
-          { conversationId, source: 'stream', profile: mediaProfile }
+          { conversationId, source: 'stream', profile: mediaProfile, knobs: mediaRuntimeProfile.config }
         );
         const scopedLlmConfig = await applyScopedAdapterToConfig(llmConfig, {
           tenantId,
@@ -10705,7 +10821,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                     buildGuardrailRegenerationMessages(mediaMessages),
                     false,
                     buildGuardrailRegenerationConfig(scopedLlmConfig),
-                    getAdaptiveGpuPriority('sync', mediaProfile)
+                    getAdaptiveGpuPriority('sync', mediaRuntimeProfile.config)
                   ) as Promise<string>,
                 });
                 if (guardedResponse !== assistantResponse.trim()) {
@@ -10749,12 +10865,16 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
 
                 const streamUserRole = req.user?.role as Role | undefined;
                 // Auto-coleta: envia cada par user+assistant individualmente (contínuo). sentToTrainingAt é apenas para coleta manual.
-                if (streamUserRole && shouldAutoCollectTraining({
-                  profile: mediaProfile,
+                const mediaAutoCollectDecision = await shouldAutoCollectTrainingWithProfile({
+                  tenantId,
                   namespaceId: namespaceIdForMedia,
+                  conversationId,
+                  userId,
                   userMessage: userContent,
                   assistantResponse: guardedResponse,
-                })) {
+                });
+                trainingAutoCollectAttemptTotal.inc({ reason: mediaAutoCollectDecision.reason });
+                if (streamUserRole && mediaAutoCollectDecision.allowed) {
                   void collectTrainingSample({
                     tenantId,
                     namespaceId: namespaceIdForMedia as string,
@@ -10764,6 +10884,14 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                     sourceId: conversationId,
                     sourceMetadata: {
                       mode: 'auto',
+                      collector: {
+                        kind: 'auto',
+                        namespaceProfileVersion: mediaAutoCollectDecision.profileVersion ?? 1,
+                        samplingRate: mediaAutoCollectDecision.samplingRate ?? 1,
+                        caps: mediaAutoCollectDecision.caps ?? null,
+                        policyTraceId: crypto.randomUUID(),
+                      },
+                      messagePairSemhash: mediaAutoCollectDecision.semhash ?? null,
                       media: true,
                       agentId: conversation?.agentId ?? null,
                     },
@@ -10827,7 +10955,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             }
           },
           scopedLlmConfig,
-          getAdaptiveGpuPriority('stream', mediaProfile),
+          getAdaptiveGpuPriority('stream', mediaRuntimeProfile.config),
           { route: llmContextRoute, tenantId, userId, conversationId, namespaceId: namespaceIdForMedia ?? undefined, agentId: conversation?.agentId ?? undefined },
           (meta) => {
             try {
@@ -10940,7 +11068,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           sanitizeAssistantResponse(greetingResponse),
           nameContext.preferredName
         );
-        if (isCorruptedAssistantResponse(greetingResponse, detectContextProfile(userMessageContent))) {
+        if (isCorruptedAssistantResponse(greetingResponse, resolveContextProfile(userMessageContent))) {
           logger.warn(
             { conversationId, cacheKey: cacheResult.cacheKey },
             'Resposta de greetings gate descartada por conteúdo degenerado'
@@ -11041,7 +11169,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             sanitizeAssistantResponse(reuseResponse),
             nameContext.preferredName
           );
-          if (isCorruptedAssistantResponse(reuseResponse, detectContextProfile(userMessageContent))) {
+          if (isCorruptedAssistantResponse(reuseResponse, resolveContextProfile(userMessageContent))) {
             logger.warn(
               { conversationId, reusedMessageId: assistantAfterLastUser.id },
               'Resposta de reuse gate descartada por conteúdo degenerado'
@@ -13610,6 +13738,10 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       let ragSources: Array<{ documentId: string; titulo: string; similarity: number }> = [];
       let webSources: Array<{ title: string; url: string }> = [];
       const classificationWebMode = ragClassification?.classification?.webMode;
+      const streamRuntimeProfile = await resolveNamespaceProfileRuntime(db, {
+        tenantId,
+        namespaceId: activeNamespaceId ?? namespaceId ?? conversation?.namespaceId ?? conversation?.agent?.namespaceId ?? null,
+      });
       let memorySearchApplied = false;
 
       if (ragResult && ragResult.context) {
@@ -13626,12 +13758,12 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           userId,
           tenantId,
           conversationId,
-          limit: CHAT_HISTORY_SEARCH_LIMIT,
+          limit: streamRuntimeProfile.config.history.searchLimit,
         });
         const memoryBlock = buildMemorySearchBlock(
           memoryHistory,
           userMessageContent,
-          CHAT_HISTORY_SEARCH_TOKEN_BUDGET
+          streamRuntimeProfile.config.history.searchTokenBudget
         );
         if (memoryBlock) {
           memorySearchApplied = true;
@@ -13804,6 +13936,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       userMessage: userMessageContent,
       history: storedPreviousMessages,
       source: 'stream',
+      knobs: streamRuntimeProfile.config,
     });
     emitAgentEvent({
       phase: 'planning',
@@ -13828,11 +13961,11 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     try {
       writeStatus('llm');
       const llmStartAt = Date.now();
-      const streamProfile = detectContextProfile(userMessageContent);
+      const streamProfile = resolveContextProfile(userMessageContent);
       const llmConfig = applyDynamicTokenBudget(
         getAgentLLMConfig(agent),
         llmMessages,
-        { conversationId, source: 'stream', profile: streamProfile }
+        { conversationId, source: 'stream', profile: streamProfile, knobs: streamRuntimeProfile.config }
       );
       const scopedLlmConfig = await applyScopedAdapterToConfig(llmConfig, {
         tenantId,
@@ -13959,7 +14092,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                   buildGuardrailRegenerationMessages(llmMessages),
                   false,
                   buildGuardrailRegenerationConfig(scopedLlmConfig),
-                  getAdaptiveGpuPriority('sync', streamProfile)
+                  getAdaptiveGpuPriority('sync', streamRuntimeProfile.config)
                 ) as Promise<string>,
               });
               if (guardedResponse !== assistantResponse.trim()) {
@@ -14001,15 +14134,18 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                 logger.warn({ error: titleError, conversationId }, 'Falha ao aplicar título automático (stream)');
               }
 
-              const streamTrainingProfile = detectContextProfile(userMessageContent);
               const streamUserRole = req.user?.role as Role | undefined;
               // Auto-coleta: envia cada par user+assistant individualmente (contínuo). sentToTrainingAt é apenas para coleta manual.
-              if (streamUserRole && shouldAutoCollectTraining({
-                profile: streamTrainingProfile,
+              const streamAutoCollectDecision = await shouldAutoCollectTrainingWithProfile({
+                tenantId,
                 namespaceId: conversation?.namespaceId || conversation?.agent?.namespaceId,
+                conversationId,
+                userId,
                 userMessage: userMessageContent,
                 assistantResponse: guardedResponse,
-              })) {
+              });
+              trainingAutoCollectAttemptTotal.inc({ reason: streamAutoCollectDecision.reason });
+              if (streamUserRole && streamAutoCollectDecision.allowed) {
                 void collectTrainingSample({
                   tenantId,
                   namespaceId: (conversation?.namespaceId || conversation?.agent?.namespaceId) as string,
@@ -14019,6 +14155,14 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                   sourceId: conversationId,
                   sourceMetadata: {
                     mode: 'auto',
+                    collector: {
+                      kind: 'auto',
+                      namespaceProfileVersion: streamAutoCollectDecision.profileVersion ?? 1,
+                      samplingRate: streamAutoCollectDecision.samplingRate ?? 1,
+                      caps: streamAutoCollectDecision.caps ?? null,
+                      policyTraceId: crypto.randomUUID(),
+                    },
+                    messagePairSemhash: streamAutoCollectDecision.semhash ?? null,
                     agentId: conversation?.agentId ?? null,
                   },
                   messages: [
@@ -14109,7 +14253,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           }
         },
         scopedLlmConfig,
-        getAdaptiveGpuPriority('stream', streamProfile),
+        getAdaptiveGpuPriority('stream', streamRuntimeProfile.config),
         { route: llmContextRoute, tenantId, userId, conversationId, namespaceId: activeNamespaceId || namespaceId || undefined, agentId: conversation?.agentId ?? undefined },
         (meta) => {
           try {
@@ -15742,17 +15886,22 @@ wss.on('connection', (ws, req) => {
           }, 'Contexto RAG injetado via WebSocket');
         }
 
+        const websocketRuntimeProfile = await resolveNamespaceProfileRuntime(db, {
+          tenantId: safeTenantId,
+          namespaceId: namespaceId ?? conversation?.namespaceId ?? conversation?.agent?.namespaceId ?? null,
+        });
+
         if (isMemorySearchIntent(messageContent)) {
           const memoryHistory = await fetchUserMemoryHistory({
             userId,
             tenantId: safeTenantId,
             conversationId,
-            limit: CHAT_HISTORY_SEARCH_LIMIT,
+            limit: websocketRuntimeProfile.config.history.searchLimit,
           });
           const memoryBlock = buildMemorySearchBlock(
             memoryHistory,
             messageContent,
-            CHAT_HISTORY_SEARCH_TOKEN_BUDGET
+            websocketRuntimeProfile.config.history.searchTokenBudget
           );
           if (memoryBlock) {
             systemPrompt += `\n\nHISTÓRICO RELEVANTE (memória solicitada):\n${memoryBlock}`;
@@ -15766,14 +15915,14 @@ wss.on('connection', (ws, req) => {
           userMessage: messageContent,
           history: [],
           source: 'websocket',
+          knobs: websocketRuntimeProfile.config,
         });
 
         // BUG FIX 02/01/2026: Extrair configuração LLM do agente para uso nas chamadas
-        const websocketProfile = detectContextProfile(messageContent);
         const llmConfig = applyDynamicTokenBudget(
           getAgentLLMConfig(agent),
           llmMessages,
-          { conversationId, source: 'websocket', profile: websocketProfile }
+          { conversationId, source: 'websocket', profile: resolveContextProfile(messageContent), knobs: websocketRuntimeProfile.config }
         );
         const scopedLlmConfig = await applyScopedAdapterToConfig(llmConfig, {
           tenantId: safeTenantId,
@@ -15867,14 +16016,17 @@ wss.on('connection', (ws, req) => {
                 logger.warn({ error: titleError, conversationId }, 'Falha ao aplicar título automático (websocket)');
               }
 
-              const websocketProfile = detectContextProfile(messageContent);
               // Auto-coleta: envia cada par user+assistant individualmente (contínuo). sentToTrainingAt é apenas para coleta manual.
-              if (userRole && shouldAutoCollectTraining({
-                profile: websocketProfile,
+              const websocketAutoCollectDecision = await shouldAutoCollectTrainingWithProfile({
+                tenantId: safeTenantId,
                 namespaceId: conversation?.namespaceId || conversation?.agent?.namespaceId,
+                conversationId,
+                userId,
                 userMessage: messageContent,
                 assistantResponse: responseText,
-              })) {
+              });
+              trainingAutoCollectAttemptTotal.inc({ reason: websocketAutoCollectDecision.reason });
+              if (userRole && websocketAutoCollectDecision.allowed) {
                 void collectTrainingSample({
                   tenantId: safeTenantId,
                   namespaceId: (conversation?.namespaceId || conversation?.agent?.namespaceId) as string,
@@ -15884,6 +16036,14 @@ wss.on('connection', (ws, req) => {
                   sourceId: conversationId,
                   sourceMetadata: {
                     mode: 'auto',
+                    collector: {
+                      kind: 'auto',
+                      namespaceProfileVersion: websocketAutoCollectDecision.profileVersion ?? 1,
+                      samplingRate: websocketAutoCollectDecision.samplingRate ?? 1,
+                      caps: websocketAutoCollectDecision.caps ?? null,
+                      policyTraceId: crypto.randomUUID(),
+                    },
+                    messagePairSemhash: websocketAutoCollectDecision.semhash ?? null,
                     agentId: conversation?.agentId ?? null,
                   },
                   messages: [
@@ -15966,7 +16126,7 @@ wss.on('connection', (ws, req) => {
               }
             },
             scopedLlmConfig, // BUG FIX 02/01/2026: Passar configuração do agente
-            getAdaptiveGpuPriority('websocket', websocketProfile),
+            getAdaptiveGpuPriority('websocket', websocketRuntimeProfile.config),
             { route: llmContextRoute, tenantId: safeTenantId, userId, conversationId, namespaceId: (namespaceId || conversation?.namespaceId || conversation?.agent?.namespaceId) ?? undefined, agentId: conversation?.agentId ?? undefined },
             (meta) => {
               try {
@@ -16278,16 +16438,24 @@ wss.on('connection', (ws, req) => {
 
         // BUG FIX 25/12/2025: Chamar LLM com streaming via proxyStreamFromGpuManager
         const llmStartTime = Date.now();
+        const mediaRuntimeProfile = await resolveNamespaceProfileRuntime(db, {
+          tenantId,
+          namespaceId: namespaceId ?? conversation.namespaceId ?? conversation.agent?.namespaceId ?? null,
+        });
         
         // BUG FIX 02/01/2026: Extrair configuração LLM do agente para uso nas chamadas
-        const mediaProfile = detectContextProfile(userContent);
         const mediaLlmConfig = applyDynamicTokenBudget(
           getAgentLLMConfig(agent),
           [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userContent },
           ],
-          { conversationId: mediaMessage.conversationId, source: 'websocket-media', profile: mediaProfile }
+          {
+            conversationId: mediaMessage.conversationId,
+            source: 'websocket-media',
+            profile: resolveContextProfile(userContent),
+            knobs: mediaRuntimeProfile.config,
+          }
         );
         const scopedMediaLlmConfig = await applyScopedAdapterToConfig(mediaLlmConfig, {
           tenantId,
@@ -16308,6 +16476,7 @@ wss.on('connection', (ws, req) => {
           userMessage: userContent,
           history: [],
           source: 'websocket-media',
+          knobs: mediaRuntimeProfile.config,
         });
 
         // BUG FIX 26/12/2025: Prefixado com _ - resultado não usado pois callback onDone usa responseText diretamente
@@ -16396,7 +16565,7 @@ wss.on('connection', (ws, req) => {
               }, 'Mensagem multimodal processada via WebSocket');
             },
             scopedMediaLlmConfig, // BUG FIX 02/01/2026: Passar configuração do agente
-            getAdaptiveGpuPriority('websocket-media', mediaProfile),
+            getAdaptiveGpuPriority('websocket-media', mediaRuntimeProfile.config),
             { route: llmContextRoute, tenantId: mediaSafeTenantId, userId, conversationId: mediaMessage.conversationId, namespaceId: (conversation?.namespaceId ?? conversation?.agent?.namespaceId) ?? undefined, agentId: conversation?.agentId ?? undefined },
             (meta) => {
               try {
@@ -17389,6 +17558,15 @@ const namespaceSchema = z.object({
 
 const updateNamespaceSchema = namespaceSchema.partial();
 
+const namespaceProfilePatchSchema = z.object({
+  isActive: z.boolean().optional(),
+  autoCollectEnabled: z.boolean().optional(),
+  config: NamespaceProfileConfigSchema.optional(),
+}).strict().refine(
+  (payload) => payload.isActive !== undefined || payload.autoCollectEnabled !== undefined || payload.config !== undefined,
+  { message: 'Envie ao menos um campo para atualização' }
+);
+
 function normalizeNamespaceSlug(value: string): string {
   return value
     .toLowerCase()
@@ -18325,6 +18503,7 @@ app.post('/api/llm/fallback-clusters/create-namespace', requireAuth(), requireSa
       contextoSistema: null,
       atualizadoEm: new Date(),
     }).returning({ id: schema.namespaces.id, slug: schema.namespaces.slug, nome: schema.namespaces.nome });
+    await ensureNamespaceProfile(db, { tenantId, namespaceId: namespace.id });
 
     const updatedRows = await db
       .update(schema.llmFallbackLogs)
@@ -18471,6 +18650,11 @@ app.post('/api/namespaces', requireAuth(), requireSameTenant(getTenantIdFromRequ
       })
       .returning();
 
+    await ensureNamespaceProfile(db, {
+      tenantId,
+      namespaceId: createdNamespace.id,
+    });
+
     logger.info({ namespaceId: createdNamespace.id, tenantId }, 'Namespace criado');
     res.status(201).json(createdNamespace);
   } catch (error) {
@@ -18543,6 +18727,71 @@ app.patch('/api/namespaces/:id', requireAuth(), requireSameTenant(getTenantIdFro
   } catch (error) {
     logger.error({ error, namespaceId: id }, 'Erro ao atualizar namespace');
     res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+app.get('/api/namespaces/:id/profile', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:namespaces:read'), async (req: Request, res: Response) => {
+  const paramsResult = uuidParamSchema.safeParse(req.params);
+  if (!paramsResult.success) {
+    return res.status(400).json({ error: 'ID de namespace inválido', details: paramsResult.error.format() });
+  }
+  const { id } = paramsResult.data;
+  const tenantId = req.tenantId;
+  if (!tenantId) {
+    return res.status(403).json({ error: 'Acesso negado: usuário não associado a um tenant' });
+  }
+
+  try {
+    const namespace = await db.query.namespaces.findFirst({
+      where: and(eq(schema.namespaces.id, id), eq(schema.namespaces.tenantId, tenantId)),
+      columns: { id: true },
+    });
+    if (!namespace) {
+      return res.status(404).json({ error: 'Namespace não encontrado' });
+    }
+
+    const profile = await ensureNamespaceProfile(db, { tenantId, namespaceId: id });
+    return res.json(profile);
+  } catch (error) {
+    logger.error({ error, tenantId, namespaceId: id }, 'Erro ao consultar profile do namespace');
+    return res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+app.patch('/api/namespaces/:id/profile', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:namespaces:write'), async (req: Request, res: Response) => {
+  const paramsResult = uuidParamSchema.safeParse(req.params);
+  if (!paramsResult.success) {
+    return res.status(400).json({ error: 'ID de namespace inválido', details: paramsResult.error.format() });
+  }
+  const { id } = paramsResult.data;
+  const tenantId = req.tenantId;
+  if (!tenantId) {
+    return res.status(403).json({ error: 'Acesso negado: usuário não associado a um tenant' });
+  }
+
+  const patchResult = namespaceProfilePatchSchema.safeParse(req.body);
+  if (!patchResult.success) {
+    return res.status(400).json({ error: 'Payload de profile inválido', details: patchResult.error.format() });
+  }
+
+  try {
+    const namespace = await db.query.namespaces.findFirst({
+      where: and(eq(schema.namespaces.id, id), eq(schema.namespaces.tenantId, tenantId)),
+      columns: { id: true },
+    });
+    if (!namespace) {
+      return res.status(404).json({ error: 'Namespace não encontrado' });
+    }
+
+    const updated = await updateNamespaceProfile(db, {
+      tenantId,
+      namespaceId: id,
+      patch: patchResult.data,
+    });
+    return res.json(updated);
+  } catch (error) {
+    logger.error({ error, tenantId, namespaceId: id }, 'Erro ao atualizar profile do namespace');
+    return res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
 
@@ -19620,17 +19869,22 @@ app.post('/api/chat/message', requireInternalHmacAuth(), requireInternalIdempote
       systemPrompt += formatarContextoParaLLM(ragResult);
     }
 
+    const externalRuntimeProfile = await resolveNamespaceProfileRuntime(db, {
+      tenantId: req.tenantId as string,
+      namespaceId: conversation.namespaceId ?? conversation.agent?.namespaceId ?? null,
+    });
+
     if (isMemorySearchIntent(content)) {
       const memoryHistory = await fetchUserMemoryHistory({
         userId: req.user?.userId,
         tenantId: req.tenantId,
         conversationId,
-        limit: CHAT_HISTORY_SEARCH_LIMIT,
+        limit: externalRuntimeProfile.config.history.searchLimit,
       });
       const memoryBlock = buildMemorySearchBlock(
         memoryHistory,
         content,
-        CHAT_HISTORY_SEARCH_TOKEN_BUDGET
+        externalRuntimeProfile.config.history.searchTokenBudget
       );
       if (memoryBlock) {
         systemPrompt += `\n\nHISTÓRICO RELEVANTE (memória solicitada):\n${memoryBlock}`;
@@ -19643,14 +19897,19 @@ app.post('/api/chat/message', requireInternalHmacAuth(), requireInternalIdempote
       userMessage: content,
       history: historyForPrompt,
       source: 'external-channel',
+      knobs: externalRuntimeProfile.config,
     });
     
     // BUG FIX 02/01/2026: Extrair configuração LLM do agente para uso nas chamadas
-    const externalProfile = detectContextProfile(content);
     const externalChannelLlmConfig = applyDynamicTokenBudget(
       getAgentLLMConfig(agent),
       llmMessages,
-      { conversationId, source: 'external-channel', profile: externalProfile }
+      {
+        conversationId,
+        source: 'external-channel',
+        profile: resolveContextProfile(content),
+        knobs: externalRuntimeProfile.config,
+      }
     );
     const scopedExternalLlmConfig = await applyScopedAdapterToConfig(externalChannelLlmConfig, {
       tenantId: safeTenantId,
@@ -19663,7 +19922,7 @@ app.post('/api/chat/message', requireInternalHmacAuth(), requireInternalIdempote
       llmMessages,
       false,
       scopedExternalLlmConfig,
-      getAdaptiveGpuPriority('external-channel', externalProfile)
+      getAdaptiveGpuPriority('external-channel', externalRuntimeProfile.config)
     );
     const llmLatency = Date.now() - llmStartTime;
     
