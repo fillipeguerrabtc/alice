@@ -1795,7 +1795,7 @@ function BulkImportTab({ t }: { t: (key: string, options?: Record<string, unknow
         role: z.enum(['user', 'assistant', 'system']),
         content: z.string().min(1),
       })
-    ).min(1),
+    ).min(2),
     rating: z.number().int().min(1).max(5).optional(),
   });
 

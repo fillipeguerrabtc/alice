@@ -3338,28 +3338,20 @@ app.post('/api/training/bulk-import', requirePermission('training:training_data:
 
     for (let i = 0; i < data.length; i++) {
       const entry = data[i];
-      
+
       const text = entry.messages.map(m => m.content).join(' ');
-      let embedding: number[] | null = null;
-      let semhash: string | null = null;
+      const semhash = computeSemHash(text);
 
-      try {
-        embedding = await gpuManagerEmbeddingsBreaker.fire(text) as number[];
-        semhash = computeSemHash(text);
+      const existingDuplicate = await db.query.trainingData.findFirst({
+        where: and(
+          eq(schema.trainingData.tenantId, tenantId),
+          eq(schema.trainingData.semhash, semhash)
+        ),
+      });
 
-        const existingDuplicate = await db.query.trainingData.findFirst({
-          where: and(
-            eq(schema.trainingData.tenantId, tenantId),
-            eq(schema.trainingData.semhash, semhash)
-          ),
-        });
-
-        if (existingDuplicate) {
-          duplicatesSkipped.push(i);
-          continue;
-        }
-      } catch (embError) {
-        logger.warn({ error: embError, index: i }, 'Erro ao gerar embedding - continuando sem deduplicação');
+      if (existingDuplicate) {
+        duplicatesSkipped.push(i);
+        continue;
       }
 
       const qualityScore = computeQualityScore(entry.messages);
@@ -3421,11 +3413,39 @@ app.post('/api/training/bulk-import', requirePermission('training:training_data:
         status,
         reviewNotes,
         semhash,
-        embedding,
+        embedding: null,
         isDuplicate: false,
       }).returning();
 
       importedIds.push(inserted.id);
+
+      if (status !== 'rejected') {
+        const idempotencyKey = buildTrainingIdempotencyKey({
+          tenantId,
+          sourceType: sourceTypeForImport,
+          sourceId: null,
+          semhash,
+        });
+        const queuePayload = trainingEmbeddingDedupeQueuePayloadSchema.parse({
+          trainingDataId: inserted.id,
+          tenantId,
+          namespaceId: scope.namespaceId ?? undefined,
+          agentId: scope.agentId ?? undefined,
+          semhash,
+          sourceType: sourceTypeForImport,
+          sourceId: undefined,
+          idempotencyKey,
+          createdAt: new Date().toISOString(),
+        });
+        try {
+          await enqueueTrainingEmbeddingDedupeJob(queuePayload);
+        } catch (queueError) {
+          logger.warn({
+            trainingDataId: inserted.id,
+            error: queueError instanceof Error ? queueError.message : String(queueError),
+          }, 'Falha ao enfileirar job de dedupe/embedding no bulk import');
+        }
+      }
     }
 
     logger.info({
@@ -4847,4 +4867,3 @@ let autoLearningLoopActive = false;
     process.exit(1);
   }
 })();
-
