@@ -4241,6 +4241,9 @@ function getSlaTargetSeconds(source: LlmSource, knobs?: RuntimeChatKnobs): numbe
 }
 
 function resolveContextProfile(_userMessage: string): LlmContextProfile {
+  if (isTradingCommand(_userMessage)) {
+    return 'trading';
+  }
   return 'general';
 }
 
@@ -5895,32 +5898,65 @@ async function shouldAutoCollectTrainingWithProfile(params: {
     }
 
     const dateISO = new Date().toISOString();
+    const appliedCapKeys: string[] = [];
+    const rollbackAppliedCaps = async (): Promise<void> => {
+      if (appliedCapKeys.length === 0) return;
+      const rollbackTargets = [...appliedCapKeys].reverse();
+      for (const key of rollbackTargets) {
+        try {
+          const decremented = await redis.decr(key);
+          if (decremented <= 0) {
+            await redis.del(key);
+          }
+        } catch (rollbackError) {
+          logger.warn(
+            {
+              tenantId: params.tenantId,
+              namespaceId: params.namespaceId,
+              userId: params.userId,
+              key,
+              error: rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
+            },
+            'Falha ao reverter contador de cap diário após bloqueio'
+          );
+        }
+      }
+    };
+
+    const tenantCapKey = buildDailyCapKey({ tenantId: params.tenantId, dateISO });
     const tenantCap = await incrementWithDailyCap(
       redis,
-      buildDailyCapKey({ tenantId: params.tenantId, dateISO }),
+      tenantCapKey,
       runtimeProfile.config.autoCollect.caps.dailyTenantCap
     );
     if (!tenantCap.allowed) {
       return { allowed: false, reason: 'cap_exceeded', semhash };
     }
+    appliedCapKeys.push(tenantCapKey);
 
+    const namespaceCapKey = buildDailyCapKey({ tenantId: params.tenantId, namespaceId: params.namespaceId, dateISO });
     const namespaceCap = await incrementWithDailyCap(
       redis,
-      buildDailyCapKey({ tenantId: params.tenantId, namespaceId: params.namespaceId, dateISO }),
+      namespaceCapKey,
       runtimeProfile.config.autoCollect.caps.dailyNamespaceCap
     );
     if (!namespaceCap.allowed) {
+      await rollbackAppliedCaps();
       return { allowed: false, reason: 'cap_exceeded', semhash };
     }
+    appliedCapKeys.push(namespaceCapKey);
 
+    const userCapKey = buildDailyCapKey({ tenantId: params.tenantId, namespaceId: params.namespaceId, userId: params.userId, dateISO });
     const userCap = await incrementWithDailyCap(
       redis,
-      buildDailyCapKey({ tenantId: params.tenantId, namespaceId: params.namespaceId, userId: params.userId, dateISO }),
+      userCapKey,
       runtimeProfile.config.autoCollect.caps.dailyUserCap
     );
     if (!userCap.allowed) {
+      await rollbackAppliedCaps();
       return { allowed: false, reason: 'cap_exceeded', semhash };
     }
+    appliedCapKeys.push(userCapKey);
 
     return {
       allowed: true,

@@ -1,7 +1,11 @@
+import crypto from 'node:crypto';
 import type { RedisClientType } from 'redis';
 
 function hashToUnitInterval(hashHex: string): number {
-  const normalized = hashHex.trim().toLowerCase();
+  const raw = hashHex.trim().toLowerCase();
+  const normalized = /^[0-9a-f]{13,}$/u.test(raw)
+    ? raw
+    : crypto.createHash('sha256').update(hashHex).digest('hex');
   const chunk = normalized.slice(0, 13); // 52 bits em hex (~13 chars)
   const value = Number.parseInt(chunk, 16);
   if (!Number.isFinite(value) || value < 0) return 0;
@@ -42,8 +46,18 @@ export async function incrementWithDailyCap(
   if (current === 1) {
     await redis.expire(key, 86_400);
   }
+  if (current > effectiveCap) {
+    const restored = await redis.decr(key);
+    if (restored <= 0) {
+      await redis.del(key);
+    }
+    return {
+      allowed: false,
+      current: Math.max(0, restored),
+    };
+  }
   return {
-    allowed: current <= effectiveCap,
+    allowed: true,
     current,
   };
 }

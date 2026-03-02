@@ -15,6 +15,19 @@ class InMemoryRedisForTest {
   async expire(): Promise<number> {
     return 1;
   }
+
+  async decr(key: string): Promise<number> {
+    const current = this.values.get(key) ?? 0;
+    const next = current - 1;
+    this.values.set(key, next);
+    return next;
+  }
+
+  async del(key: string): Promise<number> {
+    const existed = this.values.has(key);
+    this.values.delete(key);
+    return existed ? 1 : 0;
+  }
 }
 
 const DEFAULT_PROFILE_CONFIG = {
@@ -142,6 +155,15 @@ describe('training auto-collect governance', () => {
     expect(first).toBe(second);
   });
 
+  it('deterministicSample com conversationId UUID respeita taxa e não aceita tudo', () => {
+    const samples = Array.from({ length: 120 }, (_, idx) =>
+      `00000000-0000-0000-0000-${String(idx).padStart(12, '0')}`
+    );
+    const accepted = samples.filter((seed) => deterministicSample(seed, 0.1)).length;
+    expect(accepted).toBeGreaterThan(0);
+    expect(accepted).toBeLessThan(80);
+  });
+
   it('incrementWithDailyCap bloqueia ao ultrapassar cap diário', async () => {
     const redis = new InMemoryRedisForTest() as unknown as Parameters<typeof incrementWithDailyCap>[0];
     const key = 'training:cap:tenant:test';
@@ -149,5 +171,6 @@ describe('training auto-collect governance', () => {
     const second = await incrementWithDailyCap(redis, key, 1);
     expect(first.allowed).toBe(true);
     expect(second.allowed).toBe(false);
+    expect(second.current).toBe(1);
   });
 });

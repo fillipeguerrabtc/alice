@@ -87,6 +87,9 @@ Padronizar a coleta automática de dados de treinamento com governança por name
 - Fluxos `sync`, `stream`, `websocket`, `websocket-media` e `external-channel` passaram a usar knobs de `namespace_profiles.config` em runtime.
 - Threshold de roteamento, orçamento de prompt, prioridade GPU, limites de memória e histórico agora são governados por namespace profile.
 - Fallback seguro mantido somente quando o namespace não está disponível, sem bypass de política.
+- Correção de sampling determinístico para seed não-hex (`conversationId`): normalização via SHA-256 antes da projeção para faixa `[0..1]`.
+- Correção de drift de caps diários: rollback explícito dos contadores já aplicados quando o bloqueio ocorre em etapas posteriores (tenant → namespace → user), evitando rejeições prematuras por contagem inflada.
+- Hardening de guardrails em respostas numéricas: ativação do perfil de corrupção `trading` usando detector oficial de comandos de trading.
 
 ---
 
