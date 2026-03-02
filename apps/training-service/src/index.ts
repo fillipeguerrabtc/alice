@@ -72,6 +72,7 @@ import {
   tradingRebalanceEnqueueSchema,
   tradingModelRiskEnqueueSchema,
   TRAINING_EMBEDDING_DEDUPE_QUEUE,
+  TRAINING_DATA_POLICY_GATE_QUEUE,
   TRAINING_NAMESPACE_PROFILE_RECONCILE_QUEUE,
   trainingEmbeddingDedupeQueuePayloadSchema,
   trainingNamespaceProfileReconcileQueuePayloadSchema,
@@ -79,6 +80,7 @@ import {
   Counter as PromCounter,
   Histogram as PromHistogram,
   computeSemHash,
+  applyPrivacyPolicy,
   cosineSimilarity,
   generateInternalAuthHeaders,
 } from '@alice/shared-utils';
@@ -86,7 +88,7 @@ import { trainingServicePaths, trainingServiceSchemas } from './openapi-specs.js
 import { eq, and, or, desc, sql, isNull, not, inArray, lte, ne } from '@alice/database';
 import { z } from 'zod';
 import { getAllSystemConfig, setSystemConfig, getSystemConfig } from '@alice/database/system-config';
-import type { TradingSignalMetadata } from '@alice/shared';
+import { NamespaceProfileConfigSchema, type TradingSignalMetadata, type NamespaceProfileConfig } from '@alice/shared';
 
 function parseStructuredJsonFromContent(content: string): unknown {
   const trimmed = content.trim();
@@ -128,6 +130,7 @@ import { runModelRiskWorker } from './trading-v2/jobs/model-risk-worker.js';
 import { TRAINING_DATA_SIMILARITY_THRESHOLD, TRAINING_EMBEDDING_DEDUPE_WORKER_POLL_INTERVAL_MS } from './training-data-constants.js';
 import { createTrainingEmbeddingDedupeWorker } from './workers/training-embedding-dedupe-worker.js';
 import { createNamespaceProfileReconcileWorker } from './workers/namespace-profile-reconcile-worker.js';
+import { createTrainingDataPolicyGateWorker } from './workers/training-data-policy-gate-worker.js';
 // Fine-tuning é executado localmente via GPU Manager Service (Regra 6 - sem stubs/migração)
 
 // Logger centralizado: JSON em produção, pino-pretty em desenvolvimento
@@ -396,6 +399,21 @@ const trainingPipelineMetrics = {
     buckets: [0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30],
     registers: [metrics.registry],
   }),
+  privacyRedactionsTotal: new PromCounter({
+    name: 'alice_training_privacy_redactions_total',
+    help: 'Total de redações aplicadas por política de privacidade no treinamento',
+    registers: [metrics.registry],
+  }),
+  privacyQuarantineTotal: new PromCounter({
+    name: 'alice_training_privacy_quarantine_total',
+    help: 'Total de itens em quarentena por política de privacidade',
+    registers: [metrics.registry],
+  }),
+  consentRejectedTotal: new PromCounter({
+    name: 'alice_training_consent_rejected_total',
+    help: 'Total de itens rejeitados por ausência de consentimento de treinamento',
+    registers: [metrics.registry],
+  }),
 };
 
 const tradingV2Metrics = {
@@ -519,6 +537,11 @@ const NAMESPACE_PROFILE_RECONCILE_INTERVAL_MS = parseEnvInt(
   process.env.NAMESPACE_PROFILE_RECONCILE_INTERVAL_MS,
   600_000,
   'NAMESPACE_PROFILE_RECONCILE_INTERVAL_MS'
+);
+const TRAINING_POLICY_GATE_WORKER_POLL_INTERVAL_MS = parseEnvInt(
+  process.env.TRAINING_POLICY_GATE_WORKER_POLL_INTERVAL_MS,
+  5_000,
+  'TRAINING_POLICY_GATE_WORKER_POLL_INTERVAL_MS'
 );
 const TRADING_WORKER_POLL_INTERVAL_MS = 250;
 
@@ -2020,6 +2043,69 @@ const TRAINING_SCHEDULER_POLL_MS = parseEnvInt(
   'TRAINING_SCHEDULER_POLL_MS'
 );
 
+type TrainingNamespaceProfileRuntime = {
+  profileVersion: number;
+  isActive: boolean;
+  autoCollectEnabled: boolean;
+  exists: boolean;
+  config: NamespaceProfileConfig;
+};
+
+async function getDefaultNamespaceProfileConfigForTraining(): Promise<NamespaceProfileConfig> {
+  const raw = await getSystemConfig('NAMESPACE_PROFILE_DEFAULT_CONFIG_JSON');
+  if (!raw) {
+    throw new Error('NAMESPACE_PROFILE_DEFAULT_CONFIG_JSON ausente no system_config');
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(
+      `JSON inválido em NAMESPACE_PROFILE_DEFAULT_CONFIG_JSON: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+  return NamespaceProfileConfigSchema.parse(parsed);
+}
+
+async function resolveTrainingNamespaceProfile(params: {
+  tenantId: string;
+  namespaceId?: string | null;
+}): Promise<TrainingNamespaceProfileRuntime> {
+  const defaultConfig = await getDefaultNamespaceProfileConfigForTraining();
+  if (!params.namespaceId) {
+    return {
+      profileVersion: 1,
+      isActive: true,
+      autoCollectEnabled: false,
+      exists: false,
+      config: defaultConfig,
+    };
+  }
+
+  const profile = await db.query.namespaceProfiles.findFirst({
+    where: and(
+      eq(schema.namespaceProfiles.tenantId, params.tenantId),
+      eq(schema.namespaceProfiles.namespaceId, params.namespaceId)
+    ),
+  });
+  if (!profile) {
+    return {
+      profileVersion: 1,
+      isActive: true,
+      autoCollectEnabled: true,
+      exists: false,
+      config: defaultConfig,
+    };
+  }
+  return {
+    profileVersion: profile.version,
+    isActive: profile.isActive,
+    autoCollectEnabled: profile.autoCollectEnabled,
+    exists: true,
+    config: NamespaceProfileConfigSchema.parse(profile.config),
+  };
+}
+
 const collectTrainingDataSchema = z.object({
   tenantId: z.string().uuid('Tenant ID deve ser UUID válido'),
   namespaceId: z.string().uuid('Namespace ID deve ser UUID válido').optional(),
@@ -2057,7 +2143,74 @@ app.post('/api/training/data', requirePermission('training:training_data:write')
       validateTenantConsistency('agent', agent, resolvedTenantId, 'training_data');
     }
 
-    const messagesText = body.messages.map(m => m.content).join('\n');
+    const sourceType = body.sourceType ?? 'manual';
+    const namespaceProfile = await resolveTrainingNamespaceProfile({
+      tenantId: resolvedTenantId,
+      namespaceId: body.namespaceId ?? null,
+    });
+
+    if (!namespaceProfile.exists && body.namespaceId) {
+      const runId = crypto.randomUUID();
+      const reconcilePayload = trainingNamespaceProfileReconcileQueuePayloadSchema.parse({
+        runId,
+        idempotencyKey: buildNamespaceProfileReconcileIdempotencyKey({ runId }),
+        createdAt: new Date().toISOString(),
+      });
+      const enqueued = await enqueueNamespaceProfileReconcileJob(reconcilePayload);
+      logger.warn(
+        {
+          tenantId: resolvedTenantId,
+          namespaceId: body.namespaceId,
+          runId,
+          enqueued,
+        },
+        'Namespace profile ausente; reconcile enfileirado'
+      );
+    }
+
+    const privacyResult = applyPrivacyPolicy({
+      messages: body.messages,
+      privacyConfig: namespaceProfile.config.privacy,
+    });
+    const messagesForStorage = privacyResult.messagesRedacted;
+    if (privacyResult.summary.totalMatches > 0) {
+      trainingPipelineMetrics.privacyRedactionsTotal.inc(privacyResult.summary.totalMatches);
+    }
+    if (privacyResult.action === 'quarantine') {
+      trainingPipelineMetrics.privacyQuarantineTotal.inc();
+    }
+
+    if (sourceType === 'chat' && body.source === 'chat-auto') {
+      if (!namespaceProfile.isActive || !namespaceProfile.autoCollectEnabled || !namespaceProfile.config.autoCollect.enabled) {
+        trainingPipelineMetrics.dataRejectedTotal.labels('policy', sourceType).inc();
+        return res.status(403).json({ error: 'namespace_profile_auto_collect_disabled' });
+      }
+    }
+
+    if (sourceType === 'chat' && body.source === 'chat-auto' && namespaceProfile.config.autoCollect.requiresUserConsent) {
+      const sourceMetadataUserId = typeof body.sourceMetadata?.['userId'] === 'string' ? body.sourceMetadata['userId'] : null;
+      const userIdForConsent = sourceMetadataUserId ?? createdBy ?? null;
+      if (!userIdForConsent) {
+        trainingPipelineMetrics.consentRejectedTotal.inc();
+        return res.status(403).json({ error: 'user_opt_out' });
+      }
+      const userRecord = await db.query.users.findFirst({
+        where: and(
+          eq(schema.users.id, userIdForConsent),
+          eq(schema.users.tenantId, resolvedTenantId)
+        ),
+        columns: { preferencias: true },
+      });
+      const prefs = (userRecord?.preferencias ?? {}) as {
+        training?: { allowTrainingUsage?: boolean; allowAutoCollect?: boolean };
+      };
+      if (prefs.training?.allowTrainingUsage === false || prefs.training?.allowAutoCollect === false) {
+        trainingPipelineMetrics.consentRejectedTotal.inc();
+        return res.status(403).json({ error: 'user_opt_out' });
+      }
+    }
+
+    const messagesText = messagesForStorage.map((m) => m.content).join('\n');
     const scope = await resolveScope({
       tenantId: resolvedTenantId,
       namespaceId: body.namespaceId ?? null,
@@ -2087,9 +2240,8 @@ app.post('/api/training/data', requirePermission('training:training_data:write')
         source_type: body.sourceType ?? 'unknown',
       });
     }
-    const sourceType = body.sourceType ?? 'manual';
     const semhash = computeSemHash(messagesText);
-    const qualityScore = computeQualityScore(body.messages);
+    const qualityScore = computeQualityScore(messagesForStorage);
     const idempotencyKey = buildTrainingIdempotencyKey({
       tenantId: resolvedTenantId,
       sourceType,
@@ -2097,8 +2249,13 @@ app.post('/api/training/data', requirePermission('training:training_data:write')
       semhash,
     });
 
-    if (qualityScore < TRAINING_DATA_MIN_QUALITY) {
-      const reviewNotes = `Auto-rejeitado: qualidade ${qualityScore.toFixed(2)} abaixo do mínimo (${TRAINING_DATA_MIN_QUALITY}).`;
+    const qualityMinScore = namespaceProfile.config.quality.minScore;
+    const qualityAutoReject = namespaceProfile.config.quality.autoRejectBelowMin;
+    const autoRejectedByQuality = qualityAutoReject && qualityScore < qualityMinScore;
+    if (autoRejectedByQuality || privacyResult.action === 'reject') {
+      const reviewNotes = autoRejectedByQuality
+        ? `Auto-rejeitado: qualidade ${qualityScore.toFixed(2)} abaixo do mínimo (${qualityMinScore}).`
+        : 'Rejeitado por política de privacidade';
       const processedAt = new Date();
       const [trainingData] = await db.insert(schema.trainingData).values({
         tenantId: resolvedTenantId,
@@ -2115,12 +2272,16 @@ app.post('/api/training/data', requirePermission('training:training_data:write')
         inferenceConfidence: scope.confidence,
         inferenceTrace: scope.trace,
         scopeResolverVersion: 'v1',
-        profileVersion: 1,
-        needsHumanReview: scope.needsHumanReview,
-        quarantineReason: scope.needsHumanReview ? 'low_confidence_or_missing_namespace' : null,
+        profileVersion: namespaceProfile.profileVersion,
+        needsHumanReview: scope.needsHumanReview || !namespaceProfile.exists,
+        quarantineReason: !namespaceProfile.exists
+          ? 'missing_namespace_profile'
+          : scope.needsHumanReview
+            ? 'low_confidence_or_missing_namespace'
+            : null,
         scopeResolvedAt: new Date(),
-        quarantinedAt: scope.needsHumanReview ? new Date() : null,
-        messages: body.messages,
+        quarantinedAt: scope.needsHumanReview || !namespaceProfile.exists ? new Date() : null,
+        messages: messagesForStorage,
         rating: body.rating,
         qualityScore,
         createdBy,
@@ -2130,14 +2291,37 @@ app.post('/api/training/data', requirePermission('training:training_data:write')
         duplicateOfId: null,
         similarityScore: null,
         status: 'rejected',
-        reviewNotes: [reviewNotes, ...inferredStatusNotes].filter(Boolean).join(' | ') || null,
+        reviewNotes: [
+          reviewNotes,
+          !namespaceProfile.exists ? 'Namespace profile ausente; item em modo restritivo.' : null,
+          privacyResult.action === 'reject' ? 'privacy_policy_match' : null,
+          ...inferredStatusNotes,
+        ].filter(Boolean).join(' | ') || null,
         processedAt,
         processadoEm: processedAt,
       }).returning();
 
       trainingPipelineMetrics.dataCollectedTotal.labels(sourceType, 'rejected').inc();
       trainingPipelineMetrics.qualityScore.observe(qualityScore);
-      trainingPipelineMetrics.dataRejectedTotal.labels('quality', sourceType).inc();
+      trainingPipelineMetrics.dataRejectedTotal.labels(
+        privacyResult.action === 'reject' ? 'privacy' : 'quality',
+        sourceType
+      ).inc();
+      await db.insert(schema.trainingLineageEvents).values({
+        tenantId: resolvedTenantId,
+        namespaceId: effectiveNamespaceId,
+        eventType: 'training_data.rejected_policy',
+        sourceTable: 'training_data',
+        sourceId: trainingData.id,
+        producedTable: 'training_data',
+        producedId: trainingData.id,
+        metadata: {
+          sourceType,
+          qualityScore,
+          minScore: qualityMinScore,
+          privacyAction: privacyResult.action,
+        },
+      });
 
       logger.info({
         trainingDataId: trainingData.id,
@@ -2198,19 +2382,28 @@ app.post('/api/training/data', requirePermission('training:training_data:write')
       source: body.source,
       sourceType,
       sourceId: body.sourceId ?? null,
-      sourceMetadata: body.sourceMetadata ?? {},
+      sourceMetadata: {
+        ...(body.sourceMetadata ?? {}),
+        privacySummary: namespaceProfile.config.privacy.logRedactionSummary ? privacyResult.summary : undefined,
+      },
       inferredNamespaceId: scope.namespaceId,
       inferredAgentId: scope.agentId,
       inferredDomain: scope.domain,
       inferenceConfidence: scope.confidence,
       inferenceTrace: scope.trace,
       scopeResolverVersion: 'v1',
-      profileVersion: 1,
-      needsHumanReview: scope.needsHumanReview,
-      quarantineReason: scope.needsHumanReview ? 'low_confidence_or_missing_namespace' : null,
+      profileVersion: namespaceProfile.profileVersion,
+      needsHumanReview: scope.needsHumanReview || !namespaceProfile.exists || privacyResult.action === 'quarantine',
+      quarantineReason: privacyResult.action === 'quarantine'
+        ? 'privacy_policy_match'
+        : !namespaceProfile.exists
+          ? 'missing_namespace_profile'
+          : scope.needsHumanReview
+            ? 'low_confidence_or_missing_namespace'
+            : null,
       scopeResolvedAt: new Date(),
-      quarantinedAt: scope.needsHumanReview ? new Date() : null,
-      messages: body.messages,
+      quarantinedAt: scope.needsHumanReview || !namespaceProfile.exists || privacyResult.action === 'quarantine' ? new Date() : null,
+      messages: messagesForStorage,
       rating: body.rating,
       qualityScore,
       createdBy,
@@ -2220,8 +2413,30 @@ app.post('/api/training/data', requirePermission('training:training_data:write')
       duplicateOfId: null,
       similarityScore: null,
       status: 'pending',
-      reviewNotes: inferredStatusNotes.filter(Boolean).join(' | ') || null,
+      reviewNotes: [
+        ...inferredStatusNotes,
+        !namespaceProfile.exists ? 'Namespace profile ausente; reconcile solicitado.' : null,
+        privacyResult.action === 'quarantine' ? 'privacy_policy_match' : null,
+      ].filter(Boolean).join(' | ') || null,
     }).returning();
+
+    await db.insert(schema.trainingLineageEvents).values({
+      tenantId: resolvedTenantId,
+      namespaceId: effectiveNamespaceId,
+      eventType: privacyResult.action === 'quarantine' || !namespaceProfile.exists || scope.needsHumanReview
+        ? 'training_data.quarantined_policy'
+        : 'training_data.collected',
+      sourceTable: 'training_data',
+      sourceId: trainingData.id,
+      producedTable: 'training_data',
+      producedId: trainingData.id,
+      metadata: {
+        sourceType,
+        qualityScore,
+        profileVersion: namespaceProfile.profileVersion,
+        privacyAction: privacyResult.action,
+      },
+    });
 
     const queuePayload = trainingEmbeddingDedupeQueuePayloadSchema.parse({
       trainingDataId: trainingData.id,
@@ -4779,6 +4994,19 @@ let autoLearningLoopActive = false;
         similarityThreshold: SIMILARITY_THRESHOLD,
         generateEmbedding,
       })
+    );
+    tradingWorkerStoppers.push(
+      createTrainingDataPolicyGateWorker({
+        db,
+        pollIntervalMs: TRAINING_POLICY_GATE_WORKER_POLL_INTERVAL_MS,
+      })
+    );
+    logger.info(
+      {
+        queue: TRAINING_DATA_POLICY_GATE_QUEUE,
+        pollIntervalMs: TRAINING_POLICY_GATE_WORKER_POLL_INTERVAL_MS,
+      },
+      'Worker de policy gate de treinamento inicializado'
     );
     logger.info(
       {

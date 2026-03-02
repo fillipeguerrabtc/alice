@@ -1,9 +1,10 @@
 import { createLogger } from '@alice/logger';
 import { getDatabase, schema, and, eq } from '@alice/database';
+import { getSystemConfig } from '@alice/database/system-config';
 
 const logger = createLogger('training-scope-resolver');
 
-const LOW_CONFIDENCE_THRESHOLD = 0.65;
+const LOW_CONFIDENCE_THRESHOLD_DEFAULT = 0.65;
 
 export interface ScopeResolverInput {
   tenantId: string;
@@ -40,21 +41,6 @@ interface TraceStep {
   detail?: Record<string, unknown>;
 }
 
-const TRADING_TERMS = [
-  'trading',
-  'futuros',
-  'futures',
-  'btc',
-  'kucoin',
-  'alavancagem',
-  'stop loss',
-  'take profit',
-  'candles',
-  'orderbook',
-  'rsi',
-  'macd',
-];
-
 function normalizeText(value: string): string {
   return value
     .toLowerCase()
@@ -64,19 +50,87 @@ function normalizeText(value: string): string {
     .trim();
 }
 
-function inferDomainFromText(rawText: string): { domain: string | null; confidence: number } {
+async function resolveLowConfidenceThreshold(): Promise<number> {
+  const configured = await getSystemConfig('TRAINING_SCOPE_LOW_CONFIDENCE_THRESHOLD');
+  if (!configured) return LOW_CONFIDENCE_THRESHOLD_DEFAULT;
+  const parsed = Number(configured);
+  if (!Number.isFinite(parsed)) return LOW_CONFIDENCE_THRESHOLD_DEFAULT;
+  return Math.min(1, Math.max(0, parsed));
+}
+
+function readKeywords(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+}
+
+async function inferDomainFromProfiles(input: ScopeResolverInput, rawText: string): Promise<{ domain: string | null; confidence: number; detail: Record<string, unknown> }> {
   const text = normalizeText(rawText);
-  if (!text) return { domain: null, confidence: 0 };
+  if (!text) return { domain: null, confidence: 0, detail: { reason: 'empty_text' } };
 
-  let tradingHits = 0;
-  for (const term of TRADING_TERMS) {
-    if (text.includes(term)) tradingHits += 1;
+  const db = getDatabase();
+  const profiles = await db.query.trainingDatasetProfiles.findMany({
+    where: and(
+      eq(schema.trainingDatasetProfiles.tenantId, input.tenantId),
+      eq(schema.trainingDatasetProfiles.isActive, true)
+    ),
+    columns: {
+      id: true,
+      domain: true,
+      namespaceId: true,
+      agentId: true,
+      keywords: true,
+      exclusions: true,
+    },
+  });
+
+  if (profiles.length === 0) {
+    return { domain: null, confidence: 0, detail: { reason: 'no_active_profiles' } };
   }
 
-  if (tradingHits >= 2) {
-    return { domain: 'trading', confidence: Math.min(0.9, 0.55 + tradingHits * 0.07) };
+  const ranked = profiles.map((profile) => {
+    const keywords = readKeywords(profile.keywords);
+    const exclusions = readKeywords(profile.exclusions);
+    const keywordHits = keywords.filter((term) => text.includes(normalizeText(term))).length;
+    const exclusionHits = exclusions.filter((term) => text.includes(normalizeText(term))).length;
+    const relationBoost = (
+      (input.namespaceId && profile.namespaceId === input.namespaceId ? 0.15 : 0) +
+      (input.agentId && profile.agentId === input.agentId ? 0.15 : 0)
+    );
+    const rawScore = Math.max(0, keywordHits - exclusionHits * 0.75) + relationBoost;
+    const confidence = rawScore > 0 ? Math.min(0.95, 0.35 + rawScore * 0.1) : 0;
+    return {
+      profileId: profile.id,
+      domain: profile.domain,
+      keywordHits,
+      exclusionHits,
+      relationBoost,
+      rawScore,
+      confidence,
+    };
+  });
+
+  ranked.sort((a, b) => b.rawScore - a.rawScore);
+  const winner = ranked[0];
+  if (!winner || winner.rawScore <= 0) {
+    return {
+      domain: null,
+      confidence: 0,
+      detail: {
+        reason: 'no_keyword_match',
+      },
+    };
   }
-  return { domain: 'general', confidence: 0.45 };
+
+  return {
+    domain: winner.domain,
+    confidence: winner.confidence,
+    detail: {
+      profileId: winner.profileId,
+      keywordHits: winner.keywordHits,
+      exclusionHits: winner.exclusionHits,
+      relationBoost: winner.relationBoost,
+    },
+  };
 }
 
 function readString(meta: Record<string, unknown> | null | undefined, key: string): string | null {
@@ -322,14 +376,14 @@ export async function resolveScope(input: ScopeResolverInput): Promise<ScopeReso
     const semanticText = [input.messagesText ?? '', JSON.stringify(input.sourceMetadata ?? {})]
       .filter(Boolean)
       .join('\n');
-    const domainInference = inferDomainFromText(semanticText);
+    const domainInference = await inferDomainFromProfiles(input, semanticText);
     domain = domainInference.domain;
     confidence = Math.max(confidence, domainInference.confidence);
     steps.push({
       step: 'semantic_domain_classifier',
       matched: domainInference.domain !== null,
       confidence: domainInference.confidence,
-      detail: { domain: domainInference.domain },
+      detail: { domain: domainInference.domain, ...domainInference.detail },
     });
   } else {
     steps.push({ step: 'semantic_domain_classifier', matched: false });
@@ -349,30 +403,14 @@ export async function resolveScope(input: ScopeResolverInput): Promise<ScopeReso
     detail: { consistency: consistency.consistency, namespaceId, agentId },
   });
 
-  // 6) Fallback de domínio por source type
-  if (!domain && input.sourceType?.startsWith('trading')) {
-    domain = 'trading';
-    confidence = Math.max(confidence, 0.6);
-    steps.push({
-      step: 'fallback_domain_by_source_type',
-      matched: true,
-      confidence,
-      detail: { sourceType: input.sourceType, domain },
-    });
-  } else {
-    steps.push({ step: 'fallback_domain_by_source_type', matched: false });
-  }
-
-  const needsHumanReview = !namespaceId || confidence < LOW_CONFIDENCE_THRESHOLD;
+  const lowConfidenceThreshold = await resolveLowConfidenceThreshold();
+  const needsHumanReview = !namespaceId || confidence < lowConfidenceThreshold;
 
   let suggestedNewNamespace: SuggestedNewNamespace | null = null;
   if (!namespaceId && (domain || (input.messagesText ?? '').trim().length > 0)) {
-    const theme = domain === 'trading'
-      ? 'Trading e análise de mercado'
-      : domain === 'general'
-        ? 'Uso geral e assistente'
-        : 'Documentos e conversas';
-    const name = domain === 'trading' ? 'trading-geral' : domain === 'general' ? 'geral' : 'conhecimento';
+    const normalizedDomain = (domain ?? 'conhecimento').replace(/[^a-z0-9_-]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase();
+    const name = normalizedDomain.length > 0 ? normalizedDomain : 'conhecimento';
+    const theme = domain ? `Domínio sugerido: ${domain}` : 'Domínio não identificado';
     suggestedNewNamespace = { name, theme };
   }
 
@@ -387,6 +425,7 @@ export async function resolveScope(input: ScopeResolverInput): Promise<ScopeReso
       agentId,
       domain,
       confidence,
+      lowConfidenceThreshold,
       needsHumanReview,
     },
   };

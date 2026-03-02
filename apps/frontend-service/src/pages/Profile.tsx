@@ -37,7 +37,16 @@ type UpdateUserPayload = {
       region?: string;
       city?: string;
     } | null;
+    training?: {
+      allowTrainingUsage?: boolean;
+      allowAutoCollect?: boolean;
+    };
   };
+};
+
+type TrainingPreferences = {
+  allowTrainingUsage?: boolean;
+  allowAutoCollect?: boolean;
 };
 
 export default function Profile() {
@@ -68,6 +77,11 @@ export default function Profile() {
     confirmPassword: '',
   });
   const maxBiometricCaptures = 3;
+  const userTrainingPreferences = (user?.preferencias as { training?: TrainingPreferences } | undefined)?.training;
+  const [trainingConsent, setTrainingConsent] = useState({
+    allowTrainingUsage: userTrainingPreferences?.allowTrainingUsage ?? true,
+    allowAutoCollect: userTrainingPreferences?.allowAutoCollect ?? true,
+  });
 
   useEffect(() => {
     setProfileForm({
@@ -83,7 +97,11 @@ export default function Profile() {
       region: user?.preferencias?.location?.region || '',
       city: user?.preferencias?.location?.city || '',
     });
-  }, [user, i18n.language]);
+    setTrainingConsent({
+      allowTrainingUsage: userTrainingPreferences?.allowTrainingUsage ?? true,
+      allowAutoCollect: userTrainingPreferences?.allowAutoCollect ?? true,
+    });
+  }, [user, i18n.language, userTrainingPreferences?.allowAutoCollect, userTrainingPreferences?.allowTrainingUsage]);
 
   useEffect(() => {
     if (activeTab !== 'security' || !user?.id) return;
@@ -182,6 +200,42 @@ export default function Profile() {
           toast({
             title: 'Falha ao salvar configurações regionais',
             description: 'Não foi possível salvar. Tente novamente.',
+            variant: 'destructive',
+          });
+        },
+      }
+    );
+  };
+
+  const handleSaveTrainingConsent = () => {
+    updateProfile.mutate(
+      {
+        preferencias: {
+          location: user?.preferencias?.location
+            ? {
+              countryName: user.preferencias.location.countryName ?? undefined,
+              countryCode: user.preferencias.location.countryCode ?? undefined,
+              region: user.preferencias.location.region ?? undefined,
+              city: user.preferencias.location.city ?? undefined,
+            }
+            : undefined,
+          training: {
+            allowTrainingUsage: trainingConsent.allowTrainingUsage,
+            allowAutoCollect: trainingConsent.allowAutoCollect,
+          },
+        },
+      },
+      {
+        onSuccess: () => {
+          toast({
+            title: 'Consentimentos de treinamento atualizados',
+            description: 'Suas preferências de uso e auto-coleta foram salvas.',
+          });
+        },
+        onError: () => {
+          toast({
+            title: 'Falha ao salvar consentimentos',
+            description: 'Não foi possível atualizar suas preferências de treinamento.',
             variant: 'destructive',
           });
         },
@@ -381,6 +435,39 @@ export default function Profile() {
                     <Switch defaultChecked={true} data-testid={`toggle-${notification.id}`} />
                   </div>
                 ))}
+                <div className="pt-4 border-t space-y-3">
+                  <h4 className="font-medium">Consentimento de treinamento</h4>
+                  <div className="flex items-center justify-between rounded-lg border p-3">
+                    <div>
+                      <p className="text-sm font-medium">Permitir uso de conversas para treinamento</p>
+                      <p className="text-xs text-muted-foreground">Controla uso de dados para melhoria de modelos.</p>
+                    </div>
+                    <Switch
+                      checked={trainingConsent.allowTrainingUsage}
+                      onCheckedChange={(checked) => setTrainingConsent((prev) => ({ ...prev, allowTrainingUsage: checked }))}
+                      data-testid="toggle-allow-training-usage"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between rounded-lg border p-3">
+                    <div>
+                      <p className="text-sm font-medium">Permitir coleta automática</p>
+                      <p className="text-xs text-muted-foreground">Controla auto-collect contínuo quando habilitado por namespace.</p>
+                    </div>
+                    <Switch
+                      checked={trainingConsent.allowAutoCollect}
+                      onCheckedChange={(checked) => setTrainingConsent((prev) => ({ ...prev, allowAutoCollect: checked }))}
+                      data-testid="toggle-allow-auto-collect"
+                    />
+                  </div>
+                  <Button
+                    variant="outline"
+                    onClick={handleSaveTrainingConsent}
+                    disabled={updateProfile.isPending}
+                    data-testid="button-save-training-consent"
+                  >
+                    Salvar consentimentos de treinamento
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           )}

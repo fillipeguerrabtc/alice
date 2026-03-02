@@ -1,10 +1,14 @@
 import type { Database } from '@alice/database';
 import { and, desc, eq, inArray, ne, schema, sql, toSql } from '@alice/database';
+import { NamespaceProfileConfigSchema } from '@alice/shared';
 import {
   getRedisClient,
   RedisStreamQueue,
+  TRAINING_DATA_POLICY_GATE_QUEUE,
   TRAINING_EMBEDDING_DEDUPE_QUEUE,
+  buildTrainingPolicyGateIdempotencyKey,
   trainingEmbeddingDedupeQueuePayloadSchema,
+  trainingDataPolicyGateQueuePayloadSchema,
 } from '@alice/shared-utils';
 import { z } from 'zod';
 
@@ -73,9 +77,12 @@ function parseSimilarity(raw: unknown): number | null {
 
 async function queryNearestNeighborByCosine(
   db: Database,
-  payload: { tenantId: string; trainingDataId: string },
+  payload: { tenantId: string; trainingDataId: string; namespaceId?: string | null },
   embeddingVectorSql: string
 ): Promise<{ id?: unknown; similarity?: unknown } | undefined> {
+  const namespaceCondition = payload.namespaceId
+    ? sql`AND namespace_id = ${payload.namespaceId}::uuid`
+    : sql``;
   try {
     const halfvecResult = await db.execute(sql`
       SELECT id, 1 - (embedding <=> ${embeddingVectorSql}::halfvec) AS similarity
@@ -84,6 +91,7 @@ async function queryNearestNeighborByCosine(
         AND id <> ${payload.trainingDataId}::uuid
         AND status IN ('pending', 'approved', 'used')
         AND embedding IS NOT NULL
+        ${namespaceCondition}
       ORDER BY embedding <=> ${embeddingVectorSql}::halfvec
       LIMIT 1
     `);
@@ -96,6 +104,7 @@ async function queryNearestNeighborByCosine(
         AND id <> ${payload.trainingDataId}::uuid
         AND status IN ('pending', 'approved', 'used')
         AND embedding IS NOT NULL
+        ${namespaceCondition}
       ORDER BY embedding <=> ${embeddingVectorSql}::vector
       LIMIT 1
     `);
@@ -147,6 +156,13 @@ export function createTrainingEmbeddingDedupeWorker(
   const queue = new RedisStreamQueue(TRAINING_EMBEDDING_DEDUPE_QUEUE, {
     group: 'training-service',
     consumer: `training-embedding-${process.pid}`,
+    maxRetries: 3,
+    autoClaimCount: 10,
+    streamMaxLen: QUEUE_STREAM_MAX_LEN,
+  });
+  const policyGateQueue = new RedisStreamQueue(TRAINING_DATA_POLICY_GATE_QUEUE, {
+    group: 'training-service',
+    consumer: `training-policy-gate-enqueue-${process.pid}`,
     maxRetries: 3,
     autoClaimCount: 10,
     streamMaxLen: QUEUE_STREAM_MAX_LEN,
@@ -238,13 +254,37 @@ export function createTrainingEmbeddingDedupeWorker(
           const messagesText = extractMessagesText(current.messages);
           const embedding = await params.generateEmbedding(messagesText);
 
+          let dedupeScope: 'tenant' | 'namespace' = 'tenant';
+          let effectiveSimilarityThreshold = params.similarityThreshold;
+          let dedupeNamespaceId: string | null = null;
+          if (payload.namespaceId) {
+            const namespaceProfile = await params.db.query.namespaceProfiles.findFirst({
+              where: and(
+                eq(schema.namespaceProfiles.tenantId, payload.tenantId),
+                eq(schema.namespaceProfiles.namespaceId, payload.namespaceId)
+              ),
+            });
+            if (namespaceProfile) {
+              const parsedConfig = NamespaceProfileConfigSchema.parse(namespaceProfile.config);
+              dedupeScope = parsedConfig.dedupe.scope;
+              effectiveSimilarityThreshold = parsedConfig.dedupe.similarityThreshold;
+            }
+            if (dedupeScope === 'namespace') {
+              dedupeNamespaceId = payload.namespaceId;
+            }
+          }
+
+          const exactDuplicateConditions = [
+            eq(schema.trainingData.tenantId, payload.tenantId),
+            eq(schema.trainingData.semhash, payload.semhash),
+            ne(schema.trainingData.id, payload.trainingDataId),
+            inArray(schema.trainingData.status, TRAINING_DATA_ACTIVE_STATUSES),
+          ];
+          if (dedupeNamespaceId) {
+            exactDuplicateConditions.push(eq(schema.trainingData.namespaceId, dedupeNamespaceId));
+          }
           const exactDuplicate = await params.db.query.trainingData.findFirst({
-            where: and(
-              eq(schema.trainingData.tenantId, payload.tenantId),
-              eq(schema.trainingData.semhash, payload.semhash),
-              ne(schema.trainingData.id, payload.trainingDataId),
-              inArray(schema.trainingData.status, TRAINING_DATA_ACTIVE_STATUSES)
-            ),
+            where: and(...exactDuplicateConditions),
             columns: { id: true },
             orderBy: [desc(schema.trainingData.criadoEm)],
           });
@@ -263,11 +303,11 @@ export function createTrainingEmbeddingDedupeWorker(
             const embeddingVectorSql = toSql(embedding);
             const nearest = await queryNearestNeighborByCosine(
               params.db,
-              { tenantId: payload.tenantId, trainingDataId: payload.trainingDataId },
+              { tenantId: payload.tenantId, trainingDataId: payload.trainingDataId, namespaceId: dedupeNamespaceId },
               embeddingVectorSql
             );
             const nearestSimilarity = parseSimilarity(nearest?.similarity);
-            if (nearest && typeof nearest.id === 'string' && nearestSimilarity !== null && nearestSimilarity >= params.similarityThreshold) {
+            if (nearest && typeof nearest.id === 'string' && nearestSimilarity !== null && nearestSimilarity >= effectiveSimilarityThreshold) {
               isDuplicate = true;
               duplicateOfId = nearest.id;
               similarityScore = nearestSimilarity;
@@ -297,6 +337,20 @@ export function createTrainingEmbeddingDedupeWorker(
 
           params.metrics.dedupeHitsTotal.inc({ method: dedupeMethod });
           params.metrics.jobsTotal.inc({ result: 'success' });
+          const policyPayload = trainingDataPolicyGateQueuePayloadSchema.parse({
+            trainingDataId: payload.trainingDataId,
+            tenantId: payload.tenantId,
+            namespaceId: payload.namespaceId,
+            userId: undefined,
+            semhash: payload.semhash,
+            idempotencyKey: buildTrainingPolicyGateIdempotencyKey({
+              tenantId: payload.tenantId,
+              trainingDataId: payload.trainingDataId,
+              semhash: payload.semhash,
+            }),
+            createdAt: new Date().toISOString(),
+          });
+          await policyGateQueue.enqueue(redis, policyPayload, policyPayload.idempotencyKey);
           params.logger.info(
             {
               trainingDataId: payload.trainingDataId,
@@ -304,6 +358,8 @@ export function createTrainingEmbeddingDedupeWorker(
               isDuplicate,
               duplicateOfId,
               similarityScore,
+              dedupeScope,
+              similarityThreshold: effectiveSimilarityThreshold,
             },
             'Job de embedding/dedupe processado com sucesso'
           );

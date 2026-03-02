@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -67,6 +67,16 @@ interface Namespace {
   agentsCount?: number | null;
   documentsCount?: number | null;
   usersCount?: number | null;
+}
+
+interface NamespaceProfile {
+  id: string;
+  tenantId: string;
+  namespaceId: string;
+  version: number;
+  isActive: boolean;
+  autoCollectEnabled: boolean;
+  config: Record<string, unknown>;
 }
 
 const defaultColors = [
@@ -186,6 +196,7 @@ export default function Namespaces() {
   const [settingsNamespace, setSettingsNamespace] = useState<Namespace | null>(null);
   const [detailsNamespace, setDetailsNamespace] = useState<Namespace | null>(null);
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
+  const [profileJsonDraft, setProfileJsonDraft] = useState<string>("");
   const [clusterNamespaceSelections, setClusterNamespaceSelections] = useState<Record<string, string>>({});
 
   const form = useForm<NamespaceFormData>({
@@ -246,6 +257,20 @@ export default function Namespaces() {
       });
       if (!response.ok) {
         throw new Error('Falha ao carregar fallback clusters');
+      }
+      return response.json();
+    },
+  });
+
+  const { data: namespaceProfile, isLoading: isLoadingNamespaceProfile } = useQuery<NamespaceProfile>({
+    queryKey: ["/api/namespaces/profile", detailsNamespace?.id],
+    enabled: Boolean(detailsNamespace?.id && isDetailsDialogOpen),
+    queryFn: async () => {
+      const response = await fetch(`/api/namespaces/${detailsNamespace?.id}/profile`, {
+        credentials: "include",
+      });
+      if (!response.ok) {
+        throw new Error("Falha ao carregar profile do namespace");
       }
       return response.json();
     },
@@ -331,6 +356,25 @@ export default function Namespaces() {
       toast({ title: t('namespaces.alerts.createFromClusterError'), variant: 'destructive' });
     },
   });
+
+  const updateNamespaceProfileMutation = useMutation({
+    mutationFn: async (params: { namespaceId: string; payload: { isActive: boolean; autoCollectEnabled: boolean; config: Record<string, unknown> } }) => {
+      const response = await apiRequest("PATCH", `/api/namespaces/${params.namespaceId}/profile`, params.payload);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/namespaces/profile", detailsNamespace?.id] });
+      toast({ title: "Profile do namespace atualizado" });
+    },
+    onError: () => {
+      toast({ title: "Falha ao salvar profile do namespace", variant: "destructive" });
+    },
+  });
+
+  useEffect(() => {
+    if (!namespaceProfile) return;
+    setProfileJsonDraft(JSON.stringify(namespaceProfile.config, null, 2));
+  }, [namespaceProfile]);
 
   const handleSubmit = (data: NamespaceFormData) => {
     if (editingNamespace) {
@@ -961,6 +1005,85 @@ export default function Namespaces() {
                 <p className="text-sm text-foreground">
                   {detailsNamespace.contextoSistema || t('namespaces.details.noSystemContext')}
                 </p>
+              </div>
+              <div className="rounded-lg border p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium">Profile de governança do namespace</p>
+                    <p className="text-xs text-muted-foreground">
+                      Versão: {namespaceProfile?.version ?? '-'}
+                    </p>
+                  </div>
+                  {isLoadingNamespaceProfile ? <Skeleton className="h-5 w-20" /> : null}
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="flex items-center justify-between rounded-lg border p-3">
+                    <div>
+                      <p className="text-xs font-medium">Namespace ativo</p>
+                      <p className="text-[11px] text-muted-foreground">Controla governança do profile</p>
+                    </div>
+                    <Switch
+                      checked={Boolean(namespaceProfile?.isActive)}
+                      onCheckedChange={(checked) => {
+                        if (!namespaceProfile) return;
+                        queryClient.setQueryData<NamespaceProfile>(
+                          ["/api/namespaces/profile", detailsNamespace.id],
+                          { ...namespaceProfile, isActive: checked }
+                        );
+                      }}
+                      data-testid="switch-namespace-profile-active"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between rounded-lg border p-3">
+                    <div>
+                      <p className="text-xs font-medium">Auto-collect habilitado</p>
+                      <p className="text-[11px] text-muted-foreground">Habilita coleta automática no namespace</p>
+                    </div>
+                    <Switch
+                      checked={Boolean(namespaceProfile?.autoCollectEnabled)}
+                      onCheckedChange={(checked) => {
+                        if (!namespaceProfile) return;
+                        queryClient.setQueryData<NamespaceProfile>(
+                          ["/api/namespaces/profile", detailsNamespace.id],
+                          { ...namespaceProfile, autoCollectEnabled: checked }
+                        );
+                      }}
+                      data-testid="switch-namespace-profile-auto-collect"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground mb-2">Config JSON (enterprise)</p>
+                  <Textarea
+                    value={profileJsonDraft}
+                    onChange={(event) => setProfileJsonDraft(event.target.value)}
+                    className="min-h-[220px] font-mono text-xs"
+                    data-testid="textarea-namespace-profile-config"
+                  />
+                </div>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    if (!detailsNamespace?.id || !namespaceProfile) return;
+                    try {
+                      const parsed = JSON.parse(profileJsonDraft) as Record<string, unknown>;
+                      updateNamespaceProfileMutation.mutate({
+                        namespaceId: detailsNamespace.id,
+                        payload: {
+                          isActive: namespaceProfile.isActive,
+                          autoCollectEnabled: namespaceProfile.autoCollectEnabled,
+                          config: parsed,
+                        },
+                      });
+                    } catch {
+                      toast({ title: "JSON inválido no profile", variant: "destructive" });
+                    }
+                  }}
+                  disabled={!namespaceProfile || updateNamespaceProfileMutation.isPending}
+                  data-testid="button-save-namespace-profile"
+                >
+                  Salvar profile do namespace
+                </Button>
               </div>
             </div>
           )}

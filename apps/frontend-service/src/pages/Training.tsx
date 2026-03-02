@@ -112,7 +112,9 @@ interface TrainingData {
   qualityScore?: number | null;
   status: 'pending' | 'approved' | 'rejected' | 'used';
   isDuplicate: boolean;
+  duplicateOfId?: string | null;
   similarityScore: number | null;
+  profileVersion?: number | null;
   createdBy?: string | null;
   reviewedBy?: string | null;
   reviewedAt?: string | null;
@@ -280,6 +282,7 @@ function TrainingDataCard({ data, namespaceName, onApprove, onReject, onResolveS
   timeZone: string;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const privacySummary = data.sourceMetadata?.['privacySummary'];
 
   return (
     <motion.div variants={itemVariants}>
@@ -362,6 +365,21 @@ function TrainingDataCard({ data, namespaceName, onApprove, onReject, onResolveS
                 {data.quarantineReason}
               </div>
             )}
+            {typeof data.profileVersion === 'number' && (
+              <div className="text-xs text-muted-foreground">
+                Profile version: {data.profileVersion}
+              </div>
+            )}
+            {privacySummary !== undefined && (
+              <div className="text-xs text-muted-foreground">
+                Privacy summary: {JSON.stringify(privacySummary)}
+              </div>
+            )}
+            {data.isDuplicate && data.duplicateOfId ? (
+              <div className="text-xs text-muted-foreground">
+                Duplicate of: {data.duplicateOfId}
+              </div>
+            ) : null}
             {data.reviewedAt && (
               <div className="text-xs text-muted-foreground">
                 {t('training.data.reviewedAt', { date: formatDateTime(data.reviewedAt, { locale, timeZone }) })}
@@ -2317,6 +2335,9 @@ export default function Training() {
   const [namespaceFilter, setNamespaceFilter] = useState<string>('all');
   const [sourceFilter, setSourceFilter] = useState<string>('all');
   const [sourceTypeFilter, setSourceTypeFilter] = useState<string>('all');
+  const [quarantineFilter, setQuarantineFilter] = useState<string>('all');
+  const [duplicateFilter, setDuplicateFilter] = useState<string>('all');
+  const [autoCollectFilter, setAutoCollectFilter] = useState<string>('all');
   const [showCreateJob, setShowCreateJob] = useState(false);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [createJobNamespaceId, setCreateJobNamespaceId] = useState<string>('');
@@ -2649,6 +2670,12 @@ export default function Training() {
         return false;
       }
     }
+    if (quarantineFilter === 'only' && !entry.needsHumanReview) return false;
+    if (quarantineFilter === 'exclude' && entry.needsHumanReview) return false;
+    if (duplicateFilter === 'only' && !entry.isDuplicate) return false;
+    if (duplicateFilter === 'exclude' && entry.isDuplicate) return false;
+    if (autoCollectFilter === 'only' && entry.source !== 'chat-auto') return false;
+    if (autoCollectFilter === 'exclude' && entry.source === 'chat-auto') return false;
     return true;
   });
 
@@ -2657,7 +2684,10 @@ export default function Training() {
     statusFilter !== 'all' ||
     namespaceFilter !== 'all' ||
     sourceFilter !== 'all' ||
-    sourceTypeFilter !== 'all';
+    sourceTypeFilter !== 'all' ||
+    quarantineFilter !== 'all' ||
+    duplicateFilter !== 'all' ||
+    autoCollectFilter !== 'all';
 
   /** Training stats: filtrados quando filtros ativos, senão totais globais. */
   const stats = filtersActive
@@ -3001,6 +3031,36 @@ export default function Training() {
                     {sourceType}
                   </SelectItem>
                 ))}
+              </SelectContent>
+            </Select>
+            <Select value={quarantineFilter} onValueChange={setQuarantineFilter}>
+              <SelectTrigger className="w-[180px]" data-testid="select-quarantine-filter">
+                <SelectValue placeholder="Quarentena" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Quarentena: todos</SelectItem>
+                <SelectItem value="only">Somente quarentena</SelectItem>
+                <SelectItem value="exclude">Excluir quarentena</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={duplicateFilter} onValueChange={setDuplicateFilter}>
+              <SelectTrigger className="w-[180px]" data-testid="select-duplicate-filter">
+                <SelectValue placeholder="Duplicados" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Duplicados: todos</SelectItem>
+                <SelectItem value="only">Somente duplicados</SelectItem>
+                <SelectItem value="exclude">Excluir duplicados</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={autoCollectFilter} onValueChange={setAutoCollectFilter}>
+              <SelectTrigger className="w-[180px]" data-testid="select-auto-collect-filter">
+                <SelectValue placeholder="Auto-collect" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Auto-collect: todos</SelectItem>
+                <SelectItem value="only">Somente auto-collect</SelectItem>
+                <SelectItem value="exclude">Excluir auto-collect</SelectItem>
               </SelectContent>
             </Select>
             <span className="text-sm text-muted-foreground">

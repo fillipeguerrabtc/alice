@@ -652,6 +652,37 @@ export const chatServicePaths = {
       responses: { 204: { description: 'Namespace excluído' } },
     },
   },
+  '/api/namespaces/{id}/profile': {
+    get: {
+      summary: 'Buscar profile de governança do namespace',
+      tags: ['Namespaces'],
+      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+      responses: {
+        200: {
+          description: 'Profile do namespace',
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/NamespaceProfile' } } },
+        },
+      },
+    },
+    patch: {
+      summary: 'Atualizar profile de governança do namespace',
+      tags: ['Namespaces'],
+      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+      requestBody: {
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/NamespaceProfilePatch' },
+          },
+        },
+      },
+      responses: {
+        200: {
+          description: 'Profile atualizado',
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/NamespaceProfile' } } },
+        },
+      },
+    },
+  },
 };
 
 export const chatServiceSchemas = {
@@ -692,6 +723,28 @@ export const chatServiceSchemas = {
       contextoSistema: { type: 'string', nullable: true },
       ordem: { type: 'integer' },
       ativo: { type: 'boolean' },
+    },
+  },
+  NamespaceProfile: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', format: 'uuid' },
+      tenantId: { type: 'string', format: 'uuid' },
+      namespaceId: { type: 'string', format: 'uuid' },
+      version: { type: 'integer' },
+      isActive: { type: 'boolean' },
+      autoCollectEnabled: { type: 'boolean' },
+      config: { type: 'object' },
+      criadoEm: { type: 'string', format: 'date-time', nullable: true },
+      atualizadoEm: { type: 'string', format: 'date-time', nullable: true },
+    },
+  },
+  NamespaceProfilePatch: {
+    type: 'object',
+    properties: {
+      isActive: { type: 'boolean' },
+      autoCollectEnabled: { type: 'boolean' },
+      config: { type: 'object' },
     },
   },
 };
