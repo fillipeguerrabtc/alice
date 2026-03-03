@@ -6,7 +6,7 @@
 #            Instala Docker, NVIDIA Driver, NVIDIA Container Toolkit automaticamente
 #
 # ARQUITETURA ENTERPRISE (02/01/2026):
-# - 50 containers (7 infra + 7 Alice + 15 ERPNext + 14 obs + 1 backup + 6 GPU)
+# - 35 containers (infra + Alice + observability + backup + GPU)
 # - GPU Services: Mixtral 8x7B, Embeddings (Qwen3), ASR Canary, Trainer
 # - Servidor Único: Todos os containers no mesmo servidor (latência zero)
 #
@@ -267,10 +267,6 @@ DIRS=(
     /opt/alice/data/caddy
     /opt/alice/data/caddy-config
     /opt/alice/data/searxng-config
-    /opt/alice/data/erpnext-sites
-    /opt/alice/data/erpnext-mariadb
-    /opt/alice/data/erpnext-redis-cache
-    /opt/alice/data/erpnext-redis-queue
     /opt/alice/data/vector
     # REMOVIDO 01/01/2026: alertmanager substituído por Grafana Alerting
     /opt/alice/data/langfuse-db
@@ -280,10 +276,8 @@ DIRS=(
     /opt/alice/uploads/tts
     /opt/alice/uploads/media
     /opt/alice/backups/postgresql/logs
-    /opt/alice/backups/mariadb
     /opt/alice/backups/redis
     /opt/alice/backups/manifests
-    /opt/alice/logs/erpnext
     # REMOVIDO 01/01/2026: secrets/alertmanager - Grafana usa variáveis de ambiente
 )
 
@@ -304,7 +298,6 @@ log_ok "Estrutura de diretórios criada com permissões enterprise"
 log_header "9. CRIANDO REDES DOCKER"
 
 docker network create alice-network 2>/dev/null || log_info "Rede alice-network já existe"
-docker network create erpnext-network 2>/dev/null || log_info "Rede erpnext-network já existe"
 
 log_ok "Redes Docker criadas"
 
@@ -439,4 +432,3 @@ echo "Documentação: docs/DEPLOYMENT.md"
 echo "Secrets: docs/SECRETS.md"
 echo ""
 echo -e "${GREEN}════════════════════════════════════════════════════════════════${NC}"
-

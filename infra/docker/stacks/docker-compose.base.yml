@@ -13,13 +13,12 @@
 # - ALICE Stack: frontend, auth, chat, rag, training, integrations, observability, gpu-manager
 # - GPU Stack: gpu-llm, gpu-embeddings, gpu-trainer (Gate 2)
 # - OBSERVABILITY Stack: prometheus, grafana, loki, jaeger, langfuse, etc.
-# - ERPNEXT Stack: mariadb, redis-cache/queue, backend, workers (100% isolado)
 # - BACKUP Stack: pgbackrest
 #
 # BENEFÍCIOS:
 # - Deploy independente por stack (rollback cirúrgico)
-# - Graceful degradation (ERPNext pode falhar sem afetar Alice)
-# - Produção parcial (Alice funciona mesmo sem ERPNext)
+# - Graceful degradation entre stacks
+# - Produção parcial sem dependências desnecessárias
 # - Manutenção isolada (atualizar observability sem downtime de Alice)
 #
 # REGRA 6 CLAUDE.md: Enterprise-grade, sem workarounds
@@ -31,16 +30,11 @@
 # =============================================================================
 # IMPORTANTE: Executar uma vez no servidor antes do primeiro deploy:
 #   docker network create --driver bridge --subnet 172.28.0.0/16 alice-network
-#   docker network create --driver bridge erpnext-network
 # =============================================================================
 networks:
   alice-network:
     external: true
     name: alice-network
-  
-  erpnext-network:
-    external: true
-    name: erpnext-network
 
 # =============================================================================
 # VOLUMES - Persistência de dados (binds para /opt/alice)
@@ -51,7 +45,7 @@ networks:
 # Estrutura de diretórios:
 #   /opt/alice/
 #   ├── data/          # Dados persistentes (PostgreSQL, Redis, Qdrant, etc.)
-#   ├── logs/          # Logs de serviços (Caddy, ERPNext, ClickHouse)
+#   ├── logs/          # Logs de serviços (Caddy, ClickHouse)
 #   ├── uploads/       # Uploads RAG (imagens, áudios, documentos)
 #   ├── backups/       # Backups (pgBackRest, manifests)
 #   └── secrets/       # Arquivos de secrets (langfuse_db_password)
@@ -130,49 +124,6 @@ volumes:
       type: none
       o: bind
       device: /opt/alice/data/qdrant
-
-  # =========================================================================
-  # ERPNEXT STACK VOLUMES
-  # =========================================================================
-  erpnext_sites:
-    name: erpnext-sites
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: /opt/alice/data/erpnext-sites
-  
-  erpnext_logs:
-    name: erpnext-logs
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: /opt/alice/logs/erpnext
-  
-  mariadb_data:
-    name: erpnext-mariadb-data
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: /opt/alice/data/erpnext-mariadb
-  
-  redis_cache_data:
-    name: erpnext-redis-cache
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: /opt/alice/data/erpnext-redis-cache
-  
-  redis_queue_data:
-    name: erpnext-redis-queue
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: /opt/alice/data/erpnext-redis-queue
 
   # =========================================================================
   # OBSERVABILITY STACK VOLUMES

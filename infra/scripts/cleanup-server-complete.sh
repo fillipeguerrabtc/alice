@@ -72,7 +72,6 @@ echo ""
 echo "🌐 Stage 4: Removendo redes customizadas..."
 
 docker network rm alice-network 2>/dev/null || true
-docker network rm erpnext-network 2>/dev/null || true
 echo "   ✅ Redes customizadas removidas"
 
 # ================================================================
@@ -101,7 +100,6 @@ DATA_DIRS=(
     "/opt/alice/data/loki"
     "/opt/alice/data/clickhouse"
     "/opt/alice/data/langfuse-db"
-    "/opt/alice/data/mariadb"
     "/opt/alice/data/jaeger"
 )
 

@@ -139,12 +139,6 @@ check_container "Frontend" "alice-frontend"
 check_container "Observability" "alice-observability"
 check_container "Vector (Logs)" "alice-vector"
 
-# ERPNext containers
-check_container "ERPNext Frontend" "erpnext-frontend"
-check_container "ERPNext Backend" "erpnext-backend"
-check_container "ERPNext MariaDB" "erpnext-mariadb"
-check_container "ERPNext Redis Cache" "erpnext-redis-cache"
-
 # =============================================================================
 # 2. VERIFICAR ENDPOINTS HTTPS (EXTERNOS)
 # =============================================================================
@@ -162,9 +156,6 @@ check_endpoint "Chat Service Health" "https://$DOMAIN/api/chat/health"
 check_endpoint "RAG Service Health" "https://$DOMAIN/api/rag/health"
 check_endpoint "Training Service Health" "https://$DOMAIN/api/training/health"
 check_endpoint "Integrations Health" "https://$DOMAIN/api/integrations/health"
-
-# ERPNext
-check_endpoint "ERPNext" "https://erp.$DOMAIN/"
 
 # Observability
 check_endpoint "Grafana" "https://observability.$DOMAIN/"
@@ -184,18 +175,11 @@ else
     log_fail "PostgreSQL - conexão falhou"
 fi
 
-# MariaDB (ERPNext)
-if docker exec erpnext-mariadb mysqladmin ping -u root --silent > /dev/null 2>&1; then
-    log_success "MariaDB (ERPNext) - conexão OK"
-else
-    log_warn "MariaDB (ERPNext) - não disponível"
-fi
-
 # Redis
-if docker exec erpnext-redis-cache redis-cli ping > /dev/null 2>&1; then
-    log_success "Redis Cache - conexão OK"
+if docker exec alice-redis redis-cli ping > /dev/null 2>&1; then
+    log_success "Redis (Alice) - conexão OK"
 else
-    log_warn "Redis Cache - não disponível"
+    log_warn "Redis (Alice) - não disponível"
 fi
 
 # =============================================================================

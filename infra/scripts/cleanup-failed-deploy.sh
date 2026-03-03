@@ -111,7 +111,7 @@ FAILED_CONTAINERS=$(docker ps -a --filter "status=exited" --filter "status=dead"
 if [ -n "$FAILED_CONTAINERS" ]; then
     for container in $FAILED_CONTAINERS; do
         # Proteger containers de dados (db, redis) mesmo parados
-        if [[ "$container" =~ (postgres|mariadb|redis|qdrant|langfuse-db) ]]; then
+        if [[ "$container" =~ (postgres|redis|qdrant|langfuse-db) ]]; then
             log_protect "Container de dados: $container (não será removido)"
             continue
         fi
@@ -157,7 +157,7 @@ echo ""
 log_info "═══ 3. NETWORKS ÓRFÃS ═══"
 
 # Manter networks essenciais
-PROTECTED_NETWORKS="alice-network|erpnext-network|bridge|host|none"
+PROTECTED_NETWORKS="alice-network|bridge|host|none"
 
 ORPHAN_NETWORKS=$(docker network ls --format '{{.Name}}' | grep -vE "^($PROTECTED_NETWORKS)$" || true)
 

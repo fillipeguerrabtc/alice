@@ -123,9 +123,6 @@ services:
       DATABASE_URL: postgresql://alice:alice_dev_password@postgres:5432/alice_development
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY:-}
-      ERPNEXT_URL: ${ERPNEXT_URL:-}
-      ERPNEXT_API_KEY: ${ERPNEXT_API_KEY:-}
-      ERPNEXT_API_SECRET: ${ERPNEXT_API_SECRET:-}
     depends_on:
       postgres:
         condition: service_healthy

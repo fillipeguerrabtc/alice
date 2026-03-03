@@ -88,16 +88,6 @@ readonly LOKI_GID=10001
 readonly CLICKHOUSE_UID=101
 readonly CLICKHOUSE_GID=101
 
-# MariaDB (UID 999 - mysql)
-# REF: https://hub.docker.com/_/mariadb
-readonly MARIADB_UID=999
-readonly MARIADB_GID=999
-
-# ERPNext/Frappe (UID 1000 - frappe)
-# REF: https://github.com/frappe/frappe_docker
-readonly FRAPPE_UID=1000
-readonly FRAPPE_GID=1000
-
 # Node.js containers (UID 1000)
 # REF: Node.js official Alpine images
 readonly NODE_UID=1000
@@ -206,28 +196,11 @@ declare -a PERMISSIONS_CONFIG=(
     "${ALICE_DATA_DIR}/vector:${ROOT_UID}:${ROOT_GID}:755"
     
     # =========================================================================
-    # ERPNEXT STACK
-    # =========================================================================
-    
-    # ERPNext Sites (Frappe UID 1000)
-    "${ALICE_DATA_DIR}/erpnext-sites:${FRAPPE_UID}:${FRAPPE_GID}:755"
-    
-    # ERPNext MariaDB (UID 999)
-    "${ALICE_DATA_DIR}/erpnext-mariadb:${MARIADB_UID}:${MARIADB_GID}:755"
-    
-    # ERPNext Redis Cache/Queue (UID 999)
-    "${ALICE_DATA_DIR}/erpnext-redis-cache:${REDIS_UID}:${REDIS_GID}:755"
-    "${ALICE_DATA_DIR}/erpnext-redis-queue:${REDIS_UID}:${REDIS_GID}:755"
-    
-    # =========================================================================
     # LOGS
     # =========================================================================
     
     # Logs Caddy
     "${ALICE_LOGS_DIR}/caddy:${CADDY_UID}:${CADDY_GID}:755"
-    
-    # Logs ERPNext
-    "${ALICE_LOGS_DIR}/erpnext:${FRAPPE_UID}:${FRAPPE_GID}:755"
     
     # Logs ClickHouse
     "${ALICE_LOGS_DIR}/clickhouse:${CLICKHOUSE_UID}:${CLICKHOUSE_GID}:755"

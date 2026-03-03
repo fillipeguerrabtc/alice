@@ -23,7 +23,6 @@ if [ $# -lt 2 ]; then
     echo ""
     echo "Tipos disponíveis:"
     echo "  postgres  - Restaurar banco PostgreSQL (Alice)"
-    echo "  mariadb   - Restaurar banco MariaDB (ERPNext)"
     echo ""
     echo "Exemplo:"
     echo "  $0 postgres /opt/alice/backups/alice_postgres_20251126.sql.gz"
@@ -77,36 +76,9 @@ case $TYPE in
         
         echo -e "${GREEN}✓ PostgreSQL restaurado com sucesso!${NC}"
         ;;
-        
-    mariadb)
-        echo -e "\n${YELLOW}Restaurando MariaDB (ERPNext)...${NC}"
-        
-        # Parar ERPNext
-        echo "Parando ERPNext..."
-        docker compose -p alice-erpnext --env-file /opt/alice/app/infra/docker/.env.prod -f /opt/alice/app/infra/docker/stacks/docker-compose.base.yml -f /opt/alice/app/infra/docker/stacks/docker-compose.erpnext.yml stop erpnext-frontend erpnext-backend 2>/dev/null || true
-        
-        # Ler senha
-        MYSQL_ROOT_PASSWORD=$(docker exec erpnext-mariadb printenv MYSQL_ROOT_PASSWORD 2>/dev/null || echo "")
-        
-        if [ -z "$MYSQL_ROOT_PASSWORD" ]; then
-            echo -e "${RED}Erro: MYSQL_ROOT_PASSWORD não encontrada${NC}"
-            exit 1
-        fi
-        
-        # Restaurar
-        echo "Restaurando backup..."
-        gunzip -c "$BACKUP_FILE" | docker exec -i erpnext-mariadb mysql -u root -p"$MYSQL_ROOT_PASSWORD"
-        
-        # Reiniciar ERPNext
-        echo "Reiniciando ERPNext..."
-        docker compose -p alice-erpnext --env-file /opt/alice/app/infra/docker/.env.prod -f /opt/alice/app/infra/docker/stacks/docker-compose.base.yml -f /opt/alice/app/infra/docker/stacks/docker-compose.erpnext. yml up -d erpnext-frontend erpnext-backend
-        
-        echo -e "${GREEN}✓ MariaDB restaurado com sucesso!${NC}"
-        ;;
-        
     *)
         echo -e "${RED}Tipo inválido: $TYPE${NC}"
-        echo "Use: postgres ou mariadb"
+        echo "Use: postgres"
         exit 1
         ;;
 esac

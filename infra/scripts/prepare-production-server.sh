@@ -207,15 +207,6 @@ else
   echo "   ✅ alice-network já existe"
 fi
 
-# erpnext-network
-if ! docker network inspect erpnext-network > /dev/null 2>&1; then
-  echo "📝 Criando network erpnext-network..."
-  docker network create --driver bridge erpnext-network
-  echo "   ✅ erpnext-network criada"
-else
-  echo "   ✅ erpnext-network já existe"
-fi
-
 echo ""
 
 # =============================================================================
@@ -284,11 +275,6 @@ if ! docker network inspect alice-network > /dev/null 2>&1; then
     exit 1
 fi
 
-if ! docker network inspect erpnext-network > /dev/null 2>&1; then
-    echo "❌ ERRO: erpnext-network não existe!"
-    exit 1
-fi
-
 echo "   ✅ Networks Docker OK"
 echo ""
 
@@ -308,7 +294,7 @@ echo "  3. Monitore os logs em /opt/alice/logs/"
 echo ""
 echo "Estrutura criada:"
 echo "  - /opt/alice/ (30+ diretórios)"
-echo "  - Networks Docker: alice-network, erpnext-network"
+echo "  - Networks Docker: alice-network"
 echo "  - Permissões configuradas para 13 serviços"
 echo ""
 echo "============================================="

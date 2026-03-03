@@ -422,23 +422,4 @@ yesyoudeserve.duckdns.org, *.yesyoudeserve.duckdns.org {
 		}
 	}
 
-	# =========================================================================
-	# ERPNEXT (ERP/CRM)
-	# =========================================================================
-	@erpnext host erp.yesyoudeserve.duckdns.org
-	handle @erpnext {
-		# WebSocket ERPNext (socket.io)
-		handle /socket.io/* {
-			reverse_proxy erpnext-websocket:9000 {
-				import websocket_headers
-			}
-		}
-
-		# Frontend ERPNext (fallback)
-		handle {
-			reverse_proxy erpnext-frontend:8080 {
-				import proxy_headers
-			}
-		}
-	}
 }

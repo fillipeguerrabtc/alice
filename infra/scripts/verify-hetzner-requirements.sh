@@ -9,7 +9,7 @@
 # - LLM: Mixtral 8x7B (vLLM AWQ) via GPU Manager Service (Hetzner GEX44)
 # - Embeddings: Qwen3-Embedding-0.6B (1024 dim) via GPU Manager Service
 # - Vector DB: Qdrant (texto 1024 dim) + PostgreSQL pgvector (vetores internos)
-# - Containers: 50 totais (7 infra + 7 Alice + 15 ERPNext + 14 obs + 6 GPU + 1 backup)
+# - Containers: 35 totais (infra + Alice + observability + GPU + backup)
 #
 # Uso: ./verify-hetzner-requirements.sh [--fix] [--verbose]
 #   --fix     : Corrige automaticamente problemas encontrados
@@ -239,8 +239,6 @@ REQUIRED_DIRS=(
     "/opt/alice/data/caddy"
     "/opt/alice/data/caddy-config"
     "/opt/alice/data/searxng-config"
-    "/opt/alice/data/erpnext-sites"
-    "/opt/alice/data/erpnext-mariadb"
     "/opt/alice/data/prometheus"
     "/opt/alice/data/grafana"
     "/opt/alice/data/loki"
@@ -252,11 +250,9 @@ REQUIRED_DIRS=(
     "/opt/alice/backups"
     "/opt/alice/backups/postgresql"
     "/opt/alice/backups/postgresql/logs"
-    "/opt/alice/backups/mariadb"
     "/opt/alice/backups/redis"
     "/opt/alice/backups/manifests"
     "/opt/alice/logs"
-    "/opt/alice/logs/erpnext"
     "/opt/alice/secrets"
     # REMOVIDO 01/01/2026: secrets/alertmanager - Grafana usa variáveis de ambiente
 )
@@ -301,7 +297,7 @@ fi
 # =============================================================================
 log_header "5. REDES DOCKER"
 
-REQUIRED_NETWORKS=("alice-network" "erpnext-network")
+REQUIRED_NETWORKS=("alice-network")
 
 for net in "${REQUIRED_NETWORKS[@]}"; do
     if docker network ls --format '{{.Name}}' | grep -q "^${net}$"; then

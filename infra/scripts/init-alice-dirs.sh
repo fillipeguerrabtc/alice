@@ -13,7 +13,6 @@
 # │   └── media/     (750) - Outros arquivos multimodais
 # ├── backups/       (750) - Backups enterprise
 # │   ├── postgresql/ (750)
-# │   ├── mariadb/   (750)
 # │   ├── redis/     (750)
 # │   └── manifests/ (750)
 # └── logs/          (750) - Logs de serviços
@@ -45,7 +44,6 @@ mkdir -p "${BASE_DIR}/uploads/tts"
 mkdir -p "${BASE_DIR}/uploads/media"
 mkdir -p "${BASE_DIR}/backups/postgresql"
 mkdir -p "${BASE_DIR}/backups/postgresql/logs"
-mkdir -p "${BASE_DIR}/backups/mariadb"
 mkdir -p "${BASE_DIR}/backups/redis"
 mkdir -p "${BASE_DIR}/backups/manifests"
 mkdir -p "${BASE_DIR}/logs"

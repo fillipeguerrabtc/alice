@@ -15,7 +15,7 @@
 #   - alice-qdrant - Banco vetorial para texto
 #   - alice-tor - Proxy SOCKS5 para .onion
 #   - alice-searxng - Metabusca (depende de tor)
-#   - caddy - Reverse proxy SSL (dual-network: alice + erpnext)
+#   - caddy - Reverse proxy SSL
 #   - minio - Object storage S3 (para Langfuse v3)
 #   - minio-init - Init container para criar bucket
 #   - pgbackrest-init - Init container para criar stanza
@@ -24,7 +24,7 @@
 #   1. PRÉ-REQUISITOS: Networks externas criadas
 #   2. INFRA: Este stack
 #   3. Drizzle push (schema migration)
-#   4. ALICE/OBSERVABILITY/ERPNEXT (paralelos)
+#   4. ALICE/OBSERVABILITY (paralelos)
 #   5. BACKUP
 #
 # HEALTH CHECKS OBRIGATÓRIOS antes de prosseguir:
@@ -48,10 +48,6 @@ networks:
   alice-network:
     external: true
     name: alice-network
-  
-  erpnext-network:
-    external: true
-    name: erpnext-network
 
 # =============================================================================
 # VOLUMES
@@ -156,7 +152,7 @@ services:
   # ===========================================================================
   # CADDY - Reverse Proxy com SSL Automático
   # ===========================================================================
-  # NOTA: Caddy usa DUAL-NETWORK para rotear tráfego de Alice E ERPNext
+  # NOTA: Caddy roteia tráfego dos serviços públicos pela rede alice-network
   # ===========================================================================
   caddy:
     image: ${IMAGE_PREFIX}-caddy:${IMAGE_TAG:-latest}
@@ -180,7 +176,6 @@ services:
       - caddy_logs:/var/log/caddy
     networks:
       - alice-network
-      - erpnext-network
     healthcheck:
       test:
         - CMD-SHELL

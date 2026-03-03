@@ -42,10 +42,6 @@ networks:
   alice-network:
     external: true
     name: alice-network
-  
-  erpnext-network:
-    external: true
-    name: erpnext-network
 
 # =============================================================================
 # VOLUMES
@@ -152,9 +148,7 @@ services:
       OIDC_API_AUDIENCE: ${OIDC_API_AUDIENCE:-alice-api}
       OIDC_COOKIE_KEYS: ${OIDC_COOKIE_KEYS}
       GRAFANA_URL: ${GRAFANA_URL:-https://observability.yesyoudeserve.duckdns.org}
-      ERPNEXT_URL: ${ERPNEXT_URL:-https://erp.yesyoudeserve.duckdns.org}
       GRAFANA_OAUTH_CLIENT_SECRET: ${GRAFANA_OAUTH_CLIENT_SECRET}
-      ERPNEXT_OAUTH_CLIENT_SECRET: ${ERPNEXT_OAUTH_CLIENT_SECRET}
       REDIS_URL: redis://:${REDIS_PASSWORD}@alice-redis:6379
       BIOMETRICS_SERVICE_URL: http://alice-biometrics:3011
     # NOTA: postgres e alice-redis estão no stack infra - verificados pelo workflow
@@ -436,8 +430,7 @@ services:
           cpus: '0.25'
 
   # ===========================================================================
-  # ALICE INTEGRATIONS SERVICE - Stripe, Twilio, Wise, KuCoin, ERPNext
-  # NOTA: Dual-network para comunicar com ERPNext
+  # ALICE INTEGRATIONS SERVICE - Stripe, Twilio, Wise, KuCoin
   # ===========================================================================
   alice-integrations:
     image: ${IMAGE_PREFIX}-integrations:${IMAGE_TAG:-latest}
@@ -463,9 +456,6 @@ services:
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
       GMAIL_USER: ${GMAIL_USER}
       GMAIL_APP_PASSWORD: ${GMAIL_APP_PASSWORD}
-      ERPNEXT_URL: http://erpnext-backend:8000
-      ERPNEXT_API_KEY: ${ERPNEXT_API_KEY:-}
-      ERPNEXT_API_SECRET: ${ERPNEXT_API_SECRET:-}
       TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID}
       TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN}
       TWILIO_WHATSAPP_NUMBER: ${TWILIO_WHATSAPP_NUMBER}
@@ -520,7 +510,6 @@ services:
         condition: service_healthy
     networks:
       - alice-network
-      - erpnext-network
     healthcheck:
       # CORREÇÃO PR#104: Reduzir interval para 20s
       test: ["CMD", "node", "-e", "const r=require('http').get('http://localhost:3005/live',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]

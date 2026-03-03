@@ -31,12 +31,6 @@
 # - traefik: v3.3 -> v3.6.4 (corrige CVE-2025-66490, CVE-2025-66491)
 # - redis: 7-alpine -> 7.4.6-alpine (ultima estavel do 7.x)
 #
-# === ERPNEXT STACK (Arquitetura Unificada v15) ===
-# - frappe/erpnext: v15.91.0 -> v15.91.3 (Dec 14, 2025 - ultima estavel)
-# - MIGRACAO: frappe/erpnext-nginx, frappe/frappe-socketio, frappe/erpnext-worker
-#   -> Substituidos por frappe/erpnext:v15.91.3 com comandos especificos
-#   Ref: https://github.com/frappe/frappe_docker (arquitetura 2024/2025)
-#
 # === OBSERVABILITY STACK ===
 # - prometheus: v3.0.1 -> v3.8.0 (Dec 2, 2025)
 # - grafana: 11.1.4 -> 11.6.2 (ultima do 11.x, suporte ate Jun 2026)
@@ -50,11 +44,7 @@
 # - otel-collector: 0.114.0 -> 0.141.0 (Dec 3, 2025)
 #
 # === ANALISE DE IMPACTO INTEGRACOES (14/12/2025) ===
-# Auth -> ERPNext: Frappe REST API v15 compativel
 # Auth -> Grafana: Admin API Basic Auth 11.6.2 compativel
-# Stripe -> ERPNext: Stripe API 2024-12-18 + Frappe REST compativel
-# Wise -> ERPNext: Wise REST API + Frappe REST compativel
-# ERPNext v15: Arquitetura unificada + Redis-SocketIO configurado corretamente
 #
 # === SHA256 DIGESTS (Supply Chain Security 2025) ===
 # TODAS as 26 imagens externas agora possuem SHA256 digests

@@ -82,10 +82,6 @@ REQUIRED_VERSIONS=(
   "POSTGRES_LANGFUSE_VERSION"
   "LANGFUSE_VERSION"
   "LANGFUSE_WORKER_VERSION"
-  # ERPNEXT Stack
-  "ERPNEXT_VERSION"
-  "MARIADB_VERSION"
-  "REDIS_ERPNEXT_VERSION"
   # Utilities
   "BUSYBOX_VERSION"
   "PGVECTOR_TAG"
@@ -129,11 +125,6 @@ echo "   CLICKHOUSE: ${CLICKHOUSE_VERSION}"
 echo "   POSTGRES_LANGFUSE: ${POSTGRES_LANGFUSE_VERSION}"
 echo "   LANGFUSE: ${LANGFUSE_VERSION}"
 echo "   LANGFUSE_WORKER: ${LANGFUSE_WORKER_VERSION}"
-echo ""
-echo "   [ERPNEXT Stack]"
-echo "   ERPNEXT: ${ERPNEXT_VERSION}"
-echo "   MARIADB: ${MARIADB_VERSION}"
-echo "   REDIS_ERPNEXT: ${REDIS_ERPNEXT_VERSION}"
 echo ""
 
 # =============================================================================
@@ -221,13 +212,9 @@ fi
 #    - GRAFANA_ADMIN_PASSWORD: Senha (recomendado 8+ chars)
 #    - Ref: https://grafana.com/docs/grafana/latest/setup-grafana/configure-security/
 #
-# 3. ERPNEXT 15 (ERP/CRM):
-#    - Username: FIXO "Administrator" (não pode mudar - Frappe Framework)
-#    - ERPNEXT_ADMIN_PASSWORD: Senha mínimo 8 caracteres (Frappe default)
-#    - Ref: https://frappeframework.com/docs/user/en/basics/users-and-permissions
 # =============================================================================
 
-echo "🔐 Validando credenciais admin (Alice + Grafana + ERPNext)..."
+echo "🔐 Validando credenciais admin (Alice + Grafana)..."
 
 # -----------------------------------------------------------------------------
 # ALICE AUTH SERVICE - ADMIN_USER (email) + ADMIN_PWD (obrigatórios)
@@ -286,23 +273,6 @@ if [ -n "${GRAFANA_API_KEY}" ]; then
   echo "✅ GRAFANA_API_KEY configurado (usado para integrações Grafana)"
 fi
 
-# -----------------------------------------------------------------------------
-# ERPNEXT 15 - Username fixo "Administrator" + ERPNEXT_ADMIN_PASSWORD (obrigatório)
-# -----------------------------------------------------------------------------
-ERPNEXT_ADMIN_PASSWORD="${ERPNEXT_ADMIN_PASSWORD_SECRET:-}"
-
-if [ -z "${ERPNEXT_ADMIN_PASSWORD}" ]; then
-  echo "::error::ERPNEXT_ADMIN_PASSWORD não definido. Configure o secret ERPNEXT_ADMIN_PASSWORD (mínimo 8 caracteres)." >&2
-  exit 1
-fi
-
-# ERPNext 15: Frappe requer mínimo 8 caracteres por default
-if [ ${#ERPNEXT_ADMIN_PASSWORD} -lt 8 ]; then
-  echo "::error::ERPNEXT_ADMIN_PASSWORD deve ter no mínimo 8 caracteres (requisito Frappe). Comprimento atual: ${#ERPNEXT_ADMIN_PASSWORD}" >&2
-  exit 1
-fi
-
-echo "✅ ERPNext 15: Administrator (username fixo, senha 8+ chars)"
 echo "✅ Todas as credenciais admin validadas com sucesso"
 
 # =============================================================================
@@ -321,18 +291,10 @@ if [ -z "${GRAFANA_OAUTH_CLIENT_SECRET}" ]; then
   exit 1
 fi
 
-ERPNEXT_OAUTH_CLIENT_SECRET="${ERPNEXT_OAUTH_CLIENT_SECRET:-}"
-if [ -z "${ERPNEXT_OAUTH_CLIENT_SECRET}" ]; then
-  echo "::error::ERPNEXT_OAUTH_CLIENT_SECRET não definido. Configure o secret no GitHub." >&2
-  echo "   Para gerar: openssl rand -base64 32 | tr -d '=' | tr '+/' '-_'" >&2
-  exit 1
-fi
-
 # OIDC Cookie Keys - Validação adiada para após SESSION_SECRET ser carregado
 OIDC_COOKIE_KEYS_INPUT="${OIDC_COOKIE_KEYS:-}"
 
 echo "✅ GRAFANA_OAUTH_CLIENT_SECRET validado (grafana-sso)"
-echo "✅ ERPNEXT_OAUTH_CLIENT_SECRET validado (erpnext-sso)"
 echo "✅ OAuth/OIDC Secrets validados para SSO automatizado"
 
 QDRANT_API_KEY="${QDRANT_API_KEY_SECRET:-}"
@@ -434,7 +396,7 @@ echo "✅ MINIO_ROOT_PASSWORD validado (obrigatório para Langfuse v3)"
 
 REDIS_CACHE_PASSWORD="${REDIS_CACHE_PASSWORD_SECRET:-}"
 if [ -z "${REDIS_CACHE_PASSWORD}" ]; then
-  echo "::error::REDIS_CACHE_PASSWORD não definido. Configure o secret REDIS_CACHE_PASSWORD no repositório (necessário para ERPNext redis-cache)." >&2
+  echo "::error::REDIS_CACHE_PASSWORD não definido. Configure o secret REDIS_CACHE_PASSWORD no repositório." >&2
   exit 1
 fi
 
@@ -448,46 +410,13 @@ fi
 
 REDIS_QUEUE_PASSWORD="${REDIS_QUEUE_PASSWORD_SECRET:-}"
 if [ -z "${REDIS_QUEUE_PASSWORD}" ]; then
-  echo "::error::REDIS_QUEUE_PASSWORD não definido. Configure o secret REDIS_QUEUE_PASSWORD no repositório (necessário para ERPNext redis-queue)." >&2
+  echo "::error::REDIS_QUEUE_PASSWORD não definido. Configure o secret REDIS_QUEUE_PASSWORD no repositório." >&2
   exit 1
 fi
 
 # CORREÇÃO 22/12/2025: Validar que senha Redis não contém caracteres especiais de URL
 if echo "${REDIS_QUEUE_PASSWORD}" | grep -qE '[+/=@:?#%]'; then
   echo "::error::REDIS_QUEUE_PASSWORD contém caracteres especiais de URL (+/=@:?#%). URLs Redis serão malformadas. Regenere com: openssl rand -hex 32" >&2
-  exit 1
-fi
-
-ERPNEXT_MYSQL_ROOT_PASSWORD="${ERPNEXT_MYSQL_ROOT_PASSWORD_SECRET:-}"
-if [ -z "${ERPNEXT_MYSQL_ROOT_PASSWORD}" ]; then
-  echo "::error::ERPNEXT_MYSQL_ROOT_PASSWORD não definido. Configure o secret ERPNEXT_MYSQL_ROOT_PASSWORD no repositório (necessário para mariadb)." >&2
-  exit 1
-fi
-
-ERPNEXT_DB_PASSWORD="${ERPNEXT_DB_PASSWORD_SECRET:-}"
-if [ -z "${ERPNEXT_DB_PASSWORD}" ]; then
-  echo "::error::ERPNEXT_DB_PASSWORD não definido. Configure o secret ERPNEXT_DB_PASSWORD no repositório (necessário para mariadb)." >&2
-  exit 1
-fi
-
-# -----------------------------------------------------------------------------
-# ERPNext MySQL Exporter (Observability ERPNext) - credencial obrigatória
-# -----------------------------------------------------------------------------
-# O stack ERPNext inclui mysqld_exporter. O docker-compose.erpnext.yml marca
-# ERPNEXT_MYSQL_EXPORTER_PASSWORD como obrigatória (fail-fast).
-#
-# Recomendação enterprise: usar senha URL-safe/DSN-safe (ex: openssl rand -hex 32).
-ERPNEXT_MYSQL_EXPORTER_PASSWORD="${ERPNEXT_MYSQL_EXPORTER_PASSWORD_SECRET:-}"
-if [ -z "${ERPNEXT_MYSQL_EXPORTER_PASSWORD}" ]; then
-  echo "::error::ERPNEXT_MYSQL_EXPORTER_PASSWORD não definido. Configure o secret ERPNEXT_MYSQL_EXPORTER_PASSWORD no repositório (credencial do MySQL exporter para observabilidade ERPNext)." >&2
-  echo "   Recomendado: openssl rand -hex 32" >&2
-  exit 1
-fi
-
-# DATA_SOURCE_NAME do mysqld_exporter usa formato user:pass@(host:port)/.
-# Caracteres como @ e : tendem a quebrar parsing do DSN.
-if echo "${ERPNEXT_MYSQL_EXPORTER_PASSWORD}" | grep -qE '[@:/?#%]'; then
-  echo "::error::ERPNEXT_MYSQL_EXPORTER_PASSWORD contém caracteres que podem quebrar o DSN do MySQL exporter (@:/?#%). Regenere com: openssl rand -hex 32" >&2
   exit 1
 fi
 
@@ -605,7 +534,7 @@ echo "✅ BACKUP_CIPHER_PASS validado (${BACKUP_CIPHER_LEN} chars, pgBackRest AE
 echo "✅ Todas as secrets obrigatórias validadas"
 
 # =============================================================================
-# FASE 3: Secrets Opcionais (Stripe, Wise, ERPNext API)
+# FASE 3: Secrets Opcionais (Stripe e Wise)
 # =============================================================================
 echo "🔄 Configurando secrets opcionais..."
 
@@ -624,18 +553,6 @@ if [ -n "${WISE_SANDBOX_SECRET:-}" ]; then
 else
   # Política: sandbox somente quando explicitamente configurado
   WISE_SANDBOX="false"
-fi
-
-if [ -z "${ERPNEXT_API_KEY_SECRET:-}" ]; then
-  ERPNEXT_API_KEY=""
-else
-  ERPNEXT_API_KEY="${ERPNEXT_API_KEY_SECRET}"
-fi
-
-if [ -z "${ERPNEXT_API_SECRET_SECRET:-}" ]; then
-  ERPNEXT_API_SECRET=""
-else
-  ERPNEXT_API_SECRET="${ERPNEXT_API_SECRET_SECRET}"
 fi
 
 # =============================================================================
@@ -752,13 +669,6 @@ if [ -z "${ZEROSSL_EAB_KID:-}" ] || [ -z "${ZEROSSL_EAB_HMAC_KEY:-}" ]; then
 fi
 
 # =============================================================================
-# FASE 7.1: Validar usuário do mysqld_exporter (ERPNext)
-# =============================================================================
-if [ -z "${ERPNEXT_MYSQL_EXPORTER_USER:-}" ]; then
-  ERPNEXT_MYSQL_EXPORTER_USER="erpnext_exporter"
-fi
-
-# =============================================================================
 # FASE 8: Gerar arquivo .env.prod
 # =============================================================================
 echo "📄 Gerando arquivo .env.prod..."
@@ -804,11 +714,6 @@ echo "📄 Gerando arquivo .env.prod..."
   printf 'LANGFUSE_VERSION=%s\n' "${LANGFUSE_VERSION:-3.85.0}"
   printf 'LANGFUSE_WORKER_VERSION=%s\n' "${LANGFUSE_WORKER_VERSION:-3.85.0}"
   printf '\n'
-  printf '# ERPNEXT Stack\n'
-  printf 'ERPNEXT_VERSION=%s\n' "${ERPNEXT_VERSION:-v15.91.3}"
-  printf 'MARIADB_VERSION=%s\n' "${MARIADB_VERSION:-10.8.8}"
-  printf 'REDIS_ERPNEXT_VERSION=%s\n' "${REDIS_ERPNEXT_VERSION:-6.2.21-alpine}"
-  printf '\n'
   printf '# Utilities\n'
   printf 'BUSYBOX_VERSION=%s\n' "${BUSYBOX_VERSION:-1.36.1}"
   printf 'PGVECTOR_TAG=%s\n' "${PGVECTOR_TAG:-pg16}"
@@ -822,7 +727,7 @@ echo "📄 Gerando arquivo .env.prod..."
   printf 'REDIS_PASSWORD=%s\n' "${REDIS_PASSWORD}"
   printf 'REDIS_URL=redis://:%s@alice-redis:6379/0\n' "${REDIS_PASSWORD}"
   printf '\n'
-  printf '# Redis ERPNext\n'
+  printf '# Redis auxiliares\n'
   printf 'REDIS_CACHE_PASSWORD=%s\n' "${REDIS_CACHE_PASSWORD}"
   printf 'REDIS_QUEUE_PASSWORD=%s\n' "${REDIS_QUEUE_PASSWORD}"
   printf '\n'
@@ -926,21 +831,6 @@ echo "📄 Gerando arquivo .env.prod..."
   printf 'KUCOIN_WS_ORDERBOOK_DEPTH=%s\n' "${KUCOIN_WS_ORDERBOOK_DEPTH}"
   printf 'KUCOIN_REST_ORDERBOOK_DEPTH=%s\n' "${KUCOIN_REST_ORDERBOOK_DEPTH}"
   printf '\n'
-  printf '# ERPNext Database\n'
-  printf 'ERPNEXT_SITE_NAME=erp.yesyoudeserve.duckdns.org\n'
-  printf 'ERPNEXT_MYSQL_EXPORTER_USER=%s\n' "${ERPNEXT_MYSQL_EXPORTER_USER}"
-  printf 'ERPNEXT_MYSQL_ROOT_PASSWORD=%s\n' "${ERPNEXT_MYSQL_ROOT_PASSWORD}"
-  printf 'ERPNEXT_MYSQL_EXPORTER_PASSWORD=%s\n' "${ERPNEXT_MYSQL_EXPORTER_PASSWORD}"
-  printf 'ERPNEXT_ADMIN_PASSWORD=%s\n' "${ERPNEXT_ADMIN_PASSWORD}"
-  printf 'ERPNEXT_DB_NAME=erpnext\n'
-  printf 'ERPNEXT_DB_USER=erpnext\n'
-  printf 'ERPNEXT_DB_PASSWORD=%s\n' "${ERPNEXT_DB_PASSWORD}"
-  printf '\n'
-  printf '# ERPNext API\n'
-  printf 'ERPNEXT_URL=https://erp.yesyoudeserve.duckdns.org\n'
-  printf 'ERPNEXT_API_KEY=%s\n' "${ERPNEXT_API_KEY}"
-  printf 'ERPNEXT_API_SECRET=%s\n' "${ERPNEXT_API_SECRET}"
-  printf '\n'
   printf '# Backup (pgBackRest)\n'
   # CORREÇÃO CRÍTICA 02/01/2026: Escapar $ no valor para evitar interpretação pelo Docker Compose
   # Se BACKUP_CIPHER_PASS contiver $, Docker Compose tenta expandir como variável
@@ -971,13 +861,11 @@ echo "📄 Gerando arquivo .env.prod..."
   printf 'ADMIN_PWD=%s\n' "${ADMIN_PWD}"
   printf '\n'
   printf '# SSO OAuth/OIDC (Deploy 100%% Automatizado - 31/12/2025)\n'
-  printf '# Client secrets pré-definidos para Grafana e ERPNext SSO\n'
+  printf '# Client secrets pré-definidos para Grafana SSO\n'
   printf 'GRAFANA_OAUTH_CLIENT_SECRET=%s\n' "${GRAFANA_OAUTH_CLIENT_SECRET}"
-  printf 'ERPNEXT_OAUTH_CLIENT_SECRET=%s\n' "${ERPNEXT_OAUTH_CLIENT_SECRET}"
   printf 'OIDC_COOKIE_KEYS=%s\n' "${OIDC_COOKIE_KEYS}"
   printf 'OIDC_ISSUER=https://yesyoudeserve.duckdns.org\n'
   printf 'GRAFANA_URL=https://observability.yesyoudeserve.duckdns.org\n'
-  printf 'ERPNEXT_URL=https://erp.yesyoudeserve.duckdns.org\n'
   printf '\n'
   printf '# Langfuse\n'
   printf 'LANGFUSE_SECRET_KEY=%s\n' "${LANGFUSE_SECRET_KEY:-}"
