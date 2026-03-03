@@ -20,7 +20,6 @@ import {
   taskStatusEnum,
   trainingDataStatusEnum,
   fineTuningJobStatusEnum,
-  wiseSyncStatusEnum,
   conversationControlModeEnum,
   escalationTriggerEnum,
   messageOriginEnum,
@@ -42,7 +41,6 @@ import {
   usageMetrics,
   trainingData,
   fineTuningJobs,
-  wiseSyncLog,
   conversationStates,
   conversationParticipants,
   conversationEscalations,
@@ -64,7 +62,6 @@ import {
   insertTrainingDataSchema,
   insertFineTuningJobSchema,
   insertUsageMetricSchema,
-  insertWiseSyncLogSchema,
   insertConversationStateSchema,
   insertConversationParticipantSchema,
   insertConversationEscalationSchema,
@@ -153,13 +150,6 @@ describe('Schema - Enums RBAC', () => {
       expect(statuses).toContain('completed');
       expect(statuses).toContain('failed');
       expect(statuses).toContain('cancelled');
-    });
-  });
-
-  describe('wiseSyncStatusEnum', () => {
-    it('deve ter status válidos de sincronização Wise', () => {
-      const statuses = wiseSyncStatusEnum.enumValues;
-      expect(statuses).toEqual(['pending', 'synced', 'failed', 'retrying', 'manual_review']);
     });
   });
 
@@ -370,16 +360,6 @@ describe('Schema - Tabelas Principais', () => {
     });
   });
 
-  describe('wiseSyncLog (Fase 5.5)', () => {
-    it('deve ter campos de reconciliação Wise', () => {
-      const columns = Object.keys(wiseSyncLog);
-      expect(columns).toContain('wiseTransferId');
-      expect(columns).toContain('wiseAmount');
-      expect(columns).toContain('wiseCurrency');
-      expect(columns).toContain('amountDivergence');
-    });
-  });
-
   describe('conversationStates (Takeover/Handover)', () => {
     it('deve ter campos de controle de conversa', () => {
       const columns = Object.keys(conversationStates);
@@ -519,12 +499,6 @@ describe('Schema - Insert Schemas (Zod Validation)', () => {
     });
   });
 
-  describe('insertWiseSyncLogSchema', () => {
-    it('deve ser um schema Zod válido', () => {
-      expect(insertWiseSyncLogSchema).toBeDefined();
-    });
-  });
-
   describe('insertConversationStateSchema', () => {
     it('deve ser um schema Zod válido', () => {
       expect(insertConversationStateSchema).toBeDefined();
@@ -552,7 +526,6 @@ describe('Schema - Integridade Estrutural', () => {
       expect(Object.keys(usageMetrics)).toContain('tenantId');
       expect(Object.keys(trainingData)).toContain('tenantId');
       expect(Object.keys(fineTuningJobs)).toContain('tenantId');
-      expect(Object.keys(wiseSyncLog)).toContain('tenantId');
       expect(Object.keys(llmConfig)).toContain('tenantId');
     });
   });
@@ -598,3 +571,4 @@ describe('Schema - Integridade Estrutural', () => {
     });
   });
 });
+

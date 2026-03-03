@@ -148,12 +148,6 @@ export const PERMISSION_MAP: Record<string, Role[]> = {
   'integrations:wise:manage': ['super_admin', 'admin'],
   'integrations:wise:sync': ['super_admin', 'admin'],
   
-  'integrations:erpnext:read': ['super_admin', 'admin', 'manager', 'operator'],
-  'integrations:erpnext:write': ['super_admin', 'admin', 'manager'],
-  'integrations:erpnext:delete': ['super_admin', 'admin'],
-  'integrations:erpnext:manage': ['super_admin', 'admin'],
-  'integrations:erpnext:sync': ['super_admin', 'admin', 'manager'],
-
   'integrations:grafana:read': ['super_admin', 'admin', 'manager', 'operator'],
   'integrations:grafana:write': ['super_admin', 'admin', 'manager'],
   'integrations:grafana:delete': ['super_admin', 'admin'],
@@ -204,7 +198,7 @@ export const PERMISSION_MAP: Record<string, Role[]> = {
   'images:training:manage': ['super_admin', 'admin'],
 
   // ============================================================================
-  // WISE-ERPNEXT SYNC MODULE (FASE 5.5)
+  // WISE SYNC MODULE (FASE 5.5)
   // ============================================================================
   'integrations:wise_sync:read': ['super_admin', 'admin'],
   'integrations:wise_sync:write': ['super_admin', 'admin'],
@@ -313,12 +307,6 @@ export const PERMISSION_MAP: Record<string, Role[]> = {
   'admin:wise:delete': ['super_admin'],
   'admin:wise:manage': ['super_admin', 'admin'],
   'admin:wise:sync': ['super_admin', 'admin'],
-  
-  'admin:erpnext:read': ['super_admin', 'admin'],
-  'admin:erpnext:write': ['super_admin', 'admin'],
-  'admin:erpnext:delete': ['super_admin'],
-  'admin:erpnext:manage': ['super_admin', 'admin'],
-  'admin:erpnext:sync': ['super_admin', 'admin'],
   
   'admin:twilio:read': ['super_admin', 'admin'],
   'admin:twilio:write': ['super_admin', 'admin'],

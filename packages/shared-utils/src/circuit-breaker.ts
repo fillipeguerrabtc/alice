@@ -111,13 +111,6 @@ export const CIRCUIT_BREAKER_PRESETS = {
     resetTimeout: 30000,
     volumeThreshold: 5,
   },
-  /** ERPNext API - timeout baixo */
-  erpnextAPI: {
-    timeout: 10000,
-    errorThresholdPercentage: 50,
-    resetTimeout: 30000,
-    volumeThreshold: 5,
-  },
   /** Stripe API - timeout moderado */
   stripeAPI: {
     timeout: 15000,

@@ -68,34 +68,10 @@ COMPONENT_CONFIG = {
         "version_prefix": "",
         "services": ["langfuse"],
     },
-    # ENTERPRISE: ERPNext usa UMA ÚNICA imagem (frappe/erpnext) para TUDO
-    # NÃO existem imagens separadas como frappe/erpnext-worker ou frappe/erpnext-nginx
-    # Backend, Frontend (nginx), Workers e Scheduler usam a mesma imagem com comandos diferentes
-    "erpnext": {
-        "docker_image": "frappe/erpnext",
-        "version_prefix": "v15.",
-        "services": [
-            "erpnext-backend",
-            "erpnext-frontend",  # Usa mesma imagem frappe/erpnext
-            "erpnext-worker-default",
-            "erpnext-worker-default-2",
-            "erpnext-worker-short",
-            "erpnext-worker-short-2",
-            "erpnext-worker-long",
-            "erpnext-worker-long-2",
-            "erpnext-scheduler",
-            "erpnext-websocket",  # Websocket também usa frappe/erpnext (não frappe-socketio)
-        ],
-    },
     "redis": {
         "docker_image": "redis",
         "version_prefix": "",
-        "services": ["alice-redis", "erpnext-redis-cache", "erpnext-redis-queue"],
-    },
-    "mariadb": {
-        "docker_image": "mariadb",
-        "version_prefix": "",
-        "services": ["erpnext-mariadb"],
+        "services": ["alice-redis"],
     },
 }
 
@@ -192,15 +168,10 @@ def main():
     )
     
     # Argumentos para cada componente
-    components = ["prometheus", "grafana", "loki", "promtail", "jaeger", "langfuse", "erpnext", 
-                  "redis", "mariadb"]
+    components = ["prometheus", "grafana", "loki", "promtail", "jaeger", "langfuse", "redis"]
     for component in components:
         parser.add_argument(f"--{component}-version", help=f"Versão do {component}")
         parser.add_argument(f"--{component}-digest", default="", help=f"SHA256 digest do {component}")
-    
-    # NOTA: ERPNext usa UMA imagem (frappe/erpnext) para TUDO
-    # NÃO existem imagens separadas como frappe/erpnext-nginx ou frappe/erpnext-worker
-    # Argumentos obsoletos removidos para evitar confusão
     
     args = parser.parse_args()
     
@@ -241,10 +212,6 @@ def main():
             versions[component] = version
             digests[component] = digest if digest else None
             print(f"✅ {component}: {version}{' @' + digest[:20] + '...' if digest else ' (sem digest)'}")
-    
-    # NOTA: ERPNext usa UMA ÚNICA imagem (frappe/erpnext) para TUDO
-    # Backend, Frontend, Workers, Scheduler e Websocket usam a mesma imagem
-    # Código obsoleto removido - não existem mais componentes separados
     
     print()
     

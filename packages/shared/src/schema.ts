@@ -2370,46 +2370,6 @@ export const fineTuningJobs = pgTable(
 );
 
 // ============================================================================
-// WISE-ERPNEXT SYNC LOG (FASE 5.5 - Reconciliação e Auditoria)
-// ============================================================================
-
-export const wiseSyncStatusEnum = pgEnum("wise_sync_status", [
-  "pending",
-  "synced",
-  "failed",
-  "retrying",
-  "manual_review",
-]);
-
-export const wiseSyncLog = pgTable(
-  "wise_sync_log",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    tenantId: uuid("tenant_id").references(() => tenants.id),
-    wiseTransferId: varchar("wise_transfer_id", { length: 255 }).notNull(),
-    erpnextPaymentId: varchar("erpnext_payment_id", { length: 255 }),
-    status: wiseSyncStatusEnum("status").default("pending"),
-    wiseAmount: real("wise_amount"),
-    wiseCurrency: varchar("wise_currency", { length: 3 }),
-    erpnextAmount: real("erpnext_amount"),
-    erpnextCurrency: varchar("erpnext_currency", { length: 3 }),
-    amountDivergence: real("amount_divergence"),
-    syncAttempts: integer("sync_attempts").default(0),
-    lastSyncAttempt: timestamp("last_sync_attempt"),
-    lastError: text("last_error"),
-    metadata: jsonb("metadata").$type<GenericMetadata>().default({}),
-    criadoEm: timestamp("criado_em").defaultNow(),
-    sincronizadoEm: timestamp("sincronizado_em"),
-  },
-  (table) => ({
-    idxWiseSyncTenant: index("idx_wise_sync_tenant").on(table.tenantId),
-    idxWiseSyncTransfer: index("idx_wise_sync_transfer").on(table.wiseTransferId),
-    idxWiseSyncStatus: index("idx_wise_sync_status").on(table.status),
-    idxWiseSyncErpnext: index("idx_wise_sync_erpnext").on(table.erpnextPaymentId),
-  })
-);
-
-// ============================================================================
 // WEBHOOK EVENTS (Idempotência para Stripe/Wise - Segurança Enterprise)
 // Previne processamento duplicado de webhooks em caso de retry
 // ============================================================================
@@ -2418,7 +2378,6 @@ export const webhookSourceEnum = pgEnum("webhook_source", [
   "stripe",
   "wise",
   "twilio",
-  "erpnext",
 ]);
 
 export const webhookEvents = pgTable(
@@ -2443,37 +2402,6 @@ export const webhookEvents = pgTable(
     idxWebhookEventsSource: index("idx_webhook_events_source").on(table.source),
     idxWebhookEventsProcessed: index("idx_webhook_events_processed").on(table.processed),
     idxWebhookEventsCreated: index("idx_webhook_events_created").on(table.criadoEm),
-  })
-);
-
-// ============================================================================
-// STRIPE-ERPNEXT MAPPING (Rastreabilidade de documentos entre sistemas)
-// Permite encontrar documentos ERPNext a partir de IDs Stripe
-// ============================================================================
-
-export const stripeErpnextMapping = pgTable(
-  "stripe_erpnext_mapping",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    tenantId: uuid("tenant_id").references(() => tenants.id),
-    stripeSessionId: varchar("stripe_session_id", { length: 255 }).notNull(),
-    stripeCustomerId: varchar("stripe_customer_id", { length: 255 }),
-    stripePaymentIntentId: varchar("stripe_payment_intent_id", { length: 255 }),
-    stripeSubscriptionId: varchar("stripe_subscription_id", { length: 255 }),
-    erpnextCustomer: varchar("erpnext_customer", { length: 255 }),
-    erpnextSalesOrder: varchar("erpnext_sales_order", { length: 255 }),
-    erpnextSalesInvoice: varchar("erpnext_sales_invoice", { length: 255 }),
-    erpnextPaymentEntry: varchar("erpnext_payment_entry", { length: 255 }),
-    flowStatus: varchar("flow_status", { length: 50 }).default("pending"),
-    metadata: jsonb("metadata").$type<GenericMetadata>().default({}),
-    criadoEm: timestamp("criado_em").defaultNow(),
-    atualizadoEm: timestamp("atualizado_em").defaultNow(),
-  },
-  (table) => ({
-    idxStripeSession: index("idx_stripe_erpnext_session").on(table.stripeSessionId),
-    idxStripePaymentIntent: index("idx_stripe_erpnext_payment_intent").on(table.stripePaymentIntentId),
-    idxStripeCustomer: index("idx_stripe_erpnext_customer").on(table.stripeCustomerId),
-    idxStripeFlowStatus: index("idx_stripe_erpnext_flow_status").on(table.flowStatus),
   })
 );
 
@@ -5114,8 +5042,6 @@ export const agenticSettings = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     tenantId: uuid("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
     webEnabled: boolean("web_enabled").notNull().default(true),
-    erpReadEnabled: boolean("erp_read_enabled").notNull().default(true),
-    erpWriteEnabled: boolean("erp_write_enabled").notNull().default(true),
     observabilityReadEnabled: boolean("observability_read_enabled").notNull().default(true),
     observabilityWriteEnabled: boolean("observability_write_enabled").notNull().default(true),
     tradingEnabled: boolean("trading_enabled").notNull().default(true),
@@ -5541,7 +5467,7 @@ export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
 
 // ============================================================================
 // IDENTITY PROVISIONING (Outbox Pattern - Tarefa 6)
-// Sincronização Alice → Grafana/ERPNext
+// Sincronização Alice → Grafana
 // ============================================================================
 
 // Eventos de provisionamento (Outbox Pattern)
@@ -5554,8 +5480,8 @@ export const identityProvisioningEvents = pgTable('identity_provisioning_events'
   // Payload JSON do evento
   payload: jsonb('payload').notNull(),
   
-  // Sistema de destino: grafana, erpnext, all
-  targetSystem: varchar('target_system', { length: 50 }).notNull(),
+  // Sistema de destino: grafana
+  targetSystem: varchar('target_system', { length: 50 }).notNull().default('grafana'),
   
   // Status do evento: pending, processing, completed, failed, retrying
   status: varchar('status', { length: 20 }).notNull().default('pending'),
@@ -5579,14 +5505,14 @@ export const identityProvisioningEvents = pgTable('identity_provisioning_events'
   tenantId: varchar('tenant_id', { length: 100 }),
 });
 
-// Mapeamento de usuários externos (Alice ↔ Grafana/ERPNext)
+// Mapeamento de usuários externos (Alice ↔ Grafana)
 export const externalUserMappings = pgTable('external_user_mappings', {
   id: varchar('id').primaryKey().default(sql`gen_random_uuid()`),
   
   // Usuário Alice
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   
-  // Sistema externo: grafana, erpnext
+  // Sistema externo: grafana
   externalSystem: varchar('external_system', { length: 50 }).notNull(),
   
   // ID do usuário no sistema externo
@@ -5783,16 +5709,12 @@ export type FineTuningJob = typeof fineTuningJobs.$inferSelect;
 export type InsertFineTuningJob = typeof fineTuningJobs.$inferInsert;
 
 // Wise-ERPNext Sync Types (FASE 5.5)
-export type WiseSyncLog = typeof wiseSyncLog.$inferSelect;
-export type InsertWiseSyncLog = typeof wiseSyncLog.$inferInsert;
 
 // Webhook Events Types (Idempotência - Segurança Enterprise)
 export type WebhookEvent = typeof webhookEvents.$inferSelect;
 export type InsertWebhookEvent = typeof webhookEvents.$inferInsert;
 
 // Stripe ERPNext Mapping Types (Rastreabilidade de documentos)
-export type StripeErpnextMapping = typeof stripeErpnextMapping.$inferSelect;
-export type InsertStripeErpnextMapping = typeof stripeErpnextMapping.$inferInsert;
 
 // Trading Types (Gate 2 - KuCoin Futures BTC)
 export type TradingSignal = typeof tradingSignals.$inferSelect;
@@ -5895,11 +5817,6 @@ export const insertUsageMetricSchema: z.ZodType<unknown> = createInsertSchema(us
 });
 
 // Wise-ERPNext Sync Insert Schema (FASE 5.5)
-export const insertWiseSyncLogSchema: z.ZodType<unknown> = createInsertSchema(wiseSyncLog).omit({
-  id: true,
-  criadoEm: true,
-  sincronizadoEm: true,
-});
 
 // Webhook Events Insert Schema (Idempotência - Segurança Enterprise)
 export const insertWebhookEventSchema: z.ZodType<unknown> = createInsertSchema(webhookEvents).omit({
@@ -5909,11 +5826,6 @@ export const insertWebhookEventSchema: z.ZodType<unknown> = createInsertSchema(w
 });
 
 // Stripe ERPNext Mapping Insert Schema (Rastreabilidade)
-export const insertStripeErpnextMappingSchema: z.ZodType<unknown> = createInsertSchema(stripeErpnextMapping).omit({
-  id: true,
-  criadoEm: true,
-  atualizadoEm: true,
-});
 
 // Trading Insert Schemas (Gate 2 - KuCoin Futures BTC)
 export const insertTradingSignalSchema: z.ZodType<unknown> = createInsertSchema(tradingSignals).omit({

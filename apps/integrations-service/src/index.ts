@@ -3362,28 +3362,33 @@ app.get('/api/integrations/stats', requirePermission('integrations:integrations:
 
     const [stripeTransactionsRow] = await db
       .select({ total: sql<number>`count(*)` })
-      .from(schema.stripeErpnextMapping)
-      .where(eq(schema.stripeErpnextMapping.tenantId, tenantId));
+      .from(schema.webhookEvents)
+      .where(and(
+        eq(schema.webhookEvents.source, 'stripe'),
+        eq(schema.webhookEvents.eventType, 'checkout.session.completed'),
+        eq(schema.webhookEvents.processed, true),
+        eq(schema.webhookEvents.tenantId, tenantId)
+      ));
 
     const [wiseTotalRow] = await db
       .select({ total: sql<number>`count(*)` })
-      .from(schema.wiseSyncLog)
-      .where(eq(schema.wiseSyncLog.tenantId, tenantId));
+      .from(schema.wiseTransfers)
+      .where(eq(schema.wiseTransfers.tenantId, tenantId));
 
     const [wiseCompletedRow] = await db
       .select({ total: sql<number>`count(*)` })
-      .from(schema.wiseSyncLog)
+      .from(schema.wiseTransfers)
       .where(and(
-        eq(schema.wiseSyncLog.tenantId, tenantId),
-        eq(schema.wiseSyncLog.status, 'synced')
+        eq(schema.wiseTransfers.tenantId, tenantId),
+        inArray(schema.wiseTransfers.status, ['completed', 'outgoing_payment_sent'])
       ));
 
     const [wisePendingRow] = await db
-      .select({ total: sql<number>`coalesce(sum(${schema.wiseSyncLog.wiseAmount}), 0)` })
-      .from(schema.wiseSyncLog)
+      .select({ total: sql<number>`coalesce(sum(${schema.wiseTransfers.sourceValue}), 0)` })
+      .from(schema.wiseTransfers)
       .where(and(
-        eq(schema.wiseSyncLog.tenantId, tenantId),
-        inArray(schema.wiseSyncLog.status, ['pending', 'retrying', 'manual_review'])
+        eq(schema.wiseTransfers.tenantId, tenantId),
+        inArray(schema.wiseTransfers.status, ['pending', 'incoming_payment_waiting', 'processing'])
       ));
 
     const stripeCurrency = stripeRevenueRow?.currency ? stripeRevenueRow.currency.toUpperCase() : 'EUR';
@@ -10116,8 +10121,6 @@ async function getAgenticSettingsOrDefault(tenantId: string) {
     .values({
       tenantId,
       webEnabled: true,
-      erpReadEnabled: true,
-      erpWriteEnabled: true,
       tradingEnabled: true,
       paymentsEnabled: true,
       stackOpsEnabled: true,

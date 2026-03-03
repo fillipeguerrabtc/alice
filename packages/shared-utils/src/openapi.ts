@@ -63,7 +63,7 @@ Plataforma de IA Autônoma Enterprise com suporte a:
 - RAG (Retrieval-Augmented Generation)
 - Geração de imagens (FLUX.1 Schnell)
 - Fine-tuning automatizado
-- Integrações (Stripe, Wise, ERPNext)
+- Integrações (Stripe, Wise, Twilio e Email)
 
 ## Autenticação
 
@@ -504,7 +504,6 @@ export const TRAINING_SERVICE_TAGS: OpenApiTag[] = [
 export const INTEGRATIONS_SERVICE_TAGS: OpenApiTag[] = [
   { name: 'Stripe', description: 'Integração com Stripe' },
   { name: 'Wise', description: 'Integração com Wise' },
-  { name: 'ERPNext', description: 'Integração com ERPNext' },
   { name: 'Twilio', description: 'Integração com Twilio (SMS/WhatsApp)' },
   { name: 'Email', description: 'Integração com Gmail SMTP (Email)' }, // Substitui Resend - 30/12/2025
   { name: 'Webhooks', description: 'Recebimento de webhooks' },

@@ -64,7 +64,6 @@ export const FEATURE_FLAGS = {
   // Integrações
   STRIPE_ENABLED: 'stripe_enabled',
   WISE_ENABLED: 'wise_enabled',
-  ERPNEXT_ENABLED: 'erpnext_enabled',
   TWILIO_ENABLED: 'twilio_enabled',
   EMAIL_ENABLED: 'email_enabled', // Gmail SMTP (substitui RESEND_ENABLED - 30/12/2025)
 
@@ -226,7 +225,6 @@ const DEFAULT_FLAGS: Record<FeatureFlagKey, boolean> = {
   // Integrações - DESABILITADAS por padrão (requer configuração)
   [FEATURE_FLAGS.STRIPE_ENABLED]: false,
   [FEATURE_FLAGS.WISE_ENABLED]: false,
-  [FEATURE_FLAGS.ERPNEXT_ENABLED]: false,
   [FEATURE_FLAGS.TWILIO_ENABLED]: false,
   [FEATURE_FLAGS.EMAIL_ENABLED]: false, // Gmail SMTP (substitui RESEND_ENABLED - 30/12/2025)
 
@@ -499,13 +497,6 @@ export async function isStripeEnabled(tenantId?: string): Promise<boolean> {
  */
 export async function isWiseEnabled(tenantId?: string): Promise<boolean> {
   return isFeatureEnabled(FEATURE_FLAGS.WISE_ENABLED, tenantId);
-}
-
-/**
- * Verifica se integração ERPNext está habilitada.
- */
-export async function isERPNextEnabled(tenantId?: string): Promise<boolean> {
-  return isFeatureEnabled(FEATURE_FLAGS.ERPNEXT_ENABLED, tenantId);
 }
 
 /**

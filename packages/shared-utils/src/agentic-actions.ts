@@ -1,5 +1,5 @@
 /**
- * Registro central de ações agentic (Trading/ERPNext/etc.)
+ * Registro central de ações agentic (Trading e operações correlatas)
  *
  * Fonte única de governança para:
  * - endpoint/verbos
@@ -12,7 +12,6 @@
 
 export type AgenticService =
   | 'trading'
-  | 'erpnext'
   | 'payments'
   | 'grafana'
   | 'stack_ops'
@@ -700,83 +699,9 @@ const TRADING_WRITE: AgenticActionDefinition[] = [
   },
 ];
 
-const ERPNEXT_ACTIONS: AgenticActionDefinition[] = [
-  {
-    id: 'erpnext.test',
-    service: 'erpnext',
-    method: 'GET',
-    path: '/api/integrations/erpnext/test',
-    riskLevel: 'low',
-    approval: 'never',
-    permissions: ['integrations:erpnext:read'],
-    uiCardType: 'read',
-  },
-  {
-    id: 'erpnext.customers.list',
-    service: 'erpnext',
-    method: 'GET',
-    path: '/api/integrations/erpnext/customers',
-    riskLevel: 'low',
-    approval: 'never',
-    permissions: ['integrations:erpnext:read'],
-    uiCardType: 'read',
-  },
-  {
-    id: 'erpnext.customers.create',
-    service: 'erpnext',
-    method: 'POST',
-    path: '/api/integrations/erpnext/customers',
-    riskLevel: 'medium',
-    approval: 'always',
-    permissions: ['integrations:erpnext:write'],
-    uiCardType: 'approval',
-  },
-  {
-    id: 'erpnext.items.list',
-    service: 'erpnext',
-    method: 'GET',
-    path: '/api/integrations/erpnext/items',
-    riskLevel: 'low',
-    approval: 'never',
-    permissions: ['integrations:erpnext:read'],
-    uiCardType: 'read',
-  },
-  {
-    id: 'erpnext.invoices.list',
-    service: 'erpnext',
-    method: 'GET',
-    path: '/api/integrations/erpnext/invoices',
-    riskLevel: 'low',
-    approval: 'never',
-    permissions: ['integrations:erpnext:read'],
-    uiCardType: 'read',
-  },
-  {
-    id: 'erpnext.invoices.create',
-    service: 'erpnext',
-    method: 'POST',
-    path: '/api/integrations/erpnext/invoices',
-    riskLevel: 'medium',
-    approval: 'always',
-    permissions: ['integrations:erpnext:write'],
-    uiCardType: 'approval',
-  },
-  {
-    id: 'erpnext.customer_annual_billing',
-    service: 'erpnext',
-    method: 'GET',
-    path: '/api/integrations/erpnext/customer-annual-billing',
-    riskLevel: 'low',
-    approval: 'never',
-    permissions: ['integrations:erpnext:read'],
-    uiCardType: 'read',
-  },
-];
-
 export const AGENTIC_ACTION_REGISTRY: AgenticActionDefinition[] = [
   ...TRADING_READ,
   ...TRADING_WRITE,
-  ...ERPNEXT_ACTIONS,
 ];
 
 export function getAgenticActionById(actionId: string): AgenticActionDefinition | undefined {

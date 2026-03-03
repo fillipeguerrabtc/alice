@@ -49,14 +49,6 @@ const stripeConfigSchema = z.object({
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
 });
 
-const erpNextConfigSchema = z.object({
-  ERPNEXT_URL: z.string().url().optional(),
-  ERPNEXT_API_KEY: z.string().optional(),
-  ERPNEXT_API_SECRET: z.string().optional(),
-  ERPNEXT_ALLOWED_DOCTYPES: z.string().optional(),
-  ERPNEXT_ALLOWED_METHODS: z.string().optional(),
-});
-
 const wiseConfigSchema = z.object({
   WISE_API_KEY: z.string().optional(),
   WISE_PROFILE_ID: z.string().optional(),
@@ -105,7 +97,6 @@ export const trainingServiceConfigSchema = baseConfigSchema
 export const integrationsServiceConfigSchema = baseConfigSchema
   .merge(databaseConfigSchema)
   .merge(stripeConfigSchema)
-  .merge(erpNextConfigSchema)
   .merge(wiseConfigSchema)
   .merge(githubActionsConfigSchema)
   .merge(grafanaConfigSchema);
@@ -115,7 +106,6 @@ export const fullConfigSchema = baseConfigSchema
   .merge(authConfigSchema)
   .merge(llmConfigSchema)
   .merge(stripeConfigSchema)
-  .merge(erpNextConfigSchema)
   .merge(wiseConfigSchema)
   .merge(githubActionsConfigSchema)
   .merge(observabilityConfigSchema)
@@ -126,7 +116,6 @@ export type DatabaseConfig = z.infer<typeof databaseConfigSchema>;
 export type AuthConfig = z.infer<typeof authConfigSchema>;
 export type LLMConfig = z.infer<typeof llmConfigSchema>;
 export type StripeConfig = z.infer<typeof stripeConfigSchema>;
-export type ERPNextConfig = z.infer<typeof erpNextConfigSchema>;
 export type GitHubActionsConfig = z.infer<typeof githubActionsConfigSchema>;
 export type ObservabilityConfig = z.infer<typeof observabilityConfigSchema>;
 export type FullConfig = z.infer<typeof fullConfigSchema>;
@@ -180,7 +169,6 @@ const SECRET_KEYS = new Set([
   'OAUTH_GITHUB_CLIENT_SECRET',
   'STRIPE_SECRET_KEY',
   'STRIPE_WEBHOOK_SECRET',
-  'ERPNEXT_API_SECRET',
   'GH_PAT',
   'GRAFANA_LOKI_API_KEY',
   'TWILIO_AUTH_TOKEN',

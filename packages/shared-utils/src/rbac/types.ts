@@ -84,7 +84,6 @@ export type Resource =
   | 'integrations'
   | 'stripe'
   | 'wise'
-  | 'erpnext'
   | 'twilio'
   | 'email' // Gmail SMTP (substitui 'resend' - 30/12/2025)
   | 'audit_logs'

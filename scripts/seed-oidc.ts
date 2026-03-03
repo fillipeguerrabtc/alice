@@ -2,8 +2,8 @@
  * Script de Seed OIDC - Alice Enterprise Platform
  * 
  * Popula:
- * - Módulos do sistema (Dashboard, Chat, ERPNext, Grafana)
- * - Clientes OAuth (Grafana, ERPNext)
+ * - Módulos do sistema (Dashboard, Chat, Grafana)
+ * - Clientes OAuth (Grafana)
  * - Chave JWKS RS256 para assinatura JWT
  * 
  * Seguindo Regra 6 CLAUDE.md: PROIBIDO dados hardcoded em produção
@@ -103,16 +103,6 @@ const SYSTEM_MODULES = [
     ativo: true,
   },
   {
-    codigo: "erpnext",
-    nome: "ERPNext",
-    descricao: "CRM/ERP - Gestão de clientes, vendas e finanças",
-    icone: "Building2",
-    categoria: "business",
-    urlExterna: process.env.ERPNEXT_URL || null,
-    ordem: 11,
-    ativo: true,
-  },
-  {
     codigo: "takeover",
     nome: "Takeover/Handover",
     descricao: "Painel de intervenção humana em conversas",
@@ -157,18 +147,18 @@ const SYSTEM_MODULES = [
 // Mapeamento Role → Módulos (RBAC 6 níveis)
 const ROLE_MODULE_ACCESS: Record<string, { read: string[]; write: string[]; admin: string[] }> = {
   super_admin: {
-    read: ["dashboard", "chat", "rag", "training", "image_gen", "grafana", "erpnext", "takeover", "users", "modules", "settings"],
-    write: ["dashboard", "chat", "rag", "training", "image_gen", "grafana", "erpnext", "takeover", "users", "modules", "settings"],
-    admin: ["dashboard", "chat", "rag", "training", "image_gen", "grafana", "erpnext", "takeover", "users", "modules", "settings"],
+    read: ["dashboard", "chat", "rag", "training", "image_gen", "grafana", "takeover", "users", "modules", "settings"],
+    write: ["dashboard", "chat", "rag", "training", "image_gen", "grafana", "takeover", "users", "modules", "settings"],
+    admin: ["dashboard", "chat", "rag", "training", "image_gen", "grafana", "takeover", "users", "modules", "settings"],
   },
   admin: {
-    read: ["dashboard", "chat", "rag", "training", "image_gen", "grafana", "erpnext", "takeover", "users"],
-    write: ["dashboard", "chat", "rag", "training", "image_gen", "grafana", "erpnext", "takeover", "users"],
+    read: ["dashboard", "chat", "rag", "training", "image_gen", "grafana", "takeover", "users"],
+    write: ["dashboard", "chat", "rag", "training", "image_gen", "grafana", "takeover", "users"],
     admin: ["dashboard", "chat", "rag", "training", "image_gen", "takeover", "users"],
   },
   manager: {
-    read: ["dashboard", "chat", "rag", "training", "image_gen", "grafana", "erpnext", "takeover"],
-    write: ["dashboard", "chat", "rag", "image_gen", "erpnext", "takeover"],
+    read: ["dashboard", "chat", "rag", "training", "image_gen", "grafana", "takeover"],
+    write: ["dashboard", "chat", "rag", "image_gen", "takeover"],
     admin: [],
   },
   operator: {
@@ -209,7 +199,6 @@ function getRequiredEnvVar(name: string): string {
 //
 // SECRETS NECESSÁRIOS NO GITHUB:
 // - GRAFANA_OAUTH_CLIENT_SECRET: Secret pré-gerado para grafana-sso
-// - ERPNEXT_OAUTH_CLIENT_SECRET: Secret pré-gerado para erpnext-sso
 //
 // COMO GERAR: openssl rand -base64 32 | tr -d '=' | tr '+/' '-_'
 // =============================================================================
@@ -231,11 +220,9 @@ interface OAuthClientConfig {
 
 function getOAuthClients(): OAuthClientConfig[] {
   const grafanaUrl = getRequiredEnvVar('GRAFANA_URL');
-  const erpnextUrl = getRequiredEnvVar('ERPNEXT_URL');
   
   // SECRETS PRÉ-DEFINIDOS: Obrigatórios para deploy automatizado
   const grafanaClientSecret = getRequiredEnvVar('GRAFANA_OAUTH_CLIENT_SECRET');
-  const erpnextClientSecret = getRequiredEnvVar('ERPNEXT_OAUTH_CLIENT_SECRET');
   
   return [
     {
@@ -247,20 +234,6 @@ function getOAuthClients(): OAuthClientConfig[] {
       grantTypes: ["authorization_code", "refresh_token"],
       scopes: ["openid", "profile", "email", "groups", "roles"],
       tokenEndpointAuthMethod: "client_secret_basic",
-      accessTokenTtl: 3600,
-      refreshTokenTtl: 86400,
-      autoConsent: true,
-      ativo: true,
-    },
-    {
-      clientId: "erpnext-sso",
-      clientSecret: erpnextClientSecret,
-      nome: "ERPNext CRM/ERP",
-      descricao: "Sistema de gestão empresarial - SSO via Alice IdP",
-      redirectUris: [`${erpnextUrl}/api/method/frappe.integrations.oauth2.login_via_oauth2`],
-      grantTypes: ["authorization_code", "refresh_token"],
-      scopes: ["openid", "profile", "email", "groups", "roles"],
-      tokenEndpointAuthMethod: "client_secret_post",
       accessTokenTtl: 3600,
       refreshTokenTtl: 86400,
       autoConsent: true,

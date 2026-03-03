@@ -311,7 +311,7 @@ export type OidcJwk = typeof oidcJwks.$inferSelect;
 export type InsertOidcJwk = typeof oidcJwks.$inferInsert;
 
 // ============================================================================
-// IDENTITY PROVISIONING EVENTS (Outbox Pattern - Sincronização Alice → Grafana/ERPNext)
+// IDENTITY PROVISIONING EVENTS (Outbox Pattern - Sincronização Alice → Grafana)
 // Seguindo Regra 6 CLAUDE.md: Persistência PostgreSQL para garantia de entrega
 // ============================================================================
 
@@ -329,7 +329,7 @@ export const identityProvisioningEvents = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     eventType: varchar("event_type", { length: 50 }).notNull(),
     payload: jsonb("payload").notNull(),
-    targetSystem: varchar("target_system", { length: 50 }).notNull().default("all"),
+    targetSystem: varchar("target_system", { length: 50 }).notNull().default("grafana"),
     correlationId: varchar("correlation_id", { length: 255 }),
     tenantId: uuid("tenant_id").references(() => tenants.id),
     status: identityProvisioningStatusEnum("status").default("pending"),
@@ -353,7 +353,7 @@ export type IdentityProvisioningEvent = typeof identityProvisioningEvents.$infer
 export type InsertIdentityProvisioningEvent = typeof identityProvisioningEvents.$inferInsert;
 
 // ============================================================================
-// EXTERNAL USER MAPPINGS (Mapeamento Alice ↔ Grafana/ERPNext)
+// EXTERNAL USER MAPPINGS (Mapeamento Alice ↔ Grafana)
 // Rastreamento de usuários sincronizados com sistemas externos
 // ============================================================================
 
@@ -834,46 +834,6 @@ export const fineTuningJobs = pgTable(
 );
 
 // ============================================================================
-// WISE-ERPNEXT SYNC LOG (FASE 5.5 - Reconciliação e Auditoria)
-// ============================================================================
-
-export const wiseSyncStatusEnum = pgEnum("wise_sync_status", [
-  "pending",
-  "synced",
-  "failed",
-  "retrying",
-  "manual_review",
-]);
-
-export const wiseSyncLog = pgTable(
-  "wise_sync_log",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    tenantId: uuid("tenant_id").references(() => tenants.id),
-    wiseTransferId: varchar("wise_transfer_id", { length: 255 }).notNull(),
-    erpnextPaymentId: varchar("erpnext_payment_id", { length: 255 }),
-    status: wiseSyncStatusEnum("status").default("pending"),
-    wiseAmount: real("wise_amount"),
-    wiseCurrency: varchar("wise_currency", { length: 3 }),
-    erpnextAmount: real("erpnext_amount"),
-    erpnextCurrency: varchar("erpnext_currency", { length: 3 }),
-    amountDivergence: real("amount_divergence"),
-    syncAttempts: integer("sync_attempts").default(0),
-    lastSyncAttempt: timestamp("last_sync_attempt"),
-    lastError: text("last_error"),
-    metadata: jsonb("metadata").default({}),
-    criadoEm: timestamp("criado_em").defaultNow(),
-    sincronizadoEm: timestamp("sincronizado_em"),
-  },
-  (table) => ({
-    idxWiseSyncTenant: index("idx_wise_sync_tenant").on(table.tenantId),
-    idxWiseSyncTransfer: index("idx_wise_sync_transfer").on(table.wiseTransferId),
-    idxWiseSyncStatus: index("idx_wise_sync_status").on(table.status),
-    idxWiseSyncErpnext: index("idx_wise_sync_erpnext").on(table.erpnextPaymentId),
-  })
-);
-
-// ============================================================================
 // WEBHOOK EVENTS (Idempotência para Stripe/Wise - Segurança Enterprise)
 // Previne processamento duplicado de webhooks em caso de retry
 // ============================================================================
@@ -882,7 +842,6 @@ export const webhookSourceEnum = pgEnum("webhook_source", [
   "stripe",
   "wise",
   "twilio",
-  "erpnext",
 ]);
 
 export const webhookEvents = pgTable(
@@ -908,38 +867,6 @@ export const webhookEvents = pgTable(
     idxWebhookEventsSource: index("idx_webhook_events_source").on(table.source),
     idxWebhookEventsProcessed: index("idx_webhook_events_processed").on(table.processed),
     idxWebhookEventsCreated: index("idx_webhook_events_created").on(table.criadoEm),
-  })
-);
-
-// ============================================================================
-// STRIPE-ERPNEXT MAPPING (Rastreabilidade de documentos entre sistemas)
-// Permite encontrar documentos ERPNext a partir de IDs Stripe
-// ============================================================================
-
-export const stripeErpnextMapping = pgTable(
-  "stripe_erpnext_mapping",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    tenantId: uuid("tenant_id").references(() => tenants.id),
-    stripeSessionId: varchar("stripe_session_id", { length: 255 }).notNull(),
-    stripeCustomerId: varchar("stripe_customer_id", { length: 255 }),
-    stripePaymentIntentId: varchar("stripe_payment_intent_id", { length: 255 }),
-    stripeSubscriptionId: varchar("stripe_subscription_id", { length: 255 }),
-    erpnextCustomer: varchar("erpnext_customer", { length: 255 }),
-    erpnextSalesOrder: varchar("erpnext_sales_order", { length: 255 }),
-    erpnextSalesInvoice: varchar("erpnext_sales_invoice", { length: 255 }),
-    erpnextPaymentEntry: varchar("erpnext_payment_entry", { length: 255 }),
-    flowStatus: varchar("flow_status", { length: 50 }).default("pending"), // pending, order_created, invoice_created, payment_created, complete
-    metadata: jsonb("metadata").default({}),
-    criadoEm: timestamp("criado_em").defaultNow(),
-    atualizadoEm: timestamp("atualizado_em").defaultNow(),
-  },
-  (table) => ({
-    // Índice único por session_id para busca rápida
-    idxStripeSession: index("idx_stripe_erpnext_session").on(table.stripeSessionId),
-    idxStripePaymentIntent: index("idx_stripe_erpnext_payment_intent").on(table.stripePaymentIntentId),
-    idxStripeCustomer: index("idx_stripe_erpnext_customer").on(table.stripeCustomerId),
-    idxStripeFlowStatus: index("idx_stripe_erpnext_flow_status").on(table.flowStatus),
   })
 );
 
@@ -1625,16 +1552,12 @@ export type FineTuningJob = typeof fineTuningJobs.$inferSelect;
 export type InsertFineTuningJob = typeof fineTuningJobs.$inferInsert;
 
 // Wise-ERPNext Sync Types (FASE 5.5)
-export type WiseSyncLog = typeof wiseSyncLog.$inferSelect;
-export type InsertWiseSyncLog = typeof wiseSyncLog.$inferInsert;
 
 // Webhook Events Types (Idempotência - Segurança Enterprise)
 export type WebhookEvent = typeof webhookEvents.$inferSelect;
 export type InsertWebhookEvent = typeof webhookEvents.$inferInsert;
 
 // Stripe ERPNext Mapping Types (Rastreabilidade de documentos)
-export type StripeErpnextMapping = typeof stripeErpnextMapping.$inferSelect;
-export type InsertStripeErpnextMapping = typeof stripeErpnextMapping.$inferInsert;
 
 // Takeover/Handover Types (FASE 6.5)
 export type ConversationState = typeof conversationStates.$inferSelect;
@@ -1681,11 +1604,6 @@ export const insertUsageMetricSchema = createInsertSchema(usageMetrics).omit({
 });
 
 // Wise-ERPNext Sync Insert Schema (FASE 5.5)
-export const insertWiseSyncLogSchema = createInsertSchema(wiseSyncLog).omit({
-  id: true,
-  criadoEm: true,
-  sincronizadoEm: true,
-});
 
 // Takeover/Handover Insert Schemas (FASE 6.5)
 export const insertConversationStateSchema = createInsertSchema(conversationStates).omit({
