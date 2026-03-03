@@ -131,6 +131,7 @@ import {
   runTrainingFineTuningJob,
   TrainingHyperparamsOverrideSchema,
 } from './training-runner.js';
+import { loadTrainingEnterpriseConfig } from './training-config.js';
 // Fine-tuning é executado localmente via GPU Manager Service (Regra 6 - sem stubs/migração)
 
 // Logger centralizado: JSON em produção, pino-pretty em desenvolvimento
@@ -2958,8 +2959,11 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
     const approvedIds = new Set(profileSelection.selected.map((item) => item.id));
     const approvedData = approvedDataRaw.filter((item) => approvedIds.has(item.id));
 
-    const trainingRuntimeConfig = await loadTrainingSystemRuntimeConfig();
-    const minRequired = body.forceMinSize ? 1 : trainingRuntimeConfig.minOndemandDatasetSize;
+    const [trainingRuntimeConfig, trainingEnterpriseConfig] = await Promise.all([
+      loadTrainingSystemRuntimeConfig(),
+      loadTrainingEnterpriseConfig(),
+    ]);
+    const minRequired = body.forceMinSize ? 1 : trainingEnterpriseConfig.minOndemandDatasetSize;
     if (approvedData.length < minRequired) {
       return res.status(400).json({
         error: 'Dados de treinamento insuficientes',
@@ -4384,12 +4388,15 @@ app.post('/api/training/schedule/configure', requirePermission('training:trainin
   const { tenantId, scheduleType, enabled, cronPattern, minDataRequired } = parseResult.data;
   
   try {
-    const trainingRuntimeConfig = await loadTrainingSystemRuntimeConfig();
+    const [trainingRuntimeConfig, trainingEnterpriseConfig] = await Promise.all([
+      loadTrainingSystemRuntimeConfig(),
+      loadTrainingEnterpriseConfig(),
+    ]);
     const resolvedMinDataRequired = minDataRequired
       ?? (
         scheduleType === 'incremental_fine_tuning'
-          ? trainingRuntimeConfig.minScheduledDatasetSizeIncremental
-          : trainingRuntimeConfig.minScheduledDatasetSizeFull
+          ? trainingEnterpriseConfig.minScheduledIncremental
+          : trainingEnterpriseConfig.minScheduledFull
       );
 
     // Verificar se já existe configuração

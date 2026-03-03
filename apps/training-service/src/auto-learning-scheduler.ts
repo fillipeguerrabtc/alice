@@ -26,6 +26,7 @@ import * as schema from '@alice/shared/schema';
 import type { Database } from '@alice/database';
 import { GPU_MANAGER_CONFIG } from '@alice/shared-utils';
 import { enqueueTrainingFineTuningRun } from './training-fine-tuning-queue.js';
+import { loadTrainingEnterpriseConfig } from './training-config.js';
 
 // CORREÇÃO AUDITORIA 17/12/2025: Usar createLogger padronizado da plataforma
 // Bug: pino direto com pino-pretty não segue padrão enterprise (Regra 2)
@@ -76,27 +77,17 @@ export const SCHEDULE_CONFIG = {
   },
 } as const;
 
-async function resolveScheduledMinDataRequired(scheduleType: string): Promise<number> {
-  const config = await getAllSystemConfig();
-  const key = scheduleType === 'incremental_fine_tuning'
-    ? 'MIN_SCHEDULED_DATASET_SIZE_INCREMENTAL'
-    : 'MIN_SCHEDULED_DATASET_SIZE_FULL';
-  const raw = config[key];
-  const parsed = raw ? parseInt(raw, 10) : NaN;
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    throw new Error(`system_config invalido para ${key}: "${raw ?? ''}"`);
-  }
-  return parsed;
-}
-
-async function resolveTrainingQualityMinRatio(): Promise<number> {
-  const config = await getAllSystemConfig();
-  const raw = config.TRAINING_QUALITY_MIN_RATIO;
-  const parsed = raw ? Number(raw) : NaN;
-  if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 1) {
-    return parsed;
-  }
-  throw new Error(`system_config invalido para TRAINING_QUALITY_MIN_RATIO: "${raw ?? ''}"`);
+async function resolveScheduledQualityConfig(scheduleType: string): Promise<{
+  minDataRequired: number;
+  qualityMinRatio: number;
+}> {
+  const config = await loadTrainingEnterpriseConfig();
+  return {
+    minDataRequired: scheduleType === 'incremental_fine_tuning'
+      ? config.minScheduledIncremental
+      : config.minScheduledFull,
+    qualityMinRatio: config.qualityMinRatio,
+  };
 }
 
 async function resolveAutoLearningIncludeImages(): Promise<boolean> {
@@ -313,8 +304,9 @@ export async function evaluateDataQuality(
   // Para jobs agendados: threshold apenas em training_data (universal; trading não obrigatório)
   const countForMin = useOnlyTrainingDataForMinCount ? data.approvedDataCount : totalDataCount;
 
-  const minData = customMinDataRequired ?? await resolveScheduledMinDataRequired(scheduleType);
-  const qualityMinRatio = await resolveTrainingQualityMinRatio();
+  const scheduledQualityConfig = await resolveScheduledQualityConfig(scheduleType);
+  const minData = customMinDataRequired ?? scheduledQualityConfig.minDataRequired;
+  const qualityMinRatio = scheduledQualityConfig.qualityMinRatio;
 
   if (countForMin < minData) {
     return {

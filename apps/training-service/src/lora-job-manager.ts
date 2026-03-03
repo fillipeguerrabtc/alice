@@ -16,7 +16,6 @@
 
 import { createLogger } from '@alice/logger';
 import { getDatabase, schema, eq, and, desc, sql, inArray, isNull, or, not } from '@alice/database';
-import { getAllSystemConfig } from '@alice/database/system-config';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
@@ -28,6 +27,7 @@ import type {
   TradingLoraMetrics,
 } from '@alice/shared';
 import { TradingLoraHyperparamsSchema } from '@alice/shared';
+import { loadTrainingEnterpriseConfig } from './training-config.js';
 
 /** Source types de trading em training_data (tabela universal). */
 const TRADING_SOURCE_TYPES = ['trading_signal', 'trading_order', 'trading_postmortem', 'trading_demo'] as const;
@@ -44,52 +44,17 @@ const TRAINING_STORAGE_DIR = process.env.TRAINING_STORAGE_DIR || '/opt/alice/upl
 const DEFAULT_BASE_MODEL = GPU_MANAGER_CONFIG.models.llm;
 
 // Configuração padrão de hiperparâmetros
-const DEFAULT_HYPERPARAMS: TradingLoraHyperparams = TradingLoraHyperparamsSchema.parse({});
+const TRADING_HYPERPARAMS_BASE_DEFAULTS: TradingLoraHyperparams = TradingLoraHyperparamsSchema.parse({});
 /** Mínimo de exemplos para jobs LoRA (training_data com sourceType trading). Reservado para validação futura. */
 const _MIN_DATASET_SIZE = 100;
 
-async function resolveIntConfigValue(key: string, minValue: number): Promise<number> {
-  const config = await getAllSystemConfig();
-  const raw = config[key];
-  const parsed = Number.parseInt(raw ?? '', 10);
-  if (!Number.isFinite(parsed) || parsed < minValue) {
-    throw new Error(`system_config invalido para ${key}: "${raw ?? ''}"`);
-  }
-  return parsed;
-}
-
-async function resolveFloatConfigValue(key: string, minValue: number, maxValue: number): Promise<number> {
-  const config = await getAllSystemConfig();
-  const raw = config[key];
-  const parsed = Number(raw ?? '');
-  if (!Number.isFinite(parsed) || parsed < minValue || parsed > maxValue) {
-    throw new Error(`system_config invalido para ${key}: "${raw ?? ''}"`);
-  }
-  return parsed;
-}
-
-async function resolveMinOndemandDatasetSize(): Promise<number> {
-  return resolveIntConfigValue('MIN_ONDEMAND_DATASET_SIZE', 1);
-}
-
-async function resolveMinScheduledDatasetSizeIncremental(): Promise<number> {
-  return resolveIntConfigValue('MIN_SCHEDULED_DATASET_SIZE_INCREMENTAL', 1);
-}
-
-async function resolveTrainingDatasetMaxRows(): Promise<number> {
-  return resolveIntConfigValue('TRAINING_DATASET_MAX_ROWS', 100);
-}
-
-async function resolveTrainingSplitRatio(): Promise<number> {
-  return resolveFloatConfigValue('TRAINING_TRAIN_EVAL_SPLIT_RATIO', 0.5, 0.99);
-}
-
-async function resolveTrainingSliceSteps(): Promise<number> {
-  return resolveIntConfigValue('TRAINING_SLICE_STEPS', 1);
-}
-
-async function resolveTrainingGpuTimeoutMs(): Promise<number> {
-  return resolveIntConfigValue('TRAINING_GPU_TIMEOUT_MS', 1000);
+function toTradingHyperparamsFromEnterprise(
+  enterpriseHyperparams: Partial<TradingLoraHyperparams>
+): TradingLoraHyperparams {
+  return TradingLoraHyperparamsSchema.parse({
+    ...TRADING_HYPERPARAMS_BASE_DEFAULTS,
+    ...enterpriseHyperparams,
+  });
 }
 
 function hashSeed(seedText: string): number {
@@ -276,8 +241,9 @@ export async function prepareDataset(
   }
 ): Promise<PreparedDataset> {
   const db = getDatabase();
-  const datasetMaxRows = runtime?.datasetMaxRows ?? await resolveTrainingDatasetMaxRows();
-  const trainEvalSplitRatio = runtime?.trainEvalSplitRatio ?? await resolveTrainingSplitRatio();
+  const trainingConfig = await loadTrainingEnterpriseConfig();
+  const datasetMaxRows = runtime?.datasetMaxRows ?? trainingConfig.datasetMaxRows;
+  const trainEvalSplitRatio = runtime?.trainEvalSplitRatio ?? trainingConfig.trainEvalSplitRatio;
   const random = createSeededRandom(runtime?.seed ?? `${tenantId}:${namespaceId}:${agentId ?? 'all'}`);
 
   logger.info({ tenantId, filter, datasetMaxRows, trainEvalSplitRatio }, 'Preparando dataset para treinamento');
@@ -436,9 +402,10 @@ export async function prepareDatasetFromChatAndTrading(
   }
 ): Promise<PreparedDataset> {
   const db = getDatabase();
-  const datasetMaxRows = options?.datasetMaxRows ?? await resolveTrainingDatasetMaxRows();
-  const trainEvalSplitRatio = options?.trainEvalSplitRatio ?? await resolveTrainingSplitRatio();
-  const minDatasetSize = options?.minDatasetSize ?? await resolveMinScheduledDatasetSizeIncremental();
+  const trainingConfig = await loadTrainingEnterpriseConfig();
+  const datasetMaxRows = options?.datasetMaxRows ?? trainingConfig.datasetMaxRows;
+  const trainEvalSplitRatio = options?.trainEvalSplitRatio ?? trainingConfig.trainEvalSplitRatio;
+  const minDatasetSize = options?.minDatasetSize ?? trainingConfig.minScheduledIncremental;
   const includeTradingDataset = options?.includeTradingDataset ?? Boolean(namespaceId);
   const random = createSeededRandom(options?.seed ?? `${tenantId}:${namespaceId ?? 'tenant-wide'}`);
 
@@ -597,13 +564,14 @@ export async function prepareDatasetFromChatAndTrading(
 export async function createLoraJob(params: CreateJobParams): Promise<LoraJob> {
   const db = getDatabase();
 
-  const minOndemand = await resolveMinOndemandDatasetSize();
+  const trainingConfig = await loadTrainingEnterpriseConfig();
+  const defaultHyperparameters = toTradingHyperparamsFromEnterprise(trainingConfig.defaultHyperparams);
 
   // Preparar dataset para obter contagens
   const dataset = await prepareDataset(params.tenantId, params.namespaceId, params.agentId, params.datasetFilter);
   const profile = await resolveDatasetProfile(params.tenantId, params.namespaceId, params.agentId);
 
-  const minRequired = params.forceMinSize ? 1 : minOndemand;
+  const minRequired = params.forceMinSize ? 1 : trainingConfig.minOndemandDatasetSize;
   if (dataset.stats.total < minRequired) {
     throw new Error(
       `Dataset insuficiente: ${dataset.stats.total} exemplos. Mínimo necessário: ${minRequired}${params.forceMinSize ? ' (forçar com poucos exemplos pode prejudicar o modelo)' : ''}`
@@ -612,7 +580,7 @@ export async function createLoraJob(params: CreateJobParams): Promise<LoraJob> {
 
   // Mesclar hiperparâmetros com defaults
   const hyperparameters: TradingLoraHyperparams = {
-    ...DEFAULT_HYPERPARAMS,
+    ...defaultHyperparameters,
     ...params.hyperparameters,
   };
 
@@ -731,6 +699,8 @@ export async function createScheduledRunLoraJob(
   }
 ): Promise<LoraJob> {
   const db = getDatabase();
+  const trainingConfig = await loadTrainingEnterpriseConfig();
+  const defaultHyperparameters = toTradingHyperparamsFromEnterprise(trainingConfig.defaultHyperparams);
 
   const includeImages = options?.includeImages ?? false;
   const prepared = await prepareDatasetFromChatAndTrading(
@@ -756,7 +726,7 @@ export async function createScheduledRunLoraJob(
     source: 'scheduled_run',
     name,
     baseModel: DEFAULT_BASE_MODEL,
-    hyperparameters: DEFAULT_HYPERPARAMS,
+    hyperparameters: defaultHyperparameters,
     status: 'queued',
     progress: 0,
     currentStep: 0,
@@ -970,11 +940,12 @@ export interface PreparedDatasetManifest {
 }
 
 function mergeLoraHyperparameters(
+  defaultHyperparameters: TradingLoraHyperparams,
   base: TradingLoraHyperparams | null | undefined,
   override?: Partial<TradingLoraHyperparams>
 ): TradingLoraHyperparams {
   return {
-    ...DEFAULT_HYPERPARAMS,
+    ...defaultHyperparameters,
     ...(base ?? {}),
     ...(override ?? {}),
   };
@@ -985,16 +956,19 @@ export async function processLoraJob(jobId: string, options?: ProcessLoraJobOpti
   const job = await getJob(jobId);
   if (!job) throw new Error('Job LoRA nao encontrado');
   if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') return;
+  const trainingConfig = await loadTrainingEnterpriseConfig();
+  const defaultHyperparameters = toTradingHyperparamsFromEnterprise(trainingConfig.defaultHyperparams);
 
-  const sliceSteps = options?.sliceSteps ?? await resolveTrainingSliceSteps();
-  const gpuTimeoutMs = options?.gpuTimeoutMs ?? await resolveTrainingGpuTimeoutMs();
-  const datasetMaxRows = options?.datasetMaxRows ?? await resolveTrainingDatasetMaxRows();
-  const trainEvalSplitRatio = options?.trainEvalSplitRatio ?? await resolveTrainingSplitRatio();
-  const minDatasetSize = options?.minDatasetSize ?? await resolveMinScheduledDatasetSizeIncremental();
+  const sliceSteps = options?.sliceSteps ?? trainingConfig.sliceSteps;
+  const gpuTimeoutMs = options?.gpuTimeoutMs ?? trainingConfig.gpuTimeoutMs;
+  const datasetMaxRows = options?.datasetMaxRows ?? trainingConfig.datasetMaxRows;
+  const trainEvalSplitRatio = options?.trainEvalSplitRatio ?? trainingConfig.trainEvalSplitRatio;
+  const minDatasetSize = options?.minDatasetSize ?? trainingConfig.minScheduledIncremental;
   const seed = options?.seed ?? jobId;
 
   const resolvedHyperparameters = mergeLoraHyperparameters(
-    (job.hyperparameters as TradingLoraHyperparams) ?? DEFAULT_HYPERPARAMS,
+    defaultHyperparameters,
+    (job.hyperparameters as TradingLoraHyperparams) ?? defaultHyperparameters,
     options?.hyperparametersOverride
   );
 
@@ -1082,6 +1056,7 @@ export async function processLoraJob(jobId: string, options?: ProcessLoraJobOpti
     if (fresh.status === 'cancelled') return;
 
     const freshHyperparams = mergeLoraHyperparameters(
+      defaultHyperparameters,
       (fresh.hyperparameters as TradingLoraHyperparams) ?? resolvedHyperparameters,
       options?.hyperparametersOverride
     );
@@ -1103,14 +1078,14 @@ export async function processLoraJob(jobId: string, options?: ProcessLoraJobOpti
           epochs: freshHyperparams.epochs,
           learningRate: freshHyperparams.learningRate,
           batchSize: freshHyperparams.batchSize,
-          maxSeqLen: freshHyperparams.maxSeqLen ?? 2048,
+          maxSeqLen: freshHyperparams.maxSeqLen,
           loraRank: freshHyperparams.loraRank,
           loraAlpha: freshHyperparams.loraAlpha,
-          warmupSteps: freshHyperparams.warmupSteps ?? 100,
-          gradientAccumulationSteps: freshHyperparams.gradientAccumulationSteps ?? 1,
-          loraDropout: freshHyperparams.loraDropout ?? 0.05,
-          lrSchedulerType: freshHyperparams.lrSchedulerType ?? 'linear',
-          maxGradNorm: freshHyperparams.maxGradNorm ?? 1,
+          warmupSteps: freshHyperparams.warmupSteps,
+          gradientAccumulationSteps: freshHyperparams.gradientAccumulationSteps,
+          loraDropout: freshHyperparams.loraDropout,
+          lrSchedulerType: freshHyperparams.lrSchedulerType,
+          maxGradNorm: freshHyperparams.maxGradNorm,
           targetModules: freshHyperparams.targetModules,
         },
       },

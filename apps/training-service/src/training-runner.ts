@@ -15,6 +15,7 @@ import {
   setJobError,
   type PreparedDatasetManifest,
 } from './lora-job-manager.js';
+import { loadTrainingEnterpriseConfig } from './training-config.js';
 
 const runnerLogger = createLogger('training-runner');
 
@@ -26,18 +27,6 @@ const booleanStringSchema = z.string().transform((raw) => {
 });
 
 const trainingConfigShapeSchema = z.object({
-  MIN_ONDEMAND_DATASET_SIZE: z.coerce.number().int().min(1),
-  MIN_SCHEDULED_DATASET_SIZE_INCREMENTAL: z.coerce.number().int().min(1),
-  MIN_SCHEDULED_DATASET_SIZE_FULL: z.coerce.number().int().min(1),
-  TRAINING_QUALITY_MIN_RATIO: z.coerce.number().min(0).max(1),
-  TRAINING_DATASET_MAX_ROWS: z.coerce.number().int().min(100),
-  TRAINING_TRAIN_EVAL_SPLIT_RATIO: z.coerce.number().min(0.5).max(0.99),
-  TRAINING_SLICE_STEPS: z.coerce.number().int().min(1),
-  TRAINING_GPU_TIMEOUT_MS: z.coerce.number().int().min(1000),
-  TRAINING_DEFAULT_HYPERPARAMS_JSON: z.string().min(2),
-  TRAINING_PRESET_SAFE_JSON: z.string().min(2).optional(),
-  TRAINING_PRESET_STANDARD_JSON: z.string().min(2).optional(),
-  TRAINING_PRESET_LARGE_JSON: z.string().min(2).optional(),
   TRAINING_EVAL_MAX_LOSS: z.coerce.number().positive(),
   TRAINING_AUTO_PROMOTE_SCHEDULED: z.string().min(1),
   AUTO_LEARNING_CRON_INCREMENTAL: z.string().min(1),
@@ -134,20 +123,6 @@ function parseHyperparamsOverrideFromUnknown(
   return parsed.data;
 }
 
-function parseHyperparamsOverrideFromJson(
-  raw: string,
-  source: string
-): TrainingHyperparamsOverride {
-  let parsedUnknown: unknown;
-  try {
-    parsedUnknown = JSON.parse(raw);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`JSON invalido para ${source}: ${message}`);
-  }
-  return parseHyperparamsOverrideFromUnknown(parsedUnknown, source);
-}
-
 function readPresetName(snapshot: Record<string, unknown>): HyperparamPresetName | null {
   const rawPreset = readNullableString(snapshot.hyperparametersPreset)
     ?? readNullableString(snapshot.hyperparameterPreset)
@@ -223,20 +198,11 @@ function resolveMinDatasetSizeForRun(params: {
 }
 
 export async function loadTrainingSystemRuntimeConfig(): Promise<TrainingSystemRuntimeConfig> {
-  const allConfig = await getAllSystemConfig();
+  const [allConfig, enterpriseConfig] = await Promise.all([
+    getAllSystemConfig(),
+    loadTrainingEnterpriseConfig(),
+  ]);
   const parsed = trainingConfigShapeSchema.parse({
-    MIN_ONDEMAND_DATASET_SIZE: allConfig.MIN_ONDEMAND_DATASET_SIZE,
-    MIN_SCHEDULED_DATASET_SIZE_INCREMENTAL: allConfig.MIN_SCHEDULED_DATASET_SIZE_INCREMENTAL,
-    MIN_SCHEDULED_DATASET_SIZE_FULL: allConfig.MIN_SCHEDULED_DATASET_SIZE_FULL,
-    TRAINING_QUALITY_MIN_RATIO: allConfig.TRAINING_QUALITY_MIN_RATIO,
-    TRAINING_DATASET_MAX_ROWS: allConfig.TRAINING_DATASET_MAX_ROWS,
-    TRAINING_TRAIN_EVAL_SPLIT_RATIO: allConfig.TRAINING_TRAIN_EVAL_SPLIT_RATIO,
-    TRAINING_SLICE_STEPS: allConfig.TRAINING_SLICE_STEPS,
-    TRAINING_GPU_TIMEOUT_MS: allConfig.TRAINING_GPU_TIMEOUT_MS,
-    TRAINING_DEFAULT_HYPERPARAMS_JSON: allConfig.TRAINING_DEFAULT_HYPERPARAMS_JSON,
-    TRAINING_PRESET_SAFE_JSON: allConfig.TRAINING_PRESET_SAFE_JSON,
-    TRAINING_PRESET_STANDARD_JSON: allConfig.TRAINING_PRESET_STANDARD_JSON,
-    TRAINING_PRESET_LARGE_JSON: allConfig.TRAINING_PRESET_LARGE_JSON,
     TRAINING_EVAL_MAX_LOSS: allConfig.TRAINING_EVAL_MAX_LOSS,
     TRAINING_AUTO_PROMOTE_SCHEDULED: allConfig.TRAINING_AUTO_PROMOTE_SCHEDULED,
     AUTO_LEARNING_CRON_INCREMENTAL: allConfig.AUTO_LEARNING_CRON_INCREMENTAL,
@@ -247,37 +213,31 @@ export async function loadTrainingSystemRuntimeConfig(): Promise<TrainingSystemR
   const schemaDefaults = TradingLoraHyperparamsSchema.parse({});
   const defaultHyperparams = mergeHyperparams(
     schemaDefaults,
-    [parseHyperparamsOverrideFromJson(parsed.TRAINING_DEFAULT_HYPERPARAMS_JSON, 'TRAINING_DEFAULT_HYPERPARAMS_JSON')]
+    [enterpriseConfig.defaultHyperparams]
   );
 
   const presetSafe = mergeHyperparams(
     defaultHyperparams,
-    parsed.TRAINING_PRESET_SAFE_JSON
-      ? [parseHyperparamsOverrideFromJson(parsed.TRAINING_PRESET_SAFE_JSON, 'TRAINING_PRESET_SAFE_JSON')]
-      : []
+    [enterpriseConfig.presets.safe]
   );
   const presetStandard = mergeHyperparams(
     defaultHyperparams,
-    parsed.TRAINING_PRESET_STANDARD_JSON
-      ? [parseHyperparamsOverrideFromJson(parsed.TRAINING_PRESET_STANDARD_JSON, 'TRAINING_PRESET_STANDARD_JSON')]
-      : []
+    [enterpriseConfig.presets.standard]
   );
   const presetLarge = mergeHyperparams(
     defaultHyperparams,
-    parsed.TRAINING_PRESET_LARGE_JSON
-      ? [parseHyperparamsOverrideFromJson(parsed.TRAINING_PRESET_LARGE_JSON, 'TRAINING_PRESET_LARGE_JSON')]
-      : []
+    [enterpriseConfig.presets.large]
   );
 
   return {
-    minOndemandDatasetSize: parsed.MIN_ONDEMAND_DATASET_SIZE,
-    minScheduledDatasetSizeIncremental: parsed.MIN_SCHEDULED_DATASET_SIZE_INCREMENTAL,
-    minScheduledDatasetSizeFull: parsed.MIN_SCHEDULED_DATASET_SIZE_FULL,
-    qualityMinRatio: parsed.TRAINING_QUALITY_MIN_RATIO,
-    datasetMaxRows: parsed.TRAINING_DATASET_MAX_ROWS,
-    trainEvalSplitRatio: parsed.TRAINING_TRAIN_EVAL_SPLIT_RATIO,
-    sliceSteps: parsed.TRAINING_SLICE_STEPS,
-    gpuTimeoutMs: parsed.TRAINING_GPU_TIMEOUT_MS,
+    minOndemandDatasetSize: enterpriseConfig.minOndemandDatasetSize,
+    minScheduledDatasetSizeIncremental: enterpriseConfig.minScheduledIncremental,
+    minScheduledDatasetSizeFull: enterpriseConfig.minScheduledFull,
+    qualityMinRatio: enterpriseConfig.qualityMinRatio,
+    datasetMaxRows: enterpriseConfig.datasetMaxRows,
+    trainEvalSplitRatio: enterpriseConfig.trainEvalSplitRatio,
+    sliceSteps: enterpriseConfig.sliceSteps,
+    gpuTimeoutMs: enterpriseConfig.gpuTimeoutMs,
     evalMaxLoss: parsed.TRAINING_EVAL_MAX_LOSS,
     autoPromoteScheduled: booleanStringSchema.parse(parsed.TRAINING_AUTO_PROMOTE_SCHEDULED),
     defaultHyperparams,
