@@ -130,10 +130,11 @@ import {
   getTradingV2Rebalances,
   startPortfolioAutoRun,
   startSignalAutoRun,
+  getTradingAutoSignalAssetsCatalog,
   getTradingAutoRuns,
   getTradingAutoRunDetail,
 } from '@/services/api/tradingV2';
-import type { TradingAutoRun, TradingAutoRunDetail } from '@/services/api/tradingV2';
+import type { TradingAutoRun, TradingAutoRunDetail, TradingAutoSignalAsset } from '@/services/api/tradingV2';
 import { 
   CandleChart, 
   OrderBookViz, 
@@ -587,6 +588,25 @@ const TRADING_TECHNIQUE_OPTIONS = [
   { key: 'arbitrage_triangular', labelKey: 'trading.techniques.arbitrage_triangular.title', descKey: 'trading.techniques.arbitrage_triangular.desc' },
 ] as const;
 
+const AUTO_SIGNAL_MODE_OPTIONS = [
+  { value: 'scalping', label: 'Scalping' },
+  { value: 'day_trade', label: 'Day Trade' },
+  { value: 'swing', label: 'Swing' },
+  { value: 'position', label: 'Position' },
+  { value: 'trend', label: 'Trend' },
+  { value: 'mean_reversion', label: 'Mean Reversion' },
+  { value: 'breakout', label: 'Breakout' },
+  { value: 'range', label: 'Range' },
+  { value: 'momentum', label: 'Momentum' },
+  { value: 'arbitrage_triangular', label: 'Arbitrage Triangular' },
+  { value: 'cash_and_carry', label: 'Cash and Carry' },
+  { value: 'basis_trade', label: 'Basis Trade' },
+  { value: 'funding_arbitrage', label: 'Funding Arbitrage' },
+  { value: 'grid_trading', label: 'Grid Trading' },
+  { value: 'market_making', label: 'Market Making' },
+] as const;
+const AUTO_SIGNAL_ALL_MODES = AUTO_SIGNAL_MODE_OPTIONS.map((option) => option.value);
+
 const DEFAULT_SIGNAL_TECHNIQUES = TRADING_TECHNIQUE_OPTIONS
   .map((option) => option.key)
   .filter((key) => key !== 'arbitrage_triangular');
@@ -860,6 +880,8 @@ function TradingContent() {
   const [autoMix, setAutoMix] = useState(true);
   const [autoUniverseScope, setAutoUniverseScope] = useState<'futures' | 'spot' | 'margin' | 'all'>('futures');
   const [allowedModes, setAllowedModes] = useState<string[]>([]);
+  const [autoSelectAllAssets, setAutoSelectAllAssets] = useState(true);
+  const [autoSelectedAssetKeys, setAutoSelectedAssetKeys] = useState<string[]>([]);
   const [showNewOrderDialog, setShowNewOrderDialog] = useState(false);
   const [showOcoOrderDialog, setShowOcoOrderDialog] = useState(false);
   const [showRiskConfigDialog, setShowRiskConfigDialog] = useState(false);
@@ -1492,6 +1514,46 @@ function TradingContent() {
     const remaining = alphabetic.filter((symbol) => !featuredSet.has(symbol) && !favoritesSet.has(symbol));
     return [...featuredList, ...favoritesList, ...remaining];
   }, [availableSymbols, favoriteSymbols, featuredSymbols]);
+
+  const {
+    data: autoSignalAssetsCatalog,
+    isLoading: isLoadingAutoSignalAssets,
+    error: autoSignalAssetsError,
+  } = useQuery({
+    queryKey: ['/api/trading-v2/auto/assets'],
+    queryFn: getTradingAutoSignalAssetsCatalog,
+    refetchInterval: SYMBOLS_REFETCH_INTERVAL,
+    enabled: statusData?.data?.isConfigured && !statusData?.data?.requiresTenant,
+  });
+  const autoSignalAssets = autoSignalAssetsCatalog?.assets ?? [];
+  const autoSignalAssetMap = useMemo(
+    () => new Map<string, TradingAutoSignalAsset>(autoSignalAssets.map((asset) => [asset.key, asset])),
+    [autoSignalAssets]
+  );
+  const autoSignalAssetOptions = useMemo(
+    () => autoSignalAssets.map((asset) => ({ value: asset.key, label: asset.label || `${asset.venue.toUpperCase()} · ${asset.marketType} · ${asset.symbol}` })),
+    [autoSignalAssets]
+  );
+
+  useEffect(() => {
+    setAutoSelectedAssetKeys((previous) => previous.filter((key) => autoSignalAssetMap.has(key)));
+  }, [autoSignalAssetMap]);
+
+  useEffect(() => {
+    if (!autoMix) return;
+    if (autoUniverseScope !== 'all') {
+      setAutoUniverseScope('all');
+    }
+    if (!autoSelectAllAssets) {
+      setAutoSelectAllAssets(true);
+    }
+    setAllowedModes((previous) => {
+      const previousSet = new Set(previous);
+      const isAlreadyAll = previousSet.size === AUTO_SIGNAL_ALL_MODES.length
+        && AUTO_SIGNAL_ALL_MODES.every((mode) => previousSet.has(mode));
+      return isAlreadyAll ? previous : [...AUTO_SIGNAL_ALL_MODES];
+    });
+  }, [autoMix, autoSelectAllAssets, autoUniverseScope]);
 
   const resolveSpotLikeSymbol = useCallback((asset: string) => {
     const normalized = asset.trim().toUpperCase();
@@ -2545,12 +2607,39 @@ function TradingContent() {
       const tradingNamespace = availableNamespaces.find(
         (ns) => ns.slug === 'trading' || ns.nome?.toLowerCase().includes('trading')
       );
+      const selectedAssetsPayload = autoSelectedAssetKeys
+        .map((assetKey) => autoSignalAssetMap.get(assetKey))
+        .filter((asset): asset is TradingAutoSignalAsset => Boolean(asset))
+        .map((asset) => ({
+          venue: asset.venue,
+          symbol: asset.symbol,
+          marketType: asset.marketType,
+          marginMode: asset.marginMode,
+        }));
+      const effectiveSelectAllAssets = autoMix || autoSelectAllAssets;
+      const effectiveUniverseScope = autoMix ? 'all' : autoUniverseScope;
+      const effectiveAllowedModes = autoMix ? [...AUTO_SIGNAL_ALL_MODES] : allowedModes;
+      const effectiveMarketType = effectiveUniverseScope === 'all'
+        ? undefined
+        : effectiveUniverseScope;
+      const fallbackSymbol = !effectiveSelectAllAssets && selectedAssetsPayload.length === 0
+        ? (requestSymbol || undefined)
+        : undefined;
+
+      if (!effectiveSelectAllAssets && selectedAssetsPayload.length === 0 && !fallbackSymbol) {
+        throw new Error('Selecione ao menos um ativo ou habilite "Todos os ativos".');
+      }
+
       return startSignalAutoRun({
-        symbol: requestSymbol || undefined,
-        marketType: selectedMarketType,
-        universeScope: autoUniverseScope,
+        symbol: fallbackSymbol,
+        marketType: effectiveMarketType,
+        universeScope: effectiveUniverseScope,
         autoMix,
-        allowedModes: allowedModes.length > 0 ? allowedModes : undefined,
+        allowedModes: effectiveAllowedModes.length > 0 ? effectiveAllowedModes : undefined,
+        selectedAssets: !effectiveSelectAllAssets && selectedAssetsPayload.length > 0
+          ? selectedAssetsPayload
+          : undefined,
+        selectAllAssets: effectiveSelectAllAssets,
         namespaceId: tradingNamespace?.id,
       });
     },
@@ -4156,16 +4245,16 @@ function TradingContent() {
             <Card>
               <CardHeader>
                 <CardTitle>Sinais IA (Auto)</CardTitle>
-                <CardDescription>Fluxo single-asset com guardrails institucionais e sanity-check opcional de LLM.</CardDescription>
+                <CardDescription>Fluxo multi-asset enterprise com guardrails institucionais e decisao automatica por mercado/ativo/tecnica.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="text-sm text-muted-foreground">
                   O Auto Engine analisa microestrutura, arbitragem e contexto RAG por intent/regime para decidir se há trade.
-                  Quando <strong>Auto Mix</strong> está ativo, o motor seleciona automaticamente a melhor modalidade (scalping, arbitrage, carry…).
-                  Configure o escopo e as modalidades permitidas abaixo.
+                  Quando <strong>Auto Mix</strong> está ativo, a execução usa análise completa enterprise:
+                  todos os mercados, todos os ativos e todas as modalidades habilitadas.
                 </div>
                 {/* Controles do Auto Run */}
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
                   <div className="flex items-center gap-2">
                     <Switch
                       id="auto-mix-switch"
@@ -4178,7 +4267,7 @@ function TradingContent() {
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs text-muted-foreground">Escopo do universo</Label>
-                    <Select value={autoUniverseScope} onValueChange={(v) => setAutoUniverseScope(v as typeof autoUniverseScope)}>
+                    <Select value={autoUniverseScope} onValueChange={(v) => setAutoUniverseScope(v as typeof autoUniverseScope)} disabled={autoMix}>
                       <SelectTrigger className="h-8 text-sm">
                         <SelectValue />
                       </SelectTrigger>
@@ -4194,20 +4283,45 @@ function TradingContent() {
                     <Label className="text-xs text-muted-foreground">Modalidades permitidas</Label>
                     <MultiSelectDropdown
                       label="Modalidades"
-                      options={[
-                        { value: 'scalping', label: 'Scalping' },
-                        { value: 'arbitrage', label: 'Arbitrage' },
-                        { value: 'carry', label: 'Carry' },
-                        { value: 'swing', label: 'Swing' },
-                        { value: 'mean-reversion', label: 'Mean Reversion' },
-                        { value: 'trend', label: 'Trend' },
-                        { value: 'breakout', label: 'Breakout' },
-                      ]}
+                      options={AUTO_SIGNAL_MODE_OPTIONS.map((mode) => ({ value: mode.value, label: mode.label }))}
                       selectedValues={allowedModes}
                       onChange={setAllowedModes}
                       placeholder={autoMix ? 'Todas (Auto Mix ativo)' : 'Selecionar…'}
                       disabled={autoMix}
                     />
+                  </div>
+                  <div className="space-y-1 sm:col-span-2">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs text-muted-foreground">Ativos do universo</Label>
+                      <div className="flex items-center gap-2">
+                        <Label htmlFor="auto-assets-all-switch" className="text-xs text-muted-foreground cursor-pointer">
+                          Todos os ativos
+                        </Label>
+                        <Switch
+                          id="auto-assets-all-switch"
+                          checked={autoMix ? true : autoSelectAllAssets}
+                          onCheckedChange={setAutoSelectAllAssets}
+                          disabled={autoMix}
+                        />
+                      </div>
+                    </div>
+                    <MultiSelectDropdown
+                      label="Ativos"
+                      options={autoSignalAssetOptions}
+                      selectedValues={autoSelectedAssetKeys}
+                      onChange={setAutoSelectedAssetKeys}
+                      placeholder={
+                        autoMix
+                          ? 'Todos (Auto Mix ativo)'
+                          : autoSelectAllAssets
+                            ? 'Todos os ativos habilitados'
+                            : 'Selecionar ativos...'
+                      }
+                      disabled={autoMix || autoSelectAllAssets || isLoadingAutoSignalAssets}
+                    />
+                    {autoSignalAssetsError ? (
+                      <p className="text-xs text-destructive">Falha ao carregar catalogo de ativos do Auto Engine.</p>
+                    ) : null}
                   </div>
                 </div>
                 <div className="space-y-2">

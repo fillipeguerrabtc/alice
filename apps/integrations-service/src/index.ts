@@ -241,6 +241,14 @@ type TradingSignalGenerationSource = 'on_demand' | 'scheduler' | 'chat' | 'auto'
 type TradingMarketType = 'futures' | 'spot' | 'margin';
 type TradingMarginMode = 'cross' | 'isolated';
 type TradingIntervalValue = keyof typeof TRADING_INTERVAL_GRANULARITY;
+type TradingAutoAssetMarketType = TradingMarketType;
+type TradingAutoAssetMarginMode = TradingMarginMode;
+type TradingAutoSignalAssetSelection = {
+  venue: string;
+  symbol: string;
+  marketType: TradingAutoAssetMarketType;
+  marginMode?: TradingAutoAssetMarginMode;
+};
 
 type LLMMessage = { role: 'system' | 'user' | 'assistant'; content: string };
 type LLMResponse = {
@@ -9624,6 +9632,120 @@ function normalizeSymbolList(rawSymbols: string[], allowedSymbols: string[]): st
   return unique.filter((symbol) => allowedSet.has(symbol));
 }
 
+function buildTradingAutoAssetKey(input: {
+  venue: string;
+  symbol: string;
+  marketType: TradingAutoAssetMarketType;
+  marginMode?: TradingAutoAssetMarginMode;
+}): string {
+  const normalizedVenue = input.venue.trim().toLowerCase();
+  const normalizedSymbol = input.symbol.trim().toUpperCase();
+  const normalizedMarket = input.marketType;
+  const normalizedMargin = input.marketType === 'margin'
+    ? (input.marginMode ?? 'cross')
+    : 'none';
+  return `${normalizedVenue}:${normalizedMarket}:${normalizedMargin}:${normalizedSymbol}`;
+}
+
+function buildTradingAutoAssetLabel(input: {
+  venue: string;
+  symbol: string;
+  marketType: TradingAutoAssetMarketType;
+  marginMode?: TradingAutoAssetMarginMode;
+}): string {
+  const venueLabel = input.venue.trim().toUpperCase();
+  if (input.marketType === 'margin') {
+    return `${venueLabel} · Margin/${input.marginMode ?? 'cross'} · ${input.symbol}`;
+  }
+  return `${venueLabel} · ${input.marketType} · ${input.symbol}`;
+}
+
+async function resolveConnectedTradingVenues(tenantId: string): Promise<string[]> {
+  const db = getDatabase();
+  const rows = await db.query.tradingExchanges.findMany({
+    where: and(
+      eq(schema.tradingExchanges.tenantId, tenantId),
+      eq(schema.tradingExchanges.apiConnected, true),
+    ),
+    columns: { venue: true },
+  });
+  const fromDb = rows
+    .map((row) => row.venue.trim().toLowerCase())
+    .filter((venue) => venue.length > 0);
+  if (fromDb.length > 0) {
+    return Array.from(new Set(fromDb));
+  }
+
+  const fallbackVenues: string[] = [];
+  if (kucoinClient.isKucoinConfigured() || kucoinSpotClient.isSpotConfigured() || kucoinMarginClient.isMarginConfigured()) {
+    fallbackVenues.push('kucoin');
+  }
+  return Array.from(new Set(fallbackVenues));
+}
+
+async function loadTradingAutoAssetsForVenue(params: {
+  venue: string;
+  tradingAuth: { tenantId: string; userId: string };
+}): Promise<TradingAutoSignalAssetSelection[]> {
+  const venue = params.venue.trim().toLowerCase();
+  if (venue !== 'kucoin') {
+    logger.warn({ venue }, 'Venue sem adaptador de catálogo de ativos auto-signals');
+    return [];
+  }
+
+  const assets: TradingAutoSignalAssetSelection[] = [];
+  const futuresConfigured = kucoinClient.isKucoinConfigured();
+  const spotConfigured = kucoinSpotClient.isSpotConfigured();
+  const marginConfigured = kucoinMarginClient.isMarginConfigured();
+
+  if (futuresConfigured) {
+    const futures = await kucoinService.getTradingSymbols(params.tradingAuth, 'futures');
+    for (const symbol of futures.symbols) {
+      assets.push({
+        venue: 'kucoin',
+        symbol,
+        marketType: 'futures',
+      });
+    }
+  }
+
+  if (spotConfigured) {
+    const spot = await kucoinService.getTradingSymbols(params.tradingAuth, 'spot');
+    for (const symbol of spot.symbols) {
+      assets.push({
+        venue: 'kucoin',
+        symbol,
+        marketType: 'spot',
+      });
+    }
+  }
+
+  if (marginConfigured) {
+    const [crossMargin, isolatedMargin] = await Promise.all([
+      kucoinService.getTradingSymbols(params.tradingAuth, 'margin', 'cross'),
+      kucoinService.getTradingSymbols(params.tradingAuth, 'margin', 'isolated'),
+    ]);
+    for (const symbol of crossMargin.symbols) {
+      assets.push({
+        venue: 'kucoin',
+        symbol,
+        marketType: 'margin',
+        marginMode: 'cross',
+      });
+    }
+    for (const symbol of isolatedMargin.symbols) {
+      assets.push({
+        venue: 'kucoin',
+        symbol,
+        marketType: 'margin',
+        marginMode: 'isolated',
+      });
+    }
+  }
+
+  return assets;
+}
+
 async function fetchTradingSymbolPreferences(
   tenantId: string,
   userId: string,
@@ -13301,15 +13423,110 @@ const tradingAutoSignalRunSchema = z.object({
   symbol: z.string().min(1).max(50).optional(),
   universeScope: z.enum(['spot', 'futures', 'margin', 'all']).optional(),
   marketType: z.enum(['spot', 'futures', 'margin']).optional(),
-  allowedModes: z.array(z.string().min(1).max(50)).optional(),
+  allowedModes: z.array(TRADING_TECHNIQUE_ZOD).optional(),
   autoMix: z.boolean().optional().default(true),
+  selectedAssets: z.array(z.object({
+    venue: z.string().min(1).max(32).transform((value) => value.trim().toLowerCase()),
+    symbol: z.string().min(1).max(64).transform((value) => value.trim().toUpperCase()),
+    marketType: z.enum(['spot', 'futures', 'margin']),
+    marginMode: z.enum(['cross', 'isolated']).optional(),
+  })).max(2_000).optional(),
+  selectAllAssets: z.boolean().optional().default(false),
   namespaceId: z.string().uuid().optional(),
+}).superRefine((data, ctx) => {
+  for (const [index, asset] of (data.selectedAssets ?? []).entries()) {
+    if (asset.marginMode && asset.marketType !== 'margin') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'marginMode é permitido apenas para marketType=margin.',
+        path: ['selectedAssets', index, 'marginMode'],
+      });
+    }
+  }
 });
 
 const tradingAutoRunsQuerySchema = z.object({
   type: z.enum(['signal_auto', 'portfolio_auto']).optional(),
   status: z.enum(['queued', 'running', 'succeeded', 'failed', 'cancelled']).optional(),
   limit: z.coerce.number().int().min(1).max(100).optional(),
+});
+
+/** GET /api/trading-v2/auto/assets - Catálogo universal de ativos para Signal Auto */
+app.get('/api/trading-v2/auto/assets', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    const tradingAuth = { tenantId: authContext.tenantId, userId: authContext.userId };
+    const venues = await resolveConnectedTradingVenues(authContext.tenantId);
+    if (venues.length === 0) {
+      res.json({
+        success: true,
+        data: {
+          assets: [],
+          venues: [],
+          markets: [],
+          total: 0,
+          generatedAt: new Date().toISOString(),
+        },
+      });
+      return;
+    }
+
+    const venueAssets = await Promise.all(
+      venues.map((venue) => loadTradingAutoAssetsForVenue({ venue, tradingAuth })),
+    );
+
+    const deduped = new Map<string, {
+      key: string;
+      venue: string;
+      symbol: string;
+      marketType: TradingAutoAssetMarketType;
+      marginMode?: TradingAutoAssetMarginMode;
+      label: string;
+    }>();
+    for (const assets of venueAssets) {
+      for (const asset of assets) {
+        const key = buildTradingAutoAssetKey(asset);
+        deduped.set(key, {
+          key,
+          venue: asset.venue,
+          symbol: asset.symbol,
+          marketType: asset.marketType,
+          marginMode: asset.marginMode,
+          label: buildTradingAutoAssetLabel(asset),
+        });
+      }
+    }
+
+    const catalog = Array.from(deduped.values()).sort((a, b) => {
+      if (a.venue !== b.venue) return a.venue.localeCompare(b.venue);
+      if (a.marketType !== b.marketType) return a.marketType.localeCompare(b.marketType);
+      if ((a.marginMode ?? '') !== (b.marginMode ?? '')) return (a.marginMode ?? '').localeCompare(b.marginMode ?? '');
+      return a.symbol.localeCompare(b.symbol);
+    });
+    const markets = Array.from(new Set(catalog.map((item) => item.marketType)));
+    const resolvedVenues = Array.from(new Set(catalog.map((item) => item.venue)));
+
+    res.json({
+      success: true,
+      data: {
+        assets: catalog,
+        venues: resolvedVenues,
+        markets,
+        total: catalog.length,
+        generatedAt: new Date().toISOString(),
+      },
+    });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter catálogo de ativos do signal auto');
+    res.status(500).json({ error: errorMessage });
+  }
 });
 
 /** POST /api/trading-v2/auto/portfolio/run - Inicia pipeline automático de portfólio */
@@ -13395,6 +13612,15 @@ app.post('/api/trading-v2/auto/signal/run', requirePermission('integrations:trad
       res.status(400).json({ error: 'Payload inválido', details: parsed.error.flatten() });
       return;
     }
+    const normalizedPayload = parsed.data.autoMix
+      ? {
+        ...parsed.data,
+        universeScope: 'all' as const,
+        marketType: undefined,
+        allowedModes: [...TRADING_TECHNIQUE_KEYS],
+        selectAllAssets: true,
+      }
+      : parsed.data;
     correlationId = crypto.randomUUID();
     const db = getDatabase();
 
@@ -13403,9 +13629,9 @@ app.post('/api/trading-v2/auto/signal/run', requirePermission('integrations:trad
       userId: authContext.userId,
       runType: 'signal_auto',
       status: 'queued',
-      payload: parsed.data as Record<string, unknown>,
+      payload: normalizedPayload as Record<string, unknown>,
       correlationId,
-      namespaceId: parsed.data.namespaceId ?? null,
+      namespaceId: normalizedPayload.namespaceId ?? null,
     }).returning();
 
     await db.insert(schema.tradingAutoRunSteps).values([
@@ -13423,7 +13649,7 @@ app.post('/api/trading-v2/auto/signal/run', requirePermission('integrations:trad
     const enqueueResponse = await fetch(`${TRAINING_SERVICE_URL_FINAL}/internal/trading-v2/auto/signal-run`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...internalHeaders },
-      body: JSON.stringify({ runId: run.id, ...parsed.data, correlationId }),
+      body: JSON.stringify({ runId: run.id, ...normalizedPayload, correlationId }),
     });
     if (!enqueueResponse.ok) {
       const errorText = await enqueueResponse.text();

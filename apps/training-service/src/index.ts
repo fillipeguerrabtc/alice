@@ -94,9 +94,11 @@ import {
 } from '@alice/database/system-config';
 import {
   NamespaceProfileConfigSchema,
+  TradingTechniqueSchema,
   TradingLoraHyperparamsSchema,
   type TradingSignalMetadata,
   type NamespaceProfileConfig,
+  type TradingTechnique,
   type TradingLoraHyperparams,
 } from '@alice/shared';
 
@@ -561,6 +563,16 @@ const TRAINING_FINE_TUNING_WORKER_POLL_INTERVAL_MS = parseEnvInt(
   'TRAINING_FINE_TUNING_WORKER_POLL_INTERVAL_MS'
 );
 const TRADING_WORKER_POLL_INTERVAL_MS = 250;
+const TRADING_SIGNAL_AUTO_CANDIDATE_FETCH_LIMIT = parseEnvInt(
+  process.env.TRADING_SIGNAL_AUTO_CANDIDATE_FETCH_LIMIT,
+  300,
+  'TRADING_SIGNAL_AUTO_CANDIDATE_FETCH_LIMIT',
+);
+const TRADING_SIGNAL_AUTO_AUTOMIX_CANDIDATE_FETCH_LIMIT = parseEnvInt(
+  process.env.TRADING_SIGNAL_AUTO_AUTOMIX_CANDIDATE_FETCH_LIMIT,
+  2_000,
+  'TRADING_SIGNAL_AUTO_AUTOMIX_CANDIDATE_FETCH_LIMIT',
+);
 
 let trainingMetricsInterval: NodeJS.Timeout | null = null;
 let namespaceProfileReconcileInterval: NodeJS.Timeout | null = null;
@@ -1054,16 +1066,103 @@ const tradingAutoPortfolioPayloadSchema = z.object({
   correlationId: z.string(),
 });
 
+const tradingAutoSignalAssetSchema = z.object({
+  venue: z.string().min(1).max(32).transform((value) => value.trim().toLowerCase()),
+  symbol: z.string().min(1).max(64).transform((value) => value.trim().toUpperCase()),
+  marketType: z.enum(['spot', 'futures', 'margin']),
+  marginMode: z.enum(['cross', 'isolated']).optional(),
+}).superRefine((asset, ctx) => {
+  if (asset.marginMode && asset.marketType !== 'margin') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'marginMode é permitido apenas para marketType=margin.',
+      path: ['marginMode'],
+    });
+  }
+});
+
 const tradingAutoSignalPayloadSchema = z.object({
   runId: z.string().uuid(),
   symbol: z.string().min(1).max(50).optional(),
   universeScope: z.enum(['spot', 'futures', 'margin', 'all']).optional(),
   marketType: z.enum(['spot', 'futures', 'margin']).optional(),
-  allowedModes: z.array(z.string()).optional(),
+  allowedModes: z.array(TradingTechniqueSchema).optional(),
   autoMix: z.boolean().optional(),
+  selectedAssets: z.array(tradingAutoSignalAssetSchema).max(2_000).optional(),
+  selectAllAssets: z.boolean().optional().default(false),
   namespaceId: z.string().uuid().optional(),
   correlationId: z.string(),
 });
+
+const SIGNAL_AUTO_MARKET_TYPES = ['spot', 'futures', 'margin'] as const;
+const SIGNAL_AUTO_OPERATION_INTENTS = [
+  'scalping',
+  'intraday',
+  'swing',
+  'positional',
+  'arbitrage_internal',
+  'arbitrage_cross_exchange',
+  'cash_and_carry',
+  'market_neutral',
+  'volatility_breakout',
+] as const;
+type SignalAutoMarketType = (typeof SIGNAL_AUTO_MARKET_TYPES)[number];
+type SignalAutoOperationIntent = (typeof SIGNAL_AUTO_OPERATION_INTENTS)[number];
+type SignalAutoAsset = z.infer<typeof tradingAutoSignalAssetSchema>;
+
+const SIGNAL_AUTO_MODE_TO_INTENTS: Record<TradingTechnique, SignalAutoOperationIntent[]> = {
+  scalping: ['scalping'],
+  day_trade: ['intraday'],
+  swing: ['swing'],
+  position: ['positional'],
+  trend: ['intraday'],
+  mean_reversion: ['market_neutral'],
+  breakout: ['volatility_breakout'],
+  range: ['market_neutral'],
+  momentum: ['intraday', 'volatility_breakout'],
+  arbitrage_triangular: ['arbitrage_internal', 'arbitrage_cross_exchange'],
+  cash_and_carry: ['cash_and_carry'],
+  basis_trade: ['cash_and_carry', 'arbitrage_internal'],
+  funding_arbitrage: ['cash_and_carry'],
+  grid_trading: ['market_neutral'],
+  market_making: ['market_neutral'],
+};
+
+function resolveSignalAutoMarketTypes(payload: z.infer<typeof tradingAutoSignalPayloadSchema>): SignalAutoMarketType[] {
+  if (payload.autoMix) return [...SIGNAL_AUTO_MARKET_TYPES];
+  if (payload.universeScope === 'all') return [...SIGNAL_AUTO_MARKET_TYPES];
+  if (payload.marketType) return [payload.marketType];
+  if (payload.universeScope) return [payload.universeScope];
+  return ['futures'];
+}
+
+function resolveSignalAutoAllowedOperationIntents(payload: z.infer<typeof tradingAutoSignalPayloadSchema>): SignalAutoOperationIntent[] {
+  if (payload.autoMix) return [...SIGNAL_AUTO_OPERATION_INTENTS];
+  const requestedModes = payload.allowedModes ?? [];
+  if (requestedModes.length === 0) return [...SIGNAL_AUTO_OPERATION_INTENTS];
+
+  const merged = new Set<SignalAutoOperationIntent>();
+  for (const mode of requestedModes) {
+    const mapped = SIGNAL_AUTO_MODE_TO_INTENTS[mode];
+    if (!mapped) continue;
+    for (const intent of mapped) merged.add(intent);
+  }
+  return merged.size > 0 ? Array.from(merged) : [...SIGNAL_AUTO_OPERATION_INTENTS];
+}
+
+function buildSignalAutoAssetKey(input: {
+  venue: string;
+  symbol: string;
+  marketType: SignalAutoMarketType;
+  marginMode?: 'cross' | 'isolated' | null;
+}): string {
+  const normalizedVenue = input.venue.trim().toLowerCase();
+  const normalizedSymbol = input.symbol.trim().toUpperCase();
+  const normalizedMargin = input.marketType === 'margin'
+    ? (input.marginMode ?? 'cross')
+    : 'none';
+  return `${normalizedVenue}:${input.marketType}:${normalizedMargin}:${normalizedSymbol}`;
+}
 
 /** Atualiza status de um step no DB */
 async function updateAutoRunStep(
@@ -1505,16 +1604,91 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
     });
     if (!run) throw new Error('Run não encontrado');
 
-    const candidateFilters = [eq(schema.tradingUniverseCandidates.tenantId, run.tenantId)];
-    if (payload.marketType) {
-      candidateFilters.push(eq(schema.tradingUniverseCandidates.marketType, payload.marketType));
-    }
+    const normalizedPayloadSymbol = typeof payload.symbol === 'string'
+      ? payload.symbol.trim().toUpperCase()
+      : null;
+    const marketTypes = resolveSignalAutoMarketTypes(payload);
+    const allowedOperationIntents = resolveSignalAutoAllowedOperationIntents(payload);
+    const allowedIntentSet = new Set(allowedOperationIntents);
+    const selectAllAssets = Boolean(payload.autoMix || payload.selectAllAssets);
+    const selectedAssets = (payload.selectedAssets ?? []).map((asset) => ({
+      venue: asset.venue.trim().toLowerCase(),
+      symbol: asset.symbol.trim().toUpperCase(),
+      marketType: asset.marketType,
+      marginMode: asset.marginMode,
+    })) as SignalAutoAsset[];
+    const selectedAssetKeySet = new Set(
+      selectedAssets.map((asset) => buildSignalAutoAssetKey({
+        venue: asset.venue,
+        symbol: asset.symbol,
+        marketType: asset.marketType,
+        marginMode: asset.marginMode ?? null,
+      })),
+    );
+    const candidateFetchLimit = payload.autoMix
+      ? TRADING_SIGNAL_AUTO_AUTOMIX_CANDIDATE_FETCH_LIMIT
+      : TRADING_SIGNAL_AUTO_CANDIDATE_FETCH_LIMIT;
 
-    const candidates = await db.query.tradingUniverseCandidates.findMany({
+    const candidateFilters = [
+      eq(schema.tradingUniverseCandidates.tenantId, run.tenantId),
+      inArray(schema.tradingUniverseCandidates.marketType, marketTypes),
+    ];
+    const rawCandidates = await db.query.tradingUniverseCandidates.findMany({
       where: and(...candidateFilters),
       orderBy: [desc(schema.tradingUniverseCandidates.createdAt)],
-      limit: 20,
+      limit: candidateFetchLimit,
     });
+
+    const instrumentIds = Array.from(new Set(rawCandidates.map((candidate) => candidate.instrumentId)));
+    const instruments = instrumentIds.length > 0
+      ? await db.query.tradingInstruments.findMany({
+        where: and(
+          eq(schema.tradingInstruments.tenantId, run.tenantId),
+          inArray(schema.tradingInstruments.id, instrumentIds),
+        ),
+        columns: { id: true, venue: true, symbol: true },
+      })
+      : [];
+    const instrumentById = new Map(instruments.map((instrument) => [instrument.id, instrument]));
+
+    const candidatesBeforeAssetFilter = rawCandidates.length;
+    let candidates = rawCandidates;
+    if (!selectAllAssets) {
+      if (selectedAssetKeySet.size > 0) {
+        candidates = candidates.filter((candidate) => {
+          const instrument = instrumentById.get(candidate.instrumentId);
+          if (!instrument) return false;
+          const exactKey = buildSignalAutoAssetKey({
+            venue: instrument.venue,
+            symbol: instrument.symbol,
+            marketType: candidate.marketType as SignalAutoMarketType,
+            marginMode: candidate.marginMode ?? null,
+          });
+          if (selectedAssetKeySet.has(exactKey)) return true;
+          if (candidate.marketType === 'margin') {
+            const genericMarginKey = buildSignalAutoAssetKey({
+              venue: instrument.venue,
+              symbol: instrument.symbol,
+              marketType: 'margin',
+              marginMode: null,
+            });
+            return selectedAssetKeySet.has(genericMarginKey);
+          }
+          return false;
+        });
+      } else if (normalizedPayloadSymbol) {
+        candidates = candidates.filter((candidate) => {
+          const instrument = instrumentById.get(candidate.instrumentId);
+          return instrument?.symbol === normalizedPayloadSymbol;
+        });
+      }
+    }
+    const candidatesAfterAssetFilter = candidates.length;
+    const candidatesBeforeIntentFilter = candidates.length;
+    if (allowedIntentSet.size < SIGNAL_AUTO_OPERATION_INTENTS.length) {
+      candidates = candidates.filter((candidate) => allowedIntentSet.has(candidate.operationIntent as SignalAutoOperationIntent));
+    }
+    const candidatesAfterIntentFilter = candidates.length;
 
     const validationTarget = candidates.find((candidate) => (
       toFiniteNumber(candidate.dsrScore) === null || toFiniteNumber(candidate.pboScore) === null
@@ -1610,7 +1784,8 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
         columns: { symbol: true },
       })
       : null;
-    const symbol = payload.symbol ?? instrumentSymbol?.symbol ?? null;
+    const selectedAssetSymbol = selectedAssets[0]?.symbol ?? null;
+    const symbol = normalizedPayloadSymbol ?? instrumentSymbol?.symbol ?? selectedAssetSymbol ?? null;
     const ragEvidenceIds = await resolveAutoDecisionEvidenceIds({
       tenantId: run.tenantId,
       userId: run.userId,
@@ -1736,13 +1911,47 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
     await updateAutoRunStep(runId, 'signal-decision', 'succeeded', {
       metrics: {
         candidatesEvaluated: candidates.length,
+        candidatesBeforeAssetFilter,
+        candidatesAfterAssetFilter,
+        candidatesBeforeIntentFilter,
+        candidatesAfterIntentFilter,
         approved: approvedCandidates.length,
         validationTriggered,
         validatedCandidateId,
         validatedDsr,
         validatedPbo,
+        marketTypes,
+        selectAllAssets,
+        selectedAssets: selectAllAssets ? 'all' : selectedAssets.length,
+        allowedModes: payload.autoMix ? 'auto_mix_all' : (payload.allowedModes ?? []),
+        allowedOperationIntents,
+        fetchLimit: candidateFetchLimit,
       },
     });
+
+    if (approvedCandidates.length === 0) {
+      await updateAutoRunStep(runId, 'signal-llm', 'skipped', {
+        metrics: {
+          noTrade: true,
+          reasonCode: noTradeReasonCode,
+        },
+      });
+      await updateAutoRunStep(runId, 'signal-persist', 'running');
+      await updateAutoRunStep(runId, 'signal-persist', 'succeeded', {
+        metrics: {
+          noTrade: true,
+          reasonCode: noTradeReasonCode,
+        },
+      });
+      await db.update(schema.tradingAutoRuns)
+        .set({ status: 'succeeded', error: null, finishedAt: new Date() })
+        .where(eq(schema.tradingAutoRuns.id, runId));
+      logger.info(
+        { runId, correlationId, candidates: candidates.length, approved: approvedCandidates.length, noTradeReasonCode },
+        'Signal auto run concluido com no-trade (sucesso operacional)',
+      );
+      return;
+    }
 
     await updateAutoRunStep(runId, 'signal-llm', 'running');
     const llmStepTimer = tradingV2Metrics.signalAutoLlmStepSeconds.startTimer();
@@ -1917,9 +2126,18 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
     logger.info({ runId, correlationId, candidates: candidates.length, approved: approvedCandidates.length }, 'Signal auto run concluído');
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
-    await updateAutoRunStep(runId, 'signal-decision', 'failed', { error: errorMessage });
-    await updateAutoRunStep(runId, 'signal-llm', 'failed', { error: errorMessage });
-    await updateAutoRunStep(runId, 'signal-persist', 'failed', { error: errorMessage });
+    const currentSteps = await db.query.tradingAutoRunSteps.findMany({
+      where: eq(schema.tradingAutoRunSteps.runId, runId),
+      columns: { stepName: true, status: true },
+    });
+    const terminalStatuses = new Set(['succeeded', 'skipped']);
+    const statusByStep = new Map(currentSteps.map((step) => [step.stepName, step.status]));
+    for (const stepName of ['signal-decision', 'signal-llm', 'signal-persist'] as const) {
+      const currentStatus = statusByStep.get(stepName);
+      if (!terminalStatuses.has(String(currentStatus))) {
+        await updateAutoRunStep(runId, stepName, 'failed', { error: errorMessage });
+      }
+    }
     await db.update(schema.tradingAutoRuns)
       .set({ status: 'failed', error: errorMessage, finishedAt: new Date() })
       .where(eq(schema.tradingAutoRuns.id, runId));
@@ -5163,7 +5381,10 @@ let autoLearningLoopActive = false;
       tradingQueueNames.signalAutoRun,
       tradingAutoSignalPayloadSchema.extend({ idempotencyKey: z.string() }),
       async (payload) => {
-        await processSignalAutoRun(payload);
+        await processSignalAutoRun({
+          ...payload,
+          selectAllAssets: payload.selectAllAssets ?? false,
+        });
       },
       tradingV2Metrics.signalAutoRunSeconds,
     ));

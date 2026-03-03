@@ -140,6 +140,23 @@ export interface TradingAutoRunDetail {
   decisions: TradingAutoDecision[];
 }
 
+export interface TradingAutoSignalAsset {
+  key: string;
+  venue: string;
+  symbol: string;
+  marketType: 'spot' | 'futures' | 'margin';
+  marginMode?: 'cross' | 'isolated';
+  label: string;
+}
+
+export interface TradingAutoSignalAssetsCatalog {
+  assets: TradingAutoSignalAsset[];
+  venues: string[];
+  markets: Array<'spot' | 'futures' | 'margin'>;
+  total: number;
+  generatedAt?: string;
+}
+
 export async function startPortfolioAutoRun(payload: {
   portfolioId: string;
   marketType?: 'spot' | 'futures' | 'margin';
@@ -157,11 +174,24 @@ export async function startSignalAutoRun(payload: {
   marketType?: 'spot' | 'futures' | 'margin';
   allowedModes?: string[];
   autoMix?: boolean;
+  selectedAssets?: Array<{
+    venue: string;
+    symbol: string;
+    marketType: 'spot' | 'futures' | 'margin';
+    marginMode?: 'cross' | 'isolated';
+  }>;
+  selectAllAssets?: boolean;
   namespaceId?: string;
 }): Promise<{ runId: string }> {
   const response = await apiRequest('POST', '/api/trading-v2/auto/signal/run', payload);
   const body = await response.json() as { success: boolean; data: { runId: string } };
   return body.data;
+}
+
+export async function getTradingAutoSignalAssetsCatalog(): Promise<TradingAutoSignalAssetsCatalog> {
+  const response = await apiRequest('GET', '/api/trading-v2/auto/assets');
+  const body = await response.json() as { success: boolean; data: TradingAutoSignalAssetsCatalog };
+  return body.data ?? { assets: [], venues: [], markets: [], total: 0 };
 }
 
 export async function getTradingAutoRuns(params: {
