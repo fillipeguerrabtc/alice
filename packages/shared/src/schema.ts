@@ -5145,10 +5145,10 @@ export const agenticSettings = pgTable(
 
 /**
  * Tipo JSONB para componentes do backup
- * Cada componente (postgresql, mariadb, redis, uploads) tem seu status
+ * Cada componente (postgresql, redis, qdrant, uploads) tem seu status
  */
 export interface BackupComponentDetail {
-  component: 'postgresql' | 'mariadb' | 'redis' | 'uploads';
+  component: 'postgresql' | 'redis' | 'qdrant' | 'uploads';
   status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
   startedAt?: string;
   completedAt?: string;
@@ -5165,8 +5165,8 @@ export interface BackupComponentDetail {
 export interface BackupManifestData {
   components: {
     postgresql?: { status: string; lsn?: string; backupSet?: string; size?: string; walArchived?: boolean; };
-    mariadb?: { status: string; gtid?: string; binlogPosition?: string; size?: string; };
     redis?: { status: string; rdbChecksum?: string; size?: string; };
+    qdrant?: { status: string; snapshotName?: string; collections?: string[]; size?: string; };
   };
   storage: { type: 'local'; path: string; volumeName: string; };
   encryption: { enabled: boolean; algorithm?: string; };

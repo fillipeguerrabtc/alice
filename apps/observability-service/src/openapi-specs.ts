@@ -7,8 +7,8 @@ export const observabilityServicePaths = {
   '/health': { get: { summary: 'Health check', tags: ['Health'], security: [], responses: { 200: { description: 'OK' } } } },
   '/ready': { get: { summary: 'Readiness check', tags: ['Health'], security: [], responses: { 200: { description: 'Ready' } } } },
   '/api/observability/backups': {
-    get: { summary: 'Listar backups', tags: ['Backup'], parameters: [{ name: 'type', in: 'query', schema: { type: 'string', enum: ['postgres', 'mariadb', 'redis', 's3', 'full'] } }, { name: 'status', in: 'query', schema: { type: 'string', enum: ['pending', 'running', 'completed', 'failed'] } }, { name: 'limit', in: 'query', schema: { type: 'integer' } }], responses: { 200: { description: 'Lista', content: { 'application/json': { schema: { type: 'object', properties: { backups: { type: 'array', items: { $ref: '#/components/schemas/Backup' } } } } } } } } },
-    post: { summary: 'Iniciar backup', tags: ['Backup'], requestBody: { content: { 'application/json': { schema: { type: 'object', required: ['type'], properties: { type: { type: 'string', enum: ['postgres', 'mariadb', 'redis', 's3', 'full'] }, description: { type: 'string' } } } } } }, responses: { 202: { description: 'Iniciado' } } },
+    get: { summary: 'Listar backups', tags: ['Backup'], parameters: [{ name: 'type', in: 'query', schema: { type: 'string', enum: ['postgres', 'redis', 's3', 'full'] } }, { name: 'status', in: 'query', schema: { type: 'string', enum: ['pending', 'running', 'completed', 'failed'] } }, { name: 'limit', in: 'query', schema: { type: 'integer' } }], responses: { 200: { description: 'Lista', content: { 'application/json': { schema: { type: 'object', properties: { backups: { type: 'array', items: { $ref: '#/components/schemas/Backup' } } } } } } } } },
+    post: { summary: 'Iniciar backup', tags: ['Backup'], requestBody: { content: { 'application/json': { schema: { type: 'object', required: ['type'], properties: { type: { type: 'string', enum: ['postgres', 'redis', 's3', 'full'] }, description: { type: 'string' } } } } } }, responses: { 202: { description: 'Iniciado' } } },
   },
   '/api/observability/backups/{id}': {
     get: { summary: 'Buscar backup', tags: ['Backup'], parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }], responses: { 200: { description: 'Backup' }, 404: { $ref: '#/components/responses/NotFound' } } },
@@ -30,5 +30,5 @@ export const observabilityServicePaths = {
 };
 
 export const observabilityServiceSchemas = {
-  Backup: { type: 'object', properties: { id: { type: 'string' }, type: { type: 'string', enum: ['postgres', 'mariadb', 'redis', 's3', 'full'] }, status: { type: 'string', enum: ['pending', 'running', 'completed', 'failed'] }, size: { type: 'integer', description: 'Bytes' }, startedAt: { type: 'string', format: 'date-time' }, completedAt: { type: 'string', format: 'date-time' }, encrypted: { type: 'boolean' } } },
+  Backup: { type: 'object', properties: { id: { type: 'string' }, type: { type: 'string', enum: ['postgres', 'redis', 's3', 'full'] }, status: { type: 'string', enum: ['pending', 'running', 'completed', 'failed'] }, size: { type: 'integer', description: 'Bytes' }, startedAt: { type: 'string', format: 'date-time' }, completedAt: { type: 'string', format: 'date-time' }, encrypted: { type: 'boolean' } } },
 };

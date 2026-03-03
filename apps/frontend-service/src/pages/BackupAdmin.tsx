@@ -66,7 +66,6 @@ import {
   Play,
   History,
   Shield,
-  Server,
   FileJson,
   Loader2,
   Archive,
@@ -113,7 +112,6 @@ interface BackupManifest {
   totalSize?: string;
   components: {
     postgresql?: ComponentStatus;
-    mariadb?: ComponentStatus;
     redis?: ComponentStatus;
   };
   qdrant?: {
@@ -238,8 +236,6 @@ function ComponentIcon({ component }: { component: string }) {
   switch (component) {
     case 'postgresql':
       return <Database className="h-4 w-4" />;
-    case 'mariadb':
-      return <Server className="h-4 w-4" />;
     case 'redis':
       return <HardDrive className="h-4 w-4" />;
     case 'uploads':
@@ -506,7 +502,7 @@ export default function BackupAdmin() {
                   Executar Backup
                 </CardTitle>
                 <CardDescription>
-                  Backup unificado de PostgreSQL, MariaDB, Redis, Qdrant e uploads
+                  Backup unificado de PostgreSQL, Redis, Qdrant e uploads
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -862,7 +858,6 @@ export default function BackupAdmin() {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 {[
                   { name: 'PostgreSQL', icon: Database, desc: 'pgBackRest + WAL + PITR', color: 'text-blue-500' },
-                  { name: 'MariaDB', icon: Server, desc: 'Mariabackup + GTID', color: 'text-orange-500' },
                   { name: 'Redis', icon: HardDrive, desc: 'RDB Snapshot', color: 'text-red-500' },
                   { name: 'Qdrant', icon: Database, desc: 'Snapshots embeddings (RAG)', color: 'text-purple-500' },
                   { name: 'Volume Local', icon: Archive, desc: '/opt/alice/backups', color: 'text-green-500' },

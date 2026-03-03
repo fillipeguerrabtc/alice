@@ -2,8 +2,8 @@
  * Backup Orchestrator - Alice Enterprise Platform
  * 
  * Sistema unificado de backup e restore para toda a plataforma.
- * Coordena backups de PostgreSQL (pgBackRest), MariaDB (Mariabackup) e
- * Redis (RDB) com manifesto único.
+ * Coordena backups de PostgreSQL (pgBackRest), Redis (RDB) e
+ * Qdrant com manifesto único.
  * 
  * STORAGE: Volume Local Hetzner (/opt/alice/backups) - SEM S3 EXTERNO
  * Os uploads de mídia são armazenados em /opt/alice/uploads (Volume local)
@@ -15,7 +15,7 @@
  * Regra 6: Enterprise-grade (sem workarounds) - Estado persistido em PostgreSQL
  * Regra 8: TypeScript strict, zero any, Pino
  * Regra 10: Documentação PT-BR
- * Regra 11: Seguir docs oficiais pgBackRest/Mariabackup
+ * Regra 11: Seguir docs oficiais pgBackRest e Redis
  * Regra 16: Circuit breakers, health checks
  * 
  * ATUALIZADO: Migrado de in-memory para PostgreSQL (REGRA 6 COMPLIANCE)
@@ -48,7 +48,7 @@ const logger = createLogger('backup-orchestrator');
 
 /** Status de cada componente no backup */
 interface ComponentBackupStatus {
-  component: 'postgresql' | 'mariadb' | 'redis' | 'qdrant' | 'uploads';
+  component: 'postgresql' | 'redis' | 'qdrant' | 'uploads';
   status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
   startedAt?: string;
   completedAt?: string;
@@ -74,12 +74,6 @@ interface BackupManifest {
       backupSet?: string;
       size?: string;
       walArchived?: boolean;
-    };
-    mariadb?: {
-      status: 'completed' | 'failed' | 'skipped';
-      gtid?: string;
-      binlogPosition?: string;
-      size?: string;
     };
     redis?: {
       status: 'completed' | 'failed' | 'skipped';
@@ -136,8 +130,7 @@ const MANIFESTS_DIR = path.join(BACKUP_DIR, 'manifests');
 // Containers Docker (nomes em produção)
 // NOTA: POSTGRES_CONTAINER usado indiretamente via alice-pgbackrest que se conecta ao PostgreSQL
 const _POSTGRES_CONTAINER = process.env.POSTGRES_CONTAINER || 'alice-postgres';
-const MARIADB_CONTAINER = process.env.MARIADB_CONTAINER || 'erpnext-mariadb';
-const REDIS_CONTAINER = process.env.REDIS_CONTAINER || 'erpnext-redis-cache';
+const REDIS_CONTAINER = process.env.REDIS_CONTAINER || 'alice-redis';
 // NOTA: Qdrant é acessado via URL HTTP/REST, não via Docker exec
 const QDRANT_URL = process.env.QDRANT_URL || 'http://alice-qdrant:6333';
 
@@ -440,73 +433,6 @@ async function backupPostgreSQL(type: 'full' | 'diff' | 'incr'): Promise<Compone
     component.error = err.message;
     
     logger.error({ error: err.message }, 'Falha no backup PostgreSQL');
-  }
-  
-  return component;
-}
-
-/**
- * Backup MariaDB via Mariabackup (ERPNext)
- * Suporta: full, incremental
- * Retorna: GTID, binlog position
- */
-async function backupMariaDB(type: 'full' | 'incremental'): Promise<ComponentBackupStatus> {
-  const startTime = Date.now();
-  const component: ComponentBackupStatus = {
-    component: 'mariadb',
-    status: 'running',
-    startedAt: new Date().toISOString(),
-  };
-  
-  logger.info({ type }, 'Iniciando backup MariaDB via Mariabackup');
-  
-  try {
-    const backupPath = path.join(BACKUP_DIR, 'mariadb', type);
-    const timestamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0];
-    const backupFile = `erpnext_${type}_${timestamp}.xbstream.gz`;
-    
-    // Criar diretório de backup
-    await mkdir(backupPath, { recursive: true });
-    
-    // Executar backup com streaming e compressão
-    await execAsync(
-      `docker exec ${MARIADB_CONTAINER} mariabackup --backup --stream=xbstream --user=root --password="$MYSQL_ROOT_PASSWORD" | gzip > ${path.join(backupPath, backupFile)}`,
-      { timeout: 1800000, env: { ...process.env } }
-    );
-    
-    // Obter tamanho do arquivo
-    const stats = await stat(path.join(backupPath, backupFile));
-    
-    // Obter GTID position
-    const { stdout: gtidOutput } = await dockerExec(
-      MARIADB_CONTAINER,
-      "mysql -u root -p\"$MYSQL_ROOT_PASSWORD\" -e \"SELECT @@global.gtid_current_pos\" --skip-column-names"
-    );
-    
-    component.status = 'completed';
-    component.completedAt = new Date().toISOString();
-    component.durationSeconds = Math.round((Date.now() - startTime) / 1000);
-    component.size = formatBytes(stats.size);
-    component.metadata = {
-      gtid: gtidOutput.trim(),
-      backupFile,
-      type,
-    };
-    
-    logger.info({ 
-      durationSeconds: component.durationSeconds,
-      size: component.size,
-      gtid: component.metadata.gtid
-    }, 'Backup MariaDB concluído');
-    
-  } catch (error) {
-    const err = error as Error;
-    component.status = 'failed';
-    component.completedAt = new Date().toISOString();
-    component.durationSeconds = Math.round((Date.now() - startTime) / 1000);
-    component.error = err.message;
-    
-    logger.error({ error: err.message }, 'Falha no backup MariaDB');
   }
   
   return component;
@@ -827,30 +753,11 @@ async function runUnifiedBackup(
       if (pgResult.status === 'failed') hasFailures = true;
     }
     
-    await updateBackupJob(backupId, { progress: 30 });
+    await updateBackupJob(backupId, { progress: 40 });
     
-    // 2. MariaDB (ERPNext)
-    if (!skipComponents.includes('mariadb')) {
-      await updateBackupJob(backupId, { currentComponent: 'mariadb', progress: 40 });
-      
-      const mariaResult = await backupMariaDB(type === 'incremental' ? 'incremental' : 'full');
-      componentResults.push(mariaResult as BackupComponentDetail);
-      await updateBackupJob(backupId, { components: componentResults });
-      
-      manifest.components.mariadb = {
-        status: mariaResult.status === 'completed' ? 'completed' : 'failed',
-        gtid: mariaResult.metadata?.gtid,
-        size: mariaResult.size,
-      };
-      
-      if (mariaResult.status === 'failed') hasFailures = true;
-    }
-    
-    await updateBackupJob(backupId, { progress: 60 });
-    
-    // 3. Redis
+    // 2. Redis
     if (!skipComponents.includes('redis')) {
-      await updateBackupJob(backupId, { currentComponent: 'redis', progress: 60 });
+      await updateBackupJob(backupId, { currentComponent: 'redis', progress: 55 });
 
       const redisResult = await backupRedis();
       componentResults.push(redisResult as BackupComponentDetail);
@@ -867,7 +774,7 @@ async function runUnifiedBackup(
 
     await updateBackupJob(backupId, { progress: 70 });
 
-    // 4. Qdrant (embeddings de texto - crítico para RAG)
+    // 3. Qdrant (embeddings de texto - crítico para RAG)
     // ADICIONADO AUDITORIA 17/12/2025: Qdrant era o único DB sem backup
     if (!skipComponents.includes('qdrant')) {
       await updateBackupJob(backupId, { currentComponent: 'qdrant', progress: 80 });
@@ -997,7 +904,6 @@ async function runUnifiedRestore(
       message: `Dry run: restore do backup ${backupId} seria executado`,
       details: {
         postgresql: manifest.components.postgresql?.status || 'skip',
-        mariadb: manifest.components.mariadb?.status || 'skip',
         redis: manifest.components.redis?.status || 'skip',
         // CORREÇÃO 18/12/2025: qdrant está em components, não na raiz do manifest
         qdrant: manifest.components.qdrant?.status || 'skip',
@@ -1023,20 +929,7 @@ async function runUnifiedRestore(
     }
   }
   
-  // 2. Restore MariaDB
-  if (!skipComponents.includes('mariadb') && manifest.components.mariadb?.status === 'completed') {
-    try {
-      logger.info({ gtid: manifest.components.mariadb.gtid }, 'Restaurando MariaDB');
-      // Implementar restore via mariabackup --prepare + --copy-back
-      details.mariadb = 'restored';
-    } catch (error) {
-      const err = error as Error;
-      details.mariadb = `failed: ${err.message}`;
-      hasErrors = true;
-    }
-  }
-  
-  // 3. Restore Redis
+  // 2. Restore Redis
   if (!skipComponents.includes('redis') && manifest.components.redis?.status === 'completed') {
     try {
       logger.info({ checksum: manifest.components.redis.rdbChecksum }, 'Restaurando Redis');
@@ -1049,7 +942,7 @@ async function runUnifiedRestore(
     }
   }
 
-  // 4. Restore Qdrant (embeddings texto - crítico para RAG)
+  // 3. Restore Qdrant (embeddings texto - crítico para RAG)
   // ADICIONADO 17/12/2025: Restore de snapshots via API REST Qdrant
   // CORREÇÃO 18/12/2025: qdrant está em components, usar BACKUP_DIR, usar existsSync importado
   if (!skipComponents.includes('qdrant') && manifest.components.qdrant?.status === 'completed') {
@@ -1121,14 +1014,14 @@ const router: ReturnType<typeof Router> = Router();
 // ATUALIZADO 17/12/2025: Adicionado 'qdrant' (embeddings texto - crítico para RAG)
 const BackupRequestSchema = z.object({
   type: z.enum(['full', 'incremental']).default('full'),
-  skipComponents: z.array(z.enum(['postgresql', 'mariadb', 'redis', 'qdrant'])).optional(),
+  skipComponents: z.array(z.enum(['postgresql', 'redis', 'qdrant'])).optional(),
   notes: z.string().max(500).optional(),
 });
 
 // Schema de validação para restore
 const RestoreRequestSchema = z.object({
   backupId: z.string().min(1),
-  skipComponents: z.array(z.enum(['postgresql', 'mariadb', 'redis', 'qdrant'])).optional(),
+  skipComponents: z.array(z.enum(['postgresql', 'redis', 'qdrant'])).optional(),
   dryRun: z.boolean().default(false),
   confirm: z.literal(true, { message: 'Confirmação obrigatória para restore' }),
 });
@@ -1787,9 +1680,8 @@ router.get('/disk-usage', async (_req: Request, res: Response) => {
     };
 
     // ATUALIZADO 17/12/2025: Adicionado Qdrant (embeddings texto - crítico para RAG)
-    const [postgresqlSize, mariadbSize, redisSize, qdrantSize, manifestsSize] = await Promise.all([
+    const [postgresqlSize, redisSize, qdrantSize, manifestsSize] = await Promise.all([
       getDirSize(path.join(BACKUP_DIR, 'postgresql')),
-      getDirSize(path.join(BACKUP_DIR, 'mariadb')),
       getDirSize(path.join(BACKUP_DIR, 'redis')),
       getDirSize(path.join(BACKUP_DIR, 'qdrant')),
       getDirSize(MANIFESTS_DIR),
@@ -1810,12 +1702,11 @@ router.get('/disk-usage', async (_req: Request, res: Response) => {
       // Fallback se df falhar
     }
 
-    const totalBackupSize = postgresqlSize + mariadbSize + redisSize + qdrantSize + manifestsSize;
+    const totalBackupSize = postgresqlSize + redisSize + qdrantSize + manifestsSize;
 
     res.json({
       backups: {
         postgresql: formatBytes(postgresqlSize),
-        mariadb: formatBytes(mariadbSize),
         redis: formatBytes(redisSize),
         qdrant: formatBytes(qdrantSize),
         manifests: formatBytes(manifestsSize),
