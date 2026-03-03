@@ -1,11 +1,5 @@
 /**
  * System Settings Page - Alice Enterprise Platform
- *
- * Configurações editáveis do sistema: RAG, Chat, Treino, Embeddings.
- * Valores são persistidos no banco de dados (env vars como fallback).
- * Internacionalização completa (Regra 13 - i18n)
- *
- * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
 import { useState, useEffect } from 'react';
@@ -23,6 +17,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
 import {
   Tooltip,
   TooltipContent,
@@ -32,13 +28,17 @@ import {
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 
+type ConfigValueType = 'int' | 'float' | 'json' | 'cron' | 'boolean';
+
 type ConfigItem = {
   key: string;
   labelKey: string;
   descKey: string;
-  default: number;
+  defaultValue: string;
+  valueType: ConfigValueType;
   min?: number;
   max?: number;
+  step?: string;
   unit?: string;
 };
 
@@ -47,7 +47,8 @@ const RAG_ITEMS: ConfigItem[] = [
     key: 'DOCUMENT_MAX_CHUNKS',
     labelKey: 'systemSettings.rag.documentMaxChunks',
     descKey: 'systemSettings.rag.documentMaxChunksDesc',
-    default: 50,
+    defaultValue: '50',
+    valueType: 'int',
     min: 10,
     max: 200,
   },
@@ -55,7 +56,8 @@ const RAG_ITEMS: ConfigItem[] = [
     key: 'TRAINING_DOC_MAX_SAMPLES',
     labelKey: 'systemSettings.rag.trainingDocMaxSamples',
     descKey: 'systemSettings.rag.trainingDocMaxSamplesDesc',
-    default: 50,
+    defaultValue: '50',
+    valueType: 'int',
     min: 10,
     max: 100,
   },
@@ -66,7 +68,8 @@ const CHAT_ITEMS: ConfigItem[] = [
     key: 'TRAINING_CONVERSATION_MAX_MESSAGES',
     labelKey: 'systemSettings.chat.trainingConvMaxMessages',
     descKey: 'systemSettings.chat.trainingConvMaxMessagesDesc',
-    default: 50,
+    defaultValue: '50',
+    valueType: 'int',
     min: 10,
     max: 200,
   },
@@ -74,7 +77,8 @@ const CHAT_ITEMS: ConfigItem[] = [
     key: 'CONVERSATION_SLICE_SIZE',
     labelKey: 'systemSettings.chat.conversationSliceSize',
     descKey: 'systemSettings.chat.conversationSliceSizeDesc',
-    default: 10,
+    defaultValue: '10',
+    valueType: 'int',
     min: 5,
     max: 50,
   },
@@ -85,15 +89,132 @@ const TRAINING_ITEMS: ConfigItem[] = [
     key: 'MIN_ONDEMAND_DATASET_SIZE',
     labelKey: 'systemSettings.training.minOndemandDatasetSize',
     descKey: 'systemSettings.training.minOndemandDatasetSizeDesc',
-    default: 10,
+    defaultValue: '10',
+    valueType: 'int',
     min: 1,
-    max: 100,
+    max: 100000,
+  },
+  {
+    key: 'MIN_SCHEDULED_DATASET_SIZE_INCREMENTAL',
+    labelKey: 'systemSettings.training.minScheduledDatasetSizeIncremental',
+    descKey: 'systemSettings.training.minScheduledDatasetSizeIncrementalDesc',
+    defaultValue: '50',
+    valueType: 'int',
+    min: 1,
+    max: 100000,
+  },
+  {
+    key: 'MIN_SCHEDULED_DATASET_SIZE_FULL',
+    labelKey: 'systemSettings.training.minScheduledDatasetSizeFull',
+    descKey: 'systemSettings.training.minScheduledDatasetSizeFullDesc',
+    defaultValue: '200',
+    valueType: 'int',
+    min: 1,
+    max: 200000,
+  },
+  {
+    key: 'TRAINING_QUALITY_MIN_RATIO',
+    labelKey: 'systemSettings.training.trainingQualityMinRatio',
+    descKey: 'systemSettings.training.trainingQualityMinRatioDesc',
+    defaultValue: '0.5',
+    valueType: 'float',
+    min: 0,
+    max: 1,
+    step: '0.01',
+  },
+  {
+    key: 'TRAINING_DATASET_MAX_ROWS',
+    labelKey: 'systemSettings.training.trainingDatasetMaxRows',
+    descKey: 'systemSettings.training.trainingDatasetMaxRowsDesc',
+    defaultValue: '5000',
+    valueType: 'int',
+    min: 100,
+    max: 500000,
+  },
+  {
+    key: 'TRAINING_TRAIN_EVAL_SPLIT_RATIO',
+    labelKey: 'systemSettings.training.trainingTrainEvalSplitRatio',
+    descKey: 'systemSettings.training.trainingTrainEvalSplitRatioDesc',
+    defaultValue: '0.9',
+    valueType: 'float',
+    min: 0.5,
+    max: 0.99,
+    step: '0.01',
+  },
+  {
+    key: 'TRAINING_SLICE_STEPS',
+    labelKey: 'systemSettings.training.trainingSliceSteps',
+    descKey: 'systemSettings.training.trainingSliceStepsDesc',
+    defaultValue: '5',
+    valueType: 'int',
+    min: 1,
+    max: 500,
+  },
+  {
+    key: 'TRAINING_GPU_TIMEOUT_MS',
+    labelKey: 'systemSettings.training.trainingGpuTimeoutMs',
+    descKey: 'systemSettings.training.trainingGpuTimeoutMsDesc',
+    defaultValue: '25000',
+    valueType: 'int',
+    min: 1000,
+    max: 600000,
+    unit: 'ms',
+  },
+  {
+    key: 'AUTO_LEARNING_CRON_INCREMENTAL',
+    labelKey: 'systemSettings.training.autoLearningCronIncremental',
+    descKey: 'systemSettings.training.autoLearningCronIncrementalDesc',
+    defaultValue: '0 3 * * 0',
+    valueType: 'cron',
+  },
+  {
+    key: 'AUTO_LEARNING_CRON_FULL',
+    labelKey: 'systemSettings.training.autoLearningCronFull',
+    descKey: 'systemSettings.training.autoLearningCronFullDesc',
+    defaultValue: '0 1 1,15 * *',
+    valueType: 'cron',
+  },
+  {
+    key: 'AUTO_LEARNING_INCLUDE_IMAGES',
+    labelKey: 'systemSettings.training.autoLearningIncludeImages',
+    descKey: 'systemSettings.training.autoLearningIncludeImagesDesc',
+    defaultValue: 'true',
+    valueType: 'boolean',
+  },
+  {
+    key: 'TRAINING_DEFAULT_HYPERPARAMS_JSON',
+    labelKey: 'systemSettings.training.trainingDefaultHyperparamsJson',
+    descKey: 'systemSettings.training.trainingDefaultHyperparamsJsonDesc',
+    defaultValue: '{}',
+    valueType: 'json',
+  },
+  {
+    key: 'TRAINING_PRESET_SAFE_JSON',
+    labelKey: 'systemSettings.training.trainingPresetSafeJson',
+    descKey: 'systemSettings.training.trainingPresetSafeJsonDesc',
+    defaultValue: '{}',
+    valueType: 'json',
+  },
+  {
+    key: 'TRAINING_PRESET_STANDARD_JSON',
+    labelKey: 'systemSettings.training.trainingPresetStandardJson',
+    descKey: 'systemSettings.training.trainingPresetStandardJsonDesc',
+    defaultValue: '{}',
+    valueType: 'json',
+  },
+  {
+    key: 'TRAINING_PRESET_LARGE_JSON',
+    labelKey: 'systemSettings.training.trainingPresetLargeJson',
+    descKey: 'systemSettings.training.trainingPresetLargeJsonDesc',
+    defaultValue: '{}',
+    valueType: 'json',
   },
   {
     key: 'maxSeqLen',
     labelKey: 'systemSettings.training.maxSeqLen',
     descKey: 'systemSettings.training.maxSeqLenDesc',
-    default: 2048,
+    defaultValue: '2048',
+    valueType: 'int',
     min: 256,
     max: 32768,
   },
@@ -101,25 +222,72 @@ const TRAINING_ITEMS: ConfigItem[] = [
 
 const ALL_ITEMS = [...RAG_ITEMS, ...CHAT_ITEMS, ...TRAINING_ITEMS];
 
+function validateCron(value: string): boolean {
+  const parts = value.trim().split(/\s+/);
+  return parts.length === 5;
+}
+
+function validateItem(item: ConfigItem, rawValue: string): string | null {
+  if (item.valueType === 'boolean') {
+    if (rawValue !== 'true' && rawValue !== 'false') {
+      return 'Expected true or false';
+    }
+    return null;
+  }
+
+  if (item.valueType === 'json') {
+    try {
+      const parsed = JSON.parse(rawValue);
+      if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return 'Expected JSON object';
+      }
+      return null;
+    } catch {
+      return 'Invalid JSON';
+    }
+  }
+
+  if (item.valueType === 'cron') {
+    if (!validateCron(rawValue)) {
+      return 'Invalid cron (expected 5 fields)';
+    }
+    return null;
+  }
+
+  const numeric = Number(rawValue);
+  if (!Number.isFinite(numeric)) {
+    return 'Invalid number';
+  }
+
+  if (item.valueType === 'int' && !Number.isInteger(numeric)) {
+    return 'Must be integer';
+  }
+
+  if (item.min != null && numeric < item.min) {
+    return `Minimum: ${item.min}`;
+  }
+
+  if (item.max != null && numeric > item.max) {
+    return `Maximum: ${item.max}`;
+  }
+
+  return null;
+}
+
 function ConfigField({
   item,
   value,
+  error,
   onChange,
   disabled,
 }: {
   item: ConfigItem;
-  value: number;
-  onChange: (v: number) => void;
+  value: string;
+  error?: string;
+  onChange: (v: string) => void;
   disabled?: boolean;
 }) {
   const { t } = useTranslation();
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const raw = e.target.value;
-    const parsed = parseInt(raw, 10);
-    if (raw === '' || Number.isNaN(parsed)) return;
-    onChange(parsed);
-  };
 
   return (
     <div className="space-y-2">
@@ -132,29 +300,55 @@ function ConfigField({
             <TooltipTrigger asChild>
               <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
             </TooltipTrigger>
-            <TooltipContent side="top" className="max-w-xs">
+            <TooltipContent side="top" className="max-w-sm">
               <p className="text-xs">{t(item.descKey)}</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                {item.min != null && item.max != null
-                  ? `Range: ${item.min}–${item.max}. Default: ${item.default}`
-                  : `Default: ${item.default}`}
-              </p>
+              {(item.min != null || item.max != null) && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Range: {item.min ?? '-'} to {item.max ?? '-'}
+                </p>
+              )}
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
       </div>
-      <Input
-        id={item.key}
-        type="number"
-        value={value}
-        min={item.min}
-        max={item.max}
-        onChange={handleChange}
-        disabled={disabled}
-        className="max-w-[200px]"
-      />
+
+      {item.valueType === 'json' ? (
+        <Textarea
+          id={item.key}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          disabled={disabled}
+          rows={7}
+          className="font-mono text-xs"
+        />
+      ) : item.valueType === 'boolean' ? (
+        <div className="flex items-center gap-3 rounded-md border px-3 py-2 max-w-[220px]">
+          <Switch
+            checked={value === 'true'}
+            onCheckedChange={(checked) => onChange(checked ? 'true' : 'false')}
+            disabled={disabled}
+          />
+          <span className="text-sm text-muted-foreground">{value === 'true' ? 'true' : 'false'}</span>
+        </div>
+      ) : (
+        <Input
+          id={item.key}
+          type={item.valueType === 'cron' ? 'text' : 'number'}
+          value={value}
+          min={item.min}
+          max={item.max}
+          step={item.step}
+          onChange={(event) => onChange(event.target.value)}
+          disabled={disabled}
+          className="max-w-[320px]"
+        />
+      )}
+
       {item.unit && (
         <span className="text-xs text-muted-foreground">{item.unit}</span>
+      )}
+      {error && (
+        <p className="text-xs text-red-600">{error}</p>
       )}
     </div>
   );
@@ -170,20 +364,20 @@ export default function SystemSettings() {
     queryKey: ['/api/training/system-config'],
     queryFn: async () => {
       const res = await apiRequest('GET', '/api/training/system-config');
-      if (!res.ok) throw new Error('Erro ao carregar configurações');
+      if (!res.ok) throw new Error('Erro ao carregar configuracoes');
       return res.json();
     },
   });
 
-  const [localValues, setLocalValues] = useState<Record<string, number>>({});
+  const [localValues, setLocalValues] = useState<Record<string, string>>({});
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!config) return;
-    const next: Record<string, number> = {};
+    const next: Record<string, string> = {};
     for (const item of ALL_ITEMS) {
       const raw = config[item.key];
-      const parsed = raw != null ? parseInt(String(raw), 10) : item.default;
-      next[item.key] = Number.isNaN(parsed) ? item.default : parsed;
+      next[item.key] = raw != null ? String(raw) : item.defaultValue;
     }
     setLocalValues(next);
   }, [config]);
@@ -210,17 +404,39 @@ export default function SystemSettings() {
 
   const handleSave = () => {
     const payload: Record<string, string> = {};
-    for (const [key, value] of Object.entries(localValues)) {
-      const item = ALL_ITEMS.find((i) => i.key === key);
-      if (!item) continue;
-      const clamped = Math.min(Math.max(value, item.min ?? 0), item.max ?? Infinity);
-      payload[key] = String(clamped);
+    const nextErrors: Record<string, string> = {};
+
+    for (const item of ALL_ITEMS) {
+      const value = localValues[item.key] ?? item.defaultValue;
+      const error = validateItem(item, value);
+      if (error) {
+        nextErrors[item.key] = error;
+      } else {
+        payload[item.key] = value.trim();
+      }
     }
+
+    setFieldErrors(nextErrors);
+
+    if (Object.keys(nextErrors).length > 0) {
+      toast({
+        title: 'Validation error',
+        description: 'Corrija os campos com erro antes de salvar.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     saveMutation.mutate(payload);
   };
 
-  const handleChange = (key: string, value: number) => {
+  const handleChange = (key: string, value: string) => {
     setLocalValues((prev) => ({ ...prev, [key]: value }));
+    setFieldErrors((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
   };
 
   const sections = [
@@ -267,58 +483,25 @@ export default function SystemSettings() {
             </div>
           )}
 
-          {!isLoading && currentSection?.id === 'rag' && (
+          {!isLoading && currentSection && currentSection.id !== 'embeddings' && (
             <Card>
               <CardHeader>
-                <CardTitle>{t('systemSettings.sections.rag')}</CardTitle>
-                <CardDescription>{t('systemSettings.ragDesc')}</CardDescription>
+                <CardTitle>{t(currentSection.labelKey)}</CardTitle>
+                <CardDescription>
+                  {currentSection.id === 'rag'
+                    ? t('systemSettings.ragDesc')
+                    : currentSection.id === 'chat'
+                      ? t('systemSettings.chatDesc')
+                      : t('systemSettings.trainingDesc')}
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
-                {RAG_ITEMS.map((item) => (
+                {currentSection.items.map((item) => (
                   <ConfigField
                     key={item.key}
                     item={item}
-                    value={localValues[item.key] ?? item.default}
-                    onChange={(v) => handleChange(item.key, v)}
-                    disabled={saveMutation.isPending}
-                  />
-                ))}
-              </CardContent>
-            </Card>
-          )}
-
-          {!isLoading && currentSection?.id === 'chat' && (
-            <Card>
-              <CardHeader>
-                <CardTitle>{t('systemSettings.sections.chat')}</CardTitle>
-                <CardDescription>{t('systemSettings.chatDesc')}</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {CHAT_ITEMS.map((item) => (
-                  <ConfigField
-                    key={item.key}
-                    item={item}
-                    value={localValues[item.key] ?? item.default}
-                    onChange={(v) => handleChange(item.key, v)}
-                    disabled={saveMutation.isPending}
-                  />
-                ))}
-              </CardContent>
-            </Card>
-          )}
-
-          {!isLoading && currentSection?.id === 'training' && (
-            <Card>
-              <CardHeader>
-                <CardTitle>{t('systemSettings.sections.training')}</CardTitle>
-                <CardDescription>{t('systemSettings.trainingDesc')}</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {TRAINING_ITEMS.map((item) => (
-                  <ConfigField
-                    key={item.key}
-                    item={item}
-                    value={localValues[item.key] ?? item.default}
+                    value={localValues[item.key] ?? item.defaultValue}
+                    error={fieldErrors[item.key]}
                     onChange={(v) => handleChange(item.key, v)}
                     disabled={saveMutation.isPending}
                   />

@@ -87,7 +87,12 @@ import {
 import { trainingServicePaths, trainingServiceSchemas } from './openapi-specs.js';
 import { eq, and, or, desc, sql, isNull, not, inArray, lte, ne } from '@alice/database';
 import { z } from 'zod';
-import { getAllSystemConfig, setSystemConfig, getSystemConfig } from '@alice/database/system-config';
+import {
+  getAllSystemConfig,
+  getSystemConfig,
+  setSystemConfig,
+  SYSTEM_CONFIG_KNOWN_KEYS,
+} from '@alice/database/system-config';
 import { NamespaceProfileConfigSchema, type TradingSignalMetadata, type NamespaceProfileConfig } from '@alice/shared';
 
 function parseStructuredJsonFromContent(content: string): unknown {
@@ -1961,16 +1966,8 @@ const systemConfigPatchSchema = z.object({
 app.patch('/api/training/system-config', requirePermission('config:system:write'), async (req: Request, res: Response) => {
   try {
     const body = systemConfigPatchSchema.parse(req.body);
-    const knownKeys = [
-      'DOCUMENT_MAX_CHUNKS',
-      'TRAINING_DOC_MAX_SAMPLES',
-      'TRAINING_CONVERSATION_MAX_MESSAGES',
-      'CONVERSATION_SLICE_SIZE',
-      'MIN_ONDEMAND_DATASET_SIZE',
-      'maxSeqLen',
-    ] as const;
     for (const [key, value] of Object.entries(body.configs)) {
-      if (knownKeys.includes(key as (typeof knownKeys)[number])) {
+      if (SYSTEM_CONFIG_KNOWN_KEYS.includes(key as (typeof SYSTEM_CONFIG_KNOWN_KEYS)[number])) {
         await setSystemConfig(key, String(value));
       }
     }
