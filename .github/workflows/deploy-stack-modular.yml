@@ -6813,6 +6813,7 @@ jobs:
   notify:
     name: Notify & Report
     runs-on: [self-hosted, linux, deploy]
+    needs: [validate, prepare, prepare-infrastructure, deploy-infra, health-infra, rollback-infra, drizzle-push, deploy-alice, health-alice, rollback-alice, deploy-observability, health-observability, rollback-observability, deploy-backup, health-backup, rollback-backup]
     if: always()
     timeout-minutes: 3
     
@@ -6890,16 +6891,6 @@ jobs:
             OBS_STATUS="❌ FAILED"
           fi
           echo "| **OBSERVABILITY** | $OBS_DEPLOY | $OBS_HEALTH | $OBS_ROLLBACK | $OBS_STATUS |" >> $GITHUB_STEP_SUMMARY
-          
-          if [ "$ERP_HEALTH" = "success" ]; then
-            ERP_STATUS="✅ HEALTHY"
-          elif [ "$ERP_ROLLBACK" = "success" ]; then
-            ERP_STATUS="🔄 ROLLED BACK"
-          elif [ "$ERP_DEPLOY" = "skipped" ]; then
-            ERP_STATUS="⏭️ SKIPPED"
-          else
-            ERP_STATUS="❌ FAILED (não afeta Alice)"
-          fi
           
           # BACKUP
           BAK_DEPLOY="${{ needs.deploy-backup.result || 'skipped' }}"
