@@ -74,6 +74,7 @@ import {
   TRAINING_EMBEDDING_DEDUPE_QUEUE,
   TRAINING_DATA_POLICY_GATE_QUEUE,
   TRAINING_NAMESPACE_PROFILE_RECONCILE_QUEUE,
+  TRAINING_FINE_TUNING_QUEUE,
   trainingEmbeddingDedupeQueuePayloadSchema,
   trainingNamespaceProfileReconcileQueuePayloadSchema,
   Gauge as PromGauge,
@@ -136,6 +137,7 @@ import { TRAINING_DATA_SIMILARITY_THRESHOLD, TRAINING_EMBEDDING_DEDUPE_WORKER_PO
 import { createTrainingEmbeddingDedupeWorker } from './workers/training-embedding-dedupe-worker.js';
 import { createNamespaceProfileReconcileWorker } from './workers/namespace-profile-reconcile-worker.js';
 import { createTrainingDataPolicyGateWorker } from './workers/training-data-policy-gate-worker.js';
+import { createTrainingFineTuningWorker } from './workers/training-fine-tuning-worker.js';
 // Fine-tuning é executado localmente via GPU Manager Service (Regra 6 - sem stubs/migração)
 
 // Logger centralizado: JSON em produção, pino-pretty em desenvolvimento
@@ -404,7 +406,18 @@ const trainingPipelineMetrics = {
     buckets: [0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30],
     registers: [metrics.registry],
   }),
-  privacyRedactionsTotal: new PromCounter({
+  fineTuningQueueJobsTotal: new PromCounter({
+    name: 'alice_training_fine_tuning_queue_jobs_total',
+    help: 'Total de jobs de fine-tuning processados pela fila redis',
+    labelNames: ['result'] as const,
+    registers: [metrics.registry],
+  }),
+  fineTuningQueueDurationSeconds: new PromHistogram({
+    name: 'alice_training_fine_tuning_queue_duration_seconds',
+    help: 'Duracao de processamento dos jobs de fine-tuning na fila redis',
+    buckets: [0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30],
+    registers: [metrics.registry],
+  }),  privacyRedactionsTotal: new PromCounter({
     name: 'alice_training_privacy_redactions_total',
     help: 'Total de redações aplicadas por política de privacidade no treinamento',
     registers: [metrics.registry],
@@ -547,6 +560,11 @@ const TRAINING_POLICY_GATE_WORKER_POLL_INTERVAL_MS = parseEnvInt(
   process.env.TRAINING_POLICY_GATE_WORKER_POLL_INTERVAL_MS,
   5_000,
   'TRAINING_POLICY_GATE_WORKER_POLL_INTERVAL_MS'
+);
+const TRAINING_FINE_TUNING_WORKER_POLL_INTERVAL_MS = parseEnvInt(
+  process.env.TRAINING_FINE_TUNING_WORKER_POLL_INTERVAL_MS,
+  5_000,
+  'TRAINING_FINE_TUNING_WORKER_POLL_INTERVAL_MS'
 );
 const TRADING_WORKER_POLL_INTERVAL_MS = 250;
 
@@ -4959,6 +4977,24 @@ let autoLearningLoopActive = false;
     await initializeSessionAuthCache();
     logger.info('Auth cache (session-auth) inicializado');
     tradingWorkerStoppers.push(
+      createTrainingFineTuningWorker({
+        db,
+        logger,
+        metrics: {
+          jobsTotal: trainingPipelineMetrics.fineTuningQueueJobsTotal,
+          durationSeconds: trainingPipelineMetrics.fineTuningQueueDurationSeconds,
+        },
+        pollIntervalMs: TRAINING_FINE_TUNING_WORKER_POLL_INTERVAL_MS,
+      })
+    );
+    logger.info(
+      {
+        queue: TRAINING_FINE_TUNING_QUEUE,
+        pollIntervalMs: TRAINING_FINE_TUNING_WORKER_POLL_INTERVAL_MS,
+      },
+      'Worker de fila fine-tuning inicializado'
+    );
+    tradingWorkerStoppers.push(
       createNamespaceProfileReconcileWorker({
         db,
         logger,
@@ -5230,3 +5266,4 @@ let autoLearningLoopActive = false;
     process.exit(1);
   }
 })();
+

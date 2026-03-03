@@ -4,6 +4,7 @@ import { z } from 'zod';
 export const TRAINING_EMBEDDING_DEDUPE_QUEUE = 'alice:training:embedding-dedupe';
 export const TRAINING_NAMESPACE_PROFILE_RECONCILE_QUEUE = 'alice:training:namespace-profile-reconcile';
 export const TRAINING_DATA_POLICY_GATE_QUEUE = 'alice:training:data-policy-gate';
+export const TRAINING_FINE_TUNING_QUEUE = 'alice:training:fine-tuning';
 
 export const trainingEmbeddingDedupeQueuePayloadSchema = z.object({
   trainingDataId: z.string().uuid(),
@@ -39,6 +40,17 @@ export const trainingDataPolicyGateQueuePayloadSchema = z.object({
 
 export type TrainingDataPolicyGateQueuePayload = z.infer<typeof trainingDataPolicyGateQueuePayloadSchema>;
 
+export const trainingFineTuningQueuePayloadSchema = z.object({
+  runId: z.string().uuid(),
+  fineTuningJobId: z.string().uuid(),
+  tenantId: z.string().uuid(),
+  requestedBy: z.string().uuid().optional(),
+  idempotencyKey: z.string().regex(/^[a-f0-9]{64}$/),
+  createdAt: z.string().datetime(),
+}).strict();
+
+export type TrainingFineTuningQueuePayload = z.infer<typeof trainingFineTuningQueuePayloadSchema>;
+
 export function buildTrainingIdempotencyKey(params: {
   tenantId: string;
   sourceType: string;
@@ -71,5 +83,12 @@ export function buildTrainingPolicyGateIdempotencyKey(params: {
     params.trainingDataId.trim(),
     params.semhash.trim(),
   ].join(':');
+  return crypto.createHash('sha256').update(input).digest('hex');
+}
+
+export function buildTrainingFineTuningIdempotencyKey(params: {
+  fineTuningJobId: string;
+}): string {
+  const input = [params.fineTuningJobId.trim()].join(':');
   return crypto.createHash('sha256').update(input).digest('hex');
 }
