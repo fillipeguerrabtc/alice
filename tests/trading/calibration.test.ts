@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { applyPlatt, calibratePlatt } from '../../apps/training-service/src/trading-v2/validation/calibration';
+import { applyPlatt, calibratePlatt } from '../../apps/training-service/src/trading/validation/calibration';
 
 describe('calibration', () => {
   it('builds platt model and applies calibrated probability', () => {

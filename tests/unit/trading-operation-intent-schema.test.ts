@@ -26,7 +26,7 @@ describe('trading operation intent schema', () => {
     ]);
   });
 
-  it('adds operation intent columns to trading v2 tables', () => {
+  it('adds operation intent columns to trading tables', () => {
     expect(tradingStrategyRegistry.operationIntent).toBeDefined();
     expect(tradingUniverseCandidates.operationIntent).toBeDefined();
     expect(tradingBacktestRuns.operationIntent).toBeDefined();

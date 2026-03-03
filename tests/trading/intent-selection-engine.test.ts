@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { selectAutoIntentCandidate } from '../../apps/integrations-service/src/trading-v2/engines/intent-selection-engine';
+import { selectAutoIntentCandidate } from '../../apps/integrations-service/src/trading/engines/intent-selection-engine';
 
 describe('intent selection engine', () => {
   it('selects best candidate by edge/confidence under allowed intents', () => {

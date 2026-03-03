@@ -3,7 +3,7 @@ import {
   evaluateCashAndCarry,
   evaluateCrossExchangeArbitrage,
   evaluateTriangularArbitrage,
-} from '../../apps/integrations-service/src/trading-v2/engines/arbitrage-engine';
+} from '../../apps/integrations-service/src/trading/engines/arbitrage-engine';
 
 describe('arbitrage engine', () => {
   it('evaluates deterministic triangular arbitrage with costs', () => {

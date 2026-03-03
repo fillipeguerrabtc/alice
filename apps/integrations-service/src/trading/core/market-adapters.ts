@@ -3,7 +3,7 @@ import { createLogger } from '@alice/logger';
 import * as kucoinClient from '../../kucoinClient.js';
 import type { InstrumentConstraint, TradingMarketType, TradingMarginMode } from './types.js';
 
-const logger = createLogger('trading-v2-market-adapters');
+const logger = createLogger('trading-market-adapters');
 
 export interface ExchangeFees {
   makerFeeBps: number;

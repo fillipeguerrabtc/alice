@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { runDeterministicBacktest } from '../../apps/training-service/src/trading-v2/validation/backtest';
+import { runDeterministicBacktest } from '../../apps/training-service/src/trading/validation/backtest';
 
 describe('backtest execution realism', () => {
   it('reduces pnl under low liquidity and high depth pressure', () => {

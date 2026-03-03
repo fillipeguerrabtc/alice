@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeDeflatedSharpe, computeDsrProbability, computePboFromRanks } from '../../apps/training-service/src/trading-v2/validation/multiple-testing';
+import { computeDeflatedSharpe, computeDsrProbability, computePboFromRanks } from '../../apps/training-service/src/trading/validation/multiple-testing';
 
 describe('multiple-testing metrics', () => {
   it('computes DSR and probability', () => {

@@ -5,7 +5,7 @@ import {
   computeMicrostructureFeatures,
   computeOrderBookImbalance,
   computeSpreadBps,
-} from '../../apps/integrations-service/src/trading-v2/engines/microstructure-engine';
+} from '../../apps/integrations-service/src/trading/engines/microstructure-engine';
 
 describe('microstructure engine', () => {
   const orderBook = {

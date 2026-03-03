@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildAllocations } from '../../apps/integrations-service/src/trading-v2/engines/allocation-engine';
+import { buildAllocations } from '../../apps/integrations-service/src/trading/engines/allocation-engine';
 
 describe('allocation engine', () => {
   it('returns no-trade when drawdown exceeds limit', () => {

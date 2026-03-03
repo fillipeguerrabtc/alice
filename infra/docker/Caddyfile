@@ -298,24 +298,24 @@ yesyoudeserve.duckdns.org, *.yesyoudeserve.duckdns.org {
 		}
 
 		# =========================================================================
-		# Trading V2 API (portfólios, candidatos, rebalanceamentos)
+		# Trading API (portfólios, candidatos, rebalanceamentos)
 		# CORREÇÃO 22/02/2026: Rota faltante causava 403 nas páginas Trading e
 		# Trading Demo — requisições caíam no fallback alice-frontend que bloqueia
 		# /api/* com 403. Upstream correto: alice-integrations:3005.
 		# =========================================================================
-		handle /api/trading-v2/* {
+		handle /api/trading/* {
 			reverse_proxy alice-integrations:3005 {
 				import proxy_headers
 			}
 		}
 
 		# =========================================================================
-		# Trading V2 Internal Enqueue (acionado pelo frontend via apiRequest)
+		# Trading Internal Enqueue (acionado pelo frontend via apiRequest)
 		# CORREÇÃO 22/02/2026: Rota faltante causava 403 para POSTs de enqueue.
-		# Integrations-service expõe /internal/trading-v2/enqueue/* com
+		# Integrations-service expõe /internal/trading/enqueue/* com
 		# requirePermission (auth de sessão do usuário).
 		# =========================================================================
-		handle /internal/trading-v2/* {
+		handle /internal/trading/* {
 			reverse_proxy alice-integrations:3005 {
 				import proxy_headers
 			}

@@ -1,21 +1,21 @@
 import { z } from 'zod';
 
-const TRADING_V2_IDEMPOTENCY_MIN_LENGTH = 8;
+const TRADING_IDEMPOTENCY_MIN_LENGTH = 8;
 
-export const TRADING_V2_STREAMS = {
-  universeScan: 'alice:trading:v2:universe-scan',
-  backtest: 'alice:trading:v2:backtest',
-  calibration: 'alice:trading:v2:calibration',
-  portfolioRebalance: 'alice:trading:v2:portfolio-rebalance',
-  modelRisk: 'alice:trading:v2:model-risk',
-  portfolioAutoRun: 'alice:trading:v2:portfolio-auto-run',
-  signalAutoRun: 'alice:trading:v2:signal-auto-run',
+export const TRADING_STREAMS = {
+  universeScan: 'alice:trading:universe-scan',
+  backtest: 'alice:trading:backtest',
+  calibration: 'alice:trading:calibration',
+  portfolioRebalance: 'alice:trading:portfolio-rebalance',
+  modelRisk: 'alice:trading:model-risk',
+  portfolioAutoRun: 'alice:trading:portfolio-auto-run',
+  signalAutoRun: 'alice:trading:signal-auto-run',
 } as const;
 
-export type TradingV2StreamName = (typeof TRADING_V2_STREAMS)[keyof typeof TRADING_V2_STREAMS];
+export type TradingStreamName = (typeof TRADING_STREAMS)[keyof typeof TRADING_STREAMS];
 
-const tradingV2JobBaseSchema = z.object({
-  idempotencyKey: z.string().min(TRADING_V2_IDEMPOTENCY_MIN_LENGTH),
+const tradingJobBaseSchema = z.object({
+  idempotencyKey: z.string().min(TRADING_IDEMPOTENCY_MIN_LENGTH),
   tenantId: z.string().uuid(),
   requestedBy: z.string().uuid(),
 });
@@ -34,7 +34,7 @@ const operationIntentSchema = z.enum([
 
 const allOperationIntents = operationIntentSchema.options;
 
-export const tradingUniverseEnqueueSchema = tradingV2JobBaseSchema.extend({
+export const tradingUniverseEnqueueSchema = tradingJobBaseSchema.extend({
   instrumentId: z.string().uuid(),
   marketType: z.enum(['spot', 'futures', 'margin']),
   timeframe: z.string().min(2).max(10),
@@ -44,7 +44,7 @@ export const tradingUniverseEnqueueSchema = tradingV2JobBaseSchema.extend({
   candleTimestamp: z.string().datetime(),
 }).strict();
 
-export const tradingBacktestEnqueueSchema = tradingV2JobBaseSchema.extend({
+export const tradingBacktestEnqueueSchema = tradingJobBaseSchema.extend({
   namespaceId: z.string().uuid().optional(),
   instrumentId: z.string().uuid(),
   marketType: z.enum(['spot', 'futures', 'margin']),
@@ -56,7 +56,7 @@ export const tradingBacktestEnqueueSchema = tradingV2JobBaseSchema.extend({
   asofTimestamp: z.string().datetime(),
 }).strict();
 
-export const tradingCalibrationEnqueueSchema = tradingV2JobBaseSchema.extend({
+export const tradingCalibrationEnqueueSchema = tradingJobBaseSchema.extend({
   namespaceId: z.string().uuid().optional(),
   instrumentId: z.string().uuid(),
   marketType: z.enum(['spot', 'futures', 'margin']),
@@ -68,14 +68,14 @@ export const tradingCalibrationEnqueueSchema = tradingV2JobBaseSchema.extend({
   asofTimestamp: z.string().datetime(),
 }).strict();
 
-export const tradingRebalanceEnqueueSchema = tradingV2JobBaseSchema.extend({
+export const tradingRebalanceEnqueueSchema = tradingJobBaseSchema.extend({
   portfolioId: z.string().uuid(),
   asofTimestamp: z.string().datetime(),
   policyVersion: z.number().int().positive(),
   allowedOperationIntents: z.array(operationIntentSchema).min(1).optional().default(allOperationIntents),
 }).strict();
 
-export const tradingModelRiskEnqueueSchema = tradingV2JobBaseSchema.extend({
+export const tradingModelRiskEnqueueSchema = tradingJobBaseSchema.extend({
   scope: z.enum(['strategy', 'portfolio', 'instrument']),
   scopeKey: z.string().min(2).max(128),
   criticalEvents: z.number().int().min(0),
@@ -83,9 +83,9 @@ export const tradingModelRiskEnqueueSchema = tradingV2JobBaseSchema.extend({
   maxDrawdown: z.number().min(0),
 }).strict();
 
-export function buildTradingV2IdempotencyKey(stream: TradingV2StreamName, payload: Record<string, unknown>): string {
+export function buildTradingIdempotencyKey(stream: TradingStreamName, payload: Record<string, unknown>): string {
   const tenantId = String(payload.tenantId ?? 'unknown');
-  if (stream === TRADING_V2_STREAMS.universeScan) {
+  if (stream === TRADING_STREAMS.universeScan) {
     return [
       tenantId,
       String(payload.instrumentId ?? 'unknown'),
@@ -95,7 +95,7 @@ export function buildTradingV2IdempotencyKey(stream: TradingV2StreamName, payloa
       String(payload.operationIntent ?? 'unknown'),
     ].join(':');
   }
-  if (stream === TRADING_V2_STREAMS.backtest) {
+  if (stream === TRADING_STREAMS.backtest) {
     return [
       tenantId,
       String(payload.namespaceId ?? 'no-namespace'),
@@ -109,7 +109,7 @@ export function buildTradingV2IdempotencyKey(stream: TradingV2StreamName, payloa
       String(payload.operationIntent ?? 'unknown'),
     ].join(':');
   }
-  if (stream === TRADING_V2_STREAMS.calibration) {
+  if (stream === TRADING_STREAMS.calibration) {
     return [
       tenantId,
       String(payload.namespaceId ?? 'no-namespace'),
@@ -123,7 +123,7 @@ export function buildTradingV2IdempotencyKey(stream: TradingV2StreamName, payloa
       String(payload.operationIntent ?? 'unknown'),
     ].join(':');
   }
-  if (stream === TRADING_V2_STREAMS.portfolioRebalance) {
+  if (stream === TRADING_STREAMS.portfolioRebalance) {
     return [
       tenantId,
       String(payload.portfolioId ?? 'unknown'),
@@ -132,7 +132,7 @@ export function buildTradingV2IdempotencyKey(stream: TradingV2StreamName, payloa
       String((payload.allowedOperationIntents as string[] | undefined)?.join(',') ?? 'unknown'),
     ].join(':');
   }
-  if (stream === TRADING_V2_STREAMS.portfolioAutoRun) {
+  if (stream === TRADING_STREAMS.portfolioAutoRun) {
     return [
       tenantId,
       'portfolio-auto',
@@ -140,7 +140,7 @@ export function buildTradingV2IdempotencyKey(stream: TradingV2StreamName, payloa
       String(payload.correlationId ?? 'unknown'),
     ].join(':');
   }
-  if (stream === TRADING_V2_STREAMS.signalAutoRun) {
+  if (stream === TRADING_STREAMS.signalAutoRun) {
     return [
       tenantId,
       'signal-auto',

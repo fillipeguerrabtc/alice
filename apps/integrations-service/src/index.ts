@@ -121,19 +121,19 @@ import { extractValuesFromLLMResponse, validateAndPersist } from './llm-validati
 import type { ExtractedLLMValues } from './llm-validation.js';
 import { jsonrepair } from 'jsonrepair';
 import { callGatewayComplete, isGatewayConfigured, type GatewayCompleteResult } from '@alice/shared-utils';
-import { listTenantPortfolios } from './trading-v2/core/portfolio-api.js';
-import { getConnectedExchangesCount } from './trading-v2/core/market-adapters.js';
-import { buildDecisionPacket } from './trading-v2/core/decision-packet.js';
-import { estimateCosts } from './trading-v2/engines/cost-model.js';
-import { selectAutoIntentCandidate } from './trading-v2/engines/intent-selection-engine.js';
-import type { GuardrailThresholdBucket } from './trading-v2/engines/intent-selection-engine.js';
-import type { TradingOperationIntent } from './trading-v2/core/types.js';
-import { buildCompactPrompt } from './trading-v2/llm/compact-prompt.js';
-import { enforceLlmGuardrails } from './trading-v2/llm/llm-guardrails.js';
-import { saveDecisionSnapshot } from './trading-v2/storage/snapshot-store.js';
+import { listTenantPortfolios } from './trading/core/portfolio-api.js';
+import { getConnectedExchangesCount } from './trading/core/market-adapters.js';
+import { buildDecisionPacket } from './trading/core/decision-packet.js';
+import { estimateCosts } from './trading/engines/cost-model.js';
+import { selectAutoIntentCandidate } from './trading/engines/intent-selection-engine.js';
+import type { GuardrailThresholdBucket } from './trading/engines/intent-selection-engine.js';
+import type { TradingOperationIntent } from './trading/core/types.js';
+import { buildCompactPrompt } from './trading/llm/compact-prompt.js';
+import { enforceLlmGuardrails } from './trading/llm/llm-guardrails.js';
+import { saveDecisionSnapshot } from './trading/storage/snapshot-store.js';
 import {
-  TRADING_V2_STREAMS,
-  buildTradingV2IdempotencyKey,
+  TRADING_STREAMS,
+  buildTradingIdempotencyKey,
   tradingBacktestEnqueueSchema,
   tradingCalibrationEnqueueSchema,
   tradingModelRiskEnqueueSchema,
@@ -13209,10 +13209,10 @@ function parseHistoryDateParam(value?: string): Date | null {
   return parsed;
 }
 
-async function enqueueTradingV2Job(params: {
+async function enqueueTradingJob(params: {
   tenantId: string;
   userId: string;
-  path: '/internal/trading-v2/enqueue/universe-scan' | '/internal/trading-v2/enqueue/backtest' | '/internal/trading-v2/enqueue/calibration' | '/internal/trading-v2/enqueue/portfolio-rebalance' | '/internal/trading-v2/enqueue/model-risk';
+  path: '/internal/trading/enqueue/universe-scan' | '/internal/trading/enqueue/backtest' | '/internal/trading/enqueue/calibration' | '/internal/trading/enqueue/portfolio-rebalance' | '/internal/trading/enqueue/model-risk';
   payload: Record<string, unknown>;
 }): Promise<{ queued: boolean; queue: string; idempotencyKey: string }> {
   const internalHeaders = generateInternalAuthHeaders({
@@ -13230,13 +13230,13 @@ async function enqueueTradingV2Job(params: {
   });
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Falha ao enfileirar job Trading V2: ${response.status} ${errorText}`);
+    throw new Error(`Falha ao enfileirar job Trading: ${response.status} ${errorText}`);
   }
   const result = await response.json() as { queued: boolean; queue: string; idempotencyKey: string };
   return result;
 }
 
-app.get('/api/trading-v2/portfolios', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+app.get('/api/trading/portfolios', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
   try {
     const authContext = extractAuthContext(req);
     if (!authContext?.tenantId || !authContext?.userId) {
@@ -13247,12 +13247,12 @@ app.get('/api/trading-v2/portfolios', requirePermission('integrations:trading:re
     res.json({ success: true, data: portfolios });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
-    logger.error({ error: errorMessage }, 'Erro ao listar portfolios trading-v2');
+    logger.error({ error: errorMessage }, 'Erro ao listar portfolios trading');
     res.status(500).json({ error: errorMessage });
   }
 });
 
-app.get('/api/trading-v2/candidates', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+app.get('/api/trading/candidates', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
   try {
     const authContext = extractAuthContext(req);
     if (!authContext?.tenantId || !authContext?.userId) {
@@ -13280,12 +13280,12 @@ app.get('/api/trading-v2/candidates', requirePermission('integrations:trading:re
     res.json({ success: true, data: candidates });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
-    logger.error({ error: errorMessage }, 'Erro ao listar candidates trading-v2');
+    logger.error({ error: errorMessage }, 'Erro ao listar candidates trading');
     res.status(500).json({ error: errorMessage });
   }
 });
 
-app.get('/api/trading-v2/rebalances', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+app.get('/api/trading/rebalances', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
   try {
     const authContext = extractAuthContext(req);
     if (!authContext?.tenantId || !authContext?.userId) {
@@ -13318,98 +13318,98 @@ app.get('/api/trading-v2/rebalances', requirePermission('integrations:trading:re
     res.json({ success: true, data: { rebalances, executionReports } });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
-    logger.error({ error: errorMessage }, 'Erro ao listar rebalances trading-v2');
+    logger.error({ error: errorMessage }, 'Erro ao listar rebalances trading');
     res.status(500).json({ error: errorMessage });
   }
 });
 
-app.post('/internal/trading-v2/enqueue/universe-scan', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+app.post('/internal/trading/enqueue/universe-scan', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
   const authContext = extractAuthContext(req);
   if (!authContext?.tenantId || !authContext?.userId) {
     res.status(401).json({ error: 'Autenticação necessária' });
     return;
   }
   const parsed = tradingUniverseEnqueueSchema.parse(req.body);
-  const idempotencyKey = buildTradingV2IdempotencyKey(TRADING_V2_STREAMS.universeScan, parsed);
-  const result = await enqueueTradingV2Job({
+  const idempotencyKey = buildTradingIdempotencyKey(TRADING_STREAMS.universeScan, parsed);
+  const result = await enqueueTradingJob({
     tenantId: authContext.tenantId,
     userId: authContext.userId,
-    path: '/internal/trading-v2/enqueue/universe-scan',
+    path: '/internal/trading/enqueue/universe-scan',
     payload: { ...parsed, idempotencyKey },
   });
   res.status(202).json({ success: true, data: result });
 });
 
-app.post('/internal/trading-v2/enqueue/backtest', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+app.post('/internal/trading/enqueue/backtest', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
   const authContext = extractAuthContext(req);
   if (!authContext?.tenantId || !authContext?.userId) {
     res.status(401).json({ error: 'Autenticação necessária' });
     return;
   }
   const parsed = tradingBacktestEnqueueSchema.parse(req.body);
-  const idempotencyKey = buildTradingV2IdempotencyKey(TRADING_V2_STREAMS.backtest, parsed);
-  const result = await enqueueTradingV2Job({
+  const idempotencyKey = buildTradingIdempotencyKey(TRADING_STREAMS.backtest, parsed);
+  const result = await enqueueTradingJob({
     tenantId: authContext.tenantId,
     userId: authContext.userId,
-    path: '/internal/trading-v2/enqueue/backtest',
+    path: '/internal/trading/enqueue/backtest',
     payload: { ...parsed, idempotencyKey },
   });
   res.status(202).json({ success: true, data: result });
 });
 
-app.post('/internal/trading-v2/enqueue/calibration', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+app.post('/internal/trading/enqueue/calibration', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
   const authContext = extractAuthContext(req);
   if (!authContext?.tenantId || !authContext?.userId) {
     res.status(401).json({ error: 'Autenticação necessária' });
     return;
   }
   const parsed = tradingCalibrationEnqueueSchema.parse(req.body);
-  const idempotencyKey = buildTradingV2IdempotencyKey(TRADING_V2_STREAMS.calibration, parsed);
-  const result = await enqueueTradingV2Job({
+  const idempotencyKey = buildTradingIdempotencyKey(TRADING_STREAMS.calibration, parsed);
+  const result = await enqueueTradingJob({
     tenantId: authContext.tenantId,
     userId: authContext.userId,
-    path: '/internal/trading-v2/enqueue/calibration',
+    path: '/internal/trading/enqueue/calibration',
     payload: { ...parsed, idempotencyKey },
   });
   res.status(202).json({ success: true, data: result });
 });
 
-app.post('/internal/trading-v2/enqueue/portfolio-rebalance', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+app.post('/internal/trading/enqueue/portfolio-rebalance', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
   const authContext = extractAuthContext(req);
   if (!authContext?.tenantId || !authContext?.userId) {
     res.status(401).json({ error: 'Autenticação necessária' });
     return;
   }
   const parsed = tradingRebalanceEnqueueSchema.parse(req.body);
-  const idempotencyKey = buildTradingV2IdempotencyKey(TRADING_V2_STREAMS.portfolioRebalance, parsed);
-  const result = await enqueueTradingV2Job({
+  const idempotencyKey = buildTradingIdempotencyKey(TRADING_STREAMS.portfolioRebalance, parsed);
+  const result = await enqueueTradingJob({
     tenantId: authContext.tenantId,
     userId: authContext.userId,
-    path: '/internal/trading-v2/enqueue/portfolio-rebalance',
+    path: '/internal/trading/enqueue/portfolio-rebalance',
     payload: { ...parsed, idempotencyKey },
   });
   res.status(202).json({ success: true, data: result });
 });
 
-app.post('/internal/trading-v2/enqueue/model-risk', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+app.post('/internal/trading/enqueue/model-risk', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
   const authContext = extractAuthContext(req);
   if (!authContext?.tenantId || !authContext?.userId) {
     res.status(401).json({ error: 'Autenticação necessária' });
     return;
   }
   const parsed = tradingModelRiskEnqueueSchema.parse(req.body);
-  const idempotencyKey = buildTradingV2IdempotencyKey(TRADING_V2_STREAMS.modelRisk, parsed);
-  const result = await enqueueTradingV2Job({
+  const idempotencyKey = buildTradingIdempotencyKey(TRADING_STREAMS.modelRisk, parsed);
+  const result = await enqueueTradingJob({
     tenantId: authContext.tenantId,
     userId: authContext.userId,
-    path: '/internal/trading-v2/enqueue/model-risk',
+    path: '/internal/trading/enqueue/model-risk',
     payload: { ...parsed, idempotencyKey },
   });
   res.status(202).json({ success: true, data: result });
 });
 
 // ============================================================================
-// TRADING V2 AUTO ENGINE - Execuções automáticas de portfólio e sinais IA
+// TRADING AUTO ENGINE - Execuções automáticas de portfólio e sinais IA
 // ============================================================================
 
 const tradingAutoPortfolioRunSchema = z.object({
@@ -13451,8 +13451,8 @@ const tradingAutoRunsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).optional(),
 });
 
-/** GET /api/trading-v2/auto/assets - Catálogo universal de ativos para Signal Auto */
-app.get('/api/trading-v2/auto/assets', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+/** GET /api/trading/auto/assets - Catálogo universal de ativos para Signal Auto */
+app.get('/api/trading/auto/assets', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
   try {
     const authContext = extractAuthContext(req);
     if (!authContext?.tenantId || !authContext?.userId) {
@@ -13529,8 +13529,8 @@ app.get('/api/trading-v2/auto/assets', requirePermission('integrations:trading:r
   }
 });
 
-/** POST /api/trading-v2/auto/portfolio/run - Inicia pipeline automático de portfólio */
-app.post('/api/trading-v2/auto/portfolio/run', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+/** POST /api/trading/auto/portfolio/run - Inicia pipeline automático de portfólio */
+app.post('/api/trading/auto/portfolio/run', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
   let correlationId: string | null = null;
   try {
     const authContext = extractAuthContext(req);
@@ -13574,7 +13574,7 @@ app.post('/api/trading-v2/auto/portfolio/run', requirePermission('integrations:t
       tenantId: authContext.tenantId,
       role: 'operator',
     });
-    const enqueueResponse = await fetch(`${TRAINING_SERVICE_URL_FINAL}/internal/trading-v2/auto/portfolio-run`, {
+    const enqueueResponse = await fetch(`${TRAINING_SERVICE_URL_FINAL}/internal/trading/auto/portfolio-run`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...internalHeaders },
       body: JSON.stringify({ runId: run.id, ...parsed.data, correlationId }),
@@ -13598,8 +13598,8 @@ app.post('/api/trading-v2/auto/portfolio/run', requirePermission('integrations:t
   }
 });
 
-/** POST /api/trading-v2/auto/signal/run - Inicia geração automática de sinais */
-app.post('/api/trading-v2/auto/signal/run', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+/** POST /api/trading/auto/signal/run - Inicia geração automática de sinais */
+app.post('/api/trading/auto/signal/run', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
   let correlationId: string | null = null;
   try {
     const authContext = extractAuthContext(req);
@@ -13646,7 +13646,7 @@ app.post('/api/trading-v2/auto/signal/run', requirePermission('integrations:trad
       tenantId: authContext.tenantId,
       role: 'operator',
     });
-    const enqueueResponse = await fetch(`${TRAINING_SERVICE_URL_FINAL}/internal/trading-v2/auto/signal-run`, {
+    const enqueueResponse = await fetch(`${TRAINING_SERVICE_URL_FINAL}/internal/trading/auto/signal-run`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...internalHeaders },
       body: JSON.stringify({ runId: run.id, ...normalizedPayload, correlationId }),
@@ -13670,8 +13670,8 @@ app.post('/api/trading-v2/auto/signal/run', requirePermission('integrations:trad
   }
 });
 
-/** GET /api/trading-v2/auto/runs - Lista runs automáticos por tenant */
-app.get('/api/trading-v2/auto/runs', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+/** GET /api/trading/auto/runs - Lista runs automáticos por tenant */
+app.get('/api/trading/auto/runs', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
   try {
     const authContext = extractAuthContext(req);
     if (!authContext?.tenantId || !authContext?.userId) {
@@ -13719,8 +13719,8 @@ app.get('/api/trading-v2/auto/runs', requirePermission('integrations:trading:rea
   }
 });
 
-/** GET /api/trading-v2/auto/runs/:id - Retorna run + steps + decisão final */
-app.get('/api/trading-v2/auto/runs/:id', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+/** GET /api/trading/auto/runs/:id - Retorna run + steps + decisão final */
+app.get('/api/trading/auto/runs/:id', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
   try {
     const authContext = extractAuthContext(req);
     if (!authContext?.tenantId || !authContext?.userId) {

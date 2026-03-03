@@ -658,7 +658,7 @@ export async function runUniverseScanWorker(payload: UniversePayload): Promise<{
     crossExchangeAllowed,
   });
 
-  await db.insert(schema.tradingFactorSnapshotsV2).values({
+  await db.insert(schema.tradingFactorSnapshots).values({
     tenantId: payload.tenantId,
     instrumentId: payload.instrumentId,
     marketType: payload.marketType,

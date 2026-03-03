@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createPurgedSplits } from '../../apps/training-service/src/trading-v2/validation/purged-splits';
+import { createPurgedSplits } from '../../apps/training-service/src/trading/validation/purged-splits';
 
 describe('createPurgedSplits', () => {
   it('creates purged and embargoed windows', () => {

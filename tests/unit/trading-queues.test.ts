@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
-  TRADING_V2_STREAMS,
-  buildTradingV2IdempotencyKey,
+  TRADING_STREAMS,
+  buildTradingIdempotencyKey,
   tradingBacktestEnqueueSchema,
   tradingCalibrationEnqueueSchema,
   tradingUniverseEnqueueSchema,
   tradingRebalanceEnqueueSchema,
-} from '../../packages/shared-utils/src/trading-v2-queues';
+} from '../../packages/shared-utils/src/trading-queues';
 
-describe('trading-v2 queue schemas', () => {
+describe('trading queue schemas', () => {
   const base = {
     idempotencyKey: '12345678',
     tenantId: '11111111-1111-1111-1111-111111111111',
@@ -77,7 +77,7 @@ describe('trading-v2 queue schemas', () => {
   });
 });
 
-describe('buildTradingV2IdempotencyKey', () => {
+describe('buildTradingIdempotencyKey', () => {
   it('builds deterministic backtest key with scope/timeframe/asof/version', () => {
     const payload = {
       tenantId: '11111111-1111-1111-1111-111111111111',
@@ -92,8 +92,8 @@ describe('buildTradingV2IdempotencyKey', () => {
       asofTimestamp: '2026-02-22T00:00:00.000Z',
     };
 
-    const key1 = buildTradingV2IdempotencyKey(TRADING_V2_STREAMS.backtest, payload);
-    const key2 = buildTradingV2IdempotencyKey(TRADING_V2_STREAMS.backtest, payload);
+    const key1 = buildTradingIdempotencyKey(TRADING_STREAMS.backtest, payload);
+    const key2 = buildTradingIdempotencyKey(TRADING_STREAMS.backtest, payload);
     expect(key1).toBe(key2);
     expect(key1).toContain('futures');
     expect(key1).toContain('2026-02-22T00:00:00.000Z');

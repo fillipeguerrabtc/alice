@@ -124,17 +124,17 @@ import { useKucoinWebSocket } from '@/hooks/useKucoinWebSocket';
 import { apiRequest, ApiError, queryClient } from '@/lib/queryClient';
 import { frontendLogger } from '@/lib/logger';
 import {
-  enqueueTradingV2Job,
-  getTradingV2Candidates,
-  getTradingV2Portfolios,
-  getTradingV2Rebalances,
+  enqueueTradingJob,
+  getTradingCandidates,
+  getTradingPortfolios,
+  getTradingRebalances,
   startPortfolioAutoRun,
   startSignalAutoRun,
   getTradingAutoSignalAssetsCatalog,
   getTradingAutoRuns,
   getTradingAutoRunDetail,
-} from '@/services/api/tradingV2';
-import type { TradingAutoRun, TradingAutoRunDetail, TradingAutoSignalAsset } from '@/services/api/tradingV2';
+} from '@/services/api/trading';
+import type { TradingAutoRun, TradingAutoRunDetail, TradingAutoSignalAsset } from '@/services/api/trading';
 import { 
   CandleChart, 
   OrderBookViz, 
@@ -873,7 +873,7 @@ function TradingContent() {
   const sanitizedSymbol = selectedSymbol.trim();
   const [selectedInterval, setSelectedInterval] = useState('');
   const [selectedPortfolioAutoId, setSelectedPortfolioAutoId] = useState<string>('');
-  const [tradingV2JobStatus, setTradingV2JobStatus] = useState<string>('');
+  const [tradingJobStatus, setTradingJobStatus] = useState<string>('');
   const [activeAutoRunId, setActiveAutoRunId] = useState<string | null>(null);
   const [controlMode, setControlMode] = useState<TradingControlMode>('manual');
   // Controles do Signal Auto Run
@@ -1055,35 +1055,35 @@ function TradingContent() {
   });
 
   const {
-    data: tradingV2Portfolios = [],
-    refetch: refetchTradingV2Portfolios,
+    data: tradingPortfolios = [],
+    refetch: refetchTradingPortfolios,
   } = useQuery({
-    queryKey: ['/api/trading-v2/portfolios'],
-    queryFn: getTradingV2Portfolios,
+    queryKey: ['/api/trading/portfolios'],
+    queryFn: getTradingPortfolios,
     enabled: !!user?.id && csrfReady,
   });
 
   useEffect(() => {
-    if (!selectedPortfolioAutoId && tradingV2Portfolios.length > 0) {
-      setSelectedPortfolioAutoId(tradingV2Portfolios[0].id);
+    if (!selectedPortfolioAutoId && tradingPortfolios.length > 0) {
+      setSelectedPortfolioAutoId(tradingPortfolios[0].id);
     }
-  }, [selectedPortfolioAutoId, tradingV2Portfolios]);
+  }, [selectedPortfolioAutoId, tradingPortfolios]);
 
   const {
-    data: tradingV2Candidates = [],
-    refetch: refetchTradingV2Candidates,
+    data: tradingCandidates = [],
+    refetch: refetchTradingCandidates,
   } = useQuery({
-    queryKey: ['/api/trading-v2/candidates', selectedMarketType],
-    queryFn: async () => getTradingV2Candidates({ marketType: selectedMarketType, limit: 30 }),
+    queryKey: ['/api/trading/candidates', selectedMarketType],
+    queryFn: async () => getTradingCandidates({ marketType: selectedMarketType, limit: 30 }),
     enabled: !!user?.id && csrfReady,
   });
 
   const {
-    data: tradingV2RebalancesPayload = { rebalances: [], executionReports: [] },
-    refetch: refetchTradingV2Rebalances,
+    data: tradingRebalancesPayload = { rebalances: [], executionReports: [] },
+    refetch: refetchTradingRebalances,
   } = useQuery({
-    queryKey: ['/api/trading-v2/rebalances', selectedPortfolioAutoId],
-    queryFn: async () => getTradingV2Rebalances({ portfolioId: selectedPortfolioAutoId || undefined, limit: 20 }),
+    queryKey: ['/api/trading/rebalances', selectedPortfolioAutoId],
+    queryFn: async () => getTradingRebalances({ portfolioId: selectedPortfolioAutoId || undefined, limit: 20 }),
     enabled: !!user?.id && csrfReady,
   });
 
@@ -1091,7 +1091,7 @@ function TradingContent() {
   const {
     data: activeAutoRunDetail,
   } = useQuery<TradingAutoRunDetail>({
-    queryKey: ['/api/trading-v2/auto/runs', activeAutoRunId],
+    queryKey: ['/api/trading/auto/runs', activeAutoRunId],
     queryFn: async () => getTradingAutoRunDetail(activeAutoRunId!),
     enabled: !!activeAutoRunId && !!user?.id && csrfReady,
     refetchInterval: (query) => {
@@ -1105,26 +1105,26 @@ function TradingContent() {
     data: signalAutoRuns = [],
     refetch: refetchSignalAutoRuns,
   } = useQuery<TradingAutoRun[]>({
-    queryKey: ['/api/trading-v2/auto/runs', 'signal_auto'],
+    queryKey: ['/api/trading/auto/runs', 'signal_auto'],
     queryFn: async () => getTradingAutoRuns({ type: 'signal_auto', limit: 30 }),
     enabled: !!user?.id && csrfReady,
     refetchInterval: 5000,
   });
 
-  const enqueueTradingV2Mutation = useMutation({
+  const enqueueTradingMutation = useMutation({
     mutationFn: async (params: {
       job: 'universe-scan' | 'backtest' | 'calibration' | 'portfolio-rebalance' | 'model-risk';
       payload: Record<string, unknown>;
-    }) => enqueueTradingV2Job(params.job, params.payload),
+    }) => enqueueTradingJob(params.job, params.payload),
     onSuccess: (result, variables) => {
-      setTradingV2JobStatus(`${variables.job} enfileirado (${result.idempotencyKey})`);
-      refetchTradingV2Candidates();
-      refetchTradingV2Rebalances();
-      refetchTradingV2Portfolios();
+      setTradingJobStatus(`${variables.job} enfileirado (${result.idempotencyKey})`);
+      refetchTradingCandidates();
+      refetchTradingRebalances();
+      refetchTradingPortfolios();
     },
     onError: (error) => {
       const message = error instanceof Error ? error.message : t('common.error');
-      setTradingV2JobStatus(`Falha ao enfileirar job: ${message}`);
+      setTradingJobStatus(`Falha ao enfileirar job: ${message}`);
     },
   });
 
@@ -1231,18 +1231,18 @@ function TradingContent() {
   const selectedSignalSources = Object.entries(signalProfileForm.dataSources)
     .filter(([, enabled]) => enabled)
     .map(([key]) => key);
-  const tradingV2Rebalances = tradingV2RebalancesPayload.rebalances;
-  const tradingV2ExecutionReports = tradingV2RebalancesPayload.executionReports;
-  const topTradingV2Candidates = tradingV2Candidates
+  const tradingRebalances = tradingRebalancesPayload.rebalances;
+  const tradingExecutionReports = tradingRebalancesPayload.executionReports;
+  const topTradingCandidates = tradingCandidates
     .slice()
     .sort((a, b) => Number(b.expectedEdge ?? 0) - Number(a.expectedEdge ?? 0))
     .slice(0, 8);
 
-  const enqueueTradingV2 = useCallback((job: 'universe-scan' | 'backtest' | 'calibration' | 'portfolio-rebalance' | 'model-risk') => {
+  const enqueueTrading = useCallback((job: 'universe-scan' | 'backtest' | 'calibration' | 'portfolio-rebalance' | 'model-risk') => {
     if (!user?.id) return;
     const resolvedTenantId = typeof user.tenantId === 'string' ? user.tenantId : '';
     if (!resolvedTenantId) return;
-    const firstCandidate = topTradingV2Candidates[0];
+    const firstCandidate = topTradingCandidates[0];
     const basePayload = {
       tenantId: resolvedTenantId,
       requestedBy: user.id,
@@ -1251,7 +1251,7 @@ function TradingContent() {
 
     if (job === 'universe-scan') {
       if (!firstCandidate) return;
-      enqueueTradingV2Mutation.mutate({
+      enqueueTradingMutation.mutate({
         job,
         payload: {
           ...basePayload,
@@ -1267,7 +1267,7 @@ function TradingContent() {
     }
     if (job === 'backtest') {
       if (!firstCandidate) return;
-      enqueueTradingV2Mutation.mutate({
+      enqueueTradingMutation.mutate({
         job,
         payload: {
           ...basePayload,
@@ -1285,7 +1285,7 @@ function TradingContent() {
     }
     if (job === 'calibration') {
       if (!firstCandidate) return;
-      enqueueTradingV2Mutation.mutate({
+      enqueueTradingMutation.mutate({
         job,
         payload: {
           ...basePayload,
@@ -1303,7 +1303,7 @@ function TradingContent() {
     }
     if (job === 'portfolio-rebalance') {
       if (!selectedPortfolioAutoId) return;
-      enqueueTradingV2Mutation.mutate({
+      enqueueTradingMutation.mutate({
         job,
         payload: {
           ...basePayload,
@@ -1314,7 +1314,7 @@ function TradingContent() {
       });
       return;
     }
-    enqueueTradingV2Mutation.mutate({
+    enqueueTradingMutation.mutate({
       job,
       payload: {
         ...basePayload,
@@ -1326,29 +1326,29 @@ function TradingContent() {
       },
     });
   }, [
-    enqueueTradingV2Mutation,
+    enqueueTradingMutation,
     selectedMarketType,
     selectedPortfolioAutoId,
-    topTradingV2Candidates,
+    topTradingCandidates,
     user?.id,
     user?.tenantId,
   ]);
 
   const runPortfolioAutoPipeline = useCallback(() => {
     if (!selectedPortfolioAutoId) {
-      setTradingV2JobStatus('Selecione um portfólio antes de rodar o pipeline.');
+      setTradingJobStatus('Selecione um portfólio antes de rodar o pipeline.');
       return;
     }
-    setTradingV2JobStatus('Iniciando pipeline institucional...');
+    setTradingJobStatus('Iniciando pipeline institucional...');
     startPortfolioAutoRun({
       portfolioId: selectedPortfolioAutoId,
       marketType: selectedMarketType !== 'futures' ? selectedMarketType : undefined,
     }).then((result) => {
       setActiveAutoRunId(result.runId);
-      setTradingV2JobStatus(`Pipeline enfileirado (run: ${result.runId.slice(0, 8)}…). Acompanhe o status abaixo.`);
+      setTradingJobStatus(`Pipeline enfileirado (run: ${result.runId.slice(0, 8)}…). Acompanhe o status abaixo.`);
     }).catch((error: unknown) => {
       const msg = error instanceof Error ? error.message : 'Erro desconhecido';
-      setTradingV2JobStatus(`Falha ao iniciar pipeline: ${msg}`);
+      setTradingJobStatus(`Falha ao iniciar pipeline: ${msg}`);
     });
   }, [selectedPortfolioAutoId, selectedMarketType]);
 
@@ -1520,7 +1520,7 @@ function TradingContent() {
     isLoading: isLoadingAutoSignalAssets,
     error: autoSignalAssetsError,
   } = useQuery({
-    queryKey: ['/api/trading-v2/auto/assets'],
+    queryKey: ['/api/trading/auto/assets'],
     queryFn: getTradingAutoSignalAssetsCatalog,
     refetchInterval: SYMBOLS_REFETCH_INTERVAL,
     enabled: statusData?.data?.isConfigured && !statusData?.data?.requiresTenant,
@@ -4098,7 +4098,7 @@ function TradingContent() {
                       <SelectValue placeholder="Selecione o portfólio" />
                     </SelectTrigger>
                     <SelectContent>
-                      {tradingV2Portfolios.map((portfolio) => (
+                      {tradingPortfolios.map((portfolio) => (
                         <SelectItem key={portfolio.id} value={portfolio.id}>
                           {portfolio.name}
                         </SelectItem>
@@ -4113,16 +4113,16 @@ function TradingContent() {
                   </AlertDescription>
                 </Alert>
                 <div className="flex flex-wrap gap-2">
-                  <Button onClick={runPortfolioAutoPipeline} disabled={enqueueTradingV2Mutation.isPending}>Run Pipeline</Button>
-                  <Button variant="secondary" onClick={() => enqueueTradingV2('universe-scan')} disabled={enqueueTradingV2Mutation.isPending}>Enqueue Universe</Button>
-                  <Button variant="secondary" onClick={() => enqueueTradingV2('backtest')} disabled={enqueueTradingV2Mutation.isPending}>Enqueue Backtest</Button>
-                  <Button variant="secondary" onClick={() => enqueueTradingV2('calibration')} disabled={enqueueTradingV2Mutation.isPending}>Enqueue Calibration</Button>
-                  <Button variant="secondary" onClick={() => enqueueTradingV2('portfolio-rebalance')} disabled={enqueueTradingV2Mutation.isPending}>Enqueue Rebalance</Button>
-                  <Button variant="secondary" onClick={() => enqueueTradingV2('model-risk')} disabled={enqueueTradingV2Mutation.isPending}>Enqueue Model Risk</Button>
+                  <Button onClick={runPortfolioAutoPipeline} disabled={enqueueTradingMutation.isPending}>Run Pipeline</Button>
+                  <Button variant="secondary" onClick={() => enqueueTrading('universe-scan')} disabled={enqueueTradingMutation.isPending}>Enqueue Universe</Button>
+                  <Button variant="secondary" onClick={() => enqueueTrading('backtest')} disabled={enqueueTradingMutation.isPending}>Enqueue Backtest</Button>
+                  <Button variant="secondary" onClick={() => enqueueTrading('calibration')} disabled={enqueueTradingMutation.isPending}>Enqueue Calibration</Button>
+                  <Button variant="secondary" onClick={() => enqueueTrading('portfolio-rebalance')} disabled={enqueueTradingMutation.isPending}>Enqueue Rebalance</Button>
+                  <Button variant="secondary" onClick={() => enqueueTrading('model-risk')} disabled={enqueueTradingMutation.isPending}>Enqueue Model Risk</Button>
                   <Button variant="outline" onClick={() => setActiveTab('lab')}>Abrir Lab assíncrono</Button>
                 </div>
-                {tradingV2JobStatus && (
-                  <div className="text-xs text-muted-foreground">{tradingV2JobStatus}</div>
+                {tradingJobStatus && (
+                  <div className="text-xs text-muted-foreground">{tradingJobStatus}</div>
                 )}
                 {/* Status do Auto Run ativo */}
                 {activeAutoRunDetail && activeAutoRunDetail.run.runType === 'portfolio_auto' && (
@@ -4204,9 +4204,9 @@ function TradingContent() {
                       <CardTitle className="text-base">Top Candidates</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-2 text-sm">
-                      {topTradingV2Candidates.length === 0 ? (
+                      {topTradingCandidates.length === 0 ? (
                         <div className="text-muted-foreground">Nenhum candidate encontrado.</div>
-                      ) : topTradingV2Candidates.map((candidate) => (
+                      ) : topTradingCandidates.map((candidate) => (
                         <div key={candidate.id} className="border rounded p-2">
                           <div className="font-medium">{candidate.strategyKey} · {candidate.timeframe}</div>
                           <div>Edge líquido: {formatNumber(Number(candidate.expectedEdge ?? 0), locale)}</div>
@@ -4221,13 +4221,13 @@ function TradingContent() {
                       <CardTitle className="text-base">Rebalances e Execution Reports</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-2 text-sm">
-                      {tradingV2Rebalances.slice(0, 4).map((rebalance) => (
+                      {tradingRebalances.slice(0, 4).map((rebalance) => (
                         <div key={rebalance.id} className="border rounded p-2">
                           <div className="font-medium">{rebalance.status}</div>
                           <div>Asof: {formatDateTime(rebalance.asofTimestamp, { locale, timeZone })}</div>
                         </div>
                       ))}
-                      {tradingV2ExecutionReports.slice(0, 4).map((report) => (
+                      {tradingExecutionReports.slice(0, 4).map((report) => (
                         <div key={report.id} className="border rounded p-2">
                           <div className="font-medium">{report.marketType.toUpperCase()}</div>
                           <div>Instrumento: {report.instrumentId}</div>
@@ -4325,7 +4325,7 @@ function TradingContent() {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  {topTradingV2Candidates.slice(0, 5).map((candidate) => (
+                  {topTradingCandidates.slice(0, 5).map((candidate) => (
                     <div key={candidate.id} className="border rounded p-2 text-sm">
                       <div className="font-medium">{candidate.strategyKey} · {candidate.timeframe}</div>
                       <div>Side: {candidate.side}</div>
@@ -4484,11 +4484,11 @@ function TradingContent() {
                   </AlertDescription>
                 </Alert>
                 <div className="flex flex-wrap gap-2">
-                  <Button variant="outline" onClick={() => enqueueTradingV2('universe-scan')} disabled={enqueueTradingV2Mutation.isPending}>Queue Universe Scan</Button>
-                  <Button variant="outline" onClick={() => enqueueTradingV2('backtest')} disabled={enqueueTradingV2Mutation.isPending}>Queue Backtest</Button>
-                  <Button variant="outline" onClick={() => enqueueTradingV2('calibration')} disabled={enqueueTradingV2Mutation.isPending}>Queue Calibration</Button>
-                  <Button variant="outline" onClick={() => enqueueTradingV2('portfolio-rebalance')} disabled={enqueueTradingV2Mutation.isPending}>Queue Rebalance</Button>
-                  <Button variant="outline" onClick={() => enqueueTradingV2('model-risk')} disabled={enqueueTradingV2Mutation.isPending}>Queue Model Risk</Button>
+                  <Button variant="outline" onClick={() => enqueueTrading('universe-scan')} disabled={enqueueTradingMutation.isPending}>Queue Universe Scan</Button>
+                  <Button variant="outline" onClick={() => enqueueTrading('backtest')} disabled={enqueueTradingMutation.isPending}>Queue Backtest</Button>
+                  <Button variant="outline" onClick={() => enqueueTrading('calibration')} disabled={enqueueTradingMutation.isPending}>Queue Calibration</Button>
+                  <Button variant="outline" onClick={() => enqueueTrading('portfolio-rebalance')} disabled={enqueueTradingMutation.isPending}>Queue Rebalance</Button>
+                  <Button variant="outline" onClick={() => enqueueTrading('model-risk')} disabled={enqueueTradingMutation.isPending}>Queue Model Risk</Button>
                 </div>
                 <Button variant="outline" onClick={() => setActiveTab('analysis')}>Abrir análise manual</Button>
               </CardContent>

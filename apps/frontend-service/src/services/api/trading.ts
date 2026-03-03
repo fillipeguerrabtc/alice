@@ -1,6 +1,6 @@
 import { apiRequest } from '@/lib/queryClient';
 
-export interface TradingV2Portfolio {
+export interface TradingPortfolio {
   id: string;
   name: string;
   riskProfile: 'conservative' | 'balanced' | 'aggressive';
@@ -9,7 +9,7 @@ export interface TradingV2Portfolio {
   maxDrawdownLimit: string | number;
 }
 
-export interface TradingV2Candidate {
+export interface TradingCandidate {
   id: string;
   namespaceId?: string | null;
   instrumentId: string;
@@ -28,7 +28,7 @@ export interface TradingV2Candidate {
   createdAt: string;
 }
 
-export interface TradingV2Rebalance {
+export interface TradingRebalance {
   id: string;
   portfolioId: string;
   asofTimestamp: string;
@@ -38,7 +38,7 @@ export interface TradingV2Rebalance {
   createdAt: string;
 }
 
-export interface TradingV2ExecutionReport {
+export interface TradingExecutionReport {
   id: string;
   portfolioId: string | null;
   instrumentId: string;
@@ -49,41 +49,41 @@ export interface TradingV2ExecutionReport {
   createdAt: string;
 }
 
-export async function getTradingV2Portfolios(): Promise<TradingV2Portfolio[]> {
-  const response = await apiRequest('GET', '/api/trading-v2/portfolios');
-  const payload = await response.json() as { success: boolean; data: TradingV2Portfolio[] };
+export async function getTradingPortfolios(): Promise<TradingPortfolio[]> {
+  const response = await apiRequest('GET', '/api/trading/portfolios');
+  const payload = await response.json() as { success: boolean; data: TradingPortfolio[] };
   return payload.data ?? [];
 }
 
-export async function getTradingV2Candidates(params: { marketType?: 'spot' | 'futures' | 'margin'; limit?: number } = {}): Promise<TradingV2Candidate[]> {
+export async function getTradingCandidates(params: { marketType?: 'spot' | 'futures' | 'margin'; limit?: number } = {}): Promise<TradingCandidate[]> {
   const search = new URLSearchParams();
   if (params.marketType) search.set('marketType', params.marketType);
   if (params.limit) search.set('limit', String(params.limit));
-  const response = await apiRequest('GET', `/api/trading-v2/candidates${search.toString() ? `?${search.toString()}` : ''}`);
-  const payload = await response.json() as { success: boolean; data: TradingV2Candidate[] };
+  const response = await apiRequest('GET', `/api/trading/candidates${search.toString() ? `?${search.toString()}` : ''}`);
+  const payload = await response.json() as { success: boolean; data: TradingCandidate[] };
   return payload.data ?? [];
 }
 
-export async function getTradingV2Rebalances(params: { portfolioId?: string; limit?: number } = {}): Promise<{ rebalances: TradingV2Rebalance[]; executionReports: TradingV2ExecutionReport[] }> {
+export async function getTradingRebalances(params: { portfolioId?: string; limit?: number } = {}): Promise<{ rebalances: TradingRebalance[]; executionReports: TradingExecutionReport[] }> {
   const search = new URLSearchParams();
   if (params.portfolioId) search.set('portfolioId', params.portfolioId);
   if (params.limit) search.set('limit', String(params.limit));
-  const response = await apiRequest('GET', `/api/trading-v2/rebalances${search.toString() ? `?${search.toString()}` : ''}`);
-  const payload = await response.json() as { success: boolean; data: { rebalances: TradingV2Rebalance[]; executionReports: TradingV2ExecutionReport[] } };
+  const response = await apiRequest('GET', `/api/trading/rebalances${search.toString() ? `?${search.toString()}` : ''}`);
+  const payload = await response.json() as { success: boolean; data: { rebalances: TradingRebalance[]; executionReports: TradingExecutionReport[] } };
   return payload.data ?? { rebalances: [], executionReports: [] };
 }
 
-export async function enqueueTradingV2Job(
+export async function enqueueTradingJob(
   job: 'universe-scan' | 'backtest' | 'calibration' | 'portfolio-rebalance' | 'model-risk',
   payload: Record<string, unknown>,
 ): Promise<{ queued: boolean; queue: string; idempotencyKey: string }> {
-  const response = await apiRequest('POST', `/internal/trading-v2/enqueue/${job}`, payload);
+  const response = await apiRequest('POST', `/internal/trading/enqueue/${job}`, payload);
   const body = await response.json() as { success: boolean; data: { queued: boolean; queue: string; idempotencyKey: string } };
   return body.data;
 }
 
 // ============================================================================
-// Trading V2 Auto Engine API
+// Trading Auto Engine API
 // ============================================================================
 
 export interface TradingAutoRun {
@@ -163,7 +163,7 @@ export async function startPortfolioAutoRun(payload: {
   constraints?: Record<string, unknown>;
   namespaceId?: string;
 }): Promise<{ runId: string }> {
-  const response = await apiRequest('POST', '/api/trading-v2/auto/portfolio/run', payload);
+  const response = await apiRequest('POST', '/api/trading/auto/portfolio/run', payload);
   const body = await response.json() as { success: boolean; data: { runId: string } };
   return body.data;
 }
@@ -183,13 +183,13 @@ export async function startSignalAutoRun(payload: {
   selectAllAssets?: boolean;
   namespaceId?: string;
 }): Promise<{ runId: string }> {
-  const response = await apiRequest('POST', '/api/trading-v2/auto/signal/run', payload);
+  const response = await apiRequest('POST', '/api/trading/auto/signal/run', payload);
   const body = await response.json() as { success: boolean; data: { runId: string } };
   return body.data;
 }
 
 export async function getTradingAutoSignalAssetsCatalog(): Promise<TradingAutoSignalAssetsCatalog> {
-  const response = await apiRequest('GET', '/api/trading-v2/auto/assets');
+  const response = await apiRequest('GET', '/api/trading/auto/assets');
   const body = await response.json() as { success: boolean; data: TradingAutoSignalAssetsCatalog };
   return body.data ?? { assets: [], venues: [], markets: [], total: 0 };
 }
@@ -203,13 +203,13 @@ export async function getTradingAutoRuns(params: {
   if (params.type) search.set('type', params.type);
   if (params.status) search.set('status', params.status);
   if (params.limit) search.set('limit', String(params.limit));
-  const response = await apiRequest('GET', `/api/trading-v2/auto/runs${search.toString() ? `?${search.toString()}` : ''}`);
+  const response = await apiRequest('GET', `/api/trading/auto/runs${search.toString() ? `?${search.toString()}` : ''}`);
   const body = await response.json() as { success: boolean; data: TradingAutoRun[] };
   return body.data ?? [];
 }
 
 export async function getTradingAutoRunDetail(runId: string): Promise<TradingAutoRunDetail> {
-  const response = await apiRequest('GET', `/api/trading-v2/auto/runs/${runId}`);
+  const response = await apiRequest('GET', `/api/trading/auto/runs/${runId}`);
   const body = await response.json() as { success: boolean; data: TradingAutoRunDetail };
   return body.data;
 }

@@ -8,12 +8,12 @@ export async function runModelRiskWorker(payload: { tenantId: string; scope: 'st
   const baselineWindowStart = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000));
   const baselineWindowEnd = new Date(now.getTime() - (7 * 24 * 60 * 60 * 1000));
 
-  const snapshots = await db.query.tradingFactorSnapshotsV2.findMany({
+  const snapshots = await db.query.tradingFactorSnapshots.findMany({
     where: and(
-      eq(schema.tradingFactorSnapshotsV2.tenantId, payload.tenantId),
-      gte(schema.tradingFactorSnapshotsV2.createdAt, baselineWindowStart),
+      eq(schema.tradingFactorSnapshots.tenantId, payload.tenantId),
+      gte(schema.tradingFactorSnapshots.createdAt, baselineWindowStart),
     ),
-    orderBy: [desc(schema.tradingFactorSnapshotsV2.createdAt)],
+    orderBy: [desc(schema.tradingFactorSnapshots.createdAt)],
     limit: 1000,
   });
   const recentScores = snapshots

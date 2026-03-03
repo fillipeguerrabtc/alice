@@ -64,12 +64,12 @@ export async function runPortfolioRebalanceWorker(payload: RebalancePayload) {
   }
 
   const instrumentIds = allocations.map((allocation) => allocation.instrumentId);
-  const snapshots = await db.query.tradingFactorSnapshotsV2.findMany({
+  const snapshots = await db.query.tradingFactorSnapshots.findMany({
     where: and(
-      eq(schema.tradingFactorSnapshotsV2.tenantId, payload.tenantId),
-      inArray(schema.tradingFactorSnapshotsV2.instrumentId, instrumentIds),
+      eq(schema.tradingFactorSnapshots.tenantId, payload.tenantId),
+      inArray(schema.tradingFactorSnapshots.instrumentId, instrumentIds),
     ),
-    orderBy: [desc(schema.tradingFactorSnapshotsV2.candleTimestamp)],
+    orderBy: [desc(schema.tradingFactorSnapshots.candleTimestamp)],
     limit: 500,
   });
 

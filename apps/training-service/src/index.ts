@@ -60,8 +60,8 @@ import {
   TRADING_LLM_SIGNAL_PARTIAL_SCHEMA,
   GPU_MANAGER_CONFIG,
   RedisStreamQueue,
-  TRADING_V2_STREAMS,
-  buildTradingV2IdempotencyKey,
+  TRADING_STREAMS,
+  buildTradingIdempotencyKey,
   buildTrainingIdempotencyKey,
   buildNamespaceProfileReconcileIdempotencyKey,
   tradingUniverseEnqueueSchema,
@@ -117,11 +117,11 @@ function parseStructuredJsonFromContent(content: string): unknown {
 import { activateLoraAdapter, getActiveAdapter, deactivateLoraAdapter } from './lora-job-manager.js';
 import { resolveScope } from './scope-resolver.js';
 import { selectExamplesByProfile } from './dataset-selection-engine.js';
-import { runUniverseScanWorker } from './trading-v2/jobs/universe-scan-worker.js';
-import { runBacktestWorker } from './trading-v2/jobs/backtest-worker.js';
-import { runCalibrationWorker } from './trading-v2/jobs/calibration-worker.js';
-import { runPortfolioRebalanceWorker } from './trading-v2/jobs/portfolio-rebalance-worker.js';
-import { runModelRiskWorker } from './trading-v2/jobs/model-risk-worker.js';
+import { runUniverseScanWorker } from './trading/jobs/universe-scan-worker.js';
+import { runBacktestWorker } from './trading/jobs/backtest-worker.js';
+import { runCalibrationWorker } from './trading/jobs/calibration-worker.js';
+import { runPortfolioRebalanceWorker } from './trading/jobs/portfolio-rebalance-worker.js';
+import { runModelRiskWorker } from './trading/jobs/model-risk-worker.js';
 import { TRAINING_DATA_SIMILARITY_THRESHOLD, TRAINING_EMBEDDING_DEDUPE_WORKER_POLL_INTERVAL_MS } from './training-data-constants.js';
 import { createTrainingEmbeddingDedupeWorker } from './workers/training-embedding-dedupe-worker.js';
 import { createNamespaceProfileReconcileWorker } from './workers/namespace-profile-reconcile-worker.js';
@@ -430,74 +430,74 @@ const trainingPipelineMetrics = {
   }),
 };
 
-const tradingV2Metrics = {
+const tradingMetrics = {
   queuePending: new PromGauge({
-    name: 'trading_v2_queue_pending',
-    help: 'Mensagens pendentes por consumer group nas filas de trading V2',
+    name: 'trading_queue_pending',
+    help: 'Mensagens pendentes por consumer group nas filas de trading',
     labelNames: ['queue'] as const,
     registers: [metrics.registry],
   }),
   queueLagMs: new PromGauge({
-    name: 'trading_v2_queue_lag_ms',
-    help: 'Lag aproximado do consumer group de trading V2 (ms)',
+    name: 'trading_queue_lag_ms',
+    help: 'Lag aproximado do consumer group de trading (ms)',
     labelNames: ['queue'] as const,
     registers: [metrics.registry],
   }),
   dlqTotal: new PromGauge({
-    name: 'trading_v2_dlq_total',
-    help: 'Total acumulado de mensagens em DLQ por stream de trading V2',
+    name: 'trading_dlq_total',
+    help: 'Total acumulado de mensagens em DLQ por stream de trading',
     labelNames: ['queue'] as const,
     registers: [metrics.registry],
   }),
   universeScanSeconds: new PromHistogram({
-    name: 'trading_v2_universe_scan_seconds',
+    name: 'trading_universe_scan_seconds',
     help: 'Duração de processamento do worker de universe scan',
     buckets: [0.05, 0.1, 0.5, 1, 2, 5],
     registers: [metrics.registry],
   }),
   backtestSeconds: new PromHistogram({
-    name: 'trading_v2_backtest_seconds',
+    name: 'trading_backtest_seconds',
     help: 'Duração de processamento do worker de backtest',
     buckets: [0.1, 0.5, 1, 2, 5, 10],
     registers: [metrics.registry],
   }),
   calibrationSeconds: new PromHistogram({
-    name: 'trading_v2_calibration_seconds',
+    name: 'trading_calibration_seconds',
     help: 'Duração de processamento do worker de calibration',
     buckets: [0.05, 0.1, 0.5, 1, 2, 5],
     registers: [metrics.registry],
   }),
   rebalanceSeconds: new PromHistogram({
-    name: 'trading_v2_rebalance_seconds',
+    name: 'trading_rebalance_seconds',
     help: 'Duração de processamento do worker de rebalance',
     buckets: [0.05, 0.1, 0.5, 1, 2, 5],
     registers: [metrics.registry],
   }),
   modelRiskSeconds: new PromHistogram({
-    name: 'trading_v2_model_risk_seconds',
+    name: 'trading_model_risk_seconds',
     help: 'Duração de processamento do worker de model risk',
     buckets: [0.05, 0.1, 0.5, 1, 2, 5],
     registers: [metrics.registry],
   }),
   modelRiskEventsTotal: new PromCounter({
-    name: 'trading_v2_model_risk_events_total',
+    name: 'trading_model_risk_events_total',
     help: 'Total de eventos de model risk registrados',
     registers: [metrics.registry],
   }),
   backtestDsr: new PromGauge({
-    name: 'trading_v2_backtest_dsr',
+    name: 'trading_backtest_dsr',
     help: 'Último DSR calculado por mercado/estratégia',
     labelNames: ['marketType', 'strategyKey'] as const,
     registers: [metrics.registry],
   }),
   backtestPbo: new PromGauge({
-    name: 'trading_v2_backtest_pbo',
+    name: 'trading_backtest_pbo',
     help: 'Último PBO calculado por mercado/estratégia',
     labelNames: ['marketType', 'strategyKey'] as const,
     registers: [metrics.registry],
   }),
   candidateCount: new PromCounter({
-    name: 'trading_v2_candidates_total',
+    name: 'trading_candidates_total',
     help: 'Total de candidatos produzidos por lado e mercado',
     labelNames: ['side', 'marketType'] as const,
     registers: [metrics.registry],
@@ -508,38 +508,38 @@ const tradingV2Metrics = {
     registers: [metrics.registry],
   }),
   portfolioAutoRunSeconds: new PromHistogram({
-    name: 'trading_v2_portfolio_auto_run_seconds',
+    name: 'trading_portfolio_auto_run_seconds',
     help: 'Duração de processamento do worker de portfolio auto run',
     buckets: [0.1, 0.5, 1, 2, 5, 10, 30],
     registers: [metrics.registry],
   }),
   signalAutoRunSeconds: new PromHistogram({
-    name: 'trading_v2_signal_auto_run_seconds',
+    name: 'trading_signal_auto_run_seconds',
     help: 'Duração de processamento do worker de signal auto run',
     buckets: [0.1, 0.5, 1, 2, 5, 10, 30],
     registers: [metrics.registry],
   }),
   signalAutoLlmStepSeconds: new PromHistogram({
-    name: 'trading_v2_signal_auto_llm_step_seconds',
+    name: 'trading_signal_auto_llm_step_seconds',
     help: 'Duração do step signal-llm do auto engine',
     buckets: [0.1, 0.5, 1, 2, 5, 10, 30],
     registers: [metrics.registry],
   }),
   signalAutoLlmFailuresTotal: new PromCounter({
-    name: 'trading_v2_signal_auto_llm_failures_total',
+    name: 'trading_signal_auto_llm_failures_total',
     help: 'Total de falhas LLM no auto engine de sinais',
     registers: [metrics.registry],
   }),
 };
 
 const tradingQueueNames = {
-  universe: TRADING_V2_STREAMS.universeScan,
-  backtest: TRADING_V2_STREAMS.backtest,
-  calibration: TRADING_V2_STREAMS.calibration,
-  rebalance: TRADING_V2_STREAMS.portfolioRebalance,
-  modelRisk: TRADING_V2_STREAMS.modelRisk,
-  portfolioAutoRun: TRADING_V2_STREAMS.portfolioAutoRun,
-  signalAutoRun: TRADING_V2_STREAMS.signalAutoRun,
+  universe: TRADING_STREAMS.universeScan,
+  backtest: TRADING_STREAMS.backtest,
+  calibration: TRADING_STREAMS.calibration,
+  rebalance: TRADING_STREAMS.portfolioRebalance,
+  modelRisk: TRADING_STREAMS.modelRisk,
+  portfolioAutoRun: TRADING_STREAMS.portfolioAutoRun,
+  signalAutoRun: TRADING_STREAMS.signalAutoRun,
 } as const;
 
 const TRAINING_METRICS_INTERVAL_MS = parseEnvInt(
@@ -624,7 +624,7 @@ async function enqueueTradingJob(
     consumer: `training-${process.pid}`,
     maxRetries: 3,
   });
-  const idempotencyKey = buildTradingV2IdempotencyKey(queueName, payload);
+  const idempotencyKey = buildTradingIdempotencyKey(queueName, payload);
   await queue.enqueue(redis, payload, idempotencyKey);
 }
 
@@ -713,7 +713,7 @@ function createTradingWorker<T extends { idempotencyKey: string }>(
     consumer: `training-${process.pid}`,
     maxRetries: 3,
     autoClaimCount: 10,
-    streamMaxLen: parseEnvInt(process.env.TRADING_V2_QUEUE_MAXLEN, 20_000, 'TRADING_V2_QUEUE_MAXLEN'),
+    streamMaxLen: parseEnvInt(process.env.TRADING_QUEUE_MAXLEN, 20_000, 'TRADING_QUEUE_MAXLEN'),
   });
   let stopped = false;
   const stopToken = { isStopped: () => stopped };
@@ -745,11 +745,11 @@ function createTradingWorker<T extends { idempotencyKey: string }>(
           continue;
         }
         const lagMetrics = await queue.getLagMetrics(redis);
-        tradingV2Metrics.queuePending.set({ queue: queueName }, lagMetrics.pending);
-        tradingV2Metrics.queueLagMs.set({ queue: queueName }, lagMetrics.lag * TRADING_WORKER_POLL_INTERVAL_MS);
-        tradingV2Metrics.dlqTotal.set({ queue: queueName }, await queue.dlqSize(redis));
+        tradingMetrics.queuePending.set({ queue: queueName }, lagMetrics.pending);
+        tradingMetrics.queueLagMs.set({ queue: queueName }, lagMetrics.lag * TRADING_WORKER_POLL_INTERVAL_MS);
+        tradingMetrics.dlqTotal.set({ queue: queueName }, await queue.dlqSize(redis));
       } catch (error) {
-        logger.error({ queueName, error: error instanceof Error ? error.message : String(error) }, 'Falha ao processar job trading-v2');
+        logger.error({ queueName, error: error instanceof Error ? error.message : String(error) }, 'Falha ao processar job trading');
         await sleep(TRADING_WORKER_POLL_INTERVAL_MS);
       }
     }
@@ -1018,43 +1018,43 @@ app.get('/ready', async (_req: Request, res: Response) => {
   }
 });
 
-app.post(['/internal/trading/universe/enqueue', '/internal/trading-v2/enqueue/universe-scan'], requireInternalHmacAuth(), async (req: Request, res: Response) => {
+app.post('/internal/trading/enqueue/universe-scan', requireInternalHmacAuth(), async (req: Request, res: Response) => {
   const payload = tradingUniverseEnqueueSchema.parse(req.body);
   await enqueueTradingJob(tradingQueueNames.universe, payload);
-  logger.info({ tenantId: payload.tenantId, instrumentId: payload.instrumentId, queue: tradingQueueNames.universe }, 'Trading V2 universe scan enfileirado');
+  logger.info({ tenantId: payload.tenantId, instrumentId: payload.instrumentId, queue: tradingQueueNames.universe }, 'Trading universe scan enfileirado');
   res.status(202).json({ queued: true, queue: tradingQueueNames.universe, idempotencyKey: payload.idempotencyKey });
 });
 
-app.post(['/internal/trading/backtest/enqueue', '/internal/trading-v2/enqueue/backtest'], requireInternalHmacAuth(), async (req: Request, res: Response) => {
+app.post('/internal/trading/enqueue/backtest', requireInternalHmacAuth(), async (req: Request, res: Response) => {
   const payload = tradingBacktestEnqueueSchema.parse(req.body);
   await enqueueTradingJob(tradingQueueNames.backtest, payload);
-  logger.info({ tenantId: payload.tenantId, strategyKey: payload.strategyKey, queue: tradingQueueNames.backtest }, 'Trading V2 backtest enfileirado');
+  logger.info({ tenantId: payload.tenantId, strategyKey: payload.strategyKey, queue: tradingQueueNames.backtest }, 'Trading backtest enfileirado');
   res.status(202).json({ queued: true, queue: tradingQueueNames.backtest, idempotencyKey: payload.idempotencyKey });
 });
 
-app.post(['/internal/trading/calibration/enqueue', '/internal/trading-v2/enqueue/calibration'], requireInternalHmacAuth(), async (req: Request, res: Response) => {
+app.post('/internal/trading/enqueue/calibration', requireInternalHmacAuth(), async (req: Request, res: Response) => {
   const payload = tradingCalibrationEnqueueSchema.parse(req.body);
   await enqueueTradingJob(tradingQueueNames.calibration, payload);
-  logger.info({ tenantId: payload.tenantId, strategyKey: payload.strategyKey, queue: tradingQueueNames.calibration }, 'Trading V2 calibration enfileirado');
+  logger.info({ tenantId: payload.tenantId, strategyKey: payload.strategyKey, queue: tradingQueueNames.calibration }, 'Trading calibration enfileirado');
   res.status(202).json({ queued: true, queue: tradingQueueNames.calibration, idempotencyKey: payload.idempotencyKey });
 });
 
-app.post(['/internal/trading/portfolio-rebalance/enqueue', '/internal/trading-v2/enqueue/portfolio-rebalance'], requireInternalHmacAuth(), async (req: Request, res: Response) => {
+app.post('/internal/trading/enqueue/portfolio-rebalance', requireInternalHmacAuth(), async (req: Request, res: Response) => {
   const payload = tradingRebalanceEnqueueSchema.parse(req.body);
   await enqueueTradingJob(tradingQueueNames.rebalance, payload);
-  logger.info({ tenantId: payload.tenantId, portfolioId: payload.portfolioId, queue: tradingQueueNames.rebalance }, 'Trading V2 rebalance enfileirado');
+  logger.info({ tenantId: payload.tenantId, portfolioId: payload.portfolioId, queue: tradingQueueNames.rebalance }, 'Trading rebalance enfileirado');
   res.status(202).json({ queued: true, queue: tradingQueueNames.rebalance, idempotencyKey: payload.idempotencyKey });
 });
 
-app.post(['/internal/trading/model-risk/enqueue', '/internal/trading-v2/enqueue/model-risk'], requireInternalHmacAuth(), async (req: Request, res: Response) => {
+app.post('/internal/trading/enqueue/model-risk', requireInternalHmacAuth(), async (req: Request, res: Response) => {
   const payload = tradingModelRiskEnqueueSchema.parse(req.body);
   await enqueueTradingJob(tradingQueueNames.modelRisk, payload);
-  logger.info({ tenantId: payload.tenantId, scope: payload.scope, scopeKey: payload.scopeKey, queue: tradingQueueNames.modelRisk }, 'Trading V2 model risk enfileirado');
+  logger.info({ tenantId: payload.tenantId, scope: payload.scope, scopeKey: payload.scopeKey, queue: tradingQueueNames.modelRisk }, 'Trading model risk enfileirado');
   res.status(202).json({ queued: true, queue: tradingQueueNames.modelRisk, idempotencyKey: payload.idempotencyKey });
 });
 
 // ============================================================================
-// TRADING V2 AUTO ENGINE - Jobs automáticos de portfólio e sinais IA
+// TRADING AUTO ENGINE - Jobs automáticos de portfólio e sinais IA
 // ============================================================================
 
 const tradingAutoPortfolioPayloadSchema = z.object({
@@ -1205,7 +1205,7 @@ async function processPortfolioAutoRun(payload: z.infer<typeof tradingAutoPortfo
       await updateAutoRunStep(runId, stepName, 'running');
       const stepStart = Date.now();
 
-      // Enfileira o step individual na fila existente do trading V2
+      // Enfileira o step individual na fila existente do trading
       const queueMapping = {
         'universe-scan': tradingQueueNames.universe,
         'backtest': tradingQueueNames.backtest,
@@ -1215,7 +1215,7 @@ async function processPortfolioAutoRun(payload: z.infer<typeof tradingAutoPortfo
       } as const;
       const targetQueue = queueMapping[stepName];
       if (targetQueue) {
-        const idempotencyKey = buildTradingV2IdempotencyKey(targetQueue, { runId, stepName, correlationId });
+        const idempotencyKey = buildTradingIdempotencyKey(targetQueue, { runId, stepName, correlationId });
         await enqueueTradingJob(targetQueue, {
           ...payload,
           idempotencyKey,
@@ -1255,7 +1255,7 @@ async function processPortfolioAutoRun(payload: z.infer<typeof tradingAutoPortfo
     decisionType: 'portfolio_auto',
     entryPayload: payload as Record<string, unknown>,
     guardrails: { steps: Object.keys(stepMetrics), completedAll: true },
-    modelsUsed: ['trading-v2-pipeline'],
+    modelsUsed: ['trading-pipeline'],
     idempotencyHash: crypto.createHash('sha256').update(`portfolio-auto:${runId}:${correlationId}`).digest('hex'),
     approved: true,
     reasoning: `Pipeline institucional completo: ${steps.join(' → ')}. Todos os steps enfileirados com sucesso.`,
@@ -1862,7 +1862,7 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
       },
       guardrails: guardrailResults,
       candidateIds,
-      modelsUsed: ['trading-v2-guardrails'],
+      modelsUsed: ['trading-guardrails'],
       ragEvidenceIds,
       idempotencyHash,
       approved: approvedCandidates.length > 0,
@@ -1954,7 +1954,7 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
     }
 
     await updateAutoRunStep(runId, 'signal-llm', 'running');
-    const llmStepTimer = tradingV2Metrics.signalAutoLlmStepSeconds.startTimer();
+    const llmStepTimer = tradingMetrics.signalAutoLlmStepSeconds.startTimer();
     const namespaceId = run.namespaceId ?? payload.namespaceId ?? null;
     const trainingNamespaceId = namespaceId;
     if (!trainingNamespaceId) {
@@ -2004,7 +2004,7 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
           maxTokens: 1200,
         },
         context: {
-          route: '/trading-v2/auto/signal',
+          route: '/trading/auto/signal',
           tenantId: run.tenantId,
           userId: run.userId,
           namespaceId: trainingNamespaceId,
@@ -2018,7 +2018,7 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
         requestOptions: { timeout: 120000, priority: 'high' },
       });
       if (!gatewayResult.success || !gatewayResult.data) {
-        tradingV2Metrics.signalAutoLlmFailuresTotal.inc();
+        tradingMetrics.signalAutoLlmFailuresTotal.inc();
         throw new Error(gatewayResult.error || 'Falha no llm-gateway-service');
       }
       const gatewayData = gatewayResult.data as { choices?: Array<{ message?: { content?: string } }> };
@@ -2041,7 +2041,7 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
         },
       });
       if (!gpuResult.success || !gpuResult.data) {
-        tradingV2Metrics.signalAutoLlmFailuresTotal.inc();
+        tradingMetrics.signalAutoLlmFailuresTotal.inc();
         throw new Error(gpuResult.error || 'Falha no gpu-manager LLM');
       }
       const gpuData = gpuResult.data as { choices?: Array<{ message?: { content?: string } }> };
@@ -2085,7 +2085,7 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
         autoRunId: runId,
         autoDecisionId: decision.id,
         autoEngine: true,
-        modelsUsed: ['trading-v2-guardrails', loraModel],
+        modelsUsed: ['trading-guardrails', loraModel],
         ragEvidenceIds,
         createdByUserId: run.userId,
       };
@@ -2110,7 +2110,7 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
       await db.update(schema.tradingAutoDecisions)
         .set({
           tradingSignalId: createdSignal.id,
-          modelsUsed: ['trading-v2-guardrails', loraModel],
+          modelsUsed: ['trading-guardrails', loraModel],
         })
         .where(eq(schema.tradingAutoDecisions.id, decision.id));
       await updateAutoRunStep(runId, 'signal-persist', 'succeeded', {
@@ -2145,11 +2145,11 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
   }
 }
 
-/** POST /internal/trading-v2/auto/portfolio-run - Recebe job de pipeline de portfólio */
-app.post('/internal/trading-v2/auto/portfolio-run', requireInternalHmacAuth(), async (req: Request, res: Response) => {
+/** POST /internal/trading/auto/portfolio-run - Recebe job de pipeline de portfólio */
+app.post('/internal/trading/auto/portfolio-run', requireInternalHmacAuth(), async (req: Request, res: Response) => {
   try {
     const payload = tradingAutoPortfolioPayloadSchema.parse(req.body);
-    const idempotencyKey = buildTradingV2IdempotencyKey(tradingQueueNames.portfolioAutoRun, payload);
+    const idempotencyKey = buildTradingIdempotencyKey(tradingQueueNames.portfolioAutoRun, payload);
     await enqueueTradingJob(tradingQueueNames.portfolioAutoRun, { ...payload, idempotencyKey });
     logger.info({ runId: payload.runId, correlationId: payload.correlationId }, 'Portfolio auto run enfileirado');
     res.status(202).json({ queued: true, queue: tradingQueueNames.portfolioAutoRun });
@@ -2160,11 +2160,11 @@ app.post('/internal/trading-v2/auto/portfolio-run', requireInternalHmacAuth(), a
   }
 });
 
-/** POST /internal/trading-v2/auto/signal-run - Recebe job de geração automática de sinais */
-app.post('/internal/trading-v2/auto/signal-run', requireInternalHmacAuth(), async (req: Request, res: Response) => {
+/** POST /internal/trading/auto/signal-run - Recebe job de geração automática de sinais */
+app.post('/internal/trading/auto/signal-run', requireInternalHmacAuth(), async (req: Request, res: Response) => {
   try {
     const payload = tradingAutoSignalPayloadSchema.parse(req.body);
-    const idempotencyKey = buildTradingV2IdempotencyKey(tradingQueueNames.signalAutoRun, payload);
+    const idempotencyKey = buildTradingIdempotencyKey(tradingQueueNames.signalAutoRun, payload);
     await enqueueTradingJob(tradingQueueNames.signalAutoRun, { ...payload, idempotencyKey });
     logger.info({ runId: payload.runId, correlationId: payload.correlationId }, 'Signal auto run enfileirado');
     res.status(202).json({ queued: true, queue: tradingQueueNames.signalAutoRun });
@@ -5328,19 +5328,19 @@ let autoLearningLoopActive = false;
       tradingUniverseEnqueueSchema,
       async (payload) => {
         const result = await runUniverseScanWorker(payload);
-        tradingV2Metrics.candidateCount.inc({ side: result.side, marketType: payload.marketType });
+        tradingMetrics.candidateCount.inc({ side: result.side, marketType: payload.marketType });
       },
-      tradingV2Metrics.universeScanSeconds,
+      tradingMetrics.universeScanSeconds,
     ));
     tradingWorkerStoppers.push(createTradingWorker(
       tradingQueueNames.backtest,
       tradingBacktestEnqueueSchema,
       async (payload) => {
         const result = await runBacktestWorker(payload);
-        tradingV2Metrics.backtestDsr.set({ marketType: payload.marketType, strategyKey: payload.strategyKey }, result.dsr);
-        tradingV2Metrics.backtestPbo.set({ marketType: payload.marketType, strategyKey: payload.strategyKey }, result.pbo);
+        tradingMetrics.backtestDsr.set({ marketType: payload.marketType, strategyKey: payload.strategyKey }, result.dsr);
+        tradingMetrics.backtestPbo.set({ marketType: payload.marketType, strategyKey: payload.strategyKey }, result.pbo);
       },
-      tradingV2Metrics.backtestSeconds,
+      tradingMetrics.backtestSeconds,
     ));
     tradingWorkerStoppers.push(createTradingWorker(
       tradingQueueNames.calibration,
@@ -5348,7 +5348,7 @@ let autoLearningLoopActive = false;
       async (payload) => {
         await runCalibrationWorker(payload);
       },
-      tradingV2Metrics.calibrationSeconds,
+      tradingMetrics.calibrationSeconds,
     ));
     tradingWorkerStoppers.push(createTradingWorker(
       tradingQueueNames.rebalance,
@@ -5356,16 +5356,16 @@ let autoLearningLoopActive = false;
       async (payload) => {
         await runPortfolioRebalanceWorker(payload);
       },
-      tradingV2Metrics.rebalanceSeconds,
+      tradingMetrics.rebalanceSeconds,
     ));
     tradingWorkerStoppers.push(createTradingWorker(
       tradingQueueNames.modelRisk,
       tradingModelRiskEnqueueSchema,
       async (payload) => {
         await runModelRiskWorker(payload);
-        tradingV2Metrics.modelRiskEventsTotal.inc();
+        tradingMetrics.modelRiskEventsTotal.inc();
       },
-      tradingV2Metrics.modelRiskSeconds,
+      tradingMetrics.modelRiskSeconds,
     ));
 
     // Auto Engine Workers
@@ -5375,7 +5375,7 @@ let autoLearningLoopActive = false;
       async (payload) => {
         await processPortfolioAutoRun(payload);
       },
-      tradingV2Metrics.portfolioAutoRunSeconds,
+      tradingMetrics.portfolioAutoRunSeconds,
     ));
     tradingWorkerStoppers.push(createTradingWorker(
       tradingQueueNames.signalAutoRun,
@@ -5386,7 +5386,7 @@ let autoLearningLoopActive = false;
           selectAllAssets: payload.selectAllAssets ?? false,
         });
       },
-      tradingV2Metrics.signalAutoRunSeconds,
+      tradingMetrics.signalAutoRunSeconds,
     ));
     
     server = app.listen(PORT, '0.0.0.0', () => {
@@ -5513,7 +5513,7 @@ let autoLearningLoopActive = false;
     );
 
     registerShutdownCallback(
-      'training-trading-v2-workers',
+      'training-trading-workers',
       async () => {
         await Promise.all(tradingWorkerStoppers.map((stop) => stop()));
       },

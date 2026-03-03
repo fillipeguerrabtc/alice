@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getExchangeAdapter, normalizeSymbol, normalizeVenue } from '../../apps/integrations-service/src/trading-v2/core/market-adapters';
+import { getExchangeAdapter, normalizeSymbol, normalizeVenue } from '../../apps/integrations-service/src/trading/core/market-adapters';
 
 describe('trading market adapters', () => {
   it('normalizes symbol and venue consistently', () => {

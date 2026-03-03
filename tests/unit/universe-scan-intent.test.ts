@@ -3,7 +3,7 @@ import {
   allowsCrossExchangeArbitrage,
   autoSelectOperationIntent,
   deriveDeterministicArbitrageCandidates,
-} from '../../apps/training-service/src/trading-v2/jobs/universe-scan-worker';
+} from '../../apps/training-service/src/trading/jobs/universe-scan-worker';
 
 describe('universe scan intent helpers', () => {
   it('auto-selects scalping for short timeframe with good liquidity', () => {

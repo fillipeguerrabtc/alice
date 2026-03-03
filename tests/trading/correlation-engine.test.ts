@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildCorrelationMatrix, pearson } from '../../apps/integrations-service/src/trading-v2/engines/correlation-engine';
+import { buildCorrelationMatrix, pearson } from '../../apps/integrations-service/src/trading/engines/correlation-engine';
 
 describe('correlation engine', () => {
   it('computes pearson correlation', () => {

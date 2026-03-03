@@ -3039,7 +3039,7 @@ export const tradingNewsPresetsPolicies = sql`
 `;
 
 // ============================================================================
-// TRADING V2 - INSTRUMENT REGISTRY + PORTFOLIO LAYER
+// TRADING - INSTRUMENT REGISTRY + PORTFOLIO LAYER
 // ============================================================================
 export const tradingPortfolioRiskProfileEnum = pgEnum('trading_portfolio_risk_profile', [
   'conservative',
@@ -3145,7 +3145,7 @@ export const tradingCostModels = pgTable('trading_cost_models', {
   uniqTradingCostModelsVersion: uniqueIndex('uniq_trading_cost_models_version').on(table.tenantId, table.venue, table.assetClass, table.marketType, table.version),
 }));
 
-export const tradingFactorSnapshotsV2 = pgTable('trading_factor_snapshots_v2', {
+export const tradingFactorSnapshots = pgTable('trading_factor_snapshots', {
   id: uuid('id').primaryKey().defaultRandom(),
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
   instrumentId: uuid('instrument_id').notNull().references(() => tradingInstruments.id),
@@ -3163,7 +3163,7 @@ export const tradingFactorSnapshotsV2 = pgTable('trading_factor_snapshots_v2', {
   riskScore: numeric('risk_score'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 }, (table) => ({
-  uniqSnapshot: uniqueIndex('uniq_trading_factor_snapshots_v2').on(
+  uniqSnapshot: uniqueIndex('uniq_trading_factor_snapshots').on(
     table.tenantId,
     table.instrumentId,
     table.marketType,

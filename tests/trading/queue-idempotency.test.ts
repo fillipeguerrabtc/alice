@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { RedisClientType } from 'redis';
 import { RedisStreamQueue } from '../../packages/shared-utils/src/redis-queue';
-import { TRADING_V2_STREAMS, buildTradingV2IdempotencyKey } from '../../packages/shared-utils/src/trading-v2-queues';
+import { TRADING_STREAMS, buildTradingIdempotencyKey } from '../../packages/shared-utils/src/trading-queues';
 
 function createRedisMock(): RedisClientType {
   const locks = new Set<string>();
@@ -26,9 +26,9 @@ function createRedisMock(): RedisClientType {
   return mock as unknown as RedisClientType;
 }
 
-describe('trading-v2 redis queue idempotency', () => {
+describe('trading redis queue idempotency', () => {
   it('builds deterministic idempotency key for universe scan payload', () => {
-    const key = buildTradingV2IdempotencyKey(TRADING_V2_STREAMS.universeScan, {
+    const key = buildTradingIdempotencyKey(TRADING_STREAMS.universeScan, {
       tenantId: 'tenant-a',
       instrumentId: 'inst-a',
       timeframe: '5m',
@@ -42,7 +42,7 @@ describe('trading-v2 redis queue idempotency', () => {
 
   it('prevents duplicate enqueue for same idempotency key', async () => {
     const redis = createRedisMock();
-    const queue = new RedisStreamQueue(TRADING_V2_STREAMS.backtest, {
+    const queue = new RedisStreamQueue(TRADING_STREAMS.backtest, {
       group: 'training-service',
       consumer: 'training-test',
     });
