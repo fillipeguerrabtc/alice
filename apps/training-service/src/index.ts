@@ -21,8 +21,6 @@ import type { Request, Response } from 'express';
 import cors from 'cors';
 import compression from 'compression';
 import crypto from 'crypto';
-import fs from 'node:fs/promises';
-import path from 'node:path';
 import { createLogger } from '@alice/logger';
 import { getDatabase, getPool, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, validateEmbeddingDimension, EMBEDDING_DIMENSIONS, withTenantContext } from '@alice/database';
 import { 
@@ -94,7 +92,13 @@ import {
   setSystemConfig,
   SYSTEM_CONFIG_KNOWN_KEYS,
 } from '@alice/database/system-config';
-import { NamespaceProfileConfigSchema, type TradingSignalMetadata, type NamespaceProfileConfig } from '@alice/shared';
+import {
+  NamespaceProfileConfigSchema,
+  TradingLoraHyperparamsSchema,
+  type TradingSignalMetadata,
+  type NamespaceProfileConfig,
+  type TradingLoraHyperparams,
+} from '@alice/shared';
 
 function parseStructuredJsonFromContent(content: string): unknown {
   const trimmed = content.trim();
@@ -108,23 +112,6 @@ function parseStructuredJsonFromContent(content: string): unknown {
   }
 }
 
-async function resolveMinOndemandDatasetSize(): Promise<number> {
-  const v = await getSystemConfig('MIN_ONDEMAND_DATASET_SIZE');
-  if (v) {
-    const n = parseInt(v, 10);
-    if (Number.isFinite(n) && n > 0) return n;
-  }
-  return MIN_ONDEMAND_DATASET_SIZE;
-}
-
-async function resolveDefaultMaxSeqLen(): Promise<number> {
-  const v = await getSystemConfig('maxSeqLen');
-  if (v) {
-    const n = parseInt(v, 10);
-    if (Number.isFinite(n) && n >= 256 && n <= 32768) return n;
-  }
-  return 2048;
-}
 import { activateLoraAdapter, getActiveAdapter, deactivateLoraAdapter } from './lora-job-manager.js';
 import { resolveScope } from './scope-resolver.js';
 import { selectExamplesByProfile } from './dataset-selection-engine.js';
@@ -139,6 +126,11 @@ import { createNamespaceProfileReconcileWorker } from './workers/namespace-profi
 import { createTrainingDataPolicyGateWorker } from './workers/training-data-policy-gate-worker.js';
 import { createTrainingFineTuningWorker } from './workers/training-fine-tuning-worker.js';
 import { enqueueTrainingFineTuningRun } from './training-fine-tuning-queue.js';
+import {
+  loadTrainingSystemRuntimeConfig,
+  runTrainingFineTuningJob,
+  TrainingHyperparamsOverrideSchema,
+} from './training-runner.js';
 // Fine-tuning é executado localmente via GPU Manager Service (Regra 6 - sem stubs/migração)
 
 // Logger centralizado: JSON em produção, pino-pretty em desenvolvimento
@@ -2879,12 +2871,6 @@ app.get('/api/training/jobs', requirePermission('training:fine_tuning_jobs:read'
   }
 });
 
-// Gate 2: Treinamento deve usar o MESMO modelo base do LLM (texto)
-const MIN_ONDEMAND_DATASET_SIZE = Math.max(
-  1,
-  parseInt(process.env.MIN_ONDEMAND_DATASET_SIZE ?? '10', 10) || 10
-);
-
 const createJobSchema = z.object({
   tenantId: z.string().uuid().optional(),
   namespaceId: z.string().uuid(),
@@ -2892,12 +2878,8 @@ const createJobSchema = z.object({
   domain: z.string().min(1).max(120).optional(),
   name: z.string().min(1),
   baseModel: z.string().default(GPU_MANAGER_CONFIG.models.llm),
-  hyperparameters: z.object({
-    epochs: z.number().default(3),
-    learningRate: z.number().default(0.0001),
-    batchSize: z.number().default(4),
-    maxSeqLen: z.number().int().min(256).max(32768).optional(),
-  }).optional(),
+  hyperparameters: TrainingHyperparamsOverrideSchema.optional(),
+  hyperparametersPreset: z.enum(['safe', 'standard', 'large']).optional(),
   forceMinSize: z.boolean().optional(),
 });
 
@@ -2974,9 +2956,8 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
     const approvedIds = new Set(profileSelection.selected.map((item) => item.id));
     const approvedData = approvedDataRaw.filter((item) => approvedIds.has(item.id));
 
-    const minOndemand = await resolveMinOndemandDatasetSize();
-    const defaultMaxSeqLen = await resolveDefaultMaxSeqLen();
-    const minRequired = body.forceMinSize ? 1 : minOndemand;
+    const trainingRuntimeConfig = await loadTrainingSystemRuntimeConfig();
+    const minRequired = body.forceMinSize ? 1 : trainingRuntimeConfig.minOndemandDatasetSize;
     if (approvedData.length < minRequired) {
       return res.status(400).json({
         error: 'Dados de treinamento insuficientes',
@@ -2986,9 +2967,13 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
       });
     }
 
-    const jobHyperparameters: FineTuningJobHyperparams = body.hyperparameters
-      ? { ...body.hyperparameters, maxSeqLen: body.hyperparameters.maxSeqLen ?? defaultMaxSeqLen }
-      : { epochs: 3, learningRate: 0.0001, batchSize: 4, maxSeqLen: defaultMaxSeqLen };
+    const selectedPreset = body.hyperparametersPreset ?? 'standard';
+    const presetHyperparameters = trainingRuntimeConfig.presets[selectedPreset];
+    const jobHyperparameters: TradingLoraHyperparams = TradingLoraHyperparamsSchema.parse({
+      ...trainingRuntimeConfig.defaultHyperparams,
+      ...presetHyperparameters,
+      ...(body.hyperparameters ?? {}),
+    });
 
     const [loraJob] = await db.insert(schema.loraJobs).values({
       tenantId,
@@ -3001,16 +2986,8 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
       baseModel: body.baseModel,
       status: 'queued',
       datasetCount: approvedData.length,
-      hyperparameters: {
-        epochs: jobHyperparameters.epochs,
-        learningRate: jobHyperparameters.learningRate,
-        batchSize: jobHyperparameters.batchSize,
-        warmupSteps: 100,
-        loraRank: 16,
-        loraAlpha: 32,
-        targetModules: ['q_proj', 'v_proj'],
-        maxSeqLen: jobHyperparameters.maxSeqLen ?? defaultMaxSeqLen,
-      },
+      includeTradingDataset: false,
+      hyperparameters: jobHyperparameters,
     }).returning({ id: schema.loraJobs.id });
 
     const [job] = await db.insert(schema.fineTuningJobs).values({
@@ -3030,6 +3007,7 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
           agentId: body.agentId ?? null,
           domain: body.domain ?? null,
         },
+        hyperparametersPreset: selectedPreset,
         hyperparameters: jobHyperparameters,
         minDatasetSizeUsed: minRequired,
       },
@@ -3074,247 +3052,6 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
 });
 
 // NOTA: Nao usamos polling in-memory. Estado e persistido em DB e retomado no startup.
-
-/**
- * Processa job de fine-tuning
- *
- * ARQUITETURA ENTERPRISE (26/12/2025): Fine-tuning LoRA REAL via GPU Manager Service
- * - Dataset JSONL persistido em /opt/alice/uploads/training
- * - Execucao em slices curtas (preempcao real: chat/whatsapp > embeddings > training)
- * - Retomavel: estado persistido em DB (metrics) + checkpoints no disco
- */
-const TRAINING_STORAGE_DIR = process.env.TRAINING_STORAGE_DIR || '/opt/alice/uploads/training';
-
-type FineTuningJobHyperparams = { epochs: number; learningRate: number; batchSize: number; maxSeqLen?: number };
-
-async function ensureDir(dirPath: string): Promise<void> {
-  await fs.mkdir(dirPath, { recursive: true });
-}
-
-async function writeJsonl(filePath: string, lines: Array<Record<string, unknown>>): Promise<void> {
-  const content = lines.map((l) => JSON.stringify(l)).join('\n') + '\n';
-  await fs.writeFile(filePath, content, { encoding: 'utf-8' });
-}
-
-function buildChatMlText(messages: Array<{ role: string; content: string }>): string {
-  // Formato simples e determinístico para SFT: "role: content"
-  // O trainer valida que existe campo 'text' no JSONL.
-  return messages.map((m) => `${m.role}: ${m.content}`).join('\n');
-}
-
-async function prepareFineTuningDatasetFiles(
-  jobId: string,
-  tenantId: string,
-  scope?: { namespaceId?: string | null; agentId?: string | null; domain?: string | null }
-): Promise<{ trainPath: string; evalPath: string; outputDir: string; manifestPath: string; trainCount: number; evalCount: number; }> {
-  const approvedConditions = [
-    eq(schema.trainingData.status, 'approved'),
-    eq(schema.trainingData.tenantId, tenantId),
-    isNull(schema.trainingData.usedInJobId),
-  ];
-  if (scope?.namespaceId) approvedConditions.push(eq(schema.trainingData.namespaceId, scope.namespaceId));
-  if (scope?.agentId) approvedConditions.push(eq(schema.trainingData.agentId, scope.agentId));
-  if (scope?.domain) approvedConditions.push(eq(schema.trainingData.inferredDomain, scope.domain));
-
-  const approvedRaw = await db.query.trainingData.findMany({
-    where: and(...approvedConditions),
-    limit: 5000,
-  });
-
-  const profileSelection = scope?.namespaceId
-    ? await selectExamplesByProfile(
-      {
-        tenantId,
-        namespaceId: scope.namespaceId,
-        agentId: scope.agentId ?? null,
-        domain: scope.domain ?? null,
-      },
-      'fine_tuning',
-      approvedRaw.map((item) => ({
-        id: item.id,
-        sourceType: item.sourceType,
-        sourceMetadata: item.sourceMetadata as Record<string, unknown>,
-        qualityScore: item.qualityScore,
-        messages: item.messages as Array<{ role: 'user' | 'assistant' | 'system'; content: string }>,
-      }))
-    )
-    : { selected: approvedRaw };
-  const approvedIds = new Set(profileSelection.selected.map((item) => item.id));
-  const approved = approvedRaw.filter((item) => approvedIds.has(item.id));
-
-  if (approved.length < 10) {
-    throw new Error(`Dados aprovados insuficientes para fine-tuning: ${approved.length}/10`);
-  }
-
-  const jobDir = path.join(TRAINING_STORAGE_DIR, 'fine-tuning', tenantId, jobId);
-  const outputDir = path.join(jobDir, 'output');
-  await ensureDir(outputDir);
-
-  // Split determinístico 90/10
-  const splitIndex = Math.floor(approved.length * 0.9);
-  const train = approved.slice(0, splitIndex);
-  const evalData = approved.slice(splitIndex);
-
-  const trainLines = train.map((d) => ({ text: buildChatMlText(d.messages as Array<{ role: string; content: string }>) }));
-  const evalLines = evalData.map((d) => ({ text: buildChatMlText(d.messages as Array<{ role: string; content: string }>) }));
-
-  const trainPath = path.join(jobDir, 'train.jsonl');
-  const evalPath = path.join(jobDir, 'eval.jsonl');
-  const manifestPath = path.join(jobDir, 'manifest.json');
-
-  await writeJsonl(trainPath, trainLines);
-  await writeJsonl(evalPath, evalLines);
-
-  const sourceTypeCounts = approved.reduce<Record<string, number>>((acc, item) => {
-    const key = item.sourceType ?? 'unknown';
-    acc[key] = (acc[key] ?? 0) + 1;
-    return acc;
-  }, {});
-
-  await fs.writeFile(
-    manifestPath,
-    JSON.stringify({
-      jobId,
-      tenantId,
-      createdAt: new Date().toISOString(),
-      total: approved.length,
-      trainCount: trainLines.length,
-      evalCount: evalLines.length,
-      trainIds: train.map((d) => d.id),
-      evalIds: evalData.map((d) => d.id),
-      sourceTypeCounts,
-      scope: scope ?? null,
-      profileVersion: scope?.namespaceId && 'profileVersion' in profileSelection ? profileSelection.profileVersion : null,
-    }, null, 2),
-    { encoding: 'utf-8' }
-  );
-
-  // Marcar dados como usados (persistência enterprise)
-  for (const row of approved) {
-    await db.update(schema.trainingData)
-      .set({ status: 'used', usedInJobId: jobId })
-      .where(eq(schema.trainingData.id, row.id));
-  }
-
-  return { trainPath, evalPath, outputDir, manifestPath, trainCount: trainLines.length, evalCount: evalLines.length };
-}
-
-function computeTargetSteps(trainCount: number, hyper: FineTuningJobHyperparams): number {
-  const stepsPerEpoch = Math.max(1, Math.ceil(trainCount / Math.max(1, hyper.batchSize)));
-  return Math.max(1, hyper.epochs * stepsPerEpoch);
-}
-
-async function _processFineTuningJob(jobId: string, hyperparameters: FineTuningJobHyperparams): Promise<void> {
-  const job = await db.query.fineTuningJobs.findFirst({ where: eq(schema.fineTuningJobs.id, jobId) });
-  if (!job) {
-    throw new Error('Job não encontrado');
-  }
-  if (!job.tenantId) {
-    throw new Error('tenantId ausente no job');
-  }
-
-  // Se já finalizado, não reprocessar
-  if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') {
-    return;
-  }
-
-  // Preparar dataset (idempotente por jobId)
-  await db.update(schema.fineTuningJobs)
-    .set({ status: 'preparing', iniciadoEm: job.iniciadoEm ?? new Date() })
-    .where(eq(schema.fineTuningJobs.id, jobId));
-
-  const jobMetrics = (job.metrics ?? {}) as Record<string, unknown>;
-  const scope = (jobMetrics.scope ?? {}) as { namespaceId?: string | null; agentId?: string | null; domain?: string | null };
-  const { trainPath, evalPath, outputDir, manifestPath, trainCount, evalCount } =
-    await prepareFineTuningDatasetFiles(jobId, job.tenantId, scope);
-  const targetSteps = computeTargetSteps(trainCount, hyperparameters);
-
-  await db.update(schema.fineTuningJobs)
-    .set({
-      status: 'training',
-      trainingDataCount: trainCount,
-      validationDataCount: evalCount,
-      progress: 0,
-      metrics: {
-        scope,
-        dataset: { trainPath, evalPath, outputDir, manifestPath, trainCount, evalCount, targetSteps },
-        stepsCompleted: 0,
-      },
-    })
-    .where(eq(schema.fineTuningJobs.id, jobId));
-
-  // Execução em slices curtas para permitir preempção
-  const sliceSteps = 5;
-  let stepsCompleted = 0;
-
-  while (stepsCompleted < targetSteps) {
-    const fresh = await db.query.fineTuningJobs.findFirst({ where: eq(schema.fineTuningJobs.id, jobId) });
-    if (!fresh) throw new Error('Job sumiu durante processamento');
-    if (fresh.status === 'cancelled') {
-      logger.warn({ jobId }, 'Job cancelado - interrompendo processamento');
-      return;
-    }
-
-    const gpuResult = await requestGpu({
-      serviceType: GpuServiceType.TRAINING,
-      endpoint: '/train/lora/slice',
-      method: 'POST',
-      priority: GpuRequestPriority.LOW, // prioridade 3 (chat/whatsapp > embeddings > training)
-      timeout: 25000,
-      body: {
-        jobId,
-        baseModel: fresh.baseModel,
-        trainJsonlPath: trainPath,
-        evalJsonlPath: evalPath,
-        outputDir,
-        stepsThisSlice: Math.min(sliceSteps, targetSteps - stepsCompleted),
-        hyperparameters: {
-          epochs: hyperparameters.epochs,
-          learningRate: hyperparameters.learningRate,
-          batchSize: hyperparameters.batchSize,
-          maxSeqLen: hyperparameters.maxSeqLen ?? 2048,
-        },
-      },
-    });
-
-    const data = gpuResult.data as { stepsCompleted?: number; adapterPath?: string; durationMs?: number } | undefined;
-    stepsCompleted = data?.stepsCompleted ?? (stepsCompleted + sliceSteps);
-    const progressPct = Math.min(99, Math.floor((stepsCompleted / targetSteps) * 100));
-
-    await db.update(schema.fineTuningJobs)
-      .set({
-        status: stepsCompleted >= targetSteps ? 'validating' : 'training',
-        progress: progressPct,
-        metrics: {
-          dataset: { trainPath, evalPath, outputDir, trainCount, evalCount, targetSteps },
-          stepsCompleted,
-          lastSliceMs: data?.durationMs ?? null,
-        },
-        resultModel: data?.adapterPath ?? null,
-      })
-      .where(eq(schema.fineTuningJobs.id, jobId));
-  }
-
-  // Finalizar
-  const finalJob = await db.query.fineTuningJobs.findFirst({ where: eq(schema.fineTuningJobs.id, jobId) });
-  const adapterPath = (finalJob?.resultModel ?? null) as string | null;
-  if (!adapterPath) {
-    throw new Error('AdapterPath não foi gerado pelo trainer');
-  }
-
-  await db.update(schema.fineTuningJobs)
-    .set({
-      status: 'completed',
-      progress: 100,
-      completadoEm: new Date(),
-    })
-    .where(eq(schema.fineTuningJobs.id, jobId));
-
-  metrics.training.completedJobsTotal.inc(1);
-  void refreshTrainingMetrics();
-
-  logger.info({ jobId, adapterPath }, 'Fine-tuning concluído (LoRA)');
-}
 
 async function resumePendingFineTuningJobs(): Promise<void> {
   const pending = await db.query.fineTuningJobs.findMany({
@@ -4361,7 +4098,7 @@ const scheduleConfigSchema = z.object({
   scheduleType: z.enum(['incremental_fine_tuning', 'complete_fine_tuning']),
   enabled: z.boolean().default(true),
   cronPattern: z.string().optional(), // Ex: '0 3 * * 0' para domingo às 3h
-  minDataRequired: z.number().int().min(10).default(50),
+  minDataRequired: z.number().int().min(1).optional(),
 });
 
 // Schema para iniciar treinamento on-demand
@@ -4394,6 +4131,14 @@ app.post('/api/training/schedule/configure', requirePermission('training:trainin
   const { tenantId, scheduleType, enabled, cronPattern, minDataRequired } = parseResult.data;
   
   try {
+    const trainingRuntimeConfig = await loadTrainingSystemRuntimeConfig();
+    const resolvedMinDataRequired = minDataRequired
+      ?? (
+        scheduleType === 'incremental_fine_tuning'
+          ? trainingRuntimeConfig.minScheduledDatasetSizeIncremental
+          : trainingRuntimeConfig.minScheduledDatasetSizeFull
+      );
+
     // Verificar se já existe configuração
     const tenantResolution = resolveAuthorizedTenantId(req, tenantId);
     if (!tenantResolution.ok) {
@@ -4422,15 +4167,20 @@ app.post('/api/training/schedule/configure', requirePermission('training:trainin
     if (enabled) {
       // FIX: Preparar metadata com configurações customizadas (persistir minDataRequired)
       const scheduleMetadata = {
-        minDataRequired,
-        cronPattern: cronPattern || null,
+        minDataRequired: resolvedMinDataRequired,
+        cronPattern: cronPattern
+          ?? (
+            scheduleType === 'incremental_fine_tuning'
+              ? trainingRuntimeConfig.autoLearningCronIncremental
+              : trainingRuntimeConfig.autoLearningCronFull
+          ),
         configuredAt: new Date().toISOString(),
       };
       
       // FIX Bug 2: Se já existe um schedule ativo, atualizar ao invés de criar duplicado
       if (existing) {
         // Atualizar schedule existente com nova data e metadata
-        const scheduledFor = calculateNextScheduleDate(scheduleType, cronPattern);
+        const scheduledFor = calculateNextScheduleDate(scheduleType, scheduleMetadata.cronPattern ?? undefined);
         
         await db.update(schema.autoLearningSchedule)
           .set({ 
@@ -4445,7 +4195,7 @@ app.post('/api/training/schedule/configure', requirePermission('training:trainin
           scheduleType, 
           scheduledFor,
           scheduleId: existing.id,
-          minDataRequired,
+          minDataRequired: resolvedMinDataRequired,
         }, 'Schedule de treinamento atualizado');
         
         return res.json({ 
@@ -4453,12 +4203,12 @@ app.post('/api/training/schedule/configure', requirePermission('training:trainin
           action: 'updated', 
           scheduleId: existing.id,
           scheduledFor,
-          minDataRequired,
+          minDataRequired: resolvedMinDataRequired,
         });
       }
       
       // Criar novo schedule (não existe nenhum ativo)
-      const scheduledFor = calculateNextScheduleDate(scheduleType, cronPattern);
+      const scheduledFor = calculateNextScheduleDate(scheduleType, scheduleMetadata.cronPattern ?? undefined);
       
       const [newSchedule] = await db.insert(schema.autoLearningSchedule).values({
         tenantId: scopedTenantId,
@@ -4473,7 +4223,7 @@ app.post('/api/training/schedule/configure', requirePermission('training:trainin
         scheduleType, 
         scheduledFor,
         scheduleId: newSchedule.id,
-        minDataRequired,
+        minDataRequired: resolvedMinDataRequired,
       }, 'Schedule de treinamento configurado');
       
       return res.json({ 
@@ -4481,7 +4231,7 @@ app.post('/api/training/schedule/configure', requirePermission('training:trainin
         action: 'scheduled', 
         scheduleId: newSchedule.id,
         scheduledFor,
-        minDataRequired,
+        minDataRequired: resolvedMinDataRequired,
       });
     }
 
@@ -5025,6 +4775,13 @@ let autoLearningLoopActive = false;
           durationSeconds: trainingPipelineMetrics.fineTuningQueueDurationSeconds,
         },
         pollIntervalMs: TRAINING_FINE_TUNING_WORKER_POLL_INTERVAL_MS,
+        processJob: async (_job, payload) => {
+          await runTrainingFineTuningJob({
+            db,
+            payload,
+            fineTuningJobId: payload.fineTuningJobId,
+          });
+        },
       })
     );
     logger.info(

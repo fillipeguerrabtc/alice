@@ -4154,15 +4154,19 @@ export const TradingCandleDataSchema = z.object({
 export type TradingCandleData = z.infer<typeof TradingCandleDataSchema>;
 
 export const TradingLoraHyperparamsSchema = z.object({
-  loraRank: z.number().default(16),          // Rank do LoRA (8-128)
-  loraAlpha: z.number().default(32),         // Alpha do LoRA
-  learningRate: z.number().default(2e-4),    // Learning rate
-  batchSize: z.number().default(4),          // Batch size
-  epochs: z.number().default(3),             // Número de epochs
-  warmupSteps: z.number().default(100),      // Warmup steps
-  maxSteps: z.number().optional(),           // Max steps (override epochs)
-  targetModules: z.array(z.string()).default(["q_proj", "v_proj"]), // Módulos alvo
-  maxSeqLen: z.number().int().min(256).max(32768).default(2048), // TRL truncation (default TRL 2025)
+  loraRank: z.number().default(16),
+  loraAlpha: z.number().default(32),
+  learningRate: z.number().default(2e-4),
+  batchSize: z.number().default(4),
+  epochs: z.number().default(3),
+  warmupSteps: z.number().default(100),
+  gradientAccumulationSteps: z.number().int().min(1).default(1),
+  maxSteps: z.number().optional(),
+  loraDropout: z.number().min(0).max(1).default(0.05),
+  lrSchedulerType: z.string().default('linear'),
+  maxGradNorm: z.number().positive().default(1),
+  targetModules: z.array(z.string()).default(['q_proj', 'v_proj']),
+  maxSeqLen: z.number().int().min(256).max(32768).default(2048),
 });
 export type TradingLoraHyperparams = z.infer<typeof TradingLoraHyperparamsSchema>;
 
@@ -4310,6 +4314,10 @@ export const loraJobs = pgTable(
       batchSize: 4,
       epochs: 3,
       warmupSteps: 100,
+      gradientAccumulationSteps: 1,
+      loraDropout: 0.05,
+      lrSchedulerType: "linear",
+      maxGradNorm: 1,
       targetModules: ["q_proj", "v_proj"],
       maxSeqLen: 2048,
     }),
@@ -6050,3 +6058,4 @@ export const insertExternalUserMappingSchema: z.ZodType<unknown> = createInsertS
   criadoEm: true,
   atualizadoEm: true,
 });
+

@@ -16,7 +16,7 @@
 
 import { createLogger } from '@alice/logger';
 import { getDatabase, schema, eq, and, desc, sql, inArray, isNull, or, not } from '@alice/database';
-import { getSystemConfig } from '@alice/database/system-config';
+import { getAllSystemConfig } from '@alice/database/system-config';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
@@ -27,6 +27,7 @@ import type {
   TradingLoraHyperparams,
   TradingLoraMetrics,
 } from '@alice/shared';
+import { TradingLoraHyperparamsSchema } from '@alice/shared';
 
 /** Source types de trading em training_data (tabela universal). */
 const TRADING_SOURCE_TYPES = ['trading_signal', 'trading_order', 'trading_postmortem', 'trading_demo'] as const;
@@ -43,64 +44,72 @@ const TRAINING_STORAGE_DIR = process.env.TRAINING_STORAGE_DIR || '/opt/alice/upl
 const DEFAULT_BASE_MODEL = GPU_MANAGER_CONFIG.models.llm;
 
 // Configuração padrão de hiperparâmetros
-const DEFAULT_HYPERPARAMS: TradingLoraHyperparams = {
-  loraRank: 16,
-  loraAlpha: 32,
-  learningRate: 2e-4,
-  batchSize: 4,
-  epochs: 3,
-  warmupSteps: 100,
-  targetModules: ['q_proj', 'v_proj', 'k_proj', 'o_proj'],
-  maxSeqLen: 2048,
-};
-
+const DEFAULT_HYPERPARAMS: TradingLoraHyperparams = TradingLoraHyperparamsSchema.parse({});
 /** Mínimo de exemplos para jobs LoRA (training_data com sourceType trading). Reservado para validação futura. */
 const _MIN_DATASET_SIZE = 100;
 
-/** Mínimo de exemplos para runs agendados (training_data + opcional trading). */
-const MIN_CHAT_DATASET_SIZE = 50;
-
-/** Mínimo para jobs on-demand (criados via API/UI). Configurável por DB/env. */
-const MIN_ONDEMAND_DATASET_SIZE_DEFAULT = Math.max(
-  1,
-  parseInt(process.env.MIN_ONDEMAND_DATASET_SIZE ?? '10', 10) || 10
-);
-
-async function resolveMinOndemandDatasetSize(): Promise<number> {
-  const v = await getSystemConfig('MIN_ONDEMAND_DATASET_SIZE');
-  if (v) {
-    const n = parseInt(v, 10);
-    if (Number.isFinite(n) && n > 0) return n;
+async function resolveIntConfigValue(key: string, minValue: number): Promise<number> {
+  const config = await getAllSystemConfig();
+  const raw = config[key];
+  const parsed = Number.parseInt(raw ?? '', 10);
+  if (!Number.isFinite(parsed) || parsed < minValue) {
+    throw new Error(`system_config invalido para ${key}: "${raw ?? ''}"`);
   }
-  return MIN_ONDEMAND_DATASET_SIZE_DEFAULT;
+  return parsed;
 }
 
-// ============================================================================
-// UTILITÁRIOS
-// ============================================================================
+async function resolveFloatConfigValue(key: string, minValue: number, maxValue: number): Promise<number> {
+  const config = await getAllSystemConfig();
+  const raw = config[key];
+  const parsed = Number(raw ?? '');
+  if (!Number.isFinite(parsed) || parsed < minValue || parsed > maxValue) {
+    throw new Error(`system_config invalido para ${key}: "${raw ?? ''}"`);
+  }
+  return parsed;
+}
 
-/**
- * Fisher-Yates (Knuth) Shuffle - Algoritmo de embaralhamento uniforme
- * 
- * Produz distribuição verdadeiramente uniforme, ao contrário de:
- * - array.sort(() => Math.random() - 0.5) que é enviesado
- * 
- * Complexidade: O(n) tempo, O(1) espaço adicional (in-place)
- * 
- * IMPORTANTE para ML: Garante que train/validation splits sejam não-enviesados,
- * resultando em métricas de validação confiáveis.
- * 
- * Referência: https://en.wikipedia.org/wiki/Fisher%E2%80%93Yates_shuffle
- * 
- * @param array - Array a ser embaralhado (modificado in-place)
- * @returns O mesmo array, embaralhado
- */
-function fisherYatesShuffle<T>(array: T[]): T[] {
-  // Iterar de trás para frente
+async function resolveMinOndemandDatasetSize(): Promise<number> {
+  return resolveIntConfigValue('MIN_ONDEMAND_DATASET_SIZE', 1);
+}
+
+async function resolveMinScheduledDatasetSizeIncremental(): Promise<number> {
+  return resolveIntConfigValue('MIN_SCHEDULED_DATASET_SIZE_INCREMENTAL', 1);
+}
+
+async function resolveTrainingDatasetMaxRows(): Promise<number> {
+  return resolveIntConfigValue('TRAINING_DATASET_MAX_ROWS', 100);
+}
+
+async function resolveTrainingSplitRatio(): Promise<number> {
+  return resolveFloatConfigValue('TRAINING_TRAIN_EVAL_SPLIT_RATIO', 0.5, 0.99);
+}
+
+async function resolveTrainingSliceSteps(): Promise<number> {
+  return resolveIntConfigValue('TRAINING_SLICE_STEPS', 1);
+}
+
+async function resolveTrainingGpuTimeoutMs(): Promise<number> {
+  return resolveIntConfigValue('TRAINING_GPU_TIMEOUT_MS', 1000);
+}
+
+function hashSeed(seedText: string): number {
+  const digest = createHash('sha256').update(seedText).digest();
+  return digest.readUInt32LE(0);
+}
+
+function createSeededRandom(seedText: string): () => number {
+  let state = hashSeed(seedText) >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(state ^ (state >>> 15), 1 | state);
+    t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function fisherYatesShuffle<T>(array: T[], randomFn: () => number): T[] {
   for (let i = array.length - 1; i > 0; i--) {
-    // Gerar índice aleatório entre 0 e i (inclusive)
-    const j = Math.floor(Math.random() * (i + 1));
-    // Trocar elementos nas posições i e j
+    const j = Math.floor(randomFn() * (i + 1));
     [array[i], array[j]] = [array[j], array[i]];
   }
   return array;
@@ -109,7 +118,6 @@ function fisherYatesShuffle<T>(array: T[]): T[] {
 // ============================================================================
 // TIPOS
 // ============================================================================
-
 interface CreateJobParams {
   tenantId: string;
   namespaceId: string;
@@ -140,6 +148,8 @@ interface JobProgress {
 interface PreparedDataset {
   trainingData: string[];    // Linhas JSONL ({text: string})
   validationData: string[];  // Linhas JSONL ({text: string})
+  trainingRowIds: string[];  // IDs usados no split de treino
+  validationRowIds: string[]; // IDs usados no split de validação/holdout
   datasetIds: string[];      // IDs de training_data filtrados (trading) - para marcar como usados
   /** IDs de training_data usados (apenas quando source=scheduled_run). Marcar usedInJobId após sucesso. */
   trainingDataIds?: string[];
@@ -258,13 +268,20 @@ export async function prepareDataset(
     actionTypes?: string[];
     fromDate?: Date;
     toDate?: Date;
+  },
+  runtime?: {
+    datasetMaxRows?: number;
+    trainEvalSplitRatio?: number;
+    seed?: string;
   }
 ): Promise<PreparedDataset> {
   const db = getDatabase();
+  const datasetMaxRows = runtime?.datasetMaxRows ?? await resolveTrainingDatasetMaxRows();
+  const trainEvalSplitRatio = runtime?.trainEvalSplitRatio ?? await resolveTrainingSplitRatio();
+  const random = createSeededRandom(runtime?.seed ?? `${tenantId}:${namespaceId}:${agentId ?? 'all'}`);
 
-  logger.info({ tenantId, filter }, 'Preparando dataset para treinamento');
+  logger.info({ tenantId, filter, datasetMaxRows, trainEvalSplitRatio }, 'Preparando dataset para treinamento');
 
-  // Buscar datasets aprovados de trading em training_data (tabela universal)
   const datasets = await db
     .select()
     .from(schema.trainingData)
@@ -280,9 +297,9 @@ export async function prepareDataset(
           : sql`1=1`
       )
     )
-    .orderBy(desc(schema.trainingData.criadoEm));
+    .orderBy(desc(schema.trainingData.criadoEm))
+    .limit(datasetMaxRows);
 
-  // Extrair actionType e prompt/response de cada row (training_data usa messages + sourceMetadata)
   type RowWithAction = { id: string; messages: unknown; sourceMetadata: unknown; qualityScore: number | null; criadoEm: Date | null };
   const withAction = datasets.map((d): RowWithAction & { actionType: string; prompt: string; response: string } => {
     const msgs = (d.messages ?? []) as Array<{ role: string; content: string }>;
@@ -298,32 +315,30 @@ export async function prepareDataset(
     } as RowWithAction & { actionType: string; prompt: string; response: string };
   });
 
-  // Aplicar filtros
   let filtered = withAction;
 
   if (filter?.minQualityScore) {
     filtered = filtered.filter(
-      d => d.qualityScore !== null && d.qualityScore >= filter.minQualityScore!
+      (d) => d.qualityScore !== null && d.qualityScore >= filter.minQualityScore!
     );
   }
 
   if (filter?.actionTypes && filter.actionTypes.length > 0) {
-    filtered = filtered.filter(d => filter.actionTypes!.includes(d.actionType));
+    filtered = filtered.filter((d) => filter.actionTypes!.includes(d.actionType));
   }
 
   if (filter?.fromDate) {
     filtered = filtered.filter(
-      d => d.criadoEm && d.criadoEm >= filter.fromDate!
+      (d) => d.criadoEm && d.criadoEm >= filter.fromDate!
     );
   }
 
   if (filter?.toDate) {
     filtered = filtered.filter(
-      d => d.criadoEm && d.criadoEm <= filter.toDate!
+      (d) => d.criadoEm && d.criadoEm <= filter.toDate!
     );
   }
 
-  // Estatísticas por tipo de ação
   const byActionType: Record<string, number> = {};
   for (const d of filtered) {
     byActionType[d.actionType] = (byActionType[d.actionType] || 0) + 1;
@@ -338,10 +353,8 @@ export async function prepareDataset(
     to: sortedByDate[sortedByDate.length - 1]?.criadoEm ?? null,
   };
 
-  // Dividir em treinamento (90%) e validação (10%)
-  // ENTERPRISE FIX: Usar Fisher-Yates shuffle para distribuição uniforme
-  const shuffled = fisherYatesShuffle([...filtered]);
-  const splitIndex = Math.floor(shuffled.length * 0.9);
+  const shuffled = fisherYatesShuffle([...filtered], random);
+  const splitIndex = Math.floor(shuffled.length * trainEvalSplitRatio);
   const training = shuffled.slice(0, splitIndex);
   const validation = shuffled.slice(splitIndex);
 
@@ -355,7 +368,6 @@ export async function prepareDataset(
     timeframes: String(firstMetadata.timeframe ?? '1m,3m,5m'),
   });
 
-  // Converter para formato JSONL (SFT): campo `text` obrigatório (gpu-trainer valida)
   const formatToJsonl = (d: { prompt: string; response: string }): string => {
     const text = [
       `system: ${systemPrompt}`,
@@ -367,9 +379,9 @@ export async function prepareDataset(
 
   const trainingData = training.map(formatToJsonl);
   const validationData = validation.map(formatToJsonl);
-
-  // Extrair IDs dos datasets filtrados (para marcar como usados posteriormente)
-  const datasetIds = filtered.map(d => d.id);
+  const trainingRowIds = training.map((item) => item.id);
+  const validationRowIds = validation.map((item) => item.id);
+  const datasetIds = filtered.map((d) => d.id);
 
   logger.info(
     {
@@ -378,6 +390,8 @@ export async function prepareDataset(
       validation: validationData.length,
       byActionType,
       datasetIdsCount: datasetIds.length,
+      datasetMaxRows,
+      trainEvalSplitRatio,
     },
     'Dataset preparado com sucesso'
   );
@@ -385,6 +399,8 @@ export async function prepareDataset(
   return {
     trainingData,
     validationData,
+    trainingRowIds,
+    validationRowIds,
     datasetIds,
     stats: {
       total: filtered.length,
@@ -395,11 +411,6 @@ export async function prepareDataset(
     },
   };
 }
-
-/**
- * Formato SFT para mensagens de chat (training_data): "role: content" por linha.
- * Mesmo formato esperado pelo gpu-trainer (campo `text` no JSONL).
- */
 function buildChatMlText(messages: Array<{ role: string; content: string }>): string {
   return messages.map((m) => `${m.role}: ${m.content}`).join('\n');
 }
@@ -413,19 +424,38 @@ export async function prepareDatasetFromChatAndTrading(
   tenantId: string,
   namespaceId?: string | null,
   options?: {
-    /** Quando true, inclui contagem de imagens aprovadas (generated_images) em stats.imagesUsed. */
     includeImages?: boolean;
-    /** Quando true, retorna apenas stats e ids (para validação/criação de job sem carregar linhas). */
     countOnly?: boolean;
+    includeTradingDataset?: boolean;
+    agentId?: string | null;
+    domain?: string | null;
+    datasetMaxRows?: number;
+    trainEvalSplitRatio?: number;
+    minDatasetSize?: number;
+    seed?: string;
   }
 ): Promise<PreparedDataset> {
   const db = getDatabase();
+  const datasetMaxRows = options?.datasetMaxRows ?? await resolveTrainingDatasetMaxRows();
+  const trainEvalSplitRatio = options?.trainEvalSplitRatio ?? await resolveTrainingSplitRatio();
+  const minDatasetSize = options?.minDatasetSize ?? await resolveMinScheduledDatasetSizeIncremental();
+  const includeTradingDataset = options?.includeTradingDataset ?? Boolean(namespaceId);
+  const random = createSeededRandom(options?.seed ?? `${tenantId}:${namespaceId ?? 'tenant-wide'}`);
 
   const chatWhere = and(
     eq(schema.trainingData.status, 'approved'),
     eq(schema.trainingData.tenantId, tenantId),
     isNull(schema.trainingData.usedInJobId),
     not(inArray(schema.trainingData.sourceType, [...TRADING_SOURCE_TYPES])),
+    options?.agentId
+      ? or(
+          eq(schema.trainingData.agentId, options.agentId),
+          eq(schema.trainingData.inferredAgentId, options.agentId)
+        )
+      : undefined,
+    options?.domain
+      ? eq(schema.trainingData.inferredDomain, options.domain)
+      : undefined,
     namespaceId != null
       ? or(
           eq(schema.trainingData.namespaceId, namespaceId),
@@ -437,7 +467,7 @@ export async function prepareDatasetFromChatAndTrading(
   const chatRows = await db.query.trainingData.findMany({
     where: chatWhere,
     columns: { id: true, messages: true, sourceType: true },
-    limit: 5000,
+    limit: datasetMaxRows,
   });
 
   const byActionType: Record<string, number> = {};
@@ -463,6 +493,8 @@ export async function prepareDatasetFromChatAndTrading(
 
   let trainingData: string[] = [];
   let validationData: string[] = [];
+  let trainingRowIds: string[] = [];
+  let validationRowIds: string[] = [];
   let datasetIds: string[] = [];
   const trainingDataIds = chatRows.map((r) => r.id);
 
@@ -478,28 +510,45 @@ export async function prepareDatasetFromChatAndTrading(
     line: formatChatToJsonl(r),
   }));
 
-  if (namespaceId) {
-    const tradingPrepared = await prepareDataset(tenantId, namespaceId, undefined, undefined);
+  if (namespaceId && includeTradingDataset) {
+    const tradingPrepared = await prepareDataset(
+      tenantId,
+      namespaceId,
+      options?.agentId ?? undefined,
+      undefined,
+      {
+        datasetMaxRows,
+        trainEvalSplitRatio,
+        seed: `${options?.seed ?? tenantId}:trading`,
+      }
+    );
     datasetIds = tradingPrepared.datasetIds;
+
+    let tradingIndex = 0;
     for (const line of tradingPrepared.trainingData) {
-      combined.push({ id: '', type: 'trading', line });
+      const lineId = datasetIds[tradingIndex] ?? `trading-${tradingIndex}`;
+      combined.push({ id: lineId, type: 'trading', line });
+      tradingIndex += 1;
     }
     for (const line of tradingPrepared.validationData) {
-      combined.push({ id: '', type: 'trading', line });
+      const lineId = datasetIds[tradingIndex] ?? `trading-${tradingIndex}`;
+      combined.push({ id: lineId, type: 'trading', line });
+      tradingIndex += 1;
     }
+
     Object.entries(tradingPrepared.stats.byActionType).forEach(([k, v]) => {
       byActionType[`trading_${k}`] = (byActionType[`trading_${k}`] ?? 0) + v;
     });
   }
 
-  if (combined.length < MIN_CHAT_DATASET_SIZE) {
+  if (combined.length < minDatasetSize) {
     throw new Error(
-      `Dataset insuficiente para run agendado: ${combined.length} exemplos. Mínimo: ${MIN_CHAT_DATASET_SIZE}`
+      `Dataset insuficiente para run agendado: ${combined.length} exemplos. Minimo: ${minDatasetSize}`
     );
   }
 
-  const shuffled = fisherYatesShuffle([...combined]);
-  const splitIndex = Math.floor(shuffled.length * 0.9);
+  const shuffled = fisherYatesShuffle([...combined], random);
+  const splitIndex = Math.floor(shuffled.length * trainEvalSplitRatio);
   const trainPart = shuffled.slice(0, splitIndex);
   const validationPart = shuffled.slice(splitIndex);
 
@@ -507,6 +556,8 @@ export async function prepareDatasetFromChatAndTrading(
     trainingData = trainPart.map((p) => p.line);
     validationData = validationPart.map((p) => p.line);
   }
+  trainingRowIds = trainPart.map((part) => part.id);
+  validationRowIds = validationPart.map((part) => part.id);
 
   const stats = {
     total: combined.length,
@@ -525,6 +576,10 @@ export async function prepareDatasetFromChatAndTrading(
       validation: stats.validation,
       trainingDataIdsCount: trainingDataIds.length,
       datasetIdsCount: datasetIds.length,
+      datasetMaxRows,
+      trainEvalSplitRatio,
+      minDatasetSize,
+      includeTradingDataset,
     },
     'Dataset chat+trading preparado para run agendado'
   );
@@ -532,19 +587,13 @@ export async function prepareDatasetFromChatAndTrading(
   return {
     trainingData,
     validationData,
+    trainingRowIds,
+    validationRowIds,
     datasetIds,
     trainingDataIds,
     stats,
   };
 }
-
-// ============================================================================
-// GERENCIAMENTO DE JOBS
-// ============================================================================
-
-/**
- * Cria um novo job de treinamento LoRA
- */
 export async function createLoraJob(params: CreateJobParams): Promise<LoraJob> {
   const db = getDatabase();
 
@@ -601,6 +650,7 @@ export async function createLoraJob(params: CreateJobParams): Promise<LoraJob> {
     currentStep: 0,
     datasetCount: dataset.stats.training,
     validationCount: dataset.stats.validation,
+    includeTradingDataset: true,
     metrics: {},
   };
 
@@ -892,28 +942,102 @@ function computeTargetSteps(trainCount: number, hyper: TradingLoraHyperparams): 
  * Executa um job LoRA (trading) de forma preemptível (slices curtas) via gpu-trainer.
  * Status e progresso são persistidos no PostgreSQL.
  */
-export async function processLoraJob(jobId: string): Promise<void> {
+interface ProcessLoraJobOptions {
+  sliceSteps?: number;
+  gpuTimeoutMs?: number;
+  datasetMaxRows?: number;
+  trainEvalSplitRatio?: number;
+  minDatasetSize?: number;
+  seed?: string;
+  includeImages?: boolean;
+  includeTradingDataset?: boolean;
+  agentId?: string | null;
+  domain?: string | null;
+  hyperparametersOverride?: Partial<TradingLoraHyperparams>;
+  onDatasetPrepared?: (manifest: PreparedDatasetManifest) => Promise<void>;
+  onProgress?: (progress: Partial<JobProgress> & { adapterPath?: string | null }) => Promise<void>;
+}
+
+export interface PreparedDatasetManifest {
+  total: number;
+  training: number;
+  validation: number;
+  trainingRowIds: string[];
+  validationRowIds: string[];
+  trainingDataIds: string[];
+  datasetIds: string[];
+  imagesUsed: number;
+}
+
+function mergeLoraHyperparameters(
+  base: TradingLoraHyperparams | null | undefined,
+  override?: Partial<TradingLoraHyperparams>
+): TradingLoraHyperparams {
+  return {
+    ...DEFAULT_HYPERPARAMS,
+    ...(base ?? {}),
+    ...(override ?? {}),
+  };
+}
+
+export async function processLoraJob(jobId: string, options?: ProcessLoraJobOptions): Promise<void> {
   const db = getDatabase();
   const job = await getJob(jobId);
-  if (!job) throw new Error('Job LoRA não encontrado');
+  if (!job) throw new Error('Job LoRA nao encontrado');
   if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') return;
 
-  await updateJobProgress(jobId, { status: 'preparing', progress: 0, currentStep: 0, totalSteps: job.totalSteps ?? null, metrics: job.metrics as TradingLoraMetrics });
+  const sliceSteps = options?.sliceSteps ?? await resolveTrainingSliceSteps();
+  const gpuTimeoutMs = options?.gpuTimeoutMs ?? await resolveTrainingGpuTimeoutMs();
+  const datasetMaxRows = options?.datasetMaxRows ?? await resolveTrainingDatasetMaxRows();
+  const trainEvalSplitRatio = options?.trainEvalSplitRatio ?? await resolveTrainingSplitRatio();
+  const minDatasetSize = options?.minDatasetSize ?? await resolveMinScheduledDatasetSizeIncremental();
+  const seed = options?.seed ?? jobId;
+
+  const resolvedHyperparameters = mergeLoraHyperparameters(
+    (job.hyperparameters as TradingLoraHyperparams) ?? DEFAULT_HYPERPARAMS,
+    options?.hyperparametersOverride
+  );
+
+  if (options?.hyperparametersOverride) {
+    await db
+      .update(schema.loraJobs)
+      .set({ hyperparameters: resolvedHyperparameters })
+      .where(eq(schema.loraJobs.id, jobId));
+  }
+
+  await updateJobProgress(jobId, {
+    status: 'preparing',
+    progress: 0,
+    currentStep: 0,
+    totalSteps: job.totalSteps ?? null,
+    metrics: job.metrics as TradingLoraMetrics,
+  });
+  await options?.onProgress?.({ status: 'preparing', progress: 0, currentStep: 0, totalSteps: job.totalSteps ?? null });
 
   const tenantId = job.tenantId;
   if (!tenantId) {
     throw new Error('Job LoRA sem tenantId');
   }
   const namespaceId = job.scopeNamespaceId;
-  const isScheduledRun = job.source === 'scheduled_run';
-  if (!isScheduledRun && !namespaceId) {
-    throw new Error('Job LoRA explícito exige scopeNamespaceId');
-  }
+  const includeImages = options?.includeImages ?? job.includeImages ?? false;
+  const includeTradingDataset = options?.includeTradingDataset
+    ?? job.includeTradingDataset
+    ?? (job.source === 'scheduled_run' ? Boolean(namespaceId) : false);
 
-  const includeImages = job.includeImages ?? false;
-  const prepared = isScheduledRun
-    ? await prepareDatasetFromChatAndTrading(tenantId, namespaceId ?? undefined, { includeImages })
-    : await prepareDataset(tenantId, namespaceId!, job.scopeAgentId ?? undefined, undefined);
+  const prepared = await prepareDatasetFromChatAndTrading(
+    tenantId,
+    namespaceId ?? undefined,
+    {
+      includeImages,
+      includeTradingDataset,
+      agentId: options?.agentId ?? job.scopeAgentId ?? undefined,
+      domain: options?.domain ?? undefined,
+      datasetMaxRows,
+      trainEvalSplitRatio,
+      minDatasetSize,
+      seed,
+    }
+  );
 
   const jobDir = path.join(TRAINING_STORAGE_DIR, 'trading-lora', tenantId, jobId);
   await ensureDir(jobDir);
@@ -925,15 +1049,31 @@ export async function processLoraJob(jobId: string): Promise<void> {
 
   await writeJsonlFile(trainPath, prepared.trainingData);
   await writeJsonlFile(evalPath, prepared.validationData);
+  await options?.onDatasetPrepared?.({
+    total: prepared.stats.total,
+    training: prepared.stats.training,
+    validation: prepared.stats.validation,
+    trainingRowIds: prepared.trainingRowIds,
+    validationRowIds: prepared.validationRowIds,
+    trainingDataIds: prepared.trainingDataIds ?? [],
+    datasetIds: prepared.datasetIds,
+    imagesUsed: prepared.stats.imagesUsed ?? 0,
+  });
 
-  const targetSteps = computeTargetSteps(prepared.stats.training, job.hyperparameters as TradingLoraHyperparams);
+  const targetSteps = computeTargetSteps(prepared.stats.training, resolvedHyperparameters);
   const mergedMetrics: TradingLoraMetrics = {
     ...(job.metrics as TradingLoraMetrics),
     imagesUsed: prepared.stats.imagesUsed ?? (job.metrics as TradingLoraMetrics)?.imagesUsed,
   };
-  await updateJobProgress(jobId, { status: 'training', progress: 0, currentStep: 0, totalSteps: targetSteps, metrics: mergedMetrics });
+  await updateJobProgress(jobId, {
+    status: 'training',
+    progress: 0,
+    currentStep: 0,
+    totalSteps: targetSteps,
+    metrics: mergedMetrics,
+  });
+  await options?.onProgress?.({ status: 'training', progress: 0, currentStep: 0, totalSteps: targetSteps });
 
-  const sliceSteps = 5;
   let stepsCompleted = 0;
 
   while (stepsCompleted < targetSteps) {
@@ -941,12 +1081,17 @@ export async function processLoraJob(jobId: string): Promise<void> {
     if (!fresh) throw new Error('Job LoRA desapareceu');
     if (fresh.status === 'cancelled') return;
 
+    const freshHyperparams = mergeLoraHyperparameters(
+      (fresh.hyperparameters as TradingLoraHyperparams) ?? resolvedHyperparameters,
+      options?.hyperparametersOverride
+    );
+
     const gpu = await requestGpu({
       serviceType: GpuServiceType.TRAINING,
       endpoint: '/train/lora/slice',
       method: 'POST',
       priority: GpuRequestPriority.LOW,
-      timeout: 25000,
+      timeout: gpuTimeoutMs,
       body: {
         jobId,
         baseModel: fresh.baseModel,
@@ -955,15 +1100,18 @@ export async function processLoraJob(jobId: string): Promise<void> {
         outputDir,
         stepsThisSlice: Math.min(sliceSteps, targetSteps - stepsCompleted),
         hyperparameters: {
-          epochs: (fresh.hyperparameters as TradingLoraHyperparams).epochs,
-          learningRate: (fresh.hyperparameters as TradingLoraHyperparams).learningRate,
-          batchSize: (fresh.hyperparameters as TradingLoraHyperparams).batchSize,
-          maxSeqLen: (fresh.hyperparameters as TradingLoraHyperparams).maxSeqLen ?? 2048,
-          loraRank: (fresh.hyperparameters as TradingLoraHyperparams).loraRank,
-          loraAlpha: (fresh.hyperparameters as TradingLoraHyperparams).loraAlpha,
-          warmupSteps: (fresh.hyperparameters as TradingLoraHyperparams).warmupSteps ?? 100,
-          gradientAccumulationSteps: 1,
-          loraDropout: 0.05,
+          epochs: freshHyperparams.epochs,
+          learningRate: freshHyperparams.learningRate,
+          batchSize: freshHyperparams.batchSize,
+          maxSeqLen: freshHyperparams.maxSeqLen ?? 2048,
+          loraRank: freshHyperparams.loraRank,
+          loraAlpha: freshHyperparams.loraAlpha,
+          warmupSteps: freshHyperparams.warmupSteps ?? 100,
+          gradientAccumulationSteps: freshHyperparams.gradientAccumulationSteps ?? 1,
+          loraDropout: freshHyperparams.loraDropout ?? 0.05,
+          lrSchedulerType: freshHyperparams.lrSchedulerType ?? 'linear',
+          maxGradNorm: freshHyperparams.maxGradNorm ?? 1,
+          targetModules: freshHyperparams.targetModules,
         },
       },
     });
@@ -971,49 +1119,61 @@ export async function processLoraJob(jobId: string): Promise<void> {
     const data = gpu.data as { stepsCompleted?: number; adapterPath?: string } | undefined;
     stepsCompleted = data?.stepsCompleted ?? (stepsCompleted + sliceSteps);
     const pct = Math.min(99, Math.floor((stepsCompleted / targetSteps) * 100));
-    await updateJobProgress(jobId, { status: stepsCompleted >= targetSteps ? 'validating' : 'training', progress: pct, currentStep: stepsCompleted, totalSteps: targetSteps, metrics: fresh.metrics as TradingLoraMetrics });
+    await updateJobProgress(jobId, {
+      status: stepsCompleted >= targetSteps ? 'validating' : 'training',
+      progress: pct,
+      currentStep: stepsCompleted,
+      totalSteps: targetSteps,
+      metrics: fresh.metrics as TradingLoraMetrics,
+    });
 
     if (data?.adapterPath) {
       await db.update(schema.loraJobs)
         .set({ resultAdapterPath: data.adapterPath })
         .where(eq(schema.loraJobs.id, jobId));
     }
+
+    await options?.onProgress?.({
+      status: stepsCompleted >= targetSteps ? 'validating' : 'training',
+      progress: pct,
+      currentStep: stepsCompleted,
+      totalSteps: targetSteps,
+      adapterPath: data?.adapterPath ?? null,
+    });
   }
 
   const final = await getJob(jobId);
   const adapterPath = final?.resultAdapterPath;
-  if (!adapterPath) throw new Error('AdapterPath não definido no job LoRA');
+  if (!adapterPath) throw new Error('AdapterPath nao definido no job LoRA');
   const adapterSize = await getDirectorySizeBytes(adapterPath);
 
   await setJobResult(jobId, { adapterPath, adapterSize, metrics: (final?.metrics as TradingLoraMetrics) || {} });
 
-  // Runs agendados: marcar training_data e trading_dataset como usados; ativar adapter automaticamente
-  if (isScheduledRun) {
-    if (prepared.trainingDataIds?.length) {
-      await db
-        .update(schema.trainingData)
-        .set({ usedInJobId: jobId, processadoEm: new Date() })
-        .where(inArray(schema.trainingData.id, prepared.trainingDataIds));
-      logger.info({ jobId, count: prepared.trainingDataIds.length }, 'training_data marcados como usados');
-    }
-    if (prepared.datasetIds?.length) {
-      await db
-        .update(schema.trainingData)
-        .set({ status: 'used', usedInJobId: jobId })
-        .where(inArray(schema.trainingData.id, prepared.datasetIds));
-      logger.info({ jobId, count: prepared.datasetIds.length }, 'training_data (trading) marcados como usados');
-    }
+  if (prepared.trainingDataIds?.length) {
+    await db
+      .update(schema.trainingData)
+      .set({ usedInJobId: jobId, processadoEm: new Date() })
+      .where(inArray(schema.trainingData.id, prepared.trainingDataIds));
+    logger.info({ jobId, count: prepared.trainingDataIds.length }, 'training_data marcados como usados');
+  }
+  if (prepared.datasetIds?.length) {
+    await db
+      .update(schema.trainingData)
+      .set({ status: 'used', usedInJobId: jobId })
+      .where(inArray(schema.trainingData.id, prepared.datasetIds));
+    logger.info({ jobId, count: prepared.datasetIds.length }, 'training_data (trading) marcados como usados');
+  }
+
+  if (job.source === 'scheduled_run') {
     try {
       await activateLoraAdapter(jobId, undefined);
     } catch (err) {
-      logger.warn({ err, jobId }, 'Ativação automática do adapter após run agendado falhou (não bloqueante)');
+      logger.warn({ err, jobId }, 'Ativacao automatica do adapter apos run agendado falhou (nao bloqueante)');
     }
   }
-}
 
-/**
- * Define resultado do job (após treinamento)
- */
+  await options?.onProgress?.({ status: 'completed', progress: 100, currentStep: targetSteps, totalSteps: targetSteps, adapterPath });
+}
 export async function setJobResult(
   jobId: string,
   result: {

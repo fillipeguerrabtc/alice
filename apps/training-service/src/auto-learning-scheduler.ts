@@ -21,6 +21,7 @@
 
 import { createLogger } from '@alice/logger';
 import { eq, and, or, lt, desc, isNull, inArray, not } from '@alice/database';
+import { getAllSystemConfig } from '@alice/database/system-config';
 import * as schema from '@alice/shared/schema';
 import type { Database } from '@alice/database';
 import { GPU_MANAGER_CONFIG } from '@alice/shared-utils';
@@ -62,7 +63,6 @@ export const SCHEDULE_CONFIG = {
     description: 'Fine-tuning incremental QLoRA semanal (domingo 3:00 AM)',
     intervalMs: 7 * 24 * 60 * 60 * 1000, // 7 dias
     cronPattern: '0 3 * * 0', // Domingo às 3:00 AM
-    minDataRequired: 50,
     baseModel: GPU_MANAGER_CONFIG.models.llm,
     method: 'qlora',
   },
@@ -71,11 +71,129 @@ export const SCHEDULE_CONFIG = {
     description: 'Fine-tuning completo quinzenal',
     intervalMs: 14 * 24 * 60 * 60 * 1000,
     cronPattern: '0 1 1,15 * *',
-    minDataRequired: 200,
     baseModel: GPU_MANAGER_CONFIG.models.llm,
     method: 'qlora',
   },
 } as const;
+
+async function resolveScheduledMinDataRequired(scheduleType: string): Promise<number> {
+  const config = await getAllSystemConfig();
+  const key = scheduleType === 'incremental_fine_tuning'
+    ? 'MIN_SCHEDULED_DATASET_SIZE_INCREMENTAL'
+    : 'MIN_SCHEDULED_DATASET_SIZE_FULL';
+  const raw = config[key];
+  const parsed = raw ? parseInt(raw, 10) : NaN;
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`system_config invalido para ${key}: "${raw ?? ''}"`);
+  }
+  return parsed;
+}
+
+async function resolveTrainingQualityMinRatio(): Promise<number> {
+  const config = await getAllSystemConfig();
+  const raw = config.TRAINING_QUALITY_MIN_RATIO;
+  const parsed = raw ? Number(raw) : NaN;
+  if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 1) {
+    return parsed;
+  }
+  throw new Error(`system_config invalido para TRAINING_QUALITY_MIN_RATIO: "${raw ?? ''}"`);
+}
+
+async function resolveAutoLearningIncludeImages(): Promise<boolean> {
+  const config = await getAllSystemConfig();
+  const raw = config.AUTO_LEARNING_INCLUDE_IMAGES;
+  const normalized = raw.trim().toLowerCase();
+  if (normalized === 'true') return true;
+  if (normalized === 'false') return false;
+  throw new Error(`system_config invalido para AUTO_LEARNING_INCLUDE_IMAGES: "${raw}"`);
+}
+
+async function resolveScheduleCronPattern(scheduleType: string): Promise<string> {
+  const config = await getAllSystemConfig();
+  if (scheduleType === 'incremental_fine_tuning') {
+    return config.AUTO_LEARNING_CRON_INCREMENTAL;
+  }
+  return config.AUTO_LEARNING_CRON_FULL;
+}
+
+function calculateNextScheduledDate(scheduleType: string, cronPattern?: string): Date {
+  const config = scheduleType === 'incremental_fine_tuning'
+    ? SCHEDULE_CONFIG.incrementalFineTuning
+    : SCHEDULE_CONFIG.completeFineTuning;
+
+  if (!cronPattern) {
+    return new Date(Date.now() + config.intervalMs);
+  }
+
+  const parts = cronPattern.trim().split(/\s+/);
+  if (parts.length !== 5) {
+    logger.warn({ cronPattern, scheduleType }, 'Cron pattern invalido em system_config; usando intervalo padrao');
+    return new Date(Date.now() + config.intervalMs);
+  }
+
+  const [minute, hour, dayOfMonth, _month, dayOfWeek] = parts;
+  const now = new Date();
+  const next = new Date(now);
+  const targetHour = hour === '*' ? now.getHours() : Number.parseInt(hour, 10);
+  const targetMinute = minute === '*' ? 0 : Number.parseInt(minute, 10);
+
+  if (!Number.isFinite(targetHour) || !Number.isFinite(targetMinute)) {
+    logger.warn({ cronPattern, scheduleType }, 'Cron pattern invalido (hora/minuto); usando intervalo padrao');
+    return new Date(Date.now() + config.intervalMs);
+  }
+
+  next.setHours(targetHour, targetMinute, 0, 0);
+
+  if (dayOfWeek !== '*') {
+    const targetDay = Number.parseInt(dayOfWeek, 10);
+    if (!Number.isFinite(targetDay)) {
+      logger.warn({ cronPattern, scheduleType }, 'Cron pattern invalido (dia da semana); usando intervalo padrao');
+      return new Date(Date.now() + config.intervalMs);
+    }
+    let daysUntil = targetDay - now.getDay();
+    if (daysUntil < 0 || (daysUntil === 0 && now >= next)) {
+      daysUntil += 7;
+    }
+    next.setDate(now.getDate() + daysUntil);
+    return next;
+  }
+
+  if (dayOfMonth !== '*') {
+    const days = dayOfMonth
+      .split(',')
+      .map((token) => Number.parseInt(token.trim(), 10))
+      .filter((value) => Number.isFinite(value))
+      .sort((a, b) => a - b);
+    if (days.length === 0) {
+      logger.warn({ cronPattern, scheduleType }, 'Cron pattern invalido (dia do mes); usando intervalo padrao');
+      return new Date(Date.now() + config.intervalMs);
+    }
+
+    const currentDay = now.getDate();
+    let targetDay = days.find((value) => value > currentDay || (value === currentDay && now < next));
+    if (targetDay === undefined) {
+      targetDay = days[0];
+      next.setDate(1);
+      next.setMonth(next.getMonth() + 1);
+    }
+
+    for (let i = 0; i < 12; i += 1) {
+      const daysInMonth = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
+      if (targetDay <= daysInMonth) break;
+      next.setDate(1);
+      next.setMonth(next.getMonth() + 1);
+    }
+    next.setDate(targetDay);
+    if (next <= now) {
+      next.setMonth(next.getMonth() + 1);
+      next.setDate(Math.min(targetDay, new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate()));
+    }
+  } else if (next <= now) {
+    next.setDate(next.getDate() + 1);
+  }
+
+  return next;
+}
 
 // ============================================================================
 // COLETA AUTOMÁTICA DE DADOS
@@ -195,12 +313,8 @@ export async function evaluateDataQuality(
   // Para jobs agendados: threshold apenas em training_data (universal; trading não obrigatório)
   const countForMin = useOnlyTrainingDataForMinCount ? data.approvedDataCount : totalDataCount;
 
-  // FIX: Usar minDataRequired customizado se fornecido, senão usar default do SCHEDULE_CONFIG
-  const defaultMinData = scheduleType === 'incremental_fine_tuning'
-    ? SCHEDULE_CONFIG.incrementalFineTuning.minDataRequired
-    : SCHEDULE_CONFIG.completeFineTuning.minDataRequired;
-
-  const minData = customMinDataRequired ?? defaultMinData;
+  const minData = customMinDataRequired ?? await resolveScheduledMinDataRequired(scheduleType);
+  const qualityMinRatio = await resolveTrainingQualityMinRatio();
 
   if (countForMin < minData) {
     return {
@@ -215,14 +329,14 @@ export async function evaluateDataQuality(
     };
   }
 
-  if (data.qualityScore < 0.5) {
+  if (data.qualityScore < qualityMinRatio) {
     return {
       isReady: false,
       dataCount: totalDataCount,
       imageCount: data.approvedImagesCount,
       qualityScore: data.qualityScore,
       recommendation: 'skip',
-      reason: `Qualidade baixa: ${(data.qualityScore * 100).toFixed(1)}% dos dados com rating >= 4`,
+      reason: `Qualidade baixa: ${(data.qualityScore * 100).toFixed(1)}% dos dados com rating >= 4 (minimo ${(qualityMinRatio * 100).toFixed(1)}%)`,
     };
   }
 
@@ -396,11 +510,8 @@ export async function scheduleNextRun(
   scheduleType: string,
   tenantId?: string
 ): Promise<string> {
-  const config = scheduleType === 'incremental_fine_tuning'
-    ? SCHEDULE_CONFIG.incrementalFineTuning
-    : SCHEDULE_CONFIG.completeFineTuning;
-
-  const scheduledFor = new Date(Date.now() + config.intervalMs);
+  const cronPattern = await resolveScheduleCronPattern(scheduleType);
+  const scheduledFor = calculateNextScheduledDate(scheduleType, cronPattern);
 
   const [schedule] = await db.insert(schema.autoLearningSchedule).values({
     tenantId,
@@ -438,6 +549,7 @@ export async function getScheduleStatus(tenantId?: string) {
 
 export async function processScheduledJobs(): Promise<number> {
   const now = new Date();
+  const includeImagesDefault = await resolveAutoLearningIncludeImages();
   
   const dueJobs = await db.query.autoLearningSchedule.findMany({
     where: and(
@@ -466,7 +578,7 @@ export async function processScheduledJobs(): Promise<number> {
 
       if (evaluation.recommendation === 'proceed' && job.tenantId) {
         const result = await startProgressiveLoRA(job.tenantId, {
-          includeImages: true,
+          includeImages: includeImagesDefault,
         });
         await db.update(schema.loraJobs)
           .set({
@@ -487,6 +599,7 @@ export async function processScheduledJobs(): Promise<number> {
             scheduleId: job.id,
             scheduleType: job.scheduleType,
             evaluation,
+            includeImages: includeImagesDefault,
             scheduleMetadata: job.metadata ?? {},
           },
           evaluationStatus: 'pending',
@@ -596,4 +709,5 @@ export async function getAutoLearningStats(tenantId?: string) {
     lastLoraJobId: lastSchedule?.loraJobId ?? null,
   };
 }
+
 
