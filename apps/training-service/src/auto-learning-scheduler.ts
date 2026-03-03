@@ -24,6 +24,7 @@ import { eq, and, or, lt, desc, isNull, inArray, not } from '@alice/database';
 import * as schema from '@alice/shared/schema';
 import type { Database } from '@alice/database';
 import { GPU_MANAGER_CONFIG } from '@alice/shared-utils';
+import { enqueueTrainingFineTuningRun } from './training-fine-tuning-queue.js';
 
 // CORREÇÃO AUDITORIA 17/12/2025: Usar createLogger padronizado da plataforma
 // Bug: pino direto com pino-pretty não segue padrão enterprise (Regra 2)
@@ -253,7 +254,7 @@ interface ProgressiveLoRAResult {
 /**
  * Inicia Progressive LoRA para run agendado/on-demand.
  * Cria apenas lora_jobs (source=scheduled_run); não grava em model_versions.
- * O caller deve chamar processLoraJob(loraJobId) para executar o treino.
+ * O caller deve enfileirar o fine_tuning_jobs correspondente na TRAINING_FINE_TUNING_QUEUE.
  */
 export async function startProgressiveLoRA(
   tenantId: string,
@@ -467,32 +468,54 @@ export async function processScheduledJobs(): Promise<number> {
         const result = await startProgressiveLoRA(job.tenantId, {
           includeImages: true,
         });
+        await db.update(schema.loraJobs)
+          .set({
+            description: `scheduled:${job.scheduleType}`,
+          })
+          .where(eq(schema.loraJobs.id, result.loraJobId));
+
+        const [fineTuningJob] = await db.insert(schema.fineTuningJobs).values({
+          tenantId: job.tenantId,
+          name: `Treinamento agendado ${job.scheduleType}`,
+          baseModel: GPU_MANAGER_CONFIG.models.llm,
+          status: 'pending',
+          runSource: 'scheduled',
+          trainingDataCount: evaluation.dataCount,
+          loraJobId: result.loraJobId,
+          configSnapshot: {
+            runSource: 'scheduled',
+            scheduleId: job.id,
+            scheduleType: job.scheduleType,
+            evaluation,
+            scheduleMetadata: job.metadata ?? {},
+          },
+          evaluationStatus: 'pending',
+          promotionStatus: 'candidate',
+        }).returning({ id: schema.fineTuningJobs.id });
+
+        const enqueueResult = await enqueueTrainingFineTuningRun({
+          fineTuningJobId: fineTuningJob.id,
+          tenantId: job.tenantId,
+        });
 
         await db.update(schema.autoLearningSchedule)
           .set({
             loraJobId: result.loraJobId,
             dataCollected: result.trainingDataUsed,
             imagesCollected: result.imagesUsed,
+            status: 'completed',
+            completedAt: new Date(),
+            errorMessage: null,
           })
           .where(eq(schema.autoLearningSchedule.id, job.id));
 
-        const { processLoraJob } = await import('./lora-job-manager.js');
-        try {
-          await processLoraJob(result.loraJobId);
-        } catch (err) {
-          logger.error({ err, loraJobId: result.loraJobId }, 'Falha ao executar job LoRA agendado');
-          await db.update(schema.autoLearningSchedule)
-            .set({ status: 'failed', completedAt: new Date(), errorMessage: err instanceof Error ? err.message : 'processLoraJob falhou' })
-            .where(eq(schema.autoLearningSchedule.id, job.id));
-          await scheduleNextRun(job.scheduleType, job.tenantId || undefined);
-          continue;
-        }
-
-        await db.update(schema.autoLearningSchedule)
-          .set({ status: 'completed', completedAt: new Date() })
-          .where(eq(schema.autoLearningSchedule.id, job.id));
-
         await scheduleNextRun(job.scheduleType, job.tenantId || undefined);
+        logger.info({
+          scheduleId: job.id,
+          fineTuningJobId: fineTuningJob.id,
+          loraJobId: result.loraJobId,
+          enqueued: enqueueResult.enqueued,
+        }, 'Job agendado criado e enfileirado');
         processedCount++;
       } else {
         await db.update(schema.autoLearningSchedule)
@@ -573,3 +596,4 @@ export async function getAutoLearningStats(tenantId?: string) {
     lastLoraJobId: lastSchedule?.loraJobId ?? null,
   };
 }
+

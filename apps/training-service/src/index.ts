@@ -125,7 +125,7 @@ async function resolveDefaultMaxSeqLen(): Promise<number> {
   }
   return 2048;
 }
-import { processLoraJob, activateLoraAdapter, getActiveAdapter, deactivateLoraAdapter } from './lora-job-manager.js';
+import { activateLoraAdapter, getActiveAdapter, deactivateLoraAdapter } from './lora-job-manager.js';
 import { resolveScope } from './scope-resolver.js';
 import { selectExamplesByProfile } from './dataset-selection-engine.js';
 import { runUniverseScanWorker } from './trading-v2/jobs/universe-scan-worker.js';
@@ -138,6 +138,7 @@ import { createTrainingEmbeddingDedupeWorker } from './workers/training-embeddin
 import { createNamespaceProfileReconcileWorker } from './workers/namespace-profile-reconcile-worker.js';
 import { createTrainingDataPolicyGateWorker } from './workers/training-data-policy-gate-worker.js';
 import { createTrainingFineTuningWorker } from './workers/training-fine-tuning-worker.js';
+import { enqueueTrainingFineTuningRun } from './training-fine-tuning-queue.js';
 // Fine-tuning é executado localmente via GPU Manager Service (Regra 6 - sem stubs/migração)
 
 // Logger centralizado: JSON em produção, pino-pretty em desenvolvimento
@@ -2914,17 +2915,17 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
       columns: { id: true, tenantId: true },
     });
     if (!namespace) {
-      return res.status(404).json({ error: 'Namespace não encontrado' });
+      return res.status(404).json({ error: 'Namespace nao encontrado' });
     }
     if (body.tenantId && namespace.tenantId !== body.tenantId) {
-      return res.status(403).json({ error: 'Namespace não pertence ao tenant informado' });
+      return res.status(403).json({ error: 'Namespace nao pertence ao tenant informado' });
     }
     const tenantId = authorizedTenantId;
     if (namespace.tenantId !== tenantId) {
       return res.status(403).json({ error: 'Namespace nao pertence ao tenant autenticado' });
     }
     if (!tenantId) {
-      return res.status(400).json({ error: 'Tenant inválido para criação de job de treinamento' });
+      return res.status(400).json({ error: 'Tenant invalido para criacao de job de treinamento' });
     }
 
     if (body.agentId) {
@@ -2948,7 +2949,7 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
     ];
     approvedConditions.push(eq(schema.trainingData.tenantId, tenantId));
     if (body.agentId) approvedConditions.push(eq(schema.trainingData.agentId, body.agentId));
-    
+
     const approvedDataRaw = await db.query.trainingData.findMany({
       where: and(...approvedConditions),
     });
@@ -2977,7 +2978,7 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
     const defaultMaxSeqLen = await resolveDefaultMaxSeqLen();
     const minRequired = body.forceMinSize ? 1 : minOndemand;
     if (approvedData.length < minRequired) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: 'Dados de treinamento insuficientes',
         required: minRequired,
         available: approvedData.length,
@@ -2985,12 +2986,54 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
       });
     }
 
+    const jobHyperparameters: FineTuningJobHyperparams = body.hyperparameters
+      ? { ...body.hyperparameters, maxSeqLen: body.hyperparameters.maxSeqLen ?? defaultMaxSeqLen }
+      : { epochs: 3, learningRate: 0.0001, batchSize: 4, maxSeqLen: defaultMaxSeqLen };
+
+    const [loraJob] = await db.insert(schema.loraJobs).values({
+      tenantId,
+      scopeType: body.agentId ? 'agent' : 'namespace',
+      scopeNamespaceId: body.namespaceId,
+      scopeAgentId: body.agentId ?? null,
+      source: 'explicit_job',
+      name: `${body.name} (linked LoRA)`,
+      description: 'Job LoRA vinculado ao fine_tuning_jobs',
+      baseModel: body.baseModel,
+      status: 'queued',
+      datasetCount: approvedData.length,
+      hyperparameters: {
+        epochs: jobHyperparameters.epochs,
+        learningRate: jobHyperparameters.learningRate,
+        batchSize: jobHyperparameters.batchSize,
+        warmupSteps: 100,
+        loraRank: 16,
+        loraAlpha: 32,
+        targetModules: ['q_proj', 'v_proj'],
+        maxSeqLen: jobHyperparameters.maxSeqLen ?? defaultMaxSeqLen,
+      },
+    }).returning({ id: schema.loraJobs.id });
+
     const [job] = await db.insert(schema.fineTuningJobs).values({
       tenantId,
       name: body.name,
       baseModel: body.baseModel,
       status: 'pending',
+      runSource: 'custom_job',
       trainingDataCount: approvedData.length,
+      loraJobId: loraJob.id,
+      scopeNamespaceId: body.namespaceId,
+      scopeAgentId: body.agentId ?? null,
+      configSnapshot: {
+        runSource: 'custom_job',
+        scope: {
+          namespaceId: body.namespaceId,
+          agentId: body.agentId ?? null,
+          domain: body.domain ?? null,
+        },
+        hyperparameters: jobHyperparameters,
+        minDatasetSizeUsed: minRequired,
+      },
+      hyperparameters: jobHyperparameters,
       metrics: {
         scope: {
           namespaceId: body.namespaceId,
@@ -2998,45 +3041,47 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
           domain: body.domain ?? null,
         },
       },
-      hyperparameters: body.hyperparameters || {
-        epochs: 3,
-        learningRate: 0.0001,
-        batchSize: 4,
-        maxSeqLen: defaultMaxSeqLen,
-      },
+      evaluationStatus: 'pending',
+      promotionStatus: 'candidate',
     }).returning();
 
-    const jobHyperparameters: FineTuningJobHyperparams = body.hyperparameters
-      ? { ...body.hyperparameters, maxSeqLen: body.hyperparameters.maxSeqLen ?? defaultMaxSeqLen }
-      : { epochs: 3, learningRate: 0.0001, batchSize: 4, maxSeqLen: defaultMaxSeqLen };
-    
-    // Execução real (LoRA) via GPU Manager Service (prioridade baixa)
-    processFineTuningJob(job.id, jobHyperparameters).catch((err: unknown) => {
-      logger.error({ error: err, jobId: job.id }, 'Job de fine-tuning falhou');
+    const enqueueResult = await enqueueTrainingFineTuningRun({
+      fineTuningJobId: job.id,
+      tenantId,
+      requestedBy: tenantResolution.authContext.userId ?? null,
     });
 
     logger.info({
       jobId: job.id,
+      loraJobId: loraJob.id,
       dataCount: approvedData.length,
       scope: { tenantId, namespaceId: body.namespaceId, agentId: body.agentId ?? null },
       profileVersion: profileSelection.profileVersion,
-    }, 'Job de fine-tuning criado');
-    res.json({ job, profileSelection: profileSelection.diagnostics });
+      enqueued: enqueueResult.enqueued,
+      queueRunId: enqueueResult.runId,
+    }, 'Job de fine-tuning criado e enfileirado');
+
+    return res.status(202).json({
+      job,
+      loraJobId: loraJob.id,
+      enqueued: enqueueResult.enqueued,
+      profileSelection: profileSelection.diagnostics,
+    });
   } catch (error) {
     logger.error({ error }, 'Falha ao criar job');
-    res.status(500).json({ error: 'Erro interno do servidor' });
+    return res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
 
-// NOTA: Não usamos polling in-memory. Estado é persistido em DB e retomado no startup.
+// NOTA: Nao usamos polling in-memory. Estado e persistido em DB e retomado no startup.
 
 /**
  * Processa job de fine-tuning
- * 
+ *
  * ARQUITETURA ENTERPRISE (26/12/2025): Fine-tuning LoRA REAL via GPU Manager Service
  * - Dataset JSONL persistido em /opt/alice/uploads/training
- * - Execução em slices curtas (preempção real: chat/WhatsApp > embeddings > training)
- * - Retomável: estado persistido em DB (metrics) + checkpoints no disco
+ * - Execucao em slices curtas (preempcao real: chat/whatsapp > embeddings > training)
+ * - Retomavel: estado persistido em DB (metrics) + checkpoints no disco
  */
 const TRAINING_STORAGE_DIR = process.env.TRAINING_STORAGE_DIR || '/opt/alice/uploads/training';
 
@@ -3159,7 +3204,7 @@ function computeTargetSteps(trainCount: number, hyper: FineTuningJobHyperparams)
   return Math.max(1, hyper.epochs * stepsPerEpoch);
 }
 
-async function processFineTuningJob(jobId: string, hyperparameters: FineTuningJobHyperparams): Promise<void> {
+async function _processFineTuningJob(jobId: string, hyperparameters: FineTuningJobHyperparams): Promise<void> {
   const job = await db.query.fineTuningJobs.findFirst({ where: eq(schema.fineTuningJobs.id, jobId) });
   if (!job) {
     throw new Error('Job não encontrado');
@@ -3282,18 +3327,27 @@ async function resumePendingFineTuningJobs(): Promise<void> {
   });
 
   for (const job of pending) {
-    // Rodar em background, mas com retomada via DB. (Sem depender de polling em memória)
-    processFineTuningJob(job.id, (job.hyperparameters as FineTuningJobHyperparams) || { epochs: 3, learningRate: 0.0001, batchSize: 4, maxSeqLen: 2048 })
-      .catch((err: unknown) => {
-        const msg = err instanceof Error ? err.message : String(err);
-        logger.error({ jobId: job.id, error: msg }, 'Falha ao retomar fine-tuning job');
-        db.update(schema.fineTuningJobs)
-          .set({ status: 'failed', errorMessage: msg, completadoEm: new Date() })
-          .where(eq(schema.fineTuningJobs.id, job.id))
-          .catch(() => {});
-        metrics.training.failedJobsTotal.inc(1);
-        void refreshTrainingMetrics();
+    if (!job.tenantId) {
+      logger.warn({ jobId: job.id }, 'Ignorando reenqueue de fine_tuning_job sem tenantId');
+      continue;
+    }
+    try {
+      const enqueueResult = await enqueueTrainingFineTuningRun({
+        fineTuningJobId: job.id,
+        tenantId: job.tenantId,
       });
+      logger.info(
+        {
+          jobId: job.id,
+          enqueued: enqueueResult.enqueued,
+          queueRunId: enqueueResult.runId,
+        },
+        'fine_tuning_job pendente reenfileirado'
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error({ jobId: job.id, error: msg }, 'Falha ao reenfileirar fine_tuning_job');
+    }
   }
 }
 
@@ -3307,18 +3361,13 @@ async function resumePendingLoraJobs(): Promise<void> {
     limit: 5,
   });
 
-  for (const job of pending) {
-    processLoraJob(job.id).catch((err: unknown) => {
-      const msg = err instanceof Error ? err.message : String(err);
-      logger.error({ jobId: job.id, error: msg }, 'Falha ao retomar LoRA job');
-      db.update(schema.loraJobs)
-        .set({ status: 'failed', errorMessage: msg, completedAt: new Date() })
-        .where(eq(schema.loraJobs.id, job.id))
-        .catch(() => {});
-    });
+  if (pending.length > 0) {
+    logger.info(
+      { count: pending.length },
+      'lora_jobs pendentes detectados; execucao ocorre via fila de fine_tuning'
+    );
   }
 }
-
 // Polling removido (Regra 6): cancelamento e progresso são tratados via DB + gpu-trainer
 
 app.get('/api/training/jobs/:id', requirePermission('training:fine_tuning_jobs:read'), async (req: Request, res: Response) => {
@@ -4450,14 +4499,12 @@ app.post('/api/training/schedule/configure', requirePermission('training:trainin
 app.post('/api/training/run/start', requirePermission('training:training_data:manage'), async (req: Request, res: Response) => {
   const parseResult = startTrainingSchema.safeParse(req.body);
   if (!parseResult.success) {
-    return res.status(400).json({ error: 'Input inválido', details: parseResult.error.format() });
+    return res.status(400).json({ error: 'Input invalido', details: parseResult.error.format() });
   }
-  
+
   const { tenantId, trainingType, includeImages, priority: _priority, description, namespaceId } = parseResult.data;
 
   try {
-    // Verificar se já existe treinamento em andamento (status 'training' ou 'preparing')
-    // FIX Bug 1: Incluir 'preparing' na verificação (fase de preparação de dados)
     const tenantResolution = resolveAuthorizedTenantId(req, tenantId);
     if (!tenantResolution.ok) {
       return res.status(tenantResolution.status).json({ error: tenantResolution.error });
@@ -4468,6 +4515,7 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
       where: and(
         eq(schema.fineTuningJobs.tenantId, scopedTenantId),
         or(
+          eq(schema.fineTuningJobs.status, 'pending'),
           eq(schema.fineTuningJobs.status, 'training'),
           eq(schema.fineTuningJobs.status, 'preparing')
         )
@@ -4476,12 +4524,11 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
 
     if (runningJobs.length > 0) {
       return res.status(409).json({
-        error: 'Já existe treinamento em andamento',
+        error: 'Ja existe treinamento em andamento ou enfileirado',
         runningJobId: runningJobs[0].id,
       });
     }
 
-    // Avaliar qualidade dos dados antes de iniciar (com escopo namespace quando informado).
     if (namespaceId) {
       const namespace = await db.query.namespaces.findFirst({
         where: eq(schema.namespaces.id, namespaceId),
@@ -4510,51 +4557,41 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
       });
     }
 
-    // Criar job de fine-tuning on-demand
-    // Usando campos existentes no schema: name, baseModel, trainingDataCount
+    const loraResult = await startProgressiveLoRA(scopedTenantId, {
+      includeImages,
+      namespaceId,
+    });
+    await db.update(schema.loraJobs)
+      .set({
+        description: `on_demand:${scheduleType}`,
+      })
+      .where(eq(schema.loraJobs.id, loraResult.loraJobId));
+
     const [job] = await db.insert(schema.fineTuningJobs).values({
       tenantId: scopedTenantId,
       name: description || `Treinamento ${trainingType} on-demand`,
       baseModel: GPU_MANAGER_CONFIG.models.llm,
       status: 'pending',
+      runSource: 'on_demand',
       trainingDataCount: evaluation.dataCount,
+      loraJobId: loraResult.loraJobId,
+      scopeNamespaceId: namespaceId ?? null,
+      configSnapshot: {
+        runSource: 'on_demand',
+        scheduleType,
+        includeImages,
+        namespaceId: namespaceId ?? null,
+        evaluation,
+      },
+      evaluationStatus: 'pending',
+      promotionStatus: 'candidate',
     }).returning();
 
-    // Iniciar Progressive LoRA (cria lora_jobs source=scheduled_run; execução em background)
-    const loraResult = await startProgressiveLoRA(scopedTenantId, {
-      includeImages,
-      namespaceId,
+    const enqueueResult = await enqueueTrainingFineTuningRun({
+      fineTuningJobId: job.id,
+      tenantId: scopedTenantId,
+      requestedBy: tenantResolution.authContext.userId ?? null,
     });
-
-    // Atualizar job com status training
-    await db.update(schema.fineTuningJobs)
-      .set({
-        status: 'training',
-        iniciadoEm: new Date(),
-      })
-      .where(eq(schema.fineTuningJobs.id, job.id));
-
-    // Executar treino LoRA em background (processLoraJob); ao terminar, sincronizar fine_tuning_jobs
-    const fineTuningJobId = job.id;
-    const loraJobId = loraResult.loraJobId;
-    const { processLoraJob } = await import('./lora-job-manager.js');
-    processLoraJob(loraJobId)
-      .then(async () => {
-        await db.update(schema.fineTuningJobs)
-          .set({ status: 'completed', completadoEm: new Date() })
-          .where(eq(schema.fineTuningJobs.id, fineTuningJobId));
-        logger.info({ fineTuningJobId, loraJobId }, 'Treinamento on-demand concluído; fine_tuning_jobs atualizado');
-      })
-      .catch(async (err) => {
-        logger.error({ err, loraJobId }, 'Falha ao executar job LoRA on-demand');
-        await db.update(schema.fineTuningJobs)
-          .set({
-            status: 'failed',
-            completadoEm: new Date(),
-            errorMessage: err instanceof Error ? err.message : 'processLoraJob falhou',
-          })
-          .where(eq(schema.fineTuningJobs.id, fineTuningJobId));
-      });
 
     logger.info({
       jobId: job.id,
@@ -4563,9 +4600,11 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
       trainingType,
       dataCount: evaluation.dataCount,
       imageCount: evaluation.imageCount,
-    }, 'Treinamento on-demand iniciado');
+      enqueued: enqueueResult.enqueued,
+      queueRunId: enqueueResult.runId,
+    }, 'Treinamento on-demand enfileirado');
 
-    res.status(201).json({
+    return res.status(202).json({
       success: true,
       jobId: job.id,
       loraJobId: loraResult.loraJobId,
@@ -4573,17 +4612,18 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
       version: loraResult.version,
       trainingDataUsed: loraResult.trainingDataUsed,
       imagesUsed: loraResult.imagesUsed,
-      status: 'running',
+      status: 'queued',
+      enqueued: enqueueResult.enqueued,
     });
   } catch (error) {
     logger.error({ error }, 'Falha ao iniciar treinamento on-demand');
-    res.status(500).json({ error: 'Erro interno do servidor' });
+    return res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
 
 /**
  * GET /api/training/run/status
- * Obtém status atual do treinamento
+ * Obtem status atual do treinamento
  */
 app.get('/api/training/run/status', requirePermission('training:training_data:read'), async (req: Request, res: Response) => {
   const queryResult = z.object({ tenantId: z.string().uuid().optional() }).safeParse(req.query);
@@ -5266,4 +5306,9 @@ let autoLearningLoopActive = false;
     process.exit(1);
   }
 })();
+
+
+
+
+
 
