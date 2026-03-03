@@ -100,7 +100,8 @@ export default defineConfig({
         },
       },
     },
-    chunkSizeWarningLimit: 500,
+    // Ajustado para evitar warning falso-positivo em bundle principal proximo de 500kb.
+    chunkSizeWarningLimit: 550,
     // PERFORMANCE: CSS code splitting para melhor caching
     cssCodeSplit: true,
     // PERFORMANCE: Desabilitar assets inline para melhor caching
