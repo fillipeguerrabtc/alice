@@ -1,4 +1,4 @@
-﻿
+
 # PLANO DE CORRECOES ENTERPRISE - Alice
 
 Data: 2026-02-26
@@ -154,7 +154,7 @@ Objetivo: fechar gaps do score atual (72%) e elevar readiness para padrao Diaman
 ### TRD-003 - Ampliar controles de risco para execucao real (approval + kill-switch + limites)
 - Arquivos a alterar/criar:
   - Alterar `apps/integrations-service/src/index.ts`
-  - Alterar `apps/training-service/src/trading-v2/jobs/model-risk-worker.ts`
+  - Alterar `apps/training-service/src/trading/jobs/model-risk-worker.ts`
   - Alterar `packages/shared/src/schema.ts`
 - Contratos:
   - Ordem real exige `approvalStatus=approved` + risk gates (max order value/leverage/SL/TP)
@@ -228,7 +228,7 @@ Objetivo: fechar gaps do score atual (72%) e elevar readiness para padrao Diaman
 - Arquivos a alterar/criar:
   - Alterar `apps/training-service/src/index.ts`
   - Alterar `apps/training-service/src/scope-resolver.ts`
-  - Alterar `apps/training-service/src/trading-v2/jobs/model-risk-worker.ts`
+  - Alterar `apps/training-service/src/trading/jobs/model-risk-worker.ts`
   - Criar testes `tests/integration/training-fail-closed-trading.test.ts`
 - Contratos:
   - Itens sem escopo confiavel ou sem aprovacao explicita nao podem alimentar decisao de trading real

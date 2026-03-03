@@ -406,10 +406,10 @@ Páginas do frontend (ex.: **Trading**, **Trading Demo**) exibem erros de carreg
 Na aba **Network** do navegador, chamadas como:
 
 ```
-GET /api/trading-v2/portfolios          → 403
-GET /api/trading-v2/candidates?...      → 403
-GET /api/trading-v2/rebalances?...      → 403
-POST /internal/trading-v2/enqueue/...  → 403
+GET /api/trading/portfolios          → 403
+GET /api/trading/candidates?...      → 403
+GET /api/trading/rebalances?...      → 403
+POST /internal/trading/enqueue/...  → 403
 ```
 
 retornam o body:
@@ -435,13 +435,13 @@ fallback `handle { reverse_proxy alice-frontend:8080 }`, apontando para o servi�
 Exemplo (já aplicado em 22/02/2026):
 
 ```caddy
-handle /api/trading-v2/* {
+handle /api/trading/* {
     reverse_proxy alice-integrations:3005 {
         import proxy_headers
     }
 }
 
-handle /internal/trading-v2/* {
+handle /internal/trading/* {
     reverse_proxy alice-integrations:3005 {
         import proxy_headers
     }
@@ -455,15 +455,15 @@ handle /internal/trading-v2/* {
 docker exec alice-caddy ss -tlnp | grep -E '80|443'
 
 # 2. Testar roteamento de um endpoint (substituir <HOST> e <COOKIE>)
-curl -si -H "Cookie: <COOKIE>" https://<HOST>/api/trading-v2/portfolios
+curl -si -H "Cookie: <COOKIE>" https://<HOST>/api/trading/portfolios
 
 # Esperado: {"success":true,"data":[...]} — NOT {"error":"Acesso direto..."}
 
 # 3. Validar sem autenticação (deve retornar 401, não 403)
-curl -si https://<HOST>/api/trading-v2/portfolios | head -5
+curl -si https://<HOST>/api/trading/portfolios | head -5
 
 # 4. Inspecionar logs do Caddy para ver upstream usado
-docker logs alice-caddy --tail 100 | grep "trading-v2"
+docker logs alice-caddy --tail 100 | grep "trading"
 ```
 
 ### Mapeamento de rotas → upstreams (referência SSOT)
@@ -479,8 +479,8 @@ docker logs alice-caddy --tail 100 | grep "trading-v2"
 | `/api/rag/*`                      | `alice-rag:3003`       |                                               |
 | `/api/media*`                     | `alice-rag:3003`       |                                               |
 | `/api/training/*`                 | `alice-training:3004`  |                                               |
-| `/api/trading-v2/*`               | `alice-integrations:3005` | ✅ Adicionado 22/02/2026                   |
-| `/internal/trading-v2/*`          | `alice-integrations:3005` | ✅ Adicionado 22/02/2026                   |
+| `/api/trading/*`               | `alice-integrations:3005` | ✅ Adicionado 22/02/2026                   |
+| `/internal/trading/*`          | `alice-integrations:3005` | ✅ Adicionado 22/02/2026                   |
 | `/api/integrations/*`             | `alice-integrations:3005` |                                            |
 | `/webhook/*`                      | `alice-integrations:3005` |                                            |
 | `/api/observability/*`            | `alice-observability:3007` |                                           |

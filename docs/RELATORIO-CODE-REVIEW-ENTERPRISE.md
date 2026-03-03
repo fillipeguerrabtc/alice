@@ -1,4 +1,4 @@
-﻿
+
 # RELATORIO CODE REVIEW ENTERPRISE - Alice
 
 Data da revisao: 2026-02-26
@@ -53,7 +53,7 @@ Evidencias de baseline:
 | llm-gateway-service | Proxy/resolve de contexto/modelo/adapter LoRA com fail-closed para trading | `apps/llm-gateway-service/src/index.ts` | Internal secret middleware global | N/A (DB para resolucao de contexto/model) | chamado por chat-service | `apps/llm-gateway-service/src/index.ts:171`, `:185`, `:260`, `:286`, `:419` |
 | observability-service | Health aggregation, URLs observability, backup orchestrator | `apps/observability-service/src/index.ts` | internal auth ou sessao (`requireInternalOrSessionAuth`) | chamadas a Prom/Grafana/Jaeger + backup orchestration | pgbackrest, docker exec, qdrant restore | `apps/observability-service/src/index.ts:83`, `:467`, `:868`, `:952`; `apps/observability-service/src/backup-orchestrator.ts:303` |
 | rag-service | Ingestao, parsing, upload, embeddings, retrieval, media storage | `apps/rag-service/src/index.ts` | `requireAuth + requirePermission + requireSameTenant` na maioria das rotas | PostgreSQL + Qdrant + storage local + Redis | training/gpu/searxng | `apps/rag-service/src/index.ts:2317`, `:2472`, `:4235`; `apps/rag-service/src/storage.ts:203` |
-| training-service | Dataset governance, quarantine/approval, jobs fine-tune, trading v2 workers | `apps/training-service/src/index.ts` | RBAC + rotas internas HMAC | PostgreSQL + Redis streams/queues | rag/integrations/llm scopes | `apps/training-service/src/index.ts:772`, `:877`, `:1945`, `:2281`, `:3512` |
+| training-service | Dataset governance, quarantine/approval, jobs fine-tune, trading workers | `apps/training-service/src/index.ts` | RBAC + rotas internas HMAC | PostgreSQL + Redis streams/queues | rag/integrations/llm scopes | `apps/training-service/src/index.ts:772`, `:877`, `:1945`, `:2281`, `:3512` |
 | biometrics-service (Python) | Enrollment/verify facial server-side | `apps/biometrics-service/main.py` | Internal API secret header | PostgreSQL + pgvector | auth-service chama endpoints internos | `apps/biometrics-service/main.py:148`, `:312`, `:443`; `apps/biometrics-service/Dockerfile` |
 
 ### 3.2 Packages
@@ -173,7 +173,7 @@ sequenceDiagram
   participant DB as Postgres
   FE->>INT: /api/integrations/trading/* (RBAC)
   INT->>DB: risk config, signals, orders, audit
-  INT->>TR: /internal/trading-v2/enqueue/* (HMAC)
+  INT->>TR: /internal/trading/enqueue/* (HMAC)
   TR->>DB: workers + auto_runs + decisions
   TR->>LLM: inferencia com fail-closed de escopo
   TR-->>INT: status/resultado
@@ -203,7 +203,7 @@ Evidencias:
 - Envio postmortem para training: `apps/integrations-service/src/index.ts:21606`, `:21656`.
 - Quarantine e scope resolver: `apps/training-service/src/index.ts:1969`, `:1984-1994`, `:2020-2029`.
 - Approval/override scope: `apps/training-service/src/index.ts:2281`, `:2337-2340`, `:2390`, `:2436`.
-- Lineage tables: `migrations/0079_trading_v2_enterprise_hardening.sql:36`, `:52`.
+- Lineage tables: `migrations/0079_trading_enterprise_hardening.sql:36`, `:52`.
 
 ### 4.5 RAG ingestao (PDF/DOCX/HTML), chunking, embeddings, retrieval, governance
 ```mermaid
@@ -268,7 +268,7 @@ Evidencias:
 | Categoria | Peso | Score (0-100) | Peso x Score | Evidencia resumida |
 |---|---:|---:|---:|---|
 | Seguranca & Tenant Isolation | 20% | 62 | 12.4 | Boa base em auth/RBAC/CSRF; falhas criticas em rotas internas chat e WS agent (`apps/chat-service/src/index.ts:18549`, `:18829`, `:15647`) |
-| Trading Risk Controls & Governanca | 20% | 74 | 14.8 | Guardrails, risk config, kill-switch, approval flows presentes (`apps/integrations-service/src/index.ts:12121`, `apps/training-service/src/trading-v2/jobs/model-risk-worker.ts:79`) |
+| Trading Risk Controls & Governanca | 20% | 74 | 14.8 | Guardrails, risk config, kill-switch, approval flows presentes (`apps/integrations-service/src/index.ts:12121`, `apps/training-service/src/trading/jobs/model-risk-worker.ts:79`) |
 | Confiabilidade/Resiliencia | 15% | 76 | 11.4 | Circuit breakers/timeouts/filas amplos; excecao critica de fallback sync postmortem (`apps/integrations-service/src/postmortem-worker.ts:144`) |
 | Integridade de Dados (DB/RLS) | 15% | 68 | 10.2 | Schema/migrations robustos; mismatch RLS GUC e politica ausente em tabela auto steps (`migrations/0012_technical_indicators.sql:151`, `migrations/0083_trading_auto_engine.sql:86`) |
 | Observabilidade | 10% | 78 | 7.8 | Prometheus/Grafana/Jaeger/Loki/backup presentes; falta tracer app-level e RBAC granular em endpoints observability |
