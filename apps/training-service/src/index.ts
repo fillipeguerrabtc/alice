@@ -1974,11 +1974,13 @@ const systemConfigPatchSchema = z.object({
   configs: z.record(z.string().min(1)),
 });
 
+const SYSTEM_CONFIG_PATCH_KEYS = [...SYSTEM_CONFIG_KNOWN_KEYS] as const;
+
 app.patch('/api/training/system-config', requirePermission('config:system:write'), async (req: Request, res: Response) => {
   try {
     const body = systemConfigPatchSchema.parse(req.body);
     for (const [key, value] of Object.entries(body.configs)) {
-      if (SYSTEM_CONFIG_KNOWN_KEYS.includes(key as (typeof SYSTEM_CONFIG_KNOWN_KEYS)[number])) {
+      if (SYSTEM_CONFIG_PATCH_KEYS.includes(key as (typeof SYSTEM_CONFIG_PATCH_KEYS)[number])) {
         await setSystemConfig(key, String(value));
       }
     }

@@ -11,46 +11,46 @@
 Todas as chaves abaixo sao lidas de `system_config` (PostgreSQL) e podem ser editadas na UI em **Configuracoes do Sistema**.  
 Se a chave nao existir no banco, o backend usa fallback de ambiente/default.
 
-### 1.1 Gates de dados e dataset
+### 1.1 Gates de dados e dataset (20GB recomendado)
 
 | Chave | Default | Efeito |
 |---|---:|---|
-| `MIN_ONDEMAND_DATASET_SIZE` | `10` | Minimo de exemplos aprovados para run `on_demand` e `custom_job`. |
+| `MIN_ONDEMAND_DATASET_SIZE` | `20` | Minimo de exemplos aprovados para run `on_demand` e `custom_job`. |
 | `MIN_SCHEDULED_DATASET_SIZE_INCREMENTAL` | `50` | Minimo de exemplos para run agendada incremental. |
 | `MIN_SCHEDULED_DATASET_SIZE_FULL` | `200` | Minimo de exemplos para run agendada completa. |
-| `TRAINING_QUALITY_MIN_RATIO` | `0.5` | Qualidade minima para liberar run. |
+| `TRAINING_QUALITY_MIN_RATIO` | `0.60` | Qualidade minima para liberar run. |
 | `TRAINING_DATASET_MAX_ROWS` | `5000` | Cap de linhas no dataset montado para treino. |
-| `TRAINING_TRAIN_EVAL_SPLIT_RATIO` | `0.9` | Split treino/avaliacao (ex.: 90/10). |
+| `TRAINING_TRAIN_EVAL_SPLIT_RATIO` | `0.90` | Split treino/avaliacao (ex.: 90/10). |
 
 ### 1.2 Execucao GPU e slices
 
 | Chave | Default | Efeito |
 |---|---:|---|
-| `TRAINING_SLICE_STEPS` | `5` | Passos por requisicao ao gpu-trainer. |
-| `TRAINING_GPU_TIMEOUT_MS` | `25000` | Timeout por slice no gpu-trainer. |
+| `TRAINING_SLICE_STEPS` | `10` | Passos por requisicao ao gpu-trainer. |
+| `TRAINING_GPU_TIMEOUT_MS` | `120000` | Timeout por slice no gpu-trainer. |
+| `maxSeqLen` | `1536` | Limite de sequencia para cenarios de 20GB VRAM. |
 
 ### 1.3 Hyperparams e presets
 
 | Chave | Default | Efeito |
 |---|---:|---|
-| `TRAINING_DEFAULT_HYPERPARAMS_JSON` | JSON padrao | Base de hyperparams usada no snapshot do run. |
-| `TRAINING_PRESET_SAFE_JSON` | JSON safe | Preset conservador. |
-| `TRAINING_PRESET_STANDARD_JSON` | JSON standard | Preset balanceado. |
-| `TRAINING_PRESET_LARGE_JSON` | JSON large | Preset agressivo para dataset maior. |
+| `TRAINING_DEFAULT_HYPERPARAMS_JSON` | `{"epochs":2,"learningRate":0.0001,"batchSize":2,"maxSeqLen":1536,"gradientAccumulationSteps":4,"warmupSteps":100,"loraRank":16,"loraAlpha":32,"loraDropout":0.05}` | Base de hyperparams usada no snapshot do run. |
+| `TRAINING_PRESET_SAFE_JSON` | `{"epochs":2,"learningRate":0.0001,"batchSize":2,"maxSeqLen":1536,"gradientAccumulationSteps":4,"warmupSteps":100,"loraRank":16,"loraAlpha":32,"loraDropout":0.05}` | Preset conservador para 20GB. |
+| `TRAINING_PRESET_STANDARD_JSON` | `{"epochs":3,"learningRate":0.0002,"batchSize":2,"maxSeqLen":1536,"gradientAccumulationSteps":4,"warmupSteps":100,"loraRank":16,"loraAlpha":32,"loraDropout":0.05}` | Preset balanceado. |
+| `TRAINING_PRESET_LARGE_JSON` | `{"epochs":1,"learningRate":0.0001,"batchSize":2,"maxSeqLen":1536,"gradientAccumulationSteps":8,"warmupSteps":100,"loraRank":16,"loraAlpha":32,"loraDropout":0.05}` | Preset para dataset maior com seguranca de VRAM. |
 
 Campos suportados nos JSONs:
 - `epochs`
 - `learningRate`
 - `batchSize`
+- `maxSeqLen`
 - `gradientAccumulationSteps`
 - `warmupSteps`
-- `maxSeqLen`
 - `loraRank`
 - `loraAlpha`
 - `loraDropout`
-- `lrSchedulerType`
-- `maxGradNorm`
-- `targetModules`
+
+> Os defaults recomendados de 20GB estao alinhados com o trainer em `docker/gpu/lora-trainer/app/main.py` (base segura: `maxSeqLen=1536`, `batchSize=2`, `lr=1e-4`).
 
 ### 1.4 Agenda e promocao automatica
 
