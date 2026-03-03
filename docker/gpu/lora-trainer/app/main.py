@@ -15,7 +15,7 @@ import os
 import shutil
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import torch
 from fastapi import FastAPI, HTTPException
@@ -62,6 +62,105 @@ def _update_gpu_metrics() -> None:
         GPU_MEMORY_USED.set(0)
 
 
+def _normalize_messages(raw_messages: Any) -> List[Dict[str, str]]:
+    if not isinstance(raw_messages, list) or len(raw_messages) == 0:
+        raise ValueError("Campo 'messages' deve ser uma lista nao vazia")
+    normalized: List[Dict[str, str]] = []
+    for item in raw_messages:
+        if not isinstance(item, dict):
+            raise ValueError("Cada entrada de 'messages' deve ser objeto")
+        role = item.get("role")
+        content = item.get("content")
+        if role not in {"system", "user", "assistant"}:
+            raise ValueError("Role invalido em 'messages'; esperado system|user|assistant")
+        if not isinstance(content, str) or len(content.strip()) == 0:
+            raise ValueError("Conteudo invalido em 'messages'")
+        normalized.append({"role": role, "content": content})
+    return normalized
+
+
+def _render_messages_with_template(tokenizer: Any, messages: List[Dict[str, str]]) -> str:
+    if len(messages) == 0:
+        return ""
+    if hasattr(tokenizer, "apply_chat_template"):
+        rendered = tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=False,
+        )
+        if isinstance(rendered, str) and len(rendered.strip()) > 0:
+            return rendered
+    lines = [f"{message['role']}: {message['content']}" for message in messages]
+    return "\n".join(lines)
+
+
+def _tokenize_text(tokenizer: Any, text: str, max_seq_len: int) -> Dict[str, List[int]]:
+    tokens = tokenizer(
+        text,
+        truncation=True,
+        max_length=max_seq_len,
+        padding="max_length",
+    )
+    input_ids = list(tokens["input_ids"])
+    labels = list(input_ids)
+    tokens["labels"] = labels
+    return tokens
+
+
+def _tokenize_messages_with_assistant_mask(
+    tokenizer: Any,
+    messages: List[Dict[str, str]],
+    max_seq_len: int,
+) -> Dict[str, List[int]]:
+    full_text = _render_messages_with_template(tokenizer, messages)
+    full_tokens = tokenizer(
+        full_text,
+        truncation=True,
+        max_length=max_seq_len,
+        padding="max_length",
+    )
+    input_ids = list(full_tokens["input_ids"])
+    labels = [-100] * len(input_ids)
+
+    assistant_spans: List[Tuple[int, int]] = []
+    for idx, message in enumerate(messages):
+        if message["role"] != "assistant":
+            continue
+        prefix_messages = messages[:idx]
+        current_messages = messages[: idx + 1]
+        prefix_text = _render_messages_with_template(tokenizer, prefix_messages)
+        current_text = _render_messages_with_template(tokenizer, current_messages)
+        prefix_ids = tokenizer(
+            prefix_text,
+            truncation=True,
+            max_length=max_seq_len,
+            padding=False,
+            add_special_tokens=False,
+        )["input_ids"]
+        current_ids = tokenizer(
+            current_text,
+            truncation=True,
+            max_length=max_seq_len,
+            padding=False,
+            add_special_tokens=False,
+        )["input_ids"]
+        span_start = min(len(prefix_ids), max_seq_len)
+        span_end = min(len(current_ids), max_seq_len)
+        if span_end > span_start:
+            assistant_spans.append((span_start, span_end))
+
+    for span_start, span_end in assistant_spans:
+        for pos in range(span_start, span_end):
+            if 0 <= pos < len(input_ids):
+                labels[pos] = input_ids[pos]
+
+    if all(label == -100 for label in labels):
+        labels = list(input_ids)
+
+    full_tokens["labels"] = labels
+    return full_tokens
+
+
 class LoraHyperparams(BaseModel):
     epochs: int = Field(3, ge=1, le=50)
     learningRate: float = Field(1e-4, gt=0, lt=1.0)
@@ -73,6 +172,18 @@ class LoraHyperparams(BaseModel):
     loraRank: int = Field(16, ge=4, le=128)
     loraAlpha: int = Field(32, ge=8, le=256)
     loraDropout: float = Field(0.05, ge=0.0, le=0.5)
+    lrSchedulerType: Literal[
+        "constant",
+        "constant_with_warmup",
+        "linear",
+        "cosine",
+        "cosine_with_restarts",
+        "polynomial",
+        "inverse_sqrt",
+        "reduce_lr_on_plateau",
+    ] = "linear"
+    maxGradNorm: float = Field(1.0, gt=0.0, le=100.0)
+    targetModules: Optional[List[str]] = Field(default=None, min_length=1)
 
 
 class TrainSliceRequest(BaseModel):
@@ -181,16 +292,17 @@ def train_lora_slice(req: TrainSliceRequest) -> TrainSliceResponse:
 
             def tokenize_fn(ex: Dict[str, Any]) -> Dict[str, Any]:
                 text = ex.get("text")
-                if not isinstance(text, str) or len(text) == 0:
-                    raise ValueError("Campo 'text' ausente/vazio no JSONL")
-                tokens = tokenizer(
-                    text,
-                    truncation=True,
-                    max_length=req.hyperparameters.maxSeqLen,
-                    padding="max_length",
-                )
-                tokens["labels"] = tokens["input_ids"].copy()
-                return tokens
+                messages = ex.get("messages")
+                if isinstance(text, str) and len(text.strip()) > 0:
+                    return _tokenize_text(tokenizer, text, req.hyperparameters.maxSeqLen)
+                if messages is not None:
+                    normalized_messages = _normalize_messages(messages)
+                    return _tokenize_messages_with_assistant_mask(
+                        tokenizer,
+                        normalized_messages,
+                        req.hyperparameters.maxSeqLen,
+                    )
+                raise ValueError("Cada linha JSONL deve conter 'text' (string) ou 'messages' (lista)")
 
             dataset = dataset.map(tokenize_fn, remove_columns=dataset.column_names)
             if eval_dataset is not None:
@@ -219,6 +331,7 @@ def train_lora_slice(req: TrainSliceRequest) -> TrainSliceResponse:
                 lora_dropout=req.hyperparameters.loraDropout,
                 bias="none",
                 task_type="CAUSAL_LM",
+                target_modules=req.hyperparameters.targetModules,
             )
 
             model = get_peft_model(model, lora_cfg)
@@ -241,6 +354,8 @@ def train_lora_slice(req: TrainSliceRequest) -> TrainSliceResponse:
                 per_device_eval_batch_size=req.hyperparameters.batchSize,
                 gradient_accumulation_steps=req.hyperparameters.gradientAccumulationSteps,
                 warmup_steps=req.hyperparameters.warmupSteps,
+                lr_scheduler_type=req.hyperparameters.lrSchedulerType,
+                max_grad_norm=req.hyperparameters.maxGradNorm,
                 logging_steps=1,
                 save_steps=req.stepsThisSlice,
                 eval_steps=req.stepsThisSlice if eval_dataset is not None else None,
