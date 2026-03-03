@@ -455,7 +455,7 @@
   },
   "agents": {
     "title": "AI Agents",
-    "subtitle": "Active: {{active}} / {{total}} — create specialist agents and link them to the right namespace.",
+    "subtitle": "Active: {{active}} / {{total}} â€” create specialist agents and link them to the right namespace.",
     "create": "Create Agent",
     "edit": "Edit Agent",
     "deleteAgent": "Delete Agent",
@@ -515,7 +515,7 @@
       "temperature": "Temperature",
       "temperatureDesc": "Controls the randomness of responses. Lower values = more deterministic, higher values = more creative.",
       "maxTokens": "Max Tokens",
-      "maxTokensDesc": "Maximum token limit in response (1 token ≈ 4 characters in English)",
+      "maxTokensDesc": "Maximum token limit in response (1 token â‰ˆ 4 characters in English)",
       "activeCapabilities": "Active Capabilities",
       "noCapabilities": "No capabilities added",
       "addCapability": "Add Capability",
@@ -573,7 +573,7 @@
   },
   "namespaces": {
     "title": "Namespaces",
-    "subtitle": "{{count}} active namespaces — organize context, documents, and agents by domain.",
+    "subtitle": "{{count}} active namespaces â€” organize context, documents, and agents by domain.",
     "create": "Create Namespace",
     "edit": "Edit Namespace",
     "deleteNamespace": "Delete Namespace",
@@ -946,7 +946,9 @@
       "trainingPresetLargeJson": "LARGE preset (JSON)",
       "trainingPresetLargeJsonDesc": "Aggressive preset for larger datasets and stronger adaptation.",
       "maxSeqLen": "Max sequence length",
-      "maxSeqLenDesc": "TRL truncation. Higher values increase VRAM usage."
+      "maxSeqLenDesc": "TRL truncation. Higher values increase VRAM usage.",
+      "applyRecommended": "Apply 20GB recommended defaults",
+      "recommendedApplied": "20GB recommended defaults applied successfully"
     },
     "embeddingsDesc": "Embedding model and dimensions.",
     "embeddingsPlaceholder": "Embedding settings are defined in the backend (Qwen3-Embedding GPU). See technical documentation.",
@@ -1067,7 +1069,7 @@
     "time": "HH:mm",
     "datetime": "MM/DD/YYYY HH:mm",
     "currency": "EUR",
-    "currencySymbol": "€"
+    "currencySymbol": "â‚¬"
   },
   "billing": {
     "title": "Billing",
@@ -1823,6 +1825,22 @@
       "nextRunAt": "Next run: {{date}}",
       "openSchedule": "Open schedule"
     },
+    "activeConfig": {
+      "title": "Active config summary",
+      "desc": "Effective values currently used by backend training governance and execution.",
+      "minOndemandDatasetSize": "On-demand minimum: {{value}} approved samples",
+      "minScheduledDatasets": "Scheduled minimums: incremental {{incremental}} | full {{full}}",
+      "qualityMinRatio": "Minimum quality ratio: {{value}}%",
+      "datasetMaxRows": "Maximum dataset rows: {{value}}",
+      "trainEvalSplitRatio": "Train/eval split: {{value}}% train",
+      "sliceSteps": "Steps per slice: {{value}}",
+      "gpuTimeoutMs": "GPU timeout per slice: {{value}} ms",
+      "maxSeqLen": "Global maxSeqLen: {{value}}",
+      "defaultHyperparams": "Default hyperparams: ep={{epochs}} lr={{learningRate}} bs={{batchSize}} maxSeq={{maxSeqLen}} gradAcc={{gradientAccumulationSteps}} warmup={{warmupSteps}} rank={{loraRank}} alpha={{loraAlpha}} dropout={{loraDropout}}",
+      "presetSafe": "SAFE preset: ep={{epochs}} lr={{learningRate}} bs={{batchSize}} maxSeq={{maxSeqLen}} gradAcc={{gradientAccumulationSteps}} warmup={{warmupSteps}} rank={{loraRank}} alpha={{loraAlpha}} dropout={{loraDropout}}",
+      "presetStandard": "STANDARD preset: ep={{epochs}} lr={{learningRate}} bs={{batchSize}} maxSeq={{maxSeqLen}} gradAcc={{gradientAccumulationSteps}} warmup={{warmupSteps}} rank={{loraRank}} alpha={{loraAlpha}} dropout={{loraDropout}}",
+      "presetLarge": "LARGE preset: ep={{epochs}} lr={{learningRate}} bs={{batchSize}} maxSeq={{maxSeqLen}} gradAcc={{gradientAccumulationSteps}} warmup={{warmupSteps}} rank={{loraRank}} alpha={{loraAlpha}} dropout={{loraDropout}}"
+    },
     "scope": {
       "tenant": "Scope: tenant-wide",
       "namespace": "Scope: namespace {{name}}",
@@ -1908,7 +1926,7 @@
     },
     "universal": {
       "title": "Universal training per namespace",
-      "desc": "The Data tab contains entries from all namespaces. New Job and Pipeline Trading train by selected namespace — the LoRA adapter is separate per namespace. Use the namespace filter on the Data tab and select the namespace when creating a job to train any domain (Trading, Sales, Support, etc.)."
+      "desc": "The Data tab contains entries from all namespaces. New Job and Pipeline Trading train by selected namespace â€” the LoRA adapter is separate per namespace. Use the namespace filter on the Data tab and select the namespace when creating a job to train any domain (Trading, Sales, Support, etc.)."
     },
     "createJob": {
       "title": "New Fine-tuning Job",
@@ -1918,6 +1936,7 @@
       "namespacePlaceholder": "Select namespace to train",
       "namespaceHelp": "The job will use only approved data from this namespace. The LoRA adapter is associated with the namespace.",
       "namespaceRequired": "Select a namespace to create the job.",
+      "invalidHyperparams": "Invalid hyperparameters. Review field limits before starting.",
       "nameLabel": "Job Name",
       "namePlaceholder": "e.g.: Fine-tune sales Q4 2025",
       "presetLabel": "Preset",
@@ -2353,7 +2372,7 @@
       },
       "swing": {
         "title": "Swing Trade",
-        "desc": "Captures multi‑day swings with broader moves."
+        "desc": "Captures multiâ€‘day swings with broader moves."
       },
       "position": {
         "title": "Position Trading",
@@ -2463,7 +2482,7 @@
         "withLeverage": "with leverage",
         "submit": "Execute Order",
         "usdtValue": "Value (USDT)",
-        "usdtHint": "Fill quantity or USDT value — auto conversion",
+        "usdtHint": "Fill quantity or USDT value â€” auto conversion",
         "liveQuote": "Real-time Quote",
         "liveLabel": "Live",
         "offlineLabel": "Offline",
@@ -3698,3 +3717,5 @@
     "approveRealDesc": "Approve signal and create Real order"
   }
 }
+
+

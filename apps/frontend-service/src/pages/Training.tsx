@@ -92,6 +92,11 @@ import { apiRequest } from '@/lib/queryClient';
 import { cn, formatDate, formatDateTime } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { frontendLogger } from '@/lib/logger';
+import {
+  parseTrainingHyperparamsJson as parseSharedTrainingHyperparamsJson,
+  trainingHyperparamsSchema as sharedTrainingHyperparamsSchema,
+  type TrainingHyperparams,
+} from '../../../../packages/shared-utils/src/training-config';
 
 interface TrainingData {
   id: string;
@@ -237,25 +242,18 @@ interface BulkImportResult {
 
 type TrainingHyperparamsPreset = 'safe' | 'standard' | 'large';
 
-type TrainingHyperparamsForm = {
-  epochs: number;
-  learningRate: number;
-  batchSize: number;
-  gradientAccumulationSteps: number;
-  warmupSteps: number;
-  maxSeqLen: number;
-  loraRank: number;
-  loraAlpha: number;
-  loraDropout: number;
-  lrSchedulerType: string;
-  maxGradNorm: number;
-  targetModules: string[];
-};
+type TrainingHyperparamsForm = TrainingHyperparams;
 
 type TrainingSystemConfigRuntime = {
   minOndemandDatasetSize: number;
   minScheduledDatasetSizeIncremental: number;
   minScheduledDatasetSizeFull: number;
+  qualityMinRatio: number;
+  datasetMaxRows: number;
+  trainEvalSplitRatio: number;
+  sliceSteps: number;
+  gpuTimeoutMs: number;
+  maxSeqLen: number;
   autoLearningCronIncremental: string;
   autoLearningCronFull: string;
   autoLearningIncludeImages: boolean;
@@ -263,75 +261,71 @@ type TrainingSystemConfigRuntime = {
   presets: Record<TrainingHyperparamsPreset, TrainingHyperparamsForm>;
 };
 
+const TRAINING_HYPERPARAMS_SAFE_FALLBACK: TrainingHyperparamsForm = {
+  epochs: 2,
+  learningRate: 0.0001,
+  batchSize: 2,
+  maxSeqLen: 1536,
+  gradientAccumulationSteps: 4,
+  warmupSteps: 100,
+  loraRank: 16,
+  loraAlpha: 32,
+  loraDropout: 0.05,
+};
+
+const TRAINING_HYPERPARAMS_STANDARD_FALLBACK: TrainingHyperparamsForm = {
+  epochs: 3,
+  learningRate: 0.0002,
+  batchSize: 2,
+  maxSeqLen: 1536,
+  gradientAccumulationSteps: 4,
+  warmupSteps: 100,
+  loraRank: 16,
+  loraAlpha: 32,
+  loraDropout: 0.05,
+};
+
+const TRAINING_HYPERPARAMS_LARGE_FALLBACK: TrainingHyperparamsForm = {
+  epochs: 1,
+  learningRate: 0.0001,
+  batchSize: 2,
+  maxSeqLen: 1536,
+  gradientAccumulationSteps: 8,
+  warmupSteps: 100,
+  loraRank: 16,
+  loraAlpha: 32,
+  loraDropout: 0.05,
+};
+
 const TRAINING_SYSTEM_CONFIG_DEFAULTS = {
-  MIN_ONDEMAND_DATASET_SIZE: '10',
+  MIN_ONDEMAND_DATASET_SIZE: '20',
   MIN_SCHEDULED_DATASET_SIZE_INCREMENTAL: '50',
   MIN_SCHEDULED_DATASET_SIZE_FULL: '200',
+  TRAINING_QUALITY_MIN_RATIO: '0.60',
+  TRAINING_DATASET_MAX_ROWS: '5000',
+  TRAINING_TRAIN_EVAL_SPLIT_RATIO: '0.90',
+  TRAINING_SLICE_STEPS: '10',
+  TRAINING_GPU_TIMEOUT_MS: '120000',
+  maxSeqLen: '1536',
   AUTO_LEARNING_CRON_INCREMENTAL: '0 3 * * 0',
   AUTO_LEARNING_CRON_FULL: '0 1 1,15 * *',
   AUTO_LEARNING_INCLUDE_IMAGES: 'true',
-  TRAINING_DEFAULT_HYPERPARAMS_JSON: JSON.stringify({
-    epochs: 3,
-    learningRate: 0.0001,
-    batchSize: 4,
-    gradientAccumulationSteps: 1,
-    warmupSteps: 100,
-    maxSeqLen: 2048,
-    loraRank: 16,
-    loraAlpha: 32,
-    loraDropout: 0.05,
-    lrSchedulerType: 'linear',
-    maxGradNorm: 1,
-    targetModules: ['q_proj', 'k_proj', 'v_proj', 'o_proj'],
-  }),
-  TRAINING_PRESET_SAFE_JSON: JSON.stringify({
-    epochs: 2,
-    learningRate: 0.00005,
-    batchSize: 2,
-    gradientAccumulationSteps: 2,
-    warmupSteps: 150,
-    maxSeqLen: 1536,
-    loraRank: 8,
-    loraAlpha: 16,
-    loraDropout: 0.1,
-    lrSchedulerType: 'linear',
-    maxGradNorm: 0.5,
-    targetModules: ['q_proj', 'v_proj'],
-  }),
-  TRAINING_PRESET_STANDARD_JSON: JSON.stringify({
-    epochs: 3,
-    learningRate: 0.0001,
-    batchSize: 4,
-    gradientAccumulationSteps: 1,
-    warmupSteps: 100,
-    maxSeqLen: 2048,
-    loraRank: 16,
-    loraAlpha: 32,
-    loraDropout: 0.05,
-    lrSchedulerType: 'linear',
-    maxGradNorm: 1,
-    targetModules: ['q_proj', 'k_proj', 'v_proj', 'o_proj'],
-  }),
-  TRAINING_PRESET_LARGE_JSON: JSON.stringify({
-    epochs: 5,
-    learningRate: 0.00015,
-    batchSize: 8,
-    gradientAccumulationSteps: 1,
-    warmupSteps: 80,
-    maxSeqLen: 3072,
-    loraRank: 32,
-    loraAlpha: 64,
-    loraDropout: 0.03,
-    lrSchedulerType: 'cosine',
-    maxGradNorm: 1,
-    targetModules: ['q_proj', 'k_proj', 'v_proj', 'o_proj', 'gate_proj', 'up_proj', 'down_proj'],
-  }),
+  TRAINING_DEFAULT_HYPERPARAMS_JSON: JSON.stringify(TRAINING_HYPERPARAMS_SAFE_FALLBACK),
+  TRAINING_PRESET_SAFE_JSON: JSON.stringify(TRAINING_HYPERPARAMS_SAFE_FALLBACK),
+  TRAINING_PRESET_STANDARD_JSON: JSON.stringify(TRAINING_HYPERPARAMS_STANDARD_FALLBACK),
+  TRAINING_PRESET_LARGE_JSON: JSON.stringify(TRAINING_HYPERPARAMS_LARGE_FALLBACK),
 } as const;
 
 const trainingSystemConfigSchema = z.object({
   MIN_ONDEMAND_DATASET_SIZE: z.coerce.number().int().min(1),
   MIN_SCHEDULED_DATASET_SIZE_INCREMENTAL: z.coerce.number().int().min(1),
   MIN_SCHEDULED_DATASET_SIZE_FULL: z.coerce.number().int().min(1),
+  TRAINING_QUALITY_MIN_RATIO: z.coerce.number().min(0).max(1),
+  TRAINING_DATASET_MAX_ROWS: z.coerce.number().int().min(100),
+  TRAINING_TRAIN_EVAL_SPLIT_RATIO: z.coerce.number().min(0.5).max(0.99),
+  TRAINING_SLICE_STEPS: z.coerce.number().int().min(1),
+  TRAINING_GPU_TIMEOUT_MS: z.coerce.number().int().min(10000),
+  maxSeqLen: z.coerce.number().int().min(256).max(32768),
   AUTO_LEARNING_CRON_INCREMENTAL: z.string().min(1),
   AUTO_LEARNING_CRON_FULL: z.string().min(1),
   AUTO_LEARNING_INCLUDE_IMAGES: z.string().transform((raw) => raw.trim().toLowerCase() === 'true'),
@@ -341,33 +335,22 @@ const trainingSystemConfigSchema = z.object({
   TRAINING_PRESET_LARGE_JSON: z.string().min(2).optional(),
 });
 
-const trainingHyperparamsSchema = z.object({
-  epochs: z.coerce.number().int().positive().default(3),
-  learningRate: z.coerce.number().positive().default(0.0001),
-  batchSize: z.coerce.number().int().positive().default(4),
-  gradientAccumulationSteps: z.coerce.number().int().positive().default(1),
-  warmupSteps: z.coerce.number().int().nonnegative().default(100),
-  maxSeqLen: z.coerce.number().int().min(256).max(32768).default(2048),
-  loraRank: z.coerce.number().int().positive().default(16),
-  loraAlpha: z.coerce.number().positive().default(32),
-  loraDropout: z.coerce.number().min(0).max(1).default(0.05),
-  lrSchedulerType: z.string().min(1).default('linear'),
-  maxGradNorm: z.coerce.number().positive().default(1),
-  targetModules: z.array(z.string().min(1)).min(1).default(['q_proj', 'k_proj', 'v_proj', 'o_proj']),
-});
-
-function parseTrainingHyperparamsJson(raw: string): TrainingHyperparamsForm {
-  let parsed: unknown;
+function parseTrainingHyperparamsConfig(raw: string, key: string): TrainingHyperparamsForm {
   try {
-    parsed = JSON.parse(raw);
-  } catch {
-    parsed = {};
+    return parseSharedTrainingHyperparamsJson(raw);
+  } catch (error) {
+    frontendLogger.warn('Configuracao de hyperparams invalida no system_config; aplicando fallback seguro', {
+      key,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    if (key === 'TRAINING_PRESET_STANDARD_JSON') {
+      return { ...TRAINING_HYPERPARAMS_STANDARD_FALLBACK };
+    }
+    if (key === 'TRAINING_PRESET_LARGE_JSON') {
+      return { ...TRAINING_HYPERPARAMS_LARGE_FALLBACK };
+    }
+    return { ...TRAINING_HYPERPARAMS_SAFE_FALLBACK };
   }
-  const result = trainingHyperparamsSchema.safeParse(parsed);
-  if (!result.success) {
-    return trainingHyperparamsSchema.parse({});
-  }
-  return result.data;
 }
 
 function getScopeLabel(job: FineTuningJob, namespacesById: Map<string, string>, t: (key: string, options?: Record<string, unknown>) => string): string {
@@ -652,7 +635,7 @@ function JobCard({
   canRollback?: boolean;
   actionPending?: boolean;
 }) {
-  const hyperparameters = job.hyperparameters || { epochs: 3, learningRate: 0.0001, batchSize: 4 };
+  const hyperparameters = job.hyperparameters;
   const evalLabel = t(`training.evaluation.${job.evaluationStatus ?? 'pending'}`);
   const promotionLabel = t(`training.promotion.${job.promotionStatus ?? 'candidate'}`);
   const timelineFinalKey = job.promotionStatus === 'active'
@@ -709,15 +692,15 @@ function JobCard({
 
           <div className="grid grid-cols-3 gap-2 text-xs">
             <div className="p-2 rounded bg-muted/50 text-center">
-              <div className="font-medium">{hyperparameters.epochs}</div>
+              <div className="font-medium">{hyperparameters?.epochs ?? '-'}</div>
               <div className="text-muted-foreground">{t('training.job.epochs')}</div>
             </div>
             <div className="p-2 rounded bg-muted/50 text-center">
-              <div className="font-medium">{hyperparameters.batchSize}</div>
+              <div className="font-medium">{hyperparameters?.batchSize ?? '-'}</div>
               <div className="text-muted-foreground">{t('training.job.batch')}</div>
             </div>
             <div className="p-2 rounded bg-muted/50 text-center">
-              <div className="font-medium">{hyperparameters.learningRate}</div>
+              <div className="font-medium">{hyperparameters?.learningRate ?? '-'}</div>
               <div className="text-muted-foreground">{t('training.job.lr')}</div>
             </div>
           </div>
@@ -943,9 +926,6 @@ function CreateJobDialog({
   const [loraRank, setLoraRank] = useState(defaultHyperparams.loraRank);
   const [loraAlpha, setLoraAlpha] = useState(defaultHyperparams.loraAlpha);
   const [loraDropout, setLoraDropout] = useState(defaultHyperparams.loraDropout);
-  const [lrSchedulerType, setLrSchedulerType] = useState(defaultHyperparams.lrSchedulerType);
-  const [maxGradNorm, setMaxGradNorm] = useState(defaultHyperparams.maxGradNorm);
-  const [targetModules, setTargetModules] = useState(defaultHyperparams.targetModules.join(','));
 
   useEffect(() => {
     if (!open) return;
@@ -959,9 +939,6 @@ function CreateJobDialog({
     setLoraRank(presetValues.loraRank);
     setLoraAlpha(presetValues.loraAlpha);
     setLoraDropout(presetValues.loraDropout);
-    setLrSchedulerType(presetValues.lrSchedulerType);
-    setMaxGradNorm(presetValues.maxGradNorm);
-    setTargetModules(presetValues.targetModules.join(','));
   }, [defaultHyperparams, open, preset, presetHyperparams]);
 
   const createJob = useMutation({
@@ -969,31 +946,32 @@ function CreateJobDialog({
       if (!namespaceId || !tenantId) {
         throw new Error(t('training.createJob.namespaceRequired'));
       }
-      const parsedTargetModules = targetModules
-        .split(',')
-        .map((moduleName) => moduleName.trim())
-        .filter((moduleName) => moduleName.length > 0);
+
+      let validatedHyperparams: TrainingHyperparamsForm | undefined;
+      if (advancedOverride) {
+        const parsed = sharedTrainingHyperparamsSchema.safeParse({
+          epochs,
+          batchSize,
+          learningRate,
+          gradientAccumulationSteps,
+          warmupSteps,
+          maxSeqLen,
+          loraRank,
+          loraAlpha,
+          loraDropout,
+        });
+        if (!parsed.success) {
+          throw new Error(t('training.createJob.invalidHyperparams'));
+        }
+        validatedHyperparams = parsed.data;
+      }
+
       return apiRequest('POST', '/api/training/jobs', {
         tenantId,
         namespaceId,
         name,
         hyperparametersPreset: preset,
-        hyperparameters: advancedOverride
-          ? {
-              epochs,
-              batchSize,
-              learningRate,
-              gradientAccumulationSteps,
-              warmupSteps,
-              maxSeqLen,
-              loraRank,
-              loraAlpha,
-              loraDropout,
-              lrSchedulerType,
-              maxGradNorm,
-              targetModules: parsedTargetModules.length > 0 ? parsedTargetModules : undefined,
-            }
-          : undefined,
+        hyperparameters: validatedHyperparams,
       });
     },
     onSuccess: () => {
@@ -1005,8 +983,11 @@ function CreateJobDialog({
       setPreset('standard');
       setAdvancedOverride(false);
     },
-    onError: () => {
-      toast({ title: t('training.errors.createJob'), variant: 'destructive' });
+    onError: (error) => {
+      toast({
+        title: error instanceof Error ? error.message : t('training.errors.createJob'),
+        variant: 'destructive',
+      });
     },
   });
 
@@ -1088,7 +1069,7 @@ function CreateJobDialog({
                 id="epochs"
                 type="number"
                 min={1}
-                max={10}
+                max={50}
                 value={epochs}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEpochs(Number(e.target.value))}
                 data-testid="input-epochs"
@@ -1100,7 +1081,7 @@ function CreateJobDialog({
                 id="batchSize"
                 type="number"
                 min={1}
-                max={32}
+                max={64}
                 value={batchSize}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBatchSize(Number(e.target.value))}
                 data-testid="input-batch-size"
@@ -1113,7 +1094,7 @@ function CreateJobDialog({
                 type="number"
                 step={0.00001}
                 min={0.00001}
-                max={0.01}
+                max={0.99999}
                 value={learningRate}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLearningRate(Number(e.target.value))}
                 data-testid="input-learning-rate"
@@ -1130,6 +1111,7 @@ function CreateJobDialog({
                     id="gradientAccumulationSteps"
                     type="number"
                     min={1}
+                    max={128}
                     value={gradientAccumulationSteps}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setGradientAccumulationSteps(Number(e.target.value))}
                   />
@@ -1140,6 +1122,7 @@ function CreateJobDialog({
                     id="warmupSteps"
                     type="number"
                     min={0}
+                    max={10000}
                     value={warmupSteps}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setWarmupSteps(Number(e.target.value))}
                   />
@@ -1160,7 +1143,8 @@ function CreateJobDialog({
                   <Input
                     id="loraRank"
                     type="number"
-                    min={1}
+                    min={4}
+                    max={128}
                     value={loraRank}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLoraRank(Number(e.target.value))}
                   />
@@ -1170,7 +1154,8 @@ function CreateJobDialog({
                   <Input
                     id="loraAlpha"
                     type="number"
-                    min={1}
+                    min={8}
+                    max={256}
                     value={loraAlpha}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLoraAlpha(Number(e.target.value))}
                   />
@@ -1181,41 +1166,12 @@ function CreateJobDialog({
                     id="loraDropout"
                     type="number"
                     min={0}
-                    max={1}
+                    max={0.5}
                     step={0.01}
                     value={loraDropout}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLoraDropout(Number(e.target.value))}
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="lrSchedulerType">{t('training.createJob.lrSchedulerType')}</Label>
-                  <Input
-                    id="lrSchedulerType"
-                    value={lrSchedulerType}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLrSchedulerType(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="maxGradNorm">{t('training.createJob.maxGradNorm')}</Label>
-                  <Input
-                    id="maxGradNorm"
-                    type="number"
-                    min={0.01}
-                    step={0.01}
-                    value={maxGradNorm}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMaxGradNorm(Number(e.target.value))}
-                  />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="targetModules">{t('training.createJob.targetModules')}</Label>
-                <Input
-                  id="targetModules"
-                  value={targetModules}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTargetModules(e.target.value)}
-                  placeholder="q_proj,k_proj,v_proj,o_proj"
-                />
-                <p className="text-xs text-muted-foreground">{t('training.createJob.targetModulesDesc')}</p>
               </div>
             </>
           )}
@@ -2831,6 +2787,9 @@ export default function Training() {
     queryFn: async () => {
       try {
         const response = await apiRequest('GET', '/api/training/system-config');
+        if (!response.ok) {
+          throw new Error(`status=${response.status}`);
+        }
         return response.json() as Promise<Record<string, string>>;
       } catch (error) {
         frontendLogger.warn('Falha ao obter system config de training; aplicando defaults locais', {
@@ -2847,16 +2806,44 @@ export default function Training() {
       ...TRAINING_SYSTEM_CONFIG_DEFAULTS,
       ...(systemConfigRaw ?? {}),
     };
-    const parsed = trainingSystemConfigSchema.parse(source);
-    const defaultHyperparams = parseTrainingHyperparamsJson(parsed.TRAINING_DEFAULT_HYPERPARAMS_JSON);
-    const safePreset = parseTrainingHyperparamsJson(parsed.TRAINING_PRESET_SAFE_JSON ?? parsed.TRAINING_DEFAULT_HYPERPARAMS_JSON);
-    const standardPreset = parseTrainingHyperparamsJson(parsed.TRAINING_PRESET_STANDARD_JSON ?? parsed.TRAINING_DEFAULT_HYPERPARAMS_JSON);
-    const largePreset = parseTrainingHyperparamsJson(parsed.TRAINING_PRESET_LARGE_JSON ?? parsed.TRAINING_DEFAULT_HYPERPARAMS_JSON);
+    const parsedResult = trainingSystemConfigSchema.safeParse(source);
+    const parsed = parsedResult.success
+      ? parsedResult.data
+      : trainingSystemConfigSchema.parse(TRAINING_SYSTEM_CONFIG_DEFAULTS);
+
+    if (!parsedResult.success) {
+      frontendLogger.warn('Shape invalido de training system config; aplicando defaults seguros', {
+        errors: parsedResult.error.flatten(),
+      });
+    }
+
+    const defaultHyperparams = parseTrainingHyperparamsConfig(
+      parsed.TRAINING_DEFAULT_HYPERPARAMS_JSON,
+      'TRAINING_DEFAULT_HYPERPARAMS_JSON',
+    );
+    const safePreset = parseTrainingHyperparamsConfig(
+      parsed.TRAINING_PRESET_SAFE_JSON ?? parsed.TRAINING_DEFAULT_HYPERPARAMS_JSON,
+      'TRAINING_PRESET_SAFE_JSON',
+    );
+    const standardPreset = parseTrainingHyperparamsConfig(
+      parsed.TRAINING_PRESET_STANDARD_JSON ?? parsed.TRAINING_DEFAULT_HYPERPARAMS_JSON,
+      'TRAINING_PRESET_STANDARD_JSON',
+    );
+    const largePreset = parseTrainingHyperparamsConfig(
+      parsed.TRAINING_PRESET_LARGE_JSON ?? parsed.TRAINING_DEFAULT_HYPERPARAMS_JSON,
+      'TRAINING_PRESET_LARGE_JSON',
+    );
 
     return {
       minOndemandDatasetSize: parsed.MIN_ONDEMAND_DATASET_SIZE,
       minScheduledDatasetSizeIncremental: parsed.MIN_SCHEDULED_DATASET_SIZE_INCREMENTAL,
       minScheduledDatasetSizeFull: parsed.MIN_SCHEDULED_DATASET_SIZE_FULL,
+      qualityMinRatio: parsed.TRAINING_QUALITY_MIN_RATIO,
+      datasetMaxRows: parsed.TRAINING_DATASET_MAX_ROWS,
+      trainEvalSplitRatio: parsed.TRAINING_TRAIN_EVAL_SPLIT_RATIO,
+      sliceSteps: parsed.TRAINING_SLICE_STEPS,
+      gpuTimeoutMs: parsed.TRAINING_GPU_TIMEOUT_MS,
+      maxSeqLen: parsed.maxSeqLen,
       autoLearningCronIncremental: parsed.AUTO_LEARNING_CRON_INCREMENTAL,
       autoLearningCronFull: parsed.AUTO_LEARNING_CRON_FULL,
       autoLearningIncludeImages: parsed.AUTO_LEARNING_INCLUDE_IMAGES,
@@ -3227,7 +3214,11 @@ export default function Training() {
   const [rollbackDialogJob, setRollbackDialogJob] = useState<FineTuningJob | null>(null);
 
   const minCustomJobDatasetSize = trainingSystemConfig.minOndemandDatasetSize;
-  const presetLabels: Array<TrainingHyperparamsPreset> = ['safe', 'standard', 'large'];
+  const presetLabels = [
+    t('training.createJob.presetSafe'),
+    t('training.createJob.presetStandard'),
+    t('training.createJob.presetLarge'),
+  ].join(' / ');
 
   const [, navigate] = useLocation();
   const [postTrainingDialog, setPostTrainingDialog] = useState<{ open: boolean; jobName: string }>({ open: false, jobName: '' });
@@ -3602,7 +3593,11 @@ export default function Training() {
               <Play className="h-4 w-4 mr-2" />
               {t('training.autoLearning.onDemand')}
             </Button>
-            <Button onClick={() => setShowCreateJob(true)} data-testid="button-new-job">
+            <Button
+              onClick={() => setShowCreateJob(true)}
+              disabled={stats.approved < minCustomJobDatasetSize}
+              data-testid="button-new-job"
+            >
               <Brain className="h-4 w-4 mr-2" />
               {t('training.newJob')}
             </Button>
@@ -3670,13 +3665,13 @@ export default function Training() {
             </CardHeader>
             <CardContent className="space-y-2">
               <div className="text-xs text-muted-foreground">
-                {t('training.controlCards.customJobPresets', { presets: presetLabels.join(' / ') })}
+                {t('training.controlCards.customJobPresets', { presets: presetLabels })}
               </div>
               <Button
                 size="sm"
                 variant="outline"
                 onClick={() => setShowCreateJob(true)}
-                disabled={!tenantId}
+                disabled={!tenantId || stats.approved < minCustomJobDatasetSize}
               >
                 <Brain className="h-4 w-4 mr-2" />
                 {t('training.newJob')}
@@ -3704,6 +3699,68 @@ export default function Training() {
             </CardContent>
           </Card>
         </div>
+
+        <Card className="mb-4 border-primary/30 bg-primary/5">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">{t('training.activeConfig.title')}</CardTitle>
+            <CardDescription>{t('training.activeConfig.desc')}</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-2 md:grid-cols-2">
+            <p className="text-xs text-muted-foreground">
+              {t('training.activeConfig.minOndemandDatasetSize', {
+                value: trainingSystemConfig.minOndemandDatasetSize,
+              })}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {t('training.activeConfig.minScheduledDatasets', {
+                incremental: trainingSystemConfig.minScheduledDatasetSizeIncremental,
+                full: trainingSystemConfig.minScheduledDatasetSizeFull,
+              })}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {t('training.activeConfig.qualityMinRatio', {
+                value: Math.round(trainingSystemConfig.qualityMinRatio * 100),
+              })}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {t('training.activeConfig.datasetMaxRows', {
+                value: trainingSystemConfig.datasetMaxRows,
+              })}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {t('training.activeConfig.trainEvalSplitRatio', {
+                value: Math.round(trainingSystemConfig.trainEvalSplitRatio * 100),
+              })}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {t('training.activeConfig.sliceSteps', {
+                value: trainingSystemConfig.sliceSteps,
+              })}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {t('training.activeConfig.gpuTimeoutMs', {
+                value: trainingSystemConfig.gpuTimeoutMs,
+              })}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {t('training.activeConfig.maxSeqLen', {
+                value: trainingSystemConfig.maxSeqLen,
+              })}
+            </p>
+            <p className="text-xs text-muted-foreground md:col-span-2">
+              {t('training.activeConfig.defaultHyperparams', trainingSystemConfig.defaultHyperparams)}
+            </p>
+            <p className="text-xs text-muted-foreground md:col-span-2">
+              {t('training.activeConfig.presetSafe', trainingSystemConfig.presets.safe)}
+            </p>
+            <p className="text-xs text-muted-foreground md:col-span-2">
+              {t('training.activeConfig.presetStandard', trainingSystemConfig.presets.standard)}
+            </p>
+            <p className="text-xs text-muted-foreground md:col-span-2">
+              {t('training.activeConfig.presetLarge', trainingSystemConfig.presets.large)}
+            </p>
+          </CardContent>
+        </Card>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <Card>

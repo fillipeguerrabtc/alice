@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/tooltip';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
+import { parseTrainingHyperparamsJson } from '../../../../packages/shared-utils/src/training-config';
 
 type ConfigValueType = 'int' | 'float' | 'json' | 'cron' | 'boolean';
 
@@ -40,6 +41,33 @@ type ConfigItem = {
   max?: number;
   step?: string;
   unit?: string;
+};
+
+const TRAINING_HYPERPARAMS_JSON_KEYS = new Set([
+  'TRAINING_DEFAULT_HYPERPARAMS_JSON',
+  'TRAINING_PRESET_SAFE_JSON',
+  'TRAINING_PRESET_STANDARD_JSON',
+  'TRAINING_PRESET_LARGE_JSON',
+]);
+
+const TRAINING_RECOMMENDED_DEFAULTS: Record<string, string> = {
+  MIN_ONDEMAND_DATASET_SIZE: '20',
+  maxSeqLen: '1536',
+  MIN_SCHEDULED_DATASET_SIZE_INCREMENTAL: '50',
+  MIN_SCHEDULED_DATASET_SIZE_FULL: '200',
+  TRAINING_QUALITY_MIN_RATIO: '0.60',
+  TRAINING_DATASET_MAX_ROWS: '5000',
+  TRAINING_TRAIN_EVAL_SPLIT_RATIO: '0.90',
+  TRAINING_SLICE_STEPS: '10',
+  TRAINING_GPU_TIMEOUT_MS: '120000',
+  TRAINING_DEFAULT_HYPERPARAMS_JSON:
+    '{"epochs":2,"learningRate":0.0001,"batchSize":2,"maxSeqLen":1536,"gradientAccumulationSteps":4,"warmupSteps":100,"loraRank":16,"loraAlpha":32,"loraDropout":0.05}',
+  TRAINING_PRESET_SAFE_JSON:
+    '{"epochs":2,"learningRate":0.0001,"batchSize":2,"maxSeqLen":1536,"gradientAccumulationSteps":4,"warmupSteps":100,"loraRank":16,"loraAlpha":32,"loraDropout":0.05}',
+  TRAINING_PRESET_STANDARD_JSON:
+    '{"epochs":3,"learningRate":0.0002,"batchSize":2,"maxSeqLen":1536,"gradientAccumulationSteps":4,"warmupSteps":100,"loraRank":16,"loraAlpha":32,"loraDropout":0.05}',
+  TRAINING_PRESET_LARGE_JSON:
+    '{"epochs":1,"learningRate":0.0001,"batchSize":2,"maxSeqLen":1536,"gradientAccumulationSteps":8,"warmupSteps":100,"loraRank":16,"loraAlpha":32,"loraDropout":0.05}',
 };
 
 const RAG_ITEMS: ConfigItem[] = [
@@ -89,7 +117,7 @@ const TRAINING_ITEMS: ConfigItem[] = [
     key: 'MIN_ONDEMAND_DATASET_SIZE',
     labelKey: 'systemSettings.training.minOndemandDatasetSize',
     descKey: 'systemSettings.training.minOndemandDatasetSizeDesc',
-    defaultValue: '10',
+    defaultValue: '20',
     valueType: 'int',
     min: 1,
     max: 100000,
@@ -100,8 +128,8 @@ const TRAINING_ITEMS: ConfigItem[] = [
     descKey: 'systemSettings.training.minScheduledDatasetSizeIncrementalDesc',
     defaultValue: '50',
     valueType: 'int',
-    min: 1,
-    max: 100000,
+    min: 50,
+    max: 10000,
   },
   {
     key: 'MIN_SCHEDULED_DATASET_SIZE_FULL',
@@ -109,14 +137,14 @@ const TRAINING_ITEMS: ConfigItem[] = [
     descKey: 'systemSettings.training.minScheduledDatasetSizeFullDesc',
     defaultValue: '200',
     valueType: 'int',
-    min: 1,
-    max: 200000,
+    min: 50,
+    max: 50000,
   },
   {
     key: 'TRAINING_QUALITY_MIN_RATIO',
     labelKey: 'systemSettings.training.trainingQualityMinRatio',
     descKey: 'systemSettings.training.trainingQualityMinRatioDesc',
-    defaultValue: '0.5',
+    defaultValue: '0.60',
     valueType: 'float',
     min: 0,
     max: 1,
@@ -135,7 +163,7 @@ const TRAINING_ITEMS: ConfigItem[] = [
     key: 'TRAINING_TRAIN_EVAL_SPLIT_RATIO',
     labelKey: 'systemSettings.training.trainingTrainEvalSplitRatio',
     descKey: 'systemSettings.training.trainingTrainEvalSplitRatioDesc',
-    defaultValue: '0.9',
+    defaultValue: '0.90',
     valueType: 'float',
     min: 0.5,
     max: 0.99,
@@ -145,7 +173,7 @@ const TRAINING_ITEMS: ConfigItem[] = [
     key: 'TRAINING_SLICE_STEPS',
     labelKey: 'systemSettings.training.trainingSliceSteps',
     descKey: 'systemSettings.training.trainingSliceStepsDesc',
-    defaultValue: '5',
+    defaultValue: '10',
     valueType: 'int',
     min: 1,
     max: 500,
@@ -154,9 +182,9 @@ const TRAINING_ITEMS: ConfigItem[] = [
     key: 'TRAINING_GPU_TIMEOUT_MS',
     labelKey: 'systemSettings.training.trainingGpuTimeoutMs',
     descKey: 'systemSettings.training.trainingGpuTimeoutMsDesc',
-    defaultValue: '25000',
+    defaultValue: '120000',
     valueType: 'int',
-    min: 1000,
+    min: 10000,
     max: 600000,
     unit: 'ms',
   },
@@ -230,7 +258,7 @@ const TRAINING_ITEMS: ConfigItem[] = [
     key: 'maxSeqLen',
     labelKey: 'systemSettings.training.maxSeqLen',
     descKey: 'systemSettings.training.maxSeqLenDesc',
-    defaultValue: '2048',
+    defaultValue: '1536',
     valueType: 'int',
     min: 256,
     max: 32768,
@@ -258,9 +286,13 @@ function validateItem(item: ConfigItem, rawValue: string): string | null {
       if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
         return 'Expected JSON object';
       }
+      if (TRAINING_HYPERPARAMS_JSON_KEYS.has(item.key)) {
+        parseTrainingHyperparamsJson(rawValue);
+      }
       return null;
-    } catch {
-      return 'Invalid JSON';
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Invalid JSON';
+      return message;
     }
   }
 
@@ -419,6 +451,26 @@ export default function SystemSettings() {
     },
   });
 
+  const applyRecommendedMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest('PATCH', '/api/training/system-config', {
+        configs: TRAINING_RECOMMENDED_DEFAULTS,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error ?? 'Erro ao aplicar defaults recomendados');
+      }
+      return res.json() as Promise<Record<string, string>>;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/training/system-config'] });
+      toast({ title: t('systemSettings.training.recommendedApplied') });
+    },
+    onError: (error: Error) => {
+      toast({ title: error.message, variant: 'destructive' });
+    },
+  });
+
   const handleSave = () => {
     const payload: Record<string, string> = {};
     const nextErrors: Record<string, string> = {};
@@ -449,9 +501,16 @@ export default function SystemSettings() {
 
   const handleChange = (key: string, value: string) => {
     setLocalValues((prev) => ({ ...prev, [key]: value }));
+    const item = ALL_ITEMS.find((entry) => entry.key === key);
+    if (!item) return;
+    const error = validateItem(item, value);
     setFieldErrors((prev) => {
       const next = { ...prev };
-      delete next[key];
+      if (error) {
+        next[key] = error;
+      } else {
+        delete next[key];
+      }
       return next;
     });
   };
@@ -520,7 +579,7 @@ export default function SystemSettings() {
                     value={localValues[item.key] ?? item.defaultValue}
                     error={fieldErrors[item.key]}
                     onChange={(v) => handleChange(item.key, v)}
-                    disabled={saveMutation.isPending}
+                    disabled={saveMutation.isPending || applyRecommendedMutation.isPending}
                   />
                 ))}
               </CardContent>
@@ -542,10 +601,27 @@ export default function SystemSettings() {
           )}
 
           {!isLoading && currentHasItems && (
-            <div className="flex justify-end">
+            <div className="flex justify-end gap-2">
+              {activeSection === 'training' && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => applyRecommendedMutation.mutate()}
+                  disabled={saveMutation.isPending || applyRecommendedMutation.isPending}
+                >
+                  {applyRecommendedMutation.isPending ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      {t('common.saving')}
+                    </>
+                  ) : (
+                    t('systemSettings.training.applyRecommended')
+                  )}
+                </Button>
+              )}
               <Button
                 onClick={handleSave}
-                disabled={saveMutation.isPending}
+                disabled={saveMutation.isPending || applyRecommendedMutation.isPending}
               >
                 {saveMutation.isPending ? (
                   <>

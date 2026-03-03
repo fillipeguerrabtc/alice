@@ -26,13 +26,16 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
+      '@alice/shared': path.resolve(__dirname, '../../packages/shared/src'),
+      '@alice/shared/': `${path.resolve(__dirname, '../../packages/shared/src')}/`,
+      '@alice/shared-utils': path.resolve(__dirname, '../../packages/shared-utils/src'),
+      '@alice/shared-utils/': `${path.resolve(__dirname, '../../packages/shared-utils/src')}/`,
       '@': path.resolve(__dirname, './src'),
       '@/components': path.resolve(__dirname, './src/components'),
       '@/lib': path.resolve(__dirname, './src/lib'),
       '@/hooks': path.resolve(__dirname, './src/hooks'),
       '@shared': path.resolve(__dirname, '../shared'),
       '@assets': path.resolve(__dirname, '../attached_assets'),
-      '@alice/shared': path.resolve(__dirname, '../packages/shared/src'),
     },
   },
   server: {
