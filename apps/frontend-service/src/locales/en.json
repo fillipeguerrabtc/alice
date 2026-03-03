@@ -455,7 +455,7 @@
   },
   "agents": {
     "title": "AI Agents",
-    "subtitle": "Active: {{active}} / {{total}} â€” create specialist agents and link them to the right namespace.",
+    "subtitle": "Active: {{active}} / {{total}} — create specialist agents and link them to the right namespace.",
     "create": "Create Agent",
     "edit": "Edit Agent",
     "deleteAgent": "Delete Agent",
@@ -515,7 +515,7 @@
       "temperature": "Temperature",
       "temperatureDesc": "Controls the randomness of responses. Lower values = more deterministic, higher values = more creative.",
       "maxTokens": "Max Tokens",
-      "maxTokensDesc": "Maximum token limit in response (1 token â‰ˆ 4 characters in English)",
+      "maxTokensDesc": "Maximum token limit in response (1 token ≈ 4 characters in English)",
       "activeCapabilities": "Active Capabilities",
       "noCapabilities": "No capabilities added",
       "addCapability": "Add Capability",
@@ -573,7 +573,7 @@
   },
   "namespaces": {
     "title": "Namespaces",
-    "subtitle": "{{count}} active namespaces â€” organize context, documents, and agents by domain.",
+    "subtitle": "{{count}} active namespaces — organize context, documents, and agents by domain.",
     "create": "Create Namespace",
     "edit": "Edit Namespace",
     "deleteNamespace": "Delete Namespace",
@@ -1069,7 +1069,7 @@
     "time": "HH:mm",
     "datetime": "MM/DD/YYYY HH:mm",
     "currency": "EUR",
-    "currencySymbol": "â‚¬"
+    "currencySymbol": "€"
   },
   "billing": {
     "title": "Billing",
@@ -1926,7 +1926,7 @@
     },
     "universal": {
       "title": "Universal training per namespace",
-      "desc": "The Data tab contains entries from all namespaces. New Job and Pipeline Trading train by selected namespace â€” the LoRA adapter is separate per namespace. Use the namespace filter on the Data tab and select the namespace when creating a job to train any domain (Trading, Sales, Support, etc.)."
+      "desc": "The Data tab contains entries from all namespaces. New Job and Pipeline Trading train by selected namespace — the LoRA adapter is separate per namespace. Use the namespace filter on the Data tab and select the namespace when creating a job to train any domain (Trading, Sales, Support, etc.)."
     },
     "createJob": {
       "title": "New Fine-tuning Job",
@@ -2372,7 +2372,7 @@
       },
       "swing": {
         "title": "Swing Trade",
-        "desc": "Captures multiâ€‘day swings with broader moves."
+        "desc": "Captures multi‑day swings with broader moves."
       },
       "position": {
         "title": "Position Trading",
@@ -2482,7 +2482,7 @@
         "withLeverage": "with leverage",
         "submit": "Execute Order",
         "usdtValue": "Value (USDT)",
-        "usdtHint": "Fill quantity or USDT value â€” auto conversion",
+        "usdtHint": "Fill quantity or USDT value — auto conversion",
         "liveQuote": "Real-time Quote",
         "liveLabel": "Live",
         "offlineLabel": "Offline",
