@@ -313,13 +313,6 @@ describe('RBAC - Matriz de Permissões (PERMISSION_MAP)', () => {
       expect(PERMISSION_MAP['integrations:wise_sync:reconcile']).toBeDefined();
     });
 
-    it('integrations:erpnext:read deve permitir operator+', () => {
-      const allowed = PERMISSION_MAP['integrations:erpnext:read'];
-      expect(allowed).toContain('operator');
-      expect(allowed).toContain('manager');
-      expect(allowed).toContain('admin');
-      expect(allowed).toContain('super_admin');
-    });
   });
 
   describe('Módulo ADMIN', () => {

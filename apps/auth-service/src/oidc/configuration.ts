@@ -155,7 +155,7 @@ export async function createOIDCConfiguration(): Promise<Configuration> {
 
     // =========================================================================
     // CLIENTES REGISTRADOS (100% do banco - Regra 6)
-    // Os clientes grafana-sso e erpnext-sso são carregados via getRegisteredClients()
+    // Os clientes grafana-sso são carregados via getRegisteredClients()
     // =========================================================================
     clients: registeredClients,
 
@@ -378,3 +378,4 @@ export function getIssuerUrl(): string {
 }
 
 export { ISSUER_URL };
+

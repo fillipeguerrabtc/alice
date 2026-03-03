@@ -32,68 +32,6 @@ export const integrationsServicePaths = {
     post: { summary: 'Criar transferência', tags: ['Wise'], requestBody: { content: { 'application/json': { schema: { type: 'object', required: ['quoteId', 'targetRecipientId'], properties: { quoteId: { type: 'string' }, targetRecipientId: { type: 'string' }, reference: { type: 'string' } } } } } }, responses: { 201: { description: 'Criada' } } },
   },
   '/api/integrations/webhooks/wise': { post: { summary: 'Webhook Wise', tags: ['Webhooks'], security: [], responses: { 200: { description: 'OK' } } } },
-  '/api/integrations/erpnext/customers': {
-    get: { summary: 'Listar clientes', tags: ['ERPNext'], parameters: [{ name: 'limit', in: 'query', schema: { type: 'integer' } }], responses: { 200: { description: 'Lista' } } },
-    post: { summary: 'Criar cliente', tags: ['ERPNext'], requestBody: { content: { 'application/json': { schema: { type: 'object', required: ['customer_name'], properties: { customer_name: { type: 'string' }, customer_type: { type: 'string', enum: ['Company', 'Individual'] }, territory: { type: 'string' } } } } } }, responses: { 201: { description: 'Criado' } } },
-  },
-  '/api/integrations/erpnext/invoices': {
-    get: { summary: 'Listar faturas', tags: ['ERPNext'], responses: { 200: { description: 'Lista' } } },
-    post: { summary: 'Criar fatura', tags: ['ERPNext'], requestBody: { content: { 'application/json': { schema: { type: 'object', required: ['customer', 'items'], properties: { customer: { type: 'string' }, items: { type: 'array', items: { type: 'object', properties: { item_code: { type: 'string' }, qty: { type: 'number' }, rate: { type: 'number' } } } } } } } } }, responses: { 201: { description: 'Criada' } } },
-  },
-  '/api/integrations/erpnext/resource/{doctype}': {
-    get: {
-      summary: 'Consultar/listar recursos ERPNext (DocType genérico)',
-      tags: ['ERPNext'],
-      parameters: [
-        { name: 'doctype', in: 'path', required: true, schema: { type: 'string' } },
-        { name: 'name', in: 'query', schema: { type: 'string' } },
-        { name: 'fields', in: 'query', schema: { type: 'string' } },
-        { name: 'filters', in: 'query', schema: { type: 'string' } },
-        { name: 'limit_start', in: 'query', schema: { type: 'string' } },
-        { name: 'limit_page_length', in: 'query', schema: { type: 'string' } },
-        { name: 'order_by', in: 'query', schema: { type: 'string' } },
-      ],
-      responses: { 200: { description: 'Resultado ERPNext' }, 403: { description: 'DocType não permitido' } },
-    },
-    post: {
-      summary: 'Criar recurso ERPNext (DocType genérico)',
-      tags: ['ERPNext'],
-      parameters: [{ name: 'doctype', in: 'path', required: true, schema: { type: 'string' } }],
-      requestBody: { content: { 'application/json': { schema: { type: 'object' } } } },
-      responses: { 200: { description: 'Criado' }, 403: { description: 'DocType não permitido' } },
-    },
-  },
-  '/api/integrations/erpnext/resource/{doctype}/{name}': {
-    put: {
-      summary: 'Atualizar recurso ERPNext (DocType genérico)',
-      tags: ['ERPNext'],
-      parameters: [
-        { name: 'doctype', in: 'path', required: true, schema: { type: 'string' } },
-        { name: 'name', in: 'path', required: true, schema: { type: 'string' } },
-      ],
-      requestBody: { content: { 'application/json': { schema: { type: 'object' } } } },
-      responses: { 200: { description: 'Atualizado' }, 403: { description: 'DocType não permitido' } },
-    },
-    delete: {
-      summary: 'Excluir recurso ERPNext (DocType genérico)',
-      tags: ['ERPNext'],
-      parameters: [
-        { name: 'doctype', in: 'path', required: true, schema: { type: 'string' } },
-        { name: 'name', in: 'path', required: true, schema: { type: 'string' } },
-      ],
-      responses: { 200: { description: 'Excluído' }, 403: { description: 'DocType não permitido' } },
-    },
-  },
-  '/api/integrations/erpnext/method/{method}': {
-    post: {
-      summary: 'Executar método ERPNext (Frappe)',
-      tags: ['ERPNext'],
-      parameters: [{ name: 'method', in: 'path', required: true, schema: { type: 'string' } }],
-      requestBody: { content: { 'application/json': { schema: { type: 'object' } } } },
-      responses: { 200: { description: 'Executado' }, 403: { description: 'Method não permitido' } },
-    },
-  },
-  '/api/integrations/erpnext/sync': { post: { summary: 'Sincronizar', tags: ['ERPNext'], requestBody: { content: { 'application/json': { schema: { type: 'object', properties: { entity: { type: 'string', enum: ['customers', 'invoices', 'items'] } } } } } }, responses: { 202: { description: 'Iniciada' } } } },
   '/api/integrations/github/deploy-stack': {
     post: {
       summary: 'Disparar deploy/rollback via GitHub Actions',
@@ -105,7 +43,7 @@ export const integrationsServicePaths = {
               type: 'object',
               required: ['stack', 'version'],
               properties: {
-                stack: { type: 'string', enum: ['infra', 'alice', 'observability', 'erpnext', 'backup', 'all'] },
+                stack: { type: 'string', enum: ['infra', 'alice', 'observability', 'backup', 'all'] },
                 version: { type: 'string' },
                 rollback: { type: 'boolean' },
                 rollbackVersion: { type: 'string' },
@@ -583,14 +521,6 @@ export const integrationsServicePaths = {
                       totalTransfers: { type: 'integer' },
                       pendingAmount: { type: 'number' },
                       completedCount: { type: 'integer' },
-                    },
-                  },
-                  erpnext: {
-                    type: 'object',
-                    properties: {
-                      customers: { type: 'integer' },
-                      orders: { type: 'integer' },
-                      synced: { type: 'boolean' },
                     },
                   },
                 },

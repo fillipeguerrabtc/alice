@@ -41,7 +41,7 @@ export function PlatformLinksEditor({ form }: PlatformLinksEditorProps) {
                 <FormItem>
                   <FormLabel>{t('agenticConfig.linkName')}</FormLabel>
                   <FormControl>
-                    <Input {...formField} placeholder="ERPNext CRM" />
+                    <Input {...formField} placeholder={t('agenticConfig.linkName')} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -54,7 +54,7 @@ export function PlatformLinksEditor({ form }: PlatformLinksEditorProps) {
                 <FormItem>
                   <FormLabel>{t('agenticConfig.linkUrl')}</FormLabel>
                   <FormControl>
-                    <Input {...formField} placeholder="https://erp.seudominio.com" />
+                    <Input {...formField} placeholder="https://platform.example.com" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

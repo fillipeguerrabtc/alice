@@ -40,7 +40,7 @@ const internalAuthHeadersSchema = z.object({
  * Schema para configuração de timeout
  */
 const timeoutConfigSchema = z.object({
-  erpnext: z.literal(10000),
+  externalApi: z.literal(10000),
   llmStreaming: z.literal(60000),
   llmSync: z.literal(30000),
   crossService: z.literal(15000),
@@ -234,14 +234,14 @@ describe('FIX 2 - WebSocket SESSION_SECRET', () => {
 describe('FIX 3 - AbortController Timeouts', () => {
   describe('Configuração de Timeouts', () => {
     const TIMEOUT_CONFIG = {
-      erpnext: 10000,
+      externalApi: 10000,
       llmStreaming: 60000,
       llmSync: 30000,
       crossService: 15000,
     };
 
-    it('ERPNext deve ter timeout de 10 segundos', () => {
-      expect(TIMEOUT_CONFIG.erpnext).toBe(10000);
+    it('chamadas externas devem ter timeout de 10 segundos', () => {
+      expect(TIMEOUT_CONFIG.externalApi).toBe(10000);
     });
 
     it('LLM streaming deve ter timeout de 60 segundos', () => {
@@ -547,7 +547,7 @@ describe('Integração de Segurança Enterprise', () => {
 
     it('todos os timeouts devem estar em milissegundos', () => {
       const timeouts = {
-        erpnext: 10000,
+        externalApi: 10000,
         llmStreaming: 60000,
         llmSync: 30000,
         crossService: 15000,

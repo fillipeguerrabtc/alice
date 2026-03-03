@@ -11,7 +11,6 @@ import {
   RefreshCw,
   Plus,
   Trash2,
-  ExternalLink,
   AlertCircle,
   CheckCircle,
   Clock,
@@ -2689,21 +2688,6 @@ export default function WisePayments() {
           >
             <RefreshCw className="h-4 w-4 mr-2" />
             {t('common.refresh')}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            asChild
-          >
-            <a
-              href="https://erp.yesyoudeserve.duckdns.org"
-              target="_blank"
-              rel="noopener noreferrer"
-              data-testid="link-erpnext"
-            >
-              <ExternalLink className="h-4 w-4 mr-2" />
-              {t('erpnext.openErpnext')}
-            </a>
           </Button>
         </div>
       </div>
@@ -5542,3 +5526,4 @@ export default function WisePayments() {
     </div>
   );
 }
+

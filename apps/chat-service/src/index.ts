@@ -349,14 +349,14 @@ const trainingAutoCollectAttemptTotal = new PromCounter({
   registers: [metrics.registry],
 });
 
-type AgenticActionLabel = 'trading' | 'payments' | 'stack_ops' | 'agentic_task' | 'erp' | 'grafana';
+type AgenticActionLabel = 'trading' | 'payments' | 'stack_ops' | 'agentic_task' | 'grafana';
 type AgenticDecisionLabel = 'approve' | 'reject';
 type AgenticStatusLabel = 'pending' | 'executed' | 'rejected' | 'failed';
 
 const resolveAgenticActionLabel = (params: {
   pendingCommand?: ParsedTradingCommand;
   pendingTask?: { taskType?: AgenticTaskType };
-  pendingIntegration?: { action?: 'payments' | 'stack_ops' | 'erp' | 'grafana' };
+  pendingIntegration?: { action?: 'payments' | 'stack_ops' | 'grafana' };
   fallback?: AgenticActionLabel;
 }): AgenticActionLabel => {
   if (params.pendingCommand) {
@@ -367,9 +367,6 @@ const resolveAgenticActionLabel = (params: {
   }
   if (params.pendingIntegration?.action === 'stack_ops') {
     return 'stack_ops';
-  }
-  if (params.pendingIntegration?.action === 'erp') {
-    return 'erp';
   }
   if (params.pendingIntegration?.action === 'grafana') {
     return 'grafana';
@@ -1562,7 +1559,6 @@ const DEFAULT_AGENTIC_DETECTORS: AgenticDetectors = {
       images: [],
       tasks: [],
       routing: [],
-      erpnext: [],
       grafana: [],
       payments: [],
       stackOps: [],
@@ -1606,7 +1602,6 @@ const DEFAULT_AGENTIC_DETECTORS: AgenticDetectors = {
   erp: {
     baseKeywords: [
       'erp',
-      'erpnext',
       'estoque',
       'inventario',
       'inventory',
@@ -1650,7 +1645,7 @@ const DEFAULT_AGENTIC_DETECTORS: AgenticDetectors = {
     rollbackKeywords: ['rollback', 'rollback prod', 'reverter deploy'],
     dryRunKeywords: ['dry run', 'dry-run', 'simular deploy', 'preview deploy'],
     smartDeployKeywords: ['smart deploy', 'smart-deploy', 'deploy inteligente'],
-    stackKeywords: ['infra', 'alice', 'observability', 'erpnext', 'backup', 'all', 'production', 'staging'],
+    stackKeywords: ['infra', 'alice', 'observability', 'backup', 'all', 'production', 'staging'],
   },
 };
 
@@ -1692,7 +1687,6 @@ const AGENTIC_MODULE_BINDING_KEYS = [
   'images',
   'tasks',
   'routing',
-  'erpnext',
   'grafana',
   'payments',
   'stackOps',
@@ -2014,16 +2008,8 @@ function detectAgenticTaskRequest(message: string, detectors: AgenticDetectors):
 }
 
 // ============================================================================
-// AGENTIC INTEGRATIONS - ERPNext / Pagamentos / Stack Ops / Links
+// AGENTIC INTEGRATIONS - Pagamentos / Stack Ops / Grafana
 // ============================================================================
-
-type ErpCommand =
-  | { type: 'list_items' }
-  | { type: 'list_customers' }
-  | { type: 'list_invoices' }
-  | { type: 'annual_billing'; payload: { customerName: string; year: number }; missing?: string[] }
-  | { type: 'create_customer'; payload: { customerName: string; customerType: string; territory: string; email?: string; phone?: string; taxId?: string }; missing?: string[] }
-  | { type: 'create_invoice'; payload: { customer: string; items: Array<{ itemCode: string; qty: number; rate: number }>; dueDate?: string }; missing?: string[] };
 
 type PaymentCommand =
   | { type: 'wise_recipients' }
@@ -2032,8 +2018,8 @@ type PaymentCommand =
   | { type: 'stripe_payment_intent'; payload: { amount: number; currency: string; description?: string }; missing?: string[] };
 
 type StackCommand =
-  | { type: 'deploy'; stack: 'infra' | 'alice' | 'observability' | 'erpnext' | 'backup' | 'all'; version?: string; dryRun?: boolean; smartDeploy?: boolean }
-  | { type: 'rollback'; stack: 'infra' | 'alice' | 'observability' | 'erpnext' | 'backup' | 'all'; version: string; rollbackVersion?: string };
+  | { type: 'deploy'; stack: 'infra' | 'alice' | 'observability' | 'backup' | 'all'; version?: string; dryRun?: boolean; smartDeploy?: boolean }
+  | { type: 'rollback'; stack: 'infra' | 'alice' | 'observability' | 'backup' | 'all'; version: string; rollbackVersion?: string };
 
 type GrafanaCommand =
   | { type: 'list_dashboards'; payload?: { query?: string } }
@@ -2052,29 +2038,6 @@ function extractInlineField(message: string, label: string): string | null {
   return match?.[1]?.trim() ?? null;
 }
 
-function normalizeCustomerName(raw: string | null): string | null {
-  if (!raw) return null;
-  let cleaned = raw.trim();
-  cleaned = cleaned.replace(/\s+(ano|year)\s+\d{4}\b.*$/i, '').trim();
-  cleaned = cleaned.replace(/\s+em\s+\d{4}\b.*$/i, '').trim();
-  return cleaned.length > 0 ? cleaned : null;
-}
-
-function extractCustomerName(message: string): string | null {
-  const candidate = extractField(message, 'cliente')
-    ?? extractInlineField(message, 'cliente')
-    ?? extractField(message, 'customer')
-    ?? extractInlineField(message, 'customer');
-  return normalizeCustomerName(candidate);
-}
-
-function extractYearFromMessage(message: string): number | null {
-  const match = message.match(/\b(20\d{2})\b/);
-  if (!match?.[1]) return null;
-  const parsed = Number(match[1]);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
 function extractJsonField(message: string, label: string): unknown | null {
   const regex = new RegExp(`${label}\\s*[:=]\\s*(\\{[\\s\\S]+\\}|\\[[\\s\\S]+\\])`, 'i');
   const match = message.match(regex);
@@ -2084,94 +2047,6 @@ function extractJsonField(message: string, label: string): unknown | null {
   } catch {
     return null;
   }
-}
-
-function detectErpCommand(message: string, detectors: AgenticDetectors): ErpCommand | null {
-  const normalized = normalizeForAgenticDetection(message);
-  if (!normalized) return null;
-
-  const erpDetectors = detectors.erp;
-  if (erpDetectors.annualBillingKeywords.some((keyword) => normalized.includes(keyword))) {
-    const customerName = extractCustomerName(message);
-    const year = extractYearFromMessage(message) ?? new Date().getFullYear();
-    const missing = [
-      !customerName ? 'cliente' : null,
-    ].filter(Boolean) as string[];
-    return {
-      type: 'annual_billing',
-      payload: {
-        customerName: customerName ?? '',
-        year,
-      },
-      missing: missing.length ? missing : undefined,
-    };
-  }
-
-  if (erpDetectors.baseKeywords.some((keyword) => normalized.includes(keyword))) {
-    if (erpDetectors.listItemsKeywords.some((keyword) => normalized.includes(keyword))) {
-      return { type: 'list_items' };
-    }
-    if (erpDetectors.listCustomersKeywords.some((keyword) => normalized.includes(keyword))) {
-      return { type: 'list_customers' };
-    }
-    if (erpDetectors.listInvoicesKeywords.some((keyword) => normalized.includes(keyword))) {
-      return { type: 'list_invoices' };
-    }
-  }
-
-  if (erpDetectors.createCustomerKeywords.some((keyword) => normalized.includes(keyword))) {
-    const customerName = extractField(message, 'nome') ?? extractCustomerName(message);
-    const customerType = extractField(message, 'tipo');
-    const territory = extractField(message, 'territorio') ?? extractField(message, 'território');
-    const email = extractField(message, 'email') ?? undefined;
-    const phone = extractField(message, 'telefone') ?? undefined;
-    const taxId = extractField(message, 'cpf') ?? extractField(message, 'cnpj') ?? undefined;
-    const missing = [
-      !customerName ? 'nome' : null,
-      !customerType ? 'tipo' : null,
-      !territory ? 'territorio' : null,
-    ].filter(Boolean) as string[];
-    return {
-      type: 'create_customer',
-      payload: {
-        customerName: customerName ?? '',
-        customerType: customerType ?? '',
-        territory: territory ?? '',
-        email,
-        phone,
-        taxId,
-      },
-      missing: missing.length ? missing : undefined,
-    };
-  }
-
-  if (erpDetectors.createInvoiceKeywords.some((keyword) => normalized.includes(keyword))) {
-    const customer = extractCustomerName(message);
-    const itemsRaw = extractJsonField(message, 'itens') ?? extractJsonField(message, 'items');
-    const dueDate = extractField(message, 'vencimento') ?? extractField(message, 'due_date') ?? undefined;
-    const items = Array.isArray(itemsRaw)
-      ? itemsRaw.map((item) => ({
-          itemCode: (item as { item_code?: string; itemCode?: string }).itemCode || (item as { item_code?: string }).item_code || '',
-          qty: Number((item as { qty?: number }).qty),
-          rate: Number((item as { rate?: number }).rate),
-        })).filter((item) => item.itemCode && Number.isFinite(item.qty) && Number.isFinite(item.rate))
-      : [];
-    const missing = [
-      !customer ? 'cliente' : null,
-      items.length === 0 ? 'itens' : null,
-    ].filter(Boolean) as string[];
-    return {
-      type: 'create_invoice',
-      payload: {
-        customer: customer ?? '',
-        items,
-        dueDate,
-      },
-      missing: missing.length ? missing : undefined,
-    };
-  }
-
-  return null;
 }
 
 function detectGrafanaCommand(message: string, detectors: AgenticDetectors): GrafanaCommand | null {
@@ -2218,156 +2093,6 @@ function detectGrafanaCommand(message: string, detectors: AgenticDetectors): Gra
   }
 
   return null;
-}
-
-function detectErpIntent(message: string, detectors: AgenticDetectors): boolean {
-  const normalized = normalizeForAgenticDetection(message);
-  if (!normalized) return false;
-  const erpDetectors = detectors.erp;
-  const candidateLists = [
-    erpDetectors.baseKeywords,
-    erpDetectors.listItemsKeywords,
-    erpDetectors.listCustomersKeywords,
-    erpDetectors.listInvoicesKeywords,
-    erpDetectors.annualBillingKeywords,
-    erpDetectors.createCustomerKeywords,
-    erpDetectors.createInvoiceKeywords,
-  ];
-  return candidateLists.some((list) => list.some((keyword) => normalized.includes(keyword)));
-}
-
-function isErpWriteCommand(command: ErpCommand): command is Extract<ErpCommand, { type: 'create_customer' | 'create_invoice' }> {
-  return command.type === 'create_customer' || command.type === 'create_invoice';
-}
-
-function buildErpCommandSummary(command: ErpCommand): string {
-  if (command.type === 'create_customer') {
-    return `ERPNext: criar cliente (${command.payload.customerName || 'sem nome'})`;
-  }
-  if (command.type === 'create_invoice') {
-    const itemCount = command.payload.items?.length ?? 0;
-    return `ERPNext: criar fatura (${command.payload.customer} | ${itemCount} itens)`;
-  }
-  if (command.type === 'annual_billing') {
-    return `ERPNext: faturamento anual (${command.payload.customerName || 'sem nome'} | ${command.payload.year})`;
-  }
-  return 'ERPNext: operação';
-}
-
-async function executeErpCommand(params: {
-  command: ErpCommand;
-  auth: AuthContext;
-}): Promise<{ responseContent: string; integrationResult: unknown }> {
-  const { command, auth } = params;
-  let responseContent = 'Ação ERPNext concluída com sucesso.';
-  let integrationResult: unknown = null;
-
-  if (command.type === 'list_items') {
-    const result = await callIntegrationsService<{ items: Array<Record<string, unknown>> }>({
-      endpoint: '/api/integrations/erpnext/items',
-      method: 'GET',
-      auth,
-    });
-    const items = result.items.slice(0, 10).map((item) => {
-      const name = String(item.item_name ?? item.name ?? '');
-      const group = String(item.item_group ?? '');
-      const rate = item.standard_rate ?? '';
-      return `- ${name}${group ? ` (${group})` : ''}${rate ? ` - ${rate}` : ''}`;
-    });
-    responseContent = items.length
-      ? `Itens do ERPNext (top 10):\n${items.join('\n')}`
-      : 'Nenhum item encontrado no ERPNext.';
-    integrationResult = result;
-  }
-
-  if (command.type === 'list_customers') {
-    const result = await callIntegrationsService<{ customers: Array<Record<string, unknown>> }>({
-      endpoint: '/api/integrations/erpnext/customers',
-      method: 'GET',
-      auth,
-    });
-    const customers = result.customers.slice(0, 10).map((customer) => {
-      const name = String(customer.customer_name ?? customer.name ?? '');
-      const type = String(customer.customer_type ?? '');
-      return `- ${name}${type ? ` (${type})` : ''}`;
-    });
-    responseContent = customers.length
-      ? `Clientes do ERPNext (top 10):\n${customers.join('\n')}`
-      : 'Nenhum cliente encontrado no ERPNext.';
-    integrationResult = result;
-  }
-
-  if (command.type === 'list_invoices') {
-    const result = await callIntegrationsService<{ invoices: Array<Record<string, unknown>> }>({
-      endpoint: '/api/integrations/erpnext/invoices',
-      method: 'GET',
-      auth,
-    });
-    const invoices = result.invoices.slice(0, 10).map((invoice) => {
-      const name = String(invoice.name ?? '');
-      const customer = String(invoice.customer ?? '');
-      const total = invoice.grand_total ?? '';
-      const status = String(invoice.status ?? '');
-      return `- ${name} | ${customer} | ${total} | ${status}`;
-    });
-    responseContent = invoices.length
-      ? `Faturas do ERPNext (top 10):\n${invoices.join('\n')}`
-      : 'Nenhuma fatura encontrada no ERPNext.';
-    integrationResult = result;
-  }
-
-  if (command.type === 'annual_billing') {
-    const customerParam = encodeURIComponent(command.payload.customerName);
-    const yearParam = encodeURIComponent(String(command.payload.year));
-    const result = await callIntegrationsService<{
-      customer: string;
-      year: number;
-      total: number;
-      currency: string;
-      invoiceCount: number;
-    }>({
-      endpoint: `/api/integrations/erpnext/customer-annual-billing?customer=${customerParam}&year=${yearParam}`,
-      method: 'GET',
-      auth,
-    });
-    const currency = result.currency || 'BRL';
-    let formattedTotal = `${result.total}`;
-    try {
-      formattedTotal = new Intl.NumberFormat('pt-BR', {
-        style: 'currency',
-        currency,
-      }).format(result.total);
-    } catch {
-      formattedTotal = `${result.total} ${currency}`;
-    }
-    responseContent = `Faturamento anual do cliente ${result.customer} em ${result.year}: ${formattedTotal}. ` +
-      `Total de faturas consideradas: ${result.invoiceCount}.`;
-    integrationResult = result;
-  }
-
-  if (command.type === 'create_customer') {
-    const result = await callIntegrationsService<{ customer: Record<string, unknown> }>({
-      endpoint: '/api/integrations/erpnext/customers',
-      method: 'POST',
-      body: command.payload,
-      auth,
-    });
-    responseContent = `Cliente criado no ERPNext: ${command.payload.customerName}.`;
-    integrationResult = result;
-  }
-
-  if (command.type === 'create_invoice') {
-    const result = await callIntegrationsService<{ invoice: Record<string, unknown> }>({
-      endpoint: '/api/integrations/erpnext/invoices',
-      method: 'POST',
-      body: command.payload,
-      auth,
-    });
-    responseContent = `Fatura criada no ERPNext para ${command.payload.customer}.`;
-    integrationResult = result;
-  }
-
-  return { responseContent, integrationResult };
 }
 
 function isGrafanaWriteCommand(command: GrafanaCommand): command is Extract<GrafanaCommand, { type: 'update_dashboard' }> {
@@ -4742,17 +4467,6 @@ function detectAgenticModuleForRouting(message: string, detectors: AgenticDetect
     detectors.agentRouting.autoKeywords,
   ].flat())) {
     return 'routing';
-  }
-  if (matchesKeywordListForRouting(message, [
-    detectors.erp.baseKeywords,
-    detectors.erp.listItemsKeywords,
-    detectors.erp.listCustomersKeywords,
-    detectors.erp.listInvoicesKeywords,
-    detectors.erp.annualBillingKeywords,
-    detectors.erp.createCustomerKeywords,
-    detectors.erp.createInvoiceKeywords,
-  ].flat())) {
-    return 'erpnext';
   }
   if (matchesKeywordListForRouting(message, [
     detectors.grafana.baseKeywords,
@@ -11691,7 +11405,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           summary?: string;
           sourceMessageId?: string;
           integration?: {
-            action?: 'payments' | 'stack_ops' | 'erp' | 'grafana';
+            action?: 'payments' | 'stack_ops' | 'grafana';
             operation?: string;
             params?: Record<string, unknown>;
           };
@@ -11706,7 +11420,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         const pendingCommand = payload.command;
         const pendingTask = payload.task;
         const pendingIntegration = payload.integration as {
-          action?: 'payments' | 'stack_ops' | 'erp' | 'grafana';
+          action?: 'payments' | 'stack_ops' | 'grafana';
           operation?: string;
           params?: Record<string, unknown>;
         } | undefined;
@@ -11945,39 +11659,6 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                 auth: authContext,
               });
               responseContent = 'Workflow de deploy disparado no GitHub Actions.';
-            }
-
-            if (pendingIntegration.action === 'erp') {
-              if (pendingIntegration.operation === 'create_customer') {
-                const params = pendingIntegration.params as {
-                  customerName: string;
-                  customerType: string;
-                  territory: string;
-                  email?: string;
-                  phone?: string;
-                  taxId?: string;
-                };
-                const erpResult = await executeErpCommand({
-                  command: { type: 'create_customer', payload: params },
-                  auth: authContext,
-                });
-                responseContent = erpResult.responseContent;
-                integrationResult = erpResult.integrationResult;
-              }
-
-              if (pendingIntegration.operation === 'create_invoice') {
-                const params = pendingIntegration.params as {
-                  customer: string;
-                  items: Array<{ itemCode: string; qty: number; rate: number }>;
-                  dueDate?: string;
-                };
-                const erpResult = await executeErpCommand({
-                  command: { type: 'create_invoice', payload: params },
-                  auth: authContext,
-                });
-                responseContent = erpResult.responseContent;
-                integrationResult = erpResult.integrationResult;
-              }
             }
 
             if (pendingIntegration.action === 'grafana') {
@@ -12371,12 +12052,10 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
 
       const pendingAgenticDetection = detectAgenticTaskRequest(userMessageContent, agenticDetectors);
       const pendingPaymentCommand = detectPaymentCommand(userMessageContent, agenticDetectors);
-      const pendingErpCommand = detectErpCommand(userMessageContent, agenticDetectors);
       if (
         isTradingCommandWithDetectors(userMessageContent, agenticDetectors)
         || pendingAgenticDetection.isTaskRequest
         || Boolean(pendingPaymentCommand)
-        || Boolean(pendingErpCommand)
       ) {
         const responseContent = 'Existe uma ação pendente aguardando confirmação. Responda "confirmar" para executar ou "cancelar" para abortar.';
         const [assistantMessage] = await db.insert(schema.messages).values({
@@ -12829,234 +12508,6 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         metadata: {
           grafanaCommand,
           integrationResult,
-        },
-      }).returning();
-
-      await db.update(schema.conversations)
-        .set({
-          totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
-          ultimaMensagemEm: new Date(),
-          atualizadoEm: new Date(),
-        })
-        .where(eq(schema.conversations.id, conversationId));
-
-      writeContentChunk(responseContent);
-      res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
-      res.write('data: [DONE]\n\n');
-      res.end();
-      return;
-    }
-
-    const erpCommand = detectErpCommand(userMessageContent, agenticDetectors);
-    if (erpCommand) {
-      if ((erpCommand.type === 'list_items' || erpCommand.type === 'list_customers' || erpCommand.type === 'list_invoices' || erpCommand.type === 'annual_billing') && !agenticSettings.erpReadEnabled) {
-        res.write(`data: ${JSON.stringify({ error: 'ERPNext leitura está desativada nas configurações do tenant.' })}\n\n`);
-        res.write('data: [DONE]\n\n');
-        res.end();
-        return;
-      }
-      if ((erpCommand.type === 'create_customer' || erpCommand.type === 'create_invoice') && !agenticSettings.erpWriteEnabled) {
-        res.write(`data: ${JSON.stringify({ error: 'ERPNext escrita está desativada nas configurações do tenant.' })}\n\n`);
-        res.write('data: [DONE]\n\n');
-        res.end();
-        return;
-      }
-
-      const permissionCheck = await checkPermission(
-        authContext,
-        erpCommand.type === 'list_items'
-        || erpCommand.type === 'list_customers'
-        || erpCommand.type === 'list_invoices'
-        || erpCommand.type === 'annual_billing'
-          ? 'integrations:erpnext:read'
-          : 'integrations:erpnext:write'
-      );
-      if (!permissionCheck.allowed) {
-        res.write(`data: ${JSON.stringify({ error: 'Você não possui permissão para operar o ERPNext.' })}\n\n`);
-        res.write('data: [DONE]\n\n');
-        res.end();
-        return;
-      }
-
-      if ('missing' in erpCommand && erpCommand.missing?.length) {
-        const responseContent = `Para executar a ação no ERPNext, preciso dos campos: ${erpCommand.missing.join(', ')}.\nExemplo: nome: Empresa X | tipo: Company | territorio: Brasil`;
-        const [assistantMessage] = await db.insert(schema.messages).values({
-          conversationId,
-          agentId: conversation?.agentId ?? undefined,
-          conteudo: responseContent,
-          tipo: 'text',
-          isFromUser: false,
-          metadata: {
-            erpCommand,
-            validationError: true,
-          },
-        }).returning();
-
-        await db.update(schema.conversations)
-          .set({
-            totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
-            ultimaMensagemEm: new Date(),
-            atualizadoEm: new Date(),
-          })
-          .where(eq(schema.conversations.id, conversationId));
-
-        writeContentChunk(responseContent);
-        res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
-        res.write('data: [DONE]\n\n');
-        res.end();
-        return;
-      }
-
-      const erpSummary = buildErpCommandSummary(erpCommand);
-
-      if (isErpWriteCommand(erpCommand)) {
-        const [actionRequest] = await db.insert(schema.actionRequests).values({
-          tenantId,
-          conversationId,
-          userId,
-          agentId: conversation?.agentId ?? undefined,
-          type: 'integration',
-          status: 'pending',
-          payload: {
-            action: 'erp',
-            summary: erpSummary,
-            integration: {
-              action: 'erp',
-              operation: erpCommand.type,
-              params: erpCommand.payload,
-            },
-            sourceMessageId: userMessage.id,
-          },
-        }).returning();
-
-        recordAgenticMetrics({
-          action: 'erp',
-          status: 'pending',
-        });
-
-        const responseContent = `Para executar a operação (${erpSummary}), preciso de confirmação explícita.\nResponda "confirmar" para executar ou "cancelar" para abortar.`;
-        const [assistantMessage] = await db.insert(schema.messages).values({
-          conversationId,
-          agentId: conversation?.agentId ?? undefined,
-          conteudo: responseContent,
-          tipo: 'text',
-          isFromUser: false,
-          metadata: {
-            ...buildActionMetadata({
-              actionRequestId: actionRequest?.id,
-              actionType: 'erp',
-              actionOperation: erpCommand.type,
-              actionStatus: 'pending',
-              actionSummary: erpSummary,
-            }),
-            requiresConfirmation: true,
-          },
-        }).returning();
-
-        await db.update(schema.conversations)
-          .set({
-            totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
-            ultimaMensagemEm: new Date(),
-            atualizadoEm: new Date(),
-          })
-          .where(eq(schema.conversations.id, conversationId));
-
-        writeContentChunk(responseContent);
-        res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
-        res.write('data: [DONE]\n\n');
-        res.end();
-        return;
-      }
-
-      try {
-        const { responseContent, integrationResult } = await executeErpCommand({
-          command: erpCommand,
-          auth: authContext,
-        });
-
-        const [actionRequest] = await db.insert(schema.actionRequests).values({
-          tenantId,
-          conversationId,
-          userId,
-          agentId: conversation?.agentId ?? undefined,
-          type: 'integration',
-          status: 'executed',
-          payload: {
-            action: 'erp',
-            summary: erpSummary,
-            operation: erpCommand.type,
-            params: 'payload' in erpCommand ? erpCommand.payload : undefined,
-            result: integrationResult,
-          },
-          resolvedBy: userId,
-          resolvidoEm: new Date(),
-          atualizadoEm: new Date(),
-        }).returning();
-
-        recordAgenticMetrics({
-          action: 'erp',
-          status: 'executed',
-        });
-
-        const [assistantMessage] = await db.insert(schema.messages).values({
-          conversationId,
-          agentId: conversation?.agentId ?? undefined,
-          conteudo: responseContent,
-          tipo: 'text',
-          isFromUser: false,
-          metadata: {
-            ...buildActionMetadata({
-              actionRequestId: actionRequest?.id,
-              actionType: 'erp',
-              actionOperation: erpCommand.type,
-              actionStatus: 'executed',
-              actionSummary: erpSummary,
-              actionResult: integrationResult,
-            }),
-            erpCommand,
-          },
-        }).returning();
-
-        await db.update(schema.conversations)
-          .set({
-            totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
-            ultimaMensagemEm: new Date(),
-            atualizadoEm: new Date(),
-          })
-          .where(eq(schema.conversations.id, conversationId));
-
-        writeContentChunk(responseContent);
-        res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
-        res.write('data: [DONE]\n\n');
-        res.end();
-        return;
-      } catch (erpError) {
-        const errorMessage = erpError instanceof Error ? erpError.message : 'Erro desconhecido';
-        recordAgenticMetrics({
-          action: 'erp',
-          status: 'failed',
-        });
-        res.write(`data: ${JSON.stringify({ error: `Erro ao executar operação ERPNext: ${errorMessage}` })}\n\n`);
-        res.write('data: [DONE]\n\n');
-        res.end();
-        return;
-      }
-    }
-
-    if (!erpCommand && detectErpIntent(userMessageContent, agenticDetectors)) {
-      const responseContent = [
-        'Não consegui identificar uma operação válida no ERPNext para esse pedido.',
-        'Consigo executar: listar clientes, listar itens, listar faturas, criar cliente, criar fatura e faturamento anual do cliente.',
-        'Exemplo: "faturamento anual do cliente Palmer Productions Ltd. ano 2025".',
-      ].join(' ');
-      const [assistantMessage] = await db.insert(schema.messages).values({
-        conversationId,
-        agentId: conversation?.agentId ?? undefined,
-        conteudo: responseContent,
-        tipo: 'text',
-        isFromUser: false,
-        metadata: {
-          erpCommand: 'unsupported',
         },
       }).returning();
 
@@ -20754,3 +20205,4 @@ registerShutdownCallback(
   },
   { priority: ShutdownPriority.DATABASE }
 );
+

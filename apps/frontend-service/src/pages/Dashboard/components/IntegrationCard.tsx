@@ -1,5 +1,5 @@
 /**
- * IntegrationCard - Card de integração (Stripe, Wise, ERPNext)
+ * IntegrationCard - Card de integração (Stripe, Wise)
  * 
  * @module Dashboard/components/IntegrationCard
  */
@@ -67,3 +67,4 @@ export function IntegrationCard({
     </motion.div>
   );
 }
+

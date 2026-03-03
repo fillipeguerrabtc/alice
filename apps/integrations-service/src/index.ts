@@ -24,9 +24,6 @@ import {
   initFeatureFlags,
   createAlicePrometheus,
   initRbacPrometheusMetrics,
-  instrumentCircuitBreaker,
-  createCircuitBreaker,
-  CIRCUIT_BREAKER_PRESETS,
   registerShutdownCallback,
   ShutdownPriority,
   setupSwaggerUI,
@@ -85,7 +82,6 @@ import type {
 import { z } from 'zod';
 import { wiseService } from './wiseService.js';
 import { isWiseConfigured, getSandboxStatus, getProfileIdSafe, getWiseCircuitBreakerStatus, validateWiseWebhook, initWiseMetrics } from './wiseClient.js';
-import { initWiseSyncService } from './wiseSyncService.js';
 import * as kucoinClient from './kucoinClient.js';
 import * as kucoinSpotClient from './kucoinSpotClient.js';
 import * as kucoinMarginClient from './kucoinMarginClient.js';
@@ -2942,7 +2938,7 @@ app.use(metricsRouter);
 setupSwaggerUI(app, {
   serviceName: 'integrations-service',
   version: '1.0.0',
-  description: 'Serviço de integrações: Stripe, Wise, ERPNext, Twilio, KuCoin Futures.',
+  description: 'Serviço de integrações: Stripe, Wise, Twilio, KuCoin Futures.',
   port: config.PORT ?? 3005,
   tags: INTEGRATIONS_SERVICE_TAGS,
   paths: integrationsServicePaths,
@@ -3040,242 +3036,10 @@ async function executeStripeCall<T>(operation: string, fn: () => Promise<T>): Pr
   });
 }
 
-// Circuit Breaker para chamadas ao ERPNext (Best Practices 2025)
-// Usa CIRCUIT_BREAKER_PRESETS centralizado (Regra 2 - Não Duplicar)
+// Configuração de timeout para chamadas externas (Best Practices 2025)
 
 // RESILIÊNCIA: Timeout para chamadas externas (Best Practices 2025)
 const EXTERNAL_API_TIMEOUT_MS = 8000;
-
-const erpNextBreaker = createCircuitBreaker(async (options: {
-  url: string;
-  method: string;
-  headers: Record<string, string>;
-  body?: string;
-}) => {
-  // RESILIÊNCIA: AbortController com timeout para evitar chamadas penduradas
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), EXTERNAL_API_TIMEOUT_MS);
-  
-  try {
-    const response = await fetch(options.url, {
-      method: options.method,
-      headers: options.headers,
-      body: options.body,
-      signal: controller.signal,
-    });
-    if (!response.ok) {
-      throw new Error(`ERPNext request failed: ${response.status}`);
-    }
-    return response.json();
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}, {
-  name: 'erpnext-main',
-  ...CIRCUIT_BREAKER_PRESETS.erpnextAPI,
-});
-
-async function executeErpNextRequest<T>(operation: string, options: {
-  url: string;
-  method: string;
-  headers: Record<string, string>;
-  body?: string;
-}): Promise<T> {
-  return observeIntegrationCall({
-    integration: 'erpnext',
-    operation,
-    fn: async () => erpNextBreaker.fire(options) as Promise<T>,
-  });
-}
-
-// Instrumentar circuit breaker com métricas Prometheus
-// Type assertion necessária: Opossum CircuitBreaker tem tipos de eventos mais específicos
-instrumentCircuitBreaker(metrics, 'erpnext', erpNextBreaker as unknown as Parameters<typeof instrumentCircuitBreaker>[2]);
-
-type ErpNextAllowList = {
-  allowAll: boolean;
-  items: Set<string>;
-};
-
-function parseErpNextAllowList(raw?: string | null): ErpNextAllowList {
-  const normalized = String(raw ?? '').trim();
-  if (!normalized) {
-    return { allowAll: false, items: new Set() };
-  }
-  if (normalized === '*') {
-    return { allowAll: true, items: new Set() };
-  }
-  const items = normalized
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean)
-    .map((value) => value.toLowerCase());
-  return { allowAll: false, items: new Set(items) };
-}
-
-const ERPNEXT_ALLOWED_DOCTYPES = parseErpNextAllowList(config.ERPNEXT_ALLOWED_DOCTYPES);
-const ERPNEXT_ALLOWED_METHODS = parseErpNextAllowList(config.ERPNEXT_ALLOWED_METHODS);
-
-function isErpNextAllowed(value: string, allowList: ErpNextAllowList): boolean {
-  if (allowList.allowAll) return true;
-  if (!value) return false;
-  return allowList.items.has(value.toLowerCase());
-}
-
-function normalizeErpNextDoctype(raw: string): string {
-  const trimmed = raw.trim();
-  if (!trimmed) {
-    throw new Error('DocType obrigatório');
-  }
-  if (!/^[a-zA-Z0-9_\-\s]+$/.test(trimmed)) {
-    throw new Error('DocType inválido');
-  }
-  return trimmed;
-}
-
-function normalizeErpNextMethod(raw: string): string {
-  const trimmed = raw.trim();
-  if (!trimmed) {
-    throw new Error('Method obrigatório');
-  }
-  if (!/^[a-zA-Z0-9_.]+$/.test(trimmed)) {
-    throw new Error('Method inválido');
-  }
-  return trimmed;
-}
-
-function buildErpNextHeaders(): Record<string, string> {
-  return {
-    'Authorization': `token ${config.ERPNEXT_API_KEY}:${config.ERPNEXT_API_SECRET}`,
-    'Content-Type': 'application/json',
-  };
-}
-
-// Sincronizar cliente/pedido com ERPNext (com Circuit Breaker)
-// Fluxo correto ERPNext: Customer → Sales Order → Sales Invoice → Payment Entry com referência
-async function syncToERPNext(
-  type: 'customer' | 'sales_order' | 'sales_invoice' | 'payment' | 'payment_from_invoice', 
-  data: Record<string, unknown>
-) {
-  if (!config.ERPNEXT_URL || !config.ERPNEXT_API_KEY || !config.ERPNEXT_API_SECRET) {
-    logger.warn('ERPNext não configurado, sincronização ignorada');
-    return null;
-  }
-
-  const doctypes: Record<string, string> = {
-    customer: 'Customer',
-    sales_order: 'Sales Order',
-    sales_invoice: 'Sales Invoice',
-    payment: 'Payment Entry',
-    payment_from_invoice: 'Payment Entry', // Usado quando temos referência a invoice
-  };
-
-  try {
-    // Para Payment Entry com referência a invoice, usar API especial do ERPNext
-    if (type === 'payment_from_invoice' && data.against_invoice) {
-      // Usar o método get_payment_entry para criar Payment Entry corretamente linkado
-      const getPaymentResult = await executeErpNextRequest<{ message: Record<string, unknown> }>('payment_entry.get', {
-        url: `${config.ERPNEXT_URL}/api/method/erpnext.accounts.doctype.payment_entry.payment_entry.get_payment_entry`,
-        method: 'POST',
-        headers: {
-          'Authorization': `token ${config.ERPNEXT_API_KEY}:${config.ERPNEXT_API_SECRET}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          dt: 'Sales Invoice',
-          dn: data.against_invoice,
-          party_amount: data.paid_amount,
-          payment_type: 'Receive',
-        }),
-      });
-
-      // Salvar o Payment Entry gerado
-      const paymentEntry = getPaymentResult.message;
-      paymentEntry.reference_no = data.reference_no;
-      paymentEntry.reference_date = data.reference_date;
-      paymentEntry.mode_of_payment = data.mode_of_payment;
-      
-      // Adicionar campos custom se existirem
-      if (data.custom_stripe_payment_intent_id) {
-        paymentEntry.custom_stripe_payment_intent_id = data.custom_stripe_payment_intent_id;
-      }
-      if (data.custom_wise_transfer_id) {
-        paymentEntry.custom_wise_transfer_id = data.custom_wise_transfer_id;
-      }
-
-      const result = await executeErpNextRequest<{ data: { name: string } }>('payment_entry.save', {
-        url: `${config.ERPNEXT_URL}/api/resource/Payment%20Entry`,
-        method: 'POST',
-        headers: {
-          'Authorization': `token ${config.ERPNEXT_API_KEY}:${config.ERPNEXT_API_SECRET}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(paymentEntry),
-      });
-
-      logger.info({ type: 'payment_from_invoice', erpnextId: result.data.name, invoice: data.against_invoice }, 'Payment Entry criado com referência a Invoice');
-      return result.data;
-    }
-
-    const result = await executeErpNextRequest<{ data: { name: string } }>(`erpnext.${type}.create`, {
-      url: `${config.ERPNEXT_URL}/api/resource/${doctypes[type]}`,
-      method: 'POST',
-      headers: {
-        'Authorization': `token ${config.ERPNEXT_API_KEY}:${config.ERPNEXT_API_SECRET}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(data),
-    });
-
-    logger.info({ type, erpnextId: result.data.name }, 'Sincronizado com ERPNext');
-    return result.data;
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('Breaker is open')) {
-      logger.warn({ type }, 'Circuit breaker aberto - ERPNext temporariamente indisponível');
-    } else {
-      logger.error({ error, type }, 'Falha ao sincronizar com ERPNext');
-    }
-    return null;
-  }
-}
-
-// Criar Sales Invoice a partir de Sales Order
-async function createInvoiceFromOrder(salesOrderName: string): Promise<string | null> {
-  if (!config.ERPNEXT_URL || !config.ERPNEXT_API_KEY || !config.ERPNEXT_API_SECRET) {
-    return null;
-  }
-
-  try {
-    // Usar API do ERPNext para criar Invoice a partir de Sales Order
-    const result = await executeErpNextRequest<{ message: Record<string, unknown> }>('sales_order.make_invoice', {
-      url: `${config.ERPNEXT_URL}/api/method/erpnext.selling.doctype.sales_order.sales_order.make_sales_invoice`,
-      method: 'POST',
-      headers: {
-        'Authorization': `token ${config.ERPNEXT_API_KEY}:${config.ERPNEXT_API_SECRET}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ source_name: salesOrderName }),
-    });
-
-    // Salvar a invoice gerada
-    const invoice = result.message;
-    const saveResult = await executeErpNextRequest<{ data: { name: string } }>('sales_invoice.create', {
-      url: `${config.ERPNEXT_URL}/api/resource/Sales%20Invoice`,
-      method: 'POST',
-      headers: {
-        'Authorization': `token ${config.ERPNEXT_API_KEY}:${config.ERPNEXT_API_SECRET}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(invoice),
-    });
-
-    logger.info({ salesOrder: salesOrderName, invoice: saveResult.data.name }, 'Sales Invoice criada a partir de Sales Order');
-    return saveResult.data.name;
-  } catch (error) {
-    logger.error({ error, salesOrder: salesOrderName }, 'Falha ao criar Sales Invoice a partir de Sales Order');
-    return null;
-  }
-}
 
 // Inicializar sistema de feature flags com storage PostgreSQL (Regra 16 - Enterprise)
 const featureFlagStorage = createDrizzleFeatureFlagStorage();
@@ -3433,30 +3197,6 @@ async function checkWiseHealth(): Promise<IntegrationHealthStatus> {
   }
 }
 
-async function checkErpnextHealth(): Promise<IntegrationHealthStatus> {
-  if (!config.ERPNEXT_URL || !config.ERPNEXT_API_KEY || !config.ERPNEXT_API_SECRET) {
-    return { configured: false, operational: false };
-  }
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), EXTERNAL_API_TIMEOUT_MS);
-  try {
-    const response = await fetch(`${config.ERPNEXT_URL}/api/method/frappe.auth.get_logged_user`, {
-      headers: {
-        'Authorization': `token ${config.ERPNEXT_API_KEY}:${config.ERPNEXT_API_SECRET}`,
-      },
-      signal: controller.signal,
-    });
-    if (!response.ok) {
-      throw new Error(`ERPNext HTTP ${response.status}`);
-    }
-    return { configured: true, operational: true };
-  } catch (error) {
-    return { configured: true, operational: false, error: normalizeIntegrationError(error) };
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
-
 async function checkTwilioHealth(): Promise<IntegrationHealthStatus> {
   if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_WHATSAPP_NUMBER) {
     return { configured: false, operational: false };
@@ -3539,10 +3279,9 @@ function checkTradingHealth(): IntegrationHealthStatus {
 }
 
 async function collectIntegrationHealthStatuses(): Promise<Record<string, IntegrationHealthStatus>> {
-  const [stripeHealth, wiseHealth, erpnextHealth, twilioHealth, emailHealth, openAiVisionHealth] = await Promise.all([
+  const [stripeHealth, wiseHealth, twilioHealth, emailHealth, openAiVisionHealth] = await Promise.all([
     checkStripeHealth(),
     checkWiseHealth(),
-    checkErpnextHealth(),
     checkTwilioHealth(),
     checkEmailHealth(),
     checkOpenAiVisionHealth(),
@@ -3552,7 +3291,6 @@ async function collectIntegrationHealthStatuses(): Promise<Record<string, Integr
   return {
     stripe: stripeHealth,
     wise: wiseHealth,
-    erpnext: erpnextHealth,
     twilio: twilioHealth,
     email: emailHealth,
     openai_vision: openAiVisionHealth,
@@ -3582,14 +3320,12 @@ app.get('/api/integrations/health', (_req: Request, res: Response) => {
         integrations: {
           stripe: services.stripe.configured,
           wise: services.wise.configured,
-          erpnext: services.erpnext.configured,
           twilio: services.twilio.configured,
           email: services.email.configured,
           openaiVision: services.openai_vision.configured,
           trading: services.trading.configured,
         },
         circuitBreakers: {
-          erpnext: erpNextBreaker.opened ? 'open' : (erpNextBreaker.halfOpen ? 'half-open' : 'closed'),
           wise: wiseHealth.configured ? getWiseCircuitBreakerStatus() : null,
           trading: tradingHealth.details?.circuitBreaker ?? null,
         },
@@ -3650,22 +3386,6 @@ app.get('/api/integrations/stats', requirePermission('integrations:integrations:
         inArray(schema.wiseSyncLog.status, ['pending', 'retrying', 'manual_review'])
       ));
 
-    const [erpnextCustomersRow] = await db
-      .select({ total: sql<number>`count(distinct ${schema.stripeErpnextMapping.erpnextCustomer})` })
-      .from(schema.stripeErpnextMapping)
-      .where(and(
-        eq(schema.stripeErpnextMapping.tenantId, tenantId),
-        sql`${schema.stripeErpnextMapping.erpnextCustomer} is not null`
-      ));
-
-    const [erpnextOrdersRow] = await db
-      .select({ total: sql<number>`count(distinct ${schema.stripeErpnextMapping.erpnextSalesOrder})` })
-      .from(schema.stripeErpnextMapping)
-      .where(and(
-        eq(schema.stripeErpnextMapping.tenantId, tenantId),
-        sql`${schema.stripeErpnextMapping.erpnextSalesOrder} is not null`
-      ));
-
     const stripeCurrency = stripeRevenueRow?.currency ? stripeRevenueRow.currency.toUpperCase() : 'EUR';
 
     res.json({
@@ -3678,11 +3398,6 @@ app.get('/api/integrations/stats', requirePermission('integrations:integrations:
         totalTransfers: Number(wiseTotalRow?.total ?? 0),
         pendingAmount: Number(wisePendingRow?.total ?? 0),
         completedCount: Number(wiseCompletedRow?.total ?? 0),
-      },
-      erpnext: {
-        customers: Number(erpnextCustomersRow?.total ?? 0),
-        orders: Number(erpnextOrdersRow?.total ?? 0),
-        synced: Boolean(config.ERPNEXT_URL) && !erpNextBreaker.opened,
       },
     });
   } catch (error) {
@@ -3710,33 +3425,28 @@ app.get('/live', (_req: Request, res: Response) => {
 app.get('/ready', async (_req: Request, res: Response) => {
   try {
     const dbHealthy = await isPoolHealthy();
-    const erpnextReady = !erpNextBreaker.opened;
-    
-    // Para readiness, verificamos apenas PostgreSQL (obrigatório) e ERPNext (se configurado)
-    const allReady = dbHealthy && (erpnextReady || !config.ERPNEXT_URL);
-    
-    if (allReady) {
+
+    if (dbHealthy) {
       res.status(200).json({
         status: 'ready',
         service: 'integrations-service',
         timestamp: new Date().toISOString(),
         dependencies: {
           postgresql: 'ready',
-          erpnext: config.ERPNEXT_URL ? (erpnextReady ? 'ready' : 'circuit_open') : 'not_configured',
         },
       });
-    } else {
-      res.status(503).json({
-        status: 'not_ready',
-        service: 'integrations-service',
-        reason: !dbHealthy ? 'PostgreSQL não está acessível' : 'ERPNext circuit breaker aberto',
-        timestamp: new Date().toISOString(),
-        dependencies: {
-          postgresql: dbHealthy ? 'ready' : 'not_ready',
-          erpnext: config.ERPNEXT_URL ? (erpnextReady ? 'ready' : 'circuit_open') : 'not_configured',
-        },
-      });
+      return;
     }
+
+    res.status(503).json({
+      status: 'not_ready',
+      service: 'integrations-service',
+      reason: 'PostgreSQL não está acessível',
+      timestamp: new Date().toISOString(),
+      dependencies: {
+        postgresql: 'not_ready',
+      },
+    });
   } catch (error) {
     logger.error({ error }, 'Erro ao verificar readiness');
     res.status(503).json({
@@ -3773,7 +3483,7 @@ app.get('/api/integrations', requirePermission('integrations:integrations:read')
 
 const createIntegrationSchema = z.object({
   tenantId: z.string().uuid().optional(),
-  tipo: z.enum(['stripe', 'erpnext', 'twilio', 'whatsapp']),
+  tipo: z.enum(['stripe', 'twilio', 'whatsapp']),
   nome: z.string().min(1),
   configuracao: z.record(z.unknown()).optional(),
   credenciais: z.record(z.unknown()).optional(),
@@ -4228,7 +3938,7 @@ if (!STRIPE_WEBHOOK_SECRET && IS_PRODUCTION && stripe) {
 // Função auxiliar para verificar idempotência de webhooks
 async function checkWebhookIdempotency(
   db: ReturnType<typeof getDatabase>,
-  source: 'stripe' | 'wise' | 'twilio' | 'erpnext',
+  source: 'stripe' | 'wise' | 'twilio',
   eventId: string,
   eventType: string,
   payload: Record<string, unknown>
@@ -4265,7 +3975,7 @@ async function checkWebhookIdempotency(
 // Função auxiliar para marcar webhook como processado
 async function markWebhookProcessed(
   db: ReturnType<typeof getDatabase>,
-  source: 'stripe' | 'wise' | 'twilio' | 'erpnext',
+  source: 'stripe' | 'wise' | 'twilio',
   eventId: string,
   result: Record<string, unknown>,
   error?: string
@@ -4348,108 +4058,6 @@ app.post('/api/integrations/stripe/webhook', async (req: Request, res: Response)
             logger.info({ userId, subscriptionId: session.subscription }, 'Subscription created');
             processingResult = { userId, subscriptionId: session.subscription };
           }
-
-          // FLUXO ERPNEXT COMPLETO: Customer → Sales Order → Sales Invoice → Payment Entry
-          // Step 1: Criar registro de mapeamento para rastreabilidade
-          const [mapping] = await db.insert(schema.stripeErpnextMapping).values({
-            stripeSessionId: session.id,
-            stripeCustomerId: session.customer as string,
-            stripePaymentIntentId: session.payment_intent as string || null,
-            stripeSubscriptionId: session.subscription as string || null,
-            flowStatus: 'pending',
-          }).returning();
-
-          // Step 2: Criar Sales Order quando checkout completa
-          if (session.customer && session.amount_total) {
-            const customer = await executeStripeCall('customer.retrieve', () => stripe.customers.retrieve(session.customer as string));
-            if (customer && !customer.deleted) {
-              const salesOrderResult = await syncToERPNext('sales_order', {
-                customer: customer.email || customer.id,
-                transaction_date: new Date().toISOString().split('T')[0],
-                delivery_date: new Date().toISOString().split('T')[0],
-                currency: (session.currency || 'EUR').toUpperCase(),
-                items: [{
-                  item_code: session.metadata?.productId || 'SUBSCRIPTION',
-                  qty: 1,
-                  rate: (session.amount_total || 0) / 100,
-                }],
-                custom_stripe_session_id: session.id,
-                custom_stripe_customer_id: session.customer,
-              });
-              
-              if (salesOrderResult?.name) {
-                // Atualizar mapeamento com Sales Order
-                await db.update(schema.stripeErpnextMapping)
-                  .set({ 
-                    erpnextSalesOrder: salesOrderResult.name,
-                    erpnextCustomer: customer.email || customer.id,
-                    flowStatus: 'order_created',
-                    atualizadoEm: new Date(),
-                  })
-                  .where(eq(schema.stripeErpnextMapping.id, mapping.id));
-              }
-              
-              // Step 3: Se pagamento já foi feito (status=paid), criar Invoice + Payment Entry
-              if (session.payment_status === 'paid' && salesOrderResult?.name) {
-                // Criar Invoice a partir do Sales Order
-                const invoiceName = await createInvoiceFromOrder(salesOrderResult.name);
-                
-                if (invoiceName) {
-                  // Atualizar mapeamento com Invoice
-                  await db.update(schema.stripeErpnextMapping)
-                    .set({ 
-                      erpnextSalesInvoice: invoiceName,
-                      flowStatus: 'invoice_created',
-                      atualizadoEm: new Date(),
-                    })
-                    .where(eq(schema.stripeErpnextMapping.id, mapping.id));
-
-                  // Criar Payment Entry com referência à Invoice
-                  const paymentResult = await syncToERPNext('payment_from_invoice', {
-                    against_invoice: invoiceName,
-                    paid_amount: (session.amount_total || 0) / 100,
-                    reference_no: session.payment_intent as string || session.id,
-                    reference_date: new Date().toISOString().split('T')[0],
-                    mode_of_payment: 'Stripe',
-                    custom_stripe_session_id: session.id,
-                    custom_stripe_payment_intent_id: session.payment_intent,
-                  });
-                  
-                  // Atualizar mapeamento com Payment Entry
-                  if (paymentResult?.name) {
-                    await db.update(schema.stripeErpnextMapping)
-                      .set({ 
-                        erpnextPaymentEntry: paymentResult.name,
-                        flowStatus: 'complete',
-                        atualizadoEm: new Date(),
-                      })
-                      .where(eq(schema.stripeErpnextMapping.id, mapping.id));
-                  }
-                  
-                  logger.info({ 
-                    salesOrder: salesOrderResult.name, 
-                    invoice: invoiceName,
-                    sessionId: session.id 
-                  }, 'Fluxo ERPNext completo: Sales Order → Invoice → Payment Entry');
-                  
-                  processingResult = { 
-                    ...processingResult, 
-                    salesOrder: salesOrderResult.name, 
-                    invoice: invoiceName,
-                    erpnextFlowComplete: true 
-                  };
-                }
-              } else if (salesOrderResult?.name) {
-                // Pagamento pendente - apenas Sales Order criado
-                logger.info({ 
-                  salesOrder: salesOrderResult.name, 
-                  sessionId: session.id,
-                  paymentStatus: session.payment_status 
-                }, 'Sales Order criado - Invoice será criada quando pagamento confirmar');
-                processingResult = { ...processingResult, salesOrder: salesOrderResult.name };
-              }
-            }
-          }
           break;
         }
 
@@ -4474,146 +4082,15 @@ app.post('/api/integrations/stripe/webhook', async (req: Request, res: Response)
 
         case 'payment_intent.succeeded': {
           const paymentIntent = event.data.object as Stripe.PaymentIntent;
-          
-          // Completar fluxo ERPNext se pagamento foi feito após checkout
-          // Usar tabela de mapeamento para encontrar o Sales Order correto
-          
-          if (paymentIntent.amount && paymentIntent.customer) {
-            // Buscar mapeamento pelo payment_intent_id
-            const mapping = await db.query.stripeErpnextMapping.findFirst({
-              where: eq(schema.stripeErpnextMapping.stripePaymentIntentId, paymentIntent.id),
-            });
-
-            if (mapping && mapping.erpnextSalesOrder) {
-              // Verificar se fluxo já está completo
-              if (mapping.flowStatus === 'complete') {
-                logger.info({ paymentIntentId: paymentIntent.id, mappingId: mapping.id }, 
-                  'Fluxo ERPNext já completo - ignorando payment_intent.succeeded');
-                processingResult = { 
-                  paymentIntentId: paymentIntent.id, 
-                  amount: paymentIntent.amount,
-                  alreadyComplete: true 
-                };
-              } else if (mapping.flowStatus === 'order_created') {
-                // Sales Order existe mas Invoice não - criar Invoice + Payment Entry
-                try {
-                  const invoiceName = await createInvoiceFromOrder(mapping.erpnextSalesOrder);
-                  
-                  if (invoiceName) {
-                    // Atualizar mapeamento com Invoice
-                    await db.update(schema.stripeErpnextMapping)
-                      .set({ 
-                        erpnextSalesInvoice: invoiceName,
-                        flowStatus: 'invoice_created',
-                        atualizadoEm: new Date(),
-                      })
-                      .where(eq(schema.stripeErpnextMapping.id, mapping.id));
-
-                    // Criar Payment Entry com referência à Invoice
-                    const paymentResult = await syncToERPNext('payment_from_invoice', {
-                      against_invoice: invoiceName,
-                      paid_amount: paymentIntent.amount / 100,
-                      reference_no: paymentIntent.id,
-                      reference_date: new Date().toISOString().split('T')[0],
-                      mode_of_payment: 'Stripe',
-                      custom_stripe_payment_intent_id: paymentIntent.id,
-                    });
-                    
-                    // Atualizar mapeamento com Payment Entry
-                    if (paymentResult?.name) {
-                      await db.update(schema.stripeErpnextMapping)
-                        .set({ 
-                          erpnextPaymentEntry: paymentResult.name,
-                          flowStatus: 'complete',
-                          atualizadoEm: new Date(),
-                        })
-                        .where(eq(schema.stripeErpnextMapping.id, mapping.id));
-                    }
-                    
-                    logger.info({ 
-                      salesOrder: mapping.erpnextSalesOrder, 
-                      invoice: invoiceName,
-                      paymentIntentId: paymentIntent.id 
-                    }, 'Fluxo ERPNext completado via payment_intent.succeeded');
-                    
-                    processingResult = { 
-                      paymentIntentId: paymentIntent.id, 
-                      amount: paymentIntent.amount,
-                      salesOrder: mapping.erpnextSalesOrder,
-                      invoice: invoiceName,
-                      erpnextFlowComplete: true
-                    };
-                  }
-                } catch (erpnextError) {
-                  logger.error({ error: erpnextError, paymentIntentId: paymentIntent.id, mapping }, 
-                    'Falha ao completar fluxo ERPNext via payment_intent.succeeded');
-                  
-                  processingResult = { 
-                    paymentIntentId: paymentIntent.id, 
-                    amount: paymentIntent.amount,
-                    error: 'ERPNext flow failed',
-                    salesOrder: mapping.erpnextSalesOrder
-                  };
-                }
-              } else if (mapping.flowStatus === 'invoice_created' && mapping.erpnextSalesInvoice) {
-                // Invoice existe mas Payment Entry não - criar apenas Payment Entry
-                try {
-                  const paymentResult = await syncToERPNext('payment_from_invoice', {
-                    against_invoice: mapping.erpnextSalesInvoice,
-                    paid_amount: paymentIntent.amount / 100,
-                    reference_no: paymentIntent.id,
-                    reference_date: new Date().toISOString().split('T')[0],
-                    mode_of_payment: 'Stripe',
-                    custom_stripe_payment_intent_id: paymentIntent.id,
-                  });
-                  
-                  if (paymentResult?.name) {
-                    await db.update(schema.stripeErpnextMapping)
-                      .set({ 
-                        erpnextPaymentEntry: paymentResult.name,
-                        flowStatus: 'complete',
-                        atualizadoEm: new Date(),
-                      })
-                      .where(eq(schema.stripeErpnextMapping.id, mapping.id));
-                  }
-                  
-                  processingResult = { 
-                    paymentIntentId: paymentIntent.id, 
-                    amount: paymentIntent.amount,
-                    invoice: mapping.erpnextSalesInvoice,
-                    paymentCreated: true
-                  };
-                } catch (paymentError) {
-                  logger.error({ error: paymentError, paymentIntentId: paymentIntent.id }, 
-                    'Falha ao criar Payment Entry');
-                }
-              }
-            } else {
-              // Sem mapeamento encontrado - registrar apenas metadados
-              logger.info({ paymentIntentId: paymentIntent.id }, 
-                'Payment intent sem mapeamento - provavelmente processado por checkout.session.completed');
-              processingResult = { 
-                paymentIntentId: paymentIntent.id, 
-                amount: paymentIntent.amount,
-                note: 'No mapping found - may be handled by checkout.session.completed'
-              };
-            }
-          }
+          processingResult = {
+            paymentIntentId: paymentIntent.id,
+            amount: paymentIntent.amount,
+          };
           break;
         }
 
         case 'customer.created': {
           const customer = event.data.object as Stripe.Customer;
-          
-          // Sincronizar cliente com ERPNext
-          await syncToERPNext('customer', {
-            customer_name: customer.name || customer.email || customer.id,
-            customer_type: 'Individual',
-            customer_group: 'Individual',
-            territory: 'Portugal',
-            email_id: customer.email,
-            custom_stripe_customer_id: customer.id,
-          });
           processingResult = { customerId: customer.id };
           break;
         }
@@ -4630,527 +4107,6 @@ app.post('/api/integrations/stripe/webhook', async (req: Request, res: Response)
   } catch (error) {
     logger.error({ error }, 'Webhook error');
     res.status(400).json({ error: 'Webhook error' });
-  }
-});
-
-app.get('/api/integrations/erpnext/test', requirePermission('integrations:erpnext:read'), async (_req: Request, res: Response) => {
-  if (!config.ERPNEXT_URL) {
-    return res.status(503).json({ error: 'ERPNext not configured' });
-  }
-
-  // RESILIÊNCIA: AbortController com timeout
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), EXTERNAL_API_TIMEOUT_MS);
-
-  try {
-    const response = await fetch(`${config.ERPNEXT_URL}/api/method/frappe.auth.get_logged_user`, {
-      headers: {
-        'Authorization': `token ${config.ERPNEXT_API_KEY}:${config.ERPNEXT_API_SECRET}`,
-      },
-      signal: controller.signal,
-    });
-
-    if (!response.ok) {
-      throw new Error('ERPNext connection failed');
-    }
-
-    const data = await response.json() as { message: string };
-    res.json({ status: 'connected', user: data.message });
-  } catch (error) {
-    logger.error({ error }, 'ERPNext test failed');
-    res.status(500).json({ error: 'ERPNext connection failed' });
-  } finally {
-    clearTimeout(timeoutId);
-  }
-});
-
-app.get('/api/integrations/erpnext/customers', requirePermission('integrations:erpnext:read'), async (_req: Request, res: Response) => {
-  if (!config.ERPNEXT_URL) {
-    return res.status(503).json({ error: 'ERPNext not configured' });
-  }
-
-  // RESILIÊNCIA: AbortController com timeout
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), EXTERNAL_API_TIMEOUT_MS);
-
-  try {
-    const response = await fetch(
-      `${config.ERPNEXT_URL}/api/resource/Customer?fields=["name","customer_name","customer_type","territory"]&limit_page_length=100`,
-      {
-        headers: {
-          'Authorization': `token ${config.ERPNEXT_API_KEY}:${config.ERPNEXT_API_SECRET}`,
-        },
-        signal: controller.signal,
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error('Failed to fetch customers');
-    }
-
-    const data = await response.json() as { data: unknown[] };
-    res.json({ customers: data.data });
-  } catch (error) {
-    logger.error({ error }, 'Failed to fetch ERPNext customers');
-    res.status(500).json({ error: 'Failed to fetch customers' });
-  } finally {
-    clearTimeout(timeoutId);
-  }
-});
-
-app.get('/api/integrations/erpnext/items', requirePermission('integrations:erpnext:read'), async (_req: Request, res: Response) => {
-  if (!config.ERPNEXT_URL) {
-    return res.status(503).json({ error: 'ERPNext not configured' });
-  }
-
-  // RESILIÊNCIA: AbortController com timeout
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), EXTERNAL_API_TIMEOUT_MS);
-
-  try {
-    const response = await fetch(
-      `${config.ERPNEXT_URL}/api/resource/Item?fields=["name","item_name","item_group","stock_uom","standard_rate"]&limit_page_length=100`,
-      {
-        headers: {
-          'Authorization': `token ${config.ERPNEXT_API_KEY}:${config.ERPNEXT_API_SECRET}`,
-        },
-        signal: controller.signal,
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error('Failed to fetch items');
-    }
-
-    const data = await response.json() as { data: unknown[] };
-    res.json({ items: data.data });
-  } catch (error) {
-    logger.error({ error }, 'Failed to fetch ERPNext items');
-    res.status(500).json({ error: 'Failed to fetch items' });
-  } finally {
-    clearTimeout(timeoutId);
-  }
-});
-
-const erpNextCustomerCreateSchema = z.object({
-  customerName: z.string().min(2),
-  customerType: z.string().min(2),
-  territory: z.string().min(2),
-  email: z.string().email().optional(),
-  phone: z.string().min(3).optional(),
-  taxId: z.string().min(3).optional(),
-});
-
-app.post('/api/integrations/erpnext/customers', requirePermission('integrations:erpnext:write'), async (req: Request, res: Response) => {
-  if (!config.ERPNEXT_URL) {
-    return res.status(503).json({ error: 'ERPNext not configured' });
-  }
-
-  const parseResult = erpNextCustomerCreateSchema.safeParse(req.body);
-  if (!parseResult.success) {
-    logger.warn({ errors: parseResult.error.flatten() }, 'Input inválido em /api/integrations/erpnext/customers');
-    return res.status(400).json({ error: 'Input inválido', details: parseResult.error.format() });
-  }
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), EXTERNAL_API_TIMEOUT_MS);
-
-  try {
-    const response = await fetch(
-      `${config.ERPNEXT_URL}/api/resource/Customer`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `token ${config.ERPNEXT_API_KEY}:${config.ERPNEXT_API_SECRET}`,
-          'Content-Type': 'application/json',
-        },
-        signal: controller.signal,
-        body: JSON.stringify({
-          customer_name: parseResult.data.customerName,
-          customer_type: parseResult.data.customerType,
-          territory: parseResult.data.territory,
-          email_id: parseResult.data.email,
-          mobile_no: parseResult.data.phone,
-          tax_id: parseResult.data.taxId,
-        }),
-      }
-    );
-
-    if (!response.ok) {
-      const errText = await response.text().catch(() => '');
-      throw new Error(`Failed to create customer: ${response.status} - ${errText}`);
-    }
-
-    const data = await response.json() as { data: unknown };
-    res.json({ customer: data.data });
-  } catch (error) {
-    logger.error({ error }, 'Failed to create ERPNext customer');
-    res.status(500).json({ error: 'Failed to create customer' });
-  } finally {
-    clearTimeout(timeoutId);
-  }
-});
-
-app.get('/api/integrations/erpnext/invoices', requirePermission('integrations:erpnext:read'), async (req: Request, res: Response) => {
-  if (!config.ERPNEXT_URL) {
-    return res.status(503).json({ error: 'ERPNext not configured' });
-  }
-
-  const limit = Number(req.query.limit ?? 100);
-  const safeLimit = Number.isFinite(limit) && limit > 0 && limit <= 200 ? limit : 100;
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), EXTERNAL_API_TIMEOUT_MS);
-
-  try {
-    const response = await fetch(
-      `${config.ERPNEXT_URL}/api/resource/Sales%20Invoice?fields=["name","customer","grand_total","status","posting_date"]&limit_page_length=${safeLimit}`,
-      {
-        headers: {
-          'Authorization': `token ${config.ERPNEXT_API_KEY}:${config.ERPNEXT_API_SECRET}`,
-        },
-        signal: controller.signal,
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error('Failed to fetch invoices');
-    }
-
-    const data = await response.json() as { data: unknown[] };
-    res.json({ invoices: data.data });
-  } catch (error) {
-    logger.error({ error }, 'Failed to fetch ERPNext invoices');
-    res.status(500).json({ error: 'Failed to fetch invoices' });
-  } finally {
-    clearTimeout(timeoutId);
-  }
-});
-
-app.get('/api/integrations/erpnext/customer-annual-billing', requirePermission('integrations:erpnext:read'), async (req: Request, res: Response) => {
-  if (!config.ERPNEXT_URL) {
-    return res.status(503).json({ error: 'ERPNext not configured' });
-  }
-
-  const customer = String(req.query.customer ?? '').trim();
-  const yearParam = String(req.query.year ?? '').trim();
-  const resolvedYear = yearParam ? Number(yearParam) : new Date().getFullYear();
-
-  if (!customer) {
-    return res.status(400).json({ error: 'Parâmetro customer é obrigatório' });
-  }
-  if (!Number.isFinite(resolvedYear) || resolvedYear < 2000 || resolvedYear > 2100) {
-    return res.status(400).json({ error: 'Parâmetro year inválido' });
-  }
-
-  const startDate = `${resolvedYear}-01-01`;
-  const endDate = `${resolvedYear}-12-31`;
-  const fields = encodeURIComponent(JSON.stringify([
-    'name',
-    'customer',
-    'grand_total',
-    'base_grand_total',
-    'currency',
-    'base_currency',
-    'posting_date',
-    'docstatus',
-  ]));
-  const filters = encodeURIComponent(JSON.stringify([
-    ['Sales Invoice', 'customer', '=', customer],
-    ['Sales Invoice', 'docstatus', '=', 1],
-    ['Sales Invoice', 'posting_date', '>=', startDate],
-    ['Sales Invoice', 'posting_date', '<=', endDate],
-  ]));
-
-  const pageSize = 100;
-  let offset = 0;
-  let total = 0;
-  let currency: string | null = null;
-  let invoiceCount = 0;
-
-  try {
-    while (true) {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), EXTERNAL_API_TIMEOUT_MS);
-      const response = await fetch(
-        `${config.ERPNEXT_URL}/api/resource/Sales%20Invoice?fields=${fields}&filters=${filters}&limit_start=${offset}&limit_page_length=${pageSize}`,
-        {
-          headers: {
-            'Authorization': `token ${config.ERPNEXT_API_KEY}:${config.ERPNEXT_API_SECRET}`,
-          },
-          signal: controller.signal,
-        }
-      ).finally(() => clearTimeout(timeoutId));
-
-      if (!response.ok) {
-        const errText = await response.text().catch(() => '');
-        throw new Error(`Failed to fetch invoices: ${response.status} - ${errText}`);
-      }
-
-      const data = await response.json() as { data: Array<Record<string, unknown>> };
-      const invoices = data.data ?? [];
-      if (invoices.length === 0) {
-        break;
-      }
-
-      for (const invoice of invoices) {
-        const baseTotal = Number(invoice.base_grand_total);
-        const grandTotal = Number(invoice.grand_total);
-        const value = Number.isFinite(baseTotal) ? baseTotal : (Number.isFinite(grandTotal) ? grandTotal : 0);
-        total += value;
-        if (!currency) {
-          currency = String(invoice.base_currency ?? invoice.currency ?? '').trim() || null;
-        }
-      }
-      invoiceCount += invoices.length;
-      offset += pageSize;
-      if (invoices.length < pageSize) {
-        break;
-      }
-    }
-
-    res.json({
-      customer,
-      year: resolvedYear,
-      total,
-      currency: currency ?? 'BRL',
-      invoiceCount,
-    });
-  } catch (error) {
-    logger.error({ error, customer, year: resolvedYear }, 'Failed to calculate ERPNext annual billing');
-    res.status(500).json({ error: 'Failed to calculate annual billing' });
-  }
-});
-
-const erpNextInvoiceItemSchema = z.object({
-  itemCode: z.string().min(2),
-  qty: z.number().positive(),
-  rate: z.number().positive(),
-});
-
-const erpNextInvoiceCreateSchema = z.object({
-  customer: z.string().min(2),
-  items: z.array(erpNextInvoiceItemSchema).min(1),
-  dueDate: z.string().optional(),
-});
-
-app.post('/api/integrations/erpnext/invoices', requirePermission('integrations:erpnext:write'), async (req: Request, res: Response) => {
-  if (!config.ERPNEXT_URL) {
-    return res.status(503).json({ error: 'ERPNext not configured' });
-  }
-
-  const parseResult = erpNextInvoiceCreateSchema.safeParse(req.body);
-  if (!parseResult.success) {
-    logger.warn({ errors: parseResult.error.flatten() }, 'Input inválido em /api/integrations/erpnext/invoices');
-    return res.status(400).json({ error: 'Input inválido', details: parseResult.error.format() });
-  }
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), EXTERNAL_API_TIMEOUT_MS);
-
-  try {
-    const response = await fetch(
-      `${config.ERPNEXT_URL}/api/resource/Sales%20Invoice`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `token ${config.ERPNEXT_API_KEY}:${config.ERPNEXT_API_SECRET}`,
-          'Content-Type': 'application/json',
-        },
-        signal: controller.signal,
-        body: JSON.stringify({
-          customer: parseResult.data.customer,
-          items: parseResult.data.items.map((item) => ({
-            item_code: item.itemCode,
-            qty: item.qty,
-            rate: item.rate,
-          })),
-          due_date: parseResult.data.dueDate,
-        }),
-      }
-    );
-
-    if (!response.ok) {
-      const errText = await response.text().catch(() => '');
-      throw new Error(`Failed to create invoice: ${response.status} - ${errText}`);
-    }
-
-    const data = await response.json() as { data: unknown };
-    res.json({ invoice: data.data });
-  } catch (error) {
-    logger.error({ error }, 'Failed to create ERPNext invoice');
-    res.status(500).json({ error: 'Failed to create invoice' });
-  } finally {
-    clearTimeout(timeoutId);
-  }
-});
-
-// ============================================================================
-// ERPNext API Proxy (cobertura completa)
-// ============================================================================
-
-app.get('/api/integrations/erpnext/resource/:doctype', requirePermission('integrations:erpnext:read'), async (req: Request, res: Response) => {
-  if (!config.ERPNEXT_URL || !config.ERPNEXT_API_KEY || !config.ERPNEXT_API_SECRET) {
-    return res.status(503).json({ error: 'ERPNext not configured' });
-  }
-
-  try {
-    const doctype = normalizeErpNextDoctype(req.params.doctype);
-    if (!isErpNextAllowed(doctype, ERPNEXT_ALLOWED_DOCTYPES)) {
-      return res.status(403).json({ error: 'DocType não permitido. Ajuste ERPNEXT_ALLOWED_DOCTYPES.' });
-    }
-
-    const name = typeof req.query.name === 'string' ? req.query.name.trim() : '';
-    const fields = typeof req.query.fields === 'string' ? req.query.fields : undefined;
-    const filters = typeof req.query.filters === 'string' ? req.query.filters : undefined;
-    const limitStart = typeof req.query.limit_start === 'string' ? req.query.limit_start : undefined;
-    const limitLength = typeof req.query.limit_page_length === 'string' ? req.query.limit_page_length : undefined;
-    const orderBy = typeof req.query.order_by === 'string' ? req.query.order_by : undefined;
-
-    const basePath = name
-      ? `/api/resource/${encodeURIComponent(doctype)}/${encodeURIComponent(name)}`
-      : `/api/resource/${encodeURIComponent(doctype)}`;
-
-    const query = new URLSearchParams();
-    if (fields) query.set('fields', fields);
-    if (filters) query.set('filters', filters);
-    if (limitStart) query.set('limit_start', limitStart);
-    if (limitLength) query.set('limit_page_length', limitLength);
-    if (orderBy) query.set('order_by', orderBy);
-
-    const url = `${config.ERPNEXT_URL}${basePath}${query.toString() ? `?${query}` : ''}`;
-    const result = await executeErpNextRequest<Record<string, unknown>>('erpnext.resource.read', {
-      url,
-      method: 'GET',
-      headers: buildErpNextHeaders(),
-    });
-
-    res.json({ data: result });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Erro desconhecido';
-    logger.error({ error: message }, 'Falha ao consultar ERPNext resource');
-    res.status(500).json({ error: message });
-  }
-});
-
-app.post('/api/integrations/erpnext/resource/:doctype', requirePermission('integrations:erpnext:write'), async (req: Request, res: Response) => {
-  if (!config.ERPNEXT_URL || !config.ERPNEXT_API_KEY || !config.ERPNEXT_API_SECRET) {
-    return res.status(503).json({ error: 'ERPNext not configured' });
-  }
-
-  try {
-    const doctype = normalizeErpNextDoctype(req.params.doctype);
-    if (!isErpNextAllowed(doctype, ERPNEXT_ALLOWED_DOCTYPES)) {
-      return res.status(403).json({ error: 'DocType não permitido. Ajuste ERPNEXT_ALLOWED_DOCTYPES.' });
-    }
-
-    if (!req.body || typeof req.body !== 'object') {
-      return res.status(400).json({ error: 'Payload inválido para criação' });
-    }
-
-    const url = `${config.ERPNEXT_URL}/api/resource/${encodeURIComponent(doctype)}`;
-    const result = await executeErpNextRequest<Record<string, unknown>>('erpnext.resource.create', {
-      url,
-      method: 'POST',
-      headers: buildErpNextHeaders(),
-      body: JSON.stringify(req.body),
-    });
-
-    res.json({ data: result });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Erro desconhecido';
-    logger.error({ error: message }, 'Falha ao criar ERPNext resource');
-    res.status(500).json({ error: message });
-  }
-});
-
-app.put('/api/integrations/erpnext/resource/:doctype/:name', requirePermission('integrations:erpnext:write'), async (req: Request, res: Response) => {
-  if (!config.ERPNEXT_URL || !config.ERPNEXT_API_KEY || !config.ERPNEXT_API_SECRET) {
-    return res.status(503).json({ error: 'ERPNext not configured' });
-  }
-
-  try {
-    const doctype = normalizeErpNextDoctype(req.params.doctype);
-    if (!isErpNextAllowed(doctype, ERPNEXT_ALLOWED_DOCTYPES)) {
-      return res.status(403).json({ error: 'DocType não permitido. Ajuste ERPNEXT_ALLOWED_DOCTYPES.' });
-    }
-    const name = req.params.name?.trim();
-    if (!name) {
-      return res.status(400).json({ error: 'Nome do registro obrigatório' });
-    }
-    if (!req.body || typeof req.body !== 'object') {
-      return res.status(400).json({ error: 'Payload inválido para atualização' });
-    }
-
-    const url = `${config.ERPNEXT_URL}/api/resource/${encodeURIComponent(doctype)}/${encodeURIComponent(name)}`;
-    const result = await executeErpNextRequest<Record<string, unknown>>('erpnext.resource.update', {
-      url,
-      method: 'PUT',
-      headers: buildErpNextHeaders(),
-      body: JSON.stringify(req.body),
-    });
-
-    res.json({ data: result });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Erro desconhecido';
-    logger.error({ error: message }, 'Falha ao atualizar ERPNext resource');
-    res.status(500).json({ error: message });
-  }
-});
-
-app.delete('/api/integrations/erpnext/resource/:doctype/:name', requirePermission('integrations:erpnext:write'), async (req: Request, res: Response) => {
-  if (!config.ERPNEXT_URL || !config.ERPNEXT_API_KEY || !config.ERPNEXT_API_SECRET) {
-    return res.status(503).json({ error: 'ERPNext not configured' });
-  }
-
-  try {
-    const doctype = normalizeErpNextDoctype(req.params.doctype);
-    if (!isErpNextAllowed(doctype, ERPNEXT_ALLOWED_DOCTYPES)) {
-      return res.status(403).json({ error: 'DocType não permitido. Ajuste ERPNEXT_ALLOWED_DOCTYPES.' });
-    }
-    const name = req.params.name?.trim();
-    if (!name) {
-      return res.status(400).json({ error: 'Nome do registro obrigatório' });
-    }
-
-    const url = `${config.ERPNEXT_URL}/api/resource/${encodeURIComponent(doctype)}/${encodeURIComponent(name)}`;
-    const result = await executeErpNextRequest<Record<string, unknown>>('erpnext.resource.delete', {
-      url,
-      method: 'DELETE',
-      headers: buildErpNextHeaders(),
-    });
-
-    res.json({ data: result });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Erro desconhecido';
-    logger.error({ error: message }, 'Falha ao remover ERPNext resource');
-    res.status(500).json({ error: message });
-  }
-});
-
-app.post('/api/integrations/erpnext/method/:method', requirePermission('integrations:erpnext:write'), async (req: Request, res: Response) => {
-  if (!config.ERPNEXT_URL || !config.ERPNEXT_API_KEY || !config.ERPNEXT_API_SECRET) {
-    return res.status(503).json({ error: 'ERPNext not configured' });
-  }
-
-  try {
-    const methodName = normalizeErpNextMethod(req.params.method);
-    if (!isErpNextAllowed(methodName, ERPNEXT_ALLOWED_METHODS)) {
-      return res.status(403).json({ error: 'Method não permitido. Ajuste ERPNEXT_ALLOWED_METHODS.' });
-    }
-
-    const url = `${config.ERPNEXT_URL}/api/method/${encodeURIComponent(methodName)}`;
-    const result = await executeErpNextRequest<Record<string, unknown>>('erpnext.method.call', {
-      url,
-      method: 'POST',
-      headers: buildErpNextHeaders(),
-      body: JSON.stringify(req.body ?? {}),
-    });
-
-    res.json({ data: result });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Erro desconhecido';
-    logger.error({ error: message }, 'Falha ao executar método ERPNext');
-    res.status(500).json({ error: message });
   }
 });
 
@@ -5253,7 +4209,7 @@ app.post('/api/integrations/grafana/dashboards', requirePermission('integrations
 });
 
 const githubDeploySchema = z.object({
-  stack: z.enum(['infra', 'alice', 'observability', 'erpnext', 'backup', 'all']),
+  stack: z.enum(['infra', 'alice', 'observability', 'backup', 'all']),
   version: z.string().min(2),
   rollback: z.boolean().optional(),
   rollbackVersion: z.string().optional(),
@@ -6563,47 +5519,13 @@ app.post('/api/integrations/wise/webhook', async (req: Request, res: Response) =
     if (event.event_type === 'transfers#state-change') {
       const transfer = event.data.resource;
       const newState = event.data.current_state;
-
-      // Sincronizar com ERPNext quando transferência for concluída
-      if (newState === 'outgoing_payment_sent' || newState === 'funds_converted') {
-        await syncToERPNext('payment', {
-          payment_type: 'Pay',
-          party_type: 'Supplier',
-          party: transfer.reference || `Wise-${transfer.id}`,
-          paid_amount: transfer.source_amount,
-          paid_to_account_currency: transfer.source_currency,
-          received_amount: transfer.target_amount,
-          reference_no: `WISE-${transfer.id}`,
-          reference_date: event.data.occurred_at.split('T')[0],
-          mode_of_payment: 'Wise Transfer',
-          custom_wise_transfer_id: transfer.id.toString(),
-          custom_wise_state: newState,
-        });
-
-        logger.info({ transferId: transfer.id, state: newState }, 'Transferência Wise sincronizada com ERPNext');
-        processingResult = { transferId: transfer.id, state: newState, action: 'synced_to_erpnext' };
-      }
+      processingResult = { transferId: transfer.id, state: newState };
     }
 
     // Processar eventos de depósito (credit balance)
     if (event.event_type === 'balances#credit') {
       const balance = event.data.resource;
-      
-      // Registrar recebimento no ERPNext
-      await syncToERPNext('payment', {
-        payment_type: 'Receive',
-        party_type: 'Customer',
-        party: `Wise-Balance-${balance.id}`,
-        paid_amount: balance.source_amount,
-        paid_from_account_currency: balance.source_currency,
-        reference_no: `WISE-CREDIT-${balance.id}`,
-        reference_date: event.data.occurred_at.split('T')[0],
-        mode_of_payment: 'Wise Deposit',
-        custom_wise_balance_id: balance.id.toString(),
-      });
-
-      logger.info({ balanceId: balance.id }, 'Depósito Wise sincronizado com ERPNext');
-      processingResult = { balanceId: balance.id, action: 'credit_synced' };
+      processingResult = { balanceId: balance.id, action: 'credit_received' };
     }
 
   } catch (error) {
@@ -21976,7 +20898,7 @@ const PORT = config.PORT || 3005;
 const INTEGRATION_HEALTH_REFRESH_MS = 120000;
 
 type IntegrationSeed = {
-  tipo: 'kucoin' | 'erpnext';
+  tipo: 'kucoin';
   nome: string;
   configuracao: IntegrationConfiguracao;
   credenciais: Record<string, unknown>;
@@ -22003,22 +20925,6 @@ function buildIntegrationSeeds(): IntegrationSeed[] {
     });
   } else {
     logger.warn({ missing: kucoinStatus.missingKeys }, 'KuCoin não configurado - bootstrap ignorado');
-  }
-
-  if (config.ERPNEXT_URL && config.ERPNEXT_API_KEY && config.ERPNEXT_API_SECRET) {
-    seeds.push({
-      tipo: 'erpnext',
-      nome: 'ERPNext',
-      configuracao: {
-        baseUrl: config.ERPNEXT_URL,
-      },
-      credenciais: {
-        apiKey: config.ERPNEXT_API_KEY,
-        apiSecret: config.ERPNEXT_API_SECRET,
-      },
-    });
-  } else {
-    logger.warn('ERPNext não configurado - bootstrap ignorado');
   }
 
   return seeds;
@@ -22110,13 +21016,6 @@ async function initializeCaches(): Promise<void> {
 
 // Inicializar caches e depois iniciar servidor
 initializeCaches().then(() => {
-  try {
-    const db = getDatabase();
-    initWiseSyncService(db);
-    logger.info('WiseSyncService inicializado com sucesso');
-  } catch (error) {
-    logger.warn({ error }, 'WiseSyncService não inicializado (database não disponível)');
-  }
   bootstrapIntegrationsForTenants().catch((error) => {
     logger.error({ error }, 'Falha no bootstrap de integrações');
   });

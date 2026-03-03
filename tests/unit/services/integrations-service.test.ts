@@ -4,7 +4,6 @@
  * Testes unitários para integrações externas:
  * - Stripe (pagamentos)
  * - Wise (transferências internacionais)
- * - ERPNext (ERP)
  * - Webhooks (assinatura e validação)
  * 
  * Author: Fillipe Guerra
@@ -173,38 +172,6 @@ describe('Integrations Service - Wise Transfer States', () => {
 });
 
 // ============================================================================
-// TESTES DE ERPNEXT
-// ============================================================================
-
-describe('Integrations Service - ERPNext', () => {
-  const ERPNEXT_DOCTYPES = [
-    'Customer',
-    'Supplier',
-    'Sales Invoice',
-    'Purchase Invoice',
-    'Stock Entry',
-    'Journal Entry',
-    'Payment Entry',
-  ];
-
-  it('deve suportar DocType Customer', () => {
-    expect(ERPNEXT_DOCTYPES).toContain('Customer');
-  });
-
-  it('deve suportar DocType Sales Invoice', () => {
-    expect(ERPNEXT_DOCTYPES).toContain('Sales Invoice');
-  });
-
-  it('deve suportar DocType Payment Entry', () => {
-    expect(ERPNEXT_DOCTYPES).toContain('Payment Entry');
-  });
-
-  it('deve ter ao menos 7 DocTypes suportados', () => {
-    expect(ERPNEXT_DOCTYPES.length).toBeGreaterThanOrEqual(7);
-  });
-});
-
-// ============================================================================
 // TESTES DE CIRCUIT BREAKER
 // ============================================================================
 
@@ -332,11 +299,9 @@ describe('Integrations Service - Health Check', () => {
     timestamp: string;
     integrations: {
       stripe: boolean;
-      erpnext: boolean;
       wise: boolean;
     };
     circuitBreakers: {
-      erpnext: string;
       wise: { state: string; stats: object } | null;
     };
   }
@@ -348,11 +313,9 @@ describe('Integrations Service - Health Check', () => {
       timestamp: new Date().toISOString(),
       integrations: {
         stripe: true,
-        erpnext: false,
         wise: true,
       },
       circuitBreakers: {
-        erpnext: 'closed',
         wise: { state: 'closed', stats: {} },
       },
     };
@@ -362,17 +325,15 @@ describe('Integrations Service - Health Check', () => {
   });
 
   it('deve indicar integração não configurada', () => {
-    const integrations = { stripe: true, erpnext: false, wise: true };
-    expect(integrations.erpnext).toBe(false);
+    const integrations = { stripe: true, wise: false };
+    expect(integrations.wise).toBe(false);
   });
 
   it('deve incluir status dos circuit breakers', () => {
     const circuitBreakers = {
-      erpnext: 'closed',
       wise: { state: 'open', stats: { failures: 5 } },
     };
     
-    expect(circuitBreakers.erpnext).toBe('closed');
     expect(circuitBreakers.wise.state).toBe('open');
   });
 });

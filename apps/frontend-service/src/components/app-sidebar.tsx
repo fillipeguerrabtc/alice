@@ -14,7 +14,6 @@ import {
   Headphones,
   Sparkles,
   Activity,
-  Building2,
   FolderKanban,
   Shield,
   Users,
@@ -63,14 +62,7 @@ const financeItems = [
   { title: 'Trading Demo', url: '/demo-trading', icon: FlaskConical },
 ];
 
-const adminExternalLinks = [
-  { 
-    title: 'ERPNext CRM', 
-    url: 'https://erp.yesyoudeserve.duckdns.org', 
-    icon: Building2,
-    description: 'Gestão de Clientes e Vendas'
-  },
-];
+const adminExternalLinks: Array<{ title: string; url: string; icon: typeof ExternalLink; description: string }> = [];
 
 const adminItems = [
   { title: 'Observabilidade', url: '/observability', icon: Activity },
@@ -288,3 +280,4 @@ export function AppSidebar() {
     </Sidebar>
   );
 }
+

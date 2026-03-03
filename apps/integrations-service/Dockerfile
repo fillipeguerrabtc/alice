@@ -142,7 +142,7 @@ EXPOSE 3005
 
 # Health check com handlers de erro e timeout
 # CORREÇÃO 21/12/2025: Usar /live (liveness probe - processo vivo) ao invés de /ready
-# /ready verifica dependências externas (ERPNext, Stripe) - pode falhar temporariamente
+# /ready verifica dependência de PostgreSQL - pode falhar temporariamente
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD node -e "const r=require('http').get('http://localhost:3005/live',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"
 

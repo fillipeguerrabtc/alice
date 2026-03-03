@@ -157,7 +157,7 @@ describe('Schema - Enums RBAC', () => {
   });
 
   describe('wiseSyncStatusEnum', () => {
-    it('deve ter status válidos de sincronização Wise-ERPNext', () => {
+    it('deve ter status válidos de sincronização Wise', () => {
       const statuses = wiseSyncStatusEnum.enumValues;
       expect(statuses).toEqual(['pending', 'synced', 'failed', 'retrying', 'manual_review']);
     });
@@ -371,13 +371,11 @@ describe('Schema - Tabelas Principais', () => {
   });
 
   describe('wiseSyncLog (Fase 5.5)', () => {
-    it('deve ter campos de reconciliação Wise-ERPNext', () => {
+    it('deve ter campos de reconciliação Wise', () => {
       const columns = Object.keys(wiseSyncLog);
       expect(columns).toContain('wiseTransferId');
-      expect(columns).toContain('erpnextPaymentId');
       expect(columns).toContain('wiseAmount');
       expect(columns).toContain('wiseCurrency');
-      expect(columns).toContain('erpnextAmount');
       expect(columns).toContain('amountDivergence');
     });
   });

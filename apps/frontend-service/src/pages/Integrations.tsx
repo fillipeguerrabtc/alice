@@ -2,7 +2,7 @@
  * Integrations - Configuração e Status das Integrações
  * 
  * Página para visualizar status e configurar integrações:
- * Stripe, Wise, ERPNext, Twilio, Gmail SMTP, KuCoin Futures
+ * Stripe, Wise, Twilio, Gmail SMTP, KuCoin Futures
  * 
  * Regra 6 - SEM MOCKS: Apenas dados reais da API
  * Regra 10 - Documentação PT-BR
@@ -10,13 +10,12 @@
  */
 
 import { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { motion } from 'framer-motion';
 import {
   CreditCard,
-  Building2,
   Send,
   MessageSquare,
   Mail,
@@ -47,7 +46,6 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
-import { toast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 import { formatCurrency, formatNumber } from '@/lib/utils';
 
@@ -372,7 +370,6 @@ export default function Integrations() {
   const { user } = useAuth();
   const locale = user?.idioma ?? 'pt-BR';
   
-  const [testingIntegration, setTestingIntegration] = useState<string | null>(null);
   const [showConfigDialog, setShowConfigDialog] = useState<string | null>(null);
 
   const { data: integrationMetrics, isLoading } = useQuery<IntegrationMetricsResponse>({
@@ -381,30 +378,7 @@ export default function Integrations() {
     refetchInterval: 1000 * 60,
   });
 
-  const testErpnext = useMutation({
-    mutationFn: async () => {
-      const response = await fetch('/api/integrations/erpnext/test', {
-        credentials: 'include',
-      });
-      if (!response.ok) throw new Error(t('integrations.errors.testFailed'));
-      return response.json();
-    },
-    onSuccess: (data) => {
-      toast({ 
-        title: t('integrations.success.connected', { name: 'ERPNext' }),
-        description: `Versão: ${data.version || 'N/A'}`,
-      });
-    },
-    onError: () => {
-      toast({ 
-        title: t('integrations.errors.connectionFailed', { name: 'ERPNext' }), 
-        variant: 'destructive',
-      });
-    },
-    onSettled: () => setTestingIntegration(null),
-  });
-
-  const integrationIds = ['stripe', 'wise', 'erpnext', 'twilio', 'email', 'trading', 'openai_vision'] as const;
+  const integrationIds = ['stripe', 'wise', 'twilio', 'email', 'trading', 'openai_vision'] as const;
   const integrationStatusMap = (integrationMetrics?.integrations ?? []).reduce<Record<string, IntegrationMetric>>((acc, integration) => {
     acc[integration.name] = integration;
     return acc;
@@ -418,7 +392,6 @@ export default function Integrations() {
   const services = {
     stripe: getIntegrationStatus('stripe'),
     wise: getIntegrationStatus('wise'),
-    erpnext: getIntegrationStatus('erpnext'),
     twilio: getIntegrationStatus('twilio'),
     email: getIntegrationStatus('email'),
     trading: getIntegrationStatus('trading'),
@@ -535,10 +508,6 @@ export default function Integrations() {
               <Eye className="h-4 w-4 mr-2" />
               {t('integrations.tabs.ai')}
             </TabsTrigger>
-            <TabsTrigger value="erp" data-testid="tab-erp">
-              <Building2 className="h-4 w-4 mr-2" />
-              {t('integrations.tabs.erp')}
-            </TabsTrigger>
             <TabsTrigger value="communication" data-testid="tab-communication">
               <MessageSquare className="h-4 w-4 mr-2" />
               {t('integrations.tabs.communication')}
@@ -651,57 +620,6 @@ export default function Integrations() {
             </motion.div>
           </TabsContent>
 
-          <TabsContent value="erp">
-            <motion.div
-              variants={containerVariants}
-              initial="hidden"
-              animate="visible"
-              className="grid gap-4 md:grid-cols-2"
-            >
-              <IntegrationCard
-                name={t('integrations.erpnext.title')}
-                description={t('integrations.erpnext.description')}
-                icon={Building2}
-                status={services.erpnext}
-                onConfigure={() => setShowConfigDialog('erpnext')}
-                onTest={() => {
-                  setTestingIntegration('erpnext');
-                  testErpnext.mutate();
-                }}
-                testLoading={testingIntegration === 'erpnext'}
-                t={t}
-              >
-                {services.erpnext.configured && services.erpnext.operational ? (
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <ExternalLink className="h-3 w-3" />
-                      <a 
-                        href="https://erp.yesyoudeserve.duckdns.org" 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="hover:underline"
-                      >
-                        {t('integrations.erpnext.access')}
-                      </a>
-                    </div>
-                    <div className="p-2 bg-muted/50 rounded text-xs">
-                      <div className="text-muted-foreground">{t('integrations.erpnext.sync')}</div>
-                      <div className="font-medium">{t('integrations.erpnext.syncItems')}</div>
-                    </div>
-                  </div>
-                ) : services.erpnext.configured ? (
-                  <div className="text-xs text-muted-foreground p-2 bg-amber-500/10 rounded">
-                    {t('integrations.unhealthyHint', { name: 'ERPNext' })}
-                  </div>
-                ) : (
-                  <div className="text-xs text-muted-foreground p-2 bg-muted/50 rounded">
-                    {t('integrations.erpnext.configureHint')}
-                  </div>
-                )}
-              </IntegrationCard>
-            </motion.div>
-          </TabsContent>
-
           <TabsContent value="communication">
             <motion.div
               variants={containerVariants}
@@ -797,13 +715,6 @@ export default function Integrations() {
                     <p>WISE_WEBHOOK_PUBLIC_KEY (opcional)</p>
                   </>
                 )}
-                {showConfigDialog === 'erpnext' && (
-                  <>
-                    <p>ERPNEXT_URL</p>
-                    <p>ERPNEXT_API_KEY</p>
-                    <p>ERPNEXT_API_SECRET</p>
-                  </>
-                )}
                 {showConfigDialog === 'twilio' && (
                   <>
                     <p>TWILIO_ACCOUNT_SID</p>
@@ -853,3 +764,5 @@ export default function Integrations() {
     </div>
   );
 }
+
+

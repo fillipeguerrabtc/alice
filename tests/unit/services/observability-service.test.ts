@@ -377,7 +377,7 @@ describe('Observability Service - Validação Zod', () => {
   it('deve validar request de backup incremental', () => {
     const request = {
       type: 'incremental',
-      databases: ['alice', 'erpnext'],
+      databases: ['alice'],
     };
 
     const result = backupRequestSchema.safeParse(request);

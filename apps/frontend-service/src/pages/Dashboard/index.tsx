@@ -3,7 +3,7 @@
  * 
  * Painel de controle enterprise com métricas em tempo real de todos os serviços.
  * Design moderno 2025 com animações Framer Motion.
- * Integração completa: Chat, RAG, Training, Stripe, Wise, ERPNext.
+ * Integração completa: Chat, RAG, Training, Stripe, Wise.
  * 
  * Regra 6 - SEM MOCKS: Apenas dados reais da API
  * Regra 10 - Documentação PT-BR
@@ -30,7 +30,6 @@ import {
   Activity,
   CreditCard,
   Wallet,
-  Building2,
   Globe,
   Shield,
   Database,
@@ -122,10 +121,6 @@ export default function Dashboard() {
     navigate(path);
   }, [navigate]);
 
-  const openExternal = useCallback((url: string) => {
-    window.open(url, '_blank', 'noopener');
-  }, []);
-
   const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
     queryKey: ['/api/chat/stats'],
     staleTime: 1000 * 60 * 5,
@@ -154,11 +149,6 @@ export default function Dashboard() {
     queryKey: ['/api/observability/metrics/services'],
     staleTime: 1000 * 30,
     refetchInterval: 1000 * 30,
-  });
-
-  const { data: integrationData } = useQuery<{ integrations: Array<{ name: string; configured: boolean; operational: boolean }> }>({
-    queryKey: ['/api/observability/metrics/integrations'],
-    staleTime: 1000 * 60 * 5,
   });
 
   const { data: imageStats, isLoading: imageStatsLoading } = useQuery<ImageStatsApi>({
@@ -235,15 +225,9 @@ export default function Dashboard() {
     resolvedByHuman: 0,
   };
 
-  const integrationStatusMap = (integrationData?.integrations ?? []).reduce<Record<string, boolean>>((acc, integration) => {
-    acc[integration.name] = integration.operational;
-    return acc;
-  }, {});
-
   const integrationStats: IntegrationStats = integrationStatsData || {
     stripe: { totalRevenue: 0, transactions: 0, currency: 'EUR' },
     wise: { totalTransfers: 0, pendingAmount: 0, completedCount: 0 },
-    erpnext: { customers: 0, orders: 0, synced: integrationStatusMap.erpnext ?? false },
   };
 
   const displayStats: DashboardStats = stats || {
@@ -408,28 +392,6 @@ export default function Dashboard() {
                 <Badge variant="secondary">
                   {integrationStats?.wise?.completedCount || 0}
                 </Badge>
-              </div>
-            </div>
-          }
-        />
-        <IntegrationCard
-          title="ERPNext CRM"
-          icon={Building2}
-          isLoading={integrationsLoading}
-          onClick={() => openExternal('https://erp.yesyoudeserve.duckdns.org')}
-          stats={
-            <div className="space-y-2">
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">Clientes</span>
-                <span className="font-semibold">
-                  {integrationStats?.erpnext?.customers || 0}
-                </span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">Pedidos</span>
-                <span className="font-medium">
-                  {integrationStats?.erpnext?.orders || 0}
-                </span>
               </div>
             </div>
           }
@@ -729,3 +691,4 @@ export default function Dashboard() {
     </motion.div>
   );
 }
+

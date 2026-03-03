@@ -749,7 +749,7 @@ async function ensureGlobalAdmin(): Promise<void> {
 // ============================================================================
 // SEED: OAuth Clients para SSO Automatizado (31/12/2025)
 // ============================================================================
-// Cria/atualiza clientes OAuth para Grafana e ERPNext no startup
+// Cria/atualiza cliente OAuth para Grafana no startup
 // Usa secrets pré-definidos do ambiente para deploy 100% automatizado
 // Idempotente: pode rodar múltiplas vezes sem problemas
 // ============================================================================
@@ -766,19 +766,16 @@ interface OAuthClientSeedConfig {
 async function ensureOAuthClients(): Promise<void> {
   // Variáveis obrigatórias apenas em produção
   const grafanaSecret = process.env.GRAFANA_OAUTH_CLIENT_SECRET;
-  const erpnextSecret = process.env.ERPNEXT_OAUTH_CLIENT_SECRET;
   const grafanaUrl = process.env.GRAFANA_URL || 'https://observability.yesyoudeserve.duckdns.org';
-  const erpnextUrl = process.env.ERPNEXT_URL || 'https://erp.yesyoudeserve.duckdns.org';
 
-  if (!grafanaSecret || !erpnextSecret) {
+  if (!grafanaSecret) {
     if (config.NODE_ENV === 'production') {
       logger.error({
         GRAFANA_OAUTH_CLIENT_SECRET: grafanaSecret ? '[SET]' : '[NOT SET]',
-        ERPNEXT_OAUTH_CLIENT_SECRET: erpnextSecret ? '[SET]' : '[NOT SET]',
-      }, 'OAuth client secrets não configurados em produção - SSO não funcionará');
+      }, 'OAuth client secret não configurado em produção - SSO não funcionará');
       // Não é crítico - apenas loga erro, não aborta o serviço
     } else {
-      logger.warn('OAuth client secrets não configurados - seed de clientes OAuth ignorado');
+      logger.warn('OAuth client secret não configurado - seed de cliente OAuth ignorado');
     }
     return;
   }
@@ -791,15 +788,6 @@ async function ensureOAuthClients(): Promise<void> {
       descricao: 'Dashboard de observabilidade - SSO via Alice IdP',
       redirectUris: [`${grafanaUrl}/login/generic_oauth`],
       // Escopo "alice" habilita claims customizados (role, tenant_id) para RBAC no Grafana.
-      scopes: ['openid', 'profile', 'email', 'alice'],
-    },
-    {
-      clientId: 'erpnext-sso',
-      clientSecret: erpnextSecret,
-      nome: 'ERPNext CRM/ERP',
-      descricao: 'Sistema de gestão empresarial - SSO via Alice IdP',
-      redirectUris: [`${erpnextUrl}/api/method/frappe.integrations.oauth2.login_via_oauth2`],
-      // Escopo "alice" habilita claims customizados usados no provisioning e mapeamento de roles.
       scopes: ['openid', 'profile', 'email', 'alice'],
     },
   ];
@@ -1372,7 +1360,7 @@ if (googleClientId && googleClientSecret) {
 
           logger.info({ userId: createdUserId, email }, 'Novo usuário criado via Google');
           
-          // Identity Provisioning: Sincronizar usuário com Grafana/ERPNext
+          // Identity Provisioning: Sincronizar usuário com Grafana
           publishProvisioningEvent('user.created', {
             userId: user.id,
             email: user.email || email,
@@ -1520,7 +1508,7 @@ if (githubClientId && githubClientSecret) {
 
           logger.info({ userId: createdUserId, email }, 'Novo usuário criado via GitHub');
           
-          // Identity Provisioning: Sincronizar usuário com Grafana/ERPNext
+          // Identity Provisioning: Sincronizar usuário com Grafana
           publishProvisioningEvent('user.created', {
             userId: user.id,
             email: user.email || email,
@@ -1679,7 +1667,7 @@ if (samlEntryPoint && samlIssuer && samlCert) {
 
           logger.info({ userId: createdUserId, email }, 'Novo usuário criado via SAML');
           
-          // Identity Provisioning: Sincronizar usuário com Grafana/ERPNext
+          // Identity Provisioning: Sincronizar usuário com Grafana
           publishProvisioningEvent('user.created', {
             userId: user.id,
             email: user.email || email,
@@ -1992,7 +1980,7 @@ app.post('/api/auth/register', requireAuth(), requireRole('admin'), asyncHandler
 
   logger.info({ userId: newUser.id, email }, 'Novo usuário registrado');
 
-  // Identity Provisioning: Sincronizar usuário com Grafana/ERPNext
+  // Identity Provisioning: Sincronizar usuário com Grafana
   publishProvisioningEvent('user.created', {
     userId: newUser.id,
     email: newUser.email || email,
@@ -3286,7 +3274,7 @@ app.delete('/api/auth/groups/:id/users/:userId', requireAuth(), requirePermissio
 }));
 
 // ============================================================================
-// ROTAS: Gestão de Usuários (Identity Provisioning → Grafana/ERPNext)
+// ROTAS: Gestão de Usuários (Identity Provisioning → Grafana)
 // Regra 6: Persistência real em PostgreSQL, propagação automática
 // ============================================================================
 
@@ -3576,7 +3564,7 @@ app.get('/api/users/:id', requireAuth(), asyncHandler(async (req: Request, res: 
 }));
 
 // PATCH /api/users/:id - Atualizar perfil do usuário
-// Propaga automaticamente para Grafana/ERPNext via Identity Provisioning
+// Propaga automaticamente para Grafana via Identity Provisioning
 // SEGURANÇA OWASP: Usuário edita próprio perfil OU admin/super_admin do mesmo tenant
 app.patch('/api/users/:id', requireAuth(), asyncHandler(async (req: Request, res: Response) => {
   const db = getDatabase();
@@ -3673,7 +3661,7 @@ app.patch('/api/users/:id', requireAuth(), asyncHandler(async (req: Request, res
     updatedBy: requestingUser?.userId,
   }, 'Perfil de usuário atualizado');
 
-  // Identity Provisioning: Propagar alteração para Grafana/ERPNext
+  // Identity Provisioning: Propagar alteração para Grafana
   publishProvisioningEvent('user.updated', {
     userId: updatedUser.id,
     email: updatedUser.email || currentUser.email || '',
@@ -3747,7 +3735,7 @@ app.patch('/api/users/:id/password', requireAuth(), requireRole('admin'), asyncH
 }));
 
 // PATCH /api/users/:id/role - Atualizar role do usuário (admin+ only)
-// Propaga automaticamente para Grafana/ERPNext via Identity Provisioning
+// Propaga automaticamente para Grafana via Identity Provisioning
 // SEGURANÇA OWASP: Admin pode alterar roles de usuários do mesmo tenant (exceto super_admin)
 //                  Super_admin pode alterar qualquer role de qualquer tenant
 //                  PROIBIDO: auto-elevação de role (admin não pode se promover a super_admin)
@@ -3853,7 +3841,7 @@ app.patch('/api/users/:id/role', requireAuth(), requireRole('admin'), asyncHandl
     updatedBy: requestingUser?.userId,
   }, 'Role de usuário atualizada');
 
-  // Identity Provisioning: Propagar mudança de role para Grafana/ERPNext
+  // Identity Provisioning: Propagar mudança de role para Grafana
   publishProvisioningEvent('user.role_changed', {
     userId: updatedUser.id,
     email: updatedUser.email || '',
@@ -3945,7 +3933,7 @@ app.patch('/api/users/:id/custom-role', requireAuth(), requireRole('admin'), asy
 }));
 
 // PATCH /api/users/:id/status - Ativar/desativar usuário (admin+ only)
-// Propaga automaticamente para Grafana/ERPNext via Identity Provisioning
+// Propaga automaticamente para Grafana via Identity Provisioning
 // SEGURANÇA OWASP: Admin pode ativar/desativar usuários do mesmo tenant
 //                  Super_admin pode ativar/desativar qualquer usuário
 app.patch('/api/users/:id/status', requireAuth(), requireRole('admin'), asyncHandler(async (req: Request, res: Response) => {
@@ -4019,7 +4007,7 @@ app.patch('/api/users/:id/status', requireAuth(), requireRole('admin'), asyncHan
     updatedBy: requestingUser?.userId,
   }, ativo ? 'Usuário ativado' : 'Usuário desativado');
 
-  // Identity Provisioning: Propagar desativação para Grafana/ERPNext
+  // Identity Provisioning: Propagar desativação para Grafana
   publishProvisioningEvent('user.disabled', {
     userId: updatedUser.id,
     email: updatedUser.email || '',
@@ -4191,7 +4179,7 @@ app.patch('/api/users/:id/groups', requireAuth(), requireRole('admin'), asyncHan
 }));
 
 // DELETE /api/users/:id - Deletar usuário (super_admin only)
-// Propaga automaticamente para Grafana/ERPNext via Identity Provisioning
+// Propaga automaticamente para Grafana via Identity Provisioning
 app.delete('/api/users/:id', requireAuth(), requireRole('super_admin'), asyncHandler(async (req: Request, res: Response) => {
   const db = getDatabase();
   const userId = req.params.id;
@@ -4223,7 +4211,7 @@ app.delete('/api/users/:id', requireAuth(), requireRole('super_admin'), asyncHan
     deletedBy: requestingUser?.userId,
   }, 'Usuário deletado');
 
-  // Identity Provisioning: Propagar deleção para Grafana/ERPNext
+  // Identity Provisioning: Propagar deleção para Grafana
   publishProvisioningEvent('user.deleted', {
     userId: userToDelete.id,
     email: userToDelete.email || '',
@@ -4242,7 +4230,7 @@ app.delete('/api/users/:id', requireAuth(), requireRole('super_admin'), asyncHan
 }));
 
 // ============================================================================
-// OIDC PROVIDER: Alice como IdP único para Grafana e ERPNext
+// OIDC PROVIDER: Alice como IdP único para Grafana
 // ============================================================================
 
 // Montar rotas OIDC (/.well-known/openid-configuration, /oauth/*, /auth/interaction/*)
@@ -4312,7 +4300,7 @@ let server: ReturnType<typeof app.listen>;
         }
       }, 'Provedores de autenticação disponíveis');
       
-      // Seed do administrador global (admin central para Alice/ERPNext/Grafana)
+      // Seed do administrador global (admin central para Alice/Grafana)
       ensureGlobalAdmin().catch((error) => {
         logger.error({ error }, 'Falha ao criar/atualizar administrador global');
       });
@@ -4327,11 +4315,11 @@ let server: ReturnType<typeof app.listen>;
         logger.error({ error }, 'Falha ao criar/atualizar clientes OAuth');
       });
 
-      // Identity Provisioning: Sincronização Alice → Grafana/ERPNext
+      // Identity Provisioning: Sincronização Alice → Grafana
       // Processa eventos de criação/atualização/deleção de usuários via Outbox Pattern
       try {
         startIdentityProvisioning();
-        logger.info('Identity Provisioning iniciado - sincronização com Grafana/ERPNext ativa');
+        logger.info('Identity Provisioning iniciado - sincronização com Grafana ativa');
       } catch (error: unknown) {
         logger.error({ error }, 'Falha ao iniciar Identity Provisioning (não crítico)');
       }
@@ -4395,3 +4383,5 @@ let server: ReturnType<typeof app.listen>;
     process.exit(1);
   }
 })();
+
+

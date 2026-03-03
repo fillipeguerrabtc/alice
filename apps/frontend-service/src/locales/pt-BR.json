@@ -850,14 +850,6 @@
       "description": "Transferências internacionais em 50+ moedas",
       "configureHint": "Configure as credenciais do Wise para transferências internacionais."
     },
-    "erpnext": {
-      "title": "ERPNext",
-      "description": "CRM, inventário, vendas e finanças",
-      "access": "Acessar ERPNext",
-      "sync": "Sincronização",
-      "syncItems": "Clientes, Pedidos, Pagamentos",
-      "configureHint": "Configure as credenciais do ERPNext para sincronização automática."
-    },
     "twilio": {
       "title": "Twilio",
       "description": "WhatsApp e SMS para notificações",
@@ -1185,7 +1177,7 @@
       "created": "Criada",
       "processing": "Processando",
       "completed": "Concluída",
-      "cancelled": "Cancelada",
+      "cancelled": "Transferência cancelada",
       "failed": "Falhou",
       "noTransfers": "Nenhuma transferência encontrada",
       "fund": "Financiar",
@@ -1196,8 +1188,7 @@
       "transferIdPlaceholder": "Informe o ID da transferência",
       "responseEmpty": "Nenhuma resposta.",
       "missingId": "Informe o ID da transferência.",
-      "funded": "Transferência financiada",
-      "cancelled": "Transferência cancelada"
+      "funded": "Transferência financiada"
     },
     "recipients": {
       "title": "Destinatários",
@@ -1466,7 +1457,7 @@
       "createTitle": "Criar card order",
       "createSubtitle": "Informe o payload real do pedido.",
       "create": "Criar card order",
-      "created": "Card order criado com sucesso",
+      "created": "Criado em",
       "updated": "Card order atualizado",
       "actionsTitle": "Ações de card order",
       "actionsSubtitle": "Consultar, validar endereço, atualizar status e definir PIN.",
@@ -1486,7 +1477,6 @@
       "noOrders": "Nenhum card order encontrado",
       "status": "Status",
       "type": "Tipo",
-      "created": "Criado em",
       "missingPayload": "Informe um payload válido.",
       "missingParams": "Informe Card Order ID e payload.",
       "missingOrderId": "Informe o Card Order ID.",
@@ -1818,13 +1808,9 @@
     },
     "data": {
       "duplicate": "Duplicado ({{percent}}%)",
-      "viewMore": "Ver mais ({{count}})",
+      "viewMore": "Ver mais ({{count}} mensagens)",
       "approve": "Aprovar",
-      "reject": "Rejeitar",
-      "quality": "Qualidade {{percent}}%",
-      "reviewedAt": "Revisado em {{date}}",
-      "reviewedBy": "por {{userId}}",
-      "reviewNotes": "Motivo: {{notes}}"
+      "reject": "Rejeitar"
     },
     "approval": {
       "title": "Aprovação de dados coletados",
@@ -1946,12 +1932,6 @@
       "starting": "Iniciando...",
       "success": "Pipeline Trading iniciado",
       "error": "Erro ao iniciar pipeline Trading"
-    },
-    "data": {
-      "duplicate": "Duplicado ({{percent}}%)",
-      "viewMore": "Ver mais ({{count}} mensagens)",
-      "approve": "Aprovar",
-      "reject": "Rejeitar"
     },
     "job": {
       "baseModel": "Modelo base: {{model}} | {{count}} amostras",
@@ -2166,14 +2146,7 @@
       }
     }
   },
-  "erpnext": {
-    "title": "ERPNext",
-    "subtitle": "Sistema de gestão empresarial",
-    "openErpnext": "Abrir ERPNext",
-    "syncStatus": "Status de Sincronização"
-  },
   "externalLinks": {
-    "erpnext": "Ir para ERPNext",
     "openInNewTab": "Abre em nova aba"
   },
   "modules": {
@@ -3469,7 +3442,6 @@
       "tasks": "Tarefas",
       "routing": "Roteamento (Agentes)",
       "namespaces": "Namespaces",
-      "erpnext": "ERPNext",
       "grafana": "Grafana",
       "payments": "Pagamentos",
       "stackOps": "Stack Ops",
@@ -3483,7 +3455,6 @@
       "tasks": "Defina gatilhos para criação/atualização de tarefas agentic.",
       "routing": "Personalize handoff manual/automático e escopo de roteamento.",
       "namespaces": "Configure gatilhos por namespace para roteamento universal e futuro-proof.",
-      "erpnext": "Mapeie comandos operacionais ERP para gatilhos e namespaces.",
       "grafana": "Controle gatilhos de observabilidade e dashboards.",
       "payments": "Ajuste gatilhos para operações financeiras com controle por namespace.",
       "stackOps": "Defina gatilhos de deploy/rollback e stacks operacionais.",
@@ -3516,52 +3487,114 @@
     },
     "moduleHints": {
       "overview": {
-        "examples": ["Habilitar web e ERP para operação comercial", "Exigir aprovação financeira para pagamentos"],
-        "practices": ["Revise toggles por tenant antes de liberar produção", "Mantenha aprovações para ações com impacto financeiro"]
+        "examples": [
+          "Habilitar web e ERP para operação comercial",
+          "Exigir aprovação financeira para pagamentos"
+        ],
+        "practices": [
+          "Revise toggles por tenant antes de liberar produção",
+          "Mantenha aprovações para ações com impacto financeiro"
+        ]
       },
       "web": {
-        "examples": ["Pesquisar cotação do BTC com fontes", "Buscar referências públicas da CVM"],
-        "practices": ["Priorize termos de pesquisa explícitos", "Mantenha regex simples e auditáveis"]
+        "examples": [
+          "Pesquisar cotação do BTC com fontes",
+          "Buscar referências públicas da CVM"
+        ],
+        "practices": [
+          "Priorize termos de pesquisa explícitos",
+          "Mantenha regex simples e auditáveis"
+        ]
       },
       "images": {
-        "examples": ["Buscar logos de corretoras", "Gerar thumbnail de relatório mensal"],
-        "practices": ["Use palavras-chave de intenção clara", "Separe busca de imagens e geração em listas específicas"]
+        "examples": [
+          "Buscar logos de corretoras",
+          "Gerar thumbnail de relatório mensal"
+        ],
+        "practices": [
+          "Use palavras-chave de intenção clara",
+          "Separe busca de imagens e geração em listas específicas"
+        ]
       },
       "tasks": {
-        "examples": ["Criar relatório financeiro mensal", "Atualizar plano de contas da operação"],
-        "practices": ["Padronize verbos de criação e atualização", "Mantenha tipos de tarefas coerentes com seu processo"]
+        "examples": [
+          "Criar relatório financeiro mensal",
+          "Atualizar plano de contas da operação"
+        ],
+        "practices": [
+          "Padronize verbos de criação e atualização",
+          "Mantenha tipos de tarefas coerentes com seu processo"
+        ]
       },
       "routing": {
-        "examples": ["Falar com agente de pagamentos", "Voltar para roteamento automático"],
-        "practices": ["Defina gatilhos curtos para handoff", "Evite termos ambíguos entre manual e automático"]
+        "examples": [
+          "Falar com agente de pagamentos",
+          "Voltar para roteamento automático"
+        ],
+        "practices": [
+          "Defina gatilhos curtos para handoff",
+          "Evite termos ambíguos entre manual e automático"
+        ]
       },
       "namespaces": {
-        "examples": ["Mapear keywords para namespace financeiro", "Criar patterns para squad de observabilidade"],
-        "practices": ["Use slug/nome do namespace como base", "Ajuste por namespace sem quebrar o fallback global"]
-      },
-      "erpnext": {
-        "examples": ["Listar clientes e faturas ERP", "Criar cliente e emitir fatura"],
-        "practices": ["Mantenha termos de negócio reais da equipe", "Revise palavras de escrita para evitar ações indevidas"]
+        "examples": [
+          "Mapear keywords para namespace financeiro",
+          "Criar patterns para squad de observabilidade"
+        ],
+        "practices": [
+          "Use slug/nome do namespace como base",
+          "Ajuste por namespace sem quebrar o fallback global"
+        ]
       },
       "grafana": {
-        "examples": ["Listar dashboards de produção", "Atualizar painel de latência API"],
-        "practices": ["Inclua termos de incidente e SLO", "Diferencie comandos de leitura e atualização"]
+        "examples": [
+          "Listar dashboards de produção",
+          "Atualizar painel de latência API"
+        ],
+        "practices": [
+          "Inclua termos de incidente e SLO",
+          "Diferencie comandos de leitura e atualização"
+        ]
       },
       "payments": {
-        "examples": ["Transferir via Wise para destinatário", "Executar refund no Stripe"],
-        "practices": ["Use gatilhos explícitos de ação financeira", "Preserve aprovação obrigatória para riscos maiores"]
+        "examples": [
+          "Transferir via Wise para destinatário",
+          "Executar refund no Stripe"
+        ],
+        "practices": [
+          "Use gatilhos explícitos de ação financeira",
+          "Preserve aprovação obrigatória para riscos maiores"
+        ]
       },
       "stackOps": {
-        "examples": ["Executar deploy da stack alice", "Realizar rollback em produção"],
-        "practices": ["Mantenha comandos com stack alvo explícita", "Use dry-run antes de mudanças críticas"]
+        "examples": [
+          "Executar deploy da stack alice",
+          "Realizar rollback em produção"
+        ],
+        "practices": [
+          "Mantenha comandos com stack alvo explícita",
+          "Use dry-run antes de mudanças críticas"
+        ]
       },
       "links": {
-        "examples": ["Adicionar portal ERP oficial", "Cadastrar dashboard principal da operação"],
-        "practices": ["Use somente URLs oficiais e válidas", "Padronize tags por domínio de negócio"]
+        "examples": [
+          "Adicionar portal ERP oficial",
+          "Cadastrar dashboard principal da operação"
+        ],
+        "practices": [
+          "Use somente URLs oficiais e válidas",
+          "Padronize tags por domínio de negócio"
+        ]
       },
       "trading": {
-        "examples": ["Análise técnica BTCUSDTM 5m e 15m", "Gerar sinal IA com confirmação de risco"],
-        "practices": ["Inclua símbolo e timeframe na consulta", "Exija confirmação para execução operacional"]
+        "examples": [
+          "Análise técnica BTCUSDTM 5m e 15m",
+          "Gerar sinal IA com confirmação de risco"
+        ],
+        "practices": [
+          "Inclua símbolo e timeframe na consulta",
+          "Exija confirmação para execução operacional"
+        ]
       }
     },
     "tradingPromptsTitle": "Dicas de prompts para o Agente de Trading",
@@ -3585,8 +3618,6 @@
     "togglesTitle": "Escopo de Execução",
     "togglesDesc": "Habilite capacidades por tenant e exija aprovação para ações críticas.",
     "webEnabled": "Busca na internet (SearXNG)",
-    "erpReadEnabled": "ERPNext leitura",
-    "erpWriteEnabled": "ERPNext escrita",
     "observabilityReadEnabled": "Grafana leitura",
     "observabilityWriteEnabled": "Grafana escrita",
     "tradingEnabled": "Trading KuCoin",
@@ -3599,9 +3630,9 @@
     "linkName": "Nome",
     "linkUrl": "URL",
     "linkDescription": "Descrição",
-    "linkDescriptionPlaceholder": "Ex: ERPNext CRM, Grafana, Portais internos",
+    "linkDescriptionPlaceholder": "Ex: CRM CRM, Grafana, Portais internos",
     "linkTags": "Tags (separadas por vírgula)",
-    "linkTagsPlaceholder": "erpnext, crm, vendas",
+    "linkTagsPlaceholder": "crm, crm, vendas",
     "addLink": "Adicionar link",
     "removeLink": "Remover link",
     "detectorsTitle": "Detectores e gatilhos",
@@ -3639,9 +3670,7 @@
     "taskTypeAccounting": "Tipos: Contabilidade",
     "taskTypePlanning": "Tipos: Planejamento",
     "taskTypePlaceholder": "documento\nminuta\nreport",
-    "detectorsErpTitle": "ERPNext",
     "detectorsErpDesc": "Define quando a Alice pode consultar ou escrever no ERP. Inclua termos que aparecem nas solicitações.",
-    "erpBaseKeywords": "Palavras-chave base ERP",
     "detectorsGrafanaTitle": "Grafana (Observabilidade)",
     "detectorsGrafanaDesc": "Gatilhos para listar, abrir e atualizar dashboards no Grafana. Adicione palavras-chave e termos operacionais.",
     "grafanaBaseKeywords": "Palavras-chave base Grafana",
@@ -3650,14 +3679,6 @@
     "grafanaGetKeywords": "Abrir dashboard (UID)",
     "grafanaUpdateKeywords": "Atualizar dashboard",
     "grafanaKeywordsPlaceholder": "listar dashboards\nabrir dashboard\natualizar dashboard",
-    "erpBaseKeywordsPlaceholder": "erp\nestoque\ninventário",
-    "erpItemsKeywords": "Itens / estoque",
-    "erpCustomersKeywords": "Clientes",
-    "erpInvoicesKeywords": "Faturas",
-    "erpAnnualBillingKeywords": "Faturamento anual",
-    "erpCreateCustomerKeywords": "Criar cliente",
-    "erpCreateInvoiceKeywords": "Criar fatura",
-    "erpKeywordsPlaceholder": "clientes\ninvoices",
     "detectorsPaymentsTitle": "Pagamentos (Wise/Stripe)",
     "detectorsPaymentsDesc": "Palavras-chave que habilitam operações financeiras. Adicione termos usados pela equipe.",
     "wiseKeywords": "Palavras-chave Wise",
@@ -3773,5 +3794,3 @@
     "approveRealDesc": "Aprovar sinal e criar ordem Real"
   }
 }
-
-

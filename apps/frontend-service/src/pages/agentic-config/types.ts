@@ -108,7 +108,6 @@ export type AgenticModuleTab =
   | 'tasks'
   | 'routing'
   | 'namespaces'
-  | 'erpnext'
   | 'grafana'
   | 'payments'
   | 'stackOps'
@@ -122,7 +121,6 @@ export const AGENTIC_MODULE_TABS: AgenticModuleTab[] = [
   'tasks',
   'routing',
   'namespaces',
-  'erpnext',
   'grafana',
   'payments',
   'stackOps',
@@ -262,7 +260,6 @@ export function buildAgenticDefaultValues(): AgenticSettingsForm {
           images: [],
           tasks: [],
           routing: [],
-          erpnext: [],
           grafana: [],
           payments: [],
           stackOps: [],

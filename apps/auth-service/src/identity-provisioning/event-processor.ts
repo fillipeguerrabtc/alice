@@ -1,7 +1,7 @@
 /**
  * Identity Provisioning Event Processor - Outbox Pattern
  * 
- * Processa eventos de usuários e sincroniza com Grafana/ERPNext
+ * Processa eventos de usuários e sincroniza com Grafana
  * 
  * Padrão Outbox:
  * 1. Eventos são inseridos na tabela identity_provisioning_events
@@ -19,7 +19,6 @@ import { eq, and, lt, or, isNull } from '@alice/database';
 const { identityProvisioningEvents, externalUserMappings } = schema;
 import { createLogger } from '@alice/logger';
 import { createGrafanaClient, GrafanaClient } from './grafana-client.js';
-import { createERPNextClient, ERPNextClient } from './erpnext-client.js';
 
 const logger = createLogger('identity-provisioning');
 
@@ -67,7 +66,6 @@ const DEFAULT_CONFIG: ProcessorConfig = {
  */
 export class IdentityProvisioningProcessor {
   private grafana: GrafanaClient | null;
-  private erpnext: ERPNextClient | null;
   private config: ProcessorConfig;
   private isRunning: boolean = false;
   private pollInterval: NodeJS.Timeout | null = null;
@@ -79,9 +77,8 @@ export class IdentityProvisioningProcessor {
   constructor(config: Partial<ProcessorConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
     this.grafana = createGrafanaClient();
-    this.erpnext = createERPNextClient();
 
-    if (!this.grafana && !this.erpnext) {
+    if (!this.grafana) {
       logger.warn('Nenhum sistema externo configurado para Identity Provisioning');
     }
   }
@@ -283,12 +280,6 @@ export class IdentityProvisioningProcessor {
         }
       }
 
-      if (event.targetSystem === 'all' || event.targetSystem === 'erpnext') {
-        if (this.erpnext) {
-          await this.processERPNextEvent(eventType, payload);
-        }
-      }
-
       // Marcar como completed
       await db.update(identityProvisioningEvents)
         .set({ 
@@ -466,141 +457,6 @@ export class IdentityProvisioningProcessor {
     }
   }
 
-  /**
-   * Processar evento para ERPNext
-   */
-  private async processERPNextEvent(eventType: EventType, payload: UserEventPayload): Promise<void> {
-    if (!this.erpnext) {
-      throw new Error('ERPNext client não configurado');
-    }
-
-    const db = getDatabase();
-
-    switch (eventType) {
-      case 'user.created': {
-        // Criar usuário no ERPNext
-        const result = await this.erpnext.createUser({
-          email: payload.email,
-          first_name: payload.firstName || payload.email.split('@')[0],
-          last_name: payload.lastName,
-          send_welcome_email: false,
-        });
-
-        // Atualizar roles se especificado
-        if (payload.role) {
-          await this.erpnext.updateUserRoles(payload.email, payload.role);
-        }
-
-        // Salvar mapeamento
-        await db.insert(externalUserMappings).values({
-          userId: payload.userId,
-          externalSystem: 'erpnext',
-          externalUserId: result.name,
-          externalUsername: payload.email,
-          externalRole: ERPNextClient.mapRoles(payload.role || 'viewer').join(','),
-          status: 'active',
-          lastSyncAt: new Date(),
-        });
-
-        logger.info({ userId: payload.userId, erpnextUser: result.name }, 'Usuário criado no ERPNext');
-        break;
-      }
-
-      case 'user.updated': {
-        // Buscar mapeamento existente
-        const mapping = await db.query.externalUserMappings.findFirst({
-          where: and(
-            eq(externalUserMappings.userId, payload.userId),
-            eq(externalUserMappings.externalSystem, 'erpnext'),
-          ),
-        });
-
-        if (mapping) {
-          await this.erpnext.updateUser(payload.email, {
-            first_name: payload.firstName,
-            last_name: payload.lastName,
-            full_name: [payload.firstName, payload.lastName].filter(Boolean).join(' '),
-          });
-
-          // Atualizar último sync
-          await db.update(externalUserMappings)
-            .set({ lastSyncAt: new Date() })
-            .where(eq(externalUserMappings.id, mapping.id));
-        }
-        break;
-      }
-
-      case 'user.role_changed': {
-        // Buscar mapeamento existente
-        const mapping = await db.query.externalUserMappings.findFirst({
-          where: and(
-            eq(externalUserMappings.userId, payload.userId),
-            eq(externalUserMappings.externalSystem, 'erpnext'),
-          ),
-        });
-
-        if (mapping && payload.role) {
-          await this.erpnext.updateUserRoles(payload.email, payload.role);
-
-          // Atualizar mapeamento
-          await db.update(externalUserMappings)
-            .set({ 
-              externalRole: ERPNextClient.mapRoles(payload.role).join(','),
-              lastSyncAt: new Date(),
-            })
-            .where(eq(externalUserMappings.id, mapping.id));
-        }
-        break;
-      }
-
-      case 'user.deleted': {
-        // Buscar mapeamento existente
-        const mapping = await db.query.externalUserMappings.findFirst({
-          where: and(
-            eq(externalUserMappings.userId, payload.userId),
-            eq(externalUserMappings.externalSystem, 'erpnext'),
-          ),
-        });
-
-        if (mapping) {
-          await this.erpnext.deleteUser(payload.email);
-
-          // Remover mapeamento
-          await db.delete(externalUserMappings)
-            .where(eq(externalUserMappings.id, mapping.id));
-        }
-        break;
-      }
-
-      case 'user.disabled': {
-        // Buscar mapeamento existente
-        const mapping = await db.query.externalUserMappings.findFirst({
-          where: and(
-            eq(externalUserMappings.userId, payload.userId),
-            eq(externalUserMappings.externalSystem, 'erpnext'),
-          ),
-        });
-
-        if (mapping) {
-          // Verificar se é desativar ou reativar
-          if (payload.disabled) {
-            await this.erpnext.disableUser(payload.email);
-          } else {
-            await this.erpnext.enableUser(payload.email);
-          }
-
-          // Atualizar status no mapeamento
-          await db.update(externalUserMappings)
-            .set({ 
-              status: payload.disabled ? 'disabled' : 'active',
-              lastSyncAt: new Date(),
-            })
-            .where(eq(externalUserMappings.id, mapping.id));
-        }
-        break;
-      }
-    }
-  }
 }
 
 /**
@@ -610,7 +466,7 @@ export class IdentityProvisioningProcessor {
 export async function publishProvisioningEvent(
   eventType: EventType,
   payload: UserEventPayload,
-  targetSystem: 'grafana' | 'erpnext' | 'all' = 'all',
+  targetSystem: 'grafana' | 'all' = 'all',
   correlationId?: string,
 ): Promise<void> {
   const db = getDatabase();
@@ -658,3 +514,4 @@ export function stopProcessor(): void {
     processorInstance.stop();
   }
 }
+

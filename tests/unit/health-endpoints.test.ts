@@ -141,11 +141,9 @@ const trainingHealthSchema = baseHealthSchema.extend({
 const integrationsHealthSchema = baseHealthSchema.extend({
   integrations: z.object({
     stripe: z.boolean(),
-    erpnext: z.boolean(),
     wise: z.boolean(),
   }),
   circuitBreakers: z.object({
-    erpnext: z.enum(['open', 'closed']),
     wise: z.object({
       state: z.enum(['open', 'closed', 'half-open']),
       stats: circuitBreakerStatsWiseSchema,
@@ -269,11 +267,9 @@ const mockIntegrationsHealthResponse = {
   timestamp: FIXED_TIMESTAMP,
   integrations: {
     stripe: true,
-    erpnext: false,
     wise: true,
   },
   circuitBreakers: {
-    erpnext: 'closed',
     wise: {
       state: 'closed',
       stats: { failures: 0, successes: 30, rejects: 0 },
@@ -441,12 +437,10 @@ describe('Health Endpoints - Contratos de Schema', () => {
 
     it('deve listar status das integrações', () => {
       expect(mockIntegrationsHealthResponse.integrations).toHaveProperty('stripe');
-      expect(mockIntegrationsHealthResponse.integrations).toHaveProperty('erpnext');
       expect(mockIntegrationsHealthResponse.integrations).toHaveProperty('wise');
     });
 
-    it('deve ter circuit breakers para ERPNext e Wise', () => {
-      expect(mockIntegrationsHealthResponse.circuitBreakers).toHaveProperty('erpnext');
+    it('deve ter circuit breaker para Wise', () => {
       expect(mockIntegrationsHealthResponse.circuitBreakers).toHaveProperty('wise');
     });
   });

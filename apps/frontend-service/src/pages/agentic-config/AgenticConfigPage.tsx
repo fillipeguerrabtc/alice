@@ -129,8 +129,6 @@ export default function AgenticConfigPage() {
     switch (module) {
       case 'overview':
         form.setValue('webEnabled', defaults.webEnabled, { shouldDirty: true, shouldValidate: true });
-        form.setValue('erpReadEnabled', defaults.erpReadEnabled, { shouldDirty: true, shouldValidate: true });
-        form.setValue('erpWriteEnabled', defaults.erpWriteEnabled, { shouldDirty: true, shouldValidate: true });
         form.setValue('observabilityReadEnabled', defaults.observabilityReadEnabled, { shouldDirty: true, shouldValidate: true });
         form.setValue('observabilityWriteEnabled', defaults.observabilityWriteEnabled, { shouldDirty: true, shouldValidate: true });
         form.setValue('tradingEnabled', defaults.tradingEnabled, { shouldDirty: true, shouldValidate: true });
@@ -158,10 +156,6 @@ export default function AgenticConfigPage() {
         break;
       case 'namespaces':
         form.setValue('detectors.namespaceRouting', defaults.detectors.namespaceRouting, { shouldDirty: true, shouldValidate: true });
-        break;
-      case 'erpnext':
-        form.setValue('detectors.erp', defaults.detectors.erp, { shouldDirty: true, shouldValidate: true });
-        form.setValue('detectors.namespaceRouting.moduleBindings.erpnext', defaults.detectors.namespaceRouting.moduleBindings.erpnext, { shouldDirty: true, shouldValidate: true });
         break;
       case 'grafana':
         form.setValue('detectors.grafana', defaults.detectors.grafana, { shouldDirty: true, shouldValidate: true });
@@ -207,7 +201,6 @@ export default function AgenticConfigPage() {
     tasks: getModuleHints(t, 'tasks'),
     routing: getModuleHints(t, 'routing'),
     namespaces: getModuleHints(t, 'namespaces'),
-    erpnext: getModuleHints(t, 'erpnext'),
     grafana: getModuleHints(t, 'grafana'),
     payments: getModuleHints(t, 'payments'),
     stackOps: getModuleHints(t, 'stackOps'),
@@ -359,35 +352,6 @@ export default function AgenticConfigPage() {
         <Card>
           <CardContent className="pt-6">
             <NamespaceRoutingEditor form={form} defaults={mergedDefaults.detectors.namespaceRouting} />
-          </CardContent>
-        </Card>
-      </div>
-    ),
-    erpnext: (
-      <div className="space-y-6">
-        <ModuleHeaderCard
-          title={t('agenticConfig.tabs.erpnext')}
-          description={t('agenticConfig.moduleDescriptions.erpnext')}
-          onRestoreDefaults={() => restoreModuleDefaults('erpnext')}
-          {...moduleHeaderMeta('erpnext')}
-        />
-        <ModuleNamespaceBindingsEditor
-          form={form}
-          moduleKey="erpnext"
-          title={t('agenticConfig.namespaceBindings.title')}
-          description={t('agenticConfig.namespaceBindings.description')}
-        />
-        <Card>
-          <CardContent className="space-y-4 pt-6">
-            <KeywordTextareaField control={form.control} name="detectors.erp.baseKeywords" label={t('agenticConfig.erpBaseKeywords')} placeholder={t('agenticConfig.erpBaseKeywordsPlaceholder')} rows={3} />
-            <div className="grid gap-4 md:grid-cols-2">
-              <KeywordTextareaField control={form.control} name="detectors.erp.listItemsKeywords" label={t('agenticConfig.erpItemsKeywords')} placeholder={t('agenticConfig.erpKeywordsPlaceholder')} rows={3} />
-              <KeywordTextareaField control={form.control} name="detectors.erp.listCustomersKeywords" label={t('agenticConfig.erpCustomersKeywords')} placeholder={t('agenticConfig.erpKeywordsPlaceholder')} rows={3} />
-              <KeywordTextareaField control={form.control} name="detectors.erp.listInvoicesKeywords" label={t('agenticConfig.erpInvoicesKeywords')} placeholder={t('agenticConfig.erpKeywordsPlaceholder')} rows={3} />
-              <KeywordTextareaField control={form.control} name="detectors.erp.annualBillingKeywords" label={t('agenticConfig.erpAnnualBillingKeywords')} placeholder={t('agenticConfig.erpKeywordsPlaceholder')} rows={3} />
-              <KeywordTextareaField control={form.control} name="detectors.erp.createCustomerKeywords" label={t('agenticConfig.erpCreateCustomerKeywords')} placeholder={t('agenticConfig.erpKeywordsPlaceholder')} rows={3} />
-              <KeywordTextareaField control={form.control} name="detectors.erp.createInvoiceKeywords" label={t('agenticConfig.erpCreateInvoiceKeywords')} placeholder={t('agenticConfig.erpKeywordsPlaceholder')} rows={3} />
-            </div>
           </CardContent>
         </Card>
       </div>

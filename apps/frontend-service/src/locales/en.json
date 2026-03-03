@@ -825,14 +825,6 @@
       "description": "International transfers in 50+ currencies",
       "configureHint": "Configure Wise credentials for international transfers."
     },
-    "erpnext": {
-      "title": "ERPNext",
-      "description": "CRM, inventory, sales and finance",
-      "access": "Access ERPNext",
-      "sync": "Synchronization",
-      "syncItems": "Customers, Orders, Payments",
-      "configureHint": "Configure ERPNext credentials for automatic synchronization."
-    },
     "twilio": {
       "title": "Twilio",
       "description": "WhatsApp and SMS for notifications",
@@ -1160,7 +1152,7 @@
       "created": "Created",
       "processing": "Processing",
       "completed": "Completed",
-      "cancelled": "Cancelled",
+      "cancelled": "Transfer cancelled",
       "failed": "Failed",
       "noTransfers": "No transfers found",
       "fund": "Fund",
@@ -1171,8 +1163,7 @@
       "transferIdPlaceholder": "Enter transfer ID",
       "responseEmpty": "No response.",
       "missingId": "Provide the transfer ID.",
-      "funded": "Transfer funded",
-      "cancelled": "Transfer cancelled"
+      "funded": "Transfer funded"
     },
     "recipients": {
       "title": "Recipients",
@@ -1440,7 +1431,7 @@
       "createTitle": "Create card order",
       "createSubtitle": "Provide the real card order payload.",
       "create": "Create card order",
-      "created": "Card order created",
+      "created": "Created at",
       "updated": "Card order updated",
       "actionsTitle": "Card order actions",
       "actionsSubtitle": "Fetch details, validate address, update status and set PIN.",
@@ -1460,7 +1451,6 @@
       "noOrders": "No card orders found",
       "status": "Status",
       "type": "Type",
-      "created": "Created at",
       "missingPayload": "Provide a valid payload.",
       "missingParams": "Provide Card Order ID and payload.",
       "missingOrderId": "Provide Card Order ID.",
@@ -2109,14 +2099,7 @@
       }
     }
   },
-  "erpnext": {
-    "title": "ERPNext",
-    "subtitle": "Business management system",
-    "openErpnext": "Open ERPNext",
-    "syncStatus": "Sync Status"
-  },
   "externalLinks": {
-    "erpnext": "Go to ERPNext",
     "openInNewTab": "Opens in new tab"
   },
   "modules": {
@@ -3072,7 +3055,7 @@
         "8h": "8 hours",
         "12h": "12 hours",
         "1d": "1 day",
-      "1w": "1 week"
+        "1w": "1 week"
       }
     },
     "symbols": {
@@ -3412,7 +3395,6 @@
       "tasks": "Tasks",
       "routing": "Routing (Agents)",
       "namespaces": "Namespaces",
-      "erpnext": "ERPNext",
       "grafana": "Grafana",
       "payments": "Payments",
       "stackOps": "Stack Ops",
@@ -3426,7 +3408,6 @@
       "tasks": "Define triggers for creating/updating agentic tasks.",
       "routing": "Customize manual/auto handoff and routing scope.",
       "namespaces": "Manage per-namespace triggers for universal, future-proof routing.",
-      "erpnext": "Map ERP operations to detector triggers and namespaces.",
       "grafana": "Control observability and dashboard operation triggers.",
       "payments": "Tune financial operation triggers with namespace constraints.",
       "stackOps": "Define deploy/rollback and stack operation triggers.",
@@ -3459,52 +3440,114 @@
     },
     "moduleHints": {
       "overview": {
-        "examples": ["Enable web and ERP for commercial operations", "Require financial approval for payments"],
-        "practices": ["Review toggles per tenant before production", "Keep approval required for financial impact actions"]
+        "examples": [
+          "Enable web and ERP for commercial operations",
+          "Require financial approval for payments"
+        ],
+        "practices": [
+          "Review toggles per tenant before production",
+          "Keep approval required for financial impact actions"
+        ]
       },
       "web": {
-        "examples": ["Search BTC price with sources", "Look up public regulatory references"],
-        "practices": ["Prioritize explicit search intent terms", "Keep regex patterns simple and auditable"]
+        "examples": [
+          "Search BTC price with sources",
+          "Look up public regulatory references"
+        ],
+        "practices": [
+          "Prioritize explicit search intent terms",
+          "Keep regex patterns simple and auditable"
+        ]
       },
       "images": {
-        "examples": ["Search exchange logos", "Generate monthly report thumbnail"],
-        "practices": ["Use clear visual intent keywords", "Separate image search and generation trigger sets"]
+        "examples": [
+          "Search exchange logos",
+          "Generate monthly report thumbnail"
+        ],
+        "practices": [
+          "Use clear visual intent keywords",
+          "Separate image search and generation trigger sets"
+        ]
       },
       "tasks": {
-        "examples": ["Create monthly finance report", "Update accounting planning document"],
-        "practices": ["Standardize create/update verbs", "Keep task-type keywords aligned with your workflow"]
+        "examples": [
+          "Create monthly finance report",
+          "Update accounting planning document"
+        ],
+        "practices": [
+          "Standardize create/update verbs",
+          "Keep task-type keywords aligned with your workflow"
+        ]
       },
       "routing": {
-        "examples": ["Talk to payments agent", "Switch back to automatic routing"],
-        "practices": ["Use short, explicit handoff triggers", "Avoid overlap between manual and automatic terms"]
+        "examples": [
+          "Talk to payments agent",
+          "Switch back to automatic routing"
+        ],
+        "practices": [
+          "Use short, explicit handoff triggers",
+          "Avoid overlap between manual and automatic terms"
+        ]
       },
       "namespaces": {
-        "examples": ["Map finance keywords to finance namespace", "Create patterns for observability squad"],
-        "practices": ["Use namespace slug/name as baseline", "Tune per namespace without breaking global fallback"]
-      },
-      "erpnext": {
-        "examples": ["List ERP customers and invoices", "Create customer and issue invoice"],
-        "practices": ["Use business terms the team already uses", "Review write-action keywords carefully"]
+        "examples": [
+          "Map finance keywords to finance namespace",
+          "Create patterns for observability squad"
+        ],
+        "practices": [
+          "Use namespace slug/name as baseline",
+          "Tune per namespace without breaking global fallback"
+        ]
       },
       "grafana": {
-        "examples": ["List production dashboards", "Update API latency dashboard"],
-        "practices": ["Include incident and SLO terms", "Separate read and update command intent"]
+        "examples": [
+          "List production dashboards",
+          "Update API latency dashboard"
+        ],
+        "practices": [
+          "Include incident and SLO terms",
+          "Separate read and update command intent"
+        ]
       },
       "payments": {
-        "examples": ["Transfer via Wise to recipient", "Run Stripe refund flow"],
-        "practices": ["Use explicit financial action terms", "Keep approvals enabled for high-risk operations"]
+        "examples": [
+          "Transfer via Wise to recipient",
+          "Run Stripe refund flow"
+        ],
+        "practices": [
+          "Use explicit financial action terms",
+          "Keep approvals enabled for high-risk operations"
+        ]
       },
       "stackOps": {
-        "examples": ["Deploy alice stack", "Rollback production stack"],
-        "practices": ["Always include explicit stack target", "Run dry-run for critical changes"]
+        "examples": [
+          "Deploy alice stack",
+          "Rollback production stack"
+        ],
+        "practices": [
+          "Always include explicit stack target",
+          "Run dry-run for critical changes"
+        ]
       },
       "links": {
-        "examples": ["Add official ERP portal", "Register main observability dashboard"],
-        "practices": ["Use only official and valid URLs", "Standardize tags by business domain"]
+        "examples": [
+          "Add official ERP portal",
+          "Register main observability dashboard"
+        ],
+        "practices": [
+          "Use only official and valid URLs",
+          "Standardize tags by business domain"
+        ]
       },
       "trading": {
-        "examples": ["BTCUSDTM technical analysis 5m/15m", "Generate AI signal with risk confirmation"],
-        "practices": ["Include symbol and timeframe in prompts", "Require explicit confirmation before execution"]
+        "examples": [
+          "BTCUSDTM technical analysis 5m/15m",
+          "Generate AI signal with risk confirmation"
+        ],
+        "practices": [
+          "Include symbol and timeframe in prompts",
+          "Require explicit confirmation before execution"
+        ]
       }
     },
     "tradingPromptsTitle": "Trading Agent prompt tips",
@@ -3528,8 +3571,6 @@
     "togglesTitle": "Execution Scope",
     "togglesDesc": "Enable capabilities per tenant and require approval for critical actions.",
     "webEnabled": "Web search (SearXNG)",
-    "erpReadEnabled": "ERPNext read",
-    "erpWriteEnabled": "ERPNext write",
     "observabilityReadEnabled": "Grafana read",
     "observabilityWriteEnabled": "Grafana write",
     "tradingEnabled": "KuCoin trading",
@@ -3542,9 +3583,9 @@
     "linkName": "Name",
     "linkUrl": "URL",
     "linkDescription": "Description",
-    "linkDescriptionPlaceholder": "Example: ERPNext CRM, Grafana, Internal portals",
+    "linkDescriptionPlaceholder": "Example: CRM CRM, Grafana, Internal portals",
     "linkTags": "Tags (comma-separated)",
-    "linkTagsPlaceholder": "erpnext, crm, sales",
+    "linkTagsPlaceholder": "crm, crm, sales",
     "addLink": "Add link",
     "removeLink": "Remove link",
     "detectorsTitle": "Detectors and triggers",
@@ -3582,7 +3623,6 @@
     "taskTypeAccounting": "Types: Accounting",
     "taskTypePlanning": "Types: Planning",
     "taskTypePlaceholder": "document\nmemo\nreport",
-    "detectorsErpTitle": "ERPNext",
     "detectorsErpDesc": "Defines when Alice can read/write in ERP. Add terms used in ERP requests.",
     "detectorsGrafanaTitle": "Grafana (Observability)",
     "detectorsGrafanaDesc": "Triggers to list, open and update Grafana dashboards. Add operational terms.",
@@ -3592,16 +3632,6 @@
     "grafanaGetKeywords": "Open dashboard (UID)",
     "grafanaUpdateKeywords": "Update dashboard",
     "grafanaKeywordsPlaceholder": "list dashboards\nopen dashboard\nupdate dashboard",
-    "erpBaseKeywords": "ERP base keywords",
-    "erpBaseKeywordsPlaceholder": "erp\ninventory\nstock",
-    "erpItemsKeywords": "Items / stock",
-    "erpCustomersKeywords": "Customers",
-    "erpInvoicesKeywords": "Invoices",
-    "erpAnnualBillingKeywords": "Annual billing",
-    "erpCreateCustomerKeywords": "Create customer",
-    "erpCreateInvoiceKeywords": "Create invoice",
-    "erpKeywordsPlaceholder": "customers\ninvoices",
-    
     "detectorsPaymentsTitle": "Payments (Wise/Stripe)",
     "detectorsPaymentsDesc": "Keywords that enable financial operations. Add terms used by the team.",
     "wiseKeywords": "Wise keywords",
@@ -3717,5 +3747,3 @@
     "approveRealDesc": "Approve signal and create Real order"
   }
 }
-
-

@@ -49,11 +49,6 @@ export interface IntegrationStats {
     pendingAmount: number;
     completedCount: number;
   };
-  erpnext?: {
-    customers: number;
-    orders: number;
-    synced: boolean;
-  };
 }
 
 export interface ImageGenerationStats {

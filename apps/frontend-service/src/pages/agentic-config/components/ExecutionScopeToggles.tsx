@@ -13,8 +13,6 @@ export function ExecutionScopeToggles({ form }: ExecutionScopeTogglesProps) {
   const { t } = useTranslation();
   const fields: Array<{ name: keyof AgenticSettingsForm; label: string }> = [
     { name: 'webEnabled', label: t('agenticConfig.webEnabled') },
-    { name: 'erpReadEnabled', label: t('agenticConfig.erpReadEnabled') },
-    { name: 'erpWriteEnabled', label: t('agenticConfig.erpWriteEnabled') },
     { name: 'observabilityReadEnabled', label: t('agenticConfig.observabilityReadEnabled') },
     { name: 'observabilityWriteEnabled', label: t('agenticConfig.observabilityWriteEnabled') },
     { name: 'tradingEnabled', label: t('agenticConfig.tradingEnabled') },

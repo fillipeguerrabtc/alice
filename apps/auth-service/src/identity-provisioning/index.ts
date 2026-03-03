@@ -1,7 +1,7 @@
 /**
  * Identity Provisioning Module - Alice Enterprise Platform
  * 
- * Sincronização de usuários Alice → Grafana/ERPNext
+ * Sincronização de usuários Alice → Grafana
  * usando Outbox Pattern para garantia de entrega
  * 
  * @author Alice Team
@@ -9,7 +9,6 @@
  */
 
 export { GrafanaClient, createGrafanaClient } from './grafana-client.js';
-export { ERPNextClient, createERPNextClient } from './erpnext-client.js';
 export { 
   IdentityProvisioningProcessor,
   publishProvisioningEvent,

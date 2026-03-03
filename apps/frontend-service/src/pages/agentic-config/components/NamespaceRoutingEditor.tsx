@@ -21,7 +21,7 @@ type NamespaceRoutingEditorProps = {
 
 type ModuleNamespaceBindingsEditorProps = {
   form: UseFormReturn<AgenticSettingsForm>;
-  moduleKey: Extract<AgenticModuleTab, 'web' | 'images' | 'tasks' | 'routing' | 'erpnext' | 'grafana' | 'payments' | 'stackOps' | 'trading'>;
+  moduleKey: Extract<AgenticModuleTab, 'web' | 'images' | 'tasks' | 'routing' | 'grafana' | 'payments' | 'stackOps' | 'trading'>;
   title: string;
   description: string;
 };

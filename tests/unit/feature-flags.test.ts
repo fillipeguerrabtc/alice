@@ -47,7 +47,6 @@ const FEATURE_FLAGS = {
   // Integrações
   STRIPE_ENABLED: 'stripe_enabled',
   WISE_ENABLED: 'wise_enabled',
-  ERPNEXT_ENABLED: 'erpnext_enabled',
   TWILIO_ENABLED: 'twilio_enabled',
   EMAIL_ENABLED: 'email_enabled', // Gmail SMTP (substitui RESEND_ENABLED - 30/12/2025)
 
@@ -82,7 +81,6 @@ const DEFAULT_FLAGS: Record<FeatureFlagKey, boolean> = {
   // Integrações - DESABILITADAS por padrão (requer configuração)
   [FEATURE_FLAGS.STRIPE_ENABLED]: false,
   [FEATURE_FLAGS.WISE_ENABLED]: false,
-  [FEATURE_FLAGS.ERPNEXT_ENABLED]: false,
   [FEATURE_FLAGS.TWILIO_ENABLED]: false,
   [FEATURE_FLAGS.EMAIL_ENABLED]: false, // Gmail SMTP (substitui RESEND_ENABLED - 30/12/2025)
 
@@ -113,8 +111,8 @@ const DEFAULT_FLAGS: Record<FeatureFlagKey, boolean> = {
 
 describe('Feature Flags - Keys e Constantes', () => {
   describe('FEATURE_FLAGS constantes', () => {
-    it('deve ter todas as 17 feature flags definidas', () => {
-      expect(Object.keys(FEATURE_FLAGS)).toHaveLength(17);
+    it('deve ter todas as 16 feature flags definidas', () => {
+      expect(Object.keys(FEATURE_FLAGS)).toHaveLength(16);
     });
 
     it('todas as keys devem seguir padrão lowercase_underscore', () => {
@@ -127,7 +125,6 @@ describe('Feature Flags - Keys e Constantes', () => {
     it('deve ter flags de integrações', () => {
       expect(FEATURE_FLAGS.STRIPE_ENABLED).toBe('stripe_enabled');
       expect(FEATURE_FLAGS.WISE_ENABLED).toBe('wise_enabled');
-      expect(FEATURE_FLAGS.ERPNEXT_ENABLED).toBe('erpnext_enabled');
       expect(FEATURE_FLAGS.TWILIO_ENABLED).toBe('twilio_enabled');
       expect(FEATURE_FLAGS.EMAIL_ENABLED).toBe('email_enabled');
     });
@@ -161,7 +158,6 @@ describe('Feature Flags - Keys e Constantes', () => {
     it('integrações devem estar DESABILITADAS por padrão', () => {
       expect(DEFAULT_FLAGS[FEATURE_FLAGS.STRIPE_ENABLED]).toBe(false);
       expect(DEFAULT_FLAGS[FEATURE_FLAGS.WISE_ENABLED]).toBe(false);
-      expect(DEFAULT_FLAGS[FEATURE_FLAGS.ERPNEXT_ENABLED]).toBe(false);
       expect(DEFAULT_FLAGS[FEATURE_FLAGS.TWILIO_ENABLED]).toBe(false);
       expect(DEFAULT_FLAGS[FEATURE_FLAGS.EMAIL_ENABLED]).toBe(false);
     });
@@ -598,7 +594,6 @@ describe('Feature Flags - Padrão Enterprise', () => {
       const integrationFlags = [
         FEATURE_FLAGS.STRIPE_ENABLED,
         FEATURE_FLAGS.WISE_ENABLED,
-        FEATURE_FLAGS.ERPNEXT_ENABLED,
         FEATURE_FLAGS.TWILIO_ENABLED,
         FEATURE_FLAGS.EMAIL_ENABLED,
       ];
