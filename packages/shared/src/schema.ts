@@ -2296,6 +2296,28 @@ export const fineTuningJobStatusEnum = pgEnum("fine_tuning_job_status", [
   "cancelled",
 ]);
 
+export const fineTuningRunSourceEnum = pgEnum("fine_tuning_run_source", [
+  "custom_job",
+  "on_demand",
+  "scheduled",
+]);
+
+export const fineTuningEvaluationStatusEnum = pgEnum("fine_tuning_evaluation_status", [
+  "pending",
+  "running",
+  "passed",
+  "failed",
+  "skipped",
+]);
+
+export const fineTuningPromotionStatusEnum = pgEnum("fine_tuning_promotion_status", [
+  "candidate",
+  "staged",
+  "active",
+  "rejected",
+  "rolled_back",
+]);
+
 export const fineTuningJobs = pgTable(
   "fine_tuning_jobs",
   {
@@ -2304,11 +2326,20 @@ export const fineTuningJobs = pgTable(
     name: varchar("name", { length: 255 }).notNull(),
     baseModel: varchar("base_model", { length: 100 }).notNull(),
     status: fineTuningJobStatusEnum("status").default("pending"),
+    runSource: fineTuningRunSourceEnum("run_source").notNull().default("custom_job"),
     progress: integer("progress").default(0),
     containerGroupId: varchar("container_group_id", { length: 255 }),
     trainingDataCount: integer("training_data_count").default(0),
     validationDataCount: integer("validation_data_count").default(0),
     datasetVersionId: uuid("dataset_version_id").references(() => trainingDatasetVersions.id),
+    // FK para lora_jobs/model_versions aplicada via migration SQL para evitar ciclo de tipos no schema TS.
+    loraJobId: uuid("lora_job_id"),
+    modelVersionId: uuid("model_version_id"),
+    scopeNamespaceId: uuid("scope_namespace_id").references(() => namespaces.id),
+    scopeAgentId: uuid("scope_agent_id").references(() => agents.id),
+    configSnapshot: jsonb("config_snapshot").$type<Record<string, unknown>>().notNull().default({}),
+    evaluationStatus: fineTuningEvaluationStatusEnum("evaluation_status").notNull().default("pending"),
+    promotionStatus: fineTuningPromotionStatusEnum("promotion_status").notNull().default("candidate"),
     hyperparameters: jsonb("hyperparameters").$type<FineTuningHyperparameters>().default({}),
     metrics: jsonb("metrics").$type<FineTuningMetrics>().default({}),
     resultModel: varchar("result_model", { length: 255 }),
@@ -2320,6 +2351,21 @@ export const fineTuningJobs = pgTable(
   (table) => ({
     idxFinetuningTenant: index("idx_finetuning_tenant").on(table.tenantId),
     idxFinetuningStatus: index("idx_finetuning_status").on(table.status),
+    idxFinetuningTenantStatusScopeNamespace: index("idx_finetuning_tenant_status_scope_namespace").on(
+      table.tenantId,
+      table.status,
+      table.scopeNamespaceId
+    ),
+    idxFinetuningTenantStatusScopeAgent: index("idx_finetuning_tenant_status_scope_agent").on(
+      table.tenantId,
+      table.status,
+      table.scopeAgentId
+    ),
+    idxFinetuningRunSource: index("idx_finetuning_run_source").on(table.runSource),
+    idxFinetuningEvaluationStatus: index("idx_finetuning_evaluation_status").on(table.evaluationStatus),
+    idxFinetuningPromotionStatus: index("idx_finetuning_promotion_status").on(table.promotionStatus),
+    idxFinetuningLoraJob: index("idx_finetuning_lora_job").on(table.loraJobId),
+    idxFinetuningModelVersion: index("idx_finetuning_model_version").on(table.modelVersionId),
   })
 );
 
