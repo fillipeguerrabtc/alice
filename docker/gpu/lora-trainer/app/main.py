@@ -373,7 +373,18 @@ def train_lora_slice(req: TrainSliceRequest) -> TrainSliceResponse:
                 tokenizer=tokenizer,
             )
 
-            trainer.train(resume_from_checkpoint=str(out_dir / "trainer") if (out_dir / "trainer").exists() else None)
+            train_result = trainer.train(
+                resume_from_checkpoint=str(out_dir / "trainer") if (out_dir / "trainer").exists() else None
+            )
+            eval_metrics: Dict[str, Any] = {}
+            if eval_dataset is not None:
+                eval_metrics = trainer.evaluate()
+
+            merged_metrics: Dict[str, Any] = {}
+            for source_metrics in [train_result.metrics, eval_metrics]:
+                for key, value in source_metrics.items():
+                    if isinstance(value, (int, float)):
+                        merged_metrics[key] = float(value)
 
             # Persistir adapter
             _ensure_dir(adapter_dir)
@@ -398,7 +409,7 @@ def train_lora_slice(req: TrainSliceRequest) -> TrainSliceResponse:
                 status="ok",
                 stepsCompleted=steps_completed,
                 adapterPath=str(adapter_dir),
-                metrics={},
+                metrics=merged_metrics,
                 durationMs=duration_ms,
             )
         except HTTPException:

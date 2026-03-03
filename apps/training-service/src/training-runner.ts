@@ -1,5 +1,5 @@
 import type { Database } from '@alice/database';
-import { and, eq, schema } from '@alice/database';
+import { and, desc, eq, isNull, schema } from '@alice/database';
 import { getAllSystemConfig } from '@alice/database/system-config';
 import { createLogger } from '@alice/logger';
 import {
@@ -10,6 +10,7 @@ import {
 import type { TrainingFineTuningQueuePayload } from '@alice/shared-utils';
 import { z } from 'zod';
 import {
+  activateLoraAdapter,
   processLoraJob,
   setJobError,
   type PreparedDatasetManifest,
@@ -37,6 +38,8 @@ const trainingConfigShapeSchema = z.object({
   TRAINING_PRESET_SAFE_JSON: z.string().min(2).optional(),
   TRAINING_PRESET_STANDARD_JSON: z.string().min(2).optional(),
   TRAINING_PRESET_LARGE_JSON: z.string().min(2).optional(),
+  TRAINING_EVAL_MAX_LOSS: z.coerce.number().positive(),
+  TRAINING_AUTO_PROMOTE_SCHEDULED: z.string().min(1),
   AUTO_LEARNING_CRON_INCREMENTAL: z.string().min(1),
   AUTO_LEARNING_CRON_FULL: z.string().min(1),
   AUTO_LEARNING_INCLUDE_IMAGES: z.string().min(1),
@@ -70,6 +73,8 @@ interface TrainingSystemRuntimeConfig {
   trainEvalSplitRatio: number;
   sliceSteps: number;
   gpuTimeoutMs: number;
+  evalMaxLoss: number;
+  autoPromoteScheduled: boolean;
   defaultHyperparams: TradingLoraHyperparams;
   presets: Record<HyperparamPresetName, TradingLoraHyperparams>;
   autoLearningCronIncremental: string;
@@ -86,6 +91,8 @@ const FrozenRunnerConfigSchema = z.object({
   trainEvalSplitRatio: z.number().min(0.5).max(0.99),
   sliceSteps: z.number().int().min(1),
   gpuTimeoutMs: z.number().int().min(1000),
+  evalMaxLoss: z.number().positive(),
+  autoPromoteScheduled: z.boolean(),
   seed: z.string().min(1),
   includeImages: z.boolean(),
   includeTradingDataset: z.boolean(),
@@ -180,6 +187,26 @@ function mapStatusForFineTuning(status: string | undefined): FineTuningJobStatus
   return null;
 }
 
+function resolveEvaluationStatus(
+  metrics: Record<string, unknown>,
+  maxEvalLoss: number
+): 'passed' | 'failed' | 'skipped' {
+  const evalLossRaw = metrics.eval_loss ?? metrics.evalLoss ?? null;
+  const perplexityRaw = metrics.perplexity ?? null;
+  if (typeof evalLossRaw === 'number' && Number.isFinite(evalLossRaw)) {
+    return evalLossRaw <= maxEvalLoss ? 'passed' : 'failed';
+  }
+  if (
+    typeof perplexityRaw === 'number'
+    && Number.isFinite(perplexityRaw)
+    && perplexityRaw > 0
+  ) {
+    const inferredLoss = Math.log(perplexityRaw);
+    return inferredLoss <= maxEvalLoss ? 'passed' : 'failed';
+  }
+  return 'skipped';
+}
+
 function resolveMinDatasetSizeForRun(params: {
   runSource: 'custom_job' | 'on_demand' | 'scheduled';
   scheduleType: string | null;
@@ -210,6 +237,8 @@ export async function loadTrainingSystemRuntimeConfig(): Promise<TrainingSystemR
     TRAINING_PRESET_SAFE_JSON: allConfig.TRAINING_PRESET_SAFE_JSON,
     TRAINING_PRESET_STANDARD_JSON: allConfig.TRAINING_PRESET_STANDARD_JSON,
     TRAINING_PRESET_LARGE_JSON: allConfig.TRAINING_PRESET_LARGE_JSON,
+    TRAINING_EVAL_MAX_LOSS: allConfig.TRAINING_EVAL_MAX_LOSS,
+    TRAINING_AUTO_PROMOTE_SCHEDULED: allConfig.TRAINING_AUTO_PROMOTE_SCHEDULED,
     AUTO_LEARNING_CRON_INCREMENTAL: allConfig.AUTO_LEARNING_CRON_INCREMENTAL,
     AUTO_LEARNING_CRON_FULL: allConfig.AUTO_LEARNING_CRON_FULL,
     AUTO_LEARNING_INCLUDE_IMAGES: allConfig.AUTO_LEARNING_INCLUDE_IMAGES,
@@ -249,6 +278,8 @@ export async function loadTrainingSystemRuntimeConfig(): Promise<TrainingSystemR
     trainEvalSplitRatio: parsed.TRAINING_TRAIN_EVAL_SPLIT_RATIO,
     sliceSteps: parsed.TRAINING_SLICE_STEPS,
     gpuTimeoutMs: parsed.TRAINING_GPU_TIMEOUT_MS,
+    evalMaxLoss: parsed.TRAINING_EVAL_MAX_LOSS,
+    autoPromoteScheduled: booleanStringSchema.parse(parsed.TRAINING_AUTO_PROMOTE_SCHEDULED),
     defaultHyperparams,
     presets: {
       safe: presetSafe,
@@ -313,6 +344,8 @@ function buildFrozenRunnerConfig(params: {
     trainEvalSplitRatio: params.runtimeConfig.trainEvalSplitRatio,
     sliceSteps: params.runtimeConfig.sliceSteps,
     gpuTimeoutMs: params.runtimeConfig.gpuTimeoutMs,
+    evalMaxLoss: params.runtimeConfig.evalMaxLoss,
+    autoPromoteScheduled: params.runtimeConfig.autoPromoteScheduled,
     seed,
     includeImages,
     includeTradingDataset,
@@ -329,6 +362,111 @@ function buildFrozenRunnerConfig(params: {
       includeImagesDefault: params.runtimeConfig.autoLearningIncludeImagesDefault,
     },
   };
+}
+
+async function promoteFineTuningJobAsActive(params: {
+  db: Database;
+  fineTuningJob: typeof schema.fineTuningJobs.$inferSelect;
+  resultAdapterPath: string;
+  metrics: Record<string, unknown>;
+}): Promise<void> {
+  const loraJobId = params.fineTuningJob.loraJobId;
+  if (!loraJobId) {
+    throw new Error(`fine_tuning_job sem loraJobId: ${params.fineTuningJob.id}`);
+  }
+  if (!params.fineTuningJob.tenantId) {
+    throw new Error(`fine_tuning_job sem tenantId: ${params.fineTuningJob.id}`);
+  }
+
+  const activationResult = await activateLoraAdapter(loraJobId, null);
+
+  const namespaceCondition = params.fineTuningJob.scopeNamespaceId
+    ? eq(schema.modelVersions.namespaceId, params.fineTuningJob.scopeNamespaceId)
+    : isNull(schema.modelVersions.namespaceId);
+
+  const fineTuningScopeConditions = [
+    eq(schema.fineTuningJobs.tenantId, params.fineTuningJob.tenantId),
+    params.fineTuningJob.scopeNamespaceId
+      ? eq(schema.fineTuningJobs.scopeNamespaceId, params.fineTuningJob.scopeNamespaceId)
+      : isNull(schema.fineTuningJobs.scopeNamespaceId),
+    params.fineTuningJob.scopeAgentId
+      ? eq(schema.fineTuningJobs.scopeAgentId, params.fineTuningJob.scopeAgentId)
+      : isNull(schema.fineTuningJobs.scopeAgentId),
+  ];
+
+  const [modelVersion] = await params.db.transaction(async (tx) => {
+    const latestScopedVersion = await tx.query.modelVersions.findFirst({
+      where: and(
+        eq(schema.modelVersions.tenantId, params.fineTuningJob.tenantId as string),
+        namespaceCondition
+      ),
+      orderBy: [desc(schema.modelVersions.version)],
+      columns: { version: true },
+    });
+
+    await tx.update(schema.modelVersions)
+      .set({
+        isActive: false,
+        status: 'deprecated',
+        deprecadoEm: new Date(),
+      })
+      .where(and(
+        eq(schema.modelVersions.tenantId, params.fineTuningJob.tenantId as string),
+        namespaceCondition,
+        eq(schema.modelVersions.isActive, true)
+      ));
+
+    await tx.update(schema.fineTuningJobs)
+      .set({ promotionStatus: 'staged' })
+      .where(and(
+        ...fineTuningScopeConditions,
+        eq(schema.fineTuningJobs.promotionStatus, 'active')
+      ));
+
+    const nextVersion = (latestScopedVersion?.version ?? 0) + 1;
+    const datasetMetrics = typeof params.metrics.dataset === 'object' && params.metrics.dataset !== null
+      ? (params.metrics.dataset as Record<string, unknown>)
+      : {};
+    const imagesUsedRaw = datasetMetrics.imagesUsed;
+    const imageDataCount = typeof imagesUsedRaw === 'number' && Number.isFinite(imagesUsedRaw)
+      ? imagesUsedRaw
+      : 0;
+
+    const [createdVersion] = await tx.insert(schema.modelVersions).values({
+      tenantId: params.fineTuningJob.tenantId,
+      namespaceId: params.fineTuningJob.scopeNamespaceId ?? null,
+      name: `${params.fineTuningJob.name}-v${nextVersion}`,
+      version: nextVersion,
+      baseModel: params.fineTuningJob.baseModel,
+      loraPath: activationResult.adapterPath ?? params.resultAdapterPath,
+      status: 'active',
+      fineTuningJobId: params.fineTuningJob.id,
+      trainingDataCount: params.fineTuningJob.trainingDataCount ?? 0,
+      imageDataCount,
+      metrics: params.metrics,
+      baselineMetrics: {},
+      isActive: true,
+      ativadoEm: new Date(),
+    }).returning();
+
+    await tx.update(schema.fineTuningJobs)
+      .set({
+        modelVersionId: createdVersion.id,
+        promotionStatus: 'active',
+      })
+      .where(eq(schema.fineTuningJobs.id, params.fineTuningJob.id));
+
+    return [createdVersion];
+  });
+
+  runnerLogger.info(
+    {
+      fineTuningJobId: params.fineTuningJob.id,
+      loraJobId,
+      modelVersionId: modelVersion.id,
+    },
+    'Promocao automatica de modelo concluida'
+  );
 }
 
 export async function runTrainingFineTuningJob(params: {
@@ -482,6 +620,7 @@ export async function runTrainingFineTuningJob(params: {
             iniciadoEm: nextStatus && nextStatus !== 'pending' ? startedAt : undefined,
             completadoEm: nextStatus === 'completed' ? new Date() : undefined,
             metrics: fineTuningMetrics,
+            evaluationStatus: nextStatus === 'validating' ? 'running' : undefined,
           })
           .where(eq(schema.fineTuningJobs.id, fineTuningJob.id));
       },
@@ -505,6 +644,17 @@ export async function runTrainingFineTuningJob(params: {
       loraMetrics: isRecord(finalLoraJob.metrics) ? finalLoraJob.metrics : {},
       completedAt: new Date().toISOString(),
     };
+    const loraMetrics = isRecord(finalLoraJob.metrics) ? finalLoraJob.metrics : {};
+    const evaluationStatus = resolveEvaluationStatus(
+      loraMetrics,
+      runnerConfig.evalMaxLoss
+    );
+    const autoPromotionEnabled = fineTuningJob.runSource === 'scheduled'
+      && runnerConfig.autoPromoteScheduled;
+    const promotionStatus =
+      autoPromotionEnabled && evaluationStatus !== 'passed'
+        ? 'rejected'
+        : (evaluationStatus === 'failed' ? 'rejected' : 'candidate');
 
     await params.db.update(schema.fineTuningJobs)
       .set({
@@ -515,8 +665,45 @@ export async function runTrainingFineTuningJob(params: {
         validationDataCount: finalLoraJob.validationCount ?? undefined,
         completadoEm: new Date(),
         metrics: fineTuningMetrics,
+        evaluationStatus,
+        promotionStatus,
       })
       .where(eq(schema.fineTuningJobs.id, fineTuningJob.id));
+
+    if (autoPromotionEnabled && evaluationStatus === 'passed') {
+      try {
+        await promoteFineTuningJobAsActive({
+          db: params.db,
+          fineTuningJob,
+          resultAdapterPath: finalLoraJob.resultAdapterPath,
+          metrics: fineTuningMetrics,
+        });
+      } catch (promotionError) {
+        const message = promotionError instanceof Error
+          ? promotionError.message
+          : String(promotionError);
+        fineTuningMetrics = {
+          ...fineTuningMetrics,
+          promotion: {
+            autoPromoteScheduled: true,
+            status: 'failed',
+            error: message,
+            at: new Date().toISOString(),
+          },
+        };
+        await params.db.update(schema.fineTuningJobs)
+          .set({
+            metrics: fineTuningMetrics,
+            promotionStatus: 'rejected',
+          })
+          .where(eq(schema.fineTuningJobs.id, fineTuningJob.id));
+
+        runnerLogger.error(
+          { fineTuningJobId: fineTuningJob.id, error: message },
+          'Promocao automatica de modelo falhou'
+        );
+      }
+    }
 
     runnerLogger.info(
       {
@@ -556,6 +743,7 @@ export async function runTrainingFineTuningJob(params: {
           errorMessage: message,
           completadoEm: new Date(),
           metrics: failedMetrics,
+          evaluationStatus: 'failed',
         })
         .where(eq(schema.fineTuningJobs.id, params.fineTuningJobId));
     }

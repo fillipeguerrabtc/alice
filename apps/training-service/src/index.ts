@@ -3197,6 +3197,257 @@ app.delete('/api/training/jobs/:id', requirePermission('training:fine_tuning_job
   }
 });
 
+app.post('/api/training/jobs/:id/promote', requirePermission('training:fine_tuning_jobs:start'), async (req: Request, res: Response) => {
+  const paramsResult = uuidParamSchema.safeParse(req.params);
+  if (!paramsResult.success) {
+    return res.status(400).json({ error: 'ID invalido', details: paramsResult.error.format() });
+  }
+
+  try {
+    const tenantResolution = resolveAuthorizedTenantId(req);
+    if (!tenantResolution.ok) {
+      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
+    }
+    if (!tenantResolution.authContext.userId) {
+      return res.status(403).json({ error: 'Usuario nao identificado para promocao' });
+    }
+
+    const fineTuningJob = await db.query.fineTuningJobs.findFirst({
+      where: and(
+        eq(schema.fineTuningJobs.id, paramsResult.data.id),
+        eq(schema.fineTuningJobs.tenantId, tenantResolution.tenantId)
+      ),
+    });
+    if (!fineTuningJob) {
+      return res.status(404).json({ error: 'Job de fine-tuning nao encontrado' });
+    }
+    if (fineTuningJob.status !== 'completed') {
+      return res.status(409).json({ error: 'Somente jobs concluidos podem ser promovidos' });
+    }
+    if (!fineTuningJob.loraJobId) {
+      return res.status(409).json({ error: 'Job sem loraJobId vinculado' });
+    }
+    if (fineTuningJob.evaluationStatus === 'failed') {
+      return res.status(409).json({ error: 'Job com avaliacao reprovada nao pode ser promovido' });
+    }
+
+    const activationResult = await activateLoraAdapter(
+      fineTuningJob.loraJobId,
+      tenantResolution.authContext.userId
+    );
+
+    const namespaceCondition = fineTuningJob.scopeNamespaceId
+      ? eq(schema.modelVersions.namespaceId, fineTuningJob.scopeNamespaceId)
+      : isNull(schema.modelVersions.namespaceId);
+    const fineJobScopeCondition = fineTuningJob.scopeNamespaceId
+      ? eq(schema.fineTuningJobs.scopeNamespaceId, fineTuningJob.scopeNamespaceId)
+      : isNull(schema.fineTuningJobs.scopeNamespaceId);
+
+    const [modelVersion] = await db.transaction(async (tx) => {
+      const latestScopedVersion = await tx.query.modelVersions.findFirst({
+        where: and(
+          eq(schema.modelVersions.tenantId, tenantResolution.tenantId),
+          namespaceCondition
+        ),
+        orderBy: [desc(schema.modelVersions.version)],
+        columns: { version: true },
+      });
+
+      await tx.update(schema.modelVersions)
+        .set({
+          isActive: false,
+          status: 'deprecated',
+          deprecadoEm: new Date(),
+        })
+        .where(and(
+          eq(schema.modelVersions.tenantId, tenantResolution.tenantId),
+          namespaceCondition,
+          eq(schema.modelVersions.isActive, true)
+        ));
+
+      await tx.update(schema.fineTuningJobs)
+        .set({ promotionStatus: 'staged' })
+        .where(and(
+          eq(schema.fineTuningJobs.tenantId, tenantResolution.tenantId),
+          fineJobScopeCondition,
+          eq(schema.fineTuningJobs.promotionStatus, 'active')
+        ));
+
+      const nextVersion = (latestScopedVersion?.version ?? 0) + 1;
+      const jobMetrics = (fineTuningJob.metrics ?? {}) as Record<string, unknown>;
+      const datasetMetrics = typeof jobMetrics.dataset === 'object' && jobMetrics.dataset !== null
+        ? (jobMetrics.dataset as Record<string, unknown>)
+        : {};
+      const imagesUsedRaw = datasetMetrics.imagesUsed;
+      const imageDataCount = typeof imagesUsedRaw === 'number' && Number.isFinite(imagesUsedRaw)
+        ? imagesUsedRaw
+        : 0;
+      const [createdVersion] = await tx.insert(schema.modelVersions).values({
+        tenantId: tenantResolution.tenantId,
+        namespaceId: fineTuningJob.scopeNamespaceId ?? null,
+        name: `${fineTuningJob.name}-v${nextVersion}`,
+        version: nextVersion,
+        baseModel: fineTuningJob.baseModel,
+        loraPath: activationResult.adapterPath,
+        status: 'active',
+        fineTuningJobId: fineTuningJob.id,
+        trainingDataCount: fineTuningJob.trainingDataCount ?? 0,
+        imageDataCount,
+        metrics: jobMetrics,
+        baselineMetrics: {},
+        isActive: true,
+        ativadoEm: new Date(),
+      }).returning();
+
+      await tx.update(schema.fineTuningJobs)
+        .set({
+          modelVersionId: createdVersion.id,
+          promotionStatus: 'active',
+        })
+        .where(eq(schema.fineTuningJobs.id, fineTuningJob.id));
+
+      return [createdVersion];
+    });
+
+    logger.info(
+      {
+        fineTuningJobId: fineTuningJob.id,
+        loraJobId: fineTuningJob.loraJobId,
+        modelVersionId: modelVersion.id,
+      },
+      'Promocao de modelo concluida'
+    );
+
+    return res.json({
+      success: true,
+      fineTuningJobId: fineTuningJob.id,
+      modelVersion,
+      activation: activationResult,
+    });
+  } catch (error) {
+    logger.error({ error, jobId: req.params.id }, 'Falha ao promover modelo');
+    return res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+app.post('/api/training/jobs/:id/rollback', requirePermission('training:fine_tuning_jobs:start'), async (req: Request, res: Response) => {
+  const paramsResult = uuidParamSchema.safeParse(req.params);
+  if (!paramsResult.success) {
+    return res.status(400).json({ error: 'ID invalido', details: paramsResult.error.format() });
+  }
+
+  try {
+    const tenantResolution = resolveAuthorizedTenantId(req);
+    if (!tenantResolution.ok) {
+      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
+    }
+    if (!tenantResolution.authContext.userId) {
+      return res.status(403).json({ error: 'Usuario nao identificado para rollback' });
+    }
+
+    const currentJob = await db.query.fineTuningJobs.findFirst({
+      where: and(
+        eq(schema.fineTuningJobs.id, paramsResult.data.id),
+        eq(schema.fineTuningJobs.tenantId, tenantResolution.tenantId)
+      ),
+    });
+    if (!currentJob) {
+      return res.status(404).json({ error: 'Job de fine-tuning nao encontrado' });
+    }
+    if (!currentJob.modelVersionId) {
+      return res.status(409).json({ error: 'Job sem modelVersionId para rollback' });
+    }
+
+    const currentVersion = await db.query.modelVersions.findFirst({
+      where: and(
+        eq(schema.modelVersions.id, currentJob.modelVersionId),
+        eq(schema.modelVersions.tenantId, tenantResolution.tenantId)
+      ),
+    });
+    if (!currentVersion) {
+      return res.status(404).json({ error: 'Model version atual nao encontrada' });
+    }
+
+    const scopedCondition = currentVersion.namespaceId
+      ? eq(schema.modelVersions.namespaceId, currentVersion.namespaceId)
+      : isNull(schema.modelVersions.namespaceId);
+    const previousVersion = await db.query.modelVersions.findFirst({
+      where: and(
+        eq(schema.modelVersions.tenantId, tenantResolution.tenantId),
+        scopedCondition,
+        lte(schema.modelVersions.version, currentVersion.version - 1)
+      ),
+      orderBy: [desc(schema.modelVersions.version)],
+    });
+    if (!previousVersion || !previousVersion.fineTuningJobId) {
+      return res.status(404).json({ error: 'Nao existe versao anterior para rollback neste escopo' });
+    }
+
+    const previousJob = await db.query.fineTuningJobs.findFirst({
+      where: and(
+        eq(schema.fineTuningJobs.id, previousVersion.fineTuningJobId),
+        eq(schema.fineTuningJobs.tenantId, tenantResolution.tenantId)
+      ),
+    });
+    if (!previousJob?.loraJobId) {
+      return res.status(409).json({ error: 'Versao anterior nao possui loraJobId valido' });
+    }
+
+    const activationResult = await activateLoraAdapter(
+      previousJob.loraJobId,
+      tenantResolution.authContext.userId
+    );
+
+    await db.transaction(async (tx) => {
+      await tx.update(schema.modelVersions)
+        .set({
+          isActive: false,
+          status: 'rolled_back',
+          deprecadoEm: new Date(),
+          rolledBackFrom: previousVersion.id,
+          rolledBackReason: `Rollback manual para version ${previousVersion.version}`,
+        })
+        .where(eq(schema.modelVersions.id, currentVersion.id));
+
+      await tx.update(schema.modelVersions)
+        .set({
+          isActive: true,
+          status: 'active',
+          ativadoEm: new Date(),
+        })
+        .where(eq(schema.modelVersions.id, previousVersion.id));
+
+      await tx.update(schema.fineTuningJobs)
+        .set({ promotionStatus: 'rolled_back' })
+        .where(eq(schema.fineTuningJobs.id, currentJob.id));
+
+      await tx.update(schema.fineTuningJobs)
+        .set({ promotionStatus: 'active' })
+        .where(eq(schema.fineTuningJobs.id, previousJob.id));
+    });
+
+    logger.info(
+      {
+        currentJobId: currentJob.id,
+        previousJobId: previousJob.id,
+        previousModelVersionId: previousVersion.id,
+      },
+      'Rollback de modelo concluido'
+    );
+
+    return res.json({
+      success: true,
+      rolledBackJobId: currentJob.id,
+      activeJobId: previousJob.id,
+      activeModelVersionId: previousVersion.id,
+      activation: activationResult,
+    });
+  } catch (error) {
+    logger.error({ error, jobId: req.params.id }, 'Falha ao executar rollback');
+    return res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
 // ============================================================================
 // LoRA ADAPTER MANAGEMENT - Ativação, Consulta e Desativação
 // ============================================================================

@@ -1116,15 +1116,28 @@ export async function processLoraJob(jobId: string, options?: ProcessLoraJobOpti
       },
     });
 
-    const data = gpu.data as { stepsCompleted?: number; adapterPath?: string } | undefined;
+    const data = gpu.data as {
+      stepsCompleted?: number;
+      adapterPath?: string;
+      metrics?: Record<string, unknown>;
+    } | undefined;
     stepsCompleted = data?.stepsCompleted ?? (stepsCompleted + sliceSteps);
     const pct = Math.min(99, Math.floor((stepsCompleted / targetSteps) * 100));
+    const sliceMetricsRaw = data?.metrics;
+    const sliceMetrics = typeof sliceMetricsRaw === 'object' && sliceMetricsRaw !== null
+      ? sliceMetricsRaw
+      : {};
+    const nextMetrics: TradingLoraMetrics = {
+      ...(fresh.metrics as TradingLoraMetrics),
+      ...(sliceMetrics as TradingLoraMetrics),
+      imagesUsed: prepared.stats.imagesUsed ?? (fresh.metrics as TradingLoraMetrics)?.imagesUsed,
+    };
     await updateJobProgress(jobId, {
       status: stepsCompleted >= targetSteps ? 'validating' : 'training',
       progress: pct,
       currentStep: stepsCompleted,
       totalSteps: targetSteps,
-      metrics: fresh.metrics as TradingLoraMetrics,
+      metrics: nextMetrics,
     });
 
     if (data?.adapterPath) {
@@ -1386,28 +1399,38 @@ export async function activateLoraAdapter(
   // 3. Copiar adapter para diretório ativo do vLLM
   const targetDir = getScopedAdapterTargetDir(job);
   const adapterName = getScopedAdapterName(job);
-  
-  // Criar diretório base se não existir
-  await fs.mkdir(LORA_ACTIVE_DIR, { recursive: true });
-  
-  // Remover adapter anterior se existir
+  const targetParent = path.dirname(targetDir);
+  const suffix = `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+  const tempDir = `${targetDir}.tmp-${suffix}`;
+  const backupDir = `${targetDir}.bak-${suffix}`;
+  await fs.mkdir(targetParent, { recursive: true });
+
+  await fs.rm(tempDir, { recursive: true, force: true });
+  await fs.cp(sourcePath, tempDir, { recursive: true });
+  logger.info({ sourcePath, tempDir, targetDir }, 'Adapter LoRA copiado para diretório temporário');
+
+  // 4. Validar cópia temporária antes do swap atômico
   try {
-    await fs.rm(targetDir, { recursive: true, force: true });
+    await fs.access(path.join(tempDir, 'adapter_config.json'));
+    await fs.access(path.join(tempDir, 'adapter_model.safetensors'));
   } catch {
-    // Diretório pode não existir ainda - OK
+    await fs.rm(tempDir, { recursive: true, force: true });
+    throw new Error('Falha na validacao da copia temporaria do adapter');
   }
 
-  // Copiar todos os arquivos do adapter
-  await fs.cp(sourcePath, targetDir, { recursive: true });
-  logger.info({ sourcePath, targetDir }, 'Adapter LoRA copiado para diretório ativo do vLLM');
-
-  // 4. Validar que a cópia foi bem-sucedida
+  let targetExists = false;
   try {
-    await fs.access(path.join(targetDir, 'adapter_config.json'));
-    await fs.access(path.join(targetDir, 'adapter_model.safetensors'));
+    await fs.access(targetDir);
+    targetExists = true;
   } catch {
-    throw new Error('Falha na validação pós-cópia do adapter');
+    targetExists = false;
   }
+  if (targetExists) {
+    await fs.rm(backupDir, { recursive: true, force: true });
+    await fs.rename(targetDir, backupDir);
+  }
+  await fs.rename(tempDir, targetDir);
+  logger.info({ targetDir, backupDir, targetExists }, 'Swap atômico do adapter concluído');
 
   // 5. Desativar adapter anterior apenas do mesmo escopo e marcar este como ativo
   if (!job.tenantId) {
@@ -1424,18 +1447,33 @@ export async function activateLoraAdapter(
     sameScopeConditions.push(eq(schema.loraJobs.scopeAgentId, job.scopeAgentId));
   }
 
-  await db.update(schema.loraJobs)
-    .set({ isActiveAdapter: false, isActiveByScope: false })
-    .where(and(...sameScopeConditions));
+  try {
+    await db.transaction(async (tx) => {
+      await tx.update(schema.loraJobs)
+        .set({ isActiveAdapter: false, isActiveByScope: false })
+        .where(and(...sameScopeConditions));
 
-  await db.update(schema.loraJobs)
-    .set({
-      isActiveAdapter: true,
-      isActiveByScope: true,
-      approvedAt: new Date(),
-      approvedBy: approvedBy ?? null,
-    })
-    .where(eq(schema.loraJobs.id, jobId));
+      await tx.update(schema.loraJobs)
+        .set({
+          isActiveAdapter: true,
+          isActiveByScope: true,
+          approvedAt: new Date(),
+          approvedBy: approvedBy ?? null,
+        })
+        .where(eq(schema.loraJobs.id, jobId));
+    });
+  } catch (error) {
+    logger.error({ error, jobId, targetDir, backupDir }, 'Falha na transação de ativação; revertendo filesystem');
+    await fs.rm(targetDir, { recursive: true, force: true }).catch(() => undefined);
+    if (targetExists) {
+      await fs.rename(backupDir, targetDir).catch(() => undefined);
+    }
+    throw error;
+  }
+
+  if (targetExists) {
+    await fs.rm(backupDir, { recursive: true, force: true }).catch(() => undefined);
+  }
 
   logger.info(
     { jobId, adapterPath: targetDir, approvedBy },

@@ -161,6 +161,23 @@ const TRAINING_ITEMS: ConfigItem[] = [
     unit: 'ms',
   },
   {
+    key: 'TRAINING_EVAL_MAX_LOSS',
+    labelKey: 'systemSettings.training.trainingEvalMaxLoss',
+    descKey: 'systemSettings.training.trainingEvalMaxLossDesc',
+    defaultValue: '2.0',
+    valueType: 'float',
+    min: 0.0001,
+    max: 20,
+    step: '0.01',
+  },
+  {
+    key: 'TRAINING_AUTO_PROMOTE_SCHEDULED',
+    labelKey: 'systemSettings.training.trainingAutoPromoteScheduled',
+    descKey: 'systemSettings.training.trainingAutoPromoteScheduledDesc',
+    defaultValue: 'false',
+    valueType: 'boolean',
+  },
+  {
     key: 'AUTO_LEARNING_CRON_INCREMENTAL',
     labelKey: 'systemSettings.training.autoLearningCronIncremental',
     descKey: 'systemSettings.training.autoLearningCronIncrementalDesc',
