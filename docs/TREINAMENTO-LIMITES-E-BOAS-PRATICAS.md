@@ -1,144 +1,143 @@
-# Limites de Treinamento, Hardware e Boas Práticas (2025–2026)
+﻿# Treinamento: Limites, Configuracoes e Boas Praticas (2026)
 
 **Autor:** Fillipe Guerra  
-**Data:** 11 de Fevereiro de 2026  
-**Objetivo:** Referência enterprise para preservar dados de conversas longas e documentos/livros grandes, limites atuais, documentação oficial e coleta inteligente.
+**Data:** 03 de Marco de 2026  
+**Objetivo:** SSOT dos limites/configuracoes de treinamento, pipeline em fila, avaliacao e promocao/rollback.
 
 ---
 
-## 1. Limites atuais na plataforma Alice
+## 1. Configuracoes editaveis via UI (System Settings)
 
-**Configurações editáveis via UI:** As chaves abaixo marcadas com ⚙️ podem ser alteradas na página **Configurações do Sistema** (menu lateral). Valores gravados no PostgreSQL têm precedência sobre variáveis de ambiente. Alterações são aplicadas imediatamente (cache invalidado no save).
+Todas as chaves abaixo sao lidas de `system_config` (PostgreSQL) e podem ser editadas na UI em **Configuracoes do Sistema**.  
+Se a chave nao existir no banco, o backend usa fallback de ambiente/default.
 
-| Variável / Constante | Onde | Default | Descrição |
-|----------------------|------|--------|-----------|
-| `TRAINING_CONVERSATION_MAX_MESSAGES` ⚙️ | chat-service | **50** | Máximo de mensagens por conversa enviada ao training (coleta manual e batch). |
-| `CONVERSATION_SLICE_SIZE` ⚙️ | chat-service | **10** | Tamanho da janela para fatiamento de conversas longas (janelas disjuntas). |
-| `TRAINING_DOC_MAX_SAMPLES` ⚙️ | rag-service | **50** | Máximo de chunks de documento selecionados por documento para treino (após `selectTrainingChunks`). |
-| `TRAINING_DOC_MIN_CHARS` | rag-service | **180** | Mínimo de caracteres por chunk para ser elegível a treino. |
-| `DOCUMENT_CHUNK_SIZE` | document-processor | **8000** | Tamanho em caracteres de cada chunk para embedding e RAG. |
-| `DOCUMENT_MAX_CHUNKS` ⚙️ | document-processor | **50** | Máximo de chunks gerados por documento (configurável via UI ou env). |
-| `MAX_TEXT_LENGTH` | document-processor | **100000** | Texto extraído truncado além de 100k caracteres. |
-| `MAX_DOCUMENT_SIZE_MB` | document-processor | **50** | Tamanho máximo do arquivo em MB. |
-| `MIN_ONDEMAND_DATASET_SIZE` ⚙️ | training-service / lora-job-manager | **10** | Mínimo de exemplos para treino on-demand (configurável via UI ou env). |
-| `MIN_CHAT_DATASET_SIZE` | lora-job-manager | **50** | Mínimo de exemplos para runs agendados (training_data + opcional trading). |
-| `MIN_DATASET_SIZE` | lora-job-manager | **100** | Mínimo de exemplos para job LoRA (trading_dataset). |
-| `maxSeqLen` ⚙️ | lora-job-manager / training-service | **2048** | Comprimento máximo de sequência no treino LoRA (256–32768). |
-| `batchSize` (LoRA) | lora-job-manager | **4** | Batch size padrão no treino. |
+### 1.1 Gates de dados e dataset
 
-**Limites para mídia (imagens/áudio) — Plano RAG Multimodal (11/02/2026):**
+| Chave | Default | Efeito |
+|---|---:|---|
+| `MIN_ONDEMAND_DATASET_SIZE` | `10` | Minimo de exemplos aprovados para run `on_demand` e `custom_job`. |
+| `MIN_SCHEDULED_DATASET_SIZE_INCREMENTAL` | `50` | Minimo de exemplos para run agendada incremental. |
+| `MIN_SCHEDULED_DATASET_SIZE_FULL` | `200` | Minimo de exemplos para run agendada completa. |
+| `TRAINING_QUALITY_MIN_RATIO` | `0.5` | Qualidade minima para liberar run. |
+| `TRAINING_DATASET_MAX_ROWS` | `5000` | Cap de linhas no dataset montado para treino. |
+| `TRAINING_TRAIN_EVAL_SPLIT_RATIO` | `0.9` | Split treino/avaliacao (ex.: 90/10). |
 
-| Variável | Onde | Default | Descrição |
-|----------|------|---------|-----------|
-| Mínimo conteúdo para treino | rag-service | **50** chars | Imagens: `visionDescription` (OpenAI Vision); Áudio: `transcription` (ASR). Conteúdo menor é rejeitado. |
-| Namespace | rag-service | Obrigatório | Mídia sem namespace não pode ser promovida para treinamento. |
-| Tipos suportados | mediaUploads | image, audio | Apenas imagens e áudios processados podem ir para `training_data`. |
+### 1.2 Execucao GPU e slices
 
-**Comportamento resumido:**
+| Chave | Default | Efeito |
+|---|---:|---|
+| `TRAINING_SLICE_STEPS` | `5` | Passos por requisicao ao gpu-trainer. |
+| `TRAINING_GPU_TIMEOUT_MS` | `25000` | Timeout por slice no gpu-trainer. |
 
-- **Documentos/livros:** Um documento é fatiado em até **50** chunks (configurável via `DOCUMENT_MAX_CHUNKS`) de ~8k caracteres; na promoção para treino, até **50** chunks são escolhidos por relevância/diversidade (âncoras início/fim + score). Modo livro (frontend) permite até 100. Cada chunk vira **um** `training_data`. Livro grande → vários datasets (até 50 ou 100 em modo livro).
-- **Conversas:** Uma conversa com até **CONVERSATION_SLICE_SIZE** (10) mensagens vira **um** `training_data`. Conversas longas são **fatiadas em janelas disjuntas** de 10 mensagens; cada janela vira um `training_data` com `sourceMetadata.conversationWindow`. Na coleta manual, até **50** mensagens por conversa; o fatiamento é aplicado automaticamente.
-- **Mídia (imagens/áudio):** Cada item de mídia processada vira **um** `training_data`. Requer namespace e conteúdo mínimo 50 caracteres (descrição ou transcrição). Fonte `rag_media` com `sourceMetadata.mediaUploadId`.
+### 1.3 Hyperparams e presets
 
----
+| Chave | Default | Efeito |
+|---|---:|---|
+| `TRAINING_DEFAULT_HYPERPARAMS_JSON` | JSON padrao | Base de hyperparams usada no snapshot do run. |
+| `TRAINING_PRESET_SAFE_JSON` | JSON safe | Preset conservador. |
+| `TRAINING_PRESET_STANDARD_JSON` | JSON standard | Preset balanceado. |
+| `TRAINING_PRESET_LARGE_JSON` | JSON large | Preset agressivo para dataset maior. |
 
-## 2. Hardware e documentação oficial (2025–2026)
+Campos suportados nos JSONs:
+- `epochs`
+- `learningRate`
+- `batchSize`
+- `gradientAccumulationSteps`
+- `warmupSteps`
+- `maxSeqLen`
+- `loraRank`
+- `loraAlpha`
+- `loraDropout`
+- `lrSchedulerType`
+- `maxGradNorm`
+- `targetModules`
 
-### 2.1 GPU e VRAM (Hetzner GEX44 – 20GB)
+### 1.4 Agenda e promocao automatica
 
-- **Inferência Qwen2.5 7B:** FP16 ~15–17 GB; em 20GB é confortável.
-- **Fine-tuning completo (full):** FP16 ~92 GB → **inviável** em uma GPU 20GB.
-- **QLoRA / LoRA (4-bit / adapters):** QLoRA 7B reportado **~11,5 GB** mínimo; 20GB permite fine-tuning parameter-efficient (LoRA/QLoRA) no próprio servidor.
-- **Fonte:** Qwen 2.5 requirements, Novita VRAM tips, torchtune/MLflow QLoRA tutorials.
-
-**Conclusão:** O hardware atual **suporta** aumentar quantidade e tamanho dos dados de treino desde que o **treino continue sendo LoRA/QLoRA** (já é o caso). O gargalo não é VRAM para o tamanho do dataset em si, e sim batch size e `max_seq_length` durante o treino (ver TRL abaixo).
-
-### 2.2 TRL / Hugging Face (SFT Trainer, 2025)
-
-- **Formato:** SFT suporta *language modeling* e *prompt-completion*, em formato padrão ou **conversacional** (messages); o trainer aplica o chat template automaticamente.
-- **Truncation:** O truncation reduz memória; `max_length` muito pequeno descarta tokens, muito grande aumenta risco de OOM e padding. TRL trunca por padrão; default típico é `min(tokenizer.model_max_length, 1024)` (ex.: `max_seq_length=512` em exemplos).
-- **Packing:** `packing=True` concatena/divide sequências para preencher o comprimento alvo, reduz padding e preserva mais tokens. Exige FlashAttention (ou variante). Pode causar “batch contamination” se não usado com cuidado; recomendado combinar com FlashAttention 2/3.
-- **PEFT/LoRA:** Integração nativa; learning rate mais alto (~1e-4) para adapters. PEFT + quantização 4/8-bit reduz ainda mais memória.
-- **Gradient checkpointing:** Ligado por padrão nos trainers TRL para reduzir uso de memória.
-- **Fonte:** [TRL SFT Trainer](https://huggingface.co/docs/trl/main/en/sft_trainer), [Reducing Memory Usage](https://huggingface.co/docs/trl/main/en/reducing_memory_usage).
-
-### 2.3 Long context e chunking (2024–2025)
-
-- **ChunkFlow (2025):** Reorganiza dataset em chunks de tamanho uniforme (consolida curtos, divide longos); agendamento por chunk reduz pico de memória.
-- **SeCO / SpaCO (ACL 2025):** Otimização por chunk com backprop localizado; permite escalar 1K→16K em uma RTX 3090 com LoRA 8B.
-- **ProLong / boas práticas:** Misturar dados longos (código, livros) com dados de contexto curto de alta qualidade; treinar com comprimento de sequência além do de avaliação; SFT com dados curtos pode ainda dar boa performance em contexto longo.
-- **Fonte:** arXiv 2503.02356 (Chunk Flow), ACL 2025 findings (chunk-wise optimization), ProLong/OpenReview.
-
-### 2.4 Qwen (documentação oficial)
-
-- Qwen3/Qwen2.5: suporte a chat template, `enable_thinking`, `max_new_tokens` até 16k/32k conforme modelo. Para **treino**, a documentação aponta para Axolotl, LLaMA-Factory, MS-SWIFT, Unsloth, verl.
-- **Fonte:** [Qwen Quickstart](https://qwen.readthedocs.io/en/latest/getting_started/quickstart.html), [Training](https://qwen.readthedocs.io/en/latest/training/axolotl.html) (Axolotl, etc.).
+| Chave | Default | Efeito |
+|---|---:|---|
+| `AUTO_LEARNING_CRON_INCREMENTAL` | `0 3 * * 0` | Cron default de runs incrementais. |
+| `AUTO_LEARNING_CRON_FULL` | `0 1 1,15 * *` | Cron default de runs completos. |
+| `AUTO_LEARNING_INCLUDE_IMAGES` | `true` | Include-images default para runs automaticas. |
+| `TRAINING_EVAL_MAX_LOSS` | `2.0` | Limiar de `eval_loss` para aprovar avaliacao. |
+| `TRAINING_AUTO_PROMOTE_SCHEDULED` | `false` | Se `true`, run agendada promove automaticamente somente quando avaliacao passa. |
 
 ---
 
-## 3. Podemos aumentar os limites?
+## 2. Pipeline unificado (SSOT)
 
-**Sim**, dentro do seguinte quadro:
+Todos os gatilhos (`custom_job`, `on_demand`, `scheduled`) sao **enqueue-only**:
 
-1. **Treino continua LoRA/QLoRA** → 20GB é suficiente para o pipeline atual.
-2. **Aumentar número de exemplos (mais chunks, mais conversas)** é seguro: o job já usa `batchSize=4`, gradient checkpointing e preparação em JSONL; mais linhas no dataset aumentam tempo de treino, não necessariamente pico de VRAM.
-3. **Aumentar “tamanho” por exemplo** (mais mensagens por conversa, ou mais tokens por chunk) impacta **max_seq_length** no treino: no TRL, `max_length` grande aumenta memória por batch. Solução recomendada pela documentação: **chunking** (dividir conversas longas em várias sequências) + **packing** (quando disponível) em vez de subir `max_length` sem limite.
+1. Handler HTTP/scheduler valida input com Zod.
+2. Cria `fine_tuning_jobs` + `lora_jobs` com snapshot de configuracao.
+3. Enfileira payload no Redis Stream `alice:training:fine-tuning`.
+4. Worker consome fila com idempotencia/lock distribuido.
+5. `TrainingRunner` executa preparo de dataset, treino por slices, avaliacao e persistencia de metricas.
 
-Recomendações práticas:
-
-- **Documentos:** Aumentar `TRAINING_DOC_MAX_SAMPLES` (ex.: 20 → 40 ou 50) e, se necessário, `maxChunks` (ex.: 50 → 100) via env ou constante, para livros grandes cobrirem mais trecho. Manter `DOCUMENT_CHUNK_SIZE` em 8k está alinhado com contexto típico de 4k–8k tokens.
-- **Conversas:** Aumentar `TRAINING_CONVERSATION_MAX_MESSAGES` (ex.: 20 → 50) para coleta manual/batch; para conversas **muito** longas, a prática 2025 é **fatiar em várias amostras** (janelas de N turnos ou por tópico) em vez de uma única sequência gigante, para não estourar `max_seq_length` no SFT.
-
----
-
-## 4. Coleta inteligente e datasets enterprise (visão geral)
-
-Objetivo: **coleta inteligente de todas as fontes** (chat, documentos, bulk, trading) e **geração de datasets inteligente** de forma enterprise e completa.
-
-### 4.1 Fontes atuais
-
-| Fonte | Onde | Como vira training_data |
-|-------|------|---------------------------|
-| Chat (manual/batch) | chat-service | 1 conversa → 1 registro, até N mensagens |
-| Chat (auto) | chat-service | 1 par user/assistant → 1 registro |
-| Documentos RAG | rag-service | 1 doc → até M chunks selecionados → M registros |
-| **Mídia (imagens/áudio)** | rag-service | 1 mídia processada → visionDescription/transcription → 1 registro (source `rag_media`) |
-| Bulk import (Training) | training-service | 1 item do arquivo → 1 registro |
-| Trading (sinais/post-mortem) | integrations-service | 1 sinal/post-mortem aprovado → trading_dataset → usado em jobs LoRA |
-
-### 4.2 Melhorias enterprise sugeridas (sem mocks, Regra 6)
-
-1. **Conversas longas**
-   - **Opção A:** Aumentar `TRAINING_CONVERSATION_MAX_MESSAGES` (ex.: 50) e deixar o training-service/TRL truncar por `max_seq_length` (comportamento padrão).
-   - **Opção B (mais alinhado à documentação 2025):** No chat-service, ao montar o payload de coleta, **fatiar** conversas com mais de K mensagens em **várias amostras** (janelas deslizantes ou por blocos de N turnos), cada uma enviada como um `training_data` distinto, com `sourceMetadata.conversationWindow` (ex.: `{ startIndex, endIndex }`). Assim preserva-se mais conteúdo sem uma única sequência gigante.
-
-2. **Documentos/livros grandes**
-   - Tornar **maxChunks** configurável por env (ex.: `DOCUMENT_MAX_CHUNKS`, default 50) no document-processor.
-   - Aumentar **TRAINING_DOC_MAX_SAMPLES** por env (ex.: 40 ou 50) para livros.
-   - Manter `selectTrainingChunks` (relevância + âncoras início/fim + diversidade) como lógica de seleção inteligente; opcionalmente expor `selection` (minChars, maxSamples) no endpoint de “enviar para treino” para o frontend poder escolher “modo livro” (mais amostras).
-
-3. **Unificação e rastreabilidade**
-   - Todas as fontes já usam `source` / `sourceType` / `sourceId` e opcionalmente `sourceMetadata`; manter e estender para qualquer nova fonte (ex.: `conversationWindow`).
-   - Evitar duplicidade: chat já usa `sentToTrainingAt`; documentos/trading com `sourceId` permitem deduplicação no training-service.
-
-4. **Training-service**
-   - Aceitar `max_seq_length` (ou equivalente) na preparação do JSONL (ou no gpu-trainer) conforme TRL (truncation/packing). Assim os limites de “quantidade” (mais exemplos, mais chunks) ficam na coleta; o “tamanho por exemplo” fica limitado no treino de forma controlada.
-
-5. **Frontend / UX**
-   - Na página Training: opção “Enviar conversa longa” que explique que será fatiada em várias amostras (se implementar Opção B).
-   - Na promoção de documento: opção “Modo livro” (mais amostras por doc) ligada a `maxSamples` maior.
+Nao existe trabalho pesado dentro de handler HTTP.
 
 ---
 
-## 5. Referências
+## 3. Avaliacao e gate de promocao
 
-- TRL SFT Trainer: https://huggingface.co/docs/trl/main/en/sft_trainer  
-- TRL Reducing Memory Usage (truncation, packing, PEFT): https://huggingface.co/docs/trl/main/en/reducing_memory_usage  
-- Qwen Quickstart / Training: https://qwen.readthedocs.io/en/latest/  
-- Qwen2.5 7B VRAM (inferência / full ft / QLoRA): Medium/Novita, Qwen requirements  
-- Long-context chunk-wise training: ChunkFlow (arXiv 2503.02356), SeCO/SpaCO (ACL 2025), ProLong (OpenReview)  
-- CLAUDE.md: Regras 1, 6, 10, 11 (ler antes de agir, enterprise, documentação PT-BR, documentação oficial)
+### 3.1 Estados de avaliacao (`fine_tuning_jobs.evaluation_status`)
+
+- `pending`
+- `running`
+- `passed`
+- `failed`
+- `skipped`
+
+Regra atual:
+- Se `eval_loss` existe: passa quando `eval_loss <= TRAINING_EVAL_MAX_LOSS`.
+- Se so `perplexity` existe: converte via `ln(perplexity)` e aplica o mesmo limiar.
+- Sem metrica de avaliacao: `skipped`.
+
+### 3.2 Estados de promocao (`fine_tuning_jobs.promotion_status`)
+
+- `candidate`
+- `staged`
+- `active`
+- `rejected`
+- `rolled_back`
+
+Comportamento:
+- Default: run concluido vira `candidate` (nao ativa automaticamente).
+- Se `TRAINING_AUTO_PROMOTE_SCHEDULED=true` e run agendada `passed`: promocao automatica para `active`.
+- Se gate falha: `rejected`.
 
 ---
 
-*Este documento consolida limites atuais do código, documentação oficial 2025–2026 e recomendações para coleta inteligente e geração de datasets de forma enterprise.*
+## 4. Promocao manual e rollback seguro
+
+Endpoints:
+- `POST /api/training/jobs/:id/promote`
+- `POST /api/training/jobs/:id/rollback`
+
+Garantias de seguranca:
+- Ativacao de adapter por swap atomico no filesystem (temp -> rename).
+- Transacao DB para flip de flags ativas.
+- Em falha de transacao, tentativa de reversao do filesystem.
+- Historico em `model_versions` e status de promocao em `fine_tuning_jobs`.
+
+---
+
+## 5. Boas praticas operacionais
+
+- Ajustar gates no `system_config` antes de aumentar carga de treino.
+- Priorizar presets (`safe/standard/large`) na UI e usar override apenas quando necessario.
+- Manter avaliacao ativa e limiar (`TRAINING_EVAL_MAX_LOSS`) coerente com baseline.
+- Usar promocao manual em ambientes criticos; habilitar auto-promocao agendada somente com gate validado.
+- Sempre monitorar fila Redis, status do worker e metricas por slice.
+
+---
+
+## 6. Referencias internas
+
+- `apps/training-service/src/training-runner.ts`
+- `apps/training-service/src/workers/training-fine-tuning-worker.ts`
+- `apps/training-service/src/lora-job-manager.ts`
+- `apps/training-service/src/index.ts`
+- `packages/database/src/system-config.ts`
+- `packages/shared-utils/src/training-queues.ts`
+- `docker/gpu/lora-trainer/app/main.py`
