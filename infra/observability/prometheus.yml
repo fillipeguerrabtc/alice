@@ -105,42 +105,6 @@ scrape_configs:
       credentials_file: /run/secrets/qdrant_api_key
 
   # ===========================================================================
-  # ERPNEXT EXPORTERS (WS2)
-  # ===========================================================================
-  - job_name: 'erpnext-mariadb-exporter'
-    static_configs:
-      - targets: ['erpnext-mariadb-exporter:9104']
-        labels:
-          instance: 'alice-prod'
-          environment: 'production'
-          stack: 'erpnext'
-          service: 'mariadb'
-    metrics_path: '/metrics'
-    scrape_timeout: 10s
-
-  - job_name: 'erpnext-redis-cache-exporter'
-    static_configs:
-      - targets: ['erpnext-redis-cache-exporter:9121']
-        labels:
-          instance: 'alice-prod'
-          environment: 'production'
-          stack: 'erpnext'
-          service: 'redis-cache'
-    metrics_path: '/metrics'
-    scrape_timeout: 10s
-
-  - job_name: 'erpnext-redis-queue-exporter'
-    static_configs:
-      - targets: ['erpnext-redis-queue-exporter:9121']
-        labels:
-          instance: 'alice-prod'
-          environment: 'production'
-          stack: 'erpnext'
-          service: 'redis-queue'
-    metrics_path: '/metrics'
-    scrape_timeout: 10s
-
-  # ===========================================================================
   # GPU Services (FastAPI/vLLM) - métricas por serviço
   # ===========================================================================
   - job_name: 'alice-gpu-services'

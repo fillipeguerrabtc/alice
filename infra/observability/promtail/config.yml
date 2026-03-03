@@ -19,7 +19,7 @@ scrape_configs:
           __path__: /var/log/*log
 
   # ============================================================================
-  # DOCKER CONTAINERS LOGS (Alice/Infra/Observability/ERPNext)
+  # DOCKER CONTAINERS LOGS (Alice/Infra/Observability)
   # ============================================================================
   # Objetivo: coletar logs reais dos containers (json-file driver) para Loki.
   #

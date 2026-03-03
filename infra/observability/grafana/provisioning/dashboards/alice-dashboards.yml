@@ -128,17 +128,6 @@ providers:
     options:
       path: /etc/grafana/provisioning/dashboards/services
 
-  - name: 'Alice - ERPNext'
-    orgId: 1
-    folder: 'Alice/ERPNext'
-    folderUid: 'alice-erpnext'
-    type: file
-    disableDeletion: false
-    updateIntervalSeconds: 30
-    allowUiUpdates: true
-    options:
-      path: /etc/grafana/provisioning/dashboards/erpnext
-
   - name: 'Alice - Infra & Hosts'
     orgId: 1
     folder: 'Alice/Infra & Hosts'
