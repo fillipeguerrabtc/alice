@@ -8,10 +8,7 @@
 
 Este guia descreve o deploy enterprise da plataforma Alice em produção (Hetzner GEX44), com pipeline CI/CD totalmente automatizado, rollback cirúrgico por stack e validações fail-fast.
 
-## Atualização ERPNext/Frappe
 
-- **ERPNext** atualizado para `v15.95.2` via SSOT (`infra/versions.env`).
-- **docker-compose.erpnext.yml** mantém fallback alinhado com a SSOT para evitar drift.
 
 ## Timezone (padrão enterprise)
 
@@ -26,7 +23,6 @@ Este guia descreve o deploy enterprise da plataforma Alice em produção (Hetzne
 | **INFRA** | 11 | PostgreSQL, PgBouncer, Redis, Qdrant, Caddy, MinIO, SearXNG, Tor | `infra/docker/stacks/docker-compose.infra.yml` |
 | **ALICE** | 10 + GPU | Microsserviços core (incl. Biometrics, LLM Gateway) + GPU Manager + serviços GPU | `infra/docker/stacks/docker-compose.alice.yml` |
 | **OBSERVABILITY** | 13 | Prometheus, Grafana, Loki, Jaeger, Langfuse, ClickHouse | `infra/docker/stacks/docker-compose.observability.yml` |
-| **ERPNEXT** | 15 | MariaDB, Redis Cache/Queue, Backend, Workers | `infra/docker/stacks/docker-compose.erpnext.yml` |
 | **BACKUP** | 1 | pgBackRest enterprise | `infra/docker/stacks/docker-compose.backup.yml` |
 
 ## Workflows oficiais
@@ -43,7 +39,6 @@ deploy-infra + health-infra
   ↓
 drizzle-push (executa somente quando há diff real)
   ↓
-deploy-alice + deploy-observability + deploy-erpnext + deploy-backup (paralelo)
   ↓
 health-{stack} + rollback-{stack} (se necessário)
 ```
@@ -71,17 +66,11 @@ ENV NPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS=true
 
 Isso **não afeta o desenvolvimento local**, apenas o ambiente do build da imagem.
 
-## ERPNext - sincronização de assets e configs
 
-O `erpnext-configurator` sincroniza **assets completos** e arquivos de configuração para o volume `erpnext_sites` sem remover diretórios internos do container. Isso evita falhas por mountpoints gerados pelo próprio image (`VOLUME` em `/home/frappe/frappe-bench/sites` e `/home/frappe/frappe-bench/sites/assets`).
 
-- Origem dos assets: `/home/frappe/frappe-bench/sites/assets` (imagem).
-- Destino: `/mnt/erpnext-sites/assets` (volume persistente).
 - Configurações sincronizadas: `apps.txt` e `common_site_config.json`.
 
-### ERPNext - build de assets com Node (NVM)
 
-O `erpnext-create-site` executa `bench build --production` para gerar bundles CSS/JS. A imagem oficial do ERPNext já inclui Node via **NVM**, mas **login shell** (`bash -l`) pode sobrescrever `PATH` e quebrar a detecção do `node`. Para evitar isso, o build roda com `bash -c` preservando o `PATH` do container e faz bootstrap do NVM quando necessário (sem instalação runtime).
 
 - **Causa raiz típica:** `node: not found` durante `bench build --production`.
 - **Correção aplicada:** validação explícita de `node` + `nvm use` quando necessário.
@@ -100,7 +89,6 @@ gh workflow run deploy-stack-modular.yml -f stack=all -f version=v1.0.0
 gh workflow run deploy-stack-modular.yml -f stack=observability -f version=v1.0.0 -f dry_run=true
 
 # Rollback manual de um stack específico
-gh workflow run deploy-stack-modular.yml -f stack=erpnext -f version=v1.0.0 -f rollback=true -f rollback_version=v0.9.0
 ```
 
 ### Rollback automático e cleanup (INFRA)
@@ -295,11 +283,9 @@ docker logs alice-minio --tail 100
 docker logs alice-minio-init --tail 50
 ```
 
-### ERPNext sem CSS/JS (assets 404)
 
 **Sintoma:** páginas abrem com HTML sem estilos/scripts e `/assets/*` retorna 404.  
 **Causa raiz:** `assets.json` desatualizado em relação aos bundles reais.  
-**Correção aplicada:** `erpnext-configurator` sincroniza `assets.json` da imagem oficial para o volume `erpnext_sites` (sem depender de Node), ajusta as permissões do volume e executa `bench` com `setpriv --keep-groups` (necessário com `no-new-privileges` para evitar erro de `setgroups`).
 
 ### Logs de falha por stack (rollback imediato)
 
@@ -311,7 +297,6 @@ docker logs alice-minio-init --tail 50
 - `infra-deploy-logs-<run_id>-<run_attempt>`
 - `alice-deploy-logs-<run_id>-<run_attempt>`
 - `observability-deploy-logs-<run_id>-<run_attempt>`
-- `erpnext-deploy-logs-<run_id>-<run_attempt>`
 - `backup-deploy-logs-<run_id>-<run_attempt>`
 
 ### Docker Hub rate limit
@@ -324,7 +309,6 @@ O workflow `deploy-stack-modular.yml` utiliza **pull inteligente com detecção 
 
 **Arquitetura Enterprise — Funções Compartilhadas:**
 
-As funções de deploy são centralizadas em **`infra/scripts/deploy-functions.sh`** (CLAUDE.md Regra 2 — não duplicar). O script é copiado para `/opt/alice/scripts/deploy-functions.sh` no servidor pelo job `prepare` e importado via `source` pelos 5 deploy jobs (INFRA, ALICE, OBSERVABILITY, ERPNEXT, BACKUP).
 
 Funções disponíveis:
 - **`verify_docker_credentials()`** — Valida presença de `~/.docker/config.json` com credenciais ativas

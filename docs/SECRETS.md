@@ -25,8 +25,6 @@ Este documento lista os secrets obrigatórios e opcionais usados no deploy enter
 | `GH_PAT` | Token GitHub com `repo`, `write:packages`, `workflow` | ✅ |
 | `POSTGRES_PASSWORD` | Senha PostgreSQL (32+ chars) | ✅ |
 | `REDIS_PASSWORD` | Senha Redis Alice (32+ chars) | ✅ |
-| `REDIS_CACHE_PASSWORD` | Senha Redis Cache (ERPNext) | ✅ |
-| `REDIS_QUEUE_PASSWORD` | Senha Redis Queue (ERPNext) | ✅ |
 | `SESSION_SECRET` | Secret de sessão (64+ chars) | ✅ |
 | `INTERNAL_API_SECRET` | Secret S2S interno | ✅ |
 | `BIOMETRICS_ENCRYPTION_KEY` | Chave AES-256 para biometria (32 bytes, hex/base64) | ✅ |
@@ -36,7 +34,6 @@ Este documento lista os secrets obrigatórios e opcionais usados no deploy enter
 | `ADMIN_PWD` | Senha admin Alice Auth | ✅ |
 | `GRAFANA_ADMIN_USER` | Usuário admin Grafana | ✅ |
 | `GRAFANA_ADMIN_PASSWORD` | Senha admin Grafana | ✅ |
-| `ERPNEXT_ADMIN_PASSWORD` | Senha admin ERPNext | ✅ |
 | `ACME_EMAIL` | Email Let's Encrypt (Caddy TLS) | ✅ |
 | `DUCKDNS_TOKEN` | Token DuckDNS (ACME DNS-01) | ✅ |
 | `ZEROSSL_EAB_KID` | ZeroSSL EAB Key ID (fallback ACME) | ✅ |
@@ -107,13 +104,9 @@ Este documento lista os secrets obrigatórios e opcionais usados no deploy enter
 | `GH_REPO` | Repositório no formato `owner/repo` | ✅ |
 | `GH_API_URL` | API GitHub (default: `https://api.github.com`) | ⚠️ |
 
-## ERPNext
 
 | Secret | Descrição | Obrigatório |
 | --- | --- | --- |
-| `ERPNEXT_MYSQL_ROOT_PASSWORD` | Root DB ERPNext | ✅ |
-| `ERPNEXT_MYSQL_EXPORTER_PASSWORD` | Exporter DB ERPNext | ✅ |
-| `ERPNEXT_DB_PASSWORD` | Password DB ERPNext | ✅ |
 
 ## OAuth / SSO
 
@@ -127,7 +120,6 @@ Este documento lista os secrets obrigatórios e opcionais usados no deploy enter
 | `GITHUB_CLIENT_SECRET` | OAuth GitHub (legado, aceito) | ⚠️ |
 | `OIDC_COOKIE_KEYS` | Cookies OIDC | ✅ |
 | `GRAFANA_OAUTH_CLIENT_SECRET` | OAuth Grafana | ✅ |
-| `ERPNEXT_OAUTH_CLIENT_SECRET` | OAuth ERPNext | ✅ |
 
 > Preferir `OAUTH_GITHUB_CLIENT_ID` e `OAUTH_GITHUB_CLIENT_SECRET`. As chaves `GITHUB_*` existem apenas para compatibilidade.
 
@@ -144,7 +136,6 @@ Este documento lista os secrets obrigatórios e opcionais usados no deploy enter
 | `HUGGINGFACE_TOKEN` | Token HF → passado como `HF_TOKEN` (nome padrão huggingface_hub) |
 | `CORS_ORIGINS` | Lista de origens CORS permitidas (CSV) |
 | `SEARXNG_SECRET_KEY` | Secret do SearXNG |
-| `ERPNEXT_MYSQL_EXPORTER_USER` | Usuário do mysqld_exporter (default: `erpnext_exporter`) |
 | `OPENAI_PROXY` | Proxy dedicado para chamadas OpenAI (ex: `http://proxy:3128`) |
 | `HTTP_PROXY` | Proxy global (fallback para OpenAI se `OPENAI_PROXY` não existir) |
 | `HTTPS_PROXY` | Proxy global TLS (fallback para OpenAI se `OPENAI_PROXY` não existir) |

@@ -28,12 +28,9 @@ O logo da Alice é um **"A" estilizado** dentro de um círculo, representando:
 - `Landing.tsx` - Header, hero, cards, footer
 - `App.tsx` - Tela de loading
 
-### ERPNext
-O ERPNext v15 suporta customização de branding via:
 1. **Website Settings** → Brand Image (logo do site público)
 2. **Letter Head** → Logo em documentos impressos
 
-A interface interna do ERPNext mantém o branding padrão.
 
 ## Cores da Marca
 

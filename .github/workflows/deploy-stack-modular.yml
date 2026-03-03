@@ -12,17 +12,14 @@
 #   Nome: INTEGRATIONS_SERVICE_URL
 #   Valor padrão (se não configurada): http://alice-integrations:3005
 #   Quando configurar: ambientes com URL customizada ou acesso externo ao serviço
-#   Descrição: URL do serviço de integrações (Stripe, Twilio, Wise, KuCoin, ERPNext)
 #
 # =============================================================================
 # Descrição: Arquitetura totalmente modular com jobs independentes por stack
 #
 # ARQUITETURA ENTERPRISE (06/01/2026):
 # - Jobs separados por stack (deploy + health + rollback)
-# - Paralelização inteligente (alice + observability + erpnext em paralelo)
 # - Rollback cirúrgico (só reverte stack com falha)
 # - Logs isolados por stack (troubleshooting facilitado)
-# - Produção parcial real (ERPNext falha → Alice continua)
 #
 # SMART DEPLOY (09/01/2026):
 # - smart_deploy=false: Comportamento tradicional (deploya todos selecionados)
@@ -36,13 +33,11 @@
 #   - infra: PostgreSQL, Redis, Qdrant, SearXNG, Tor, Caddy, MinIO
 #   - alice: Frontend, Auth, Chat, RAG, Training, Integrations, GPU Manager
 #   - observability: Prometheus, Grafana, Loki, Jaeger, Langfuse, ClickHouse
-#   - erpnext: MariaDB, Redis Cache/Queue, Backend, Workers (15 containers)
 #   - backup: pgBackRest
 #
 # ORDEM DE DEPLOY:
 #   1. infra (obrigatório primeiro - databases, caches, reverse proxy)
 #   2. drizzle push (migrações de schema)
-#   3. alice + observability + erpnext (PARALELO após infra)
 #   4. backup (paralelo após infra)
 #
 # ROLLBACK CIRÚRGICO:
@@ -54,7 +49,6 @@
 #
 # PARALELIZAÇÃO:
 #   - infra: sempre primeiro (sequencial)
-#   - alice + observability + erpnext + backup: paralelo após infra
 #   - 3x mais rápido que arquitetura monolítica
 #
 # Author: Fillipe Guerra
@@ -70,7 +64,6 @@ on:
   workflow_dispatch:
     inputs:
       stack:
-        description: 'Stack para deploy (infra, alice, observability, erpnext, backup, all)'
         type: choice
         required: true
         default: 'all'
@@ -79,7 +72,6 @@ on:
           - infra
           - alice
           - observability
-          - erpnext
           - backup
       version:
         description: 'Versão para deploy (ex: v1.0.0)'
@@ -157,7 +149,6 @@ jobs:
       deploy_infra: ${{ steps.stacks.outputs.deploy_infra }}
       deploy_alice: ${{ steps.stacks.outputs.deploy_alice }}
       deploy_observability: ${{ steps.stacks.outputs.deploy_observability }}
-      deploy_erpnext: ${{ steps.stacks.outputs.deploy_erpnext }}
       deploy_backup: ${{ steps.stacks.outputs.deploy_backup }}
       # SMART DEPLOY: Status de cada stack no servidor (para logs/debugging)
       # =======================================================================
@@ -174,7 +165,6 @@ jobs:
       infra_status: ${{ steps.parse-health.outputs.infra_status || steps.server-health-default.outputs.infra_status }}
       alice_status: ${{ steps.parse-health.outputs.alice_status || steps.server-health-default.outputs.alice_status }}
       observability_status: ${{ steps.parse-health.outputs.observability_status || steps.server-health-default.outputs.observability_status }}
-      erpnext_status: ${{ steps.parse-health.outputs.erpnext_status || steps.server-health-default.outputs.erpnext_status }}
       backup_status: ${{ steps.parse-health.outputs.backup_status || steps.server-health-default.outputs.backup_status }}
     
     steps:
@@ -339,23 +329,6 @@ jobs:
               "langfuse-db"
             )
             
-            ERPNEXT_CONTAINERS=(
-              "erpnext-mariadb"
-              "erpnext-redis-cache"
-              "erpnext-redis-queue"
-              "erpnext-backend"
-              "erpnext-frontend"
-              "erpnext-websocket"
-              "erpnext-scheduler"
-              "erpnext-worker-default-0"
-              "erpnext-worker-default-1"
-              "erpnext-worker-default-2"
-              "erpnext-worker-short-0"
-              "erpnext-worker-short-1"
-              "erpnext-worker-short-2"
-              "erpnext-worker-long-0"
-              "erpnext-worker-long-1"
-              "erpnext-worker-long-2"
             )
             
             BACKUP_CONTAINERS=(
@@ -372,7 +345,6 @@ jobs:
             INFRA_STATUS=$(check_stack_health "INFRA" "${INFRA_CONTAINERS[@]}")
             ALICE_STATUS=$(check_stack_health "ALICE" "${ALICE_CONTAINERS[@]}")
             OBSERVABILITY_STATUS=$(check_stack_health "OBSERVABILITY" "${OBSERVABILITY_CONTAINERS[@]}")
-            ERPNEXT_STATUS=$(check_stack_health "ERPNEXT" "${ERPNEXT_CONTAINERS[@]}")
             BACKUP_STATUS=$(check_stack_health "BACKUP" "${BACKUP_CONTAINERS[@]}")
             
             # =================================================================
@@ -395,7 +367,6 @@ jobs:
             print_status "INFRA        " "$INFRA_STATUS"
             print_status "ALICE        " "$ALICE_STATUS"
             print_status "OBSERVABILITY" "$OBSERVABILITY_STATUS"
-            print_status "ERPNEXT      " "$ERPNEXT_STATUS"
             print_status "BACKUP       " "$BACKUP_STATUS"
             
             echo "└─────────────────────────────────────────────────────────┘"
@@ -408,7 +379,6 @@ jobs:
             echo "$INFRA_STATUS" > /tmp/smart-deploy/infra_status
             echo "$ALICE_STATUS" > /tmp/smart-deploy/alice_status
             echo "$OBSERVABILITY_STATUS" > /tmp/smart-deploy/observability_status
-            echo "$ERPNEXT_STATUS" > /tmp/smart-deploy/erpnext_status
             echo "$BACKUP_STATUS" > /tmp/smart-deploy/backup_status
             
             echo "✅ Smart Deploy check concluído"
@@ -438,20 +408,17 @@ jobs:
           INFRA_STATUS=$(cat /tmp/smart-deploy-results/infra_status 2>/dev/null || echo "unknown")
           ALICE_STATUS=$(cat /tmp/smart-deploy-results/alice_status 2>/dev/null || echo "unknown")
           OBSERVABILITY_STATUS=$(cat /tmp/smart-deploy-results/observability_status 2>/dev/null || echo "unknown")
-          ERPNEXT_STATUS=$(cat /tmp/smart-deploy-results/erpnext_status 2>/dev/null || echo "unknown")
           BACKUP_STATUS=$(cat /tmp/smart-deploy-results/backup_status 2>/dev/null || echo "unknown")
           
           # Exportar outputs
           echo "infra_status=$INFRA_STATUS" >> "$GITHUB_OUTPUT"
           echo "alice_status=$ALICE_STATUS" >> "$GITHUB_OUTPUT"
           echo "observability_status=$OBSERVABILITY_STATUS" >> "$GITHUB_OUTPUT"
-          echo "erpnext_status=$ERPNEXT_STATUS" >> "$GITHUB_OUTPUT"
           echo "backup_status=$BACKUP_STATUS" >> "$GITHUB_OUTPUT"
           
           # Limpar SSH key
           rm -f ~/.ssh/id_rsa
           
-          echo "📊 Status capturado: INFRA=$INFRA_STATUS, ALICE=$ALICE_STATUS, OBS=$OBSERVABILITY_STATUS, ERP=$ERPNEXT_STATUS, BACKUP=$BACKUP_STATUS"
 
       - name: Parse server health for outputs
         id: parse-health
@@ -462,7 +429,6 @@ jobs:
           echo "infra_status=${{ steps.capture-health.outputs.infra_status }}" >> "$GITHUB_OUTPUT"
           echo "alice_status=${{ steps.capture-health.outputs.alice_status }}" >> "$GITHUB_OUTPUT"
           echo "observability_status=${{ steps.capture-health.outputs.observability_status }}" >> "$GITHUB_OUTPUT"
-          echo "erpnext_status=${{ steps.capture-health.outputs.erpnext_status }}" >> "$GITHUB_OUTPUT"
           echo "backup_status=${{ steps.capture-health.outputs.backup_status }}" >> "$GITHUB_OUTPUT"
 
       - name: Set server health outputs (default if not smart_deploy)
@@ -474,7 +440,6 @@ jobs:
           echo "infra_status=unknown" >> "$GITHUB_OUTPUT"
           echo "alice_status=unknown" >> "$GITHUB_OUTPUT"
           echo "observability_status=unknown" >> "$GITHUB_OUTPUT"
-          echo "erpnext_status=unknown" >> "$GITHUB_OUTPUT"
           echo "backup_status=unknown" >> "$GITHUB_OUTPUT"
           echo "📊 Smart Deploy desabilitado - status não verificado"
 
@@ -490,13 +455,11 @@ jobs:
             INFRA_STATUS="${{ steps.parse-health.outputs.infra_status }}"
             ALICE_STATUS="${{ steps.parse-health.outputs.alice_status }}"
             OBSERVABILITY_STATUS="${{ steps.parse-health.outputs.observability_status }}"
-            ERPNEXT_STATUS="${{ steps.parse-health.outputs.erpnext_status }}"
             BACKUP_STATUS="${{ steps.parse-health.outputs.backup_status }}"
           else
             INFRA_STATUS="unknown"
             ALICE_STATUS="unknown"
             OBSERVABILITY_STATUS="unknown"
-            ERPNEXT_STATUS="unknown"
             BACKUP_STATUS="unknown"
           fi
           
@@ -504,7 +467,6 @@ jobs:
           [ -z "$INFRA_STATUS" ] && INFRA_STATUS="unknown"
           [ -z "$ALICE_STATUS" ] && ALICE_STATUS="unknown"
           [ -z "$OBSERVABILITY_STATUS" ] && OBSERVABILITY_STATUS="unknown"
-          [ -z "$ERPNEXT_STATUS" ] && ERPNEXT_STATUS="unknown"
           [ -z "$BACKUP_STATUS" ] && BACKUP_STATUS="unknown"
           
           # =================================================================
@@ -551,14 +513,12 @@ jobs:
           DEPLOY_INFRA=$(should_deploy "$STACK" "infra" "$INFRA_STATUS")
           DEPLOY_ALICE=$(should_deploy "$STACK" "alice" "$ALICE_STATUS")
           DEPLOY_OBSERVABILITY=$(should_deploy "$STACK" "observability" "$OBSERVABILITY_STATUS")
-          DEPLOY_ERPNEXT=$(should_deploy "$STACK" "erpnext" "$ERPNEXT_STATUS")
           DEPLOY_BACKUP=$(should_deploy "$STACK" "backup" "$BACKUP_STATUS")
           
           # Exportar outputs
           echo "deploy_infra=$DEPLOY_INFRA" >> "$GITHUB_OUTPUT"
           echo "deploy_alice=$DEPLOY_ALICE" >> "$GITHUB_OUTPUT"
           echo "deploy_observability=$DEPLOY_OBSERVABILITY" >> "$GITHUB_OUTPUT"
-          echo "deploy_erpnext=$DEPLOY_ERPNEXT" >> "$GITHUB_OUTPUT"
           echo "deploy_backup=$DEPLOY_BACKUP" >> "$GITHUB_OUTPUT"
           
           # Resumo visual
@@ -581,7 +541,6 @@ jobs:
           print_decision "INFRA        " "$DEPLOY_INFRA" "$INFRA_STATUS"
           print_decision "ALICE        " "$DEPLOY_ALICE" "$ALICE_STATUS"
           print_decision "OBSERVABILITY" "$DEPLOY_OBSERVABILITY" "$OBSERVABILITY_STATUS"
-          print_decision "ERPNEXT      " "$DEPLOY_ERPNEXT" "$ERPNEXT_STATUS"
           print_decision "BACKUP       " "$DEPLOY_BACKUP" "$BACKUP_STATUS"
           
           echo "└─────────────────────────────────────────────────────────┘"
@@ -917,11 +876,6 @@ jobs:
           SECRET_GMAIL_USER: ${{ secrets.GMAIL_USER }}
           SECRET_GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           SECRET_HF_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN }}
-          SECRET_ERPNEXT_MYSQL_ROOT_PASSWORD: ${{ secrets.ERPNEXT_MYSQL_ROOT_PASSWORD }}
-          SECRET_ERPNEXT_MYSQL_EXPORTER_PASSWORD: ${{ secrets.ERPNEXT_MYSQL_EXPORTER_PASSWORD }}
-          SECRET_ERPNEXT_DB_PASSWORD: ${{ secrets.ERPNEXT_DB_PASSWORD }}
-          SECRET_ERPNEXT_ADMIN_PASSWORD: ${{ secrets.ERPNEXT_ADMIN_PASSWORD }}
-          SECRET_ERPNEXT_OAUTH_CLIENT_SECRET: ${{ secrets.ERPNEXT_OAUTH_CLIENT_SECRET }}
           SECRET_REDIS_CACHE_PASSWORD: ${{ secrets.REDIS_CACHE_PASSWORD }}
           SECRET_REDIS_QUEUE_PASSWORD: ${{ secrets.REDIS_QUEUE_PASSWORD }}
           SECRET_STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
@@ -942,8 +896,6 @@ jobs:
           SECRET_KUCOIN_REST_ORDERBOOK_DEPTH: ${{ secrets.KUCOIN_REST_ORDERBOOK_DEPTH }}
           # Secrets adicionais (09/02/2026 - Pente Fino Completo)
           SECRET_BASE_URL: ${{ secrets.BASE_URL }}
-          SECRET_ERPNEXT_API_KEY: ${{ secrets.ERPNEXT_API_KEY }}
-          SECRET_ERPNEXT_API_SECRET: ${{ secrets.ERPNEXT_API_SECRET }}
           SECRET_GH_API_URL: ${{ secrets.GH_API_URL }}
           # URL do serviço de integrações (configurar secret INTEGRATIONS_SERVICE_URL no GitHub)
           SECRET_INTEGRATIONS_SERVICE_URL: ${{ secrets.INTEGRATIONS_SERVICE_URL }}
@@ -958,9 +910,7 @@ jobs:
           export ADMIN_PWD_SECRET="${SECRET_ADMIN_PWD}"
           export GRAFANA_ADMIN_USER_SECRET="${SECRET_GRAFANA_ADMIN_USER}"
           export GRAFANA_ADMIN_PASSWORD_SECRET="${SECRET_GRAFANA_ADMIN_PASSWORD}"
-          export ERPNEXT_ADMIN_PASSWORD_SECRET="${SECRET_ERPNEXT_ADMIN_PASSWORD}"
           export GRAFANA_OAUTH_CLIENT_SECRET="${SECRET_GRAFANA_OAUTH_CLIENT_SECRET}"
-          export ERPNEXT_OAUTH_CLIENT_SECRET="${SECRET_ERPNEXT_OAUTH_CLIENT_SECRET}"
           export QDRANT_API_KEY_SECRET="${SECRET_QDRANT_API_KEY}"
           export SESSION_SECRET_SECRET="${SECRET_SESSION_SECRET}"
           export INTERNAL_API_SECRET_SECRET="${SECRET_INTERNAL_API_SECRET}"
@@ -970,8 +920,6 @@ jobs:
           export MINIO_ROOT_PASSWORD_SECRET="${SECRET_MINIO_ROOT_PASSWORD}"
           export REDIS_CACHE_PASSWORD_SECRET="${SECRET_REDIS_CACHE_PASSWORD}"
           export REDIS_QUEUE_PASSWORD_SECRET="${SECRET_REDIS_QUEUE_PASSWORD}"
-          export ERPNEXT_MYSQL_ROOT_PASSWORD_SECRET="${SECRET_ERPNEXT_MYSQL_ROOT_PASSWORD}"
-          export ERPNEXT_MYSQL_EXPORTER_PASSWORD_SECRET="${SECRET_ERPNEXT_MYSQL_EXPORTER_PASSWORD}"
           export CORS_ORIGINS_SECRET="${SECRET_CORS_ORIGINS}"
           export OPENAI_API_KEY_SECRET="${SECRET_OPENAI_API_KEY}"
           export GH_PAT_SECRET="${SECRET_GH_PAT}"
@@ -980,7 +928,6 @@ jobs:
           export LANGFUSE_DB_USER_SECRET="${SECRET_LANGFUSE_DB_USER}"
           export LANGFUSE_DB_PASSWORD_SECRET="${SECRET_LANGFUSE_DB_PASSWORD}"
           export LANGFUSE_DB_NAME_SECRET="${SECRET_LANGFUSE_DB_NAME}"
-          export ERPNEXT_DB_PASSWORD_SECRET="${SECRET_ERPNEXT_DB_PASSWORD}"
           export STRIPE_WEBHOOK_BASE_URL_SECRET=""  # STRIPE_WEBHOOK_BASE_URL não existe no GitHub; generate-env-prod.sh usa fallback https://yesyoudeserve.duckdns.org
           export WISE_SANDBOX_SECRET="${SECRET_WISE_SANDBOX}"
           
@@ -1038,8 +985,6 @@ jobs:
           
           # Secrets adicionais (09/02/2026 - existem no GitHub mas não eram passados)
           export BASE_URL="${SECRET_BASE_URL:-https://yesyoudeserve.duckdns.org}"
-          export ERPNEXT_API_KEY_SECRET="${SECRET_ERPNEXT_API_KEY}"
-          export ERPNEXT_API_SECRET_SECRET="${SECRET_ERPNEXT_API_SECRET}"
           export GH_API_URL_SECRET="${SECRET_GH_API_URL:-https://api.github.com}"
           # NOTA: OPENAI_ADMIN_KEY existe no GitHub mas não é usado pelo sistema atualmente
           # URL do serviço de integrações (fallback para URL interna Docker se secret não configurada)
@@ -1111,7 +1056,6 @@ jobs:
             alice)
               IMAGES=("${ALICE_CUSTOM_IMAGES[@]}")
               ;;
-            observability|erpnext)
               IMAGES=()  # Usam imagens públicas
               ;;
             backup)
@@ -1221,7 +1165,6 @@ jobs:
           echo "   PROMETHEUS: ${PROMETHEUS_VERSION}"
           echo "   GRAFANA: ${GRAFANA_VERSION}"
           echo "   LANGFUSE: ${LANGFUSE_VERSION}"
-          echo "   ERPNEXT: ${ERPNEXT_VERSION}"
           echo ""
           
           # INFRA Stack (docker-compose.infra.yml)
@@ -1252,11 +1195,6 @@ jobs:
             "langfuse/langfuse-worker:${LANGFUSE_WORKER_VERSION}"
           )
           
-          # ERPNEXT Stack (docker-compose.erpnext.yml)
-          ERPNEXT_IMAGES=(
-            "mariadb:${MARIADB_VERSION}"
-            "redis:${REDIS_ERPNEXT_VERSION}"
-            "frappe/erpnext:${ERPNEXT_VERSION}"
           )
           
           # Determinar imagens a validar por stack
@@ -1268,11 +1206,8 @@ jobs:
             observability)
               IMAGES_TO_CHECK=("${OBSERVABILITY_IMAGES[@]}")
               ;;
-            erpnext)
-              IMAGES_TO_CHECK=("${ERPNEXT_IMAGES[@]}")
               ;;
             all)
-              IMAGES_TO_CHECK=("${INFRA_IMAGES[@]}" "${OBSERVABILITY_IMAGES[@]}" "${ERPNEXT_IMAGES[@]}")
               ;;
             alice|backup)
               echo "ℹ️ Stack $STACK usa apenas imagens custom (GHCR)"
@@ -1584,7 +1519,6 @@ jobs:
             '' \
             '  echo "🌐 Removendo redes customizadas..."' \
             '  docker network rm alice-network 2>/dev/null || true' \
-            '  docker network rm erpnext-network 2>/dev/null || true' \
             '' \
             '  echo "🧹 Limpeza geral do Docker..."' \
             '  docker system prune -af --volumes 2>/dev/null || true' \
@@ -2303,11 +2237,7 @@ jobs:
               echo "   ✅ alice-network existe"
             fi
             
-            if ! docker network inspect erpnext-network > /dev/null 2>&1; then
-              echo "   📝 Criando network erpnext-network..."
-              docker network create --driver bridge erpnext-network
             else
-              echo "   ✅ erpnext-network existe"
             fi
             
             # =========================================================
@@ -3248,11 +3178,8 @@ jobs:
               echo "   ✅ alice-network OK"
             fi
             
-            if ! docker network inspect erpnext-network >/dev/null 2>&1; then
-              echo "   ❌ erpnext-network não existe"
               ERRORS=$((ERRORS + 1))
             else
-              echo "   ✅ erpnext-network OK"
             fi
             
             # =================================================================
@@ -3276,7 +3203,6 @@ jobs:
             echo "   ✅ Prometheus: 65534:65534"
             echo "   ✅ Loki: 10001:10001"
             echo "   ✅ alice-network: OK"
-            echo "   ✅ erpnext-network: OK"
             echo ""
 
   # ===========================================================================
@@ -4650,7 +4576,6 @@ jobs:
                 fi
               done
 
-              for network in "alice-network" "erpnext-network"; do
                 if docker network inspect "$network" >/dev/null 2>&1; then
                   ATTACHED=$(docker network inspect -f '{{len .Containers}}' "$network" 2>/dev/null || echo "0")
                   if [ "$ATTACHED" = "0" ]; then
@@ -4901,7 +4826,6 @@ jobs:
   
   # ===========================================================================
   # ALICE STACK - Deploy + Health + Rollback
-  # Roda em PARALELO com observability e erpnext após drizzle push
   # ===========================================================================
   
   deploy-alice:
@@ -5354,7 +5278,6 @@ jobs:
                   echo "❌ ERRO: Container $container não encontrado!"
                   echo ""
                   echo "📋 Containers existentes:"
-                  docker ps -a --format "table {{.Names}}\t{{.Status}}" | grep -E "alice-|erpnext-|grafana|prometheus" || echo "   (nenhum encontrado)"
                   exit 1
                 elif [ "$STATUS" = "unhealthy" ]; then
                   # CAPTURAR ERRO REAL DO HEALTHCHECK
@@ -5594,7 +5517,6 @@ jobs:
   # ===========================================================================
   # CORREÇÃO PR#106 (10/01/2026): Ordem Sequencial de Deploy
   # ===========================================================================
-  # ORDEM: INFRA → Drizzle → ALICE → OBSERVABILITY → ERPNEXT → BACKUP
   # 
   # - Espera ciclo completo de ALICE (deploy → health → rollback) terminar
   # - Usa always() para rodar mesmo se ALICE falhou
@@ -5693,7 +5615,6 @@ jobs:
               "$DASH_DST/rag-embeddings" \
               "$DASH_DST/gpu" \
               "$DASH_DST/services" \
-              "$DASH_DST/erpnext" \
               "$DASH_DST/infra-hosts" \
               "$DASH_DST/backup" \
               "$DASH_DST/training"
@@ -5712,7 +5633,6 @@ jobs:
             cp -f "$DASH_SRC/alice-rag.json" "$DASH_DST/rag-embeddings/alice-rag.json"
             cp -f "$DASH_SRC/alice-gpu-manager.json" "$DASH_DST/gpu/alice-gpu-manager.json"
             cp -f "$DASH_SRC/alice-services.json" "$DASH_DST/services/alice-services.json"
-            cp -f "$DASH_SRC/alice-erpnext.json" "$DASH_DST/erpnext/alice-erpnext.json"
             cp -f "$DASH_SRC/alice-infrastructure.json" "$DASH_DST/infra-hosts/alice-infrastructure.json"
             cp -f "$DASH_SRC/alice-backup.json" "$DASH_DST/backup/alice-backup.json"
             cp -f "$DASH_SRC/alice-training.json" "$DASH_DST/training/alice-training.json"
@@ -6323,11 +6243,9 @@ jobs:
             echo "⚠️  Outros stacks NÃO foram afetados"
 
   # ===========================================================================
-  # ERPNEXT STACK - Deploy + Health + Rollback
   # ===========================================================================
   # CORREÇÃO PR#106 (10/01/2026): Ordem Sequencial de Deploy
   # ===========================================================================
-  # ORDEM: INFRA → Drizzle → ALICE → OBSERVABILITY → ERPNEXT → BACKUP
   # 
   # - Espera ciclo completo de OBSERVABILITY (deploy → health → rollback) terminar
   # - Usa always() para rodar mesmo se OBSERVABILITY falhou
@@ -6337,8 +6255,6 @@ jobs:
   # REF: CLAUDE.md Regra 6 (Enterprise-grade)
   # ===========================================================================
   
-  deploy-erpnext:
-    name: Deploy Stack ERPNEXT
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, prepare, deploy-infra, health-infra, drizzle-push, deploy-observability, health-observability, rollback-observability]
     outputs:
@@ -6348,7 +6264,6 @@ jobs:
     # always() permite rodar mesmo se OBSERVABILITY falhou
     if: |
       always() &&
-      needs.validate.outputs.deploy_erpnext == 'true' &&
       needs.prepare.result == 'success' &&
       needs.deploy-infra.result != 'failure' &&
       (needs.health-infra.result == 'success' || needs.health-infra.result == 'skipped') &&
@@ -6357,7 +6272,6 @@ jobs:
     timeout-minutes: 25
     
     steps:
-      - name: Deploy stack erpnext via SSH
         id: deploy
         uses: appleboy/ssh-action@v1.2.2
         with:
@@ -6388,7 +6302,6 @@ jobs:
             LOG_DIR="/opt/alice/logs"
             RUN_ID="${{ github.run_id }}"
             RUN_ATTEMPT="${{ github.run_attempt }}"
-            LOG_FILE="${LOG_DIR}/deploy-erpnext-${RUN_ID}-${RUN_ATTEMPT}.log"
             
             mkdir -p "$LOG_DIR"
             touch "$LOG_FILE"
@@ -6429,18 +6342,13 @@ jobs:
             echo ""
             
             echo "══════════════════════════════════════════════════════════════════"
-            echo "🚀 DEPLOYING ERPNEXT STACK"
             echo "══════════════════════════════════════════════════════════════════"
             echo ""
-            echo "📦 Containers: mariadb, redis-cache, redis-queue, backend, frontend, websocket, scheduler, workers"
             echo "📅 Versão: ${{ needs.validate.outputs.version }}"
             echo "🕐 Início: $(date '+%Y-%m-%d %H:%M:%S')"
             echo ""
             
             # Salvar versão anterior
-            if [ -f /opt/alice/versions/erpnext.current ]; then
-              cp /opt/alice/versions/erpnext.current /opt/alice/versions/erpnext.previous
-              echo "📋 Versão anterior: $(cat /opt/alice/versions/erpnext.previous)"
             else
               echo "📋 Primeiro deploy (sem versão anterior)"
             fi
@@ -6450,7 +6358,6 @@ jobs:
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "📥 PULL INTELIGENTE: Verificando imagens..."
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            IMAGES=$(docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.erpnext.yml config --images 2>/dev/null | sort -u)
             TOTAL=$(echo "$IMAGES" | wc -l)
             COUNT=0
             FAILED=""
@@ -6473,22 +6380,18 @@ jobs:
               exit 1
             fi
             echo ""
-            echo "✅ Pull ERPNEXT concluído ($TOTAL imagens verificadas)"
             echo ""
 
             # Deploy
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "🚀 UP: Iniciando containers..."
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            if ! docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.erpnext.yml up -d --remove-orphans 2>&1; then
               echo ""
               echo "❌ ERRO: Falha no docker compose up!"
               echo ""
               echo "📋 Status dos containers:"
-              docker ps -a --filter "name=erpnext-" --format "table {{.Names}}\t{{.Status}}" || true
               echo ""
               echo "📋 Logs dos containers com erro (últimas 30 linhas cada):"
-              for c in erpnext-mariadb erpnext-redis-cache erpnext-redis-queue erpnext-backend erpnext-frontend; do
                 if docker ps -a --format '{{.Names}}' | grep -q "^${c}$"; then
                   echo ""
                   echo "── $c ──"
@@ -6503,7 +6406,6 @@ jobs:
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "📋 STATUS: Containers após deploy"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            docker ps -a --filter "name=erpnext-" --format "table {{.Names}}\t{{.Status}}" || echo "   (nenhum container encontrado)"
             echo ""
             
             # =================================================================
@@ -6512,7 +6414,6 @@ jobs:
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "🔍 VERIFICAÇÃO INICIAL DE SAÚDE (quick check):"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            ERP_CONTAINERS="erpnext-mariadb erpnext-redis-cache erpnext-redis-queue erpnext-backend erpnext-frontend erpnext-websocket erpnext-scheduler erpnext-worker-default erpnext-worker-short erpnext-worker-long"
             ALL_RUNNING=true
             for c in $ERP_CONTAINERS; do
               if docker ps -a --format '{{.Names}}' | grep -q "^${c}$"; then
@@ -6541,25 +6442,21 @@ jobs:
             echo ""
             
             # Salvar versão atual
-            echo "${{ needs.validate.outputs.version }}" > /opt/alice/versions/erpnext.current
             
             # Calcular tempo de deploy
             DEPLOY_END=$(date +%s)
             DEPLOY_DURATION=$((DEPLOY_END - DEPLOY_START))
             
             echo "══════════════════════════════════════════════════════════════════"
-            echo "✅ ERPNEXT STACK DEPLOYED"
             echo "   ⏱️  Tempo total: ${DEPLOY_DURATION}s"
             echo "══════════════════════════════════════════════════════════════════"
 
-      - name: Marcar deploy executado (ERPNEXT)
         id: deploy_executed
         if: success()
         shell: bash
         run: |
           echo "deploy_executed=true" >> "$GITHUB_OUTPUT"
 
-      - name: Diagnóstico rápido ERPNEXT (na tela)
         if: failure()
         uses: appleboy/ssh-action@v1.2.2
         with:
@@ -6570,10 +6467,7 @@ jobs:
           command_timeout: 3m
           script: |
             set +e
-            echo "🧭 DIAGNÓSTICO RÁPIDO - ERPNEXT (tail na tela)"
             echo "================================================"
-            docker ps -a --filter "name=erpnext-" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" || true
-            for c in erpnext-configurator erpnext-create-site erpnext-mariadb erpnext-redis-cache erpnext-redis-queue erpnext-backend erpnext-frontend erpnext-websocket erpnext-scheduler erpnext-worker-default erpnext-worker-short erpnext-worker-long; do
               if docker ps -a --format '{{.Names}}' | grep -q "^${c}$"; then
                 echo ""
                 echo "── $c (tail 80) ──"
@@ -6581,7 +6475,6 @@ jobs:
               fi
             done
 
-      - name: Capturar logs de falha ERPNext (servidor)
         if: failure()
         uses: appleboy/ssh-action@v1.2.2
         env:
@@ -6597,23 +6490,18 @@ jobs:
           script: |
             set -euo pipefail
             LOG_ROOT="/tmp/deploy-logs"
-            LOG_DIR="${LOG_ROOT}/erpnext"
             RUN_ID="${RUN_ID:-unknown}"
             RUN_ATTEMPT="${RUN_ATTEMPT:-0}"
-            ARCHIVE_NAME="erpnext-deploy-${RUN_ID}-${RUN_ATTEMPT}.tar.gz"
             ARCHIVE_PATH="${LOG_ROOT}/${ARCHIVE_NAME}"
 
             mkdir -p "$LOG_DIR"
 
             {
               echo "timestamp: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
-              echo "stack: erpnext"
               echo "version: ${{ needs.validate.outputs.version }}"
             } > "${LOG_DIR}/meta.txt"
 
-            docker ps -a --filter "name=erpnext-" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" > "${LOG_DIR}/containers.txt" 2>&1 || true
 
-            ERP_CONTAINERS="erpnext-configurator erpnext-create-site erpnext-mariadb erpnext-redis-cache erpnext-redis-queue erpnext-backend erpnext-frontend erpnext-websocket erpnext-scheduler erpnext-worker-default erpnext-worker-short erpnext-worker-long"
             for c in $ERP_CONTAINERS; do
               if docker ps -a --format '{{.Names}}' | grep -q "^${c}$"; then
                 docker logs "$c" --tail 500 > "${LOG_DIR}/${c}.log" 2>&1 || true
@@ -6623,18 +6511,13 @@ jobs:
 
             if [ -d /opt/alice/app/infra/docker/stacks ]; then
               cd /opt/alice/app/infra/docker/stacks
-              docker compose -p alice-erpnext --env-file ../.env.prod \
                 -f docker-compose.base.yml \
-                -f docker-compose.erpnext.yml ps > "${LOG_DIR}/compose-ps.txt" 2>&1 || true
             else
               echo "Diretório /opt/alice/app/infra/docker/stacks não existe" > "${LOG_DIR}/compose-ps.txt"
             fi
 
-            tar -czf "$ARCHIVE_PATH" -C "$LOG_ROOT" erpnext
             chmod 644 "$ARCHIVE_PATH"
-            echo "$ARCHIVE_PATH" > "${LOG_ROOT}/erpnext-latest.path"
 
-      - name: Baixar logs de falha ERPNext (SCP)
         if: failure()
         shell: bash
         env:
@@ -6649,28 +6532,18 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
 
-          mkdir -p ./artifacts/erpnext
-          ARCHIVE_NAME="erpnext-deploy-${RUN_ID}-${RUN_ATTEMPT}.tar.gz"
           scp -o StrictHostKeyChecking=no -o ConnectTimeout=30 \
             "$SSH_USER@$SSH_HOST:/tmp/deploy-logs/$ARCHIVE_NAME" \
-            "./artifacts/erpnext/$ARCHIVE_NAME" 2>/dev/null || echo "Falha ao baixar logs ERPNext"
 
           rm -f ~/.ssh/id_rsa
 
-      - name: Upload logs de falha ERPNext
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: erpnext-deploy-logs-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ./artifacts/erpnext/*.tar.gz
           if-no-files-found: warn
           retention-days: 30
 
-  health-erpnext:
-    name: Health Check ERPNEXT
     runs-on: [self-hosted, linux, deploy]
-    needs: [validate, deploy-erpnext]
-    if: ${{ always() && needs.deploy-erpnext.result == 'success' }}
     timeout-minutes: 7
     
     steps:
@@ -6685,18 +6558,14 @@ jobs:
           command_timeout: 7m
           script: |
             set -euo pipefail
-            echo "🏥 Checking ERPNEXT stack health..."
             
             # CRITICAL FIX (06/01/2026): Adicionar todos os 10 containers com healthcheck
             # Faltavam: websocket (Socket.IO), scheduler (cron), workers (job queues)
-            CONTAINERS="erpnext-mariadb erpnext-redis-cache erpnext-redis-queue erpnext-backend erpnext-frontend erpnext-websocket erpnext-scheduler erpnext-worker-default erpnext-worker-short erpnext-worker-long"
             # =================================================================
             # CORREÇÃO PR#100 (09/01/2026): Alinhar workflow timeout com Docker healthcheck
             # =================================================================
-            # PROBLEMA: Docker healthcheck (erpnext-backend) tem:
             #           start_period: 120s + (15 retries × 30s) = 570s
             #           Workflow tinha MAX_RETRIES=25 × 10s = 250s (muito curto!)
-            #           erpnext-backend ficava "starting" e workflow expirava
             # CORREÇÃO PR#104: Reduzir para 15 tentativas (5 min total)
             # Problema real NÃO é timeout - são healthchecks com bugs
             # =================================================================
@@ -6721,7 +6590,6 @@ jobs:
                   echo "❌ ERRO: Container $container não encontrado!"
                   echo ""
                   echo "📋 Containers existentes:"
-                  docker ps -a --format "table {{.Names}}\t{{.Status}}" | grep -E "erpnext-" || echo "   (nenhum encontrado)"
                   exit 1
                 elif [ "$STATUS" = "unhealthy" ]; then
                   HEALTH_LOG=$(docker inspect --format='{{range .State.Health.Log}}{{.Output}}{{end}}' $container 2>/dev/null | tail -c 500)
@@ -6766,19 +6634,13 @@ jobs:
             done
             
             echo ""
-            echo "✅ Todos os containers do ERPNEXT stack estão healthy"
 
-  rollback-erpnext:
-    name: Rollback ERPNEXT
     runs-on: [self-hosted, linux, deploy]
-    needs: [validate, prepare, deploy-erpnext, health-erpnext]
     # CRITICAL: 3 modos de rollback
     # 1) MANUAL: Usuário solicitou (is_rollback=true) → usar rollback_version
     # 2) AUTOMÁTICO: Deploy falhou (timeout, erro) → cleanup/rollback
     # 3) AUTOMÁTICO: Deploy sucesso mas health falhou → usar .previous
     if: |
-      (needs.validate.outputs.is_rollback == 'true' && needs.validate.outputs.deploy_erpnext == 'true' && needs.prepare.result == 'success') ||
-      (failure() && (needs.deploy-erpnext.result == 'failure' || (needs.deploy-erpnext.result == 'success' && needs.health-erpnext.result == 'failure')))
     timeout-minutes: 7
     
     steps:
@@ -6797,14 +6659,11 @@ jobs:
           script: |
             set -euo pipefail
             # =================================================================
-            # SEÇÃO 2.4: Surgical Rollback for ERPNEXT Stack
             # =================================================================
             # CORREÇÃO PR#95 (09/01/2026): Suporte a primeiro deploy
             # Em primeiro deploy não existe versão anterior - apenas limpa
             # =================================================================
-            echo "🔄 ROLLBACK CIRÚRGICO - Stack ERPNEXT"
             echo "========================================"
-            echo "⚠️  ERPNext pode falhar SEM afetar Alice - design proposital"
             
             # Determinar modo: MANUAL (versão específica), AUTO (versão anterior), ou CLEANUP (primeiro deploy)
             ROLLBACK_MODE="cleanup"  # Default para primeiro deploy
@@ -6814,8 +6673,6 @@ jobs:
               ROLLBACK_MODE="manual"
               TARGET_VERSION="${ROLLBACK_VERSION}"
               echo "📌 ROLLBACK MANUAL para versão: $TARGET_VERSION"
-            elif [ -f /opt/alice/versions/erpnext.previous ]; then
-              TARGET_VERSION=$(cat /opt/alice/versions/erpnext.previous)
               if [ -n "$TARGET_VERSION" ]; then
                 ROLLBACK_MODE="auto"
                 echo "📌 ROLLBACK AUTOMÁTICO para versão anterior: $TARGET_VERSION"
@@ -6831,32 +6688,14 @@ jobs:
             cd /opt/alice/app/infra/docker/stacks
             
             # STAGE 1: Stop and Remove via Docker Compose
-            echo "🛑 Stage 1: Stopping ERPNEXT stack containers..."
-            docker compose -p alice-erpnext --env-file ../.env.prod \
                            -f docker-compose.base.yml \
-                           -f docker-compose.erpnext.yml \
                            down --remove-orphans --timeout 30 2>&1 || true
             
             # STAGE 2: Force Remove All Containers
             echo ""
-            echo "🧹 Stage 2: Force cleaning ALL ERPNEXT containers..."
-            ERPNEXT_CONTAINERS=(
-              "erpnext-mariadb"
-              "erpnext-redis-cache"
-              "erpnext-redis-queue"
-              "erpnext-backend"
-              "erpnext-frontend"
-              "erpnext-websocket"
-              "erpnext-scheduler"
-              "erpnext-worker-default"
-              "erpnext-worker-short"
-              "erpnext-worker-long"
-              "erpnext-configurator"
-              "erpnext-create-site"
             )
             
             REMOVED_COUNT=0
-            for container in "${ERPNEXT_CONTAINERS[@]}"; do
               if docker ps -a --format '{{.Names}}' | grep -q "^${container}$"; then
                 echo "   🗑️  Removing: $container"
                 docker rm -f "$container" 2>/dev/null || true
@@ -6871,18 +6710,14 @@ jobs:
             echo ""
             echo "🧪 Stage 3: Validating clean state..."
             REMAINING=0
-            for container in "${ERPNEXT_CONTAINERS[@]}"; do
               if docker ps -a --format '{{.Names}}' | grep -q "^${container}$"; then
                 REMAINING=$((REMAINING + 1))
                 echo "   ⚠️  Container ainda existe: $container"
               fi
             done
             if [ "$REMAINING" -eq 0 ]; then
-              echo "   ✅ All ERPNEXT containers cleaned"
             else
-              echo "   ⚠️  WARNING: $REMAINING ERPNEXT containers still present"
               echo "   🔄 Forcing removal..."
-              for container in "${ERPNEXT_CONTAINERS[@]}"; do
                 docker rm -f "$container" 2>/dev/null || true
               done
             fi
@@ -6893,7 +6728,6 @@ jobs:
               echo "========================================"
               echo "🐳 Deploying rollback version: $TARGET_VERSION"
               echo "========================================"
-              echo "   NOTE: ERPNEXT uses public Frappe images only (no IMAGE_TAG)"
               
               # =================================================================
               # ROLLBACK LOCAL (08/02/2026): Usa imagens locais, fallback pull
@@ -6901,7 +6735,6 @@ jobs:
               echo ""
               echo "🔍 Verificando imagens locais para rollback..."
               MISSING_IMAGES=0
-              for img in $(docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.erpnext.yml config --images 2>/dev/null); do
                 if ! docker image inspect "$img" >/dev/null 2>&1; then
                   echo "   ⚠️  Imagem não encontrada localmente: $img"
                   MISSING_IMAGES=$((MISSING_IMAGES + 1))
@@ -6910,16 +6743,13 @@ jobs:
               
               if [ "$MISSING_IMAGES" -gt 0 ]; then
                 echo "   📥 $MISSING_IMAGES imagens faltando. Tentando pull como fallback..."
-                docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.erpnext.yml pull 2>&1 || {
                   echo "   ⚠️  Pull falhou. Rollback usará imagens disponíveis localmente."
                 }
               else
                 echo "   ✅ Todas as imagens encontradas localmente"
               fi
               
-              docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.erpnext.yml up -d --remove-orphans
               
-              echo "$TARGET_VERSION" > /opt/alice/versions/erpnext.current
               
               echo ""
               echo "✅ ROLLBACK CONCLUÍDO"
@@ -6927,9 +6757,7 @@ jobs:
             else
               echo ""
               echo "✅ CLEANUP CONCLUÍDO"
-              echo "   Containers ERPNEXT removidos"
               echo "   Servidor limpo para nova tentativa de deploy"
-              rm -f /opt/alice/versions/erpnext.current 2>/dev/null || true
             fi
             
             echo "⚠️  Outros stacks NÃO foram afetados (Alice continua rodando)"
@@ -6939,10 +6767,7 @@ jobs:
   # ===========================================================================
   # CORREÇÃO PR#106 (10/01/2026): Ordem Sequencial de Deploy
   # ===========================================================================
-  # ORDEM: INFRA → Drizzle → ALICE → OBSERVABILITY → ERPNEXT → BACKUP
   # 
-  # - Espera ciclo completo de ERPNEXT (deploy → health → rollback) terminar
-  # - Usa always() para rodar mesmo se ERPNEXT falhou
   # - ÚNICA dependência real: health-infra == success
   # - Stacks são AUTÔNOMOS entre si, só dependem de INFRA
   #
@@ -6952,12 +6777,9 @@ jobs:
   deploy-backup:
     name: Deploy Stack BACKUP
     runs-on: [self-hosted, linux, deploy]
-    needs: [validate, prepare, deploy-infra, health-infra, drizzle-push, deploy-erpnext, health-erpnext, rollback-erpnext]
     outputs:
       deploy_executed: ${{ steps.deploy_executed.outputs.deploy_executed }}
-    # ORDEM SEQUENCIAL: Espera ERPNEXT terminar (deploy/health/rollback)
     # DEPENDÊNCIA REAL: Apenas health-infra precisa ser success
-    # always() permite rodar mesmo se ERPNEXT falhou
     if: |
       always() &&
       needs.validate.outputs.deploy_backup == 'true' &&
@@ -7517,7 +7339,6 @@ jobs:
   notify:
     name: Notify & Report
     runs-on: [self-hosted, linux, deploy]
-    needs: [validate, prepare, deploy-infra, health-infra, drizzle-push, deploy-alice, deploy-observability, deploy-erpnext, deploy-backup, health-alice, health-observability, health-erpnext, health-backup, rollback-infra, rollback-alice, rollback-observability, rollback-erpnext, rollback-backup]
     if: always()
     timeout-minutes: 3
     
@@ -7596,10 +7417,6 @@ jobs:
           fi
           echo "| **OBSERVABILITY** | $OBS_DEPLOY | $OBS_HEALTH | $OBS_ROLLBACK | $OBS_STATUS |" >> $GITHUB_STEP_SUMMARY
           
-          # ERPNEXT
-          ERP_DEPLOY="${{ needs.deploy-erpnext.result || 'skipped' }}"
-          ERP_HEALTH="${{ needs.health-erpnext.result || 'skipped' }}"
-          ERP_ROLLBACK="${{ needs.rollback-erpnext.result || 'skipped' }}"
           if [ "$ERP_HEALTH" = "success" ]; then
             ERP_STATUS="✅ HEALTHY"
           elif [ "$ERP_ROLLBACK" = "success" ]; then
@@ -7609,7 +7426,6 @@ jobs:
           else
             ERP_STATUS="❌ FAILED (não afeta Alice)"
           fi
-          echo "| **ERPNEXT** | $ERP_DEPLOY | $ERP_HEALTH | $ERP_ROLLBACK | $ERP_STATUS |" >> $GITHUB_STEP_SUMMARY
           
           # BACKUP
           BAK_DEPLOY="${{ needs.deploy-backup.result || 'skipped' }}"
@@ -7631,9 +7447,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Benefícios dessa arquitetura:**" >> $GITHUB_STEP_SUMMARY
           echo "- ✅ **Rollback Cirúrgico**: Cada stack rola back independentemente" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ **Paralelização**: Alice + Observability + ERPNext rodam em paralelo (3x mais rápido)" >> $GITHUB_STEP_SUMMARY
           echo "- ✅ **Logs Isolados**: Troubleshooting facilitado por stack" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ **Produção Parcial Real**: ERPNext pode falhar sem afetar Alice" >> $GITHUB_STEP_SUMMARY
           echo "- ✅ **Health Checks Inteligentes**: Retry logic com timeout por stack" >> $GITHUB_STEP_SUMMARY
           echo "- ✅ **Zero Dependências**: Stacks não se afetam mutuamente" >> $GITHUB_STEP_SUMMARY
           

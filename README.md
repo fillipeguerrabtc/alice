@@ -34,7 +34,6 @@
 | **Deduplicação Semântica** | SemHash para filtragem de dados duplicados no treinamento |
 | **Multi-tenant** | Suporte a múltiplas organizações com agentes IA especializados |
 | **RAG Agentic** | Busca híbrida (interna + SearXNG) com classificador inteligente |
-| **Modo Agentic** | Execução real de tarefas (ERPNext, pagamentos, stack ops) com auditoria |
 | **Stack Ops** | Deploy/rollback via GitHub Actions com governança |
 | **Enterprise RBAC** | Controle de acesso granular com 6 roles hierárquicas |
 | **Gestão de Usuários/Grupos/Permissões** | Painel dedicado com CRUD, criação admin-only e atribuição por role |
@@ -114,7 +113,6 @@ A plataforma possui **3 sistemas independentes** que requerem credenciais de adm
 |---------|----------|-----------------|------------|
 | **Alice Auth Service** | `ADMIN_USER` (email obrigatório) | `ADMIN_PWD` | Email válido (ex: admin@dominio.com), senha mín. 8 chars |
 | **Grafana 12** | `GRAFANA_ADMIN_USER` (qualquer string) | `GRAFANA_ADMIN_PASSWORD` | Username customizável, senha recomendada 8+ chars |
-| **ERPNext 15** | `Administrator` (fixo) | `ERPNEXT_ADMIN_PASSWORD` | Username não pode mudar (Frappe Framework), senha mín. 8 chars |
 
 ### SSO 100% Automatizado (31/12/2025)
 
@@ -123,11 +121,9 @@ O deploy configura SSO automaticamente - **não é necessário nenhum passo manu
 | Secret Pré-Definido | Propósito |
 |---------------------|-----------|
 | `GRAFANA_OAUTH_CLIENT_SECRET` | OAuth para Grafana → Alice IdP |
-| `ERPNEXT_OAUTH_CLIENT_SECRET` | OAuth para ERPNext → Alice IdP |
 
 **Fluxo pós-deploy:**
 1. ✅ Grafana exibe botão "Login com Alice Enterprise" automaticamente
-2. ✅ ERPNext pode usar SSO via Alice (requer ativação no painel admin)
 3. ✅ Admins locais funcionam como fallback de emergência
 
 ### Variáveis de Ambiente
@@ -149,9 +145,7 @@ Consulte [docs/SECRETS.md](docs/SECRETS.md) para a lista completa de secrets nec
 
 | Diretório | Propósito |
 |-----------|-----------|
-| `/opt/alice/data` | Dados PostgreSQL, MariaDB, Redis |
 | `/opt/alice/uploads` | Uploads RAG (imagens, áudios e documentos) |
-| `/opt/alice/backups` | Backups locais (pgBackRest, MariaDB, Redis) |
 
 ### Pipeline CI/CD Enterprise Modular v3.0.0 (06/01/2026)
 
@@ -217,8 +211,6 @@ Consulte [docs/SECRETS.md](docs/SECRETS.md) para a lista completa de secrets nec
 │             ┌─────────────────┼─────────────────┬─────────────┐   │
 │             │                 │                 │             │   │
 │      ┌──────▼──────┐   ┌──────▼──────┐   ┌──────▼──────┐   ┌▼┐  │
-│      │deploy-alice │   │deploy-observ│   │deploy-erpnext│   │B│  │
-│      │health-alice │   │health-observ│   │health-erpnext│   │A│  │
 │      │rollback-alie│   │rollback-obs │   │rollback-erpnx│   │C│  │
 │      └─────────────┘   └─────────────┘   └─────────────┘   └─┘  │
 │                                                                    │
@@ -246,10 +238,7 @@ Consulte [docs/SECRETS.md](docs/SECRETS.md) para a lista completa de secrets nec
 - ✅ **Disparo Automático**: Deploy disparado automaticamente após sucesso
 
 **Características Enterprise Deploy Modular (`deploy-stack-modular.yml`):**
-- ✅ **5 Stacks Independentes**: INFRA, ALICE, OBSERVABILITY, ERPNEXT, BACKUP
-- ✅ **Paralelização Real**: Alice + Observability + ERPNext + Backup em PARALELO após INFRA
 - ✅ **Rollback Cirúrgico**: Só reverte stack com falha (outros continuam)
-- ✅ **Produção Parcial**: ERPNext falha → Alice continua 100% operacional
 - ✅ **Isolamento**: Docker Compose projects (`-p alice-{stack}`)
 - ✅ **External Volumes/Networks**: Dados compartilhados preservados entre deploys/rollbacks
 - ✅ **Health Checks**: 50 containers verificados com retry logic (30-45x)
@@ -260,7 +249,6 @@ Consulte [docs/SECRETS.md](docs/SECRETS.md) para a lista completa de secrets nec
 |---------|-----------|-------|
 | CI | Validação (typecheck, lint, trivy) | ~3min |
 | Release | Build 16 imagens + GitHub Release | ~5-10min |
-| Deploy INFRA/OBSERVABILITY/ERPNEXT/BACKUP | 4 stacks standard | **~10min** |
 | Deploy ALICE | Stack com GPU images | **~20-25min** |
 | Rollback | Stack específico | **Cirúrgico** 🎯 |
 
@@ -286,7 +274,6 @@ Consulte [docs/SECRETS.md](docs/SECRETS.md) para a lista completa de secrets nec
 |-------|---------------------|
 | INFRA | `REDIS_ALICE_VERSION`, `QDRANT_VERSION`, `SEARXNG_VERSION`, `MINIO_*` |
 | OBSERVABILITY | `PROMETHEUS_VERSION`, `GRAFANA_VERSION`, `LANGFUSE_VERSION`, etc |
-| ERPNEXT | `ERPNEXT_VERSION`, `MARIADB_VERSION`, `REDIS_ERPNEXT_VERSION` |
 
 **GPU Manager Service (v4.0.0):**
 - Arquitetura simplificada: todos os serviços GPU rodam simultaneamente (15GB de 20GB VRAM)
@@ -334,7 +321,6 @@ Host alice-prod
 | **Alice Dashboard** | https://yesyoudeserve.duckdns.org/dashboard | Painel administrativo |
 | **Alice Trading** | https://yesyoudeserve.duckdns.org/trading | Interface trading BTC |
 | **Alice WebSocket** | wss://yesyoudeserve.duckdns.org/ws | Streaming em tempo real |
-| **ERPNext** | https://erp.yesyoudeserve.duckdns.org | ERP/CRM Frappe |
 | **Grafana** | https://observability.yesyoudeserve.duckdns.org | Dashboards e alertas |
 | **Prometheus** | https://metrics.yesyoudeserve.duckdns.org | Métricas e consultas |
 | **Jaeger** | https://traces.yesyoudeserve.duckdns.org | Distributed tracing |
@@ -358,7 +344,6 @@ alice/
 │   ├── gpu-manager-service/        # Gerenciamento centralizado GPU (filas, VRAM, circuit breakers)
 │   ├── rag-service/                # Embeddings + pgvector
 │   ├── training-service/           # SemHash + Fine-tuning
-│   ├── integrations-service/       # Stripe, ERPNext, Twilio, KuCoin Trading
 │   └── observability-service/      # Prometheus, Grafana, Jaeger, Langfuse
 │
 ├── packages/                       # Código compartilhado

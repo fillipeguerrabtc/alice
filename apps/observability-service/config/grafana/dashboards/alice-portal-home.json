@@ -201,9 +201,9 @@
       "gridPos": { "h": 4, "w": 6, "x": 6, "y": 14 },
       "id": 21,
       "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
-      "title": "Circuit Breaker - ERPNext",
+      "title": "Circuit Breaker - Stripe",
       "type": "stat",
-      "targets": [{ "expr": "alice_circuit_breaker_state{name=\"erpnext\",state=\"open\"}", "legendFormat": "", "refId": "A" }]
+      "targets": [{ "expr": "alice_circuit_breaker_state{name=\"stripe\",state=\"open\"}", "legendFormat": "", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },

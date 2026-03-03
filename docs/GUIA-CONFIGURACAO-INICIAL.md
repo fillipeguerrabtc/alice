@@ -10,7 +10,6 @@
 
 Este manual é focado em **operações pedidas no chat** e em **como usar agentes** para executar tarefas com qualidade e gerar dados de treino. Inclui apenas o essencial de configuração para operar:
 - Configuração mínima (Core, Agentic, Namespaces e Agentes).
-- Playbooks de operação no chat por domínio (Trading, Financeiro/ERPNext, Atendimento, Jurídico/Compliance, Fiscal, Backoffice).
 - Ciclo **chat → aprovação → treino**.
 
 > **Importante:** Este guia é prático e didático. Para aprofundamento técnico, consulte os SSOTs: `docs/SISTEMA-APRENDIZADO.md`, `docs/TRAINING.md`, `docs/ARQUITETURA.md`, `docs/SECRETS.md` e `docs/PERMISSIONS.md`.
@@ -21,12 +20,10 @@ Este manual é focado em **operações pedidas no chat** e em **como usar agente
 
 1. **Secrets configuradas**  
    - Siga `docs/SECRETS.md` (SSOT).
-   - Sem secrets, várias integrações não funcionarão (OpenAI, KuCoin, ERPNext, Gmail, etc.).
 
 2. **Contas administrativas (3 sistemas independentes)**  
    - **Alice/Auth:** `ADMIN_USER` + `ADMIN_PWD`
    - **Grafana:** `GRAFANA_ADMIN_USER` + `GRAFANA_ADMIN_PASSWORD`
-   - **ERPNext:** usuário fixo `Administrator` + `ERPNEXT_ADMIN_PASSWORD`
 
 3. **GPU obrigatória em produção**  
    - LLM e embeddings rodam no GPU Manager (Gate 2).
@@ -40,7 +37,6 @@ Este manual é focado em **operações pedidas no chat** e em **como usar agente
 2. Criar **Namespaces** por domínio.
 3. Criar **Agentes** e aplicar **templates de prompts** (seção 6).
 4. Se quiser, aplicar a **Configuração completa por pilar** (seção 7).
-5. Habilitar **Modo Agentic** necessário (Trading/ERP/Payments).
 6. Executar **operações no chat** com agentes por domínio.
 7. Aprovar dados de treino e rodar **treino on-demand**.
 
@@ -151,7 +147,6 @@ Campos visíveis no print (Prompts por Agente):
 
 ### 3.2 Modo Agentic (habilitar capacidades)
 - Página: `/agentic-config`
-- Objetivo: ligar/desligar **capabilities reais** do sistema (Web, ERP, Payments, Stack Ops, Trading).
 
 **Passo a passo**
 1. Acesse `/agentic-config`.
@@ -161,8 +156,6 @@ Campos visíveis no print (Prompts por Agente):
 
 **O que cada toggle faz**
 - **webEnabled**: permite busca web (SearXNG) no fluxo agentic.
-- **erpReadEnabled**: leitura no ERPNext (consultas e listagens).
-- **erpWriteEnabled**: escrita no ERPNext (criar/alterar registros).
 - **tradingEnabled**: habilita comandos reais de trading (KuCoin).
 - **paymentsEnabled**: habilita pagamentos via Wise/Stripe.
 - **stackOpsEnabled**: permite ações operacionais (deploy/rollback via GitHub Actions).
@@ -173,12 +166,10 @@ Campos visíveis no print (Prompts por Agente):
 - `financialApprovalRequired` deve ficar **ativo** para compliance.
 
 **Detectores (keywords e patterns)**
-- Cada seção (`web`, `erp`, `payments`, `stackOps`, `trading`, `agenticTask`) possui **keywords** e **patterns**.
 - **Keywords**: termos simples (ex.: “fatura”, “invoice”, “pagamento”).
 - **Patterns**: regex para identificar pedidos específicos (ex.: `\bcriar\s+invoice\b`).
 
 **Exemplo de configuração (keywords)**
-- `erp.baseKeywords`: `cliente`, `item`, `invoice`, `fatura`
 - `payments.wiseKeywords`: `wise`, `transferência internacional`
 - `stackOps.deployKeywords`: `deploy`, `release`, `versão`
 
@@ -262,20 +253,13 @@ Campos visíveis no print (Prompts por Agente):
 </details>
 
 <details>
-<summary><strong>ERPNext (consulta e escrita)</strong></summary>
 
 **Comandos e exemplos**
-- `listar clientes do ERP`
 - `criar cliente ACME com email financeiro@acme.com`
 - `listar faturas em aberto`
 - `faturamento anual do tenant`
 
 **Configuração (detectors)**
-- `detectors.erp.baseKeywords`
-- `detectors.erp.listCustomersKeywords`
-- `detectors.erp.createCustomerKeywords`
-- `detectors.erp.listInvoicesKeywords`
-- `detectors.erp.annualBillingKeywords`
 
 **Adicionar novos termos**
 - Inclua termos do domínio (ex.: “nota fiscal”, “conta a receber”).
@@ -391,7 +375,6 @@ Campos visíveis no print (Prompts por Agente):
 - **Prompt do Agente (base)**  
   `Você é o agente Contabilidade. Solicitar documentos e evidências. Confirmar lançamentos antes de criar/alterar.`
 - **Modelo/temperatura**: `temperature 0.2–0.4`, `maxTokens 900–1100`
-- **Agentic recomendado**: `erpReadEnabled=true`, `erpWriteEnabled=true`, `financialApprovalRequired=true`
 
 **Perfil 4 — Financeiro**
 - **System Prompt Core (trecho)**  
@@ -401,7 +384,6 @@ Campos visíveis no print (Prompts por Agente):
 - **Prompt do Agente (base)**  
   `Você é o agente Financeiro. Nunca criar/pagar sem aprovação explícita. Não inventar números. Solicitar dados mínimos obrigatórios.`
 - **Modelo/temperatura**: `temperature 0.2–0.4`, `maxTokens 900–1200`
-- **Agentic recomendado**: `erpReadEnabled=true`, `erpWriteEnabled=true`, `paymentsEnabled=true`, `financialApprovalRequired=true`
 
 **Perfil 5 — Jurídico/Compliance**
 - **System Prompt Core (trecho)**  
@@ -421,7 +403,6 @@ Campos visíveis no print (Prompts por Agente):
 - **Prompt do Agente (base)**  
   `Você é o agente Fiscal. Não inventar alíquotas, prazos ou números. Pedir referência legal.`
 - **Modelo/temperatura**: `temperature 0.2–0.3`, `maxTokens 900–1100`
-- **Agentic recomendado**: `erpReadEnabled=true`, `erpWriteEnabled=true`, `webEnabled=true`, `financialApprovalRequired=true`
 
 **Perfil 7 — Secretaria(o)**
 - **System Prompt Core (trecho)**  
@@ -435,13 +416,10 @@ Campos visíveis no print (Prompts por Agente):
 
 **Perfil 8 — Backoffice**
 - **System Prompt Core (trecho)**  
-  `Padronizar processos e exigir confirmação antes de alterações no ERP.`
 - **Prompt Padrão**  
   `Formato: entendimento -> dados necessários -> ação sugerida -> confirmação.`
 - **Prompt do Agente (base)**  
-  `Você é o agente Backoffice. Registrar o que será alterado no ERP antes de executar.`
 - **Modelo/temperatura**: `temperature 0.3–0.5`, `maxTokens 900–1100`
-- **Agentic recomendado**: `erpReadEnabled=true`, `erpWriteEnabled=true`, `webEnabled=true`, `financialApprovalRequired=true`
 
 **Templates completos (copiar e colar)**
 > **Importante:** System Prompt Core e Prompt Padrao sao **globais**. Escolha UM perfil principal como base global e aplique os prompts dos agentes por dominio.
@@ -570,7 +548,6 @@ Objetiva, conservadora e focada em risco.
 ### 6.3 Contabilidade
 **Namespace:** `contabilidade`  
 **Agente:** `Contabilidade`  
-**Modo Agentic recomendado:** `erpReadEnabled`, `erpWriteEnabled`  
 **Temperatura:** 0.2 | **maxTokens:** 900
 
 **Instruções do agente (copiar e colar)**
@@ -594,7 +571,6 @@ Precisa, técnica e verificável.
 ### 6.4 Financeiro
 **Namespace:** `financeiro`  
 **Agente:** `Financeiro`  
-**Modo Agentic recomendado:** `erpReadEnabled`, `erpWriteEnabled`, `paymentsEnabled`  
 **Temperatura:** 0.3 | **maxTokens:** 1000
 
 **Instruções do agente (copiar e colar)**
@@ -642,14 +618,12 @@ Cautelosa, baseada em evidências.
 ### 6.6 Fiscal
 **Namespace:** `fiscal`  
 **Agente:** `Fiscal`  
-**Modo Agentic recomendado:** `erpReadEnabled`, `erpWriteEnabled`, `webEnabled`  
 **Temperatura:** 0.2 | **maxTokens:** 1000
 
 **Instruções do agente (copiar e colar)**
 ```
 Você é o agente Fiscal.
 Regras: não inventar alíquotas, prazos ou números. Sempre pedir base legal/documento.
-Antes de qualquer ação no ERP, pedir confirmação explícita.
 Formato: entendimento -> obrigações envolvidas -> dados necessários -> ação sugerida -> confirmação.
 ```
 
@@ -690,14 +664,12 @@ Organizada, objetiva e previsível.
 ### 6.8 Backoffice
 **Namespace:** `backoffice`  
 **Agente:** `Backoffice`  
-**Modo Agentic recomendado:** `erpReadEnabled`, `erpWriteEnabled`, `webEnabled`  
 **Temperatura:** 0.3 | **maxTokens:** 1000
 
 **Instruções do agente (copiar e colar)**
 ```
 Você é o agente Backoffice.
 Regras: padronizar processos internos e evitar ações críticas sem aprovação.
-Sempre registrar o que será alterado no ERPNext antes de executar.
 Formato: entendimento -> dados necessários -> ação sugerida -> confirmação.
 ```
 
@@ -894,7 +866,6 @@ Content-Type: application/json
 - Nome: `Contabilidade`
 - Slug: `contabilidade`
 - Status: `active`
-- Descrição: `Agente contábil integrado ao ERPNext`
 - Avatar (URL opcional): `https://cdn.seudominio.com/avatars/contabilidade.png`
 - Instruções do agente (copiar e colar): **use a seção 6.3**
 - Personalidade do agente (copiar e colar): **use a seção 6.3**
@@ -914,7 +885,6 @@ Content-Type: application/json
   "slug": "contabilidade",
   "status": "active",
   "namespaceId": "UUID_DO_NAMESPACE_CONTABILIDADE",
-  "descricao": "Agente contábil integrado ao ERPNext",
   "avatar": "https://cdn.seudominio.com/avatars/contabilidade.png",
   "instrucoes": "Use Instruções do agente da seção 6.3.",
   "personalidade": "Use Personalidade do agente da seção 6.3.",
@@ -925,8 +895,6 @@ Content-Type: application/json
 ```
 
 **Modo Agentic**
-- `erpReadEnabled: true`
-- `erpWriteEnabled: true`
 - `financialApprovalRequired: true`
 
 **Treinamento (exemplo de descrição)**
@@ -967,7 +935,6 @@ Content-Type: application/json
 - Nome: `Financeiro`
 - Slug: `financeiro`
 - Status: `active`
-- Descrição: `Agente financeiro integrado ao ERPNext e Wise/Stripe`
 - Avatar (URL opcional): `https://cdn.seudominio.com/avatars/financeiro.png`
 - Instruções do agente (copiar e colar): **use a seção 6.4**
 - Personalidade do agente (copiar e colar): **use a seção 6.4**
@@ -987,7 +954,6 @@ Content-Type: application/json
   "slug": "financeiro",
   "status": "active",
   "namespaceId": "UUID_DO_NAMESPACE_FINANCEIRO",
-  "descricao": "Agente financeiro integrado ao ERPNext e Wise/Stripe",
   "avatar": "https://cdn.seudominio.com/avatars/financeiro.png",
   "instrucoes": "Use Instruções do agente da seção 6.4.",
   "personalidade": "Use Personalidade do agente da seção 6.4.",
@@ -998,8 +964,6 @@ Content-Type: application/json
 ```
 
 **Modo Agentic**
-- `erpReadEnabled: true`
-- `erpWriteEnabled: true`
 - `paymentsEnabled: true`
 - `financialApprovalRequired: true`
 
@@ -1144,8 +1108,6 @@ Content-Type: application/json
 ```
 
 **Modo Agentic**
-- `erpReadEnabled: true`
-- `erpWriteEnabled: true`
 - `webEnabled: true`
 - `financialApprovalRequired: true`
 
@@ -1231,7 +1193,6 @@ Treino Secretaria: checklist de tarefas, prazos e confirmações simples.
 **Alice Core (trecho recomendado)**
 ```
 Você é Alice, assistente enterprise.
-Backoffice padroniza processos e exige confirmação antes de alterações no ERP.
 ```
 
 **Namespace (configuração completa)**
@@ -1289,8 +1250,6 @@ Content-Type: application/json
 ```
 
 **Modo Agentic**
-- `erpReadEnabled: true`
-- `erpWriteEnabled: true`
 - `webEnabled: true`
 - `financialApprovalRequired: true`
 
@@ -1390,7 +1349,6 @@ Para obter melhores resultados e gerar dados de treino úteis, use o chat com es
 > Use o agente Trading. Avalie <SYMBOL> no timeframe 5m com risco max 2% e sem auto execução.  
 > Quero: contexto rápido, sinal (LONG/SHORT/NEUTRAL), entrada/SL/TP e confirmação explícita.
 
-**Exemplo (Financeiro/ERPNext)**
 > Use o agente Financeiro. Preciso criar invoice para cliente ACME LTDA com 1 item SERVICO-001 (R$ 1.500) e vencimento 15/02.  
 > Responda com os dados necessários e peça confirmação antes de criar.
 
@@ -1471,7 +1429,6 @@ Página: `/training`
 
 **Exemplo de prompt de treino (descrição)**
 ```
-Treino incremental após conversas de ERPNext com aprovação explícita.
 Objetivo: reduzir perguntas repetidas e melhorar checklist de dados.
 ```
 
@@ -1496,16 +1453,13 @@ Foco em **pedidos no chat** + **confirmação explícita**.
 
 ---
 
-## 14) Especialização para Finanças/ERPNext
 
 Foco em **tarefas financeiras pedidas no chat** com confirmação.
 
 ### Playbook no chat
 1. Solicite **dados mínimos** (cliente, item, valores, vencimento).
-2. Explique o que será criado no ERPNext.
 3. **Peça confirmação explícita** antes de criar.
 
-### Exemplo de pedido (Financeiro/ERPNext)
 > Use o agente Financeiro. Preciso criar invoice para ACME LTDA com 1 item SERVICO-001 (R$ 1.500) e vencimento 15/02.  
 > Liste dados faltantes e peça confirmação antes de criar.
 
@@ -1526,7 +1480,6 @@ Foco em **tarefas financeiras pedidas no chat** com confirmação.
 | **Training** | `training:training_data:*` | Aprovação e gestão de dados |
 | **Fine-tuning** | `training:fine_tuning_jobs:*` | Criar/cancelar jobs |
 | **Trading** | `integrations:trading:read/write/manage` | Operações KuCoin |
-| **ERPNext** | `integrations:erpnext:read/write` | CRM/ERP |
 
 > Admins e super_admins recebem permissões completas automaticamente.
 
@@ -1535,7 +1488,6 @@ Foco em **tarefas financeiras pedidas no chat** com confirmação.
 ## 16) Observabilidade e validação
 
 Validação mínima pós-operação:
-- **Grafana** (Trading/GPU/ERPNext) e `/health`.
 - Logs no Grafana/Loki quando algo não responde.
 
 ---
@@ -1544,7 +1496,6 @@ Validação mínima pós-operação:
 
 - **Agente não responde**: verifique GPU Manager e containers GPU.
 - **Treino não inicia**: valide se há dados aprovados.
-- **ERPNext falha**: valide ERPNEXT_URL e permissões agentic.
 
 ---
 
@@ -1575,7 +1526,6 @@ Se usar recursos avançados:
 
 ### 19.2 Produção (Hetzner)
 Obrigatórios (core + compliance):
-- Admins: `ADMIN_USER`, `ADMIN_PWD`, `GRAFANA_ADMIN_USER`, `GRAFANA_ADMIN_PASSWORD`, `ERPNEXT_ADMIN_PASSWORD`
 - Segurança: `SESSION_SECRET`, `INTERNAL_API_SECRET`
 - Banco/cache: `POSTGRES_*`, `REDIS_*`
 - RAG: `QDRANT_API_KEY`
@@ -1584,7 +1534,6 @@ Obrigatórios (core + compliance):
 
 Integrações opcionais (quando habilitadas):
 - **KuCoin Trading**: `KUCOIN_*`
-- **ERPNext**: `ERPNEXT_URL` + credenciais/SSO
 - **Stripe/Wise/Twilio**: respectivos tokens
 
 ---
@@ -1713,14 +1662,11 @@ Content-Type: application/json
 
 {
   "webEnabled": true,
-  "erpReadEnabled": true,
-  "erpWriteEnabled": true,
   "tradingEnabled": true,
   "paymentsEnabled": true,
   "stackOpsEnabled": false,
   "financialApprovalRequired": true,
   "platformLinks": [
-    { "id": "erpnext", "name": "ERPNext", "url": "https://erp.seudominio.com" }
   ]
 }
 ```
@@ -1792,9 +1738,7 @@ Content-Type: application/json
 }
 ```
 
-### 20.15 ERPNext — Criar cliente
 ```http
-POST /api/integrations/erpnext/customers
 Content-Type: application/json
 
 {
@@ -1807,9 +1751,7 @@ Content-Type: application/json
 }
 ```
 
-### 20.16 ERPNext — Criar invoice
 ```http
-POST /api/integrations/erpnext/invoices
 Content-Type: application/json
 
 {
@@ -1821,9 +1763,7 @@ Content-Type: application/json
 }
 ```
 
-### 20.17 ERPNext — Faturamento anual do cliente
 ```http
-GET /api/integrations/erpnext/customer-annual-billing?customer=ACME%20LTDA&year=2025
 ```
 
 Resposta (exemplo):
@@ -1840,13 +1780,8 @@ Resposta (exemplo):
 Observação:
 - O parser ignora automaticamente sufixos como `ano 2025` ou `em 2025` no nome do cliente.
 
-### 20.18 ERPNext — Nota sobre Sales Order e Payment Entry
 No `integrations-service`, **não há endpoints públicos** para `sales-order` e `payment-entry`.
-Esses registros são criados **internamente** no fluxo ERPNext (Customer → Sales Order → Sales Invoice → Payment Entry)
-usando as APIs oficiais do ERPNext:
 - `POST /api/resource/Sales%20Order`
-- `POST /api/method/erpnext.selling.doctype.sales_order.sales_order.make_sales_invoice`
-- `POST /api/method/erpnext.accounts.doctype.payment_entry.payment_entry.get_payment_entry`
 - `POST /api/resource/Payment%20Entry`
 
 ---

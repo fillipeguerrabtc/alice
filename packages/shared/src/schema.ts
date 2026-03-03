@@ -835,7 +835,7 @@ export const userCustomRoles = pgTable(
 );
 
 // ============================================================================
-// OAUTH CLIENTS (SSO - Alice como OAuth Provider para Grafana/ERPNext)
+// OAUTH CLIENTS (SSO - Alice como OAuth Provider)
 // RFC 6749 + OIDC Best Practices 2025
 // ============================================================================
 
@@ -1574,7 +1574,7 @@ export const mediaJobs = pgTable(
 );
 
 // ============================================================================
-// INTEGRAÇÕES EXTERNAS (ERPNext, Stripe, Twilio, etc.)
+// INTEGRAÇÕES EXTERNAS (Stripe, Twilio e outros serviços)
 // ============================================================================
 
 export const integrations = pgTable(
@@ -5009,15 +5009,6 @@ export interface AgenticDetectors {
       planning: string[];
     };
   };
-  erp: {
-    baseKeywords: string[];
-    listItemsKeywords: string[];
-    listCustomersKeywords: string[];
-    listInvoicesKeywords: string[];
-    annualBillingKeywords: string[];
-    createCustomerKeywords: string[];
-    createInvoiceKeywords: string[];
-  };
   payments: {
     wiseKeywords: string[];
     wiseRecipientsKeywords: string[];
@@ -5708,13 +5699,13 @@ export type InsertTrainingScopeOverride = typeof trainingScopeOverrides.$inferIn
 export type FineTuningJob = typeof fineTuningJobs.$inferSelect;
 export type InsertFineTuningJob = typeof fineTuningJobs.$inferInsert;
 
-// Wise-ERPNext Sync Types (FASE 5.5)
+// Wise Sync Types (FASE 5.5)
 
 // Webhook Events Types (Idempotência - Segurança Enterprise)
 export type WebhookEvent = typeof webhookEvents.$inferSelect;
 export type InsertWebhookEvent = typeof webhookEvents.$inferInsert;
 
-// Stripe ERPNext Mapping Types (Rastreabilidade de documentos)
+// Stripe Mapping Types (Rastreabilidade de documentos)
 
 // Trading Types (Gate 2 - KuCoin Futures BTC)
 export type TradingSignal = typeof tradingSignals.$inferSelect;
@@ -5816,7 +5807,7 @@ export const insertUsageMetricSchema: z.ZodType<unknown> = createInsertSchema(us
   criadoEm: true,
 });
 
-// Wise-ERPNext Sync Insert Schema (FASE 5.5)
+// Wise Sync Insert Schema (FASE 5.5)
 
 // Webhook Events Insert Schema (Idempotência - Segurança Enterprise)
 export const insertWebhookEventSchema: z.ZodType<unknown> = createInsertSchema(webhookEvents).omit({
@@ -5825,7 +5816,7 @@ export const insertWebhookEventSchema: z.ZodType<unknown> = createInsertSchema(w
   processedAt: true,
 });
 
-// Stripe ERPNext Mapping Insert Schema (Rastreabilidade)
+// Stripe Mapping Insert Schema (Rastreabilidade)
 
 // Trading Insert Schemas (Gate 2 - KuCoin Futures BTC)
 export const insertTradingSignalSchema: z.ZodType<unknown> = createInsertSchema(tradingSignals).omit({

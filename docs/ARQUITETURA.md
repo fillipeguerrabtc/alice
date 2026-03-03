@@ -161,7 +161,6 @@ C4Context
 | **Stripe** | Pagamentos | Webhooks | Signature verification |
 | **Twilio** | WhatsApp/SMS | REST | API Key + Token |
 | **Gmail SMTP** | Email | SMTP/TLS | App Password |
-| **ERPNext** | ERP/CRM | REST | OAuth 2.0 SSO |
 | **Grafana** | Dashboards | REST | OAuth 2.0 SSO |
 
 ---
@@ -187,7 +186,6 @@ C4Container
         Container(observability, "Observability", "Node.js", "Health, Backup")
         
         ContainerDb(postgres, "PostgreSQL", "PostgreSQL 16", "pgvector, RLS")
-        ContainerDb(redis, "Redis", "Redis 7.4 (Alice) / 6.2 (ERPNext)", "Cache, Pub/Sub")
         ContainerDb(qdrant, "Qdrant", "Vector DB", "Embeddings texto 1024 dim")
     }
     
@@ -238,11 +236,9 @@ C4Container
 | 16 | `alice-observability` | Node.js | 3007 | Health, Backup |
 | 17 | `alice-gpu-manager` | Node.js | 3010 | Gerenciamento centralizado GPU |
 
-#### ERPNext Stack (15)
 
 | # | Container | Descrição |
 |---|-----------|-----------|
-| 15-29 | ERPNext | MariaDB, Redis 6.2 x2 (cache+queue), Backend, Frontend, WebSocket, Scheduler, 9 Workers |
 
 #### Observability Stack (13)
 
@@ -296,11 +292,9 @@ C4Component
 
 #### Modo Agentic Enterprise (Chat Service)
 
-- Router de tools para web search, ERPNext (read/write), pagamentos e stack ops.
 - Ações críticas registradas em `action_requests` com aprovação explícita (financeiro).
 - Configuração por tenant persistida em `agentic_settings` (links, escopo, políticas e detectores).
 - Streaming de eventos agentic em tempo real (SSE/WS) com payload redigido.
-- Detectores (keywords/regex) configuráveis no Modo Agentic para web, imagens, tasks, ERP, payments, stack ops e trading.
 
 ### 5.2 RAG Service - Componentes
 
@@ -364,10 +358,8 @@ C4Component
     Container_Boundary(auth, "Auth Service") {
         Component(oauth, "OAuth Handler", "Passport.js", "Google, GitHub")
         Component(saml, "SAML Handler", "passport-saml", "Azure AD, Okta")
-        Component(oidc, "OIDC Provider", "oidc-provider", "SSO para ERPNext, Grafana")
         Component(rbac, "RBAC Engine", "6 roles", "Permissões granulares")
         Component(sessions, "Session Manager", "Redis", "Sessões distribuídas")
-        Component(provisioning, "Identity Provisioning", "REST", "Sync ERPNext, Grafana")
     }
     
     ComponentDb(postgres, "PostgreSQL", "Users, Tenants, Permissions")
@@ -645,7 +637,6 @@ C4Deployment
             Deployment_Node(docker, "Docker 29.1.2") {
                 Container(caddy, "Caddy", "API Gateway")
                 Container(services, "Alice Services", "7 containers")
-                Container(erpnext, "ERPNext", "15 containers")
                 Container(obs, "Observability", "13 containers")
                 Container(backup, "pgBackRest", "Backup")
             }
@@ -669,7 +660,6 @@ C4Deployment
 /mnt/alice-data/                    # Volume Hetzner 100GB
 ├── data/                           # Dados persistentes
 │   ├── postgresql/                 # PostgreSQL + pgvector
-│   ├── mariadb/                    # ERPNext
 │   └── redis/                      # Cache persistente
 ├── uploads/                        # Mídia multimodal
 │   ├── {tenantId}/                 # Isolamento por tenant
@@ -679,7 +669,6 @@ C4Deployment
 │   └── {tenantId}/                 # Uploads por tenant
 ├── backups/                        # Backups enterprise
 │   ├── postgresql/                 # pgBackRest (WAL, PITR)
-│   ├── mariadb/                    # ERPNext dumps
 │   └── manifests/                  # Metadados JSON
 └── logs/                           # Logs de serviços
 ```
@@ -750,7 +739,6 @@ flowchart TB
     
     subgraph SSO
         E --> H[OIDC Provider]
-        H --> I[ERPNext]
         H --> J[Grafana]
     end
 ```
@@ -1012,17 +1000,13 @@ logger.info({
 |---------|---------|
 | **Status** | Aceito |
 | **Data** | 05 de Janeiro de 2026 |
-| **Contexto** | Deploy monolítico de 49 containers causava rollback total quando ERPNext falhava, derrubando Alice e Grafana que funcionavam. Pipeline era "all-or-nothing" sem possibilidade de produção parcial. |
-| **Decisão** | Separar a plataforma em **5 stacks independentes** (INFRA, ALICE, OBSERVABILITY, ERPNEXT, BACKUP) com Docker Compose files separados e workflow de deploy modular (`deploy-stack.yml`). |
 | **Alternativas** | (1) Kubernetes com namespaces - rejeitado por complexidade excessiva para 49 containers; (2) Docker Swarm stacks - rejeitado por falta de GPU support nativo; (3) Manter monolítico - rejeitado pelo problema de rollback total |
-| **Consequências** | + Produção parcial (Alice funciona se ERPNext falhar); + Rollback cirúrgico por stack; + Deploy independente; + Isolamento de falhas; - Maior complexidade de orquestração; - Necessidade de manter dependências entre stacks |
 
 **Arquivos Criados:**
 - `infra/docker/stacks/docker-compose.base.yml` - Networks e volumes compartilhados
 - `infra/docker/stacks/docker-compose.infra.yml` - Stack de infraestrutura (10 containers)
 - `infra/docker/stacks/docker-compose.alice.yml` - Stack Alice + GPU (8 + 5 containers)
 - `infra/docker/stacks/docker-compose.observability.yml` - Stack de observabilidade (13 containers)
-- `infra/docker/stacks/docker-compose.erpnext.yml` - Stack ERPNext (15 containers)
 - `infra/docker/stacks/docker-compose.backup.yml` - Stack de backup (2 containers: pgbackrest + pgbackrest-exporter)
 - `.github/workflows/deploy-stack.yml` - Workflow para deploy/rollback por stack
 
@@ -1030,7 +1014,6 @@ logger.info({
 1. INFRA (obrigatório primeiro)
 2. Drizzle push (migrações)
 3. ALICE + OBSERVABILITY (paralelos)
-4. ERPNEXT (independente)
 5. BACKUP (após postgres healthy)
 
 **Histórico de Versões:**
@@ -1084,7 +1067,6 @@ trigger-deploy:
 | **Status** | Aceito |
 | **Data** | 06 de Janeiro de 2026 |
 | **Contexto** | Deploy workflow v2 (`deploy-stack.yml`) tinha um único job "deploy-all" com 5 stacks deployados **sequencialmente** via SSH (~30min). Rollback automático só funcionava se TODOS os stacks falhassem. Rollback manual exigia `workflow_dispatch` separado. Violava best practices para pipelines modulares enterprise. |
-| **Decisão** | Refatorar para **Deploy Modular v3** (`deploy-stack-modular.yml`) com **15 jobs independentes**: `validate`, `prepare`, `deploy-infra`, `health-infra`, `rollback-infra`, `drizzle-push`, `deploy-alice`, `health-alice`, `rollback-alice`, `deploy-observability`, `health-observability`, `rollback-observability`, `deploy-erpnext`, `health-erpnext`, `rollback-erpnext`, `deploy-backup`, `health-backup`, `rollback-backup`, `notify`. |
 | **Alternativas** | (1) Manter monolítico com bash case - rejeitado por impossibilitar paralelização e rollback cirúrgico; (2) Matrix strategy para stacks - rejeitado por não permitir dependências condicionais entre stacks; (3) Separate workflows por stack - rejeitado por duplicação de código |
 | **Consequências** | + 66% mais rápido (~10min vs ~30min); + Rollback cirúrgico (só stack com falha); + Produção parcial real; + Paralelização de 4 stacks após infra; + Logs isolados por stack; + Rollback manual integrado; + Health checks completos (49 containers); - Maior número de jobs (15 vs 1); - Maior complexidade de `needs` e condições |
 
@@ -1125,9 +1107,6 @@ prepare → deploy-infra → health-infra → drizzle-push
                                            ↓
                         ┌──────────────────┼──────────────────┬──────────────┐
                         │                  │                  │              │
-                  deploy-alice    deploy-observability  deploy-erpnext  deploy-backup
-                  health-alice    health-observability  health-erpnext  health-backup
-                 rollback-alice*  rollback-observability* rollback-erpnext* rollback-backup*
                         │                  │                  │              │
                         └──────────────────┴──────────────────┴──────────────┘
                                            ↓
@@ -1136,14 +1115,12 @@ prepare → deploy-infra → health-infra → drizzle-push
 
 **Performance:**
 - v2 (sequencial): 5 stacks x ~6min/cada = ~30min
-- v3 (paralelo): infra (~4min) + max(alice, observability, erpnext, backup) (~6min) = **~10min** ⚡
 
 **Workflow File:** `.github/workflows/deploy-stack-modular.yml`
 
 **Bugs Corrigidos na v3:**
 - ✅ `$GITHUB_OUTPUT` em SSH scripts (não funciona no servidor remoto)
 - ✅ Race condition em rollbacks paralelos (sed modificando `.env.prod`)
-- ✅ Health checks incompletos (ERPNext 5/10, Observability 6/13, INFRA sem Tor/SearXNG)
 - ✅ Missing `drizzle-push` job (migrations não rodavam em fresh deploys)
 - ✅ Dependency `jq` não instalado (trocado por pure-bash `urlencode`)
 - ✅ External volumes não criados (faltava `-f docker-compose.base.yml`)
@@ -1182,7 +1159,6 @@ generate-env-prod.sh (gera .env.prod com versões)
 |-------|-----------|------------|
 | INFRA | `REDIS_ALICE_VERSION`, `QDRANT_VERSION`, `SEARXNG_VERSION`, `MINIO_*` | 8 |
 | OBSERVABILITY | `PROMETHEUS_VERSION`, `GRAFANA_VERSION`, `LOKI_VERSION`, `LANGFUSE_*`, etc | 14 |
-| ERPNEXT | `ERPNEXT_VERSION`, `MARIADB_VERSION`, `REDIS_ERPNEXT_VERSION` | 3 |
 | Utilities | `BUSYBOX_VERSION`, `PGVECTOR_TAG` | 3 |
 
 **Validação de Imagens Públicas:**
@@ -1255,10 +1231,7 @@ step parse-health (propaga outputs)
 | Stack | Container | Versão | Propósito |
 |-------|-----------|--------|-----------|
 | INFRA | `alice-redis` | 7.4.7-alpine | Cache Alice, Rate limiting |
-| ERPNEXT | `erpnext-redis-cache` | 6.2.21-alpine | Cache ERPNext (Frappe) |
-| ERPNEXT | `erpnext-redis-queue` | 6.2.21-alpine | Filas ERPNext (Frappe) |
 
-> **Nota:** Redis 6.x para ERPNext é OBRIGATÓRIO por compatibilidade com Frappe Framework.
 
 **Workflow File:** `.github/workflows/deploy-stack-modular.yml` (v3.1.0)
 
@@ -1597,7 +1570,6 @@ A plataforma possui uma **suite de testes unitários completa** usando **Vitest*
 *Autor: Fillipe Guerra*  
 *Data: 24 de Janeiro de 2026*
 *Versão: 3.4.3 - Detectores Agentic configuráveis + ASR/Vision alinhados*
-*Total de Containers: 49 (10 infra + 8 Alice + 2 GPU + 13 observability + 15 ERPNext + 1 backup) + 1 trainer sob demanda*
 *Stack: Express 5.2, Vite 7.3, Tailwind CSS 4.1, HTTP/3 via Caddy*
 *LLM: Qwen2.5 7B Instruct (AWQ) via GPU Manager Service (Hetzner GEX44) - Gate 2*
 *Embeddings: Qwen3-Embedding-0.6B INT8 (1024 dim) + OpenAI Vision (descrição textual, sem embeddings de imagem)*

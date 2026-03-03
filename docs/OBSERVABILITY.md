@@ -16,7 +16,6 @@
 | 2 | Dashboards acoplados a nomes de modelos | Mudança de modelos (WS3) quebrava painéis/legendas | Dashboards revisados para **modelo-agnóstico (WS3-ready)** | ✅ CORRIGIDO |
 | 3 | ZERO dashboard Trading (KuCoin Spot/Margin/Futures) | Impossível monitorar P&L, ordens, posições | Criado alice-trading.json (8 painéis) | ✅ CORRIGIDO |
 | 4 | Dashboard LLM incompleto | Impossível medir Response Cache (Greetings Gate) | Adicionados 8 painéis (cache, WebSocket, streaming) | ✅ CORRIGIDO |
-| 5 | ZERO dashboard ERPNext | Impossível debugar workers, jobs, MariaDB | Criado alice-erpnext.json (13 painéis) | ✅ CORRIGIDO |
 | 6 | Infra sem visibilidade de DB/Cache | Impossível monitorar Postgres/PgBouncer/Redis/Qdrant | Adicionados exporters (Postgres/PgBouncer/Redis) + scrape Qdrant `/metrics` | ✅ CORRIGIDO |
 | 7 | Painéis "No data" (RBAC 0%, logs vazios) | Métricas/logs não aparecendo | Promtail atualizado para coletar logs reais dos containers (`/var/lib/docker/containers/*/*-json.log`) sem usar Docker socket (seguro) | ✅ CORRIGIDO |
 | 8 | Circuit breaker HALF_OPEN não aparecia | Grafana mapeava HALF_OPEN como `2`, mas métrica usa `0.5` | Mapeamento dashboards corrigido para `0.5` (HALF-OPEN) | ✅ CORRIGIDO |
@@ -30,7 +29,6 @@
 ### Checklist de validação (pós-deploy)
 
 - **Prometheus (`/targets`)**: `alice-services`, `alice-gpu-services`, `node-exporter`, `cadvisor`, `qdrant`, `jaeger`, `vector` em **UP**.
-- **Grafana**: dashboards Home, LLM/Chat, **LLM Gateway**, Agentic, **Biometria**, GPU Manager, Trading, **Demo Trading**, ERPNext, Training, Training Pipeline provisionados.
 - **Loki/Promtail**: logs do job `docker-containers` chegando com parsing JSON.
 - **Alertas**: regras ativas para LLM, GPU, KuCoin e infraestrutura.
 
@@ -169,7 +167,6 @@ Permitir que o Chat consulte e **atualize dashboards** do Grafana com RBAC, audi
 - RAG
 - Training
 - Training Pipeline
-- ERPNext
 - Traces (Jaeger)
 - Alertas
 
@@ -366,20 +363,10 @@ Permitir que o Chat consulte e **atualize dashboards** do Grafana com RBAC, audi
 
 ---
 
-### 5. Dashboard ERPNext
 
-**UID:** `alice-erpnext`  
-**Quando usar:** Monitorar workers Frappe, job queue, MariaDB, Redis
 
 **Métricas principais:**
 
-- **Workers Status:** `up{job="erpnext-worker-{default|short|long}"}`
-- **Jobs Pendentes:** `alice_erpnext_queue_depth{status="pending"}`
-- **Jobs Processando:** `alice_erpnext_queue_depth{status="processing"}`
-- **Jobs Falhos (1h):** `increase(alice_erpnext_jobs_failed_total[1h])`
-- **Jobs Completados (1h):** `increase(alice_erpnext_jobs_completed_total[1h])`
-- **MariaDB Connections:** `mysql_global_status_threads_connected`
-- **MariaDB Slow Queries:** `increase(mysql_global_status_slow_queries[1h])`
 - **Redis Memory:** `(redis_memory_used_bytes / redis_memory_max_bytes) * 100`
 
 **Painéis:**
@@ -387,13 +374,11 @@ Permitir que o Chat consulte e **atualize dashboards** do Grafana com RBAC, audi
 1. **Workers Status:** 3x default, 3x short, 3x long
 2. **Job Queue:** Pendentes, processando, falhos, completados
 3. **Sync Status:** Wise transactions, Stripe events
-4. **MariaDB & Redis:** Connections, slow queries, memory usage
 
 **Alertas:**
 
 - Worker DOWN > 2min
 - Jobs pendentes > 50 por 5min
-- MariaDB slow queries > 10 por 1h
 
 ---
 

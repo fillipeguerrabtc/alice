@@ -29,8 +29,6 @@ export const namespaceRoutingSchema = z.object({
 
 export const agenticSettingsSchema = z.object({
   webEnabled: z.boolean(),
-  erpReadEnabled: z.boolean(),
-  erpWriteEnabled: z.boolean(),
   observabilityReadEnabled: z.boolean(),
   observabilityWriteEnabled: z.boolean(),
   tradingEnabled: z.boolean(),
@@ -64,15 +62,6 @@ export const agenticSettingsSchema = z.object({
         accounting: detectorListSchema,
         planning: detectorListSchema,
       }),
-    }),
-    erp: z.object({
-      baseKeywords: detectorListSchema,
-      listItemsKeywords: detectorListSchema,
-      listCustomersKeywords: detectorListSchema,
-      listInvoicesKeywords: detectorListSchema,
-      annualBillingKeywords: detectorListSchema,
-      createCustomerKeywords: detectorListSchema,
-      createInvoiceKeywords: detectorListSchema,
     }),
     payments: z.object({
       wiseKeywords: detectorListSchema,
@@ -237,8 +226,6 @@ export function buildNamespaceKeywordDefaults(namespace: NamespaceItem): string[
 export function buildAgenticDefaultValues(): AgenticSettingsForm {
   return {
     webEnabled: true,
-    erpReadEnabled: true,
-    erpWriteEnabled: true,
     observabilityReadEnabled: true,
     observabilityWriteEnabled: true,
     tradingEnabled: true,
@@ -283,15 +270,6 @@ export function buildAgenticDefaultValues(): AgenticSettingsForm {
           planning: [],
         },
       },
-      erp: {
-        baseKeywords: [],
-        listItemsKeywords: [],
-        listCustomersKeywords: [],
-        listInvoicesKeywords: [],
-        annualBillingKeywords: [],
-        createCustomerKeywords: [],
-        createInvoiceKeywords: [],
-      },
       payments: {
         wiseKeywords: [],
         wiseRecipientsKeywords: [],
@@ -312,3 +290,4 @@ export function buildAgenticDefaultValues(): AgenticSettingsForm {
     platformLinks: [],
   };
 }
+

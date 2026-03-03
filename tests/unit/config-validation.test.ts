@@ -258,16 +258,12 @@ describe('Config - CORS Origins', () => {
       expect(PRODUCTION_CORS_ORIGINS).toContain('https://yesyoudeserve.duckdns.org');
     });
 
-    it('deve incluir subdomínio ERP', () => {
-      expect(PRODUCTION_CORS_ORIGINS).toContain('https://erp.yesyoudeserve.duckdns.org');
-    });
-
     it('deve incluir subdomínio API', () => {
       expect(PRODUCTION_CORS_ORIGINS).toContain('https://api.yesyoudeserve.duckdns.org');
     });
 
-    it('deve ter exatamente 3 origens de produção', () => {
-      expect(PRODUCTION_CORS_ORIGINS).toHaveLength(3);
+    it('deve ter exatamente 2 origens de produção', () => {
+      expect(PRODUCTION_CORS_ORIGINS).toHaveLength(2);
     });
 
     it('todas as origens devem usar HTTPS', () => {

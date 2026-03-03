@@ -83,7 +83,6 @@
     "emailInvalid": "E-mail inválido",
     "registrationSuccess": "Conta criada com sucesso! Faça login.",
     "ssoProvider": "Provedor SSO",
-    "enterpriseSSO": "SSO Enterprise",
     "selectProvider": "Selecione como deseja entrar"
   },
   "nav": {
@@ -835,7 +834,6 @@
       "payments": "Pagamentos",
       "trading": "Trading",
       "ai": "IA",
-      "erp": "ERP",
       "communication": "Comunicação"
     },
     "stripe": {
@@ -954,8 +952,6 @@
       "autoLearningCronFullDesc": "Agenda padrão para runs completos automáticos (5 campos CRON).",
       "autoLearningIncludeImages": "Auto-learning inclui imagens",
       "autoLearningIncludeImagesDesc": "Define se runs automáticas incluem imagens aprovadas por padrão.",
-      "trainingDefaultHyperparamsJson": "Hyperparams padrão (JSON)",
-      "trainingDefaultHyperparamsJsonDesc": "Objeto JSON com hyperparams default usados para snapshot de execução.",
       "trainingPresetSafeJson": "Preset SAFE (JSON)",
       "trainingPresetSafeJsonDesc": "Preset conservador com menor risco de instabilidade.",
       "trainingPresetStandardJson": "Preset STANDARD (JSON)",
@@ -1098,7 +1094,6 @@
     "usage": "Uso",
     "free": "Gratuito",
     "pro": "Profissional",
-    "enterprise": "Enterprise",
     "manageBilling": "Gerenciar Faturamento",
     "manageSubscription": "Gerenciar Assinatura",
     "selectPlan": "Selecionar Plano",
@@ -1873,7 +1868,6 @@
       "sliceSteps": "Passos por slice: {{value}}",
       "gpuTimeoutMs": "Timeout GPU por slice: {{value}} ms",
       "maxSeqLen": "maxSeqLen global: {{value}}",
-      "defaultHyperparams": "Hyperparams default: ep={{epochs}} lr={{learningRate}} bs={{batchSize}} maxSeq={{maxSeqLen}} gradAcc={{gradientAccumulationSteps}} warmup={{warmupSteps}} rank={{loraRank}} alpha={{loraAlpha}} dropout={{loraDropout}}",
       "presetSafe": "Preset SAFE: ep={{epochs}} lr={{learningRate}} bs={{batchSize}} maxSeq={{maxSeqLen}} gradAcc={{gradientAccumulationSteps}} warmup={{warmupSteps}} rank={{loraRank}} alpha={{loraAlpha}} dropout={{loraDropout}}",
       "presetStandard": "Preset STANDARD: ep={{epochs}} lr={{learningRate}} bs={{batchSize}} maxSeq={{maxSeqLen}} gradAcc={{gradientAccumulationSteps}} warmup={{warmupSteps}} rank={{loraRank}} alpha={{loraAlpha}} dropout={{loraDropout}}",
       "presetLarge": "Preset LARGE: ep={{epochs}} lr={{learningRate}} bs={{batchSize}} maxSeq={{maxSeqLen}} gradAcc={{gradientAccumulationSteps}} warmup={{warmupSteps}} rank={{loraRank}} alpha={{loraAlpha}} dropout={{loraDropout}}"
@@ -1973,7 +1967,6 @@
       "namespacePlaceholder": "Selecione o namespace para treinar",
       "namespaceHelp": "O job usará apenas dados aprovados deste namespace. O adaptador LoRA fica associado ao namespace.",
       "namespaceRequired": "Selecione um namespace para criar o job.",
-      "invalidHyperparams": "Hyperparams invalidos. Revise os limites antes de iniciar.",
       "nameLabel": "Nome do Job",
       "namePlaceholder": "ex: Fine-tune vendas Q4 2025",
       "presetLabel": "Preset",
@@ -3488,7 +3481,7 @@
     "moduleHints": {
       "overview": {
         "examples": [
-          "Habilitar web e ERP para operação comercial",
+          "Habilitar web e backoffice para operação comercial",
           "Exigir aprovação financeira para pagamentos"
         ],
         "practices": [
@@ -3578,7 +3571,7 @@
       },
       "links": {
         "examples": [
-          "Adicionar portal ERP oficial",
+          "Adicionar portal backoffice oficial",
           "Cadastrar dashboard principal da operação"
         ],
         "practices": [
@@ -3670,7 +3663,6 @@
     "taskTypeAccounting": "Tipos: Contabilidade",
     "taskTypePlanning": "Tipos: Planejamento",
     "taskTypePlaceholder": "documento\nminuta\nreport",
-    "detectorsErpDesc": "Define quando a Alice pode consultar ou escrever no ERP. Inclua termos que aparecem nas solicitações.",
     "detectorsGrafanaTitle": "Grafana (Observabilidade)",
     "detectorsGrafanaDesc": "Gatilhos para listar, abrir e atualizar dashboards no Grafana. Adicione palavras-chave e termos operacionais.",
     "grafanaBaseKeywords": "Palavras-chave base Grafana",

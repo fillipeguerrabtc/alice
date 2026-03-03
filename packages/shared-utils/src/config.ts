@@ -223,7 +223,6 @@ export const SERVICE_URLS: ServiceUrlsConfig = new Proxy({} as ServiceUrlsConfig
  */
 export const PRODUCTION_CORS_ORIGINS = [
   'https://yesyoudeserve.duckdns.org',
-  'https://erp.yesyoudeserve.duckdns.org',
   'https://api.yesyoudeserve.duckdns.org',
 ];
 

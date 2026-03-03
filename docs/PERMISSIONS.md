@@ -79,9 +79,6 @@ Servidor de produção com permissões corretas
 | **Langfuse DB** | 70 | 70 | postgres | 700 | PostgreSQL strict mode |
 | **ClickHouse** | 101 | 101 | clickhouse | 755 | OLAP Langfuse |
 | **Vector** | 0 | 0 | root | 755 | Agregador de logs |
-| **ERPNext Sites** | 1000 | 1000 | frappe | 755 | Sites Frappe |
-| **ERPNext MariaDB** | 999 | 999 | mysql | 755 | Banco ERPNext |
-| **ERPNext Redis** | 999 | 1000 | redis | 755 | Cache/Queue ERPNext |
 | **Uploads** | 1000 | 1000 | node | 755 | RAG multimodal |
 | **Backups PostgreSQL** | 70 | 70 | postgres | 755 | pgBackRest backups |
 | **Secrets** | 0 | 0 | root | 700 | Apenas root pode ler |
@@ -418,7 +415,6 @@ fi
 ### Impacto
 
 Sem esta correção, os seguintes containers crashariam com "Permission denied":
-- PostgreSQL, MariaDB, Redis, Qdrant, Langfuse DB
 
 **COM A CORREÇÃO: Todos esses cenários são corrigidos automaticamente!** ✅
 

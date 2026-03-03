@@ -143,7 +143,6 @@ Usar escala consistente: `2, 4, 8, 12, 16, 24, 32` (px-2, h-8, m-12, etc.)
 | Financeiro | Resumo de saldo, tabela de transações, filtros lateral |
 | Emails | Toggle lista/grid, editor de templates com preview |
 | Stripe | Interface multi-abas (Saldo, Pagamentos, Saques, Disputas) |
-| ERPNext | Widgets via API ou iframes |
 | Usuários | Tabela com badges de role, dropdowns de ações |
 
 ### Configurações
@@ -287,4 +286,3 @@ Antes de entregar qualquer página:
 *Autor: Fillipe Guerra*
 *Documentação em Português Brasileiro (Regra 10 CLAUDE.md)*
 *Atualizado: 27 de Dezembro de 2025*
-*Total de Containers: 51 (8 infraestrutura + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup)*

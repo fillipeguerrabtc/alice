@@ -5,8 +5,8 @@
 # Autor: Fillipe Guerra
 # Data: 14 de Fevereiro de 2026 (Atualizado)
 #
-# Contém funções reutilizadas por TODOS os 5 deploy jobs (INFRA, ALICE,
-# OBSERVABILITY, ERPNEXT, BACKUP) para eliminar duplicação (CLAUDE.md Regra 2).
+# Contém funções reutilizadas por TODOS os deploy jobs (INFRA, ALICE,
+# OBSERVABILITY e BACKUP) para eliminar duplicação (CLAUDE.md Regra 2).
 #
 # USO:
 #   BUILT_IMAGES="auth,chat,rag"  # ou "__NONE__" ou ""

@@ -83,7 +83,6 @@
     "emailInvalid": "Invalid email",
     "registrationSuccess": "Account created successfully! Please log in.",
     "ssoProvider": "SSO Provider",
-    "enterpriseSSO": "Enterprise SSO",
     "selectProvider": "Select how you want to sign in"
   },
   "nav": {
@@ -810,7 +809,6 @@
       "payments": "Payments",
       "trading": "Trading",
       "ai": "AI",
-      "erp": "ERP",
       "communication": "Communication"
     },
     "stripe": {
@@ -929,8 +927,6 @@
       "autoLearningCronFullDesc": "Default schedule for automatic full runs (5 CRON fields).",
       "autoLearningIncludeImages": "Auto-learning include images",
       "autoLearningIncludeImagesDesc": "Defines whether automatic runs include approved images by default.",
-      "trainingDefaultHyperparamsJson": "Default hyperparams (JSON)",
-      "trainingDefaultHyperparamsJsonDesc": "JSON object with default hyperparameters used for run snapshot.",
       "trainingPresetSafeJson": "SAFE preset (JSON)",
       "trainingPresetSafeJsonDesc": "Conservative preset with lower instability risk.",
       "trainingPresetStandardJson": "STANDARD preset (JSON)",
@@ -1073,7 +1069,6 @@
     "usage": "Usage",
     "free": "Free",
     "pro": "Professional",
-    "enterprise": "Enterprise",
     "manageBilling": "Manage Billing",
     "manageSubscription": "Manage Subscription",
     "selectPlan": "Select Plan",
@@ -1826,7 +1821,6 @@
       "sliceSteps": "Steps per slice: {{value}}",
       "gpuTimeoutMs": "GPU timeout per slice: {{value}} ms",
       "maxSeqLen": "Global maxSeqLen: {{value}}",
-      "defaultHyperparams": "Default hyperparams: ep={{epochs}} lr={{learningRate}} bs={{batchSize}} maxSeq={{maxSeqLen}} gradAcc={{gradientAccumulationSteps}} warmup={{warmupSteps}} rank={{loraRank}} alpha={{loraAlpha}} dropout={{loraDropout}}",
       "presetSafe": "SAFE preset: ep={{epochs}} lr={{learningRate}} bs={{batchSize}} maxSeq={{maxSeqLen}} gradAcc={{gradientAccumulationSteps}} warmup={{warmupSteps}} rank={{loraRank}} alpha={{loraAlpha}} dropout={{loraDropout}}",
       "presetStandard": "STANDARD preset: ep={{epochs}} lr={{learningRate}} bs={{batchSize}} maxSeq={{maxSeqLen}} gradAcc={{gradientAccumulationSteps}} warmup={{warmupSteps}} rank={{loraRank}} alpha={{loraAlpha}} dropout={{loraDropout}}",
       "presetLarge": "LARGE preset: ep={{epochs}} lr={{learningRate}} bs={{batchSize}} maxSeq={{maxSeqLen}} gradAcc={{gradientAccumulationSteps}} warmup={{warmupSteps}} rank={{loraRank}} alpha={{loraAlpha}} dropout={{loraDropout}}"
@@ -1926,7 +1920,6 @@
       "namespacePlaceholder": "Select namespace to train",
       "namespaceHelp": "The job will use only approved data from this namespace. The LoRA adapter is associated with the namespace.",
       "namespaceRequired": "Select a namespace to create the job.",
-      "invalidHyperparams": "Invalid hyperparameters. Review field limits before starting.",
       "nameLabel": "Job Name",
       "namePlaceholder": "e.g.: Fine-tune sales Q4 2025",
       "presetLabel": "Preset",
@@ -3441,7 +3434,7 @@
     "moduleHints": {
       "overview": {
         "examples": [
-          "Enable web and ERP for commercial operations",
+          "Enable web and backoffice for commercial operations",
           "Require financial approval for payments"
         ],
         "practices": [
@@ -3531,7 +3524,7 @@
       },
       "links": {
         "examples": [
-          "Add official ERP portal",
+          "Add official backoffice portal",
           "Register main observability dashboard"
         ],
         "practices": [
@@ -3623,7 +3616,6 @@
     "taskTypeAccounting": "Types: Accounting",
     "taskTypePlanning": "Types: Planning",
     "taskTypePlaceholder": "document\nmemo\nreport",
-    "detectorsErpDesc": "Defines when Alice can read/write in ERP. Add terms used in ERP requests.",
     "detectorsGrafanaTitle": "Grafana (Observability)",
     "detectorsGrafanaDesc": "Triggers to list, open and update Grafana dashboards. Add operational terms.",
     "grafanaBaseKeywords": "Grafana base keywords",

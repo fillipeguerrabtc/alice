@@ -194,7 +194,7 @@ function getRequiredEnvVar(name: string): string {
 // SECRETS PRÉ-DEFINIDOS: Em vez de gerar client_secret dinamicamente,
 // usamos secrets pré-definidos no GitHub. Isso permite:
 // 1. Deploy 100% automatizado sem passos manuais pós-deploy
-// 2. Grafana/ERPNext já têm os secrets configurados antes do primeiro acesso
+// 2. Grafana já tem os secrets configurados antes do primeiro acesso
 // 3. Seed é idempotente - pode rodar múltiplas vezes sem problemas
 //
 // SECRETS NECESSÁRIOS NO GITHUB:

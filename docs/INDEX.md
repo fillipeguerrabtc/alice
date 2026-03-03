@@ -22,7 +22,6 @@
 | `docs/GUIA-TREINAMENTO-AGENTES.md` | Guia de treinamento para negócios | Sim | Passo a passo didático (RAG + treinamento) |
 | `docs/SECRETS.md` | Secrets e variáveis | Sim | SSOT de secrets + geração de `.env.prod` |
 | `docs/PERMISSIONS.md` | SSOT de permissões | Sim | UIDs/GIDs + RBAC de aplicação |
-| `docs/FRAPPE-PATCHING.md` | Patching ERPNext/Frappe | Sim | Segurança e procedimento de atualização |
 | `docs/GUIA-CONFIGURACAO-INICIAL.md` | Configuração inicial (passo a passo) | Sim | Manual completo de onboarding |
 | `docs/ROADMAP.md` | Funcionalidades futuras (Trading, integrações) | Sim | Itens de expansão, não pendências |
 

@@ -20,7 +20,6 @@ A página **Modo Agentic** foi refatorada para uma arquitetura modular com abas,
    - `components/NamespaceRoutingEditor.tsx`
    - `types.ts`
 2. Abas por módulo:
-   - Visão Geral, Web, Imagens, Tarefas, Roteamento, Namespaces, ERPNext, Grafana, Pagamentos, Stack Ops, Links e Trading.
 3. Validação enterprise no editor de listas:
    - `trim`, deduplicação case-insensitive, limite de 200 itens e erro para linha acima de 160 caracteres.
    - Validação de regex textual no formato `/.../flags`.

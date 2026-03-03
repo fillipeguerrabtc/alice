@@ -47,7 +47,7 @@ function calculateBackoff(attempt: number, config: RetryConfig): number {
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'failed';
 
 /** Timeout para requisições SSE (ms) */
-const SSE_TIMEOUT = 120000; // 120 segundos (vision/web/ERP podem levar mais tempo)
+const SSE_TIMEOUT = 120000; // 120 segundos (vision/web podem levar mais tempo)
 
 /** Base URL da API */
 const API_BASE = import.meta.env.VITE_API_URL || '';

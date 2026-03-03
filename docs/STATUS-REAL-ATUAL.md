@@ -132,9 +132,7 @@
 - Modo Agentic: criação de `conversation_states` agora é UPSERT idempotente (elimina erro 23505).
 - Chat streaming: resposta de erro clara quando falha antes de enviar headers (evita 502 silencioso).
 - Agentic settings: detectores default persistidos quando `detectors` está vazio no banco.
-- Integrações: bootstrap automático de KuCoin e ERPNext por tenant quando secrets válidos existem.
 - LLM Trading: normalização de campos numéricos e arrays reduz falhas de parse e validação.
-- ERPNext: versão atualizada para v15.95.2 via SSOT.
 - Training: webhook com deduplicação semântica (semhash + cosine) e auditoria de duplicados.
 - CI: reordenação de enums/schemas de trading evita uso antes da declaração.
 - Lint: remoção de import não usado na página Trading (zero warnings).
@@ -155,7 +153,6 @@
 ## Visão geral da plataforma
 
 - Arquitetura: Multi-Stack Modular (5 stacks independentes).
-- Total de containers: 50 (10 infra + 10 Alice + 2 GPU + 13 observability + 15 ERPNext + 2 backup) + 1 trainer sob demanda.
 - Servidor: Hetzner GEX44 (Intel Core i5-13500 14 Core, 64GB DDR4 RAM, 2x 1.92TB NVMe SSD RAID 1, RTX 4000 Ada 20GB).
 - SO: Ubuntu 24.04.3 LTS.
 - Docker: 29.1.3 + Compose v5.0.0.
@@ -212,9 +209,7 @@
 
 - Prometheus, Grafana (Alerting), Loki, Jaeger, Langfuse, ClickHouse, OTel Collector, Vector, Node Exporter, cAdvisor.
 
-### Stack ERPNEXT
 
-- MariaDB, Redis Cache/Queue, backend, websocket, scheduler e workers.
 
 ### Stack BACKUP
 
@@ -232,7 +227,6 @@
 - `llm-gateway-service`: gateway LLM (resolução rota/contexto namespace/agente; chat e integrations podem usar quando `LLM_GATEWAY_URL` configurado).
 - `rag-service`: upload multimodal, embeddings texto GPU, fila assíncrona, WebSocket de embeddings.
 - `training-service`: scheduler, fine-tuning QLoRA, SemHash.
-- `integrations-service`: Stripe/Wise/Twilio/ERPNext/KuCoin/OpenAI Vision + circuit breakers.
 - `observability-service`: health checker, backup orchestrator, métricas.
 - `api-gateway` Node.js: apenas dev local (Caddy em produção).
 
@@ -258,7 +252,6 @@
 
 ### Schema Integrations
 
-- `integrations`, `audit_logs`, `webhook_events`, `stripe_erpnext_mapping`, `wise_sync_log`, `backup_jobs`.
 
 ### Schema Media
 
@@ -456,7 +449,6 @@
 ## Backups
 
 - PostgreSQL: pgBackRest (full + incremental + WAL).
-- MariaDB: Mariabackup.
 - Redis: RDB snapshots.
 - Manifestos JSON por job.
 
@@ -513,7 +505,6 @@ Retenção Arquivo:   30 dias
 - Imagens: resposta de geração agora inclui conteúdo padrão para não exibir bolha vazia.
 - Web: busca de imagens na web via SearXNG com envio direto no chat (sem embeddings de imagem).
 - Dashboard: takeover/SLA/circuit breakers/conversas semanais agora com dados reais do backend.
-- Integrações: métricas reais de Stripe/Wise/ERPNext expostas no dashboard.
 - Users Admin: modal de edição com rolagem, senha redefinível e colunas de grupos/nome preferido.
 - Namespaces: contagem real de agentes/docs e detalhes clicáveis no card.
 - Observability: alertas Grafana com fallback de no-data para evitar falsos positivos (LLM/RAG/GPU).
@@ -536,16 +527,9 @@ Retenção Arquivo:   30 dias
 - RBAC: resolveHighestRole não usa fallback quando roles existem (permite downgrade).
 - Stack Ops: validação de versão persistida no histórico da conversa (mensagem salva + contadores).
 - Agentic: confirmação respeita approvalPolicy novamente (sem bypass).
-- ERPNext: configurator executa `bench` com `setpriv --keep-groups` (compatível com `no-new-privileges`).
-- Deploy: logs de falha do ERPNext agora persistem como artifact no GitHub Actions.
-- Deploy: logs de falha persistem para todos os stacks (infra, alice, observability, erpnext, backup).
 - Deploy: diagnóstico rápido (tail) é exibido na tela antes do artifact.
-- Deploy: healthchecks de OBSERVABILITY/ERPNEXT/BACKUP rodam após deploy bem-sucedido.
 - Integrations: variáveis KuCoin orderbook (WS/REST) exigidas quando KuCoin ativo.
 - Timezone: containers em UTC; UI/Chat usam timezone do usuário com default `America/Sao_Paulo`.
-- ERPNext: configurator sincroniza assets e configs sem remover mountpoints (evita exit 1).
-- ERPNext: criação de site agora executa `bench build --production` e valida `frappe/dist` (corrige 404 de CSS/JS).
-- ERPNext: comando "inventario" agora mapeia corretamente para listagem de itens.
 - Users Admin: atualização de roles/grupos agora é transacional (sem perda parcial).
 - Auth: buildAuthContext propaga customRoleId para headers internos.
 - Chat: fallback de role agora usa `guest` (evita ROLE_HIERARCHY inválido).
@@ -555,8 +539,6 @@ Retenção Arquivo:   30 dias
 - Agentic: fallback determinístico quando busca web falha mesmo com request explícito.
 - Stack Ops: operações via GitHub Actions exigem confirmação explícita (action_requests).
 - Modo Agentic: configuração por tenant (toggles + links) com persistência PostgreSQL.
-- Agentic: execução real para ERPNext (read/write), pagamentos (Wise/Stripe) e stack ops (GitHub Actions).
-- ERPNext: novos endpoints para clientes e faturas (listar/criar) + validação Zod.
 - GitHub Actions: disparo de deploy/rollback via integrations-service com token seguro.
 - Chat: foco persistente no input ao abrir novas conversas e selecionar histórico.
 - Caddy: ACME resiliente com DNS precheck, DNS-01 DuckDNS e fallback ZeroSSL.
@@ -585,7 +567,6 @@ Retenção Arquivo:   30 dias
 - Configurações regionais: timezone, idioma da Alice e local (país/cidade) configuráveis no dashboard e persistidos em PostgreSQL.
 - Chat: SERVER_TIME agora usa timezone do usuário em todos os fluxos (REST, stream e WebSocket).
 - Frontend: datas e horários agora respeitam idioma/timezone do usuário em listas e cards.
-- ERPNext: init ajusta permissões do volume + sync de `assets.json` da imagem, executando `bench` via `setpriv` (evita 404 de CSS/JS).
 - RAG: timeout configurável por env (RAG_REQUEST_TIMEOUT_MS).
 - Agentic web: busca web forçada quando o usuário pedir explicitamente (sem aprovação).
 - Web/Deepweb: SearXNG com Tor via Ahmia habilitado; engine Torch desabilitado explicitamente para evitar falha na imagem atual.
@@ -669,9 +650,7 @@ Retenção Arquivo:   30 dias
 - pgBackRest: captura stderr+stdout no stanza-create para detectar mismatch.
 - pgBackRest: stanza-delete com `--force --force` no reset controlado.
 - pgBackRest: stop file + limpeza de metadados no reset automático.
-- ERPNext: mysqld_exporter usa .my.cnf gerado em runtime com usuário dedicado.
 - TLS Caddy: ACME_EMAIL agora é obrigatório (fail-fast no deploy).
-- ERPNext: ERPNEXT_MYSQL_EXPORTER_USER garantido na geração do .env.prod.
 - Permissions-Policy: microfone liberado apenas para `self` (Caddy + Nginx).
 - Alice Config: tratamento de erro de carregamento com UI estável e labels corretos.
 - Chat streaming: status duplicado removido e sincronização de mensagens durante stream.

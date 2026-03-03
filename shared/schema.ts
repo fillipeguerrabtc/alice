@@ -173,7 +173,7 @@ export const rolePermissions = pgTable(
 );
 
 // ============================================================================
-// OAUTH CLIENTS (SSO - Alice como OAuth Provider para Grafana/ERPNext)
+// OAUTH CLIENTS (SSO - Alice como OAuth Provider)
 // RFC 6749 + OIDC Best Practices 2025
 // ============================================================================
 
@@ -652,7 +652,7 @@ export const learningTasks = pgTable(
 );
 
 // ============================================================================
-// INTEGRAÇÕES EXTERNAS (ERPNext, Stripe, Twilio, etc.)
+// INTEGRAÇÕES EXTERNAS (Stripe, Twilio e outros serviços)
 // ============================================================================
 
 export const integrations = pgTable(
@@ -1272,15 +1272,6 @@ export interface AgenticDetectors {
       planning: string[];
     };
   };
-  erp: {
-    baseKeywords: string[];
-    listItemsKeywords: string[];
-    listCustomersKeywords: string[];
-    listInvoicesKeywords: string[];
-    annualBillingKeywords: string[];
-    createCustomerKeywords: string[];
-    createInvoiceKeywords: string[];
-  };
   payments: {
     wiseKeywords: string[];
     wiseRecipientsKeywords: string[];
@@ -1551,13 +1542,13 @@ export type InsertTrainingData = typeof trainingData.$inferInsert;
 export type FineTuningJob = typeof fineTuningJobs.$inferSelect;
 export type InsertFineTuningJob = typeof fineTuningJobs.$inferInsert;
 
-// Wise-ERPNext Sync Types (FASE 5.5)
+// Wise Sync Types (FASE 5.5)
 
 // Webhook Events Types (Idempotência - Segurança Enterprise)
 export type WebhookEvent = typeof webhookEvents.$inferSelect;
 export type InsertWebhookEvent = typeof webhookEvents.$inferInsert;
 
-// Stripe ERPNext Mapping Types (Rastreabilidade de documentos)
+// Stripe Mapping Types (Rastreabilidade de documentos)
 
 // Takeover/Handover Types (FASE 6.5)
 export type ConversationState = typeof conversationStates.$inferSelect;
@@ -1603,7 +1594,7 @@ export const insertUsageMetricSchema = createInsertSchema(usageMetrics).omit({
   criadoEm: true,
 });
 
-// Wise-ERPNext Sync Insert Schema (FASE 5.5)
+// Wise Sync Insert Schema (FASE 5.5)
 
 // Takeover/Handover Insert Schemas (FASE 6.5)
 export const insertConversationStateSchema = createInsertSchema(conversationStates).omit({

@@ -36,7 +36,6 @@ Deploy Workflow (deploy-stack-modular.yml)
 Job: prepare
     └─ Recebe built_images como input
         ↓
-Jobs: deploy-{infra,alice,observability,erpnext,backup}
     ├─ Export BUILT_IMAGES="${{ github.event.inputs.built_images }}"
     ├─ Source /opt/alice/scripts/deploy-functions.sh
     └─ Loop em cada imagem:

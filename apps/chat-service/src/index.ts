@@ -1599,38 +1599,6 @@ const DEFAULT_AGENTIC_DETECTORS: AgenticDetectors = {
       planning: AGENTIC_TASK_TYPE_KEYWORDS.planning,
     },
   },
-  erp: {
-    baseKeywords: [
-      'erp',
-      'estoque',
-      'inventario',
-      'inventory',
-      'fatura',
-      'invoice',
-      'cliente',
-      'customer',
-      'pedido',
-      'ordem',
-      'item',
-      'produto',
-      'nota fiscal',
-      'fiscal note',
-    ],
-    listItemsKeywords: ['estoque', 'inventario', 'itens', 'items', 'inventory', 'produto', 'produtos', 'sku'],
-    listCustomersKeywords: ['clientes', 'customers', 'contato', 'contact', 'account'],
-    listInvoicesKeywords: ['faturas', 'invoices', 'invoice', 'nota fiscal', 'nfs', 'billing'],
-    annualBillingKeywords: [
-      'faturamento anual',
-      'receita anual',
-      'vendas anuais',
-      'annual revenue',
-      'annual billing',
-      'yearly revenue',
-      'yearly billing',
-    ],
-    createCustomerKeywords: ['criar cliente', 'cadastrar cliente', 'novo cliente', 'create customer', 'register customer'],
-    createInvoiceKeywords: ['criar fatura', 'emitir fatura', 'criar invoice', 'emitir invoice', 'gerar nota fiscal', 'create billing'],
-  },
   payments: {
     wiseKeywords: ['wise', 'transferência', 'transferencia', 'wire', 'remessa'],
     wiseRecipientsKeywords: ['destinatario', 'recipient', 'recebedor', 'beneficiario', 'beneficiary'],
@@ -1769,15 +1737,6 @@ function normalizeAgenticDetectors(detectors: Partial<AgenticDetectors> | null |
         accounting: normalizeDetectorList(safe.agenticTask?.typeKeywords?.accounting ?? DEFAULT_AGENTIC_DETECTORS.agenticTask.typeKeywords.accounting),
         planning: normalizeDetectorList(safe.agenticTask?.typeKeywords?.planning ?? DEFAULT_AGENTIC_DETECTORS.agenticTask.typeKeywords.planning),
       },
-    },
-    erp: {
-      baseKeywords: normalizeDetectorList(safe.erp?.baseKeywords ?? DEFAULT_AGENTIC_DETECTORS.erp.baseKeywords),
-      listItemsKeywords: normalizeDetectorList(safe.erp?.listItemsKeywords ?? DEFAULT_AGENTIC_DETECTORS.erp.listItemsKeywords),
-      listCustomersKeywords: normalizeDetectorList(safe.erp?.listCustomersKeywords ?? DEFAULT_AGENTIC_DETECTORS.erp.listCustomersKeywords),
-      listInvoicesKeywords: normalizeDetectorList(safe.erp?.listInvoicesKeywords ?? DEFAULT_AGENTIC_DETECTORS.erp.listInvoicesKeywords),
-      annualBillingKeywords: normalizeDetectorList(safe.erp?.annualBillingKeywords ?? DEFAULT_AGENTIC_DETECTORS.erp.annualBillingKeywords),
-      createCustomerKeywords: normalizeDetectorList(safe.erp?.createCustomerKeywords ?? DEFAULT_AGENTIC_DETECTORS.erp.createCustomerKeywords),
-      createInvoiceKeywords: normalizeDetectorList(safe.erp?.createInvoiceKeywords ?? DEFAULT_AGENTIC_DETECTORS.erp.createInvoiceKeywords),
     },
     payments: {
       wiseKeywords: normalizeDetectorList(safe.payments?.wiseKeywords ?? DEFAULT_AGENTIC_DETECTORS.payments.wiseKeywords),
@@ -18494,15 +18453,6 @@ const agenticDetectorsSchema = z.object({
       planning: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
     }),
   }),
-  erp: z.object({
-    baseKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
-    listItemsKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
-    listCustomersKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
-    listInvoicesKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
-      annualBillingKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
-    createCustomerKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
-    createInvoiceKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
-  }),
   payments: z.object({
     wiseKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
     wiseRecipientsKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
@@ -18523,8 +18473,6 @@ const agenticDetectorsSchema = z.object({
 
 const agenticSettingsSchema = z.object({
   webEnabled: z.boolean(),
-  erpReadEnabled: z.boolean(),
-  erpWriteEnabled: z.boolean(),
   observabilityReadEnabled: z.boolean(),
   observabilityWriteEnabled: z.boolean(),
   tradingEnabled: z.boolean(),
@@ -18537,8 +18485,6 @@ const agenticSettingsSchema = z.object({
 
 const DEFAULT_AGENTIC_SETTINGS = {
   webEnabled: true,
-  erpReadEnabled: true,
-  erpWriteEnabled: true,
   observabilityReadEnabled: true,
   observabilityWriteEnabled: true,
   tradingEnabled: true,
@@ -20205,4 +20151,5 @@ registerShutdownCallback(
   },
   { priority: ShutdownPriority.DATABASE }
 );
+
 

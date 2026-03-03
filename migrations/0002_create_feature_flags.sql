@@ -132,7 +132,6 @@ VALUES
     ('jaeger_enabled', true, 'Tracing Jaeger'),
     ('stripe_enabled', false, 'Integração Stripe (requer configuração)'),
     ('wise_enabled', false, 'Integração Wise (requer configuração)'),
-    ('erpnext_enabled', false, 'Integração ERPNext (requer configuração)'),
     ('twilio_enabled', false, 'Integração Twilio (requer configuração)'),
     ('email_enabled', false, 'Integração Gmail SMTP (requer configuração)'),
     ('saml_enabled', false, 'Autenticação SAML 2.0 (requer configuração)'),

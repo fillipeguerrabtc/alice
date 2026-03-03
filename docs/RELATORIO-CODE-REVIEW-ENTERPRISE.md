@@ -45,11 +45,9 @@ Evidencias de baseline:
 | Servico | Responsabilidade principal | Entry point | AuthN/AuthZ | Dados/Filas | Dependencias e integracoes | Evidencias |
 |---|---|---|---|---|---|---|
 | api-gateway | Proxy, rate limit e circuit breakers para servicos | `apps/api-gateway/src/index.ts` | Nao aplica RBAC proprio, delega ao backend | N/A | auth/chat/rag/training/integrations/observability via URL | `apps/api-gateway/src/index.ts:283`, `:300`, `:542`, `:549`, `:581` |
-| auth-service | Sessao, OAuth (Google/GitHub), SAML, OIDC provider, RBAC admin | `apps/auth-service/src/index.ts` | `session` + `passport` + `requireAuth/requirePermission` + CSRF | PostgreSQL/Drizzle | Biometrics interno, Grafana/ERP OIDC clients | `apps/auth-service/src/index.ts:959`, `:984`, `:2299`, `:2351`, `:4248` |
 | chat-service | Chat streaming (SSE), WS, handover/takeover, roteamento, comandos trading | `apps/chat-service/src/index.ts` | `createSessionAuthMiddleware` + rotas com `requireAuth/requirePermission` (com excecoes criticas) | PostgreSQL, Redis pub/sub, chamadas cross-service | integrations/training/llm-gateway | `apps/chat-service/src/index.ts:7356`, `:847`, `:9076`, `:15647`, `:18549` |
 | frontend-service | SPA React/Vite (chat, trading, training, observability) | `apps/frontend-service/src/main.tsx` + Nginx runtime | Sessao/cookies e chamadas API | N/A | API via Caddy/gateway | `apps/frontend-service/Dockerfile`, `apps/frontend-service/src/pages/Chat/index.tsx:1479`, `apps/frontend-service/src/hooks/use-websocket-chat.ts:429` |
 | gpu-manager-service | Fila e admission control de workloads GPU | `apps/gpu-manager-service/src/index.ts` | `X-Internal-Api-Secret` | Redis queue/result, metricas | llm/embeddings/trainer services | `apps/gpu-manager-service/src/index.ts:107`, `:1046`, `:1082`, `:1112` |
-| integrations-service | Integracoes Stripe/Wise/Twilio/ERPNext/KuCoin + trading core + postmortem | `apps/integrations-service/src/index.ts` | Sessao + `requirePermission` na maioria das rotas | PostgreSQL, Redis (worker), chamadas internas | chat/training/rag/kucoin/wise/stripe | `apps/integrations-service/src/index.ts:3326`, `:3596`, `:12121`, `:13294`, `:21554` |
 | llm-gateway-service | Proxy/resolve de contexto/modelo/adapter LoRA com fail-closed para trading | `apps/llm-gateway-service/src/index.ts` | Internal secret middleware global | N/A (DB para resolucao de contexto/model) | chamado por chat-service | `apps/llm-gateway-service/src/index.ts:171`, `:185`, `:260`, `:286`, `:419` |
 | observability-service | Health aggregation, URLs observability, backup orchestrator | `apps/observability-service/src/index.ts` | internal auth ou sessao (`requireInternalOrSessionAuth`) | chamadas a Prom/Grafana/Jaeger + backup orchestration | pgbackrest, docker exec, qdrant restore | `apps/observability-service/src/index.ts:83`, `:467`, `:868`, `:952`; `apps/observability-service/src/backup-orchestrator.ts:303` |
 | rag-service | Ingestao, parsing, upload, embeddings, retrieval, media storage | `apps/rag-service/src/index.ts` | `requireAuth + requirePermission + requireSameTenant` na maioria das rotas | PostgreSQL + Qdrant + storage local + Redis | training/gpu/searxng | `apps/rag-service/src/index.ts:2317`, `:2472`, `:4235`; `apps/rag-service/src/storage.ts:203` |
@@ -233,9 +231,7 @@ Evidencias:
 - LLM gateway internal auth global: `apps/llm-gateway-service/src/index.ts:171-185`.
 - Timeouts/circuit breaker no chat para chamadas cross-service: `apps/chat-service/src/index.ts:6081-6087`, `:5703`.
 
-### 4.7 Integrations (KuCoin/Wise/Stripe/ERPNext/SearXNG/OpenAI Vision) e isolamento tenant
 Evidencias:
-- Wise/Stripe/Twilio/ERP rotas e webhooks: `apps/integrations-service/src/index.ts:3311-3313`, `:5868+`, `:4061+`, `:9047+`, `:4659+`.
 - KuCoin multi-mercado (spot/margin/futures): `apps/integrations-service/src/index.ts:17864+`, `:19731+`, `:20547`, `:21030`.
 - Isolamento via permissao e tenant em queries trading/dataset: `apps/integrations-service/src/index.ts:3596`, `:12121`, `:13614`.
 
