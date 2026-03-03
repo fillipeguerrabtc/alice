@@ -1804,6 +1804,8 @@
     },
     "batchSelection": {
       "selectAllFiltered": "Selecionar pendentes filtrados",
+      "selectAll": "Selecionar todos",
+      "deselectAll": "Deselecionar todos",
       "selected": "{{count}} dataset(s) selecionado(s)",
       "filteredPending": "{{count}} pendente(s) no filtro atual",
       "approveSelected": "Aprovar selecionados",
@@ -1961,14 +1963,20 @@
     "resolveScope": {
       "title": "Resolver escopo",
       "desc": "Defina o namespace de destino e o motivo do override (auditável).",
+      "relinkTitle": "Alterar namespace do dataset",
+      "relinkDesc": "Ajuste manualmente o namespace vinculado ao dataset mantendo trilha de auditoria.",
       "suggestedTitle": "Namespace sugerido",
       "createSuggested": "Criar namespace sugerido",
       "namespaceSelect": "Namespace existente",
       "reason": "Motivo (obrigatório)",
       "reasonPlaceholder": "Correção manual do escopo inferido",
+      "relinkReasonPlaceholder": "Correção manual de namespace do dataset",
       "domain": "Domínio (opcional)",
       "agentId": "Agent ID (opcional)",
       "confirm": "Resolver escopo",
+      "relinkConfirm": "Salvar namespace",
+      "resolveAction": "Resolver escopo",
+      "changeNamespaceAction": "Alterar namespace",
       "namespaceCreated": "Namespace criado e escopo resolvido"
     },
     "promoteDocument": {

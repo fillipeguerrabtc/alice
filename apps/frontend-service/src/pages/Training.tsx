@@ -423,17 +423,18 @@ function TrainingDataCard({
 
         {data.status === 'pending' && (
           <CardFooter className="pt-2 gap-2">
-            {data.needsHumanReview && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="flex-1"
-                onClick={onResolveScope}
-                disabled={isPending}
-              >
-                Resolver escopo
-              </Button>
-            )}
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1"
+              onClick={onResolveScope}
+              disabled={isPending}
+            >
+              <Folder className="h-3 w-3 mr-1" />
+              {data.needsHumanReview
+                ? t('training.resolveScope.resolveAction')
+                : t('training.resolveScope.changeNamespaceAction')}
+            </Button>
             <Button 
               variant="outline" 
               size="sm" 
@@ -2769,6 +2770,8 @@ export default function Training() {
   const filteredSelectedPendingCount = filteredPendingIds.filter((id) => selectedDataIds.has(id)).length;
   const totalSelectedPendingCount = Array.from(selectedDataIds).filter((id) => allPendingIds.has(id)).length;
   const reviewMutationPending = updateStatus.isPending || updateStatusBatch.isPending;
+  const allFilteredPendingSelected =
+    filteredPendingIds.length > 0 && filteredSelectedPendingCount === filteredPendingIds.length;
 
   useEffect(() => {
     setSelectedDataIds((prev) => {
@@ -2810,6 +2813,14 @@ export default function Training() {
       return next;
     });
   }, [filteredPendingIds]);
+
+  const selectAllFilteredPending = useCallback(() => {
+    toggleSelectAllFilteredPending(true);
+  }, [toggleSelectAllFilteredPending]);
+
+  const clearAllPendingSelection = useCallback(() => {
+    setSelectedDataIds(new Set());
+  }, []);
 
   const openBatchReviewDialog = useCallback((action: 'approve' | 'reject') => {
     const selectedIds = Array.from(selectedDataIds).filter((id) => allPendingIds.has(id));
@@ -2938,11 +2949,15 @@ export default function Training() {
   const handleResolveScope = useCallback((entry: TrainingData) => {
     setResolveScopeEntry(entry);
     setResolveScopeNamespaceId(entry.namespaceId ?? entry.inferredNamespaceId ?? '');
-    setResolveScopeReason('Correção manual do escopo inferido');
+    setResolveScopeReason(
+      entry.needsHumanReview
+        ? t('training.resolveScope.reasonPlaceholder')
+        : t('training.resolveScope.relinkReasonPlaceholder')
+    );
     setResolveScopeDomain(entry.inferredDomain ?? '');
     setResolveScopeAgentId(entry.agentId ?? entry.inferredAgentId ?? '');
     setResolveScopeDialogOpen(true);
-  }, []);
+  }, [t]);
 
   const confirmResolveScope = useCallback(() => {
     if (!resolveScopeEntry) return;
@@ -2997,6 +3012,8 @@ export default function Training() {
       }
     );
   }, [resolveScopeEntry, resolveScopeReason, createNamespaceMutation, resolveScopeMutation, t]);
+
+  const resolveScopeNeedsHumanReview = Boolean(resolveScopeEntry?.needsHumanReview);
 
   return (
     <div className="flex flex-col h-full">
@@ -3248,7 +3265,25 @@ export default function Training() {
                 <span className="text-xs text-muted-foreground">
                   {t('training.batchSelection.filteredPending', { count: filteredPendingIds.length })}
                 </span>
-                <div className="ml-auto flex items-center gap-2">
+                <div className="ml-auto flex flex-wrap items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={selectAllFilteredPending}
+                    disabled={filteredPendingIds.length === 0 || allFilteredPendingSelected || reviewMutationPending}
+                    data-testid="button-select-all-filtered"
+                  >
+                    {t('training.batchSelection.selectAll')}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={clearAllPendingSelection}
+                    disabled={totalSelectedPendingCount === 0 || reviewMutationPending}
+                    data-testid="button-deselect-all"
+                  >
+                    {t('training.batchSelection.deselectAll')}
+                  </Button>
                   <Button
                     variant="outline"
                     size="sm"
@@ -3847,11 +3882,19 @@ export default function Training() {
       >
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>{t('training.resolveScope.title')}</DialogTitle>
-            <DialogDescription>{t('training.resolveScope.desc')}</DialogDescription>
+            <DialogTitle>
+              {resolveScopeNeedsHumanReview
+                ? t('training.resolveScope.title')
+                : t('training.resolveScope.relinkTitle')}
+            </DialogTitle>
+            <DialogDescription>
+              {resolveScopeNeedsHumanReview
+                ? t('training.resolveScope.desc')
+                : t('training.resolveScope.relinkDesc')}
+            </DialogDescription>
           </DialogHeader>
           <div className="grid gap-3 py-2">
-            {resolveScopeEntry?.inferenceTrace?.suggestedNewNamespace && (
+            {resolveScopeNeedsHumanReview && resolveScopeEntry?.inferenceTrace?.suggestedNewNamespace && (
               <div className="rounded-lg border border-primary/30 bg-primary/5 p-3">
                 <p className="text-sm font-medium mb-2">{t('training.resolveScope.suggestedTitle')}</p>
                 <p className="text-xs text-muted-foreground mb-2">
@@ -3890,7 +3933,15 @@ export default function Training() {
             </div>
             <div className="grid gap-2">
               <Label>{t('training.resolveScope.reason')}</Label>
-              <Input value={resolveScopeReason} onChange={(e) => setResolveScopeReason(e.target.value)} placeholder={t('training.resolveScope.reasonPlaceholder')} />
+              <Input
+                value={resolveScopeReason}
+                onChange={(e) => setResolveScopeReason(e.target.value)}
+                placeholder={
+                  resolveScopeNeedsHumanReview
+                    ? t('training.resolveScope.reasonPlaceholder')
+                    : t('training.resolveScope.relinkReasonPlaceholder')
+                }
+              />
             </div>
             <div className="grid gap-2">
               <Label>{t('training.resolveScope.domain')}</Label>
@@ -3912,7 +3963,9 @@ export default function Training() {
                   {t('training.reviewDialog.saving')}
                 </>
               ) : (
-                t('training.resolveScope.confirm')
+                resolveScopeNeedsHumanReview
+                  ? t('training.resolveScope.confirm')
+                  : t('training.resolveScope.relinkConfirm')
               )}
             </Button>
           </DialogFooter>

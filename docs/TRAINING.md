@@ -1,7 +1,7 @@
 # Sistema de Treinamento - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra  
-**Data:** 11 de Fevereiro de 2026  
+**Data:** 3 de Marco de 2026  
 **Versão:** 4.4.0 - Gate 2 + Configurações editáveis via UI
 
 ---
@@ -174,6 +174,13 @@ Quando **não há namespace** após todas as etapas, o scope-resolver retorna **
 | Outro | `conhecimento` | Documentos e conversas |
 
 O frontend (modal "Resolver escopo") exibe a opção **"Criar namespace: {{name}} ({{theme}})"** e, ao confirmar, chama a API de criação e associa ao `training_data`. O fluxo reutiliza `handleResolveScope` e `POST /api/training/data/resolve-scope`.
+
+### Curadoria manual de namespace (UI)
+
+- A aba **Training > Data** possui acao explicita para **Alterar namespace** em datasets pendentes.
+- O ajuste manual reutiliza o endpoint oficial `PATCH /api/training/data/:id/resolve-scope` (sem endpoint novo e sem workaround).
+- Em itens de quarentena (`needsHumanReview=true`), a mesma acao permanece como **Resolver escopo**.
+- O motivo continua obrigatorio para preservar trilha de auditoria (`training_scope_overrides`).
 
 **Métrica de observabilidade:** `alice_training_scope_suggested_new_namespace_total{source_type}` — incrementada sempre que `suggestedNewNamespace` é retornado.
 
@@ -684,7 +691,9 @@ A página de treinamento no dashboard oferece:
 2. **Gestão de Dados**
    - Aprovar/rejeitar dados individualmente
    - Aprovação em lote
+   - Selecionar todos / deselecionar todos os pendentes do filtro atual
    - Filtros por status e namespace
+   - Ajuste manual de namespace por dataset pendente
 
 3. **Jobs de Treinamento**
    - Criar novo job

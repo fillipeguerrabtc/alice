@@ -1753,6 +1753,8 @@
     },
     "batchSelection": {
       "selectAllFiltered": "Select filtered pending",
+      "selectAll": "Select all",
+      "deselectAll": "Deselect all",
       "selected": "{{count}} dataset(s) selected",
       "filteredPending": "{{count}} pending in current filter",
       "approveSelected": "Approve selected",
@@ -1904,14 +1906,20 @@
     "resolveScope": {
       "title": "Resolve scope",
       "desc": "Set the target namespace and override reason (auditable).",
+      "relinkTitle": "Change dataset namespace",
+      "relinkDesc": "Manually adjust the namespace linked to the dataset while keeping an audit trail.",
       "suggestedTitle": "Suggested namespace",
       "createSuggested": "Create suggested namespace",
       "namespaceSelect": "Existing namespace",
       "reason": "Reason (required)",
       "reasonPlaceholder": "Manual correction of inferred scope",
+      "relinkReasonPlaceholder": "Manual correction of dataset namespace",
       "domain": "Domain (optional)",
       "agentId": "Agent ID (optional)",
       "confirm": "Resolve scope",
+      "relinkConfirm": "Save namespace",
+      "resolveAction": "Resolve scope",
+      "changeNamespaceAction": "Change namespace",
       "namespaceCreated": "Namespace created and scope resolved"
     },
     "promoteDocument": {
