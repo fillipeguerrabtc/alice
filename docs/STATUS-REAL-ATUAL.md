@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 03 de Março de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 11.2 - Trading V2 enterprise
+**Versão:** 11.3 - Trading V2 enterprise + hardening de treino on-demand
 
 ---
 
@@ -11,6 +11,7 @@
 - **Hardening Chat/Trading (23/02/2026):** Autenticação interna HMAC unificada entre serviços, GPU trainer sob demanda via profile `gpu-training`, chat sem login não abre WebSocket e exibe aviso, métricas de erro SSE + auto-runs e latência do LLM Gateway observadas em Prometheus.
 - **Training Embedding/Dedupe (02/03/2026):** correção da causa raiz de falha no import JSONL com worker assíncrono: escrita de embedding em `training_data` agora usa literal vetorial SQL (`toSql`) com cast correto (`halfvec`/`vector`) e resolução dinâmica do tipo da coluna. Migração `0091_training_data_embedding_1024_halfvec.sql` alinha `training_data.embedding` para `halfvec(1024)` e força reprocessamento assíncrono de embeddings antigos/incompatíveis.
 - **Trading V2 Auto Signal Enterprise (03/03/2026):** Auto Engine agora suporta seleção universal de ativos por venue/mercado (multi-seleção + todos os ativos), catálogo dinâmico via `GET /api/trading-v2/auto/assets`, payload normalizado de `autoMix` para análise completa (`scope=all`, todas as modalidades, todos os ativos), e filtro de candidatos por mercado/ativo/intent com métricas de decisão detalhadas. Fluxos `no-trade` deixam de ser classificados como falha operacional.
+- **Training on-demand Hardening (03/03/2026):** correção de duas causas raiz: (1) frontend de Training passa a enviar sempre `epochs/batch/lr` efetivos para criação de job (valor digitado não é mais ignorado sem `advancedOverride`); (2) start sob demanda do `gpu-trainer` corrigido com `DOCKER_SOCKET_GID` configurável no compose/env, removendo hardcode de grupo e eliminando falha `fetch failed` por indisponibilidade do orquestrador Docker.
 - **Chat Runtime Governado por Namespace Profile (02/03/2026):** remoção da lógica legada de perfil hardcoded em SLA/history/routing no `chat-service`. Fluxos `sync`, `stream`, `websocket`, `websocket-media` e `external-channel` agora resolvem knobs em tempo de execução a partir de `namespace_profiles.config` (SLA por canal, orçamento de prompt, threshold de roteamento, prioridade GPU, memória e histórico), com fallback seguro somente quando não houver namespace.
 - **Hardening Auto-collect + Guardrails (02/03/2026):** corrigidos três desvios críticos de governança: (1) perfil de corrupção volta a ativar modo `trading` usando detector oficial de comandos de trading (evita falso-positivo em respostas numéricas válidas); (2) sampling determinístico com `conversationId` agora normaliza seed não-hex com SHA-256 antes da projeção para `[0..1]`, preservando a taxa configurada; (3) caps diários com rollback transacional no `chat-service` (tenant/namespace/user) e proteção no helper para não acumular contador acima do limite quando o cap é excedido.
 

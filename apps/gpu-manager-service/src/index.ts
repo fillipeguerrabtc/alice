@@ -174,6 +174,24 @@ const GPU_SERVICE_URLS = {
   [GpuServiceType.TRAINING]: process.env.TRAINING_GPU_URL || 'http://gpu-trainer:8000',
 };
 
+async function isTrainingServiceReachable(): Promise<boolean> {
+  const trainingUrl = GPU_SERVICE_URLS[GpuServiceType.TRAINING];
+  const controller = new AbortController();
+  const timeoutHandle = setTimeout(() => controller.abort(), 3000);
+  try {
+    const response = await fetch(`${trainingUrl}/health`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+    });
+    return response.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
+}
+
 /** VRAM necessária por serviço (GB)
  *
  * IMPORTANTE (Regra 6 - sem valores “falsos”): este valor é usado para:
@@ -735,6 +753,13 @@ async function processGpuRequest(request: GpuRequest): Promise<GpuResponse> {
         await switchToTraining();
       } else if (serviceType === GpuServiceType.EMBEDDINGS && getOrchestratorState() === 'training' && GPU_ORCHESTRATION_MODE === 'preemptive') {
         await switchToLlmEmbeddings();
+      }
+    } else if (serviceType === GpuServiceType.TRAINING) {
+      const trainerReachable = await isTrainingServiceReachable();
+      if (!trainerReachable) {
+        throw new Error(
+          'TRAINING_SERVICE_UNAVAILABLE: gpu-trainer offline e orquestrador indisponivel para start on-demand. Verifique DOCKER_SOCKET_GID e profile gpu-training.'
+        );
       }
     }
 
@@ -1498,10 +1523,16 @@ async function start(): Promise<void> {
     
     // Verificar disponibilidade do orquestrador (uma vez no startup)
     orchestratorAvailable = await isOrchestratorAvailable();
-    if (orchestratorAvailable && GPU_ORCHESTRATION_MODE === 'preemptive') {
-      logger.info({ orchestrationMode: GPU_ORCHESTRATION_MODE }, 'Orquestrador GPU disponível - troca embeddings↔trainer habilitada');
+    if (orchestratorAvailable) {
+      logger.info(
+        { orchestrationMode: GPU_ORCHESTRATION_MODE },
+        'Orquestrador GPU disponivel para ciclo de treino sob demanda'
+      );
     } else {
-      logger.info({ orchestrationMode: GPU_ORCHESTRATION_MODE }, 'Modo simultâneo/fixo habilitado para serviços GPU');
+      logger.warn(
+        { orchestrationMode: GPU_ORCHESTRATION_MODE },
+        'Orquestrador GPU indisponivel; treino requer gpu-trainer ja ativo ou correcao de acesso ao docker.sock'
+      );
     }
 
     // Iniciar worker de fila

@@ -947,24 +947,27 @@ function CreateJobDialog({
         throw new Error(t('training.createJob.namespaceRequired'));
       }
 
-      let validatedHyperparams: TrainingHyperparamsForm | undefined;
-      if (advancedOverride) {
-        const parsed = sharedTrainingHyperparamsSchema.safeParse({
-          epochs,
-          batchSize,
-          learningRate,
-          gradientAccumulationSteps,
-          warmupSteps,
-          maxSeqLen,
-          loraRank,
-          loraAlpha,
-          loraDropout,
-        });
-        if (!parsed.success) {
-          throw new Error(t('training.createJob.invalidHyperparams'));
-        }
-        validatedHyperparams = parsed.data;
+      const presetValues = presetHyperparams[preset] ?? defaultHyperparams;
+      const parsed = sharedTrainingHyperparamsSchema.safeParse({
+        ...presetValues,
+        epochs,
+        batchSize,
+        learningRate,
+        ...(advancedOverride
+          ? {
+            gradientAccumulationSteps,
+            warmupSteps,
+            maxSeqLen,
+            loraRank,
+            loraAlpha,
+            loraDropout,
+          }
+          : {}),
+      });
+      if (!parsed.success) {
+        throw new Error(t('training.createJob.invalidHyperparams'));
       }
+      const validatedHyperparams = parsed.data;
 
       return apiRequest('POST', '/api/training/jobs', {
         tenantId,

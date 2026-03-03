@@ -610,7 +610,7 @@ services:
       - no-new-privileges:true
     # Orquestrador GPU (11/02/2026): socket + compose para troca embeddings↔trainer
     group_add:
-      - "999"  # docker group (acesso ao socket)
+      - "${DOCKER_SOCKET_GID:-988}"  # docker.sock GID do host (acesso ao socket)
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /opt/alice/app/infra/docker:/opt/alice/compose:ro

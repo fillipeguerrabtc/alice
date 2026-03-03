@@ -89,7 +89,11 @@ export async function isOrchestratorAvailable(): Promise<boolean> {
   try {
     await execAsync('docker info', { timeout: 5000 });
     return true;
-  } catch {
+  } catch (error) {
+    logger.warn(
+      { error: error instanceof Error ? error.message : String(error) },
+      'Orquestrador indisponivel: docker info falhou (socket/permissoes)'
+    );
     return false;
   }
 }
