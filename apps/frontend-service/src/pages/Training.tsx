@@ -128,11 +128,27 @@ interface FineTuningJob {
   name: string;
   baseModel: string;
   status: 'pending' | 'preparing' | 'training' | 'validating' | 'completed' | 'failed' | 'cancelled';
-  trainingDataCount: number;
+  runSource?: 'custom_job' | 'on_demand' | 'scheduled';
+  trainingDataCount: number | null;
+  validationDataCount?: number | null;
+  evaluationStatus?: 'pending' | 'running' | 'passed' | 'failed' | 'skipped';
+  promotionStatus?: 'candidate' | 'staged' | 'active' | 'rejected' | 'rolled_back';
+  modelVersionId?: string | null;
+  scopeNamespaceId?: string | null;
+  scopeAgentId?: string | null;
   hyperparameters: {
     epochs?: number;
     learningRate?: number;
     batchSize?: number;
+    gradientAccumulationSteps?: number;
+    warmupSteps?: number;
+    maxSeqLen?: number;
+    loraRank?: number;
+    loraAlpha?: number;
+    loraDropout?: number;
+    lrSchedulerType?: string;
+    maxGradNorm?: number;
+    targetModules?: string[];
   };
   progress: number | null;
   metrics: Record<string, unknown> | null;
@@ -217,6 +233,153 @@ interface BulkImportResult {
   duplicatesSkipped?: number;
   sourceType?: string;
   errors?: Array<{ index: number; error: string }>;
+}
+
+type TrainingHyperparamsPreset = 'safe' | 'standard' | 'large';
+
+type TrainingHyperparamsForm = {
+  epochs: number;
+  learningRate: number;
+  batchSize: number;
+  gradientAccumulationSteps: number;
+  warmupSteps: number;
+  maxSeqLen: number;
+  loraRank: number;
+  loraAlpha: number;
+  loraDropout: number;
+  lrSchedulerType: string;
+  maxGradNorm: number;
+  targetModules: string[];
+};
+
+type TrainingSystemConfigRuntime = {
+  minOndemandDatasetSize: number;
+  minScheduledDatasetSizeIncremental: number;
+  minScheduledDatasetSizeFull: number;
+  autoLearningCronIncremental: string;
+  autoLearningCronFull: string;
+  autoLearningIncludeImages: boolean;
+  defaultHyperparams: TrainingHyperparamsForm;
+  presets: Record<TrainingHyperparamsPreset, TrainingHyperparamsForm>;
+};
+
+const TRAINING_SYSTEM_CONFIG_DEFAULTS = {
+  MIN_ONDEMAND_DATASET_SIZE: '10',
+  MIN_SCHEDULED_DATASET_SIZE_INCREMENTAL: '50',
+  MIN_SCHEDULED_DATASET_SIZE_FULL: '200',
+  AUTO_LEARNING_CRON_INCREMENTAL: '0 3 * * 0',
+  AUTO_LEARNING_CRON_FULL: '0 1 1,15 * *',
+  AUTO_LEARNING_INCLUDE_IMAGES: 'true',
+  TRAINING_DEFAULT_HYPERPARAMS_JSON: JSON.stringify({
+    epochs: 3,
+    learningRate: 0.0001,
+    batchSize: 4,
+    gradientAccumulationSteps: 1,
+    warmupSteps: 100,
+    maxSeqLen: 2048,
+    loraRank: 16,
+    loraAlpha: 32,
+    loraDropout: 0.05,
+    lrSchedulerType: 'linear',
+    maxGradNorm: 1,
+    targetModules: ['q_proj', 'k_proj', 'v_proj', 'o_proj'],
+  }),
+  TRAINING_PRESET_SAFE_JSON: JSON.stringify({
+    epochs: 2,
+    learningRate: 0.00005,
+    batchSize: 2,
+    gradientAccumulationSteps: 2,
+    warmupSteps: 150,
+    maxSeqLen: 1536,
+    loraRank: 8,
+    loraAlpha: 16,
+    loraDropout: 0.1,
+    lrSchedulerType: 'linear',
+    maxGradNorm: 0.5,
+    targetModules: ['q_proj', 'v_proj'],
+  }),
+  TRAINING_PRESET_STANDARD_JSON: JSON.stringify({
+    epochs: 3,
+    learningRate: 0.0001,
+    batchSize: 4,
+    gradientAccumulationSteps: 1,
+    warmupSteps: 100,
+    maxSeqLen: 2048,
+    loraRank: 16,
+    loraAlpha: 32,
+    loraDropout: 0.05,
+    lrSchedulerType: 'linear',
+    maxGradNorm: 1,
+    targetModules: ['q_proj', 'k_proj', 'v_proj', 'o_proj'],
+  }),
+  TRAINING_PRESET_LARGE_JSON: JSON.stringify({
+    epochs: 5,
+    learningRate: 0.00015,
+    batchSize: 8,
+    gradientAccumulationSteps: 1,
+    warmupSteps: 80,
+    maxSeqLen: 3072,
+    loraRank: 32,
+    loraAlpha: 64,
+    loraDropout: 0.03,
+    lrSchedulerType: 'cosine',
+    maxGradNorm: 1,
+    targetModules: ['q_proj', 'k_proj', 'v_proj', 'o_proj', 'gate_proj', 'up_proj', 'down_proj'],
+  }),
+} as const;
+
+const trainingSystemConfigSchema = z.object({
+  MIN_ONDEMAND_DATASET_SIZE: z.coerce.number().int().min(1),
+  MIN_SCHEDULED_DATASET_SIZE_INCREMENTAL: z.coerce.number().int().min(1),
+  MIN_SCHEDULED_DATASET_SIZE_FULL: z.coerce.number().int().min(1),
+  AUTO_LEARNING_CRON_INCREMENTAL: z.string().min(1),
+  AUTO_LEARNING_CRON_FULL: z.string().min(1),
+  AUTO_LEARNING_INCLUDE_IMAGES: z.string().transform((raw) => raw.trim().toLowerCase() === 'true'),
+  TRAINING_DEFAULT_HYPERPARAMS_JSON: z.string().min(2),
+  TRAINING_PRESET_SAFE_JSON: z.string().min(2).optional(),
+  TRAINING_PRESET_STANDARD_JSON: z.string().min(2).optional(),
+  TRAINING_PRESET_LARGE_JSON: z.string().min(2).optional(),
+});
+
+const trainingHyperparamsSchema = z.object({
+  epochs: z.coerce.number().int().positive().default(3),
+  learningRate: z.coerce.number().positive().default(0.0001),
+  batchSize: z.coerce.number().int().positive().default(4),
+  gradientAccumulationSteps: z.coerce.number().int().positive().default(1),
+  warmupSteps: z.coerce.number().int().nonnegative().default(100),
+  maxSeqLen: z.coerce.number().int().min(256).max(32768).default(2048),
+  loraRank: z.coerce.number().int().positive().default(16),
+  loraAlpha: z.coerce.number().positive().default(32),
+  loraDropout: z.coerce.number().min(0).max(1).default(0.05),
+  lrSchedulerType: z.string().min(1).default('linear'),
+  maxGradNorm: z.coerce.number().positive().default(1),
+  targetModules: z.array(z.string().min(1)).min(1).default(['q_proj', 'k_proj', 'v_proj', 'o_proj']),
+});
+
+function parseTrainingHyperparamsJson(raw: string): TrainingHyperparamsForm {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    parsed = {};
+  }
+  const result = trainingHyperparamsSchema.safeParse(parsed);
+  if (!result.success) {
+    return trainingHyperparamsSchema.parse({});
+  }
+  return result.data;
+}
+
+function getScopeLabel(job: FineTuningJob, namespacesById: Map<string, string>, t: (key: string, options?: Record<string, unknown>) => string): string {
+  if (job.scopeAgentId) {
+    return t('training.scope.agent', { id: job.scopeAgentId.slice(0, 8) });
+  }
+  if (job.scopeNamespaceId) {
+    return t('training.scope.namespace', {
+      name: namespacesById.get(job.scopeNamespaceId) ?? job.scopeNamespaceId.slice(0, 8),
+    });
+  }
+  return t('training.scope.tenant');
 }
 
 const containerVariants = {
@@ -466,19 +629,56 @@ function TrainingDataCard({
 
 function JobCard({
   job,
+  scopeLabel,
   t,
   locale,
   timeZone,
   onClick,
+  onPromote,
+  onRollback,
+  canPromote,
+  canRollback,
+  actionPending,
 }: {
   job: FineTuningJob;
+  scopeLabel: string;
   t: (key: string, options?: Record<string, unknown>) => string;
   locale: string;
   timeZone: string;
   onClick?: () => void;
+  onPromote?: () => void;
+  onRollback?: () => void;
+  canPromote?: boolean;
+  canRollback?: boolean;
+  actionPending?: boolean;
 }) {
   const hyperparameters = job.hyperparameters || { epochs: 3, learningRate: 0.0001, batchSize: 4 };
-  
+  const evalLabel = t(`training.evaluation.${job.evaluationStatus ?? 'pending'}`);
+  const promotionLabel = t(`training.promotion.${job.promotionStatus ?? 'candidate'}`);
+  const timelineFinalKey = job.promotionStatus === 'active'
+    ? 'training.timeline.active'
+    : (job.promotionStatus === 'rejected' || job.evaluationStatus === 'failed'
+      ? 'training.timeline.rejected'
+      : 'training.timeline.active');
+
+  const timelineChecks = {
+    queued: true,
+    preparing: job.status !== 'pending',
+    training: ['training', 'validating', 'completed', 'failed', 'cancelled'].includes(job.status),
+    evaluating: ['running', 'passed', 'failed', 'skipped'].includes(job.evaluationStatus ?? 'pending'),
+    candidate: ['candidate', 'staged', 'active', 'rejected', 'rolled_back'].includes(job.promotionStatus ?? 'candidate'),
+    final: ['active', 'rejected', 'rolled_back'].includes(job.promotionStatus ?? ''),
+  };
+
+  const timelineItems = [
+    { key: 'queued', label: t('training.timeline.queued'), done: timelineChecks.queued },
+    { key: 'preparing', label: t('training.timeline.preparing'), done: timelineChecks.preparing },
+    { key: 'training', label: t('training.timeline.training'), done: timelineChecks.training },
+    { key: 'evaluating', label: t('training.timeline.evaluating'), done: timelineChecks.evaluating },
+    { key: 'candidate', label: t('training.timeline.candidate'), done: timelineChecks.candidate },
+    { key: 'final', label: t(timelineFinalKey), done: timelineChecks.final },
+  ];
+
   return (
     <motion.div variants={itemVariants}>
       <Card className="hover-elevate cursor-pointer" onClick={onClick} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick?.(); } }}>
@@ -491,8 +691,9 @@ function JobCard({
             {getJobStatusBadge(job.status, t)}
           </div>
           <CardDescription>
-            {t('training.job.baseModel', { model: job.baseModel, count: job.trainingDataCount })}
+            {t('training.job.baseModel', { model: job.baseModel, count: job.trainingDataCount ?? 0 })}
           </CardDescription>
+          <CardDescription>{scopeLabel}</CardDescription>
         </CardHeader>
 
         <CardContent className="space-y-3">
@@ -521,6 +722,26 @@ function JobCard({
             </div>
           </div>
 
+          <div className="flex flex-wrap gap-2">
+            <Badge variant="outline">{evalLabel}</Badge>
+            <Badge variant="outline">{promotionLabel}</Badge>
+          </div>
+
+          <div className="space-y-1">
+            <div className="text-xs text-muted-foreground">{t('training.timeline.label')}</div>
+            <div className="flex flex-wrap gap-1">
+              {timelineItems.map((item) => (
+                <Badge
+                  key={item.key}
+                  variant={item.done ? 'secondary' : 'outline'}
+                  className="text-[10px]"
+                >
+                  {item.label}
+                </Badge>
+              ))}
+            </div>
+          </div>
+
           {job.metrics && typeof job.metrics === 'object' && Object.keys(job.metrics).length > 0 && (
             <div className="flex gap-2 flex-wrap">
               {Object.entries(job.metrics).map(([key, value]) => (
@@ -533,10 +754,43 @@ function JobCard({
         </CardContent>
 
         <CardFooter className="pt-2 text-xs text-muted-foreground">
-          <div className="flex justify-between w-full">
-            <span>{t('training.job.created', { date: formatDate(job.criadoEm, { locale, timeZone }) })}</span>
-            {(job.completadoEm ?? (job as unknown as Record<string, unknown>).finalizadoEm as string | undefined) && (
-              <span>{t('training.job.finished', { date: formatDate((job.completadoEm ?? (job as unknown as Record<string, unknown>).finalizadoEm) as string, { locale, timeZone }) })}</span>
+          <div className="w-full space-y-2">
+            <div className="flex justify-between w-full">
+              <span>{t('training.job.created', { date: formatDate(job.criadoEm, { locale, timeZone }) })}</span>
+              {(job.completadoEm ?? (job as unknown as Record<string, unknown>).finalizadoEm as string | undefined) && (
+                <span>{t('training.job.finished', { date: formatDate((job.completadoEm ?? (job as unknown as Record<string, unknown>).finalizadoEm) as string, { locale, timeZone }) })}</span>
+              )}
+            </div>
+            {(canPromote || canRollback) && (
+              <div className="flex flex-wrap gap-2">
+                {canPromote && onPromote && (
+                  <Button
+                    size="sm"
+                    className="h-7"
+                    disabled={actionPending}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onPromote();
+                    }}
+                  >
+                    {t('training.actions.promote')}
+                  </Button>
+                )}
+                {canRollback && onRollback && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7"
+                    disabled={actionPending}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onRollback();
+                    }}
+                  >
+                    {t('training.actions.rollback')}
+                  </Button>
+                )}
+              </div>
             )}
           </div>
         </CardFooter>
@@ -655,6 +909,9 @@ function CreateJobDialog({
   open,
   onClose,
   approvedCount,
+  minRequiredApprovedData,
+  defaultHyperparams,
+  presetHyperparams,
   namespaces,
   namespaceId,
   onNamespaceIdChange,
@@ -664,6 +921,9 @@ function CreateJobDialog({
   open: boolean;
   onClose: () => void;
   approvedCount: number;
+  minRequiredApprovedData: number;
+  defaultHyperparams: TrainingHyperparamsForm;
+  presetHyperparams: Record<TrainingHyperparamsPreset, TrainingHyperparamsForm>;
   namespaces: Array<{ id: string; nome: string }>;
   namespaceId: string;
   onNamespaceIdChange: (value: string) => void;
@@ -672,20 +932,68 @@ function CreateJobDialog({
 }) {
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
-  const [epochs, setEpochs] = useState(3);
-  const [batchSize, setBatchSize] = useState(4);
-  const [learningRate, setLearningRate] = useState(0.0001);
+  const [preset, setPreset] = useState<TrainingHyperparamsPreset>('standard');
+  const [advancedOverride, setAdvancedOverride] = useState(false);
+  const [epochs, setEpochs] = useState(defaultHyperparams.epochs);
+  const [batchSize, setBatchSize] = useState(defaultHyperparams.batchSize);
+  const [learningRate, setLearningRate] = useState(defaultHyperparams.learningRate);
+  const [gradientAccumulationSteps, setGradientAccumulationSteps] = useState(defaultHyperparams.gradientAccumulationSteps);
+  const [warmupSteps, setWarmupSteps] = useState(defaultHyperparams.warmupSteps);
+  const [maxSeqLen, setMaxSeqLen] = useState(defaultHyperparams.maxSeqLen);
+  const [loraRank, setLoraRank] = useState(defaultHyperparams.loraRank);
+  const [loraAlpha, setLoraAlpha] = useState(defaultHyperparams.loraAlpha);
+  const [loraDropout, setLoraDropout] = useState(defaultHyperparams.loraDropout);
+  const [lrSchedulerType, setLrSchedulerType] = useState(defaultHyperparams.lrSchedulerType);
+  const [maxGradNorm, setMaxGradNorm] = useState(defaultHyperparams.maxGradNorm);
+  const [targetModules, setTargetModules] = useState(defaultHyperparams.targetModules.join(','));
+
+  useEffect(() => {
+    if (!open) return;
+    const presetValues = presetHyperparams[preset] ?? defaultHyperparams;
+    setEpochs(presetValues.epochs);
+    setBatchSize(presetValues.batchSize);
+    setLearningRate(presetValues.learningRate);
+    setGradientAccumulationSteps(presetValues.gradientAccumulationSteps);
+    setWarmupSteps(presetValues.warmupSteps);
+    setMaxSeqLen(presetValues.maxSeqLen);
+    setLoraRank(presetValues.loraRank);
+    setLoraAlpha(presetValues.loraAlpha);
+    setLoraDropout(presetValues.loraDropout);
+    setLrSchedulerType(presetValues.lrSchedulerType);
+    setMaxGradNorm(presetValues.maxGradNorm);
+    setTargetModules(presetValues.targetModules.join(','));
+  }, [defaultHyperparams, open, preset, presetHyperparams]);
 
   const createJob = useMutation({
     mutationFn: async () => {
       if (!namespaceId || !tenantId) {
         throw new Error(t('training.createJob.namespaceRequired'));
       }
+      const parsedTargetModules = targetModules
+        .split(',')
+        .map((moduleName) => moduleName.trim())
+        .filter((moduleName) => moduleName.length > 0);
       return apiRequest('POST', '/api/training/jobs', {
         tenantId,
         namespaceId,
         name,
-        hyperparameters: { epochs, batchSize, learningRate },
+        hyperparametersPreset: preset,
+        hyperparameters: advancedOverride
+          ? {
+              epochs,
+              batchSize,
+              learningRate,
+              gradientAccumulationSteps,
+              warmupSteps,
+              maxSeqLen,
+              loraRank,
+              loraAlpha,
+              loraDropout,
+              lrSchedulerType,
+              maxGradNorm,
+              targetModules: parsedTargetModules.length > 0 ? parsedTargetModules : undefined,
+            }
+          : undefined,
       });
     },
     onSuccess: () => {
@@ -694,6 +1002,8 @@ function CreateJobDialog({
       toast({ title: t('training.success.jobCreated') });
       onClose();
       setName('');
+      setPreset('standard');
+      setAdvancedOverride(false);
     },
     onError: () => {
       toast({ title: t('training.errors.createJob'), variant: 'destructive' });
@@ -710,9 +1020,12 @@ function CreateJobDialog({
           </DialogTitle>
           <DialogDescription>
             {t('training.createJob.description')}
-            {approvedCount < 10 && (
+            {approvedCount < minRequiredApprovedData && (
               <span className="block mt-2 text-amber-600">
-                {t('training.createJob.minDataWarning', { count: approvedCount })}
+                {t('training.createJob.minDataWarning', {
+                  count: approvedCount,
+                  min: minRequiredApprovedData,
+                })}
               </span>
             )}
           </DialogDescription>
@@ -744,6 +1057,28 @@ function CreateJobDialog({
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)}
               data-testid="input-job-name"
             />
+          </div>
+
+          <div className="grid gap-2">
+            <Label>{t('training.createJob.presetLabel')}</Label>
+            <Select value={preset} onValueChange={(value) => setPreset(value as TrainingHyperparamsPreset)}>
+              <SelectTrigger data-testid="select-hyperparams-preset">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="safe">{t('training.createJob.presetSafe')}</SelectItem>
+                <SelectItem value="standard">{t('training.createJob.presetStandard')}</SelectItem>
+                <SelectItem value="large">{t('training.createJob.presetLarge')}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex items-center justify-between rounded-md border p-3">
+            <div>
+              <p className="text-sm font-medium">{t('training.createJob.advancedOverride')}</p>
+              <p className="text-xs text-muted-foreground">{t('training.createJob.advancedOverrideDesc')}</p>
+            </div>
+            <Switch checked={advancedOverride} onCheckedChange={setAdvancedOverride} />
           </div>
 
           <div className="grid grid-cols-3 gap-4">
@@ -786,6 +1121,105 @@ function CreateJobDialog({
             </div>
           </div>
 
+          {advancedOverride && (
+            <>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="gradientAccumulationSteps">{t('training.createJob.gradientAccumulationSteps')}</Label>
+                  <Input
+                    id="gradientAccumulationSteps"
+                    type="number"
+                    min={1}
+                    value={gradientAccumulationSteps}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setGradientAccumulationSteps(Number(e.target.value))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="warmupSteps">{t('training.createJob.warmupSteps')}</Label>
+                  <Input
+                    id="warmupSteps"
+                    type="number"
+                    min={0}
+                    value={warmupSteps}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setWarmupSteps(Number(e.target.value))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="maxSeqLen">{t('training.createJob.maxSeqLen')}</Label>
+                  <Input
+                    id="maxSeqLen"
+                    type="number"
+                    min={256}
+                    max={32768}
+                    value={maxSeqLen}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMaxSeqLen(Number(e.target.value))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="loraRank">{t('training.createJob.loraRank')}</Label>
+                  <Input
+                    id="loraRank"
+                    type="number"
+                    min={1}
+                    value={loraRank}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLoraRank(Number(e.target.value))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="loraAlpha">{t('training.createJob.loraAlpha')}</Label>
+                  <Input
+                    id="loraAlpha"
+                    type="number"
+                    min={1}
+                    value={loraAlpha}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLoraAlpha(Number(e.target.value))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="loraDropout">{t('training.createJob.loraDropout')}</Label>
+                  <Input
+                    id="loraDropout"
+                    type="number"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={loraDropout}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLoraDropout(Number(e.target.value))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="lrSchedulerType">{t('training.createJob.lrSchedulerType')}</Label>
+                  <Input
+                    id="lrSchedulerType"
+                    value={lrSchedulerType}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLrSchedulerType(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="maxGradNorm">{t('training.createJob.maxGradNorm')}</Label>
+                  <Input
+                    id="maxGradNorm"
+                    type="number"
+                    min={0.01}
+                    step={0.01}
+                    value={maxGradNorm}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMaxGradNorm(Number(e.target.value))}
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="targetModules">{t('training.createJob.targetModules')}</Label>
+                <Input
+                  id="targetModules"
+                  value={targetModules}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTargetModules(e.target.value)}
+                  placeholder="q_proj,k_proj,v_proj,o_proj"
+                />
+                <p className="text-xs text-muted-foreground">{t('training.createJob.targetModulesDesc')}</p>
+              </div>
+            </>
+          )}
+
           <div className="p-3 rounded-lg bg-muted/50">
             <div className="flex items-center gap-2 text-sm">
               <Database className="h-4 w-4 text-primary" />
@@ -800,7 +1234,7 @@ function CreateJobDialog({
           </Button>
           <Button
             onClick={() => createJob.mutate()}
-            disabled={!namespaceId || !tenantId || !name || approvedCount < 10 || createJob.isPending}
+            disabled={!namespaceId || !tenantId || !name || approvedCount < minRequiredApprovedData || createJob.isPending}
             data-testid="button-create-job"
           >
             {createJob.isPending ? (
@@ -2359,6 +2793,7 @@ export default function Training() {
   const queryClient = useQueryClient();
   const tenantId = user?.tenantId;
   
+  const [activeTab, setActiveTab] = useState<string>('data');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [namespaceFilter, setNamespaceFilter] = useState<string>('all');
   const [sourceFilter, setSourceFilter] = useState<string>('all');
@@ -2389,6 +2824,50 @@ export default function Training() {
   const [overrideAgentId, setOverrideAgentId] = useState('');
   const [overrideDomain, setOverrideDomain] = useState('');
   const [overrideReason, setOverrideReason] = useState('');
+
+  const systemConfigQueryKey = ['training', 'system-config'] as const;
+  const { data: systemConfigRaw } = useQuery<Record<string, string>>({
+    queryKey: systemConfigQueryKey,
+    queryFn: async () => {
+      try {
+        const response = await apiRequest('GET', '/api/training/system-config');
+        return response.json() as Promise<Record<string, string>>;
+      } catch (error) {
+        frontendLogger.warn('Falha ao obter system config de training; aplicando defaults locais', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return { ...TRAINING_SYSTEM_CONFIG_DEFAULTS };
+      }
+    },
+    staleTime: 1000 * 30,
+  });
+
+  const trainingSystemConfig = useMemo<TrainingSystemConfigRuntime>(() => {
+    const source: Record<string, string> = {
+      ...TRAINING_SYSTEM_CONFIG_DEFAULTS,
+      ...(systemConfigRaw ?? {}),
+    };
+    const parsed = trainingSystemConfigSchema.parse(source);
+    const defaultHyperparams = parseTrainingHyperparamsJson(parsed.TRAINING_DEFAULT_HYPERPARAMS_JSON);
+    const safePreset = parseTrainingHyperparamsJson(parsed.TRAINING_PRESET_SAFE_JSON ?? parsed.TRAINING_DEFAULT_HYPERPARAMS_JSON);
+    const standardPreset = parseTrainingHyperparamsJson(parsed.TRAINING_PRESET_STANDARD_JSON ?? parsed.TRAINING_DEFAULT_HYPERPARAMS_JSON);
+    const largePreset = parseTrainingHyperparamsJson(parsed.TRAINING_PRESET_LARGE_JSON ?? parsed.TRAINING_DEFAULT_HYPERPARAMS_JSON);
+
+    return {
+      minOndemandDatasetSize: parsed.MIN_ONDEMAND_DATASET_SIZE,
+      minScheduledDatasetSizeIncremental: parsed.MIN_SCHEDULED_DATASET_SIZE_INCREMENTAL,
+      minScheduledDatasetSizeFull: parsed.MIN_SCHEDULED_DATASET_SIZE_FULL,
+      autoLearningCronIncremental: parsed.AUTO_LEARNING_CRON_INCREMENTAL,
+      autoLearningCronFull: parsed.AUTO_LEARNING_CRON_FULL,
+      autoLearningIncludeImages: parsed.AUTO_LEARNING_INCLUDE_IMAGES,
+      defaultHyperparams,
+      presets: {
+        safe: safePreset,
+        standard: standardPreset,
+        large: largePreset,
+      },
+    };
+  }, [systemConfigRaw]);
 
   // Auto-learning (status + schedules) - Gate 2
   const autoLearningQueryKey = [
@@ -2441,15 +2920,15 @@ export default function Training() {
         },
         { message: 'cronPattern inválido (esperado: 5 campos)' },
       ),
-    minDataRequired: z.number().int().min(10).max(100000),
+    minDataRequired: z.number().int().min(1).max(100000),
   });
 
   const [scheduleType, setScheduleType] = useState<'incremental_fine_tuning' | 'complete_fine_tuning'>(
     'incremental_fine_tuning',
   );
   const [scheduleEnabled, setScheduleEnabled] = useState<boolean>(true);
-  const [scheduleCronPattern, setScheduleCronPattern] = useState<string>('0 3 * * 0');
-  const [scheduleMinDataRequired, setScheduleMinDataRequired] = useState<number>(50);
+  const [scheduleCronPattern, setScheduleCronPattern] = useState<string>(trainingSystemConfig.autoLearningCronIncremental);
+  const [scheduleMinDataRequired, setScheduleMinDataRequired] = useState<number>(trainingSystemConfig.minScheduledDatasetSizeIncremental);
 
   const configureSchedule = useMutation({
     mutationFn: async () => {
@@ -2459,6 +2938,13 @@ export default function Training() {
         cronPattern: scheduleCronPattern.trim().length > 0 ? scheduleCronPattern.trim() : undefined,
         minDataRequired: scheduleMinDataRequired,
       });
+      const minAllowed =
+        parsed.scheduleType === 'incremental_fine_tuning'
+          ? trainingSystemConfig.minScheduledDatasetSizeIncremental
+          : trainingSystemConfig.minScheduledDatasetSizeFull;
+      if (parsed.minDataRequired < minAllowed) {
+        throw new Error(`minDataRequired abaixo do limite configurado (${minAllowed})`);
+      }
 
       if (!tenantId) {
         throw new Error('tenantId ausente (usuário não associado a um tenant)');
@@ -2500,10 +2986,30 @@ export default function Training() {
   });
 
   const [onDemandTrainingType, setOnDemandTrainingType] = useState<'incremental' | 'full'>('incremental');
-  const [onDemandIncludeImages, setOnDemandIncludeImages] = useState<boolean>(false);
+  const [onDemandIncludeImages, setOnDemandIncludeImages] = useState<boolean>(trainingSystemConfig.autoLearningIncludeImages);
   const [onDemandPriority, setOnDemandPriority] = useState<'low' | 'normal' | 'high'>('normal');
   const [onDemandDescription, setOnDemandDescription] = useState<string>('');
   const [onDemandNamespaceId, setOnDemandNamespaceId] = useState<string>('__tenant__');
+
+  useEffect(() => {
+    setOnDemandIncludeImages(trainingSystemConfig.autoLearningIncludeImages);
+  }, [trainingSystemConfig.autoLearningIncludeImages]);
+
+  useEffect(() => {
+    if (scheduleType === 'incremental_fine_tuning') {
+      setScheduleCronPattern(trainingSystemConfig.autoLearningCronIncremental);
+      setScheduleMinDataRequired(trainingSystemConfig.minScheduledDatasetSizeIncremental);
+      return;
+    }
+    setScheduleCronPattern(trainingSystemConfig.autoLearningCronFull);
+    setScheduleMinDataRequired(trainingSystemConfig.minScheduledDatasetSizeFull);
+  }, [
+    scheduleType,
+    trainingSystemConfig.autoLearningCronFull,
+    trainingSystemConfig.autoLearningCronIncremental,
+    trainingSystemConfig.minScheduledDatasetSizeFull,
+    trainingSystemConfig.minScheduledDatasetSizeIncremental,
+  ]);
 
   const startOnDemand = useMutation({
     mutationFn: async () => {
@@ -2567,6 +3073,36 @@ export default function Training() {
       const jobsList = (query.state.data as JobsResponse | undefined)?.jobs ?? [];
       const hasActive = jobsList.some((j) => ['pending', 'preparing', 'training', 'validating'].includes(j.status));
       return hasActive ? 5000 : 30000;
+    },
+  });
+
+  const promoteJobMutation = useMutation({
+    mutationFn: async (jobId: string) => {
+      const response = await apiRequest('POST', `/api/training/jobs/${jobId}/promote`);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/training/jobs'] });
+      queryClient.invalidateQueries({ queryKey: autoLearningQueryKey });
+      toast({ title: t('training.promotion.promoteSuccess') });
+    },
+    onError: () => {
+      toast({ title: t('training.promotion.promoteError'), variant: 'destructive' });
+    },
+  });
+
+  const rollbackJobMutation = useMutation({
+    mutationFn: async (jobId: string) => {
+      const response = await apiRequest('POST', `/api/training/jobs/${jobId}/rollback`);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/training/jobs'] });
+      queryClient.invalidateQueries({ queryKey: autoLearningQueryKey });
+      toast({ title: t('training.promotion.rollbackSuccess') });
+    },
+    onError: () => {
+      toast({ title: t('training.promotion.rollbackError'), variant: 'destructive' });
     },
   });
 
@@ -2687,6 +3223,11 @@ export default function Training() {
 
   const allData = trainingData?.trainingData || [];
   const allJobs = jobs?.jobs || [];
+  const [promoteDialogJob, setPromoteDialogJob] = useState<FineTuningJob | null>(null);
+  const [rollbackDialogJob, setRollbackDialogJob] = useState<FineTuningJob | null>(null);
+
+  const minCustomJobDatasetSize = trainingSystemConfig.minOndemandDatasetSize;
+  const presetLabels: Array<TrainingHyperparamsPreset> = ['safe', 'standard', 'large'];
 
   const [, navigate] = useLocation();
   const [postTrainingDialog, setPostTrainingDialog] = useState<{ open: boolean; jobName: string }>({ open: false, jobName: '' });
@@ -2731,6 +3272,25 @@ export default function Training() {
 
   const TRADING_SOURCE_TYPES = ['trading_signal', 'trading_order', 'trading_postmortem', 'trading_demo'] as const;
   const namespacesById = new Map((namespaces || []).map((ns) => [ns.id, ns.nome]));
+  const activeJobsByScope = useMemo(() => {
+    const scoped = allJobs
+      .filter((job) => job.promotionStatus === 'active')
+      .sort((a, b) => {
+        const aDate = new Date(a.completadoEm ?? a.criadoEm).getTime();
+        const bDate = new Date(b.completadoEm ?? b.criadoEm).getTime();
+        return bDate - aDate;
+      });
+
+    const dedup = new Map<string, FineTuningJob>();
+    for (const job of scoped) {
+      const scopeKey = `${job.scopeNamespaceId ?? 'tenant'}:${job.scopeAgentId ?? 'none'}`;
+      if (!dedup.has(scopeKey)) {
+        dedup.set(scopeKey, job);
+      }
+    }
+    return Array.from(dedup.values());
+  }, [allJobs]);
+
   const sourceOptions = Array.from(new Set(allData.map((d) => d.source))).sort();
   const rawSourceTypes = Array.from(new Set(allData.map((d) => d.sourceType).filter(Boolean) as string[])).sort();
   const hasTradingData = rawSourceTypes.some((st) => TRADING_SOURCE_TYPES.includes(st as typeof TRADING_SOURCE_TYPES[number]));
@@ -3054,7 +3614,7 @@ export default function Training() {
           <AlertTitle>{t('training.optionsHelp.title')}</AlertTitle>
           <AlertDescription className="space-y-1">
             <p><strong>{t('training.autoLearning.onDemand')}:</strong> {t('training.optionsHelp.onDemand')}</p>
-            <p><strong>{t('training.newJob')}:</strong> {t('training.optionsHelp.newJob')}</p>
+            <p><strong>{t('training.newJob')}:</strong> {t('training.optionsHelp.newJob', { minData: minCustomJobDatasetSize })}</p>
           </AlertDescription>
         </Alert>
 
@@ -3073,6 +3633,77 @@ export default function Training() {
             <AlertDescription>{t('training.autoLearning.tenantMissingDesc')}</AlertDescription>
           </Alert>
         )}
+
+        <div className="grid gap-3 md:grid-cols-3 mb-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">{t('training.controlCards.onDemandTitle')}</CardTitle>
+              <CardDescription>
+                {t('training.controlCards.onDemandDesc', { minData: minCustomJobDatasetSize })}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <div className="text-xs text-muted-foreground">
+                {t('training.controlCards.onDemandThresholds', {
+                  incrementalMin: trainingSystemConfig.minScheduledDatasetSizeIncremental,
+                  fullMin: trainingSystemConfig.minScheduledDatasetSizeFull,
+                })}
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setShowOnDemandRun(true)}
+                disabled={!tenantId}
+              >
+                <Play className="h-4 w-4 mr-2" />
+                {t('training.autoLearning.startOnDemand')}
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">{t('training.controlCards.customJobTitle')}</CardTitle>
+              <CardDescription>
+                {t('training.controlCards.customJobDesc', { minData: minCustomJobDatasetSize })}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <div className="text-xs text-muted-foreground">
+                {t('training.controlCards.customJobPresets', { presets: presetLabels.join(' / ') })}
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setShowCreateJob(true)}
+                disabled={!tenantId}
+              >
+                <Brain className="h-4 w-4 mr-2" />
+                {t('training.newJob')}
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">{t('training.controlCards.autoScheduleTitle')}</CardTitle>
+              <CardDescription>{t('training.controlCards.autoScheduleDesc')}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <div className="text-xs text-muted-foreground">
+                {autoLearning?.upcomingSchedules?.[0]
+                  ? t('training.controlCards.nextRunAt', {
+                      date: formatDateTime(autoLearning.upcomingSchedules[0].scheduledFor, { locale, timeZone }),
+                    })
+                  : t('training.autoLearning.noUpcoming')}
+              </div>
+              <Button size="sm" variant="outline" onClick={() => setActiveTab('auto-learning')}>
+                <RefreshCw className="h-4 w-4 mr-2" />
+                {t('training.controlCards.openSchedule')}
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <Card>
@@ -3122,7 +3753,7 @@ export default function Training() {
         </div>
       </motion.div>
 
-      <Tabs defaultValue="data" className="flex-1 flex flex-col">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
         <div className="px-4 pt-2 border-b">
           <TabsList>
             <TabsTrigger value="data" data-testid="tab-training-data">
@@ -3464,7 +4095,11 @@ export default function Training() {
                         type="number"
                         value={scheduleMinDataRequired}
                         onChange={(e) => setScheduleMinDataRequired(Number(e.target.value))}
-                        min={10}
+                        min={
+                          scheduleType === 'incremental_fine_tuning'
+                            ? trainingSystemConfig.minScheduledDatasetSizeIncremental
+                            : trainingSystemConfig.minScheduledDatasetSizeFull
+                        }
                       />
                     </div>
 
@@ -3532,7 +4167,7 @@ export default function Training() {
                 <Button 
                   className="mt-4" 
                   onClick={() => setShowCreateJob(true)}
-                  disabled={stats.approved < 10}
+                  disabled={stats.approved < minCustomJobDatasetSize}
                   data-testid="button-create-first-job"
                 >
                   <Brain className="h-4 w-4 mr-2" />
@@ -3541,6 +4176,30 @@ export default function Training() {
               </motion.div>
             ) : (
               <div className="space-y-6">
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">{t('training.activeByScope.title')}</CardTitle>
+                    <CardDescription>{t('training.activeByScope.desc')}</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {activeJobsByScope.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">{t('training.activeByScope.none')}</p>
+                    ) : (
+                      activeJobsByScope.map((job) => (
+                        <div key={job.id} className="flex items-center justify-between rounded-md border p-2">
+                          <div>
+                            <p className="text-sm font-medium">{job.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {getScopeLabel(job, namespacesById, t)}
+                            </p>
+                          </div>
+                          <Badge>{t('training.promotion.active')}</Badge>
+                        </div>
+                      ))
+                    )}
+                  </CardContent>
+                </Card>
+
                 {jobStats.running > 0 && (
                   <div>
                     <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
@@ -3554,7 +4213,18 @@ export default function Training() {
                       className="grid gap-4 md:grid-cols-2"
                     >
                       {allJobs.filter((j) => ['pending', 'preparing', 'training', 'validating'].includes(j.status)).map((job) => (
-                        <JobCard key={job.id} job={job} t={t} locale={locale} timeZone={timeZone} onClick={() => setSelectedJobId(job.id)} />
+                        <JobCard
+                          key={job.id}
+                          job={job}
+                          scopeLabel={getScopeLabel(job, namespacesById, t)}
+                          t={t}
+                          locale={locale}
+                          timeZone={timeZone}
+                          onClick={() => setSelectedJobId(job.id)}
+                          canPromote={false}
+                          canRollback={false}
+                          actionPending={promoteJobMutation.isPending || rollbackJobMutation.isPending}
+                        />
                       ))}
                     </motion.div>
                   </div>
@@ -3572,7 +4242,24 @@ export default function Training() {
                       className="grid gap-4 md:grid-cols-2"
                     >
                       {allJobs.filter((j) => ['completed', 'failed', 'cancelled'].includes(j.status)).map((job) => (
-                        <JobCard key={job.id} job={job} t={t} locale={locale} timeZone={timeZone} onClick={() => setSelectedJobId(job.id)} />
+                        <JobCard
+                          key={job.id}
+                          job={job}
+                          scopeLabel={getScopeLabel(job, namespacesById, t)}
+                          t={t}
+                          locale={locale}
+                          timeZone={timeZone}
+                          onClick={() => setSelectedJobId(job.id)}
+                          canPromote={
+                            job.status === 'completed'
+                            && job.promotionStatus === 'candidate'
+                            && job.evaluationStatus !== 'failed'
+                          }
+                          canRollback={job.promotionStatus === 'active'}
+                          onPromote={() => setPromoteDialogJob(job)}
+                          onRollback={() => setRollbackDialogJob(job)}
+                          actionPending={promoteJobMutation.isPending || rollbackJobMutation.isPending}
+                        />
                       ))}
                     </motion.div>
                   </div>
@@ -3604,12 +4291,84 @@ export default function Training() {
         open={showCreateJob}
         onClose={() => setShowCreateJob(false)}
         approvedCount={stats.approved}
+        minRequiredApprovedData={minCustomJobDatasetSize}
+        defaultHyperparams={trainingSystemConfig.defaultHyperparams}
+        presetHyperparams={trainingSystemConfig.presets}
         namespaces={namespaces || []}
         namespaceId={createJobNamespaceId}
         onNamespaceIdChange={setCreateJobNamespaceId}
         tenantId={tenantId}
         t={t}
       />
+
+      <Dialog open={!!promoteDialogJob} onOpenChange={(open) => !open && setPromoteDialogJob(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t('training.promotion.promoteTitle')}</DialogTitle>
+            <DialogDescription>
+              {t('training.promotion.promoteDesc', {
+                jobName: promoteDialogJob?.name ?? '',
+              })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setPromoteDialogJob(null)}>
+              {t('training.createJob.cancel')}
+            </Button>
+            <Button
+              onClick={() => {
+                if (!promoteDialogJob) return;
+                promoteJobMutation.mutate(promoteDialogJob.id, {
+                  onSuccess: () => setPromoteDialogJob(null),
+                });
+              }}
+              disabled={!promoteDialogJob || promoteJobMutation.isPending}
+            >
+              {promoteJobMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <CheckCircle2 className="h-4 w-4 mr-2" />
+              )}
+              {t('training.actions.promote')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!rollbackDialogJob} onOpenChange={(open) => !open && setRollbackDialogJob(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t('training.promotion.rollbackTitle')}</DialogTitle>
+            <DialogDescription>
+              {t('training.promotion.rollbackDesc', {
+                jobName: rollbackDialogJob?.name ?? '',
+              })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setRollbackDialogJob(null)}>
+              {t('training.createJob.cancel')}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (!rollbackDialogJob) return;
+                rollbackJobMutation.mutate(rollbackDialogJob.id, {
+                  onSuccess: () => setRollbackDialogJob(null),
+                });
+              }}
+              disabled={!rollbackDialogJob || rollbackJobMutation.isPending}
+            >
+              {rollbackJobMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4 mr-2" />
+              )}
+              {t('training.actions.rollback')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={postTrainingDialog.open} onOpenChange={(open) => !open && setPostTrainingDialog((d) => ({ ...d, open: false }))}>
         <DialogContent className="max-w-md">

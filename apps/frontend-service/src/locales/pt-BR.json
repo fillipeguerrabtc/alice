@@ -1732,7 +1732,9 @@
     },
     "actions": {
       "approve": "Aprovar",
-      "reject": "Rejeitar"
+      "reject": "Rejeitar",
+      "promote": "Promover",
+      "rollback": "Rollback"
     },
     "tradingDataset": {
       "filter": "Status do dataset",
@@ -1858,7 +1860,61 @@
       "title": "Diferença entre as opções de treinamento",
       "onDemand": "Treino on-demand: executa imediatamente um treinamento incremental ou completo usando dados do chat (Dados tab). Usa o mesmo modelo base do LLM (Qwen2.5 7B).",
       "pipelineTrading": "Pipeline Trading: cria um job de fine-tuning usando apenas dados aprovados de trading (Datasets Trading tab). Requer namespace de trading selecionado. Ideal para post-mortems e sinais de trading.",
-      "newJob": "Novo Job: configura um job customizado com epochs, batch size e learning rate. Usa dados do chat (Dados tab). Mínimo de 10 dados aprovados."
+      "newJob": "Novo Job: configura um job customizado com presets e override de hyperparams. Usa dados do chat (Dados tab). Mínimo de {{minData}} dados aprovados."
+    },
+    "controlCards": {
+      "onDemandTitle": "Run on-demand",
+      "onDemandDesc": "Enfileire um run incremental ou completo com dados aprovados. Mínimo atual: {{minData}}.",
+      "onDemandThresholds": "Gates agendados: incremental {{incrementalMin}} | completo {{fullMin}} exemplos aprovados.",
+      "customJobTitle": "Job customizado",
+      "customJobDesc": "Crie um job por escopo com presets e override avançado opcional de hyperparams. Mínimo: {{minData}}.",
+      "customJobPresets": "Presets disponíveis: {{presets}}",
+      "autoScheduleTitle": "Schedule auto-learning",
+      "autoScheduleDesc": "Configure runs recorrentes e acompanhe a próxima execução em um único fluxo.",
+      "nextRunAt": "Próximo run: {{date}}",
+      "openSchedule": "Abrir schedule"
+    },
+    "scope": {
+      "tenant": "Escopo: tenant inteiro",
+      "namespace": "Escopo: namespace {{name}}",
+      "agent": "Escopo: agente {{id}}"
+    },
+    "timeline": {
+      "label": "Linha do tempo do run",
+      "queued": "na fila",
+      "preparing": "preparando",
+      "training": "treinando",
+      "evaluating": "avaliando",
+      "candidate": "candidato",
+      "active": "ativo",
+      "rejected": "rejeitado"
+    },
+    "evaluation": {
+      "pending": "Avaliação: pendente",
+      "running": "Avaliação: executando",
+      "passed": "Avaliação: aprovada",
+      "failed": "Avaliação: reprovada",
+      "skipped": "Avaliação: ignorada"
+    },
+    "promotion": {
+      "candidate": "Promoção: candidato",
+      "staged": "Promoção: staged",
+      "active": "Promoção: ativa",
+      "rejected": "Promoção: rejeitada",
+      "rolled_back": "Promoção: rollback",
+      "promoteTitle": "Promover modelo candidato",
+      "promoteDesc": "Promover \"{{jobName}}\" para modelo ativo deste escopo?",
+      "promoteSuccess": "Modelo promovido com sucesso",
+      "promoteError": "Falha ao promover modelo",
+      "rollbackTitle": "Rollback do modelo ativo",
+      "rollbackDesc": "Executar rollback de \"{{jobName}}\" para a versão ativa anterior?",
+      "rollbackSuccess": "Rollback concluído com sucesso",
+      "rollbackError": "Falha ao executar rollback"
+    },
+    "activeByScope": {
+      "title": "Modelo ativo por escopo",
+      "desc": "Adaptadores promovidos atualmente por escopo de tenant/namespace/agente.",
+      "none": "Nenhum modelo promovido ativo neste tenant."
     },
     "trading": {
       "button": "Pipeline Trading",
@@ -1914,16 +1970,32 @@
     "createJob": {
       "title": "Novo Job de Fine-tuning",
       "description": "Configure um novo job de fine-tuning para o LLM (Qwen2.5 7B).",
-      "minDataWarning": "Você tem apenas {{count}} dados aprovados. Mínimo necessário: 10.",
+      "minDataWarning": "Você tem apenas {{count}} dados aprovados. Mínimo necessário: {{min}}.",
       "namespaceLabel": "Namespace",
       "namespacePlaceholder": "Selecione o namespace para treinar",
       "namespaceHelp": "O job usará apenas dados aprovados deste namespace. O adaptador LoRA fica associado ao namespace.",
       "namespaceRequired": "Selecione um namespace para criar o job.",
       "nameLabel": "Nome do Job",
       "namePlaceholder": "ex: Fine-tune vendas Q4 2025",
+      "presetLabel": "Preset",
+      "presetSafe": "Safe",
+      "presetStandard": "Standard",
+      "presetLarge": "Large",
+      "advancedOverride": "Override avançado",
+      "advancedOverrideDesc": "Sobrescreva campos do preset antes de enfileirar este job.",
       "epochs": "Epochs",
       "batchSize": "Batch Size",
       "learningRate": "Learning Rate",
+      "gradientAccumulationSteps": "Acumulação de gradiente",
+      "warmupSteps": "Warmup steps",
+      "maxSeqLen": "Comprimento máximo de sequência",
+      "loraRank": "LoRA rank",
+      "loraAlpha": "LoRA alpha",
+      "loraDropout": "LoRA dropout",
+      "lrSchedulerType": "LR scheduler",
+      "maxGradNorm": "Max grad norm",
+      "targetModules": "Módulos alvo",
+      "targetModulesDesc": "Nomes de módulos separados por vírgula (ex: q_proj,k_proj,v_proj,o_proj).",
       "approvedData": "{{count}} dados de treinamento aprovados",
       "cancel": "Cancelar",
       "start": "Iniciar Fine-tuning"

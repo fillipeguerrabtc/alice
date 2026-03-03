@@ -1681,7 +1681,9 @@
     },
     "actions": {
       "approve": "Approve",
-      "reject": "Reject"
+      "reject": "Reject",
+      "promote": "Promote",
+      "rollback": "Rollback"
     },
     "tradingDataset": {
       "filter": "Dataset status",
@@ -1807,7 +1809,61 @@
       "title": "Difference between training options",
       "onDemand": "On-demand training: runs immediately an incremental or complete training using chat data (Data tab). Uses the same base LLM model (Qwen2.5 7B).",
       "pipelineTrading": "Pipeline Trading: creates a fine-tuning job using only approved trading data (Trading Datasets tab). Requires selected trading namespace. Ideal for post-mortems and trading signals.",
-      "newJob": "New Job: configures a custom job with epochs, batch size and learning rate. Uses chat data (Data tab). Minimum 10 approved data points."
+      "newJob": "New Job: configures a custom job with presets and hyperparameter override. Uses chat data (Data tab). Minimum {{minData}} approved data points."
+    },
+    "controlCards": {
+      "onDemandTitle": "On-demand run",
+      "onDemandDesc": "Queue an incremental or full run using approved data. Current minimum: {{minData}}.",
+      "onDemandThresholds": "Scheduled gates: incremental {{incrementalMin}} | full {{fullMin}} approved samples.",
+      "customJobTitle": "Custom job",
+      "customJobDesc": "Create a scoped job with presets and optional advanced hyperparameter override. Minimum: {{minData}}.",
+      "customJobPresets": "Available presets: {{presets}}",
+      "autoScheduleTitle": "Auto-learning schedule",
+      "autoScheduleDesc": "Configure recurring runs and inspect the next execution in one place.",
+      "nextRunAt": "Next run: {{date}}",
+      "openSchedule": "Open schedule"
+    },
+    "scope": {
+      "tenant": "Scope: tenant-wide",
+      "namespace": "Scope: namespace {{name}}",
+      "agent": "Scope: agent {{id}}"
+    },
+    "timeline": {
+      "label": "Run timeline",
+      "queued": "queued",
+      "preparing": "preparing",
+      "training": "training",
+      "evaluating": "evaluating",
+      "candidate": "candidate",
+      "active": "active",
+      "rejected": "rejected"
+    },
+    "evaluation": {
+      "pending": "Evaluation: pending",
+      "running": "Evaluation: running",
+      "passed": "Evaluation: passed",
+      "failed": "Evaluation: failed",
+      "skipped": "Evaluation: skipped"
+    },
+    "promotion": {
+      "candidate": "Promotion: candidate",
+      "staged": "Promotion: staged",
+      "active": "Promotion: active",
+      "rejected": "Promotion: rejected",
+      "rolled_back": "Promotion: rolled back",
+      "promoteTitle": "Promote candidate model",
+      "promoteDesc": "Promote \"{{jobName}}\" to active model for this scope?",
+      "promoteSuccess": "Model promoted successfully",
+      "promoteError": "Failed to promote model",
+      "rollbackTitle": "Rollback active model",
+      "rollbackDesc": "Rollback \"{{jobName}}\" to the previous active version?",
+      "rollbackSuccess": "Rollback completed successfully",
+      "rollbackError": "Failed to rollback model"
+    },
+    "activeByScope": {
+      "title": "Active model by scope",
+      "desc": "Current promoted adapters per tenant/namespace/agent scope.",
+      "none": "No active promoted model in this tenant yet."
     },
     "trading": {
       "button": "Trading Pipeline",
@@ -1857,16 +1913,32 @@
     "createJob": {
       "title": "New Fine-tuning Job",
       "description": "Configure a new fine-tuning job for the LLM (Qwen2.5 7B).",
-      "minDataWarning": "You only have {{count}} approved data. Minimum required: 10.",
+      "minDataWarning": "You only have {{count}} approved data. Minimum required: {{min}}.",
       "namespaceLabel": "Namespace",
       "namespacePlaceholder": "Select namespace to train",
       "namespaceHelp": "The job will use only approved data from this namespace. The LoRA adapter is associated with the namespace.",
       "namespaceRequired": "Select a namespace to create the job.",
       "nameLabel": "Job Name",
       "namePlaceholder": "e.g.: Fine-tune sales Q4 2025",
+      "presetLabel": "Preset",
+      "presetSafe": "Safe",
+      "presetStandard": "Standard",
+      "presetLarge": "Large",
+      "advancedOverride": "Advanced override",
+      "advancedOverrideDesc": "Override preset fields before enqueueing this job.",
       "epochs": "Epochs",
       "batchSize": "Batch Size",
       "learningRate": "Learning Rate",
+      "gradientAccumulationSteps": "Gradient accumulation",
+      "warmupSteps": "Warmup steps",
+      "maxSeqLen": "Max sequence length",
+      "loraRank": "LoRA rank",
+      "loraAlpha": "LoRA alpha",
+      "loraDropout": "LoRA dropout",
+      "lrSchedulerType": "LR scheduler",
+      "maxGradNorm": "Max grad norm",
+      "targetModules": "Target modules",
+      "targetModulesDesc": "Comma-separated module names (e.g. q_proj,k_proj,v_proj,o_proj).",
       "approvedData": "{{count}} approved training data",
       "cancel": "Cancel",
       "start": "Start Fine-tuning"
