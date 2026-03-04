@@ -333,6 +333,10 @@ function buildRunStartRequestFingerprint(params: {
   })).digest('hex');
 }
 
+function hashIdempotencyKeyForAudit(key: string): string {
+  return crypto.createHash('sha256').update(key).digest('hex').slice(0, 16);
+}
+
 type TrainingRunStartReplayLookup =
   | { status: 'miss' }
   | { status: 'payload_mismatch' }
@@ -3645,6 +3649,7 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
         forceMinSize: body.forceMinSize ?? false,
       },
     });
+    const idempotencyKeyHash = idempotencyHeader.key ? hashIdempotencyKeyForAudit(idempotencyHeader.key) : null;
 
     const redis = getRedisClient();
     let lockHandle: Awaited<ReturnType<typeof acquireTrainingOperationLock>> = null;
@@ -3869,6 +3874,7 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
             operation: 'run_start',
             queuePriority: 'normal',
             runSource: 'custom_job',
+            idempotencyKeyHash,
           },
         },
       }));
@@ -3899,6 +3905,7 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
         profileVersion: profileSelection.profileVersion,
         enqueued: enqueueResult.enqueued,
         queueRunId: enqueueResult.runId,
+        idempotencyKeyHash,
       }, 'Job de fine-tuning criado e enfileirado');
 
       return res.status(202).json({
@@ -6135,6 +6142,7 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
         namespaceId: namespaceId ?? null,
       },
     });
+    const idempotencyKeyHash = idempotencyHeader.key ? hashIdempotencyKeyForAudit(idempotencyHeader.key) : null;
     if (idempotencyHeader.key) {
       const replay = await lookupRunStartIdempotencyReplay({
         redis,
@@ -6317,6 +6325,7 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
               runSource: 'on_demand',
               includeImages,
               trainingType,
+              idempotencyKeyHash,
             },
           },
         }));
@@ -6349,6 +6358,7 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
         imageCount: evaluation.imageCount,
         enqueued: enqueueResult.enqueued,
         queueRunId: enqueueResult.runId,
+        idempotencyKeyHash,
       }, 'Treinamento on-demand enfileirado');
 
       return res.status(202).json({
