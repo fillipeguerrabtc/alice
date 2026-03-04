@@ -432,6 +432,19 @@ function generateTrainingIdempotencyKey(prefix: 'training-job' | 'training-on-de
   return `${prefix}-${entropy}`.slice(0, 128);
 }
 
+function buildTrainingIdempotencyFingerprint(value: unknown): string {
+  const stableSerialize = (input: unknown): string => {
+    if (input === null) return 'null';
+    if (typeof input !== 'object') return JSON.stringify(input);
+    if (Array.isArray(input)) return `[${input.map((item) => stableSerialize(item)).join(',')}]`;
+    const entries = Object.entries(input as Record<string, unknown>)
+      .filter(([, entryValue]) => typeof entryValue !== 'undefined')
+      .sort(([keyA], [keyB]) => keyA.localeCompare(keyB));
+    return `{${entries.map(([entryKey, entryValue]) => `${JSON.stringify(entryKey)}:${stableSerialize(entryValue)}`).join(',')}}`;
+  };
+  return stableSerialize(value);
+}
+
 function getScopeLabel(job: FineTuningJob, namespacesById: Map<string, string>, t: (key: string, options?: Record<string, unknown>) => string): string {
   if (job.scopeAgentId) {
     return t('training.scope.agent', { id: job.scopeAgentId.slice(0, 8) });
@@ -1128,6 +1141,7 @@ function CreateJobDialog({
   const [loraRank, setLoraRank] = useState(defaultHyperparams.loraRank);
   const [loraAlpha, setLoraAlpha] = useState(defaultHyperparams.loraAlpha);
   const [loraDropout, setLoraDropout] = useState(defaultHyperparams.loraDropout);
+  const createJobIdempotencyRef = useRef<{ fingerprint: string; key: string } | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -1142,6 +1156,12 @@ function CreateJobDialog({
     setLoraAlpha(presetValues.loraAlpha);
     setLoraDropout(presetValues.loraDropout);
   }, [defaultHyperparams, open, preset, presetHyperparams]);
+
+  useEffect(() => {
+    if (!open) {
+      createJobIdempotencyRef.current = null;
+    }
+  }, [open]);
 
   const createJob = useMutation({
     mutationFn: async () => {
@@ -1170,15 +1190,20 @@ function CreateJobDialog({
         throw new Error(t('training.createJob.invalidHyperparams'));
       }
       const validatedHyperparams = parsed.data;
-      const idempotencyKey = generateTrainingIdempotencyKey('training-job');
-
-      return apiRequest('POST', '/api/training/jobs', {
+      const requestPayload = {
         tenantId,
         namespaceId,
         name,
         hyperparametersPreset: preset,
         hyperparameters: validatedHyperparams,
-      }, {
+      };
+      const fingerprint = buildTrainingIdempotencyFingerprint(requestPayload);
+      const idempotencyKey = createJobIdempotencyRef.current?.fingerprint === fingerprint
+        ? createJobIdempotencyRef.current.key
+        : generateTrainingIdempotencyKey('training-job');
+      createJobIdempotencyRef.current = { fingerprint, key: idempotencyKey };
+
+      return apiRequest('POST', '/api/training/jobs', requestPayload, {
         headers: {
           'X-Idempotency-Key': idempotencyKey,
         },
@@ -1192,6 +1217,7 @@ function CreateJobDialog({
       setName('');
       setPreset('standard');
       setAdvancedOverride(false);
+      createJobIdempotencyRef.current = null;
     },
     onError: (error) => {
       toast({
@@ -3247,6 +3273,7 @@ export default function Training() {
   const [onDemandPriority, setOnDemandPriority] = useState<'low' | 'normal' | 'high'>('normal');
   const [onDemandDescription, setOnDemandDescription] = useState<string>('');
   const [onDemandNamespaceId, setOnDemandNamespaceId] = useState<string>('__tenant__');
+  const onDemandIdempotencyRef = useRef<{ fingerprint: string; key: string } | null>(null);
 
   useEffect(() => {
     setOnDemandIncludeImages(trainingSystemConfig.autoLearningIncludeImages);
@@ -3282,15 +3309,21 @@ export default function Training() {
         throw new Error('tenantId ausente (usuário não associado a um tenant)');
       }
 
-      const idempotencyKey = generateTrainingIdempotencyKey('training-on-demand');
-      const res = await apiRequest('POST', '/api/training/run/start', {
+      const requestPayload = {
         tenantId,
         trainingType: parsed.trainingType,
         includeImages: parsed.includeImages,
         priority: parsed.priority,
         description: parsed.description,
         namespaceId: parsed.namespaceId,
-      }, {
+      };
+      const fingerprint = buildTrainingIdempotencyFingerprint(requestPayload);
+      const idempotencyKey = onDemandIdempotencyRef.current?.fingerprint === fingerprint
+        ? onDemandIdempotencyRef.current.key
+        : generateTrainingIdempotencyKey('training-on-demand');
+      onDemandIdempotencyRef.current = { fingerprint, key: idempotencyKey };
+
+      const res = await apiRequest('POST', '/api/training/run/start', requestPayload, {
         headers: {
           'X-Idempotency-Key': idempotencyKey,
         },
@@ -3301,6 +3334,7 @@ export default function Training() {
       setShowOnDemandRun(false);
       queryClient.invalidateQueries({ queryKey: runStatusQueryKey });
       queryClient.invalidateQueries({ queryKey: ['/api/training/jobs'] });
+      onDemandIdempotencyRef.current = null;
       toast({ title: t('training.autoLearning.onDemandStarted') });
     },
     onError: (error) => {
