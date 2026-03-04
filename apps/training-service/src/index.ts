@@ -511,6 +511,18 @@ const trainingPipelineMetrics = {
     help: 'Total de itens rejeitados por ausÃªncia de consentimento de treinamento',
     registers: [metrics.registry],
   }),
+  governanceLockAttemptsTotal: new PromCounter({
+    name: 'alice_training_governance_lock_attempts_total',
+    help: 'Total de tentativas de lock distribuido para operacoes de governanca de treinamento',
+    labelNames: ['operation', 'result'] as const,
+    registers: [metrics.registry],
+  }),
+  governanceAuditWritesTotal: new PromCounter({
+    name: 'alice_training_governance_audit_writes_total',
+    help: 'Total de eventos de auditoria de governanca persistidos',
+    labelNames: ['action', 'result'] as const,
+    registers: [metrics.registry],
+  }),
 };
 
 const tradingMetrics = {
@@ -3826,6 +3838,10 @@ app.post('/api/training/jobs/:id/promotion-approval', requirePermission('trainin
     }
 
     if (!redis) {
+      trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
+        operation: 'promotion_approval',
+        result: 'redis_unavailable',
+      });
       return res.status(503).json({ error: 'Redis indisponivel para controle de concorrencia de aprovacao' });
     }
     const lockKey = buildTrainingJobOperationLockKey({
@@ -3839,8 +3855,16 @@ app.post('/api/training/jobs/:id/promotion-approval', requirePermission('trainin
       ttlSeconds: TRAINING_OPERATION_LOCK_TTL_SECONDS,
     });
     if (!lockHandle) {
+      trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
+        operation: 'promotion_approval',
+        result: 'lock_conflict',
+      });
       return res.status(409).json({ error: 'Aprovacao de promocao em andamento para este job; tente novamente' });
     }
+    trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
+      operation: 'promotion_approval',
+      result: 'acquired',
+    });
 
     const now = new Date();
     await db.transaction(async (tx) => {
@@ -3899,6 +3923,10 @@ app.post('/api/training/jobs/:id/promotion-approval', requirePermission('trainin
           },
         },
       }));
+    });
+    trainingPipelineMetrics.governanceAuditWritesTotal.inc({
+      action: 'training_promotion_approval_recorded',
+      result: 'success',
     });
 
     const summary = await getPromotionApprovalSummary({
@@ -3998,6 +4026,10 @@ app.post('/api/training/jobs/:id/promote', requirePermission('training:fine_tuni
     }
 
     if (!redis) {
+      trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
+        operation: 'promote',
+        result: 'redis_unavailable',
+      });
       return res.status(503).json({ error: 'Redis indisponivel para controle de concorrencia de promocao' });
     }
     const lockKey = buildTrainingScopeOperationLockKey({
@@ -4014,8 +4046,16 @@ app.post('/api/training/jobs/:id/promote', requirePermission('training:fine_tuni
       ttlSeconds: TRAINING_OPERATION_LOCK_TTL_SECONDS,
     });
     if (!lockHandle) {
+      trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
+        operation: 'promote',
+        result: 'lock_conflict',
+      });
       return res.status(409).json({ error: 'Promocao em andamento neste escopo; tente novamente' });
     }
+    trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
+      operation: 'promote',
+      result: 'acquired',
+    });
 
     const activationResult = await activateLoraAdapter(
       fineTuningJob.loraJobId,
@@ -4112,6 +4152,10 @@ app.post('/api/training/jobs/:id/promote', requirePermission('training:fine_tuni
 
       return [createdVersion];
     });
+    trainingPipelineMetrics.governanceAuditWritesTotal.inc({
+      action: 'training_model_promoted',
+      result: 'success',
+    });
 
     logger.info(
       {
@@ -4203,6 +4247,10 @@ app.post('/api/training/jobs/:id/rollback', requirePermission('training:fine_tun
     }
 
     if (!redis) {
+      trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
+        operation: 'rollback',
+        result: 'redis_unavailable',
+      });
       return res.status(503).json({ error: 'Redis indisponivel para controle de concorrencia de rollback' });
     }
     const lockKey = buildTrainingScopeOperationLockKey({
@@ -4219,8 +4267,16 @@ app.post('/api/training/jobs/:id/rollback', requirePermission('training:fine_tun
       ttlSeconds: TRAINING_OPERATION_LOCK_TTL_SECONDS,
     });
     if (!lockHandle) {
+      trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
+        operation: 'rollback',
+        result: 'lock_conflict',
+      });
       return res.status(409).json({ error: 'Rollback em andamento neste escopo; tente novamente' });
     }
+    trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
+      operation: 'rollback',
+      result: 'acquired',
+    });
 
     const scopedCondition = buildModelVersionScopeCondition(scopedModelRegistry);
     const previousVersion = await db.query.modelVersions.findFirst({
@@ -4301,6 +4357,10 @@ app.post('/api/training/jobs/:id/rollback', requirePermission('training:fine_tun
           },
         },
       }));
+    });
+    trainingPipelineMetrics.governanceAuditWritesTotal.inc({
+      action: 'training_model_rollback_executed',
+      result: 'success',
     });
 
     logger.info(
