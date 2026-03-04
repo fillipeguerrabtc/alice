@@ -16,6 +16,7 @@
  * DocumentaÃ§Ã£o em PT-BR (Regra 10 CLAUDE.md)
  */
 
+/* eslint-disable no-irregular-whitespace -- legacy text encoding needs dedicated cleanup */
 import express from 'express';
 import type { Request, Response } from 'express';
 import cors from 'cors';
@@ -2990,6 +2991,10 @@ const promotionApprovalBodySchema = z.object({
   reason: z.string().max(2000).optional(),
 });
 
+const rollbackBodySchema = z.object({
+  reason: z.string().trim().min(10).max(500),
+});
+
 async function getPromotionApprovalSummary(params: {
   tenantId: string;
   fineTuningJobId: string;
@@ -3987,6 +3992,26 @@ app.post('/api/training/jobs/:id/promote', requirePermission('training:fine_tuni
     if (!fineTuningJob.loraJobId) {
       return res.status(409).json({ error: 'Job sem loraJobId vinculado' });
     }
+    if (fineTuningJob.promotionStatus === 'active' && fineTuningJob.modelVersionId) {
+      const activeVersion = await db.query.modelVersions.findFirst({
+        where: and(
+          eq(schema.modelVersions.id, fineTuningJob.modelVersionId),
+          eq(schema.modelVersions.tenantId, tenantResolution.tenantId),
+          eq(schema.modelVersions.isActive, true)
+        ),
+      });
+      if (activeVersion) {
+        return res.json({
+          success: true,
+          alreadyActive: true,
+          fineTuningJobId: fineTuningJob.id,
+          modelVersion: activeVersion,
+        });
+      }
+    }
+    if (fineTuningJob.promotionStatus === 'active') {
+      return res.status(409).json({ error: 'Job ja esta com promocao ativa neste escopo' });
+    }
     let scopedModelRegistry: ReturnType<typeof assertValidModelRegistryScope>;
     try {
       scopedModelRegistry = assertValidModelRegistryScope({
@@ -4198,6 +4223,11 @@ app.post('/api/training/jobs/:id/rollback', requirePermission('training:fine_tun
   if (!paramsResult.success) {
     return res.status(400).json({ error: 'ID invalido', details: paramsResult.error.format() });
   }
+  const bodyResult = rollbackBodySchema.safeParse(req.body);
+  if (!bodyResult.success) {
+    return res.status(400).json({ error: 'Payload invalido', details: bodyResult.error.format() });
+  }
+  const rollbackReason = bodyResult.data.reason.trim();
 
   const redis = getRedisClient();
   let lockHandle: Awaited<ReturnType<typeof acquireTrainingOperationLock>> = null;
@@ -4232,6 +4262,12 @@ app.post('/api/training/jobs/:id/rollback', requirePermission('training:fine_tun
     });
     if (!currentVersion) {
       return res.status(404).json({ error: 'Model version atual nao encontrada' });
+    }
+    if (!currentVersion.isActive) {
+      return res.status(409).json({ error: 'Somente model version ativa pode sofrer rollback' });
+    }
+    if (currentJob.promotionStatus !== 'active') {
+      return res.status(409).json({ error: 'Somente job com promocao ativa pode sofrer rollback' });
     }
 
     let scopedModelRegistry: ReturnType<typeof assertValidModelRegistryScope>;
@@ -4313,7 +4349,7 @@ app.post('/api/training/jobs/:id/rollback', requirePermission('training:fine_tun
           status: 'rolled_back',
           deprecadoEm: new Date(),
           rolledBackFrom: previousVersion.id,
-          rolledBackReason: `Rollback manual para version ${previousVersion.version}`,
+          rolledBackReason: rollbackReason,
         })
         .where(eq(schema.modelVersions.id, currentVersion.id));
 
@@ -4348,7 +4384,7 @@ app.post('/api/training/jobs/:id/rollback', requirePermission('training:fine_tun
             modelVersionId: previousVersion.id,
             promotionStatus: 'active',
           },
-          reason: `Rollback manual para version ${previousVersion.version}`,
+          reason: rollbackReason,
           metadata: {
             operation: 'rollback',
             scope: scopedModelRegistry,

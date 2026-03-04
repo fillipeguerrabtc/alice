@@ -3289,8 +3289,8 @@ export default function Training() {
   });
 
   const rollbackJobMutation = useMutation({
-    mutationFn: async (jobId: string) => {
-      const response = await apiRequest('POST', `/api/training/jobs/${jobId}/rollback`);
+    mutationFn: async ({ jobId, reason }: { jobId: string; reason: string }) => {
+      const response = await apiRequest('POST', `/api/training/jobs/${jobId}/rollback`, { reason });
       return response.json();
     },
     onSuccess: () => {
@@ -3298,8 +3298,11 @@ export default function Training() {
       queryClient.invalidateQueries({ queryKey: autoLearningQueryKey });
       toast({ title: t('training.promotion.rollbackSuccess') });
     },
-    onError: () => {
-      toast({ title: t('training.promotion.rollbackError'), variant: 'destructive' });
+    onError: (error) => {
+      const errorMessage = error instanceof ApiError
+        ? error.message
+        : t('training.promotion.rollbackError');
+      toast({ title: t('training.promotion.rollbackError'), description: errorMessage, variant: 'destructive' });
     },
   });
 
@@ -3422,6 +3425,7 @@ export default function Training() {
   const allJobs = jobs?.jobs || [];
   const [promoteDialogJob, setPromoteDialogJob] = useState<FineTuningJob | null>(null);
   const [rollbackDialogJob, setRollbackDialogJob] = useState<FineTuningJob | null>(null);
+  const [rollbackReason, setRollbackReason] = useState('');
 
   const minCustomJobDatasetSize = trainingSystemConfig.minOndemandDatasetSize;
 
@@ -4469,7 +4473,10 @@ export default function Training() {
                           onRejectPromotion={() => approvalPromotionMutation.mutate({ jobId: job.id, decision: 'rejected' })}
                           canRollback={job.promotionStatus === 'active'}
                           onPromote={() => setPromoteDialogJob(job)}
-                          onRollback={() => setRollbackDialogJob(job)}
+                          onRollback={() => {
+                            setRollbackReason('');
+                            setRollbackDialogJob(job);
+                          }}
                           actionPending={
                             promoteJobMutation.isPending
                             || approvalPromotionMutation.isPending
@@ -4551,7 +4558,15 @@ export default function Training() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!rollbackDialogJob} onOpenChange={(open) => !open && setRollbackDialogJob(null)}>
+      <Dialog
+        open={!!rollbackDialogJob}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRollbackDialogJob(null);
+            setRollbackReason('');
+          }
+        }}
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>{t('training.promotion.rollbackTitle')}</DialogTitle>
@@ -4561,19 +4576,35 @@ export default function Training() {
               })}
             </DialogDescription>
           </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="rollback-reason">{t('training.promotion.rollbackReasonLabel')}</Label>
+            <Input
+              id="rollback-reason"
+              value={rollbackReason}
+              onChange={(event) => setRollbackReason(event.target.value)}
+              placeholder={t('training.promotion.rollbackReasonPlaceholder')}
+              maxLength={500}
+            />
+            <p className="text-xs text-muted-foreground">
+              {t('training.promotion.rollbackReasonHint')}
+            </p>
+          </div>
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setRollbackDialogJob(null)}>
+            <Button variant="outline" onClick={() => { setRollbackDialogJob(null); setRollbackReason(''); }}>
               {t('training.createJob.cancel')}
             </Button>
             <Button
               variant="outline"
               onClick={() => {
                 if (!rollbackDialogJob) return;
-                rollbackJobMutation.mutate(rollbackDialogJob.id, {
-                  onSuccess: () => setRollbackDialogJob(null),
+                rollbackJobMutation.mutate({ jobId: rollbackDialogJob.id, reason: rollbackReason.trim() }, {
+                  onSuccess: () => {
+                    setRollbackDialogJob(null);
+                    setRollbackReason('');
+                  },
                 });
               }}
-              disabled={!rollbackDialogJob || rollbackJobMutation.isPending}
+              disabled={!rollbackDialogJob || rollbackJobMutation.isPending || rollbackReason.trim().length < 10}
             >
               {rollbackJobMutation.isPending ? (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />

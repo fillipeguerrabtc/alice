@@ -30,6 +30,36 @@ export const trainingServicePaths = {
       responses: { 200: { description: 'Eventos de auditoria' } },
     },
   },
+  '/api/training/jobs/{id}/promote': {
+    post: {
+      summary: 'Promover job concluido para modelo ativo',
+      tags: ['Training Jobs'],
+      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+      responses: { 200: { description: 'Promocao executada (ou idempotente quando ja ativo)' } },
+    },
+  },
+  '/api/training/jobs/{id}/rollback': {
+    post: {
+      summary: 'Executar rollback para versao anterior ativa no escopo',
+      tags: ['Training Jobs'],
+      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['reason'],
+              properties: {
+                reason: { type: 'string', minLength: 10, maxLength: 500 },
+              },
+            },
+          },
+        },
+      },
+      responses: { 200: { description: 'Rollback executado' } },
+    },
+  },
   '/api/training/jobs/{id}/promotion-approval': {
     post: {
       summary: 'Registrar aprovacao/reprovacao de promocao',
