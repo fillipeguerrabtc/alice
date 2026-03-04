@@ -140,6 +140,22 @@ describe('Training Service - OpenAPI (critical contracts)', () => {
     ).properties;
     expect(governanceSchema).toHaveProperty('requireIdempotencyKeyForRunStart');
   });
+
+  it('documents strict trading dataset fail-closed governance fields', () => {
+    const executionGovernance = (
+      trainingServiceSchemas.TrainingExecutionModesResponse.properties.governance as { properties: Record<string, unknown> }
+    ).properties;
+    const queueGovernance = (
+      trainingServiceSchemas.FineTuningQueueStatusResponse.properties.governance as { properties: Record<string, unknown> }
+    ).properties;
+
+    expect(executionGovernance).toHaveProperty('requireStrictApprovedDataForAutoEngine');
+    expect(executionGovernance).toHaveProperty('enforceMinInferenceConfidence');
+    expect(executionGovernance).toHaveProperty('tradingMinInferenceConfidence');
+    expect(queueGovernance).toHaveProperty('requireStrictApprovedDataForAutoEngine');
+    expect(queueGovernance).toHaveProperty('enforceMinInferenceConfidence');
+    expect(queueGovernance).toHaveProperty('tradingMinInferenceConfidence');
+  });
 });
 
 // ============================================================================

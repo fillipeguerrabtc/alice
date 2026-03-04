@@ -243,6 +243,9 @@ type TrainingQueueStatusResponse = {
     requireDualApprovalForPromotion: boolean;
     promotionMinApprovals: number;
     requireIdempotencyKeyForRunStart?: boolean;
+    requireStrictApprovedDataForAutoEngine?: boolean;
+    enforceMinInferenceConfidence?: boolean;
+    tradingMinInferenceConfidence?: number;
   };
   tenant: {
     id: string;
@@ -273,6 +276,9 @@ type TrainingExecutionModesResponse = {
     requireDualApprovalForPromotion: boolean;
     promotionMinApprovals: number;
     requireIdempotencyKeyForRunStart?: boolean;
+    requireStrictApprovedDataForAutoEngine?: boolean;
+    enforceMinInferenceConfidence?: boolean;
+    tradingMinInferenceConfidence?: number;
   };
 };
 
@@ -4469,6 +4475,15 @@ export default function Training() {
                           {queueStatus?.governance?.requireIdempotencyKeyForRunStart
                             ? t('training.autoLearning.policyRequireIdempotencyKey')
                             : t('training.autoLearning.policyOptionalIdempotencyKey')}
+                        </div>
+                        <div className="text-sm text-muted-foreground">
+                          {queueStatus?.governance?.requireStrictApprovedDataForAutoEngine
+                            ? t('training.autoLearning.policyRequireStrictTradingData', {
+                              confidence: Number(
+                                queueStatus?.governance?.tradingMinInferenceConfidence ?? 0.65
+                              ).toFixed(2),
+                            })
+                            : t('training.autoLearning.policyRelaxedTradingData')}
                         </div>
                       </div>
                       <div className="space-y-2">

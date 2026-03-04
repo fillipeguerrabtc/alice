@@ -28,11 +28,14 @@ import type {
 } from '@alice/shared';
 import { TradingLoraHyperparamsSchema } from '@alice/shared';
 import { loadTrainingEnterpriseConfig } from './training-config.js';
-
-/** Source types de trading em training_data (tabela universal). */
-const TRADING_SOURCE_TYPES = ['trading_signal', 'trading_order', 'trading_postmortem', 'trading_demo'] as const;
+import {
+  buildTradingDataEligibilityConditions,
+  loadTradingDataGovernancePolicyFromEnv,
+  TRADING_DATA_SOURCE_TYPES,
+} from './trading-data-governance.js';
 
 const logger = createLogger('lora-job-manager');
+const tradingDataGovernancePolicy = loadTradingDataGovernancePolicyFromEnv();
 
 const TRAINING_STORAGE_DIR = process.env.TRAINING_STORAGE_DIR || '/opt/alice/uploads/training';
 
@@ -253,11 +256,11 @@ export async function prepareDataset(
     .from(schema.trainingData)
     .where(
       and(
-        eq(schema.trainingData.tenantId, tenantId),
-        eq(schema.trainingData.status, 'approved'),
-        eq(schema.trainingData.isDuplicate, false),
-        inArray(schema.trainingData.sourceType, [...TRADING_SOURCE_TYPES]),
-        eq(schema.trainingData.namespaceId, namespaceId),
+        ...buildTradingDataEligibilityConditions({
+          tenantId,
+          namespaceId,
+          policy: tradingDataGovernancePolicy,
+        }),
         agentId != null
           ? eq(schema.trainingData.agentId, agentId)
           : sql`1=1`
@@ -413,7 +416,7 @@ export async function prepareDatasetFromChatAndTrading(
     eq(schema.trainingData.status, 'approved'),
     eq(schema.trainingData.tenantId, tenantId),
     isNull(schema.trainingData.usedInJobId),
-    not(inArray(schema.trainingData.sourceType, [...TRADING_SOURCE_TYPES])),
+    not(inArray(schema.trainingData.sourceType, [...TRADING_DATA_SOURCE_TYPES])),
     options?.agentId
       ? or(
           eq(schema.trainingData.agentId, options.agentId),

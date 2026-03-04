@@ -1804,6 +1804,8 @@
       "policyDualApprovalDisabled": "Dual-control desativado para promoção.",
       "policyRequireIdempotencyKey": "Start de treino exige header X-Idempotency-Key.",
       "policyOptionalIdempotencyKey": "Start de treino aceita X-Idempotency-Key opcional.",
+      "policyRequireStrictTradingData": "Auto Engine exige dados Trading aprovados, sem quarentena e confidence mínimo {{confidence}}.",
+      "policyRelaxedTradingData": "Auto Engine usa política relaxada para dataset Trading (sem gate estrito).",
       "queueStats": "Pendente: {{pending}} | Lag: {{lag}} | DLQ: {{dlq}}"
     },
     "filter": {

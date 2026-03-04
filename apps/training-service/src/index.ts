@@ -158,6 +158,10 @@ import {
   type TrainingRunStartIdempotencyOperation,
 } from './training-enterprise-controls.js';
 import { validateWebhookBodyDigest, validateWebhookSignature } from './webhook-security.js';
+import {
+  buildTradingDataEligibilityConditions,
+  loadTradingDataGovernancePolicyFromEnv,
+} from './trading-data-governance.js';
 // Fine-tuning Ã© executado localmente via GPU Manager Service (Regra 6 - sem stubs/migraÃ§Ã£o)
 
 // Logger centralizado: JSON em produÃ§Ã£o, pino-pretty em desenvolvimento
@@ -562,6 +566,7 @@ const TRAINING_RUN_START_REQUIRE_IDEMPOTENCY_KEY = parseEnvBoolean(
   process.env.TRAINING_RUN_START_REQUIRE_IDEMPOTENCY_KEY,
   false
 );
+const tradingDataGovernancePolicy = loadTradingDataGovernancePolicyFromEnv();
 const DATABASE_URL = process.env.DATABASE_URL;
 const RAG_SERVICE_URL = process.env.RAG_SERVICE_URL ?? 'http://alice-rag:3003';
 const INTEGRATIONS_SERVICE_URL = process.env.INTEGRATIONS_SERVICE_URL;
@@ -701,6 +706,18 @@ const trainingPipelineMetrics = {
     name: 'alice_training_scope_suggested_new_namespace_total',
     help: 'Total de vezes que scope-resolver sugeriu criaÃ§Ã£o de novo namespace (sem namespace inferido)',
     labelNames: ['source_type'] as const,
+    registers: [metrics.registry],
+  }),
+  scopeConfidenceHistogram: new PromHistogram({
+    name: 'alice_training_scope_confidence_histogram',
+    help: 'Distribuicao de confidence do scope-resolver para dados de treinamento',
+    buckets: [0, 0.25, 0.5, 0.65, 0.75, 0.85, 0.95, 1],
+    registers: [metrics.registry],
+  }),
+  failClosedBlockTotal: new PromCounter({
+    name: 'alice_training_fail_closed_block_total',
+    help: 'Total de bloqueios fail-closed no pipeline de treinamento/trading',
+    labelNames: ['reason'] as const,
     registers: [metrics.registry],
   }),
   embeddingDedupeJobsTotal: new PromCounter({
@@ -2432,16 +2449,35 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
     if (!trainingNamespaceId) {
       throw new Error('TRADING_SCOPE_REQUIRED: Namespace Trading obrigatÃ³rio para Auto Engine.');
     }
+    const tradingDatasetEligibilityConditions = tradingDataGovernancePolicy.requireStrictApprovedDataForAutoEngine
+      ? buildTradingDataEligibilityConditions({
+          tenantId: run.tenantId,
+          namespaceId: trainingNamespaceId,
+          policy: tradingDataGovernancePolicy,
+        })
+      : [
+          eq(schema.trainingData.tenantId, run.tenantId),
+          eq(schema.trainingData.namespaceId, trainingNamespaceId),
+          eq(schema.trainingData.status, 'approved'),
+        ];
     const [trainingSummary] = await db
-      .select({ count: sql<number>`count(*)` })
+      .select({
+        count: sql<number>`count(*)`,
+        maxConfidence: sql<number>`COALESCE(MAX(${schema.trainingData.inferenceConfidence}), 0)`,
+      })
       .from(schema.trainingData)
-      .where(and(
-        eq(schema.trainingData.tenantId, run.tenantId),
-        eq(schema.trainingData.namespaceId, trainingNamespaceId),
-        eq(schema.trainingData.status, 'approved'),
-      ));
+      .where(and(...tradingDatasetEligibilityConditions));
+    trainingPipelineMetrics.scopeConfidenceHistogram.observe(Number(trainingSummary?.maxConfidence ?? 0));
     if (Number(trainingSummary?.count ?? 0) <= 0) {
-      throw new Error('TRADING_SCOPE_REQUIRED: Dataset aprovado de Trading Ã© obrigatÃ³rio para Auto Engine.');
+      if (tradingDataGovernancePolicy.requireStrictApprovedDataForAutoEngine) {
+        trainingPipelineMetrics.failClosedBlockTotal.inc({
+          reason: 'trading_scope_missing_strict_eligible_data',
+        });
+        throw new Error(
+          `TRADING_SCOPE_REQUIRED: Auto Engine exige dataset Trading aprovado, sem quarentena e elegivel por politica (min_confidence=${tradingDataGovernancePolicy.minInferenceConfidence.toFixed(2)}).`
+        );
+      }
+      throw new Error('TRADING_SCOPE_REQUIRED: Approved Trading dataset is required for Auto Engine.');
     }
     const activeAdapter = await getActiveAdapter({ tenantId: run.tenantId, namespaceId: trainingNamespaceId });
     if (!activeAdapter?.adapterPath) {
@@ -2923,6 +2959,7 @@ app.post('/api/training/data', requirePermission('training:training_data:write')
       conversationId: body.conversationId ?? null,
       messagesText,
     });
+    trainingPipelineMetrics.scopeConfidenceHistogram.observe(scope.confidence);
 
     const effectiveNamespaceId = body.namespaceId ?? scope.namespaceId ?? null;
     const effectiveAgentId = body.agentId ?? scope.agentId ?? null;
@@ -5191,6 +5228,7 @@ app.post('/api/training/bulk-import', requirePermission('training:training_data:
         },
         messagesText: entry.messages.map((m) => m.content).join('\n'),
       });
+      trainingPipelineMetrics.scopeConfidenceHistogram.observe(scope.confidence);
       if (scope.needsHumanReview) {
         trainingPipelineMetrics.scopeQuarantineTotal.inc({
           source_type: sourceTypeForImport,
@@ -5561,6 +5599,7 @@ app.post('/api/training/webhook', async (req: Request, res: Response) => {
         conversationId: payload.conversationId ?? null,
         messagesText: text,
       });
+      trainingPipelineMetrics.scopeConfidenceHistogram.observe(scope.confidence);
 
       try {
         embedding = await gpuManagerEmbeddingsBreaker.fire(text) as number[];
@@ -5916,6 +5955,9 @@ app.get('/api/training/execution-modes', requirePermission('training:training_da
         requireDualApprovalForPromotion: governanceConfig.requireDualApprovalForPromotion,
         promotionMinApprovals: governanceConfig.promotionMinApprovals,
         requireIdempotencyKeyForRunStart: TRAINING_RUN_START_REQUIRE_IDEMPOTENCY_KEY,
+        requireStrictApprovedDataForAutoEngine: tradingDataGovernancePolicy.requireStrictApprovedDataForAutoEngine,
+        enforceMinInferenceConfidence: tradingDataGovernancePolicy.enforceMinInferenceConfidence,
+        tradingMinInferenceConfidence: tradingDataGovernancePolicy.minInferenceConfidence,
       },
     });
   } catch (error) {
@@ -6614,6 +6656,9 @@ app.get('/api/training/queue/status', requirePermission('training:fine_tuning_jo
         requireDualApprovalForPromotion: governanceConfig.requireDualApprovalForPromotion,
         promotionMinApprovals: governanceConfig.promotionMinApprovals,
         requireIdempotencyKeyForRunStart: TRAINING_RUN_START_REQUIRE_IDEMPOTENCY_KEY,
+        requireStrictApprovedDataForAutoEngine: tradingDataGovernancePolicy.requireStrictApprovedDataForAutoEngine,
+        enforceMinInferenceConfidence: tradingDataGovernancePolicy.enforceMinInferenceConfidence,
+        tradingMinInferenceConfidence: tradingDataGovernancePolicy.minInferenceConfidence,
       },
       tenant: {
         id: tenantResolution.tenantId,
