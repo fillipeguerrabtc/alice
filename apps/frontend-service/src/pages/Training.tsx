@@ -249,6 +249,21 @@ type TrainingQueueStatusResponse = {
   };
 };
 
+type TrainingGovernanceAuditEvent = {
+  id: string;
+  action: 'training_promotion_approval_recorded' | 'training_model_promoted' | 'training_model_rollback_executed' | string;
+  resourceId: string | null;
+  details: Record<string, unknown> | null;
+  ip: string | null;
+  userAgent: string | null;
+  createdAt: string;
+  user: {
+    id: string;
+    name: string;
+    email: string | null;
+  } | null;
+};
+
 interface BulkImportEntry {
   messages: Array<{ role: string; content: string }>;
   rating?: number;
@@ -470,6 +485,16 @@ function getJobStatusBadge(status: FineTuningJob['status'], t: (key: string) => 
     default:
       return null;
   }
+}
+
+function getTrainingAuditActionLabel(
+  action: TrainingGovernanceAuditEvent['action'],
+  t: (key: string, options?: Record<string, unknown>) => string
+): string {
+  if (action === 'training_promotion_approval_recorded') return t('training.audit.actions.approval');
+  if (action === 'training_model_promoted') return t('training.audit.actions.promoted');
+  if (action === 'training_model_rollback_executed') return t('training.audit.actions.rolledBack');
+  return action;
 }
 
 function TrainingDataCard({
@@ -906,8 +931,18 @@ function JobDetailModal({
       return active ? 2000 : false;
     },
   });
+  const { data: auditData, isLoading: auditLoading } = useQuery<{ events: TrainingGovernanceAuditEvent[] }>({
+    queryKey: ['/api/training/jobs', jobId, 'audit-trail'],
+    queryFn: async () => {
+      const res = await apiRequest('GET', `/api/training/jobs/${jobId}/audit-trail`);
+      return res.json();
+    },
+    enabled: open && !!jobId,
+    refetchInterval: false,
+  });
 
   const job = data?.job;
+  const auditEvents = auditData?.events ?? [];
   if (!open || !jobId) return null;
 
   const startTime = job?.iniciadoEm ? new Date(job.iniciadoEm).getTime() : null;
@@ -976,6 +1011,40 @@ function JobDetailModal({
                 <AlertDescription>{job.errorMessage}</AlertDescription>
               </Alert>
             )}
+            <div className="space-y-2">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                {t('training.audit.title')}
+              </p>
+              {auditLoading ? (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  {t('training.audit.loading')}
+                </div>
+              ) : auditEvents.length === 0 ? (
+                <p className="text-xs text-muted-foreground">{t('training.audit.empty')}</p>
+              ) : (
+                <div className="max-h-40 space-y-2 overflow-y-auto rounded border p-2">
+                  {auditEvents.map((event) => {
+                    const details = event.details ?? {};
+                    const reason = typeof details.reason === 'string' ? details.reason : null;
+                    return (
+                      <div key={event.id} className="rounded border bg-muted/20 p-2 text-xs">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <Badge variant="outline">{getTrainingAuditActionLabel(event.action, t)}</Badge>
+                          <span className="text-muted-foreground">
+                            {formatDateTime(event.createdAt, { locale, timeZone })}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-muted-foreground">
+                          {event.user?.name ?? t('training.audit.systemUser')}
+                        </p>
+                        {reason && <p className="mt-1">{t('training.audit.reason', { reason })}</p>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         ) : null}
       </DialogContent>

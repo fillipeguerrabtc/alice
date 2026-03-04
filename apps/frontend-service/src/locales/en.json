@@ -1879,6 +1879,18 @@
       "rollbackSuccess": "Rollback completed successfully",
       "rollbackError": "Failed to rollback model"
     },
+    "audit": {
+      "title": "Governance audit trail",
+      "loading": "Loading audit events...",
+      "empty": "No governance audit events for this job.",
+      "systemUser": "System automation",
+      "reason": "Reason: {{reason}}",
+      "actions": {
+        "approval": "Promotion approval recorded",
+        "promoted": "Model promoted",
+        "rolledBack": "Rollback executed"
+      }
+    },
     "activeByScope": {
       "title": "Active model by scope",
       "desc": "Current promoted adapters per tenant/namespace/agent scope.",

@@ -22,6 +22,14 @@ export const trainingServicePaths = {
       responses: { 200: { description: 'Aprovacoes' } },
     },
   },
+  '/api/training/jobs/{id}/audit-trail': {
+    get: {
+      summary: 'Listar trilha de auditoria de governanca do job',
+      tags: ['Training Jobs'],
+      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+      responses: { 200: { description: 'Eventos de auditoria' } },
+    },
+  },
   '/api/training/jobs/{id}/promotion-approval': {
     post: {
       summary: 'Registrar aprovacao/reprovacao de promocao',

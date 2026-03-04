@@ -1926,6 +1926,18 @@
       "rollbackSuccess": "Rollback concluído com sucesso",
       "rollbackError": "Falha ao executar rollback"
     },
+    "audit": {
+      "title": "Trilha de auditoria da governanÃ§a",
+      "loading": "Carregando eventos de auditoria...",
+      "empty": "Nenhum evento de auditoria de governanÃ§a para este job.",
+      "systemUser": "AutomaÃ§Ã£o do sistema",
+      "reason": "Motivo: {{reason}}",
+      "actions": {
+        "approval": "AprovaÃ§Ã£o de promoÃ§Ã£o registrada",
+        "promoted": "Modelo promovido",
+        "rolledBack": "Rollback executado"
+      }
+    },
     "activeByScope": {
       "title": "Modelo ativo por escopo",
       "desc": "Adaptadores promovidos atualmente por escopo de tenant/namespace/agente.",

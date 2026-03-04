@@ -3024,6 +3024,11 @@ type TrainingGovernanceAuditAction =
   | 'training_promotion_approval_recorded'
   | 'training_model_promoted'
   | 'training_model_rollback_executed';
+const TRAINING_GOVERNANCE_AUDIT_ACTIONS: TrainingGovernanceAuditAction[] = [
+  'training_promotion_approval_recorded',
+  'training_model_promoted',
+  'training_model_rollback_executed',
+];
 
 function buildTrainingGovernanceAuditValues(params: {
   tenantId: string;
@@ -3703,6 +3708,83 @@ app.get('/api/training/jobs/:id/promotion-approvals', requirePermission('trainin
     return res.json(summary);
   } catch (error) {
     logger.error({ error, jobId: req.params.id }, 'Falha ao consultar aprovacoes de promocao');
+    return res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+app.get('/api/training/jobs/:id/audit-trail', requirePermission('training:fine_tuning_jobs:read'), async (req: Request, res: Response) => {
+  const paramsResult = uuidParamSchema.safeParse(req.params);
+  if (!paramsResult.success) {
+    return res.status(400).json({ error: 'ID invalido', details: paramsResult.error.format() });
+  }
+
+  try {
+    const tenantResolution = resolveAuthorizedTenantId(req);
+    if (!tenantResolution.ok) {
+      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
+    }
+
+    const fineTuningJob = await db.query.fineTuningJobs.findFirst({
+      where: and(
+        eq(schema.fineTuningJobs.id, paramsResult.data.id),
+        eq(schema.fineTuningJobs.tenantId, tenantResolution.tenantId)
+      ),
+      columns: { id: true },
+    });
+    if (!fineTuningJob) {
+      return res.status(404).json({ error: 'Job de fine-tuning nao encontrado' });
+    }
+
+    const events = await db.query.auditLogs.findMany({
+      where: and(
+        eq(schema.auditLogs.tenantId, tenantResolution.tenantId),
+        eq(schema.auditLogs.recurso, 'fine_tuning_job'),
+        eq(schema.auditLogs.recursoId, fineTuningJob.id),
+        inArray(schema.auditLogs.acao, TRAINING_GOVERNANCE_AUDIT_ACTIONS)
+      ),
+      orderBy: [desc(schema.auditLogs.criadoEm)],
+      limit: 100,
+    });
+
+    const userIds = Array.from(new Set(
+      events
+        .map((event) => event.userId)
+        .filter((userId): userId is string => typeof userId === 'string' && userId.length > 0)
+    ));
+    const users = userIds.length > 0
+      ? await db.query.users.findMany({
+        where: inArray(schema.users.id, userIds),
+        columns: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+        },
+      })
+      : [];
+    const usersById = new Map(users.map((user) => [user.id, user]));
+
+    return res.json({
+      events: events.map((event) => {
+        const user = event.userId ? usersById.get(event.userId) : undefined;
+        return {
+          id: event.id,
+          action: event.acao,
+          resourceId: event.recursoId,
+          details: event.detalhes,
+          ip: event.ip,
+          userAgent: event.userAgent,
+          createdAt: event.criadoEm,
+          user: user ? {
+            id: user.id,
+            name: [user.firstName, user.lastName].filter(Boolean).join(' ').trim() || user.email || user.id,
+            email: user.email,
+          } : null,
+        };
+      }),
+    });
+  } catch (error) {
+    logger.error({ error, jobId: req.params.id }, 'Falha ao consultar trilha de auditoria de training');
     return res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
