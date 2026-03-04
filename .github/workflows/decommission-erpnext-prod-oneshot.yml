@@ -179,9 +179,10 @@ jobs:
               fi
               in_use="$(docker ps -q --filter "ancestor=$img" | wc -l | tr -d ' ')"
               if [ "${in_use:-0}" != "0" ]; then
-                fail "Image still used by running containers: $img"
+                log "skip image still used by running containers: $img"
+                continue
               fi
-              docker image rm "$img" >/dev/null
+              docker image rm "$img" >/dev/null || fail "Failed to remove image: $img"
               log "removed image ref=$img"
             done
 
@@ -227,6 +228,10 @@ jobs:
 
             if docker volume ls --format '{{.Name}}' | grep -Eqi 'erpnext|frappe|mariadb'; then
               fail "Legacy ERPNext/Frappe/MariaDB volumes still detected"
+            fi
+
+            if docker images --format '{{.Repository}}:{{.Tag}}' | grep -Eqi 'frappe/erpnext|mariadb:|prom/mysqld-exporter'; then
+              fail "Legacy ERPNext/Frappe/MariaDB images still detected"
             fi
 
             log "Decommission one-shot completed successfully."
