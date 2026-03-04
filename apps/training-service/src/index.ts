@@ -524,6 +524,12 @@ const trainingPipelineMetrics = {
     labelNames: ['action', 'result'] as const,
     registers: [metrics.registry],
   }),
+  webhookNonceValidationTotal: new PromCounter({
+    name: 'alice_training_webhook_nonce_validation_total',
+    help: 'Resultado das validacoes de nonce do webhook de treinamento',
+    labelNames: ['storage', 'result'] as const,
+    registers: [metrics.registry],
+  }),
 };
 
 const tradingMetrics = {
@@ -4846,7 +4852,8 @@ const webhookInternalHeadersSchema = z.object({
 const webhookNonceStore = new Map<string, number>();
 const WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS = 300;
 const WEBHOOK_NONCE_TTL_MS = 10 * 60 * 1000;
-setInterval(() => {
+const WEBHOOK_NONCE_REDIS_PREFIX = 'alice:training:webhook:nonce';
+const webhookNonceCleanupTimer = setInterval(() => {
   const now = Date.now();
   for (const [nonce, expiresAt] of webhookNonceStore.entries()) {
     if (expiresAt <= now) {
@@ -4854,6 +4861,50 @@ setInterval(() => {
     }
   }
 }, 60_000);
+webhookNonceCleanupTimer.unref?.();
+
+type WebhookNonceValidationResult = {
+  accepted: boolean;
+  storage: 'redis' | 'memory';
+  result: 'accepted' | 'replay' | 'fallback_after_redis_error';
+};
+
+async function validateAndStoreWebhookNonce(params: {
+  tenantId: string;
+  nonce: string;
+}): Promise<WebhookNonceValidationResult> {
+  const inMemoryKey = `${params.tenantId}:${params.nonce}`;
+  const redis = getRedisClient();
+
+  if (redis) {
+    try {
+      const redisKey = `${WEBHOOK_NONCE_REDIS_PREFIX}:${params.tenantId}:${params.nonce}`;
+      const lock = await redis.set(redisKey, '1', { NX: true, PX: WEBHOOK_NONCE_TTL_MS });
+      if (lock !== 'OK') {
+        return { accepted: false, storage: 'redis', result: 'replay' };
+      }
+      return { accepted: true, storage: 'redis', result: 'accepted' };
+    } catch (error) {
+      logger.error(
+        { error, tenantId: params.tenantId },
+        'Falha ao validar nonce do webhook no Redis; aplicando fallback em memoria'
+      );
+      const nonceExpiry = webhookNonceStore.get(inMemoryKey);
+      if (nonceExpiry && nonceExpiry > Date.now()) {
+        return { accepted: false, storage: 'memory', result: 'replay' };
+      }
+      webhookNonceStore.set(inMemoryKey, Date.now() + WEBHOOK_NONCE_TTL_MS);
+      return { accepted: true, storage: 'memory', result: 'fallback_after_redis_error' };
+    }
+  }
+
+  const nonceExpiry = webhookNonceStore.get(inMemoryKey);
+  if (nonceExpiry && nonceExpiry > Date.now()) {
+    return { accepted: false, storage: 'memory', result: 'replay' };
+  }
+  webhookNonceStore.set(inMemoryKey, Date.now() + WEBHOOK_NONCE_TTL_MS);
+  return { accepted: true, storage: 'memory', result: 'accepted' };
+}
 
 // OWASP API3 - Schema para aprovaÃ§Ã£o em lote
 const batchApproveSchema = z.object({
@@ -4946,12 +4997,17 @@ app.post('/api/training/webhook', async (req: Request, res: Response) => {
     return res.status(401).json({ error: 'Assinatura interna invalida' });
   }
 
-  const nonceKey = `${internalTenantId}:${internalNonce}`;
-  const nonceExpiry = webhookNonceStore.get(nonceKey);
-  if (nonceExpiry && nonceExpiry > Date.now()) {
+  const nonceValidation = await validateAndStoreWebhookNonce({
+    tenantId: internalTenantId,
+    nonce: internalNonce,
+  });
+  trainingPipelineMetrics.webhookNonceValidationTotal.inc({
+    storage: nonceValidation.storage,
+    result: nonceValidation.result,
+  });
+  if (!nonceValidation.accepted) {
     return res.status(409).json({ error: 'Nonce ja utilizado (replay detectado)' });
   }
-  webhookNonceStore.set(nonceKey, Date.now() + WEBHOOK_NONCE_TTL_MS);
 
   const tenantId = internalTenantId;
 
