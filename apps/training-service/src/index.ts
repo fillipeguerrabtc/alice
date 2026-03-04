@@ -1544,11 +1544,11 @@ async function resolveAutoDecisionEvidenceIds(params: {
   const ragEvidenceIds: string[] = [];
   if (params.namespaceId && params.operationIntent && params.userId) {
     try {
-      const internalHeaders: Record<string, string> = {
-        'x-internal-auth': 'service',
-        'x-user-id': params.userId,
-        'x-tenant-id': params.tenantId,
-      };
+      const internalHeaders = generateInternalAuthHeaders({
+        userId: params.userId,
+        tenantId: params.tenantId,
+        role: 'viewer',
+      });
       const queryParts = [
         `EstratÃ©gia: ${params.operationIntent}`,
         params.regime ? `Regime: ${params.regime}` : null,
