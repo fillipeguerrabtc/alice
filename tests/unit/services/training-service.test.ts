@@ -80,6 +80,13 @@ describe('Training Service - OpenAPI (critical contracts)', () => {
     expect(paths).not.toContain('/api/training/datasets');
     expect(paths).not.toContain('/api/training/models');
   });
+
+  it('documents only webhook events implemented by the handler', () => {
+    const eventEnum = (
+      trainingServiceSchemas.TrainingWebhookRequest.properties.event as { enum: string[] }
+    ).enum;
+    expect(eventEnum).toEqual(['training_data', 'feedback']);
+  });
 });
 
 // ============================================================================

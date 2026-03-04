@@ -4929,7 +4929,7 @@ app.post('/api/training/bulk-import', requirePermission('training:training_data:
 // ============================================================================
 
 const webhookSchema = z.object({
-  event: z.enum(['training_data', 'feedback', 'document']),
+  event: z.enum(['training_data', 'feedback']),
   payload: z.object({
     messages: z.array(z.object({
       role: z.enum(['system', 'user', 'assistant']),

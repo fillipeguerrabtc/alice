@@ -786,7 +786,7 @@ export const trainingServiceSchemas = {
     type: 'object',
     required: ['event', 'payload'],
     properties: {
-      event: { type: 'string', enum: ['training_data', 'feedback', 'document'] },
+      event: { type: 'string', enum: ['training_data', 'feedback'] },
       timestamp: { type: 'string', format: 'date-time' },
       payload: {
         type: 'object',
