@@ -1632,7 +1632,7 @@
   "training": {
     "title": "Fine-tuning & Training",
     "subtitle": "Approve data, track jobs, and control continuous learning with safety.",
-    "newJob": "New Job",
+    "newJob": "Advanced Job",
     "postTraining": {
       "title": "Training completed",
       "desc": "Job \"{{jobName}}\" has finished. Continue training or go back to chat?",
@@ -1661,7 +1661,7 @@
     },
     "tabs": {
       "data": "Data",
-      "autoLearning": "Auto-learning",
+      "autoLearning": "Runs & Schedules",
       "jobs": "Jobs",
       "tradingDatasets": "Trading Datasets",
       "multimodal": "Multimodal Upload"
@@ -1670,6 +1670,8 @@
       "approve": "Approve",
       "reject": "Reject",
       "promote": "Promote",
+      "approvePromotion": "Approve promotion",
+      "rejectPromotion": "Reject promotion",
       "rollback": "Rollback"
     },
     "tradingDataset": {
@@ -1691,9 +1693,9 @@
     "autoLearning": {
       "tenantMissingTitle": "Tenant not identified",
       "tenantMissingDesc": "Your user is not associated with a tenant. To configure schedules and start on-demand training, a valid tenant is required.",
-      "onDemand": "On-demand training",
-      "onDemandTitle": "Start on-demand training",
-      "onDemandDesc": "Runs an immediate training (incremental or full) using the same base model as the LLM (Gate 2).",
+      "onDemand": "Quick run",
+      "onDemandTitle": "Run immediately",
+      "onDemandDesc": "Starts an immediate run with standard policy. Use Advanced Job for full control.",
       "onDemandType": "Training type",
       "includeImages": "Include images",
       "includeImagesDesc": "Includes approved multimodal data when available.",
@@ -1722,6 +1724,9 @@
       "scheduleTitle": "Schedule",
       "scheduleDesc": "Configure weekly incremental and biweekly full fine-tuning (optional cron).",
       "scheduleType": "Schedule type",
+      "scheduleScope": "Schedule scope",
+      "scheduleScopeTenant": "Whole tenant",
+      "scheduleScopeDesc": "Choose whether this schedule applies to the whole tenant or only one namespace.",
       "incremental": "Incremental (weekly)",
       "complete": "Full (biweekly)",
       "enabled": "Enabled",
@@ -1734,7 +1739,16 @@
       "scheduleConfigured": "Schedule saved successfully",
       "scheduleError": "Failed to save schedule",
       "upcoming": "Upcoming runs",
-      "noUpcoming": "No upcoming schedule found"
+      "noUpcoming": "No upcoming schedule found",
+      "queueTitle": "Queues and governance",
+      "queueDesc": "Capacity and backlog by priority (high/normal/low).",
+      "policyTitle": "Active policy",
+      "policyInflight": "Tenant inflight: {{current}}/{{max}}",
+      "policyRequireEvalPassed": "Promotion requires evaluation status passed.",
+      "policyAllowWithoutEval": "Promotion allowed without passed evaluation (flex mode).",
+      "policyDualApprovalEnabled": "Dual-control enabled: minimum {{count}} distinct approvals.",
+      "policyDualApprovalDisabled": "Dual-control disabled for promotion.",
+      "queueStats": "Pending: {{pending}} | Lag: {{lag}} | DLQ: {{dlq}}"
     },
     "filter": {
       "placeholder": "Filter",
@@ -1808,7 +1822,7 @@
       "autoScheduleTitle": "Auto-learning schedule",
       "autoScheduleDesc": "Configure recurring runs and inspect the next execution in one place.",
       "nextRunAt": "Next run: {{date}}",
-      "openSchedule": "Open schedule"
+      "openSchedule": "Manage schedule"
     },
     "activeConfig": {
       "title": "Active config summary",
@@ -1857,6 +1871,9 @@
       "promoteDesc": "Promote \"{{jobName}}\" to active model for this scope?",
       "promoteSuccess": "Model promoted successfully",
       "promoteError": "Failed to promote model",
+      "approvalSuccess": "Promotion approval registered",
+      "rejectionSuccess": "Promotion rejection registered",
+      "approvalError": "Failed to register promotion decision",
       "rollbackTitle": "Rollback active model",
       "rollbackDesc": "Rollback \"{{jobName}}\" to the previous active version?",
       "rollbackSuccess": "Rollback completed successfully",
@@ -1886,6 +1903,16 @@
       "epochs": "Epochs",
       "batch": "Batch",
       "lr": "LR",
+      "source": {
+        "onDemand": "Source: quick run",
+        "scheduled": "Source: scheduled",
+        "advanced": "Source: advanced job"
+      },
+      "priority": {
+        "low": "Priority: low",
+        "normal": "Priority: normal",
+        "high": "Priority: high"
+      },
       "created": "Created: {{date}}",
       "finished": "Finished: {{date}}"
     },

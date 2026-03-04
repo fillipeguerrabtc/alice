@@ -88,7 +88,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { apiRequest } from '@/lib/queryClient';
+import { ApiError, apiRequest } from '@/lib/queryClient';
 import { cn, formatDate, formatDateTime } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { frontendLogger } from '@/lib/logger';
@@ -155,6 +155,13 @@ interface FineTuningJob {
     maxGradNorm?: number;
     targetModules?: string[];
   };
+  configSnapshot?: {
+    priority?: 'low' | 'normal' | 'high';
+    execution?: {
+      trigger?: 'manual' | 'schedule';
+      profile?: 'quick_run' | 'advanced_job' | 'scheduled_policy';
+    };
+  } | null;
   progress: number | null;
   metrics: Record<string, unknown> | null;
   iniciadoEm: string | null;
@@ -199,6 +206,7 @@ type AutoLearningStatusResponse = {
     type: 'incremental_fine_tuning' | 'complete_fine_tuning';
     scheduledFor: string;
     status: string;
+    namespaceId: string | null;
   }>;
 };
 
@@ -221,6 +229,25 @@ type TrainingRunStatusResponse =
         startedAt: string | null;
       };
     };
+
+type TrainingQueueStatusResponse = {
+  queues: Array<{
+    queue: string;
+    pending: number;
+    lag: number;
+    dlq: number;
+  }>;
+  governance: {
+    maxInflightRunsPerTenant: number;
+    requireEvalPassedForPromotion: boolean;
+    requireDualApprovalForPromotion: boolean;
+    promotionMinApprovals: number;
+  };
+  tenant: {
+    id: string;
+    inflightCount: number;
+  };
+};
 
 interface BulkImportEntry {
   messages: Array<{ role: string; content: string }>;
@@ -363,6 +390,34 @@ function getScopeLabel(job: FineTuningJob, namespacesById: Map<string, string>, 
     });
   }
   return t('training.scope.tenant');
+}
+
+function getScheduleScopeLabel(
+  namespaceId: string | null | undefined,
+  namespacesById: Map<string, string>,
+  t: (key: string, options?: Record<string, unknown>) => string
+): string {
+  if (!namespaceId) {
+    return t('training.scope.tenant');
+  }
+  return t('training.scope.namespace', {
+    name: namespacesById.get(namespaceId) ?? namespaceId.slice(0, 8),
+  });
+}
+
+function getRunSourceLabel(job: FineTuningJob, t: (key: string, options?: Record<string, unknown>) => string): string {
+  const runSource = job.runSource ?? 'custom_job';
+  if (runSource === 'on_demand') return t('training.job.source.onDemand');
+  if (runSource === 'scheduled') return t('training.job.source.scheduled');
+  return t('training.job.source.advanced');
+}
+
+function getRunPriorityLabel(job: FineTuningJob, t: (key: string, options?: Record<string, unknown>) => string): string | null {
+  const priority = job.configSnapshot?.priority;
+  if (!priority) return null;
+  if (priority === 'high') return t('training.job.priority.high');
+  if (priority === 'normal') return t('training.job.priority.normal');
+  return t('training.job.priority.low');
 }
 
 const containerVariants = {
@@ -618,8 +673,12 @@ function JobCard({
   timeZone,
   onClick,
   onPromote,
+  onApprovePromotion,
+  onRejectPromotion,
   onRollback,
   canPromote,
+  canApprovePromotion,
+  canRejectPromotion,
   canRollback,
   actionPending,
 }: {
@@ -630,14 +689,20 @@ function JobCard({
   timeZone: string;
   onClick?: () => void;
   onPromote?: () => void;
+  onApprovePromotion?: () => void;
+  onRejectPromotion?: () => void;
   onRollback?: () => void;
   canPromote?: boolean;
+  canApprovePromotion?: boolean;
+  canRejectPromotion?: boolean;
   canRollback?: boolean;
   actionPending?: boolean;
 }) {
   const hyperparameters = job.hyperparameters;
   const evalLabel = t(`training.evaluation.${job.evaluationStatus ?? 'pending'}`);
   const promotionLabel = t(`training.promotion.${job.promotionStatus ?? 'candidate'}`);
+  const runSourceLabel = getRunSourceLabel(job, t);
+  const runPriorityLabel = getRunPriorityLabel(job, t);
   const timelineFinalKey = job.promotionStatus === 'active'
     ? 'training.timeline.active'
     : (job.promotionStatus === 'rejected' || job.evaluationStatus === 'failed'
@@ -706,6 +771,8 @@ function JobCard({
           </div>
 
           <div className="flex flex-wrap gap-2">
+            <Badge variant="outline">{runSourceLabel}</Badge>
+            {runPriorityLabel && <Badge variant="outline">{runPriorityLabel}</Badge>}
             <Badge variant="outline">{evalLabel}</Badge>
             <Badge variant="outline">{promotionLabel}</Badge>
           </div>
@@ -744,8 +811,36 @@ function JobCard({
                 <span>{t('training.job.finished', { date: formatDate((job.completadoEm ?? (job as unknown as Record<string, unknown>).finalizadoEm) as string, { locale, timeZone }) })}</span>
               )}
             </div>
-            {(canPromote || canRollback) && (
+            {(canPromote || canApprovePromotion || canRejectPromotion || canRollback) && (
               <div className="flex flex-wrap gap-2">
+                {canApprovePromotion && onApprovePromotion && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-green-700"
+                    disabled={actionPending}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onApprovePromotion();
+                    }}
+                  >
+                    {t('training.actions.approvePromotion')}
+                  </Button>
+                )}
+                {canRejectPromotion && onRejectPromotion && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-red-700"
+                    disabled={actionPending}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onRejectPromotion();
+                    }}
+                  >
+                    {t('training.actions.rejectPromotion')}
+                  </Button>
+                )}
                 {canPromote && onPromote && (
                   <Button
                     size="sm"
@@ -2895,6 +2990,21 @@ export default function Training() {
     refetchInterval: 1000 * 15,
   });
 
+  const queueStatusQueryKey = ['training', 'queue', 'status', tenantId ?? null] as const;
+  const { data: queueStatus, isLoading: queueStatusLoading } = useQuery<TrainingQueueStatusResponse>({
+    queryKey: queueStatusQueryKey,
+    queryFn: async () => {
+      const url = tenantId
+        ? `/api/training/queue/status?tenantId=${encodeURIComponent(tenantId)}`
+        : '/api/training/queue/status';
+      const res = await apiRequest('GET', url);
+      return res.json();
+    },
+    staleTime: 1000 * 15,
+    refetchInterval: 1000 * 15,
+    enabled: Boolean(tenantId),
+  });
+
   const scheduleFormSchema = z.object({
     scheduleType: z.enum(['incremental_fine_tuning', 'complete_fine_tuning']),
     enabled: z.boolean(),
@@ -2911,11 +3021,13 @@ export default function Training() {
         { message: 'cronPattern inválido (esperado: 5 campos)' },
       ),
     minDataRequired: z.number().int().min(1).max(100000),
+    namespaceId: z.string().uuid().optional().nullable(),
   });
 
   const [scheduleType, setScheduleType] = useState<'incremental_fine_tuning' | 'complete_fine_tuning'>(
     'incremental_fine_tuning',
   );
+  const [scheduleNamespaceId, setScheduleNamespaceId] = useState<string>('__tenant__');
   const [scheduleEnabled, setScheduleEnabled] = useState<boolean>(true);
   const [scheduleCronPattern, setScheduleCronPattern] = useState<string>(trainingSystemConfig.autoLearningCronIncremental);
   const [scheduleMinDataRequired, setScheduleMinDataRequired] = useState<number>(trainingSystemConfig.minScheduledDatasetSizeIncremental);
@@ -2927,6 +3039,7 @@ export default function Training() {
         enabled: scheduleEnabled,
         cronPattern: scheduleCronPattern.trim().length > 0 ? scheduleCronPattern.trim() : undefined,
         minDataRequired: scheduleMinDataRequired,
+        namespaceId: scheduleNamespaceId !== '__tenant__' ? scheduleNamespaceId : null,
       });
       const minAllowed =
         parsed.scheduleType === 'incremental_fine_tuning'
@@ -2946,6 +3059,7 @@ export default function Training() {
         enabled: parsed.enabled,
         cronPattern: parsed.cronPattern,
         minDataRequired: parsed.minDataRequired,
+        namespaceId: parsed.namespaceId,
       });
       return res.json();
     },
@@ -2959,6 +3073,7 @@ export default function Training() {
         errorStack: error instanceof Error ? error.stack : undefined,
         tenantId,
         scheduleType,
+        scheduleNamespaceId,
         scheduleEnabled,
         scheduleCronPattern,
         scheduleMinDataRequired,
@@ -3076,8 +3191,31 @@ export default function Training() {
       queryClient.invalidateQueries({ queryKey: autoLearningQueryKey });
       toast({ title: t('training.promotion.promoteSuccess') });
     },
-    onError: () => {
-      toast({ title: t('training.promotion.promoteError'), variant: 'destructive' });
+    onError: (error) => {
+      const errorMessage = error instanceof ApiError
+        ? error.message
+        : t('training.promotion.promoteError');
+      toast({ title: t('training.promotion.promoteError'), description: errorMessage, variant: 'destructive' });
+    },
+  });
+
+  const approvalPromotionMutation = useMutation({
+    mutationFn: async ({ jobId, decision }: { jobId: string; decision: 'approved' | 'rejected' }) => {
+      const response = await apiRequest('POST', `/api/training/jobs/${jobId}/promotion-approval`, { decision });
+      return response.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/training/jobs'] });
+      const title = variables.decision === 'approved'
+        ? t('training.promotion.approvalSuccess')
+        : t('training.promotion.rejectionSuccess');
+      toast({ title });
+    },
+    onError: (error) => {
+      const errorMessage = error instanceof ApiError
+        ? error.message
+        : t('training.promotion.approvalError');
+      toast({ title: t('training.promotion.approvalError'), description: errorMessage, variant: 'destructive' });
     },
   });
 
@@ -3217,11 +3355,6 @@ export default function Training() {
   const [rollbackDialogJob, setRollbackDialogJob] = useState<FineTuningJob | null>(null);
 
   const minCustomJobDatasetSize = trainingSystemConfig.minOndemandDatasetSize;
-  const presetLabels = [
-    t('training.createJob.presetSafe'),
-    t('training.createJob.presetStandard'),
-    t('training.createJob.presetLarge'),
-  ].join(' / ');
 
   const [, navigate] = useLocation();
   const [postTrainingDialog, setPostTrainingDialog] = useState<{ open: boolean; jobName: string }>({ open: false, jobName: '' });
@@ -3568,6 +3701,7 @@ export default function Training() {
   }, [resolveScopeEntry, resolveScopeReason, createNamespaceMutation, resolveScopeMutation, t]);
 
   const resolveScopeNeedsHumanReview = Boolean(resolveScopeEntry?.needsHumanReview);
+  const requireEvalPassedForPromotion = queueStatus?.governance?.requireEvalPassedForPromotion ?? true;
 
   return (
     <div className="flex flex-col h-full">
@@ -3598,31 +3732,23 @@ export default function Training() {
             </Button>
             <Button
               onClick={() => setShowCreateJob(true)}
-              disabled={stats.approved < minCustomJobDatasetSize}
+              disabled={!tenantId || stats.approved < minCustomJobDatasetSize}
               data-testid="button-new-job"
             >
               <Brain className="h-4 w-4 mr-2" />
               {t('training.newJob')}
             </Button>
+            <Button
+              variant="outline"
+              onClick={() => setActiveTab('auto-learning')}
+              disabled={!tenantId}
+              data-testid="button-open-schedule"
+            >
+              <RefreshCw className="h-4 w-4 mr-2" />
+              {t('training.controlCards.openSchedule')}
+            </Button>
           </div>
         </div>
-
-        <Alert className="mb-4 bg-muted/50">
-          <Info className="h-4 w-4" />
-          <AlertTitle>{t('training.optionsHelp.title')}</AlertTitle>
-          <AlertDescription className="space-y-1">
-            <p><strong>{t('training.autoLearning.onDemand')}:</strong> {t('training.optionsHelp.onDemand')}</p>
-            <p><strong>{t('training.newJob')}:</strong> {t('training.optionsHelp.newJob', { minData: minCustomJobDatasetSize })}</p>
-          </AlertDescription>
-        </Alert>
-
-        <Alert className="mb-4 border-primary/30 bg-primary/5">
-          <Brain className="h-4 w-4" />
-          <AlertTitle>{t('training.universal.title')}</AlertTitle>
-          <AlertDescription>
-            {t('training.universal.desc')}
-          </AlertDescription>
-        </Alert>
 
         {!tenantId && (
           <Alert className="mb-4" variant="destructive">
@@ -3631,139 +3757,6 @@ export default function Training() {
             <AlertDescription>{t('training.autoLearning.tenantMissingDesc')}</AlertDescription>
           </Alert>
         )}
-
-        <div className="grid gap-3 md:grid-cols-3 mb-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">{t('training.controlCards.onDemandTitle')}</CardTitle>
-              <CardDescription>
-                {t('training.controlCards.onDemandDesc', { minData: minCustomJobDatasetSize })}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <div className="text-xs text-muted-foreground">
-                {t('training.controlCards.onDemandThresholds', {
-                  incrementalMin: trainingSystemConfig.minScheduledDatasetSizeIncremental,
-                  fullMin: trainingSystemConfig.minScheduledDatasetSizeFull,
-                })}
-              </div>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setShowOnDemandRun(true)}
-                disabled={!tenantId}
-              >
-                <Play className="h-4 w-4 mr-2" />
-                {t('training.autoLearning.startOnDemand')}
-              </Button>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">{t('training.controlCards.customJobTitle')}</CardTitle>
-              <CardDescription>
-                {t('training.controlCards.customJobDesc', { minData: minCustomJobDatasetSize })}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <div className="text-xs text-muted-foreground">
-                {t('training.controlCards.customJobPresets', { presets: presetLabels })}
-              </div>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setShowCreateJob(true)}
-                disabled={!tenantId || stats.approved < minCustomJobDatasetSize}
-              >
-                <Brain className="h-4 w-4 mr-2" />
-                {t('training.newJob')}
-              </Button>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">{t('training.controlCards.autoScheduleTitle')}</CardTitle>
-              <CardDescription>{t('training.controlCards.autoScheduleDesc')}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <div className="text-xs text-muted-foreground">
-                {autoLearning?.upcomingSchedules?.[0]
-                  ? t('training.controlCards.nextRunAt', {
-                      date: formatDateTime(autoLearning.upcomingSchedules[0].scheduledFor, { locale, timeZone }),
-                    })
-                  : t('training.autoLearning.noUpcoming')}
-              </div>
-              <Button size="sm" variant="outline" onClick={() => setActiveTab('auto-learning')}>
-                <RefreshCw className="h-4 w-4 mr-2" />
-                {t('training.controlCards.openSchedule')}
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-
-        <Card className="mb-4 border-primary/30 bg-primary/5">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">{t('training.activeConfig.title')}</CardTitle>
-            <CardDescription>{t('training.activeConfig.desc')}</CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-2 md:grid-cols-2">
-            <p className="text-xs text-muted-foreground">
-              {t('training.activeConfig.minOndemandDatasetSize', {
-                value: trainingSystemConfig.minOndemandDatasetSize,
-              })}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {t('training.activeConfig.minScheduledDatasets', {
-                incremental: trainingSystemConfig.minScheduledDatasetSizeIncremental,
-                full: trainingSystemConfig.minScheduledDatasetSizeFull,
-              })}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {t('training.activeConfig.qualityMinRatio', {
-                value: Math.round(trainingSystemConfig.qualityMinRatio * 100),
-              })}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {t('training.activeConfig.datasetMaxRows', {
-                value: trainingSystemConfig.datasetMaxRows,
-              })}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {t('training.activeConfig.trainEvalSplitRatio', {
-                value: Math.round(trainingSystemConfig.trainEvalSplitRatio * 100),
-              })}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {t('training.activeConfig.sliceSteps', {
-                value: trainingSystemConfig.sliceSteps,
-              })}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {t('training.activeConfig.gpuTimeoutMs', {
-                value: trainingSystemConfig.gpuTimeoutMs,
-              })}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {t('training.activeConfig.maxSeqLen', {
-                value: trainingSystemConfig.maxSeqLen,
-              })}
-            </p>
-            <p className="text-xs text-muted-foreground md:col-span-2">
-              {t('training.activeConfig.defaultHyperparams', trainingSystemConfig.defaultHyperparams)}
-            </p>
-            <p className="text-xs text-muted-foreground md:col-span-2">
-              {t('training.activeConfig.presetSafe', trainingSystemConfig.presets.safe)}
-            </p>
-            <p className="text-xs text-muted-foreground md:col-span-2">
-              {t('training.activeConfig.presetStandard', trainingSystemConfig.presets.standard)}
-            </p>
-            <p className="text-xs text-muted-foreground md:col-span-2">
-              {t('training.activeConfig.presetLarge', trainingSystemConfig.presets.large)}
-            </p>
-          </CardContent>
-        </Card>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <Card>
@@ -4131,6 +4124,22 @@ export default function Training() {
                       </Select>
                     </div>
 
+                    <div className="grid gap-2">
+                      <Label>{t('training.autoLearning.scheduleScope')}</Label>
+                      <Select value={scheduleNamespaceId} onValueChange={setScheduleNamespaceId}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__tenant__">{t('training.autoLearning.scheduleScopeTenant')}</SelectItem>
+                          {(namespaces || []).map((ns) => (
+                            <SelectItem key={ns.id} value={ns.id}>{ns.nome}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">{t('training.autoLearning.scheduleScopeDesc')}</p>
+                    </div>
+
                     <div className="flex items-center justify-between rounded-md border p-3">
                       <div>
                         <div className="text-sm font-medium">{t('training.autoLearning.enabled')}</div>
@@ -4188,17 +4197,79 @@ export default function Training() {
                       <div className="space-y-2">
                         {autoLearning?.upcomingSchedules?.slice(0, 5).map((s) => (
                           <div key={s.id} className="flex items-center justify-between text-sm">
-                            <span className="text-muted-foreground">
-                              {s.type === 'incremental_fine_tuning'
-                                ? t('training.autoLearning.incremental')
-                                : t('training.autoLearning.complete')}
-                            </span>
+                            <div className="flex flex-col">
+                              <span className="text-muted-foreground">
+                                {s.type === 'incremental_fine_tuning'
+                                  ? t('training.autoLearning.incremental')
+                                  : t('training.autoLearning.complete')}
+                              </span>
+                              <span className="text-xs text-muted-foreground">
+                                {getScheduleScopeLabel(s.namespaceId, namespacesById, t)}
+                              </span>
+                            </div>
                             <span>{formatDateTime(s.scheduledFor, { locale, timeZone })}</span>
                           </div>
                         ))}
                       </div>
                     )}
                   </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>{t('training.autoLearning.queueTitle')}</CardTitle>
+                  <CardDescription>{t('training.autoLearning.queueDesc')}</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {queueStatusLoading ? (
+                    <Skeleton className="h-24" />
+                  ) : (
+                    <>
+                      <div className="rounded-md border p-3 space-y-2">
+                        <div className="text-xs text-muted-foreground">{t('training.autoLearning.policyTitle')}</div>
+                        <div className="text-sm">
+                          {t('training.autoLearning.policyInflight', {
+                            current: queueStatus?.tenant?.inflightCount ?? 0,
+                            max: queueStatus?.governance?.maxInflightRunsPerTenant ?? 0,
+                          })}
+                        </div>
+                        <div className="text-sm text-muted-foreground">
+                          {queueStatus?.governance?.requireEvalPassedForPromotion
+                            ? t('training.autoLearning.policyRequireEvalPassed')
+                            : t('training.autoLearning.policyAllowWithoutEval')}
+                        </div>
+                        <div className="text-sm text-muted-foreground">
+                          {queueStatus?.governance?.requireDualApprovalForPromotion
+                            ? t('training.autoLearning.policyDualApprovalEnabled', {
+                              count: queueStatus?.governance?.promotionMinApprovals ?? 2,
+                            })
+                            : t('training.autoLearning.policyDualApprovalDisabled')}
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        {(queueStatus?.queues ?? []).map((queue) => {
+                          const priorityLabel = queue.queue.endsWith(':high')
+                            ? t('training.autoLearning.priorityHigh')
+                            : queue.queue.endsWith(':low')
+                              ? t('training.autoLearning.priorityLow')
+                              : t('training.autoLearning.priorityNormal');
+                          return (
+                            <div key={queue.queue} className="rounded-md border p-3">
+                              <div className="text-sm font-medium">{priorityLabel}</div>
+                              <div className="mt-1 text-xs text-muted-foreground">
+                                {t('training.autoLearning.queueStats', {
+                                  pending: queue.pending,
+                                  lag: queue.lag,
+                                  dlq: queue.dlq,
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
                 </CardContent>
               </Card>
             </div>
@@ -4227,7 +4298,7 @@ export default function Training() {
                 <Button 
                   className="mt-4" 
                   onClick={() => setShowCreateJob(true)}
-                  disabled={stats.approved < minCustomJobDatasetSize}
+                  disabled={!tenantId || stats.approved < minCustomJobDatasetSize}
                   data-testid="button-create-first-job"
                 >
                   <Brain className="h-4 w-4 mr-2" />
@@ -4283,7 +4354,11 @@ export default function Training() {
                           onClick={() => setSelectedJobId(job.id)}
                           canPromote={false}
                           canRollback={false}
-                          actionPending={promoteJobMutation.isPending || rollbackJobMutation.isPending}
+                          actionPending={
+                            promoteJobMutation.isPending
+                            || approvalPromotionMutation.isPending
+                            || rollbackJobMutation.isPending
+                          }
                         />
                       ))}
                     </motion.div>
@@ -4313,12 +4388,24 @@ export default function Training() {
                           canPromote={
                             job.status === 'completed'
                             && job.promotionStatus === 'candidate'
-                            && job.evaluationStatus !== 'failed'
+                            && (
+                              requireEvalPassedForPromotion
+                                ? job.evaluationStatus === 'passed'
+                                : job.evaluationStatus !== 'failed'
+                            )
                           }
+                          canApprovePromotion={job.status === 'completed' && job.promotionStatus === 'candidate'}
+                          canRejectPromotion={job.status === 'completed' && job.promotionStatus === 'candidate'}
+                          onApprovePromotion={() => approvalPromotionMutation.mutate({ jobId: job.id, decision: 'approved' })}
+                          onRejectPromotion={() => approvalPromotionMutation.mutate({ jobId: job.id, decision: 'rejected' })}
                           canRollback={job.promotionStatus === 'active'}
                           onPromote={() => setPromoteDialogJob(job)}
                           onRollback={() => setRollbackDialogJob(job)}
-                          actionPending={promoteJobMutation.isPending || rollbackJobMutation.isPending}
+                          actionPending={
+                            promoteJobMutation.isPending
+                            || approvalPromotionMutation.isPending
+                            || rollbackJobMutation.isPending
+                          }
                         />
                       ))}
                     </motion.div>

@@ -1683,7 +1683,7 @@
   "training": {
     "title": "Fine-tuning & Treinamento",
     "subtitle": "Aprove dados, acompanhe jobs e controle o aprendizado contínuo do LLM com segurança.",
-    "newJob": "Novo Job",
+    "newJob": "Job avancado",
     "postTraining": {
       "title": "Treinamento concluído",
       "desc": "O job \"{{jobName}}\" foi finalizado. Deseja continuar treinando ou voltar ao chat?",
@@ -1712,7 +1712,7 @@
     },
     "tabs": {
       "data": "Dados",
-      "autoLearning": "Auto-learning",
+      "autoLearning": "Runs e schedule",
       "jobs": "Jobs",
       "tradingDatasets": "Datasets Trading",
       "multimodal": "Upload Multimodal"
@@ -1721,6 +1721,8 @@
       "approve": "Aprovar",
       "reject": "Rejeitar",
       "promote": "Promover",
+      "approvePromotion": "Aprovar promoção",
+      "rejectPromotion": "Reprovar promoção",
       "rollback": "Rollback"
     },
     "tradingDataset": {
@@ -1742,9 +1744,9 @@
     "autoLearning": {
       "tenantMissingTitle": "Tenant não identificado",
       "tenantMissingDesc": "Seu usuário não está associado a um tenant. Para configurar schedule e iniciar treinamento on-demand, é necessário um tenant válido.",
-      "onDemand": "Treino on-demand",
-      "onDemandTitle": "Iniciar treinamento on-demand",
-      "onDemandDesc": "Executa um treinamento imediato (incremental ou completo) usando o mesmo modelo base do LLM (Gate 2).",
+      "onDemand": "Run rapido",
+      "onDemandTitle": "Executar run imediato",
+      "onDemandDesc": "Executa um run imediato com politica padrao. Use Job avancado para controle fino.",
       "onDemandType": "Tipo de treinamento",
       "includeImages": "Incluir imagens",
       "includeImagesDesc": "Inclui dados multimodais aprovados (quando disponíveis).",
@@ -1773,6 +1775,9 @@
       "scheduleTitle": "Schedule (Agendamentos)",
       "scheduleDesc": "Configure o treinamento incremental semanal e o completo quinzenal (cron opcional).",
       "scheduleType": "Tipo de schedule",
+      "scheduleScope": "Escopo do schedule",
+      "scheduleScopeTenant": "Tenant inteiro",
+      "scheduleScopeDesc": "Defina se este agendamento vale para todo o tenant ou apenas para um namespace.",
       "incremental": "Incremental (semanal)",
       "complete": "Completo (quinzenal)",
       "enabled": "Habilitado",
@@ -1785,7 +1790,16 @@
       "scheduleConfigured": "Schedule configurado com sucesso",
       "scheduleError": "Erro ao configurar schedule",
       "upcoming": "Próximos agendamentos",
-      "noUpcoming": "Nenhum agendamento futuro encontrado"
+      "noUpcoming": "Nenhum agendamento futuro encontrado",
+      "queueTitle": "Filas e governança",
+      "queueDesc": "Capacidade e backlog por prioridade (high/normal/low).",
+      "policyTitle": "Política ativa",
+      "policyInflight": "Inflight no tenant: {{current}}/{{max}}",
+      "policyRequireEvalPassed": "Promoção exige avaliação aprovada (passed).",
+      "policyAllowWithoutEval": "Promoção permitida sem avaliação passed (modo flexível).",
+      "policyDualApprovalEnabled": "Dual-control ativo: mínimo de {{count}} aprovações distintas.",
+      "policyDualApprovalDisabled": "Dual-control desativado para promoção.",
+      "queueStats": "Pendente: {{pending}} | Lag: {{lag}} | DLQ: {{dlq}}"
     },
     "filter": {
       "placeholder": "Filtrar",
@@ -1855,7 +1869,7 @@
       "autoScheduleTitle": "Schedule auto-learning",
       "autoScheduleDesc": "Configure runs recorrentes e acompanhe a próxima execução em um único fluxo.",
       "nextRunAt": "Próximo run: {{date}}",
-      "openSchedule": "Abrir schedule"
+      "openSchedule": "Gerenciar schedule"
     },
     "activeConfig": {
       "title": "Resumo da configuracao ativa",
@@ -1904,6 +1918,9 @@
       "promoteDesc": "Promover \"{{jobName}}\" para modelo ativo deste escopo?",
       "promoteSuccess": "Modelo promovido com sucesso",
       "promoteError": "Falha ao promover modelo",
+      "approvalSuccess": "Aprovação de promoção registrada",
+      "rejectionSuccess": "Reprovação de promoção registrada",
+      "approvalError": "Falha ao registrar decisão de promoção",
       "rollbackTitle": "Rollback do modelo ativo",
       "rollbackDesc": "Executar rollback de \"{{jobName}}\" para a versão ativa anterior?",
       "rollbackSuccess": "Rollback concluído com sucesso",
@@ -1933,6 +1950,16 @@
       "epochs": "Epochs",
       "batch": "Batch",
       "lr": "LR",
+      "source": {
+        "onDemand": "Origem: run rapido",
+        "scheduled": "Origem: agendado",
+        "advanced": "Origem: job avancado"
+      },
+      "priority": {
+        "low": "Prioridade: baixa",
+        "normal": "Prioridade: normal",
+        "high": "Prioridade: alta"
+      },
       "created": "Criado: {{date}}",
       "finished": "Finalizado: {{date}}"
     },
