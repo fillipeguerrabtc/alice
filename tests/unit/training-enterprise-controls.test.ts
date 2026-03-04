@@ -32,6 +32,18 @@ describe('training-enterprise-controls', () => {
     expect(key).toBe('alice:training:model-registry:scope-lock:tenant-a:ns-1:agent-1:rollback');
   });
 
+  it('gera chave de lock para inicializacao de run por tenant', () => {
+    const key = buildTrainingScopeOperationLockKey({
+      scope: {
+        tenantId: 'tenant-a',
+        namespaceId: null,
+        agentId: null,
+      },
+      operation: 'run_start',
+    });
+    expect(key).toBe('alice:training:model-registry:scope-lock:tenant-a:global:global:run_start');
+  });
+
   it('gera chave de lock por job para aprovacao de promocao', () => {
     const key = buildTrainingJobOperationLockKey({
       tenantId: 'tenant-a',

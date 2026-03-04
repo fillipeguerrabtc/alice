@@ -10,7 +10,7 @@ export type TrainingModelRegistryScope = {
 
 type RedisClient = NonNullable<ReturnType<typeof getRedisClient>>;
 
-export type TrainingScopedOperation = 'promote' | 'rollback';
+export type TrainingScopedOperation = 'promote' | 'rollback' | 'run_start';
 export type TrainingJobOperation = 'promotion_approval';
 
 export type TrainingOperationLockHandle = {

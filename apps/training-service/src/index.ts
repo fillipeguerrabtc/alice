@@ -3390,37 +3390,72 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
       return res.status(400).json({ error: 'Tenant invalido para criacao de job de treinamento' });
     }
 
-    const governanceConfig = await loadTrainingGovernanceRuntimeConfig();
-    const inflightCount = await getTenantInflightFineTuningJobsCount(db, tenantId);
-    if (inflightCount >= governanceConfig.maxInflightRunsPerTenant) {
-      return res.status(429).json({
-        error: 'Capacidade de treinamento esgotada para este tenant',
-        inflightCount,
-        maxInflightRunsPerTenant: governanceConfig.maxInflightRunsPerTenant,
+    const redis = getRedisClient();
+    let lockHandle: Awaited<ReturnType<typeof acquireTrainingOperationLock>> = null;
+    if (!redis) {
+      trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
+        operation: 'run_start',
+        result: 'redis_unavailable',
       });
+      return res.status(503).json({ error: 'Redis indisponivel para controle de concorrencia de inicio de treino' });
     }
-
-    if (body.agentId) {
-      const agent = await db.query.agents.findFirst({
-        where: eq(schema.agents.id, body.agentId),
-        columns: { id: true, tenantId: true, namespaceId: true },
+    const startLockKey = buildTrainingScopeOperationLockKey({
+      scope: {
+        tenantId,
+        namespaceId: null,
+        agentId: null,
+      },
+      operation: 'run_start',
+    });
+    lockHandle = await acquireTrainingOperationLock({
+      redis,
+      key: startLockKey,
+      ttlSeconds: 300,
+    });
+    if (!lockHandle) {
+      trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
+        operation: 'run_start',
+        result: 'contention',
       });
-      if (!agent || agent.tenantId !== tenantId) {
-        return res.status(403).json({ error: 'Agente invalido para o tenant autenticado' });
-      }
-      if (agent.namespaceId && agent.namespaceId !== namespace.id) {
-        return res.status(403).json({ error: 'Agente nao pertence ao namespace informado' });
-      }
+      return res.status(409).json({ error: 'Ja existe inicializacao de treino em andamento para este tenant' });
     }
+    trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
+      operation: 'run_start',
+      result: 'acquired',
+    });
 
-    const approvedConditions = [
-      eq(schema.trainingData.status, 'approved'),
-      eq(schema.trainingData.isDuplicate, false),
-      isNull(schema.trainingData.usedInJobId),
-      eq(schema.trainingData.namespaceId, body.namespaceId),
-    ];
-    approvedConditions.push(eq(schema.trainingData.tenantId, tenantId));
-    if (body.agentId) approvedConditions.push(eq(schema.trainingData.agentId, body.agentId));
+    try {
+      const governanceConfig = await loadTrainingGovernanceRuntimeConfig();
+      const inflightCount = await getTenantInflightFineTuningJobsCount(db, tenantId);
+      if (inflightCount >= governanceConfig.maxInflightRunsPerTenant) {
+        return res.status(429).json({
+          error: 'Capacidade de treinamento esgotada para este tenant',
+          inflightCount,
+          maxInflightRunsPerTenant: governanceConfig.maxInflightRunsPerTenant,
+        });
+      }
+
+      if (body.agentId) {
+        const agent = await db.query.agents.findFirst({
+          where: eq(schema.agents.id, body.agentId),
+          columns: { id: true, tenantId: true, namespaceId: true },
+        });
+        if (!agent || agent.tenantId !== tenantId) {
+          return res.status(403).json({ error: 'Agente invalido para o tenant autenticado' });
+        }
+        if (agent.namespaceId && agent.namespaceId !== namespace.id) {
+          return res.status(403).json({ error: 'Agente nao pertence ao namespace informado' });
+        }
+      }
+
+      const approvedConditions = [
+        eq(schema.trainingData.status, 'approved'),
+        eq(schema.trainingData.isDuplicate, false),
+        isNull(schema.trainingData.usedInJobId),
+        eq(schema.trainingData.namespaceId, body.namespaceId),
+      ];
+      approvedConditions.push(eq(schema.trainingData.tenantId, tenantId));
+      if (body.agentId) approvedConditions.push(eq(schema.trainingData.agentId, body.agentId));
 
     const approvedDataRaw = await db.query.trainingData.findMany({
       where: and(...approvedConditions),
@@ -3528,22 +3563,40 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
       requestedBy: tenantResolution.authContext.userId ?? null,
     });
 
-    logger.info({
-      jobId: job.id,
-      loraJobId: loraJob.id,
-      dataCount: approvedData.length,
-      scope: { tenantId, namespaceId: body.namespaceId, agentId: body.agentId ?? null },
-      profileVersion: profileSelection.profileVersion,
-      enqueued: enqueueResult.enqueued,
-      queueRunId: enqueueResult.runId,
-    }, 'Job de fine-tuning criado e enfileirado');
+      logger.info({
+        jobId: job.id,
+        loraJobId: loraJob.id,
+        dataCount: approvedData.length,
+        scope: { tenantId, namespaceId: body.namespaceId, agentId: body.agentId ?? null },
+        profileVersion: profileSelection.profileVersion,
+        enqueued: enqueueResult.enqueued,
+        queueRunId: enqueueResult.runId,
+      }, 'Job de fine-tuning criado e enfileirado');
 
-    return res.status(202).json({
-      job,
-      loraJobId: loraJob.id,
-      enqueued: enqueueResult.enqueued,
-      profileSelection: profileSelection.diagnostics,
-    });
+      return res.status(202).json({
+        job,
+        loraJobId: loraJob.id,
+        enqueued: enqueueResult.enqueued,
+        profileSelection: profileSelection.diagnostics,
+      });
+    } finally {
+      if (lockHandle) {
+        try {
+          await releaseTrainingOperationLock({
+            redis,
+            handle: lockHandle,
+          });
+        } catch (releaseError) {
+          logger.error(
+            {
+              error: releaseError instanceof Error ? releaseError.message : String(releaseError),
+              tenantId,
+            },
+            'Falha ao liberar lock de inicializacao de treino (job customizado)'
+          );
+        }
+      }
+    }
   } catch (error) {
     logger.error({ error }, 'Falha ao criar job');
     return res.status(500).json({ error: 'Erro interno do servidor' });
@@ -5605,34 +5658,68 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
     }
     const scopedTenantId = tenantResolution.tenantId;
     const governanceConfig = await loadTrainingGovernanceRuntimeConfig();
-
-    const runningJobs = await db.query.fineTuningJobs.findMany({
-      where: and(
-        eq(schema.fineTuningJobs.tenantId, scopedTenantId),
-        or(
-          eq(schema.fineTuningJobs.status, 'pending'),
-          eq(schema.fineTuningJobs.status, 'training'),
-          eq(schema.fineTuningJobs.status, 'preparing'),
-          eq(schema.fineTuningJobs.status, 'validating')
-        )
-      ),
+    const redis = getRedisClient();
+    let lockHandle: Awaited<ReturnType<typeof acquireTrainingOperationLock>> = null;
+    if (!redis) {
+      trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
+        operation: 'run_start',
+        result: 'redis_unavailable',
+      });
+      return res.status(503).json({ error: 'Redis indisponivel para controle de concorrencia de inicio de treino' });
+    }
+    const startLockKey = buildTrainingScopeOperationLockKey({
+      scope: {
+        tenantId: scopedTenantId,
+        namespaceId: null,
+        agentId: null,
+      },
+      operation: 'run_start',
+    });
+    lockHandle = await acquireTrainingOperationLock({
+      redis,
+      key: startLockKey,
+      ttlSeconds: 300,
+    });
+    if (!lockHandle) {
+      trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
+        operation: 'run_start',
+        result: 'contention',
+      });
+      return res.status(409).json({ error: 'Ja existe inicializacao de treino em andamento para este tenant' });
+    }
+    trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
+      operation: 'run_start',
+      result: 'acquired',
     });
 
-    if (runningJobs.length > 0) {
-      return res.status(409).json({
-        error: 'Ja existe treinamento em andamento ou enfileirado',
-        runningJobId: runningJobs[0].id,
+    try {
+      const runningJobs = await db.query.fineTuningJobs.findMany({
+        where: and(
+          eq(schema.fineTuningJobs.tenantId, scopedTenantId),
+          or(
+            eq(schema.fineTuningJobs.status, 'pending'),
+            eq(schema.fineTuningJobs.status, 'training'),
+            eq(schema.fineTuningJobs.status, 'preparing'),
+            eq(schema.fineTuningJobs.status, 'validating')
+          )
+        ),
       });
-    }
 
-    const inflightCount = await getTenantInflightFineTuningJobsCount(db, scopedTenantId);
-    if (inflightCount >= governanceConfig.maxInflightRunsPerTenant) {
-      return res.status(429).json({
-        error: 'Capacidade de treinamento esgotada para este tenant',
-        inflightCount,
-        maxInflightRunsPerTenant: governanceConfig.maxInflightRunsPerTenant,
-      });
-    }
+      if (runningJobs.length > 0) {
+        return res.status(409).json({
+          error: 'Ja existe treinamento em andamento ou enfileirado',
+          runningJobId: runningJobs[0].id,
+        });
+      }
+
+      const inflightCount = await getTenantInflightFineTuningJobsCount(db, scopedTenantId);
+      if (inflightCount >= governanceConfig.maxInflightRunsPerTenant) {
+        return res.status(429).json({
+          error: 'Capacidade de treinamento esgotada para este tenant',
+          inflightCount,
+          maxInflightRunsPerTenant: governanceConfig.maxInflightRunsPerTenant,
+        });
+      }
 
     if (namespaceId) {
       const namespace = await db.query.namespaces.findFirst({
@@ -5704,29 +5791,47 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
       requestedBy: tenantResolution.authContext.userId ?? null,
     });
 
-    logger.info({
-      jobId: job.id,
-      loraJobId: loraResult.loraJobId,
-      tenantId: scopedTenantId,
-      trainingType,
-      priority,
-      dataCount: evaluation.dataCount,
-      imageCount: evaluation.imageCount,
-      enqueued: enqueueResult.enqueued,
-      queueRunId: enqueueResult.runId,
-    }, 'Treinamento on-demand enfileirado');
+      logger.info({
+        jobId: job.id,
+        loraJobId: loraResult.loraJobId,
+        tenantId: scopedTenantId,
+        trainingType,
+        priority,
+        dataCount: evaluation.dataCount,
+        imageCount: evaluation.imageCount,
+        enqueued: enqueueResult.enqueued,
+        queueRunId: enqueueResult.runId,
+      }, 'Treinamento on-demand enfileirado');
 
-    return res.status(202).json({
-      success: true,
-      jobId: job.id,
-      loraJobId: loraResult.loraJobId,
-      modelVersionId: loraResult.modelVersionId,
-      version: loraResult.version,
-      trainingDataUsed: loraResult.trainingDataUsed,
-      imagesUsed: loraResult.imagesUsed,
-      status: 'queued',
-      enqueued: enqueueResult.enqueued,
-    });
+      return res.status(202).json({
+        success: true,
+        jobId: job.id,
+        loraJobId: loraResult.loraJobId,
+        modelVersionId: loraResult.modelVersionId,
+        version: loraResult.version,
+        trainingDataUsed: loraResult.trainingDataUsed,
+        imagesUsed: loraResult.imagesUsed,
+        status: 'queued',
+        enqueued: enqueueResult.enqueued,
+      });
+    } finally {
+      if (lockHandle) {
+        try {
+          await releaseTrainingOperationLock({
+            redis,
+            handle: lockHandle,
+          });
+        } catch (releaseError) {
+          logger.error(
+            {
+              error: releaseError instanceof Error ? releaseError.message : String(releaseError),
+              tenantId: scopedTenantId,
+            },
+            'Falha ao liberar lock de inicializacao de treino (on-demand)'
+          );
+        }
+      }
+    }
   } catch (error) {
     logger.error({ error }, 'Falha ao iniciar treinamento on-demand');
     return res.status(500).json({ error: 'Erro interno do servidor' });
