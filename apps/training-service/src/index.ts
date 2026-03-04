@@ -146,6 +146,14 @@ import {
   buildFineTuningScopeCondition,
   buildModelVersionScopeCondition,
 } from './model-registry-scope.js';
+import {
+  acquireTrainingOperationLock,
+  buildTrainingJobOperationLockKey,
+  buildTrainingScopeOperationLockKey,
+  extractRequestIp,
+  extractRequestUserAgent,
+  releaseTrainingOperationLock,
+} from './training-enterprise-controls.js';
 // Fine-tuning Ã© executado localmente via GPU Manager Service (Regra 6 - sem stubs/migraÃ§Ã£o)
 
 // Logger centralizado: JSON em produÃ§Ã£o, pino-pretty em desenvolvimento
@@ -271,6 +279,11 @@ const TRAINING_HTTP_SERVER_TIMEOUT_MS = parseEnvInt(
   process.env.TRAINING_HTTP_SERVER_TIMEOUT_MS,
   600000,
   'TRAINING_HTTP_SERVER_TIMEOUT_MS'
+);
+const TRAINING_OPERATION_LOCK_TTL_SECONDS = parseEnvInt(
+  process.env.TRAINING_OPERATION_LOCK_TTL_SECONDS,
+  45,
+  'TRAINING_OPERATION_LOCK_TTL_SECONDS'
 );
 const DATABASE_URL = process.env.DATABASE_URL;
 const RAG_SERVICE_URL = process.env.RAG_SERVICE_URL ?? 'http://alice-rag:3003';
@@ -3007,6 +3020,31 @@ async function getPromotionApprovalSummary(params: {
   };
 }
 
+type TrainingGovernanceAuditAction =
+  | 'training_promotion_approval_recorded'
+  | 'training_model_promoted'
+  | 'training_model_rollback_executed';
+
+function buildTrainingGovernanceAuditValues(params: {
+  tenantId: string;
+  userId: string;
+  action: TrainingGovernanceAuditAction;
+  resourceId: string;
+  request: Request;
+  details: Record<string, unknown>;
+}) {
+  return {
+    tenantId: params.tenantId,
+    userId: params.userId,
+    acao: params.action,
+    recurso: 'fine_tuning_job',
+    recursoId: params.resourceId,
+    detalhes: params.details,
+    ip: extractRequestIp(params.request),
+    userAgent: extractRequestUserAgent(params.request),
+  };
+}
+
 app.patch('/api/training/data/:id/status', requirePermission('training:training_data:manage'), async (req: Request, res: Response) => {
   // OWASP API3: ValidaÃ§Ã£o Zod obrigatÃ³ria de parÃ¢metros de rota
   const paramsResult = uuidParamSchema.safeParse(req.params);
@@ -3679,6 +3717,9 @@ app.post('/api/training/jobs/:id/promotion-approval', requirePermission('trainin
     return res.status(400).json({ error: 'Payload invalido', details: bodyResult.error.format() });
   }
 
+  const redis = getRedisClient();
+  let lockHandle: Awaited<ReturnType<typeof acquireTrainingOperationLock>> = null;
+
   try {
     const tenantResolution = resolveAuthorizedTenantId(req);
     if (!tenantResolution.ok) {
@@ -3702,24 +3743,80 @@ app.post('/api/training/jobs/:id/promotion-approval', requirePermission('trainin
       return res.status(409).json({ error: 'Somente jobs concluidos podem receber aprovacao de promocao' });
     }
 
-    await db.insert(schema.fineTuningPromotionApprovals).values({
+    if (!redis) {
+      return res.status(503).json({ error: 'Redis indisponivel para controle de concorrencia de aprovacao' });
+    }
+    const lockKey = buildTrainingJobOperationLockKey({
       tenantId: tenantResolution.tenantId,
       fineTuningJobId: fineTuningJob.id,
-      approverUserId: tenantResolution.authContext.userId,
-      decision: bodyResult.data.decision,
-      reason: bodyResult.data.reason ?? null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    }).onConflictDoUpdate({
-      target: [
-        schema.fineTuningPromotionApprovals.fineTuningJobId,
-        schema.fineTuningPromotionApprovals.approverUserId,
-      ],
-      set: {
+      operation: 'promotion_approval',
+    });
+    lockHandle = await acquireTrainingOperationLock({
+      redis,
+      key: lockKey,
+      ttlSeconds: TRAINING_OPERATION_LOCK_TTL_SECONDS,
+    });
+    if (!lockHandle) {
+      return res.status(409).json({ error: 'Aprovacao de promocao em andamento para este job; tente novamente' });
+    }
+
+    const now = new Date();
+    await db.transaction(async (tx) => {
+      const existingApproval = await tx.query.fineTuningPromotionApprovals.findFirst({
+        where: and(
+          eq(schema.fineTuningPromotionApprovals.tenantId, tenantResolution.tenantId),
+          eq(schema.fineTuningPromotionApprovals.fineTuningJobId, fineTuningJob.id),
+          eq(schema.fineTuningPromotionApprovals.approverUserId, tenantResolution.authContext.userId)
+        ),
+        columns: {
+          decision: true,
+          reason: true,
+          updatedAt: true,
+        },
+      });
+
+      await tx.insert(schema.fineTuningPromotionApprovals).values({
+        tenantId: tenantResolution.tenantId,
+        fineTuningJobId: fineTuningJob.id,
+        approverUserId: tenantResolution.authContext.userId,
         decision: bodyResult.data.decision,
         reason: bodyResult.data.reason ?? null,
-        updatedAt: new Date(),
-      },
+        createdAt: now,
+        updatedAt: now,
+      }).onConflictDoUpdate({
+        target: [
+          schema.fineTuningPromotionApprovals.fineTuningJobId,
+          schema.fineTuningPromotionApprovals.approverUserId,
+        ],
+        set: {
+          decision: bodyResult.data.decision,
+          reason: bodyResult.data.reason ?? null,
+          updatedAt: now,
+        },
+      });
+
+      await tx.insert(schema.auditLogs).values(buildTrainingGovernanceAuditValues({
+        tenantId: tenantResolution.tenantId,
+        userId: tenantResolution.authContext.userId,
+        action: 'training_promotion_approval_recorded',
+        resourceId: fineTuningJob.id,
+        request: req,
+        details: {
+          before: existingApproval ? {
+            decision: existingApproval.decision,
+            reason: existingApproval.reason,
+            updatedAt: existingApproval.updatedAt.toISOString(),
+          } : undefined,
+          after: {
+            decision: bodyResult.data.decision,
+            reason: bodyResult.data.reason ?? null,
+          },
+          reason: bodyResult.data.reason ?? undefined,
+          metadata: {
+            operation: 'promotion_approval',
+          },
+        },
+      }));
     });
 
     const summary = await getPromotionApprovalSummary({
@@ -3735,6 +3832,15 @@ app.post('/api/training/jobs/:id/promotion-approval', requirePermission('trainin
   } catch (error) {
     logger.error({ error, jobId: req.params.id }, 'Falha ao registrar aprovacao de promocao');
     return res.status(500).json({ error: 'Erro interno do servidor' });
+  } finally {
+    if (redis && lockHandle) {
+      await releaseTrainingOperationLock({ redis, handle: lockHandle }).catch((lockError) => {
+        logger.warn(
+          { lockKey: lockHandle?.key, error: lockError instanceof Error ? lockError.message : String(lockError) },
+          'Falha ao liberar lock de aprovacao de promocao'
+        );
+      });
+    }
   }
 });
 
@@ -3743,6 +3849,9 @@ app.post('/api/training/jobs/:id/promote', requirePermission('training:fine_tuni
   if (!paramsResult.success) {
     return res.status(400).json({ error: 'ID invalido', details: paramsResult.error.format() });
   }
+
+  const redis = getRedisClient();
+  let lockHandle: Awaited<ReturnType<typeof acquireTrainingOperationLock>> = null;
 
   try {
     const tenantResolution = resolveAuthorizedTenantId(req);
@@ -3804,6 +3913,26 @@ app.post('/api/training/jobs/:id/promote', requirePermission('training:fine_tuni
           requireDualApprovalForPromotion: governanceConfig.requireDualApprovalForPromotion,
         },
       });
+    }
+
+    if (!redis) {
+      return res.status(503).json({ error: 'Redis indisponivel para controle de concorrencia de promocao' });
+    }
+    const lockKey = buildTrainingScopeOperationLockKey({
+      scope: {
+        tenantId: tenantResolution.tenantId,
+        namespaceId: scopedModelRegistry.namespaceId,
+        agentId: scopedModelRegistry.agentId,
+      },
+      operation: 'promote',
+    });
+    lockHandle = await acquireTrainingOperationLock({
+      redis,
+      key: lockKey,
+      ttlSeconds: TRAINING_OPERATION_LOCK_TTL_SECONDS,
+    });
+    if (!lockHandle) {
+      return res.status(409).json({ error: 'Promocao em andamento neste escopo; tente novamente' });
     }
 
     const activationResult = await activateLoraAdapter(
@@ -3878,6 +4007,27 @@ app.post('/api/training/jobs/:id/promote', requirePermission('training:fine_tuni
         })
         .where(eq(schema.fineTuningJobs.id, fineTuningJob.id));
 
+      await tx.insert(schema.auditLogs).values(buildTrainingGovernanceAuditValues({
+        tenantId: tenantResolution.tenantId,
+        userId: tenantResolution.authContext.userId,
+        action: 'training_model_promoted',
+        resourceId: fineTuningJob.id,
+        request: req,
+        details: {
+          after: {
+            modelVersionId: createdVersion.id,
+            promotionStatus: 'active',
+          },
+          metadata: {
+            operation: 'promote',
+            scope: scopedModelRegistry,
+            loraJobId: fineTuningJob.loraJobId,
+            approvedDistinctUsersCount: approvalSummary.approvedDistinctUsersCount,
+            requesterHasApproved: approvalSummary.requesterHasApproved,
+          },
+        },
+      }));
+
       return [createdVersion];
     });
 
@@ -3905,6 +4055,15 @@ app.post('/api/training/jobs/:id/promote', requirePermission('training:fine_tuni
   } catch (error) {
     logger.error({ error, jobId: req.params.id }, 'Falha ao promover modelo');
     return res.status(500).json({ error: 'Erro interno do servidor' });
+  } finally {
+    if (redis && lockHandle) {
+      await releaseTrainingOperationLock({ redis, handle: lockHandle }).catch((lockError) => {
+        logger.warn(
+          { lockKey: lockHandle?.key, error: lockError instanceof Error ? lockError.message : String(lockError) },
+          'Falha ao liberar lock de promocao'
+        );
+      });
+    }
   }
 });
 
@@ -3913,6 +4072,9 @@ app.post('/api/training/jobs/:id/rollback', requirePermission('training:fine_tun
   if (!paramsResult.success) {
     return res.status(400).json({ error: 'ID invalido', details: paramsResult.error.format() });
   }
+
+  const redis = getRedisClient();
+  let lockHandle: Awaited<ReturnType<typeof acquireTrainingOperationLock>> = null;
 
   try {
     const tenantResolution = resolveAuthorizedTenantId(req);
@@ -3957,6 +4119,27 @@ app.post('/api/training/jobs/:id/rollback', requirePermission('training:fine_tun
         error: scopeError instanceof Error ? scopeError.message : 'Escopo do model version invalido para rollback',
       });
     }
+
+    if (!redis) {
+      return res.status(503).json({ error: 'Redis indisponivel para controle de concorrencia de rollback' });
+    }
+    const lockKey = buildTrainingScopeOperationLockKey({
+      scope: {
+        tenantId: tenantResolution.tenantId,
+        namespaceId: scopedModelRegistry.namespaceId,
+        agentId: scopedModelRegistry.agentId,
+      },
+      operation: 'rollback',
+    });
+    lockHandle = await acquireTrainingOperationLock({
+      redis,
+      key: lockKey,
+      ttlSeconds: TRAINING_OPERATION_LOCK_TTL_SECONDS,
+    });
+    if (!lockHandle) {
+      return res.status(409).json({ error: 'Rollback em andamento neste escopo; tente novamente' });
+    }
+
     const scopedCondition = buildModelVersionScopeCondition(scopedModelRegistry);
     const previousVersion = await db.query.modelVersions.findFirst({
       where: and(
@@ -4011,6 +4194,31 @@ app.post('/api/training/jobs/:id/rollback', requirePermission('training:fine_tun
       await tx.update(schema.fineTuningJobs)
         .set({ promotionStatus: 'active' })
         .where(eq(schema.fineTuningJobs.id, previousJob.id));
+
+      await tx.insert(schema.auditLogs).values(buildTrainingGovernanceAuditValues({
+        tenantId: tenantResolution.tenantId,
+        userId: tenantResolution.authContext.userId,
+        action: 'training_model_rollback_executed',
+        resourceId: currentJob.id,
+        request: req,
+        details: {
+          before: {
+            modelVersionId: currentVersion.id,
+            promotionStatus: currentJob.promotionStatus,
+          },
+          after: {
+            modelVersionId: previousVersion.id,
+            promotionStatus: 'active',
+          },
+          reason: `Rollback manual para version ${previousVersion.version}`,
+          metadata: {
+            operation: 'rollback',
+            scope: scopedModelRegistry,
+            previousJobId: previousJob.id,
+            previousVersion: previousVersion.version,
+          },
+        },
+      }));
     });
 
     logger.info(
@@ -4032,6 +4240,15 @@ app.post('/api/training/jobs/:id/rollback', requirePermission('training:fine_tun
   } catch (error) {
     logger.error({ error, jobId: req.params.id }, 'Falha ao executar rollback');
     return res.status(500).json({ error: 'Erro interno do servidor' });
+  } finally {
+    if (redis && lockHandle) {
+      await releaseTrainingOperationLock({ redis, handle: lockHandle }).catch((lockError) => {
+        logger.warn(
+          { lockKey: lockHandle?.key, error: lockError instanceof Error ? lockError.message : String(lockError) },
+          'Falha ao liberar lock de rollback'
+        );
+      });
+    }
   }
 });
 
@@ -6022,4 +6239,3 @@ let autoLearningLoopActive = false;
     process.exit(1);
   }
 })();
-
