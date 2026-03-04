@@ -733,6 +733,10 @@ echo "📄 Gerando arquivo .env.prod..."
   printf '\n'
   printf '# Sessão e Segurança S2S\n'
   printf 'SESSION_SECRET=%s\n' "${SESSION_SECRET}"
+  printf 'WS_TOKEN_SECRET=%s\n' "${WS_TOKEN_SECRET:-}"
+  printf 'WS_TOKEN_TTL_SECONDS=%s\n' "${WS_TOKEN_TTL_SECONDS:-60}"
+  printf 'WS_AGENT_REQUIRE_TOKEN=%s\n' "${WS_AGENT_REQUIRE_TOKEN:-true}"
+  printf 'WS_AGENT_ALLOW_LEGACY_SESSION_FALLBACK=%s\n' "${WS_AGENT_ALLOW_LEGACY_SESSION_FALLBACK:-false}"
   printf 'INTERNAL_API_SECRET=%s\n' "${INTERNAL_API_SECRET}"
   printf 'BIOMETRICS_ENCRYPTION_KEY=%s\n' "${BIOMETRICS_ENCRYPTION_KEY}"
   printf '\n'

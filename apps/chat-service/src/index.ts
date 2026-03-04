@@ -130,6 +130,7 @@ import {
 // - OpenAI API: Vision (gpt-4.1), ASR (gpt-4o-transcribe), Geração de imagens (gpt-image-1)
 import { initTradingOrchestrator } from './trading-orchestrator.js';
 import { checkResponseCache, isGreeting as isGreetingMessage } from './response-cache.js';
+import { loadWsAgentAuthGovernancePolicyFromEnv } from './ws-agent-auth-governance.js';
 
 // Logger centralizado: JSON em produção, pino-pretty em desenvolvimento
 const logger = createLogger('chat-service');
@@ -349,6 +350,20 @@ const trainingAutoCollectAttemptTotal = new PromCounter({
   registers: [metrics.registry],
 });
 
+const wsAgentAuthRejectedTotal = new PromCounter({
+  name: 'alice_ws_agent_auth_rejected_total',
+  help: 'Total de conexoes WebSocket de agente rejeitadas por regra de autenticacao',
+  labelNames: ['reason'] as const,
+  registers: [metrics.registry],
+});
+
+const wsAgentLegacySessionFallbackTotal = new PromCounter({
+  name: 'alice_ws_agent_legacy_session_fallback_total',
+  help: 'Total de tentativas de fallback legado de sessao no /ws/agent',
+  labelNames: ['result'] as const,
+  registers: [metrics.registry],
+});
+
 type AgenticActionLabel = 'trading' | 'payments' | 'stack_ops' | 'agentic_task' | 'grafana';
 type AgenticDecisionLabel = 'approve' | 'reject';
 type AgenticStatusLabel = 'pending' | 'executed' | 'rejected' | 'failed';
@@ -448,6 +463,14 @@ const server = createServer(app);
 
 // SEGURANÇA: Origin validation allowlist (OWASP WebSocket Security)
 const ALLOWED_WEBSOCKET_ORIGINS = process.env.WEBSOCKET_ALLOWED_ORIGINS?.split(',') || CORS_ORIGINS;
+const WS_AGENT_AUTH_GOVERNANCE = loadWsAgentAuthGovernancePolicyFromEnv(process.env);
+logger.info(
+  {
+    requireWsAgentToken: WS_AGENT_AUTH_GOVERNANCE.requireWsAgentToken,
+    allowLegacySessionFallback: WS_AGENT_AUTH_GOVERNANCE.allowLegacySessionFallback,
+  },
+  'Governanca de autenticacao do /ws/agent inicializada'
+);
 
 // SEGURANÇA: Nome do cookie de sessão (deve coincidir com auth-service)
 const SESSION_COOKIE_NAME = 'alice.sid';
@@ -7845,6 +7868,12 @@ app.get('/api/chat/health', async (_req: Request, res: Response) => {
     agents: {
       allowedModels: ALLOWED_AGENT_LLM_MODEL_NAMES,
       invalidModelCount: invalidAgentsCount,
+    },
+    websocket: {
+      agentAuth: {
+        requireWsAgentToken: WS_AGENT_AUTH_GOVERNANCE.requireWsAgentToken,
+        allowLegacySessionFallback: WS_AGENT_AUTH_GOVERNANCE.allowLegacySessionFallback,
+      },
     },
     circuitBreakers: {
       llm: {
@@ -16089,11 +16118,16 @@ agentWss.on('connection', async (ws, req) => {
 
   const urlParams = new URL(req.url || '', 'ws://localhost').searchParams;
   const wsToken = urlParams.get('token');
-  let tokenPayload = wsToken ? verifyWsToken(wsToken, 'ws-agent') : null;
+  const normalizedWsToken = wsToken?.trim() ?? '';
+  const hasWsToken = normalizedWsToken.length > 0;
+  let tokenPayload = hasWsToken ? verifyWsToken(normalizedWsToken, 'ws-agent') : null;
+  let authRejectedReason: 'missing_token' | 'invalid_token' | 'legacy_session_invalid' | 'missing_token_fallback_disabled' | null = null;
 
-  // Compatibilidade: permite sessão autenticada (cookie) para clientes legados
-  // enquanto a migração para token efêmero ws-agent é concluída.
-  if (!tokenPayload) {
+  if (hasWsToken && !tokenPayload) {
+    authRejectedReason = 'invalid_token';
+  } else if (!hasWsToken && WS_AGENT_AUTH_GOVERNANCE.allowLegacySessionFallback) {
+    // Compatibilidade controlada por governanca (opt-in):
+    // usa sessao apenas para clientes legados sem suporte a ws-agent token.
     const sessionAuth = await authenticateWebSocketConnection(req.headers.cookie, req.headers.origin);
     if (sessionAuth.authenticated && sessionAuth.userId && sessionAuth.tenantId) {
       tokenPayload = {
@@ -16101,11 +16135,40 @@ agentWss.on('connection', async (ws, req) => {
         tenantId: sessionAuth.tenantId,
         role: sessionAuth.role ?? 'viewer',
       };
+      wsAgentLegacySessionFallbackTotal.inc({ result: 'success' });
+      logger.warn(
+        {
+          userId: sessionAuth.userId,
+          tenantId: sessionAuth.tenantId,
+        },
+        'Conexao /ws/agent autenticada via fallback legado de sessao'
+      );
+    } else {
+      authRejectedReason = 'legacy_session_invalid';
+      wsAgentLegacySessionFallbackTotal.inc({ result: 'failure' });
     }
+  } else if (!hasWsToken && WS_AGENT_AUTH_GOVERNANCE.requireWsAgentToken) {
+    authRejectedReason = 'missing_token';
+  } else if (!hasWsToken) {
+    authRejectedReason = 'missing_token_fallback_disabled';
   }
 
   if (!tokenPayload) {
-    ws.close(4001, 'Token ws-agent invalido ou expirado');
+    wsAgentAuthRejectedTotal.inc({ reason: authRejectedReason ?? 'unknown' });
+    logger.warn(
+      {
+        reason: authRejectedReason ?? 'unknown',
+        hasWsToken,
+        requireWsAgentToken: WS_AGENT_AUTH_GOVERNANCE.requireWsAgentToken,
+        allowLegacySessionFallback: WS_AGENT_AUTH_GOVERNANCE.allowLegacySessionFallback,
+      },
+      'Conexao /ws/agent rejeitada por autenticacao'
+    );
+    const closeReason =
+      authRejectedReason === 'missing_token'
+        ? 'Token ws-agent obrigatorio'
+        : 'Token ws-agent invalido ou expirado';
+    ws.close(4001, closeReason);
     return;
   }
 
