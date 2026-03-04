@@ -5162,6 +5162,25 @@ app.post('/api/training/webhook', async (req: Request, res: Response) => {
   }
 
   const tenantId = internalTenantId;
+  const tenant = await db.query.tenants.findFirst({
+    where: eq(schema.tenants.id, tenantId),
+    columns: { id: true },
+  });
+  if (!tenant) {
+    return res.status(403).json({ error: 'Tenant invalido para webhook' });
+  }
+  const internalUser = await db.query.users.findFirst({
+    where: eq(schema.users.id, internalUserId),
+    columns: { id: true, tenantId: true },
+  });
+  if (!internalUser) {
+    return res.status(401).json({ error: 'Usuario interno invalido para webhook' });
+  }
+  try {
+    validateTenantConsistency('user', internalUser, tenantId, 'training_webhook');
+  } catch {
+    return res.status(403).json({ error: 'Usuario nao pertence ao tenant do webhook' });
+  }
 
   try {
     const validation = webhookSchema.safeParse(req.body);
