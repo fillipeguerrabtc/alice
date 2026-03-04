@@ -25,6 +25,27 @@ Fora de escopo:
 - Sem comandos globais destrutivos
 - Rollback com critérios explícitos de go/no-go
 
+## 2.1) Modo simples (one-shot)
+
+Se você quer uma única execução automática, use o workflow:
+
+- `.github/workflows/decommission-erpnext-prod-oneshot.yml`
+
+Ele executa em sequência:
+
+1. Inventário
+2. Remoção de containers alvo
+3. Remoção de redes alvo
+4. Remoção de imagens alvo
+5. Remoção de volumes alvo (destrutivo)
+6. Pós-check com fail-fast
+
+Entradas mínimas:
+
+- `confirm_phrase=DECOMMISSION ERPNext PROD ONE SHOT`
+- `project_label=erpnext`
+- `name_prefix=erpnext-`
+
 ## 3) Checklist pré-execução (obrigatório)
 
 1. Janela de mudança aprovada com owner de negócio e SRE.
@@ -129,3 +150,24 @@ Ações de rollback por severidade:
 - Este processo não altera os workflows de deploy existentes.
 - O decommission é intencionalmente separado do deploy para evitar risco sistêmico.
 - Recomendação: proteger este workflow com approvals em `Environment` de produção.
+
+## 7) Comandos de verificação pós-workflow
+
+Execute no servidor de produção:
+
+```bash
+# 1) Contêineres legados (deve retornar vazio)
+docker ps -a --format '{{.Names}} {{.Image}}' | grep -E 'erpnext|frappe|mariadb|mariabackup' || true
+
+# 2) Redes legadas (deve retornar vazio)
+docker network ls --format '{{.Name}}' | grep -E 'erpnext|frappe|mariadb' || true
+
+# 3) Volumes legados (deve retornar vazio)
+docker volume ls --format '{{.Name}}' | grep -E 'erpnext|frappe|mariadb' || true
+
+# 4) Projetos Compose ativos (não deve haver projeto "erpnext")
+docker compose ls
+
+# 5) Saúde da Alice (todos healthy/up conforme esperado)
+docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
+```

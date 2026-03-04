@@ -1,0 +1,246 @@
+name: Decommission ERPNext (Production - One Shot)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_phrase:
+        description: "Type exactly: DECOMMISSION ERPNext PROD ONE SHOT"
+        required: true
+        type: string
+      project_label:
+        description: "Compose project label to target"
+        required: true
+        type: string
+        default: "erpnext"
+      name_prefix:
+        description: "Resource name prefix to target"
+        required: true
+        type: string
+        default: "erpnext-"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: decommission-erpnext-production-oneshot
+  cancel-in-progress: false
+
+env:
+  HETZNER_HOST: ${{ secrets.HETZNER_VM_HOST }}
+  HETZNER_USER: ${{ secrets.HETZNER_VM_USER }}
+
+jobs:
+  decommission-oneshot:
+    name: Decommission ERPNext Fully (Containers, Networks, Images, Volumes)
+    runs-on: [self-hosted, linux, deploy]
+    environment: production
+    timeout-minutes: 60
+    steps:
+      - name: Validate request
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          EXPECTED_PHRASE="DECOMMISSION ERPNext PROD ONE SHOT"
+          if [ "${{ github.event.inputs.confirm_phrase }}" != "$EXPECTED_PHRASE" ]; then
+            echo "❌ Invalid confirmation phrase."
+            echo "Expected exactly: $EXPECTED_PHRASE"
+            exit 1
+          fi
+
+          if [ -z "${{ env.HETZNER_HOST }}" ] || [ -z "${{ env.HETZNER_USER }}" ]; then
+            echo "❌ Missing HETZNER host/user secrets."
+            exit 1
+          fi
+
+          PROJECT_LABEL="${{ github.event.inputs.project_label }}"
+          NAME_PREFIX="${{ github.event.inputs.name_prefix }}"
+          if [ -z "$PROJECT_LABEL" ] || [ -z "$NAME_PREFIX" ]; then
+            echo "❌ project_label and name_prefix are required."
+            exit 1
+          fi
+
+          if ! [[ "$PROJECT_LABEL" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+            echo "❌ project_label has invalid characters."
+            exit 1
+          fi
+
+          if ! [[ "$NAME_PREFIX" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+            echo "❌ name_prefix has invalid characters."
+            exit 1
+          fi
+
+      - name: Execute one-shot decommission over SSH
+        uses: appleboy/ssh-action@v1.2.2
+        env:
+          PROJECT_LABEL: ${{ github.event.inputs.project_label }}
+          NAME_PREFIX: ${{ github.event.inputs.name_prefix }}
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: ${{ env.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          command_timeout: 55m
+          envs: PROJECT_LABEL,NAME_PREFIX
+          script: |
+            set -euo pipefail
+
+            log() { printf '%s %s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$*"; }
+            fail() { log "ERROR: $*"; exit 1; }
+
+            [ -n "$PROJECT_LABEL" ] || fail "PROJECT_LABEL is empty"
+            [ -n "$NAME_PREFIX" ] || fail "NAME_PREFIX is empty"
+
+            unique_lines() {
+              awk 'NF && !seen[$0]++'
+            }
+
+            collect_containers() {
+              {
+                docker ps -aq --filter "label=com.docker.compose.project=${PROJECT_LABEL}" || true
+                docker ps -aq --filter "name=${NAME_PREFIX}" || true
+              } | unique_lines
+            }
+
+            collect_networks() {
+              {
+                docker network ls --format '{{.Name}}' --filter "label=com.docker.compose.project=${PROJECT_LABEL}" || true
+                docker network ls --format '{{.Name}}' | grep "^${NAME_PREFIX}" || true
+              } | unique_lines
+            }
+
+            collect_volumes() {
+              {
+                docker volume ls --format '{{.Name}}' --filter "label=com.docker.compose.project=${PROJECT_LABEL}" || true
+                docker volume ls --format '{{.Name}}' | grep "^${NAME_PREFIX}" || true
+              } | unique_lines
+            }
+
+            collect_images_from_containers() {
+              local id image
+              for id in "$@"; do
+                image="$(docker inspect -f '{{.Config.Image}}' "$id" 2>/dev/null || true)"
+                if [ -n "$image" ]; then
+                  echo "$image"
+                fi
+              done | unique_lines
+            }
+
+            readarray -t TARGET_CONTAINERS < <(collect_containers)
+            readarray -t TARGET_NETWORKS < <(collect_networks)
+            readarray -t TARGET_VOLUMES < <(collect_volumes)
+            readarray -t TARGET_IMAGES < <(collect_images_from_containers "${TARGET_CONTAINERS[@]}")
+
+            log "=== INVENTORY BEFORE ==="
+            log "project_label=$PROJECT_LABEL name_prefix=$NAME_PREFIX"
+            log "containers=${#TARGET_CONTAINERS[@]} networks=${#TARGET_NETWORKS[@]} volumes=${#TARGET_VOLUMES[@]} images=${#TARGET_IMAGES[@]}"
+
+            for id in "${TARGET_CONTAINERS[@]}"; do
+              [ -n "$id" ] || continue
+              name="$(docker inspect -f '{{.Name}}' "$id" 2>/dev/null | sed 's#^/##' || true)"
+              image="$(docker inspect -f '{{.Config.Image}}' "$id" 2>/dev/null || true)"
+              status="$(docker inspect -f '{{.State.Status}}' "$id" 2>/dev/null || true)"
+              log "container id=$id name=$name status=$status image=$image"
+            done
+
+            for net in "${TARGET_NETWORKS[@]}"; do [ -n "$net" ] && log "network name=$net"; done
+            for vol in "${TARGET_VOLUMES[@]}"; do [ -n "$vol" ] && log "volume name=$vol"; done
+            for img in "${TARGET_IMAGES[@]}"; do [ -n "$img" ] && log "image ref=$img"; done
+
+            log "=== STAGE 1: Remove containers ==="
+            for id in "${TARGET_CONTAINERS[@]}"; do
+              [ -n "$id" ] || continue
+              if docker ps -q --no-trunc | grep -q "^$id$"; then
+                docker stop -t 30 "$id" >/dev/null
+              fi
+              docker rm -f "$id" >/dev/null
+              log "removed container id=$id"
+            done
+
+            log "=== STAGE 2: Remove networks ==="
+            for net in "${TARGET_NETWORKS[@]}"; do
+              [ -n "$net" ] || continue
+              if ! docker network inspect "$net" >/dev/null 2>&1; then
+                continue
+              fi
+              attached="$(docker network inspect -f '{{len .Containers}}' "$net" 2>/dev/null || echo "0")"
+              if [ "$attached" != "0" ]; then
+                fail "Network $net still has attached containers: $attached"
+              fi
+              docker network rm "$net" >/dev/null
+              log "removed network name=$net"
+            done
+
+            log "=== STAGE 3: Remove images ==="
+            for img in "${TARGET_IMAGES[@]}"; do
+              [ -n "$img" ] || continue
+              if ! docker image inspect "$img" >/dev/null 2>&1; then
+                continue
+              fi
+              in_use="$(docker ps -q --filter "ancestor=$img" | wc -l | tr -d ' ')"
+              if [ "${in_use:-0}" != "0" ]; then
+                fail "Image still used by running containers: $img"
+              fi
+              docker image rm "$img" >/dev/null
+              log "removed image ref=$img"
+            done
+
+            log "=== STAGE 4: Remove volumes (destructive) ==="
+            for vol in "${TARGET_VOLUMES[@]}"; do
+              [ -n "$vol" ] || continue
+              if ! docker volume inspect "$vol" >/dev/null 2>&1; then
+                continue
+              fi
+              attached="$(docker ps -aq --filter "volume=$vol" | wc -l | tr -d ' ')"
+              if [ "${attached:-0}" != "0" ]; then
+                fail "Volume still attached to container(s): $vol"
+              fi
+              docker volume rm "$vol" >/dev/null
+              log "removed volume name=$vol"
+            done
+
+            log "=== STAGE 5: Post-check targeted resources ==="
+            readarray -t REMAINING_CONTAINERS < <(collect_containers)
+            readarray -t REMAINING_NETWORKS < <(collect_networks)
+            readarray -t REMAINING_VOLUMES < <(collect_volumes)
+
+            if [ "${#REMAINING_CONTAINERS[@]}" -ne 0 ]; then
+              fail "Remaining targeted containers: ${#REMAINING_CONTAINERS[@]}"
+            fi
+
+            if [ "${#REMAINING_NETWORKS[@]}" -ne 0 ]; then
+              fail "Remaining targeted networks: ${#REMAINING_NETWORKS[@]}"
+            fi
+
+            if [ "${#REMAINING_VOLUMES[@]}" -ne 0 ]; then
+              fail "Remaining targeted volumes: ${#REMAINING_VOLUMES[@]}"
+            fi
+
+            log "=== STAGE 6: Residue checks by patterns ==="
+            if docker ps -a --format '{{.Names}} {{.Image}}' | grep -Eqi 'erpnext|frappe|mariadb|mariabackup'; then
+              fail "Legacy ERPNext/Frappe/MariaDB containers still detected"
+            fi
+
+            if docker network ls --format '{{.Name}}' | grep -Eqi 'erpnext|frappe|mariadb'; then
+              fail "Legacy ERPNext/Frappe/MariaDB networks still detected"
+            fi
+
+            if docker volume ls --format '{{.Name}}' | grep -Eqi 'erpnext|frappe|mariadb'; then
+              fail "Legacy ERPNext/Frappe/MariaDB volumes still detected"
+            fi
+
+            log "Decommission one-shot completed successfully."
+
+      - name: Publish summary
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "# ERPNext One-Shot Decommission"
+            echo ""
+            echo "- Host: \`${{ env.HETZNER_HOST }}\`"
+            echo "- project_label: \`${{ github.event.inputs.project_label }}\`"
+            echo "- name_prefix: \`${{ github.event.inputs.name_prefix }}\`"
+            echo ""
+            echo "Completed full removal flow (containers, networks, images, volumes) with post-checks."
+          } >> "$GITHUB_STEP_SUMMARY"
