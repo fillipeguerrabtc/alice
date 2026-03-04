@@ -249,6 +249,31 @@ type TrainingQueueStatusResponse = {
   };
 };
 
+type TrainingExecutionModesResponse = {
+  tenantId: string;
+  modes: Array<{
+    id: 'quick_run' | 'advanced_job' | 'auto_schedule';
+    runSource: 'on_demand' | 'custom_job' | 'scheduled';
+    endpoint: string;
+    scope: 'tenant_or_namespace' | 'namespace_required';
+    trigger: 'manual_immediate' | 'cron_recurring';
+    datasetPolicy: {
+      source: string;
+      minApprovedData?: number;
+      minApprovedDataIncremental?: number;
+      minApprovedDataFull?: number;
+    };
+    hyperparametersPolicy: string;
+    schedulePolicy: string;
+  }>;
+  governance: {
+    maxInflightRunsPerTenant: number;
+    requireEvalPassedForPromotion: boolean;
+    requireDualApprovalForPromotion: boolean;
+    promotionMinApprovals: number;
+  };
+};
+
 type TrainingGovernanceAuditEvent = {
   id: string;
   action:
@@ -3080,6 +3105,46 @@ export default function Training() {
     enabled: Boolean(tenantId),
   });
 
+  const executionModesQueryKey = ['training', 'execution-modes', tenantId ?? null] as const;
+  const { data: executionModes } = useQuery<TrainingExecutionModesResponse>({
+    queryKey: executionModesQueryKey,
+    queryFn: async () => {
+      const url = tenantId
+        ? `/api/training/execution-modes?tenantId=${encodeURIComponent(tenantId)}`
+        : '/api/training/execution-modes';
+      const res = await apiRequest('GET', url);
+      return res.json();
+    },
+    staleTime: 1000 * 60,
+    enabled: Boolean(tenantId),
+  });
+
+  const executionModesHint = useMemo(() => {
+    const quickMode = executionModes?.modes.find((mode) => mode.id === 'quick_run');
+    const advancedMode = executionModes?.modes.find((mode) => mode.id === 'advanced_job');
+    const scheduleMode = executionModes?.modes.find((mode) => mode.id === 'auto_schedule');
+    const quickMin = quickMode?.datasetPolicy.minApprovedData;
+    const advancedMin = advancedMode?.datasetPolicy.minApprovedData;
+    const scheduleIncMin = scheduleMode?.datasetPolicy.minApprovedDataIncremental;
+    const scheduleFullMin = scheduleMode?.datasetPolicy.minApprovedDataFull;
+
+    if (
+      typeof quickMin === 'number'
+      && typeof advancedMin === 'number'
+      && typeof scheduleIncMin === 'number'
+      && typeof scheduleFullMin === 'number'
+    ) {
+      return t('training.executionModesHintDynamic', {
+        quickMin,
+        advancedMin,
+        scheduleIncMin,
+        scheduleFullMin,
+      });
+    }
+
+    return t('training.executionModesHint');
+  }, [executionModes, t]);
+
   const scheduleFormSchema = z.object({
     scheduleType: z.enum(['incremental_fine_tuning', 'complete_fine_tuning']),
     enabled: z.boolean(),
@@ -3829,7 +3894,7 @@ export default function Training() {
           </div>
         </div>
         <p className="mb-4 text-xs text-muted-foreground">
-          {t('training.executionModesHint')}
+          {executionModesHint}
         </p>
 
         {!tenantId && (

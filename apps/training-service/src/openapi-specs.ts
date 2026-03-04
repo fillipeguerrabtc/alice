@@ -529,6 +529,23 @@ export const trainingServicePaths = {
       responses: { 200: { description: 'Auto-learning status' } },
     },
   },
+  '/api/training/execution-modes': {
+    get: {
+      summary: 'Get objective training execution mode definitions',
+      tags: ['Auto-Learning'],
+      parameters: [{ name: 'tenantId', in: 'query', schema: { type: 'string', format: 'uuid' } }],
+      responses: {
+        200: {
+          description: 'Execution mode SSOT',
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/TrainingExecutionModesResponse' },
+            },
+          },
+        },
+      },
+    },
+  },
   '/api/training/stats': {
     get: {
       summary: 'Get training dataset/job counters',
@@ -902,6 +919,37 @@ export const trainingServiceSchemas = {
             durationSeconds: { type: 'integer', nullable: true },
             errorMessage: { type: 'string', nullable: true },
           },
+        },
+      },
+    },
+  },
+  TrainingExecutionModesResponse: {
+    type: 'object',
+    properties: {
+      tenantId: { type: 'string', format: 'uuid' },
+      modes: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', enum: ['quick_run', 'advanced_job', 'auto_schedule'] },
+            runSource: { type: 'string', enum: ['on_demand', 'custom_job', 'scheduled'] },
+            endpoint: { type: 'string' },
+            scope: { type: 'string', enum: ['tenant_or_namespace', 'namespace_required'] },
+            trigger: { type: 'string', enum: ['manual_immediate', 'cron_recurring'] },
+            datasetPolicy: { type: 'object', additionalProperties: true },
+            hyperparametersPolicy: { type: 'string' },
+            schedulePolicy: { type: 'string' },
+          },
+        },
+      },
+      governance: {
+        type: 'object',
+        properties: {
+          maxInflightRunsPerTenant: { type: 'integer' },
+          requireEvalPassedForPromotion: { type: 'boolean' },
+          requireDualApprovalForPromotion: { type: 'boolean' },
+          promotionMinApprovals: { type: 'integer' },
         },
       },
     },

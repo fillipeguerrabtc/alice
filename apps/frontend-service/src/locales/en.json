@@ -1634,6 +1634,7 @@
     "subtitle": "Choose the execution mode, approve data, and track training governance.",
     "newJob": "Advanced Job",
     "executionModesHint": "Quick run = immediate with standard policy | Advanced Job = scoped fine-tuning with preset/overrides | Schedule = recurring automated runs.",
+    "executionModesHintDynamic": "Quick run = immediate (minimum {{quickMin}} approved) | Advanced Job = namespace-scoped with preset/override (minimum {{advancedMin}}) | Schedule = recurring (incremental minimum {{scheduleIncMin}}, full minimum {{scheduleFullMin}}).",
     "postTraining": {
       "title": "Training completed",
       "desc": "Job \"{{jobName}}\" has finished. Continue training or go back to chat?",

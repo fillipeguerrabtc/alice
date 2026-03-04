@@ -57,6 +57,7 @@ describe('Training Service - OpenAPI (critical contracts)', () => {
     expect(paths).toContain('/api/training/run/status');
     expect(paths).toContain('/api/training/run/history');
     expect(paths).toContain('/api/training/run/cancel');
+    expect(paths).toContain('/api/training/execution-modes');
   });
 
   it('exposes governance and webhook endpoints', () => {
@@ -86,6 +87,13 @@ describe('Training Service - OpenAPI (critical contracts)', () => {
       trainingServiceSchemas.TrainingWebhookRequest.properties.event as { enum: string[] }
     ).enum;
     expect(eventEnum).toEqual(['training_data', 'feedback']);
+  });
+
+  it('documents the 3 objective execution modes as SSOT', () => {
+    const modeEnum = (
+      trainingServiceSchemas.TrainingExecutionModesResponse.properties.modes.items.properties.id as { enum: string[] }
+    ).enum;
+    expect(modeEnum).toEqual(['quick_run', 'advanced_job', 'auto_schedule']);
   });
 });
 

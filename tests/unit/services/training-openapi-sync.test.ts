@@ -20,6 +20,7 @@ const CRITICAL_OPENAPI_ROUTES: Array<{ method: HttpMethod; path: string }> = [
   { method: 'delete', path: '/api/training/run/cancel' },
   { method: 'get', path: '/api/training/queue/status' },
   { method: 'get', path: '/api/training/auto-learning/status' },
+  { method: 'get', path: '/api/training/execution-modes' },
 ];
 
 function openApiPathToExpressPath(pathname: string): string {
@@ -68,4 +69,3 @@ describe('Training OpenAPI - critical route sync', () => {
     }
   });
 });
-

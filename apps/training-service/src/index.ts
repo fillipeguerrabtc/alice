@@ -5047,6 +5047,10 @@ const trainingStatsQuerySchema = z.object({
   tenantId: z.string().uuid().optional(),
 });
 
+const trainingExecutionModesQuerySchema = z.object({
+  tenantId: z.string().uuid().optional(),
+});
+
 app.post('/api/training/webhook', async (req: Request, res: Response) => {
   const expectedSecret = process.env.TRAINING_WEBHOOK_SECRET;
 
@@ -5456,6 +5460,80 @@ app.get('/api/training/auto-learning/status', requirePermission('training:traini
   } catch (error) {
     logger.error({ error }, 'Falha ao obter status do auto-learning');
     res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+app.get('/api/training/execution-modes', requirePermission('training:training_data:read'), async (req: Request, res: Response) => {
+  const queryResult = trainingExecutionModesQuerySchema.safeParse(req.query);
+  if (!queryResult.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: queryResult.error.format() });
+  }
+
+  try {
+    const tenantResolution = resolveAuthorizedTenantId(req, queryResult.data.tenantId ?? null);
+    if (!tenantResolution.ok) {
+      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
+    }
+
+    const [runtimeConfig, governanceConfig] = await Promise.all([
+      loadTrainingSystemRuntimeConfig(),
+      loadTrainingGovernanceRuntimeConfig(),
+    ]);
+
+    return res.json({
+      tenantId: tenantResolution.tenantId,
+      modes: [
+        {
+          id: 'quick_run',
+          runSource: 'on_demand',
+          endpoint: '/api/training/run/start',
+          scope: 'tenant_or_namespace',
+          trigger: 'manual_immediate',
+          datasetPolicy: {
+            source: 'training_data_approved',
+            minApprovedData: runtimeConfig.minOndemandDatasetSize,
+          },
+          hyperparametersPolicy: 'runtime_defaults',
+          schedulePolicy: 'none',
+        },
+        {
+          id: 'advanced_job',
+          runSource: 'custom_job',
+          endpoint: '/api/training/jobs',
+          scope: 'namespace_required',
+          trigger: 'manual_immediate',
+          datasetPolicy: {
+            source: 'training_data_approved_by_namespace',
+            minApprovedData: runtimeConfig.minOndemandDatasetSize,
+          },
+          hyperparametersPolicy: 'preset_with_overrides',
+          schedulePolicy: 'none',
+        },
+        {
+          id: 'auto_schedule',
+          runSource: 'scheduled',
+          endpoint: '/api/training/schedule/configure',
+          scope: 'tenant_or_namespace',
+          trigger: 'cron_recurring',
+          datasetPolicy: {
+            source: 'training_data_approved_by_scope',
+            minApprovedDataIncremental: runtimeConfig.minScheduledDatasetSizeIncremental,
+            minApprovedDataFull: runtimeConfig.minScheduledDatasetSizeFull,
+          },
+          hyperparametersPolicy: 'runtime_defaults',
+          schedulePolicy: 'cron_configurable',
+        },
+      ],
+      governance: {
+        maxInflightRunsPerTenant: governanceConfig.maxInflightRunsPerTenant,
+        requireEvalPassedForPromotion: governanceConfig.requireEvalPassedForPromotion,
+        requireDualApprovalForPromotion: governanceConfig.requireDualApprovalForPromotion,
+        promotionMinApprovals: governanceConfig.promotionMinApprovals,
+      },
+    });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao obter modos de execução de treinamento');
+    return res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
 
