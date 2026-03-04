@@ -530,6 +530,12 @@ const trainingPipelineMetrics = {
     labelNames: ['storage', 'result'] as const,
     registers: [metrics.registry],
   }),
+  webhookAuthValidationTotal: new PromCounter({
+    name: 'alice_training_webhook_auth_validation_total',
+    help: 'Resultado da validacao de autenticacao do webhook de treinamento',
+    labelNames: ['mode', 'result'] as const,
+    registers: [metrics.registry],
+  }),
 };
 
 const tradingMetrics = {
@@ -4922,6 +4928,46 @@ type WebhookNonceValidationResult = {
   result: 'accepted' | 'replay' | 'fallback_after_redis_error';
 };
 
+type WebhookSignatureValidationResult = {
+  ok: boolean;
+  mode: 'internal_api_secret' | 'legacy_webhook_secret' | 'none';
+};
+
+const TRAINING_WEBHOOK_ALLOW_LEGACY_SIGNATURE = process.env.TRAINING_WEBHOOK_ALLOW_LEGACY_SIGNATURE === 'true';
+
+function validateWebhookSignature(params: {
+  signature: string;
+  payload: string;
+  webhookSecret: string;
+}): WebhookSignatureValidationResult {
+  const internalSecret = process.env.INTERNAL_API_SECRET;
+  if (internalSecret) {
+    const expectedInternalSignature = crypto
+      .createHmac('sha256', internalSecret)
+      .update(params.payload)
+      .digest('hex');
+    const internalMatch = params.signature.length === expectedInternalSignature.length
+      && crypto.timingSafeEqual(Buffer.from(params.signature, 'utf8'), Buffer.from(expectedInternalSignature, 'utf8'));
+    if (internalMatch) {
+      return { ok: true, mode: 'internal_api_secret' };
+    }
+  }
+
+  if (TRAINING_WEBHOOK_ALLOW_LEGACY_SIGNATURE) {
+    const expectedLegacySignature = crypto
+      .createHmac('sha256', params.webhookSecret)
+      .update(params.payload)
+      .digest('hex');
+    const legacyMatch = params.signature.length === expectedLegacySignature.length
+      && crypto.timingSafeEqual(Buffer.from(params.signature, 'utf8'), Buffer.from(expectedLegacySignature, 'utf8'));
+    if (legacyMatch) {
+      return { ok: true, mode: 'legacy_webhook_secret' };
+    }
+  }
+
+  return { ok: false, mode: 'none' };
+}
+
 async function validateAndStoreWebhookNonce(params: {
   tenantId: string;
   nonce: string;
@@ -5040,14 +5086,23 @@ app.post('/api/training/webhook', async (req: Request, res: Response) => {
   }
 
   const signaturePayload = `${internalUserId}:${internalTenantId}:${internalRole}:${internalNonce}:${internalTimestamp}`;
-  const expectedSignature = crypto
-    .createHmac('sha256', expectedSecret)
-    .update(signaturePayload)
-    .digest('hex');
-  const signatureValid = internalSignature.length === expectedSignature.length
-    && crypto.timingSafeEqual(Buffer.from(internalSignature, 'utf8'), Buffer.from(expectedSignature, 'utf8'));
-  if (!signatureValid) {
+  const signatureValidation = validateWebhookSignature({
+    signature: internalSignature,
+    payload: signaturePayload,
+    webhookSecret: expectedSecret,
+  });
+  trainingPipelineMetrics.webhookAuthValidationTotal.inc({
+    mode: signatureValidation.mode,
+    result: signatureValidation.ok ? 'accepted' : 'rejected',
+  });
+  if (!signatureValidation.ok) {
     return res.status(401).json({ error: 'Assinatura interna invalida' });
+  }
+  if (signatureValidation.mode === 'legacy_webhook_secret') {
+    logger.warn(
+      { tenantId: internalTenantId },
+      'Webhook autenticado via assinatura legada; migre para assinatura com INTERNAL_API_SECRET'
+    );
   }
 
   const nonceValidation = await validateAndStoreWebhookNonce({
