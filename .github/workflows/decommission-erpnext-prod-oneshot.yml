@@ -133,14 +133,31 @@ jobs:
               done | unique_lines
             }
 
+            collect_legacy_images() {
+              docker images --format '{{.Repository}}:{{.Tag}}' \
+                | awk 'tolower($0) ~ /(frappe\/erpnext|^mariadb:|prom\/mysqld-exporter)/ { print }' \
+                | unique_lines
+            }
+
             readarray -t TARGET_CONTAINERS < <(collect_containers)
             readarray -t TARGET_NETWORKS < <(collect_networks)
             readarray -t TARGET_VOLUMES < <(collect_volumes)
             readarray -t TARGET_IMAGES < <(collect_images_from_containers "${TARGET_CONTAINERS[@]}")
+            readarray -t LEGACY_IMAGES < <(collect_legacy_images)
+            readarray -t REMOVAL_IMAGES < <(
+              {
+                for img in "${TARGET_IMAGES[@]}"; do
+                  [ -n "$img" ] && echo "$img"
+                done
+                for img in "${LEGACY_IMAGES[@]}"; do
+                  [ -n "$img" ] && echo "$img"
+                done
+              } | unique_lines
+            )
 
             log "=== INVENTORY BEFORE ==="
             log "project_label=$PROJECT_LABEL name_prefix=$NAME_PREFIX"
-            log "containers=${#TARGET_CONTAINERS[@]} networks=${#TARGET_NETWORKS[@]} volumes=${#TARGET_VOLUMES[@]} images=${#TARGET_IMAGES[@]}"
+            log "containers=${#TARGET_CONTAINERS[@]} networks=${#TARGET_NETWORKS[@]} volumes=${#TARGET_VOLUMES[@]} target_images=${#TARGET_IMAGES[@]} legacy_images=${#LEGACY_IMAGES[@]} removal_images=${#REMOVAL_IMAGES[@]}"
 
             for id in "${TARGET_CONTAINERS[@]}"; do
               [ -n "$id" ] || continue
@@ -153,6 +170,7 @@ jobs:
             for net in "${TARGET_NETWORKS[@]}"; do [ -n "$net" ] && log "network name=$net"; done
             for vol in "${TARGET_VOLUMES[@]}"; do [ -n "$vol" ] && log "volume name=$vol"; done
             for img in "${TARGET_IMAGES[@]}"; do [ -n "$img" ] && log "image ref=$img"; done
+            for img in "${LEGACY_IMAGES[@]}"; do [ -n "$img" ] && log "legacy image ref=$img"; done
 
             log "=== STAGE 1: Remove containers ==="
             for id in "${TARGET_CONTAINERS[@]}"; do
@@ -179,14 +197,14 @@ jobs:
             done
 
             log "=== STAGE 3: Remove images ==="
-            for img in "${TARGET_IMAGES[@]}"; do
+            for img in "${REMOVAL_IMAGES[@]}"; do
               [ -n "$img" ] || continue
               if ! docker image inspect "$img" >/dev/null 2>&1; then
                 continue
               fi
-              in_use="$(docker ps -q --filter "ancestor=$img" | wc -l | tr -d ' ')"
-              if [ "${in_use:-0}" != "0" ]; then
-                log "skip image still used by running containers: $img"
+              in_use_by="$(docker ps --filter "ancestor=$img" --format '{{.Names}}' | paste -sd ',' -)"
+              if [ -n "$in_use_by" ]; then
+                log "skip image still used by running containers: $img users=$in_use_by"
                 continue
               fi
               docker image rm "$img" >/dev/null || fail "Failed to remove image: $img"
