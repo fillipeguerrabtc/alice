@@ -314,11 +314,29 @@ export const trainingServicePaths = {
         },
       },
       responses: {
-        200: { description: 'Idempotent replay: existing job returned' },
-        202: { description: 'Job created and enqueued' },
+        200: {
+          description: 'Idempotent replay: existing job returned',
+          headers: {
+            'X-Idempotency-Key': { schema: { type: 'string' } },
+            'X-Idempotency-Status': { schema: { type: 'string', enum: ['replayed'] } },
+          },
+        },
+        202: {
+          description: 'Job created and enqueued',
+          headers: {
+            'X-Idempotency-Key': { schema: { type: 'string' } },
+            'X-Idempotency-Status': { schema: { type: 'string', enum: ['created'] } },
+          },
+        },
         400: { $ref: '#/components/responses/ValidationError' },
         403: { $ref: '#/components/responses/Forbidden' },
-        409: { description: 'Run start lock contention' },
+        409: {
+          description: 'Run start lock contention or idempotency payload mismatch',
+          headers: {
+            'X-Idempotency-Key': { schema: { type: 'string' } },
+            'X-Idempotency-Status': { schema: { type: 'string', enum: ['conflict'] } },
+          },
+        },
         429: { description: 'Tenant run capacity exhausted' },
       },
     },
@@ -621,6 +639,10 @@ export const trainingServicePaths = {
               schema: { $ref: '#/components/schemas/TrainingRunStartResponse' },
             },
           },
+          headers: {
+            'X-Idempotency-Key': { schema: { type: 'string' } },
+            'X-Idempotency-Status': { schema: { type: 'string', enum: ['replayed'] } },
+          },
         },
         202: {
           description: 'Run accepted and enqueued',
@@ -629,9 +651,19 @@ export const trainingServicePaths = {
               schema: { $ref: '#/components/schemas/TrainingRunStartResponse' },
             },
           },
+          headers: {
+            'X-Idempotency-Key': { schema: { type: 'string' } },
+            'X-Idempotency-Status': { schema: { type: 'string', enum: ['created'] } },
+          },
         },
         400: { $ref: '#/components/responses/ValidationError' },
-        409: { description: 'Run already in progress or lock contention' },
+        409: {
+          description: 'Run already in progress, lock contention, or idempotency payload mismatch',
+          headers: {
+            'X-Idempotency-Key': { schema: { type: 'string' } },
+            'X-Idempotency-Status': { schema: { type: 'string', enum: ['conflict'] } },
+          },
+        },
         429: { description: 'Tenant run capacity exhausted' },
       },
     },

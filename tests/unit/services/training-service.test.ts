@@ -113,6 +113,22 @@ describe('Training Service - OpenAPI (critical contracts)', () => {
     };
     expect(responseSchema.properties).toHaveProperty('idempotencyHit');
   });
+
+  it('documents idempotency response headers for start endpoints', () => {
+    const runStartResponses = trainingServicePaths['/api/training/run/start'].post.responses as Record<string, {
+      headers?: Record<string, unknown>;
+    }>;
+    const customJobResponses = trainingServicePaths['/api/training/jobs'].post.responses as Record<string, {
+      headers?: Record<string, unknown>;
+    }>;
+
+    expect(runStartResponses['200']?.headers).toHaveProperty('X-Idempotency-Key');
+    expect(runStartResponses['200']?.headers).toHaveProperty('X-Idempotency-Status');
+    expect(runStartResponses['202']?.headers).toHaveProperty('X-Idempotency-Key');
+    expect(runStartResponses['202']?.headers).toHaveProperty('X-Idempotency-Status');
+    expect(customJobResponses['200']?.headers).toHaveProperty('X-Idempotency-Key');
+    expect(customJobResponses['202']?.headers).toHaveProperty('X-Idempotency-Status');
+  });
 });
 
 // ============================================================================

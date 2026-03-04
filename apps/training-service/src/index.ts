@@ -337,6 +337,15 @@ function hashIdempotencyKeyForAudit(key: string): string {
   return crypto.createHash('sha256').update(key).digest('hex').slice(0, 16);
 }
 
+function applyIdempotencyResponseHeaders(
+  res: Response,
+  idempotencyKey: string,
+  status: 'created' | 'replayed' | 'conflict'
+): void {
+  res.setHeader('X-Idempotency-Key', idempotencyKey);
+  res.setHeader('X-Idempotency-Status', status);
+}
+
 type TrainingRunStartReplayLookup =
   | { status: 'miss' }
   | { status: 'payload_mismatch' }
@@ -3669,9 +3678,11 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
         fingerprint: requestFingerprint,
       });
       if (replay.status === 'payload_mismatch') {
+        applyIdempotencyResponseHeaders(res, idempotencyHeader.key, 'conflict');
         return res.status(409).json({ error: 'Idempotency-Key reutilizada com payload diferente' });
       }
       if (replay.status === 'hit') {
+        applyIdempotencyResponseHeaders(res, idempotencyHeader.key, 'replayed');
         return res.status(200).json({
           job: replay.job,
           loraJobId: replay.job.loraJobId,
@@ -3907,6 +3918,10 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
         queueRunId: enqueueResult.runId,
         idempotencyKeyHash,
       }, 'Job de fine-tuning criado e enfileirado');
+
+      if (idempotencyHeader.key) {
+        applyIdempotencyResponseHeaders(res, idempotencyHeader.key, 'created');
+      }
 
       return res.status(202).json({
         job,
@@ -6152,9 +6167,11 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
         fingerprint: requestFingerprint,
       });
       if (replay.status === 'payload_mismatch') {
+        applyIdempotencyResponseHeaders(res, idempotencyHeader.key, 'conflict');
         return res.status(409).json({ error: 'Idempotency-Key reutilizada com payload diferente' });
       }
       if (replay.status === 'hit') {
+        applyIdempotencyResponseHeaders(res, idempotencyHeader.key, 'replayed');
         return res.status(200).json({
           success: true,
           jobId: replay.job.id,
@@ -6360,6 +6377,10 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
         queueRunId: enqueueResult.runId,
         idempotencyKeyHash,
       }, 'Treinamento on-demand enfileirado');
+
+      if (idempotencyHeader.key) {
+        applyIdempotencyResponseHeaders(res, idempotencyHeader.key, 'created');
+      }
 
       return res.status(202).json({
         success: true,
