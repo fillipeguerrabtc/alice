@@ -251,7 +251,12 @@ type TrainingQueueStatusResponse = {
 
 type TrainingGovernanceAuditEvent = {
   id: string;
-  action: 'training_promotion_approval_recorded' | 'training_model_promoted' | 'training_model_rollback_executed' | string;
+  action:
+    | 'training_promotion_approval_recorded'
+    | 'training_model_promoted'
+    | 'training_model_rollback_executed'
+    | 'training_run_start_requested'
+    | string;
   resourceId: string | null;
   details: Record<string, unknown> | null;
   ip: string | null;
@@ -494,6 +499,7 @@ function getTrainingAuditActionLabel(
   if (action === 'training_promotion_approval_recorded') return t('training.audit.actions.approval');
   if (action === 'training_model_promoted') return t('training.audit.actions.promoted');
   if (action === 'training_model_rollback_executed') return t('training.audit.actions.rolledBack');
+  if (action === 'training_run_start_requested') return t('training.audit.actions.runStarted');
   return action;
 }
 

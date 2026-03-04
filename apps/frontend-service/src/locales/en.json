@@ -1891,7 +1891,8 @@
       "actions": {
         "approval": "Promotion approval recorded",
         "promoted": "Model promoted",
-        "rolledBack": "Rollback executed"
+        "rolledBack": "Rollback executed",
+        "runStarted": "Training run started"
       }
     },
     "activeByScope": {

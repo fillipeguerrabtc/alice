@@ -1938,7 +1938,8 @@
       "actions": {
         "approval": "AprovaÃ§Ã£o de promoÃ§Ã£o registrada",
         "promoted": "Modelo promovido",
-        "rolledBack": "Rollback executado"
+        "rolledBack": "Rollback executado",
+        "runStarted": "Execucao de treino iniciada"
       }
     },
     "activeByScope": {

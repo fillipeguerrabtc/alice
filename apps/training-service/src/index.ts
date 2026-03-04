@@ -3052,16 +3052,18 @@ async function getPromotionApprovalSummary(params: {
 type TrainingGovernanceAuditAction =
   | 'training_promotion_approval_recorded'
   | 'training_model_promoted'
-  | 'training_model_rollback_executed';
+  | 'training_model_rollback_executed'
+  | 'training_run_start_requested';
 const TRAINING_GOVERNANCE_AUDIT_ACTIONS: TrainingGovernanceAuditAction[] = [
   'training_promotion_approval_recorded',
   'training_model_promoted',
   'training_model_rollback_executed',
+  'training_run_start_requested',
 ];
 
 function buildTrainingGovernanceAuditValues(params: {
   tenantId: string;
-  userId: string;
+  userId: string | null;
   action: TrainingGovernanceAuditAction;
   resourceId: string;
   request: Request;
@@ -3568,6 +3570,48 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
       priority: 'normal',
       requestedBy: tenantResolution.authContext.userId ?? null,
     });
+
+    try {
+      await db.insert(schema.auditLogs).values(buildTrainingGovernanceAuditValues({
+        tenantId,
+        userId: tenantResolution.authContext.userId ?? null,
+        action: 'training_run_start_requested',
+        resourceId: job.id,
+        request: req,
+        details: {
+          source: 'custom_job',
+          after: {
+            status: job.status,
+            promotionStatus: job.promotionStatus,
+            trainingDataCount: job.trainingDataCount,
+            scopeNamespaceId: job.scopeNamespaceId,
+            scopeAgentId: job.scopeAgentId,
+          },
+          metadata: {
+            operation: 'run_start',
+            queuePriority: 'normal',
+            runSource: 'custom_job',
+          },
+        },
+      }));
+      trainingPipelineMetrics.governanceAuditWritesTotal.inc({
+        action: 'training_run_start_requested',
+        result: 'success',
+      });
+    } catch (auditError) {
+      trainingPipelineMetrics.governanceAuditWritesTotal.inc({
+        action: 'training_run_start_requested',
+        result: 'failure',
+      });
+      logger.error(
+        {
+          error: auditError instanceof Error ? auditError.message : String(auditError),
+          tenantId,
+          jobId: job.id,
+        },
+        'Falha ao registrar auditoria de inicio de treino (job customizado)'
+      );
+    }
 
       logger.info({
         jobId: job.id,
@@ -5845,6 +5889,50 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
       priority,
       requestedBy: tenantResolution.authContext.userId ?? null,
     });
+
+      try {
+        await db.insert(schema.auditLogs).values(buildTrainingGovernanceAuditValues({
+          tenantId: scopedTenantId,
+          userId: tenantResolution.authContext.userId ?? null,
+          action: 'training_run_start_requested',
+          resourceId: job.id,
+          request: req,
+          details: {
+            source: 'on_demand',
+            after: {
+              status: job.status,
+              promotionStatus: job.promotionStatus,
+              trainingDataCount: job.trainingDataCount,
+              scopeNamespaceId: job.scopeNamespaceId,
+              scopeAgentId: job.scopeAgentId,
+            },
+            metadata: {
+              operation: 'run_start',
+              queuePriority: priority,
+              runSource: 'on_demand',
+              includeImages,
+              trainingType,
+            },
+          },
+        }));
+        trainingPipelineMetrics.governanceAuditWritesTotal.inc({
+          action: 'training_run_start_requested',
+          result: 'success',
+        });
+      } catch (auditError) {
+        trainingPipelineMetrics.governanceAuditWritesTotal.inc({
+          action: 'training_run_start_requested',
+          result: 'failure',
+        });
+        logger.error(
+          {
+            error: auditError instanceof Error ? auditError.message : String(auditError),
+            tenantId: scopedTenantId,
+            jobId: job.id,
+          },
+          'Falha ao registrar auditoria de inicio de treino (on-demand)'
+        );
+      }
 
       logger.info({
         jobId: job.id,
