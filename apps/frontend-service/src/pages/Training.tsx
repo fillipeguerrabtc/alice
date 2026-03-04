@@ -425,6 +425,13 @@ function parseTrainingHyperparamsConfig(raw: string, key: string): TrainingHyper
   }
 }
 
+function generateTrainingIdempotencyKey(prefix: 'training-job' | 'training-on-demand'): string {
+  const entropy = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID().replace(/-/g, '')
+    : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`;
+  return `${prefix}-${entropy}`.slice(0, 128);
+}
+
 function getScopeLabel(job: FineTuningJob, namespacesById: Map<string, string>, t: (key: string, options?: Record<string, unknown>) => string): string {
   if (job.scopeAgentId) {
     return t('training.scope.agent', { id: job.scopeAgentId.slice(0, 8) });
@@ -1163,6 +1170,7 @@ function CreateJobDialog({
         throw new Error(t('training.createJob.invalidHyperparams'));
       }
       const validatedHyperparams = parsed.data;
+      const idempotencyKey = generateTrainingIdempotencyKey('training-job');
 
       return apiRequest('POST', '/api/training/jobs', {
         tenantId,
@@ -1170,6 +1178,10 @@ function CreateJobDialog({
         name,
         hyperparametersPreset: preset,
         hyperparameters: validatedHyperparams,
+      }, {
+        headers: {
+          'X-Idempotency-Key': idempotencyKey,
+        },
       });
     },
     onSuccess: () => {
@@ -3270,6 +3282,7 @@ export default function Training() {
         throw new Error('tenantId ausente (usuário não associado a um tenant)');
       }
 
+      const idempotencyKey = generateTrainingIdempotencyKey('training-on-demand');
       const res = await apiRequest('POST', '/api/training/run/start', {
         tenantId,
         trainingType: parsed.trainingType,
@@ -3277,6 +3290,10 @@ export default function Training() {
         priority: parsed.priority,
         description: parsed.description,
         namespaceId: parsed.namespaceId,
+      }, {
+        headers: {
+          'X-Idempotency-Key': idempotencyKey,
+        },
       });
       return res.json();
     },
