@@ -3,46 +3,433 @@
  * Author: Fillipe Guerra | Data: 05/12/2025
  */
 
+const fineTuningJobStatusEnum = [
+  'pending',
+  'preparing',
+  'training',
+  'validating',
+  'completed',
+  'failed',
+  'cancelled',
+];
+
+const fineTuningPromotionStatusEnum = [
+  'candidate',
+  'active',
+  'staged',
+  'rejected',
+];
+
+const trainingRunPriorityEnum = ['low', 'normal', 'high'];
+const scheduleTypeEnum = ['incremental_fine_tuning', 'complete_fine_tuning'];
+
 export const trainingServicePaths = {
-  '/health': { get: { summary: 'Health check', tags: ['Health'], security: [], responses: { 200: { description: 'OK' } } } },
-  '/ready': { get: { summary: 'Readiness check', tags: ['Health'], security: [], responses: { 200: { description: 'Ready' } } } },
+  '/live': {
+    get: {
+      summary: 'Liveness probe',
+      tags: ['Health'],
+      security: [],
+      responses: { 200: { description: 'Service alive' } },
+    },
+  },
+  '/ready': {
+    get: {
+      summary: 'Readiness probe',
+      tags: ['Health'],
+      security: [],
+      responses: { 200: { description: 'Service ready' } },
+    },
+  },
+  '/metrics': {
+    get: {
+      summary: 'Prometheus metrics',
+      tags: ['Health'],
+      security: [],
+      responses: { 200: { description: 'Metrics exposed' } },
+    },
+  },
+  '/api/training/health': {
+    get: {
+      summary: 'Training service health',
+      tags: ['Health'],
+      security: [],
+      responses: {
+        200: {
+          description: 'Health status',
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/TrainingHealth' },
+            },
+          },
+        },
+      },
+    },
+  },
+  '/api/training/system-config': {
+    get: {
+      summary: 'List effective training runtime config',
+      tags: ['System Config'],
+      responses: {
+        200: { description: 'Effective config loaded from DB/env' },
+        401: { $ref: '#/components/responses/Unauthorized' },
+      },
+    },
+    patch: {
+      summary: 'Update training runtime config',
+      tags: ['System Config'],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              additionalProperties: true,
+            },
+          },
+        },
+      },
+      responses: {
+        200: { description: 'Config updated' },
+        400: { $ref: '#/components/responses/ValidationError' },
+        401: { $ref: '#/components/responses/Unauthorized' },
+      },
+    },
+  },
+  '/api/training/data': {
+    get: {
+      summary: 'List training data',
+      tags: ['Training Data'],
+      parameters: [
+        { name: 'status', in: 'query', schema: { type: 'string', enum: ['pending', 'approved', 'rejected', 'used'] } },
+        { name: 'namespaceId', in: 'query', schema: { type: 'string', format: 'uuid' } },
+        { name: 'agentId', in: 'query', schema: { type: 'string', format: 'uuid' } },
+        { name: 'sourceType', in: 'query', schema: { type: 'string' } },
+      ],
+      responses: {
+        200: { description: 'Training data list' },
+        401: { $ref: '#/components/responses/Unauthorized' },
+      },
+    },
+    post: {
+      summary: 'Create training data entry',
+      tags: ['Training Data'],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['messages'],
+              properties: {
+                conversationId: { type: 'string', format: 'uuid', nullable: true },
+                namespaceId: { type: 'string', format: 'uuid', nullable: true },
+                agentId: { type: 'string', format: 'uuid', nullable: true },
+                sourceType: { type: 'string' },
+                metadata: { type: 'object', additionalProperties: true },
+                messages: {
+                  type: 'array',
+                  minItems: 1,
+                  items: { $ref: '#/components/schemas/TrainingMessage' },
+                },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        201: { description: 'Training data created' },
+        400: { $ref: '#/components/responses/ValidationError' },
+        401: { $ref: '#/components/responses/Unauthorized' },
+      },
+    },
+  },
+  '/api/training/data/{id}/status': {
+    patch: {
+      summary: 'Approve or reject one training data entry',
+      tags: ['Training Data'],
+      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['status'],
+              properties: {
+                status: { type: 'string', enum: ['approved', 'rejected'] },
+                reviewNotes: { type: 'string', maxLength: 2000 },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        200: { description: 'Status updated' },
+        400: { $ref: '#/components/responses/ValidationError' },
+        404: { $ref: '#/components/responses/NotFound' },
+      },
+    },
+  },
+  '/api/training/data/{id}/resolve-scope': {
+    patch: {
+      summary: 'Resolve quarantined scope for a training data entry',
+      tags: ['Training Data'],
+      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['namespaceId', 'reason'],
+              properties: {
+                namespaceId: { type: 'string', format: 'uuid' },
+                agentId: { type: 'string', format: 'uuid', nullable: true },
+                domain: { type: 'string', maxLength: 120, nullable: true },
+                reason: { type: 'string', minLength: 10, maxLength: 2000 },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        200: { description: 'Scope resolved' },
+        400: { $ref: '#/components/responses/ValidationError' },
+      },
+    },
+  },
+  '/api/training/data/approve-batch': {
+    post: {
+      summary: 'Approve/reject training data in batch',
+      tags: ['Training Data'],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['ids', 'action'],
+              properties: {
+                ids: {
+                  type: 'array',
+                  minItems: 1,
+                  maxItems: 1000,
+                  items: { type: 'string', format: 'uuid' },
+                },
+                action: { type: 'string', enum: ['approve', 'reject'] },
+                reviewNotes: { type: 'string', maxLength: 2000 },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        200: { description: 'Batch operation completed' },
+        400: { $ref: '#/components/responses/ValidationError' },
+      },
+    },
+  },
+  '/api/training/bulk-import': {
+    post: {
+      summary: 'Bulk import to training_data',
+      tags: ['Training Data'],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['items'],
+              properties: {
+                namespaceId: { type: 'string', format: 'uuid', nullable: true },
+                sourceType: { type: 'string' },
+                items: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    required: ['messages'],
+                    properties: {
+                      messages: {
+                        type: 'array',
+                        minItems: 1,
+                        items: { $ref: '#/components/schemas/TrainingMessage' },
+                      },
+                      metadata: { type: 'object', additionalProperties: true },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        200: { description: 'Import result' },
+        400: { $ref: '#/components/responses/ValidationError' },
+      },
+    },
+  },
   '/api/training/jobs': {
-    get: { summary: 'Listar jobs', tags: ['Training Jobs'], parameters: [{ name: 'status', in: 'query', schema: { type: 'string', enum: ['pending', 'running', 'completed', 'failed', 'cancelled'] } }, { name: 'page', in: 'query', schema: { type: 'integer' } }, { name: 'limit', in: 'query', schema: { type: 'integer' } }], responses: { 200: { description: 'Lista', content: { 'application/json': { schema: { type: 'object', properties: { jobs: { type: 'array', items: { $ref: '#/components/schemas/TrainingJob' } } } } } } } } },
-    post: { summary: 'Criar job', tags: ['Training Jobs'], requestBody: { content: { 'application/json': { schema: { type: 'object', required: ['datasetId', 'type'], properties: { datasetId: { type: 'string' }, type: { type: 'string', enum: ['lora', 'full'], default: 'lora' }, hyperparameters: { type: 'object', properties: { learningRate: { type: 'number' }, epochs: { type: 'integer' }, batchSize: { type: 'integer' } } } } } } } }, responses: { 201: { description: 'Criado' }, 400: { $ref: '#/components/responses/ValidationError' } } },
+    get: {
+      summary: 'List fine-tuning jobs',
+      tags: ['Training Jobs'],
+      parameters: [{ name: 'tenantId', in: 'query', schema: { type: 'string', format: 'uuid' } }],
+      responses: {
+        200: {
+          description: 'Jobs list',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  jobs: {
+                    type: 'array',
+                    items: { $ref: '#/components/schemas/FineTuningJob' },
+                  },
+                },
+              },
+            },
+          },
+        },
+        400: { $ref: '#/components/responses/ValidationError' },
+      },
+    },
+    post: {
+      summary: 'Create custom scoped fine-tuning job',
+      tags: ['Training Jobs'],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/CreateTrainingJobRequest' },
+          },
+        },
+      },
+      responses: {
+        202: { description: 'Job created and enqueued' },
+        400: { $ref: '#/components/responses/ValidationError' },
+        403: { $ref: '#/components/responses/Forbidden' },
+        409: { description: 'Run start lock contention' },
+        429: { description: 'Tenant run capacity exhausted' },
+      },
+    },
   },
   '/api/training/jobs/{id}': {
-    get: { summary: 'Buscar job', tags: ['Training Jobs'], parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }], responses: { 200: { description: 'Job' }, 404: { $ref: '#/components/responses/NotFound' } } },
-    delete: { summary: 'Cancelar job', tags: ['Training Jobs'], parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }], responses: { 204: { description: 'Cancelado' } } },
+    get: {
+      summary: 'Get job details',
+      tags: ['Training Jobs'],
+      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+      responses: {
+        200: {
+          description: 'Job details',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  job: { $ref: '#/components/schemas/FineTuningJob' },
+                },
+              },
+            },
+          },
+        },
+        404: { $ref: '#/components/responses/NotFound' },
+      },
+    },
+    delete: {
+      summary: 'Cancel one fine-tuning job',
+      tags: ['Training Jobs'],
+      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+      responses: {
+        200: { description: 'Job cancelled' },
+        404: { $ref: '#/components/responses/NotFound' },
+      },
+    },
   },
   '/api/training/jobs/{id}/promotion-approvals': {
     get: {
-      summary: 'Listar aprovacoes de promocao',
+      summary: 'Get promotion approval summary',
       tags: ['Training Jobs'],
-      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
-      responses: { 200: { description: 'Aprovacoes' } },
+      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+      responses: {
+        200: {
+          description: 'Approval summary',
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/PromotionApprovalSummary' },
+            },
+          },
+        },
+      },
     },
   },
   '/api/training/jobs/{id}/audit-trail': {
     get: {
-      summary: 'Listar trilha de auditoria de governanca do job',
+      summary: 'Get governance audit trail for job',
       tags: ['Training Jobs'],
-      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
-      responses: { 200: { description: 'Eventos de auditoria' } },
+      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+      responses: {
+        200: {
+          description: 'Audit trail events',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  events: {
+                    type: 'array',
+                    items: { $ref: '#/components/schemas/TrainingGovernanceAuditEvent' },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+  '/api/training/jobs/{id}/promotion-approval': {
+    post: {
+      summary: 'Register promotion approval decision',
+      tags: ['Training Jobs'],
+      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['decision'],
+              properties: {
+                decision: { type: 'string', enum: ['approved', 'rejected'] },
+                reason: { type: 'string', maxLength: 2000 },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        200: { description: 'Decision recorded' },
+        409: { description: 'Approval conflict or invalid job state' },
+      },
     },
   },
   '/api/training/jobs/{id}/promote': {
     post: {
-      summary: 'Promover job concluido para modelo ativo',
+      summary: 'Promote completed job to active model',
       tags: ['Training Jobs'],
-      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
-      responses: { 200: { description: 'Promocao executada (ou idempotente quando ja ativo)' } },
+      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+      responses: {
+        200: { description: 'Promotion completed or idempotent' },
+        409: { description: 'Promotion policy or lock conflict' },
+      },
     },
   },
   '/api/training/jobs/{id}/rollback': {
     post: {
-      summary: 'Executar rollback para versao anterior ativa no escopo',
+      summary: 'Rollback active model version for scope',
       tags: ['Training Jobs'],
-      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
       requestBody: {
         required: true,
         content: {
@@ -57,111 +444,102 @@ export const trainingServicePaths = {
           },
         },
       },
-      responses: { 200: { description: 'Rollback executado' } },
+      responses: {
+        200: { description: 'Rollback completed' },
+        409: { description: 'Rollback not allowed for current state' },
+      },
     },
   },
-  '/api/training/jobs/{id}/promotion-approval': {
+  '/api/training/lora/activate/{jobId}': {
     post: {
-      summary: 'Registrar aprovacao/reprovacao de promocao',
-      tags: ['Training Jobs'],
-      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+      summary: 'Activate LoRA adapter by job id',
+      tags: ['LoRA'],
+      parameters: [{ name: 'jobId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+      responses: { 200: { description: 'Adapter activated' } },
+    },
+  },
+  '/api/training/lora/active': {
+    get: {
+      summary: 'Get active LoRA adapter',
+      tags: ['LoRA'],
+      parameters: [
+        { name: 'tenantId', in: 'query', schema: { type: 'string', format: 'uuid' } },
+        { name: 'namespaceId', in: 'query', schema: { type: 'string', format: 'uuid' } },
+        { name: 'agentId', in: 'query', schema: { type: 'string', format: 'uuid' } },
+      ],
+      responses: { 200: { description: 'Active adapter state' } },
+    },
+    delete: {
+      summary: 'Deactivate active LoRA adapter for scope',
+      tags: ['LoRA'],
+      responses: { 200: { description: 'Adapter deactivated' } },
+    },
+  },
+  '/api/training/gpu-orchestrator/state': {
+    get: {
+      summary: 'Get GPU orchestrator state',
+      tags: ['GPU'],
+      responses: { 200: { description: 'Current orchestrator state' } },
+    },
+  },
+  '/api/training/gpu-orchestrator/return': {
+    post: {
+      summary: 'Return GPU lease to orchestrator',
+      tags: ['GPU'],
+      responses: { 200: { description: 'GPU lease returned' } },
+    },
+  },
+  '/api/training/webhook': {
+    post: {
+      summary: 'Internal webhook for training ingestion',
+      tags: ['Webhooks'],
+      security: [],
+      parameters: [
+        { name: 'x-webhook-secret', in: 'header', required: true, schema: { type: 'string' } },
+        { name: 'x-internal-signature', in: 'header', required: true, schema: { type: 'string' } },
+        { name: 'x-internal-timestamp', in: 'header', required: true, schema: { type: 'string' } },
+        { name: 'x-internal-user-id', in: 'header', required: true, schema: { type: 'string' } },
+        { name: 'x-internal-tenant-id', in: 'header', required: true, schema: { type: 'string', format: 'uuid' } },
+        { name: 'x-internal-role', in: 'header', required: true, schema: { type: 'string' } },
+        { name: 'x-internal-nonce', in: 'header', required: true, schema: { type: 'string', format: 'uuid' } },
+      ],
       requestBody: {
         required: true,
         content: {
           'application/json': {
-            schema: {
-              type: 'object',
-              required: ['decision'],
-              properties: {
-                decision: { type: 'string', enum: ['approved', 'rejected'] },
-                reason: { type: 'string' },
-              },
-            },
+            schema: { $ref: '#/components/schemas/TrainingWebhookRequest' },
           },
         },
       },
-      responses: { 200: { description: 'Aprovacao registrada' } },
+      responses: {
+        201: { description: 'Training data received from webhook' },
+        200: { description: 'Feedback webhook processed' },
+        400: { $ref: '#/components/responses/ValidationError' },
+        401: { description: 'Invalid internal auth/signature/secret' },
+        409: { description: 'Webhook nonce replay detected' },
+        503: { description: 'Webhook feature disabled (missing secret)' },
+      },
     },
   },
-  '/api/training/datasets': {
-    get: { summary: 'Listar datasets', tags: ['Datasets'], responses: { 200: { description: 'Lista' } } },
-    post: { summary: 'Criar dataset', tags: ['Datasets'], requestBody: { content: { 'application/json': { schema: { type: 'object', required: ['name'], properties: { name: { type: 'string' }, description: { type: 'string' } } } } } }, responses: { 201: { description: 'Criado' } } },
-  },
-  '/api/training/datasets/{id}': {
-    get: { summary: 'Buscar dataset', tags: ['Datasets'], parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }], responses: { 200: { description: 'Dataset' } } },
-    delete: { summary: 'Remover dataset', tags: ['Datasets'], parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }], responses: { 204: { description: 'Removido' } } },
-  },
-  '/api/training/datasets/{id}/examples': { post: { summary: 'Adicionar exemplo', tags: ['Datasets'], parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }], requestBody: { content: { 'application/json': { schema: { type: 'object', required: ['input', 'output'], properties: { input: { type: 'string' }, output: { type: 'string' }, rating: { type: 'integer', minimum: 1, maximum: 5 } } } } } }, responses: { 201: { description: 'Adicionado' } } } },
-  '/api/training/datasets/{id}/export': { get: { summary: 'Exportar JSONL', tags: ['Datasets'], parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }], responses: { 200: { description: 'JSONL', content: { 'application/jsonl': { schema: { type: 'string' } } } } } } },
-  '/api/training/models': { get: { summary: 'Listar modelos', tags: ['Models'], responses: { 200: { description: 'Lista' } } } },
-  '/api/training/models/{id}/activate': { post: { summary: 'Ativar modelo', tags: ['Models'], parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }], responses: { 200: { description: 'Ativado' } } } },
   '/api/training/auto-learning/status': {
     get: {
-      summary: 'Status auto-learning',
+      summary: 'Get auto-learning status',
       tags: ['Auto-Learning'],
       parameters: [{ name: 'tenantId', in: 'query', schema: { type: 'string', format: 'uuid' } }],
-      responses: {
-        200: {
-          description: 'Status',
-          content: {
-            'application/json': {
-              schema: {
-                type: 'object',
-                properties: {
-                  activeModel: {
-                    type: 'object',
-                    properties: {
-                      version: { type: 'integer' },
-                      name: { type: 'string' },
-                      improvementPercent: { type: 'number' },
-                      trainingDataUsed: { type: 'integer' },
-                      imagesUsed: { type: 'integer' },
-                    },
-                  },
-                  pendingData: {
-                    type: 'object',
-                    properties: {
-                      trainingEntries: { type: 'integer' },
-                      images: { type: 'integer' },
-                    },
-                  },
-                  recentVersions: {
-                    type: 'array',
-                    items: {
-                      type: 'object',
-                      properties: {
-                        version: { type: 'integer' },
-                        status: { type: 'string' },
-                        namespaceId: { type: 'string', format: 'uuid', nullable: true },
-                        agentId: { type: 'string', format: 'uuid', nullable: true },
-                        createdAt: { type: 'string', format: 'date-time' },
-                      },
-                    },
-                  },
-                  upcomingSchedules: {
-                    type: 'array',
-                    items: {
-                      type: 'object',
-                      properties: {
-                        id: { type: 'string', format: 'uuid' },
-                        type: { type: 'string', enum: ['incremental_fine_tuning', 'complete_fine_tuning'] },
-                        scheduledFor: { type: 'string', format: 'date-time' },
-                        status: { type: 'string' },
-                        namespaceId: { type: 'string', format: 'uuid', nullable: true },
-                      },
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
+      responses: { 200: { description: 'Auto-learning status' } },
+    },
+  },
+  '/api/training/stats': {
+    get: {
+      summary: 'Get training dataset/job counters',
+      tags: ['Auto-Learning'],
+      parameters: [{ name: 'tenantId', in: 'query', schema: { type: 'string', format: 'uuid' } }],
+      responses: { 200: { description: 'Training stats' } },
     },
   },
   '/api/training/schedule/configure': {
     post: {
-      summary: 'Configurar schedule de treinamento',
+      summary: 'Configure auto-learning schedule',
       tags: ['Auto-Learning'],
       requestBody: {
         required: true,
@@ -172,7 +550,7 @@ export const trainingServicePaths = {
               required: ['tenantId', 'scheduleType'],
               properties: {
                 tenantId: { type: 'string', format: 'uuid' },
-                scheduleType: { type: 'string', enum: ['incremental_fine_tuning', 'complete_fine_tuning'] },
+                scheduleType: { type: 'string', enum: scheduleTypeEnum },
                 enabled: { type: 'boolean', default: true },
                 cronPattern: { type: 'string' },
                 minDataRequired: { type: 'integer', minimum: 1 },
@@ -182,12 +560,96 @@ export const trainingServicePaths = {
           },
         },
       },
-      responses: { 200: { description: 'Schedule configurado' } },
+      responses: {
+        200: { description: 'Schedule configured' },
+        400: { $ref: '#/components/responses/ValidationError' },
+      },
     },
   },
   '/api/training/run/start': {
     post: {
-      summary: 'Iniciar run de treinamento on-demand',
+      summary: 'Start on-demand training run',
+      tags: ['Auto-Learning'],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/TrainingRunStartRequest' },
+          },
+        },
+      },
+      responses: {
+        202: {
+          description: 'Run accepted and enqueued',
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/TrainingRunStartResponse' },
+            },
+          },
+        },
+        400: { $ref: '#/components/responses/ValidationError' },
+        409: { description: 'Run already in progress or lock contention' },
+        429: { description: 'Tenant run capacity exhausted' },
+      },
+    },
+  },
+  '/api/training/run/status': {
+    get: {
+      summary: 'Get current training run status',
+      tags: ['Auto-Learning'],
+      parameters: [{ name: 'tenantId', in: 'query', schema: { type: 'string', format: 'uuid' } }],
+      responses: {
+        200: {
+          description: 'Current run status',
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/TrainingRunStatusResponse' },
+            },
+          },
+        },
+      },
+    },
+  },
+  '/api/training/queue/status': {
+    get: {
+      summary: 'Get fine-tuning queue/governance status',
+      tags: ['Auto-Learning'],
+      parameters: [{ name: 'tenantId', in: 'query', schema: { type: 'string', format: 'uuid' } }],
+      responses: {
+        200: {
+          description: 'Queue and governance status',
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/FineTuningQueueStatusResponse' },
+            },
+          },
+        },
+      },
+    },
+  },
+  '/api/training/run/history': {
+    get: {
+      summary: 'Get training run history',
+      tags: ['Auto-Learning'],
+      parameters: [
+        { name: 'tenantId', in: 'query', schema: { type: 'string', format: 'uuid' } },
+        { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 } },
+      ],
+      responses: {
+        200: {
+          description: 'Run history',
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/TrainingRunHistoryResponse' },
+            },
+          },
+        },
+      },
+    },
+  },
+  '/api/training/run/cancel': {
+    delete: {
+      summary: 'Cancel one in-flight training run',
       tags: ['Auto-Learning'],
       requestBody: {
         required: true,
@@ -195,76 +657,253 @@ export const trainingServicePaths = {
           'application/json': {
             schema: {
               type: 'object',
-              required: ['tenantId'],
+              required: ['trainingRunId'],
               properties: {
-                tenantId: { type: 'string', format: 'uuid' },
-                trainingType: { type: 'string', enum: ['incremental', 'full'], default: 'incremental' },
-                includeImages: { type: 'boolean', default: false },
-                priority: { type: 'string', enum: ['low', 'normal', 'high'], default: 'normal' },
-                description: { type: 'string', maxLength: 500 },
-                namespaceId: { type: 'string', format: 'uuid' },
+                trainingRunId: { type: 'string', format: 'uuid' },
+                reason: { type: 'string', maxLength: 500 },
               },
             },
           },
         },
       },
-      responses: { 202: { description: 'Run enfileirado' } },
-    },
-  },
-  '/api/training/queue/status': {
-    get: {
-      summary: 'Status das filas de fine-tuning',
-      tags: ['Auto-Learning'],
-      parameters: [{ name: 'tenantId', in: 'query', schema: { type: 'string', format: 'uuid' } }],
       responses: {
-        200: {
-          description: 'Status das filas por prioridade',
-          content: {
-            'application/json': {
-              schema: {
-                type: 'object',
-                properties: {
-                  queues: {
-                    type: 'array',
-                    items: {
-                      type: 'object',
-                      properties: {
-                        queue: { type: 'string' },
-                        pending: { type: 'integer' },
-                        lag: { type: 'integer' },
-                        dlq: { type: 'integer' },
-                      },
-                    },
-                  },
-                  governance: {
-                    type: 'object',
-                    properties: {
-                      maxInflightRunsPerTenant: { type: 'integer' },
-                      requireEvalPassedForPromotion: { type: 'boolean' },
-                      requireDualApprovalForPromotion: { type: 'boolean' },
-                      promotionMinApprovals: { type: 'integer' },
-                    },
-                  },
-                  tenant: {
-                    type: 'object',
-                    properties: {
-                      id: { type: 'string', format: 'uuid' },
-                      inflightCount: { type: 'integer' },
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
+        200: { description: 'Run cancelled' },
+        404: { $ref: '#/components/responses/NotFound' },
       },
     },
   },
-  '/api/training/auto-learning/trigger': { post: { summary: 'Disparar auto-learning', tags: ['Auto-Learning'], responses: { 202: { description: 'Iniciado' } } } },
-  '/api/training/stats': { get: { summary: 'Estatísticas', tags: ['Health'], responses: { 200: { description: 'Stats' } } } },
-  '/metrics': { get: { summary: 'Métricas', tags: ['Health'], security: [], responses: { 200: { description: 'OK' } } } },
 };
 
 export const trainingServiceSchemas = {
-  TrainingJob: { type: 'object', properties: { id: { type: 'string' }, status: { type: 'string', enum: ['pending', 'running', 'completed', 'failed', 'cancelled'] }, type: { type: 'string', enum: ['lora', 'full'] }, progress: { type: 'number' }, startedAt: { type: 'string', format: 'date-time' }, completedAt: { type: 'string', format: 'date-time' } } },
+  ErrorResponse: {
+    type: 'object',
+    properties: {
+      error: { type: 'string' },
+      details: { type: 'object', additionalProperties: true },
+    },
+  },
+  TrainingMessage: {
+    type: 'object',
+    required: ['role', 'content'],
+    properties: {
+      role: { type: 'string', enum: ['system', 'user', 'assistant'] },
+      content: { type: 'string' },
+      timestamp: { type: 'string', format: 'date-time' },
+    },
+  },
+  TrainingHealth: {
+    type: 'object',
+    properties: {
+      status: { type: 'string', enum: ['ok', 'degraded'] },
+      service: { type: 'string' },
+      timestamp: { type: 'string', format: 'date-time' },
+      embeddingsProvider: { type: 'string' },
+      model: { type: 'string' },
+      fineTuningStatus: { type: 'string' },
+      circuitBreakers: { type: 'object', additionalProperties: true },
+    },
+  },
+  FineTuningJob: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', format: 'uuid' },
+      tenantId: { type: 'string', format: 'uuid' },
+      name: { type: 'string' },
+      baseModel: { type: 'string' },
+      status: { type: 'string', enum: fineTuningJobStatusEnum },
+      runSource: { type: 'string', enum: ['custom_job', 'on_demand', 'scheduled'] },
+      progress: { type: 'number' },
+      trainingDataCount: { type: 'integer' },
+      validationDataCount: { type: 'integer' },
+      loraJobId: { type: 'string', format: 'uuid', nullable: true },
+      modelVersionId: { type: 'string', format: 'uuid', nullable: true },
+      evaluationStatus: { type: 'string', enum: ['pending', 'running', 'passed', 'failed', 'skipped'] },
+      promotionStatus: { type: 'string', enum: fineTuningPromotionStatusEnum },
+      scopeNamespaceId: { type: 'string', format: 'uuid', nullable: true },
+      scopeAgentId: { type: 'string', format: 'uuid', nullable: true },
+      iniciadoEm: { type: 'string', format: 'date-time', nullable: true },
+      completadoEm: { type: 'string', format: 'date-time', nullable: true },
+      criadoEm: { type: 'string', format: 'date-time' },
+      errorMessage: { type: 'string', nullable: true },
+    },
+  },
+  CreateTrainingJobRequest: {
+    type: 'object',
+    required: ['namespaceId', 'name'],
+    properties: {
+      tenantId: { type: 'string', format: 'uuid' },
+      namespaceId: { type: 'string', format: 'uuid' },
+      agentId: { type: 'string', format: 'uuid' },
+      domain: { type: 'string', minLength: 1, maxLength: 120 },
+      name: { type: 'string', minLength: 1 },
+      baseModel: { type: 'string' },
+      hyperparametersPreset: { type: 'string', enum: ['safe', 'standard', 'large'] },
+      hyperparameters: { type: 'object', additionalProperties: true },
+      forceMinSize: { type: 'boolean' },
+    },
+  },
+  PromotionApprovalSummary: {
+    type: 'object',
+    properties: {
+      approvedDistinctUsersCount: { type: 'integer' },
+      requesterHasApproved: { type: 'boolean' },
+      approvals: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            approverUserId: { type: 'string', format: 'uuid' },
+            decision: { type: 'string', enum: ['approved', 'rejected'] },
+            reason: { type: 'string', nullable: true },
+            updatedAt: { type: 'string', format: 'date-time' },
+          },
+        },
+      },
+    },
+  },
+  TrainingGovernanceAuditEvent: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', format: 'uuid' },
+      action: { type: 'string' },
+      resourceId: { type: 'string', format: 'uuid' },
+      details: { type: 'object', additionalProperties: true, nullable: true },
+      ip: { type: 'string', nullable: true },
+      userAgent: { type: 'string', nullable: true },
+      createdAt: { type: 'string', format: 'date-time' },
+      user: {
+        type: 'object',
+        nullable: true,
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          name: { type: 'string' },
+          email: { type: 'string' },
+        },
+      },
+    },
+  },
+  TrainingWebhookRequest: {
+    type: 'object',
+    required: ['event', 'payload'],
+    properties: {
+      event: { type: 'string', enum: ['training_data', 'feedback', 'document'] },
+      timestamp: { type: 'string', format: 'date-time' },
+      payload: {
+        type: 'object',
+        properties: {
+          conversationId: { type: 'string' },
+          rating: { type: 'number', minimum: 1, maximum: 5 },
+          metadata: { type: 'object', additionalProperties: true },
+          messages: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/TrainingMessage' },
+          },
+        },
+      },
+    },
+  },
+  TrainingRunStartRequest: {
+    type: 'object',
+    required: ['tenantId'],
+    properties: {
+      tenantId: { type: 'string', format: 'uuid' },
+      trainingType: { type: 'string', enum: ['incremental', 'full'], default: 'incremental' },
+      includeImages: { type: 'boolean', default: false },
+      priority: { type: 'string', enum: trainingRunPriorityEnum, default: 'normal' },
+      description: { type: 'string', maxLength: 500 },
+      namespaceId: { type: 'string', format: 'uuid' },
+    },
+  },
+  TrainingRunStartResponse: {
+    type: 'object',
+    properties: {
+      success: { type: 'boolean' },
+      jobId: { type: 'string', format: 'uuid' },
+      loraJobId: { type: 'string', format: 'uuid' },
+      modelVersionId: { type: 'string', format: 'uuid', nullable: true },
+      version: { type: 'integer', nullable: true },
+      trainingDataUsed: { type: 'integer', nullable: true },
+      imagesUsed: { type: 'integer', nullable: true },
+      status: { type: 'string' },
+      enqueued: { type: 'boolean' },
+    },
+  },
+  TrainingRunStatusResponse: {
+    type: 'object',
+    properties: {
+      hasRunningTraining: { type: 'boolean' },
+      status: { type: 'string', enum: ['idle', 'training'] },
+      message: { type: 'string' },
+      currentJob: {
+        type: 'object',
+        nullable: true,
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          name: { type: 'string' },
+          baseModel: { type: 'string' },
+          trainingDataCount: { type: 'integer' },
+          progress: { type: 'number' },
+          elapsedSeconds: { type: 'integer' },
+          startedAt: { type: 'string', format: 'date-time', nullable: true },
+        },
+      },
+    },
+  },
+  FineTuningQueueStatusResponse: {
+    type: 'object',
+    properties: {
+      queues: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            queue: { type: 'string' },
+            pending: { type: 'integer' },
+            lag: { type: 'integer' },
+            dlq: { type: 'integer' },
+          },
+        },
+      },
+      governance: {
+        type: 'object',
+        properties: {
+          maxInflightRunsPerTenant: { type: 'integer' },
+          requireEvalPassedForPromotion: { type: 'boolean' },
+          requireDualApprovalForPromotion: { type: 'boolean' },
+          promotionMinApprovals: { type: 'integer' },
+        },
+      },
+      tenant: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          inflightCount: { type: 'integer' },
+        },
+      },
+    },
+  },
+  TrainingRunHistoryResponse: {
+    type: 'object',
+    properties: {
+      total: { type: 'integer' },
+      history: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            jobType: { type: 'string' },
+            status: { type: 'string', enum: fineTuningJobStatusEnum },
+            totalRecords: { type: 'integer', nullable: true },
+            processedRecords: { type: 'integer' },
+            description: { type: 'string' },
+            startedAt: { type: 'string', format: 'date-time', nullable: true },
+            completedAt: { type: 'string', format: 'date-time', nullable: true },
+            durationSeconds: { type: 'integer', nullable: true },
+            errorMessage: { type: 'string', nullable: true },
+          },
+        },
+      },
+    },
+  },
 };

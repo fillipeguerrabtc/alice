@@ -20,6 +20,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
+import { trainingServicePaths, trainingServiceSchemas } from '../../../apps/training-service/src/openapi-specs';
 
 // ============================================================================
 // TESTES DE CONFIGURAÇÃO GPU MANAGER SERVICE
@@ -42,6 +43,42 @@ describe('Training Service - GPU Manager Config', () => {
 
   it('deve ter máximo de 3 retries', () => {
     expect(GPU_MANAGER_CONFIG.maxRetries).toBe(3);
+  });
+});
+
+// ============================================================================
+// WS6: OpenAPI contracts for critical training flows
+// ============================================================================
+
+describe('Training Service - OpenAPI (critical contracts)', () => {
+  it('exposes run lifecycle endpoints', () => {
+    const paths = Object.keys(trainingServicePaths);
+    expect(paths).toContain('/api/training/run/start');
+    expect(paths).toContain('/api/training/run/status');
+    expect(paths).toContain('/api/training/run/history');
+    expect(paths).toContain('/api/training/run/cancel');
+  });
+
+  it('exposes governance and webhook endpoints', () => {
+    const paths = Object.keys(trainingServicePaths);
+    expect(paths).toContain('/api/training/jobs/{id}/audit-trail');
+    expect(paths).toContain('/api/training/jobs/{id}/promotion-approval');
+    expect(paths).toContain('/api/training/webhook');
+  });
+
+  it('documents full fine-tuning status lifecycle', () => {
+    const statusEnum = (
+      trainingServiceSchemas.FineTuningJob.properties.status as { enum: string[] }
+    ).enum;
+    expect(statusEnum).toEqual(
+      expect.arrayContaining(['pending', 'preparing', 'training', 'validating', 'completed', 'failed', 'cancelled'])
+    );
+  });
+
+  it('removes legacy dataset/model training paths from swagger', () => {
+    const paths = Object.keys(trainingServicePaths);
+    expect(paths).not.toContain('/api/training/datasets');
+    expect(paths).not.toContain('/api/training/models');
   });
 });
 
