@@ -350,9 +350,9 @@ const trainingAutoCollectAttemptTotal = new PromCounter({
   registers: [metrics.registry],
 });
 
-const wsAgentAuthRejectedTotal = new PromCounter({
-  name: 'alice_ws_agent_auth_rejected_total',
-  help: 'Total de conexoes WebSocket de agente rejeitadas por regra de autenticacao',
+const wsAgentAuthFailTotal = new PromCounter({
+  name: 'alice_ws_agent_auth_fail_total',
+  help: 'Total de falhas de autenticacao no WebSocket de agente',
   labelNames: ['reason'] as const,
   registers: [metrics.registry],
 });
@@ -361,6 +361,13 @@ const wsAgentLegacySessionFallbackTotal = new PromCounter({
   name: 'alice_ws_agent_legacy_session_fallback_total',
   help: 'Total de tentativas de fallback legado de sessao no /ws/agent',
   labelNames: ['result'] as const,
+  registers: [metrics.registry],
+});
+
+const wsAgentConnectionTotal = new PromCounter({
+  name: 'alice_ws_agent_connection_total',
+  help: 'Total de tentativas de conexao no WebSocket de agente por status',
+  labelNames: ['status'] as const,
   registers: [metrics.registry],
 });
 
@@ -16112,6 +16119,7 @@ server.on('upgrade', (request, socket, head) => {
 
 agentWss.on('connection', async (ws, req) => {
   if (!verifyWebSocketOrigin(req.headers.origin)) {
+    wsAgentConnectionTotal.inc({ status: 'rejected' });
     ws.close(4000, 'Origin nao permitido');
     return;
   }
@@ -16154,7 +16162,8 @@ agentWss.on('connection', async (ws, req) => {
   }
 
   if (!tokenPayload) {
-    wsAgentAuthRejectedTotal.inc({ reason: authRejectedReason ?? 'unknown' });
+    wsAgentAuthFailTotal.inc({ reason: authRejectedReason ?? 'unknown' });
+    wsAgentConnectionTotal.inc({ status: 'rejected' });
     logger.warn(
       {
         reason: authRejectedReason ?? 'unknown',
@@ -16175,10 +16184,12 @@ agentWss.on('connection', async (ws, req) => {
   const queryAgentId = urlParams.get('agentId');
   const queryTenantId = urlParams.get('tenantId');
   if (queryAgentId && queryAgentId !== tokenPayload.userId) {
+    wsAgentConnectionTotal.inc({ status: 'rejected' });
     ws.close(4002, 'agentId divergente do token');
     return;
   }
   if (queryTenantId && queryTenantId !== tokenPayload.tenantId) {
+    wsAgentConnectionTotal.inc({ status: 'rejected' });
     ws.close(4003, 'tenantId divergente do token');
     return;
   }
@@ -16198,6 +16209,7 @@ agentWss.on('connection', async (ws, req) => {
     
     if (!user) {
       logger.warn({ agentId, claimedTenantId }, 'Agente não encontrado no banco de dados');
+      wsAgentConnectionTotal.inc({ status: 'rejected' });
       ws.close(4003, 'Agente não encontrado');
       return;
     }
@@ -16207,6 +16219,7 @@ agentWss.on('connection', async (ws, req) => {
     
     if (!safeTenantId) {
       logger.warn({ agentId }, 'Agente sem tenant associado');
+      wsAgentConnectionTotal.inc({ status: 'rejected' });
       ws.close(4004, 'Agente sem tenant associado');
       return;
     }
@@ -16218,6 +16231,7 @@ agentWss.on('connection', async (ws, req) => {
         claimedTenantId, 
         actualTenantId: safeTenantId,
       }, 'Tentativa de conexão WebSocket com tenant incorreto - possível ataque');
+      wsAgentConnectionTotal.inc({ status: 'rejected' });
       ws.close(4005, 'Tenant inválido para este agente');
       return;
     }
@@ -16228,6 +16242,7 @@ agentWss.on('connection', async (ws, req) => {
     
     if (!userRole) {
       logger.warn({ agentId, safeTenantId }, 'Agente sem role definida');
+      wsAgentConnectionTotal.inc({ status: 'rejected' });
       ws.close(4006, 'Sem permissão para takeover');
       return;
     }
@@ -16245,6 +16260,7 @@ agentWss.on('connection', async (ws, req) => {
         role: userRole,
         reason: permissionCheck.reason,
       }, 'Agente sem permissão de takeover');
+      wsAgentConnectionTotal.inc({ status: 'rejected' });
       ws.close(4006, 'Sem permissão para takeover');
       return;
     }
@@ -16260,6 +16276,7 @@ agentWss.on('connection', async (ws, req) => {
     });
     
     logger.info({ agentId, tenantId: safeTenantId, agentKey }, 'Agente conectado ao WebSocket de takeover');
+    wsAgentConnectionTotal.inc({ status: 'accepted' });
     
     // Enviar confirmação de conexão
     ws.send(JSON.stringify({
@@ -16321,6 +16338,7 @@ agentWss.on('connection', async (ws, req) => {
     });
   } catch (error) {
     logger.error({ error, agentId }, 'Erro ao validar agente para WebSocket');
+    wsAgentConnectionTotal.inc({ status: 'rejected' });
     ws.close(4000, 'Erro interno de autenticação');
     return;
   }
