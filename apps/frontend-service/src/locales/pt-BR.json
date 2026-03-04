@@ -1802,6 +1802,8 @@
       "policyAllowWithoutEval": "Promoção permitida sem avaliação passed (modo flexível).",
       "policyDualApprovalEnabled": "Dual-control ativo: mínimo de {{count}} aprovações distintas.",
       "policyDualApprovalDisabled": "Dual-control desativado para promoção.",
+      "policyRequireIdempotencyKey": "Start de treino exige header X-Idempotency-Key.",
+      "policyOptionalIdempotencyKey": "Start de treino aceita X-Idempotency-Key opcional.",
       "queueStats": "Pendente: {{pending}} | Lag: {{lag}} | DLQ: {{dlq}}"
     },
     "filter": {

@@ -198,6 +198,14 @@ function parseEnvInt(envValue: string | undefined, defaultValue: number, varName
   return parsed;
 }
 
+function parseEnvBoolean(envValue: string | undefined, defaultValue: boolean): boolean {
+  if (typeof envValue === 'undefined') return defaultValue;
+  const normalized = envValue.trim().toLowerCase();
+  if (normalized === 'true') return true;
+  if (normalized === 'false') return false;
+  return defaultValue;
+}
+
 function readUuidFromUnknown(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
@@ -549,6 +557,10 @@ const TRAINING_RUN_START_CAPACITY_RETRY_AFTER_SECONDS = parseEnvInt(
   process.env.TRAINING_RUN_START_CAPACITY_RETRY_AFTER_SECONDS,
   60,
   'TRAINING_RUN_START_CAPACITY_RETRY_AFTER_SECONDS'
+);
+const TRAINING_RUN_START_REQUIRE_IDEMPOTENCY_KEY = parseEnvBoolean(
+  process.env.TRAINING_RUN_START_REQUIRE_IDEMPOTENCY_KEY,
+  false
 );
 const DATABASE_URL = process.env.DATABASE_URL;
 const RAG_SERVICE_URL = process.env.RAG_SERVICE_URL ?? 'http://alice-rag:3003';
@@ -3658,6 +3670,16 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
       });
       return res.status(400).json({ error: idempotencyHeader.error });
     }
+    if (TRAINING_RUN_START_REQUIRE_IDEMPOTENCY_KEY && !idempotencyHeader.key) {
+      trainingPipelineMetrics.runStartIdempotencyTotal.inc({
+        endpoint: 'custom_job',
+        result: 'missing_required',
+      });
+      return res.status(400).json({
+        error: 'Header X-Idempotency-Key obrigatorio para iniciar treino',
+        code: 'IDEMPOTENCY_KEY_REQUIRED',
+      });
+    }
     const tenantResolution = resolveAuthorizedTenantId(req, body.tenantId ?? null);
     if (!tenantResolution.ok) {
       return res.status(tenantResolution.status).json({ error: tenantResolution.error });
@@ -5893,6 +5915,7 @@ app.get('/api/training/execution-modes', requirePermission('training:training_da
         requireEvalPassedForPromotion: governanceConfig.requireEvalPassedForPromotion,
         requireDualApprovalForPromotion: governanceConfig.requireDualApprovalForPromotion,
         promotionMinApprovals: governanceConfig.promotionMinApprovals,
+        requireIdempotencyKeyForRunStart: TRAINING_RUN_START_REQUIRE_IDEMPOTENCY_KEY,
       },
     });
   } catch (error) {
@@ -6178,6 +6201,16 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
       result: 'invalid_header',
     });
     return res.status(400).json({ error: idempotencyHeader.error });
+  }
+  if (TRAINING_RUN_START_REQUIRE_IDEMPOTENCY_KEY && !idempotencyHeader.key) {
+    trainingPipelineMetrics.runStartIdempotencyTotal.inc({
+      endpoint: 'on_demand',
+      result: 'missing_required',
+    });
+    return res.status(400).json({
+      error: 'Header X-Idempotency-Key obrigatorio para iniciar treino',
+      code: 'IDEMPOTENCY_KEY_REQUIRED',
+    });
   }
 
   const { tenantId, trainingType, includeImages, priority, description, namespaceId } = parseResult.data;
@@ -6580,6 +6613,7 @@ app.get('/api/training/queue/status', requirePermission('training:fine_tuning_jo
         requireEvalPassedForPromotion: governanceConfig.requireEvalPassedForPromotion,
         requireDualApprovalForPromotion: governanceConfig.requireDualApprovalForPromotion,
         promotionMinApprovals: governanceConfig.promotionMinApprovals,
+        requireIdempotencyKeyForRunStart: TRAINING_RUN_START_REQUIRE_IDEMPOTENCY_KEY,
       },
       tenant: {
         id: tenantResolution.tenantId,

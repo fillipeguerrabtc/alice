@@ -133,6 +133,13 @@ describe('Training Service - OpenAPI (critical contracts)', () => {
     expect(customJobResponses['409']?.headers).toHaveProperty('Retry-After');
     expect(customJobResponses['429']?.headers).toHaveProperty('Retry-After');
   });
+
+  it('documents idempotency requirement governance flag in execution mode SSOT', () => {
+    const governanceSchema = (
+      trainingServiceSchemas.TrainingExecutionModesResponse.properties.governance as { properties: Record<string, unknown> }
+    ).properties;
+    expect(governanceSchema).toHaveProperty('requireIdempotencyKeyForRunStart');
+  });
 });
 
 // ============================================================================

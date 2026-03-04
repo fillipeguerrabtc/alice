@@ -963,6 +963,7 @@ export const trainingServiceSchemas = {
           requireEvalPassedForPromotion: { type: 'boolean' },
           requireDualApprovalForPromotion: { type: 'boolean' },
           promotionMinApprovals: { type: 'integer' },
+          requireIdempotencyKeyForRunStart: { type: 'boolean' },
         },
       },
       tenant: {
@@ -1025,6 +1026,7 @@ export const trainingServiceSchemas = {
           requireEvalPassedForPromotion: { type: 'boolean' },
           requireDualApprovalForPromotion: { type: 'boolean' },
           promotionMinApprovals: { type: 'integer' },
+          requireIdempotencyKeyForRunStart: { type: 'boolean' },
         },
       },
     },

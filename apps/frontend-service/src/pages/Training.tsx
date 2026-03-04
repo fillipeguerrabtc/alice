@@ -242,6 +242,7 @@ type TrainingQueueStatusResponse = {
     requireEvalPassedForPromotion: boolean;
     requireDualApprovalForPromotion: boolean;
     promotionMinApprovals: number;
+    requireIdempotencyKeyForRunStart?: boolean;
   };
   tenant: {
     id: string;
@@ -271,6 +272,7 @@ type TrainingExecutionModesResponse = {
     requireEvalPassedForPromotion: boolean;
     requireDualApprovalForPromotion: boolean;
     promotionMinApprovals: number;
+    requireIdempotencyKeyForRunStart?: boolean;
   };
 };
 
@@ -4462,6 +4464,11 @@ export default function Training() {
                               count: queueStatus?.governance?.promotionMinApprovals ?? 2,
                             })
                             : t('training.autoLearning.policyDualApprovalDisabled')}
+                        </div>
+                        <div className="text-sm text-muted-foreground">
+                          {queueStatus?.governance?.requireIdempotencyKeyForRunStart
+                            ? t('training.autoLearning.policyRequireIdempotencyKey')
+                            : t('training.autoLearning.policyOptionalIdempotencyKey')}
                         </div>
                       </div>
                       <div className="space-y-2">

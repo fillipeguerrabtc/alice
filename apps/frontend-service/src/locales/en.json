@@ -1751,6 +1751,8 @@
       "policyAllowWithoutEval": "Promotion allowed without passed evaluation (flex mode).",
       "policyDualApprovalEnabled": "Dual-control enabled: minimum {{count}} distinct approvals.",
       "policyDualApprovalDisabled": "Dual-control disabled for promotion.",
+      "policyRequireIdempotencyKey": "Training start requires X-Idempotency-Key header.",
+      "policyOptionalIdempotencyKey": "Training start accepts optional X-Idempotency-Key header.",
       "queueStats": "Pending: {{pending}} | Lag: {{lag}} | DLQ: {{dlq}}"
     },
     "filter": {
