@@ -1899,6 +1899,7 @@
         "approval": "Promotion approval recorded",
         "promoted": "Model promoted",
         "rolledBack": "Rollback executed",
+        "scopeBindingChanged": "Scope binding changed",
         "runStarted": "Training run started"
       }
     },

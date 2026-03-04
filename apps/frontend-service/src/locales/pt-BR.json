@@ -1946,6 +1946,7 @@
         "approval": "AprovaÃ§Ã£o de promoÃ§Ã£o registrada",
         "promoted": "Modelo promovido",
         "rolledBack": "Rollback executado",
+        "scopeBindingChanged": "Binding de escopo alterado",
         "runStarted": "Execucao de treino iniciada"
       }
     },

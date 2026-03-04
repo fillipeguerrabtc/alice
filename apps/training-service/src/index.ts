@@ -3378,18 +3378,21 @@ type TrainingGovernanceAuditAction =
   | 'training_promotion_approval_recorded'
   | 'training_model_promoted'
   | 'training_model_rollback_executed'
-  | 'training_run_start_requested';
+  | 'training_run_start_requested'
+  | 'training_scope_binding_changed';
 const TRAINING_GOVERNANCE_AUDIT_ACTIONS: TrainingGovernanceAuditAction[] = [
   'training_promotion_approval_recorded',
   'training_model_promoted',
   'training_model_rollback_executed',
   'training_run_start_requested',
+  'training_scope_binding_changed',
 ];
 
 function buildTrainingGovernanceAuditValues(params: {
   tenantId: string;
   userId: string | null;
   action: TrainingGovernanceAuditAction;
+  resource?: 'fine_tuning_job' | 'training_data';
   resourceId: string;
   request: Request;
   details: Record<string, unknown>;
@@ -3398,7 +3401,7 @@ function buildTrainingGovernanceAuditValues(params: {
     tenantId: params.tenantId,
     userId: params.userId,
     acao: params.action,
-    recurso: 'fine_tuning_job',
+    recurso: params.resource ?? 'fine_tuning_job',
     recursoId: params.resourceId,
     detalhes: params.details,
     ip: extractRequestIp(params.request),
@@ -3519,6 +3522,40 @@ app.patch('/api/training/data/:id/status', requirePermission('training:training_
           source: 'training_review',
         });
         trainingPipelineMetrics.scopeOverrideTotal.inc({ source: 'training_review' });
+        try {
+          await db.insert(schema.auditLogs).values(buildTrainingGovernanceAuditValues({
+            tenantId: existing.tenantId,
+            userId: reviewedBy,
+            action: 'training_scope_binding_changed',
+            resource: 'training_data',
+            resourceId: existing.id,
+            request: req,
+            details: {
+              source: 'training_review',
+              reason: overrideScope.reason,
+              oldScope: {
+                namespaceId: existing.namespaceId,
+                agentId: existing.agentId,
+                domain: existing.inferredDomain,
+              },
+              newScope: {
+                namespaceId: nextNamespaceId,
+                agentId: nextAgentId,
+                domain: nextDomain,
+              },
+            },
+          }));
+          trainingPipelineMetrics.governanceAuditWritesTotal.inc({
+            action: 'training_scope_binding_changed',
+            result: 'success',
+          });
+        } catch (auditError) {
+          logger.warn({ auditError, trainingDataId: existing.id }, 'Falha ao registrar auditoria de mudanca de escopo');
+          trainingPipelineMetrics.governanceAuditWritesTotal.inc({
+            action: 'training_scope_binding_changed',
+            result: 'error',
+          });
+        }
       }
     }
 
@@ -3631,6 +3668,40 @@ app.patch('/api/training/data/:id/resolve-scope', requirePermission('training:tr
     });
     trainingPipelineMetrics.scopeOverrideTotal.inc({ source: 'quarantine_resolution' });
     trainingPipelineMetrics.scopeResolvedTotal.inc({ source: 'quarantine_resolution' });
+    try {
+      await db.insert(schema.auditLogs).values(buildTrainingGovernanceAuditValues({
+        tenantId: existing.tenantId,
+        userId: changedBy,
+        action: 'training_scope_binding_changed',
+        resource: 'training_data',
+        resourceId: existing.id,
+        request: req,
+        details: {
+          source: 'quarantine_resolution',
+          reason: bodyResult.data.reason,
+          oldScope: {
+            namespaceId: existing.namespaceId,
+            agentId: existing.agentId,
+            domain: existing.inferredDomain,
+          },
+          newScope: {
+            namespaceId: namespace.id,
+            agentId: nextAgentId,
+            domain: bodyResult.data.domain ?? existing.inferredDomain,
+          },
+        },
+      }));
+      trainingPipelineMetrics.governanceAuditWritesTotal.inc({
+        action: 'training_scope_binding_changed',
+        result: 'success',
+      });
+    } catch (auditError) {
+      logger.warn({ auditError, trainingDataId: existing.id }, 'Falha ao registrar auditoria de resolucao de escopo');
+      trainingPipelineMetrics.governanceAuditWritesTotal.inc({
+        action: 'training_scope_binding_changed',
+        result: 'error',
+      });
+    }
 
     const [updated] = await db.update(schema.trainingData)
       .set({

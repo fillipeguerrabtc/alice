@@ -288,6 +288,7 @@ type TrainingGovernanceAuditEvent = {
     | 'training_promotion_approval_recorded'
     | 'training_model_promoted'
     | 'training_model_rollback_executed'
+    | 'training_scope_binding_changed'
     | 'training_run_start_requested'
     | string;
   resourceId: string | null;
@@ -563,6 +564,7 @@ function getTrainingAuditActionLabel(
   if (action === 'training_promotion_approval_recorded') return t('training.audit.actions.approval');
   if (action === 'training_model_promoted') return t('training.audit.actions.promoted');
   if (action === 'training_model_rollback_executed') return t('training.audit.actions.rolledBack');
+  if (action === 'training_scope_binding_changed') return t('training.audit.actions.scopeBindingChanged');
   if (action === 'training_run_start_requested') return t('training.audit.actions.runStarted');
   return action;
 }
