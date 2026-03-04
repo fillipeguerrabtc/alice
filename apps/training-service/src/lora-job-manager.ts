@@ -923,9 +923,18 @@ interface ProcessLoraJobOptions {
   includeTradingDataset?: boolean;
   agentId?: string | null;
   domain?: string | null;
+  gpuPriority?: TrainingRunPriority;
   hyperparametersOverride?: Partial<TradingLoraHyperparams>;
   onDatasetPrepared?: (manifest: PreparedDatasetManifest) => Promise<void>;
   onProgress?: (progress: Partial<JobProgress> & { adapterPath?: string | null }) => Promise<void>;
+}
+
+export type TrainingRunPriority = 'low' | 'normal' | 'high';
+
+function resolveGpuPriority(priority: TrainingRunPriority | undefined): GpuRequestPriority {
+  if (priority === 'high') return GpuRequestPriority.HIGH;
+  if (priority === 'normal') return GpuRequestPriority.MEDIUM;
+  return GpuRequestPriority.LOW;
 }
 
 export interface PreparedDatasetManifest {
@@ -965,6 +974,7 @@ export async function processLoraJob(jobId: string, options?: ProcessLoraJobOpti
   const trainEvalSplitRatio = options?.trainEvalSplitRatio ?? trainingConfig.trainEvalSplitRatio;
   const minDatasetSize = options?.minDatasetSize ?? trainingConfig.minScheduledIncremental;
   const seed = options?.seed ?? jobId;
+  const gpuPriority = resolveGpuPriority(options?.gpuPriority);
 
   const resolvedHyperparameters = mergeLoraHyperparameters(
     defaultHyperparameters,
@@ -1065,7 +1075,7 @@ export async function processLoraJob(jobId: string, options?: ProcessLoraJobOpti
       serviceType: GpuServiceType.TRAINING,
       endpoint: '/train/lora/slice',
       method: 'POST',
-      priority: GpuRequestPriority.LOW,
+      priority: gpuPriority,
       timeout: gpuTimeoutMs,
       body: {
         jobId,
@@ -1522,6 +1532,11 @@ export async function deactivateLoraAdapter(scope?: {
   agentId?: string;
 }): Promise<void> {
   const db = getDatabase();
+  const agentScopeCondition = scope?.agentId
+    ? eq(schema.loraJobs.scopeAgentId, scope.agentId)
+    : scope?.namespaceId
+      ? sql`${schema.loraJobs.scopeAgentId} IS NULL`
+      : sql`TRUE`;
 
   const [active] = await db
     .select({
@@ -1536,7 +1551,7 @@ export async function deactivateLoraAdapter(scope?: {
         eq(schema.loraJobs.isActiveByScope, true),
         scope?.tenantId ? eq(schema.loraJobs.tenantId, scope.tenantId) : sql`TRUE`,
         scope?.namespaceId ? eq(schema.loraJobs.scopeNamespaceId, scope.namespaceId) : sql`TRUE`,
-        scope?.agentId ? eq(schema.loraJobs.scopeAgentId, scope.agentId) : sql`TRUE`
+        agentScopeCondition
       )
     )
     .limit(1);

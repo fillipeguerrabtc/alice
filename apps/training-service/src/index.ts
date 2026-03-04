@@ -1,19 +1,19 @@
 /**
  * Training Service - Alice Enterprise Platform
  * 
- * Serviço de treinamento e fine-tuning com deduplicação semântica (SemHash).
+ * ServiÃ§o de treinamento e fine-tuning com deduplicaÃ§Ã£o semÃ¢ntica (SemHash).
  * Implementa Circuit Breaker pattern (Regra 16 - Best Practices 2025).
  * 
  * Gate 2 (15/01/2026):
- * - Embeddings de texto: Qwen3-Embedding-0.6B INT8 (1024 dim, GPU Manager Service → Qdrant)
+ * - Embeddings de texto: Qwen3-Embedding-0.6B INT8 (1024 dim, GPU Manager Service â†’ Qdrant)
  * - Fine-tuning (QLoRA): MESMO modelo base do LLM (texto) via gpu-trainer (sob demanda)
- * - Schedule semanal configurável (domingo 3:00 AM default)
+ * - Schedule semanal configurÃ¡vel (domingo 3:00 AM default)
  * - Treinamento on-demand via dashboard admin
- * - Zero latência de troca (serviços GPU sempre ativos)
+ * - Zero latÃªncia de troca (serviÃ§os GPU sempre ativos)
  * 
  * Autor: Fillipe Guerra
  * Data: 15 de Janeiro de 2026
- * Documentação em PT-BR (Regra 10 CLAUDE.md)
+ * DocumentaÃ§Ã£o em PT-BR (Regra 10 CLAUDE.md)
  */
 
 import express from 'express';
@@ -45,7 +45,7 @@ import {
   validateNamespaceTenantConsistency,
   validateTenantConsistency,
   setPermissionResolver,
-  // Auth híbrida (WS4): Sessão (cookie) + Bearer JWT (OIDC) com validação local via JWKS
+  // Auth hÃ­brida (WS4): SessÃ£o (cookie) + Bearer JWT (OIDC) com validaÃ§Ã£o local via JWKS
   createSessionAuthMiddleware,
   initializeRedisCache,
   initializeSessionAuthCache,
@@ -72,7 +72,9 @@ import {
   TRAINING_EMBEDDING_DEDUPE_QUEUE,
   TRAINING_DATA_POLICY_GATE_QUEUE,
   TRAINING_NAMESPACE_PROFILE_RECONCILE_QUEUE,
-  TRAINING_FINE_TUNING_QUEUE,
+  TRAINING_FINE_TUNING_QUEUE_HIGH,
+  TRAINING_FINE_TUNING_QUEUE_NORMAL,
+  TRAINING_FINE_TUNING_QUEUE_LOW,
   trainingEmbeddingDedupeQueuePayloadSchema,
   trainingNamespaceProfileReconcileQueuePayloadSchema,
   Gauge as PromGauge,
@@ -84,7 +86,7 @@ import {
   generateInternalAuthHeaders,
 } from '@alice/shared-utils';
 import { trainingServicePaths, trainingServiceSchemas } from './openapi-specs.js';
-import { eq, and, or, desc, sql, isNull, not, inArray, lte, ne } from '@alice/database';
+import { eq, and, or, desc, asc, sql, isNull, not, inArray, lte, ne } from '@alice/database';
 import { z } from 'zod';
 import {
   getAllSystemConfig,
@@ -110,7 +112,7 @@ function parseStructuredJsonFromContent(content: string): unknown {
   try {
     return JSON.parse(stripped);
   } catch {
-    throw new Error(`Conteúdo LLM não é JSON válido. Recebido: ${stripped.slice(0, 200)}`);
+    throw new Error(`ConteÃºdo LLM nÃ£o Ã© JSON vÃ¡lido. Recebido: ${stripped.slice(0, 200)}`);
   }
 }
 
@@ -134,40 +136,50 @@ import {
   TrainingHyperparamsOverrideSchema,
 } from './training-runner.js';
 import { loadTrainingEnterpriseConfig } from './training-config.js';
-// Fine-tuning é executado localmente via GPU Manager Service (Regra 6 - sem stubs/migração)
+import {
+  canPromoteFineTuningJob,
+  getTenantInflightFineTuningJobsCount,
+  loadTrainingGovernanceRuntimeConfig,
+} from './training-governance.js';
+import {
+  assertValidModelRegistryScope,
+  buildFineTuningScopeCondition,
+  buildModelVersionScopeCondition,
+} from './model-registry-scope.js';
+// Fine-tuning Ã© executado localmente via GPU Manager Service (Regra 6 - sem stubs/migraÃ§Ã£o)
 
-// Logger centralizado: JSON em produção, pino-pretty em desenvolvimento
+// Logger centralizado: JSON em produÃ§Ã£o, pino-pretty em desenvolvimento
 const logger = createLogger('training-service');
 
 // ============================================================================
-// VALIDAÇÃO DE VARIÁVEIS DE AMBIENTE - CORREÇÃO AUDITORIA 17/12/2025
-// Bug: parseInt sem validação de NaN causava:
-// - app.listen(NaN) → comportamento indefinido
+// VALIDAÃ‡ÃƒO DE VARIÃVEIS DE AMBIENTE - CORREÃ‡ÃƒO AUDITORIA 17/12/2025
+// Bug: parseInt sem validaÃ§Ã£o de NaN causava:
+// - app.listen(NaN) â†’ comportamento indefinido
 // ============================================================================
 function parseEnvInt(envValue: string | undefined, defaultValue: number, varName: string): number {
   const raw = envValue ?? String(defaultValue);
   const trimmed = raw.trim();
   
-  // Regra 6: Rejeitar valores parciais - só dígitos são aceitos
+  // Regra 6: Rejeitar valores parciais - sÃ³ dÃ­gitos sÃ£o aceitos
   if (!/^\d+$/.test(trimmed)) {
-    const errorMsg = `${varName} inválido: "${raw}". Deve ser número inteiro positivo.`;
+    const errorMsg = `${varName} invÃ¡lido: "${raw}". Deve ser nÃºmero inteiro positivo.`;
     if (process.env.NODE_ENV === 'production') {
       logger.error({ varName, rawValue: raw }, errorMsg);
       throw new Error(errorMsg);
     }
-    logger.warn({ varName, rawValue: raw, defaultValue }, `${errorMsg} Usando valor padrão.`);
+    logger.warn({ varName, rawValue: raw, defaultValue }, `${errorMsg} Usando valor padrÃ£o.`);
     return defaultValue;
   }
   
   const parsed = parseInt(trimmed, 10);
   
   if (!Number.isFinite(parsed) || parsed <= 0) {
-    const errorMsg = `${varName} inválido: "${raw}". Deve ser número inteiro positivo.`;
+    const errorMsg = `${varName} invÃ¡lido: "${raw}". Deve ser nÃºmero inteiro positivo.`;
     if (process.env.NODE_ENV === 'production') {
       logger.error({ varName, rawValue: raw, parsed }, errorMsg);
       throw new Error(errorMsg);
     }
-    logger.warn({ varName, rawValue: raw, parsed, defaultValue }, `${errorMsg} Usando valor padrão.`);
+    logger.warn({ varName, rawValue: raw, parsed, defaultValue }, `${errorMsg} Usando valor padrÃ£o.`);
     return defaultValue;
   }
   
@@ -180,6 +192,45 @@ function readUuidFromUnknown(value: unknown): string | null {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(trimmed)
     ? trimmed
     : null;
+}
+
+function resolveFineTuningQueuePriorityFromSnapshot(
+  runSource: 'custom_job' | 'on_demand' | 'scheduled',
+  snapshot: unknown
+): 'low' | 'normal' | 'high' {
+  if (snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot)) {
+    const raw = (snapshot as Record<string, unknown>).priority;
+    if (raw === 'low' || raw === 'normal' || raw === 'high') {
+      return raw;
+    }
+  }
+  if (runSource === 'scheduled') return 'low';
+  return 'normal';
+}
+
+type ScheduleScopeMetadata = {
+  minDataRequired?: number;
+  cronPattern?: string;
+  namespaceId?: string | null;
+  configuredAt?: string;
+};
+
+function readScheduleScopeMetadata(raw: unknown): ScheduleScopeMetadata {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const metadata = raw as Record<string, unknown>;
+  return {
+    minDataRequired: typeof metadata.minDataRequired === 'number' ? metadata.minDataRequired : undefined,
+    cronPattern: typeof metadata.cronPattern === 'string' ? metadata.cronPattern : undefined,
+    namespaceId: typeof metadata.namespaceId === 'string'
+      ? metadata.namespaceId
+      : (metadata.namespaceId === null ? null : undefined),
+    configuredAt: typeof metadata.configuredAt === 'string' ? metadata.configuredAt : undefined,
+  };
+}
+
+function isSameScheduleScope(metadata: unknown, namespaceId: string | null): boolean {
+  const parsed = readScheduleScopeMetadata(metadata);
+  return (parsed.namespaceId ?? null) === (namespaceId ?? null);
 }
 
 type RequestAuthContext = NonNullable<ReturnType<typeof extractAuthContext>>;
@@ -225,12 +276,12 @@ const DATABASE_URL = process.env.DATABASE_URL;
 const RAG_SERVICE_URL = process.env.RAG_SERVICE_URL ?? 'http://alice-rag:3003';
 const INTEGRATIONS_SERVICE_URL = process.env.INTEGRATIONS_SERVICE_URL;
 if (!INTEGRATIONS_SERVICE_URL) {
-  throw new Error('INTEGRATIONS_SERVICE_URL é obrigatório (Regra 6 - fail-fast)');
+  throw new Error('INTEGRATIONS_SERVICE_URL Ã© obrigatÃ³rio (Regra 6 - fail-fast)');
 }
 const INTEGRATIONS_SERVICE_URL_FINAL = INTEGRATIONS_SERVICE_URL;
 const corsOriginsEnv = process.env.CORS_ORIGINS;
 if (!corsOriginsEnv && process.env.NODE_ENV === 'production') {
-  logger.error('CORS_ORIGINS é obrigatório em produção (Regra 6 - fail-fast)');
+  logger.error('CORS_ORIGINS Ã© obrigatÃ³rio em produÃ§Ã£o (Regra 6 - fail-fast)');
   process.exit(1);
 }
 const CORS_ORIGINS = corsOriginsEnv
@@ -238,13 +289,13 @@ const CORS_ORIGINS = corsOriginsEnv
   : [];
 
 if (!DATABASE_URL) {
-  logger.error('DATABASE_URL não configurada');
+  logger.error('DATABASE_URL nÃ£o configurada');
   process.exit(1);
 }
 
-logger.info('Training service inicializado - fine-tuning LoRA ativo via GPU Manager Service (GPU única 20GB)');
+logger.info('Training service inicializado - fine-tuning LoRA ativo via GPU Manager Service (GPU Ãºnica 20GB)');
 
-// Usar package @alice/database centralizado (node-postgres para produção Hetzner)
+// Usar package @alice/database centralizado (node-postgres para produÃ§Ã£o Hetzner)
 const db = getDatabase();
 setPermissionResolver(async (auth) => {
   let customRoleId = auth.customRoleId;
@@ -286,14 +337,14 @@ logger.info('Sistema de feature flags inicializado');
 const app = express();
 
 // ============================================================================
-// PROMETHEUS: Instrumentação de métricas (Regra 16 - Observability Enterprise)
+// PROMETHEUS: InstrumentaÃ§Ã£o de mÃ©tricas (Regra 16 - Observability Enterprise)
 // ============================================================================
 const { metrics, metricsRouter, httpMetricsMiddleware } = createAlicePrometheus({
   serviceName: 'training-service',
   collectDefaultMetrics: true,
 });
 
-// Métrica enterprise: total de datasets de treinamento (DB → Prometheus)
+// MÃ©trica enterprise: total de datasets de treinamento (DB â†’ Prometheus)
 const trainingDatasetsTotal = new PromGauge({
   name: 'alice_training_datasets_total',
   help: 'Total de registros de training data (todas as categorias)',
@@ -321,19 +372,19 @@ const trainingPipelineMetrics = {
   }),
   qualityScore: new PromHistogram({
     name: 'alice_training_data_quality_score',
-    help: 'Distribuição de score de qualidade dos dados de treinamento',
+    help: 'DistribuiÃ§Ã£o de score de qualidade dos dados de treinamento',
     buckets: [0, 0.25, 0.5, 0.75, 0.9, 0.95, 1],
     registers: [metrics.registry],
   }),
   reviewTotal: new PromCounter({
     name: 'alice_training_data_review_total',
-    help: 'Total de revisões manuais de dados de treinamento',
+    help: 'Total de revisÃµes manuais de dados de treinamento',
     labelNames: ['decision'] as const,
     registers: [metrics.registry],
   }),
   schedulerRunsTotal: new PromCounter({
     name: 'alice_training_scheduler_runs_total',
-    help: 'Total de execuções do scheduler de auto-learning',
+    help: 'Total de execuÃ§Ãµes do scheduler de auto-learning',
     labelNames: ['result'] as const,
     registers: [metrics.registry],
   }),
@@ -345,7 +396,7 @@ const trainingPipelineMetrics = {
   }),
   scopeOverrideTotal: new PromCounter({
     name: 'alice_training_scope_override_total',
-    help: 'Total de overrides manuais de escopo durante aprovação',
+    help: 'Total de overrides manuais de escopo durante aprovaÃ§Ã£o',
     labelNames: ['source'] as const,
     registers: [metrics.registry],
   }),
@@ -355,10 +406,10 @@ const trainingPipelineMetrics = {
     labelNames: ['source'] as const,
     registers: [metrics.registry],
   }),
-  /** Plano TREINAMENTO-LIMITES 11/02/2026: sugestão de novo namespace quando não há match */
+  /** Plano TREINAMENTO-LIMITES 11/02/2026: sugestÃ£o de novo namespace quando nÃ£o hÃ¡ match */
   scopeSuggestedNewNamespaceTotal: new PromCounter({
     name: 'alice_training_scope_suggested_new_namespace_total',
-    help: 'Total de vezes que scope-resolver sugeriu criação de novo namespace (sem namespace inferido)',
+    help: 'Total de vezes que scope-resolver sugeriu criaÃ§Ã£o de novo namespace (sem namespace inferido)',
     labelNames: ['source_type'] as const,
     registers: [metrics.registry],
   }),
@@ -370,19 +421,19 @@ const trainingPipelineMetrics = {
   }),
   embeddingDedupeHitsTotal: new PromCounter({
     name: 'alice_training_embedding_dedupe_hits_total',
-    help: 'Total de hits de deduplicação por método',
+    help: 'Total de hits de deduplicaÃ§Ã£o por mÃ©todo',
     labelNames: ['method'] as const,
     registers: [metrics.registry],
   }),
   embeddingDedupeDurationSeconds: new PromHistogram({
     name: 'alice_training_embedding_dedupe_duration_seconds',
-    help: 'Duração de processamento dos jobs de embedding/dedupe',
+    help: 'DuraÃ§Ã£o de processamento dos jobs de embedding/dedupe',
     buckets: [0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30],
     registers: [metrics.registry],
   }),
   namespaceProfileReconcileJobsTotal: new PromCounter({
     name: 'alice_training_namespace_profile_reconcile_jobs_total',
-    help: 'Total de jobs de reconciliação de namespace_profiles processados pela fila',
+    help: 'Total de jobs de reconciliaÃ§Ã£o de namespace_profiles processados pela fila',
     labelNames: ['result'] as const,
     registers: [metrics.registry],
   }),
@@ -398,7 +449,7 @@ const trainingPipelineMetrics = {
   }),
   namespaceProfileReconcileDurationSeconds: new PromHistogram({
     name: 'alice_training_namespace_profile_reconcile_duration_seconds',
-    help: 'Duração de processamento dos jobs de reconciliação de namespace_profiles',
+    help: 'DuraÃ§Ã£o de processamento dos jobs de reconciliaÃ§Ã£o de namespace_profiles',
     buckets: [0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30],
     registers: [metrics.registry],
   }),
@@ -413,19 +464,38 @@ const trainingPipelineMetrics = {
     help: 'Duracao de processamento dos jobs de fine-tuning na fila redis',
     buckets: [0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30],
     registers: [metrics.registry],
-  }),  privacyRedactionsTotal: new PromCounter({
+  }),
+  fineTuningQueuePending: new PromGauge({
+    name: 'alice_training_fine_tuning_queue_pending',
+    help: 'Mensagens pendentes no consumer group da fila de fine-tuning',
+    labelNames: ['queue'] as const,
+    registers: [metrics.registry],
+  }),
+  fineTuningQueueLag: new PromGauge({
+    name: 'alice_training_fine_tuning_queue_lag',
+    help: 'Lag aproximado por fila de prioridade de fine-tuning',
+    labelNames: ['queue'] as const,
+    registers: [metrics.registry],
+  }),
+  fineTuningQueueDlqTotal: new PromGauge({
+    name: 'alice_training_fine_tuning_queue_dlq_total',
+    help: 'Total acumulado de mensagens em DLQ por fila de fine-tuning',
+    labelNames: ['queue'] as const,
+    registers: [metrics.registry],
+  }),
+  privacyRedactionsTotal: new PromCounter({
     name: 'alice_training_privacy_redactions_total',
-    help: 'Total de redações aplicadas por política de privacidade no treinamento',
+    help: 'Total de redaÃ§Ãµes aplicadas por polÃ­tica de privacidade no treinamento',
     registers: [metrics.registry],
   }),
   privacyQuarantineTotal: new PromCounter({
     name: 'alice_training_privacy_quarantine_total',
-    help: 'Total de itens em quarentena por política de privacidade',
+    help: 'Total de itens em quarentena por polÃ­tica de privacidade',
     registers: [metrics.registry],
   }),
   consentRejectedTotal: new PromCounter({
     name: 'alice_training_consent_rejected_total',
-    help: 'Total de itens rejeitados por ausência de consentimento de treinamento',
+    help: 'Total de itens rejeitados por ausÃªncia de consentimento de treinamento',
     registers: [metrics.registry],
   }),
 };
@@ -451,31 +521,31 @@ const tradingMetrics = {
   }),
   universeScanSeconds: new PromHistogram({
     name: 'trading_universe_scan_seconds',
-    help: 'Duração de processamento do worker de universe scan',
+    help: 'DuraÃ§Ã£o de processamento do worker de universe scan',
     buckets: [0.05, 0.1, 0.5, 1, 2, 5],
     registers: [metrics.registry],
   }),
   backtestSeconds: new PromHistogram({
     name: 'trading_backtest_seconds',
-    help: 'Duração de processamento do worker de backtest',
+    help: 'DuraÃ§Ã£o de processamento do worker de backtest',
     buckets: [0.1, 0.5, 1, 2, 5, 10],
     registers: [metrics.registry],
   }),
   calibrationSeconds: new PromHistogram({
     name: 'trading_calibration_seconds',
-    help: 'Duração de processamento do worker de calibration',
+    help: 'DuraÃ§Ã£o de processamento do worker de calibration',
     buckets: [0.05, 0.1, 0.5, 1, 2, 5],
     registers: [metrics.registry],
   }),
   rebalanceSeconds: new PromHistogram({
     name: 'trading_rebalance_seconds',
-    help: 'Duração de processamento do worker de rebalance',
+    help: 'DuraÃ§Ã£o de processamento do worker de rebalance',
     buckets: [0.05, 0.1, 0.5, 1, 2, 5],
     registers: [metrics.registry],
   }),
   modelRiskSeconds: new PromHistogram({
     name: 'trading_model_risk_seconds',
-    help: 'Duração de processamento do worker de model risk',
+    help: 'DuraÃ§Ã£o de processamento do worker de model risk',
     buckets: [0.05, 0.1, 0.5, 1, 2, 5],
     registers: [metrics.registry],
   }),
@@ -486,13 +556,13 @@ const tradingMetrics = {
   }),
   backtestDsr: new PromGauge({
     name: 'trading_backtest_dsr',
-    help: 'Último DSR calculado por mercado/estratégia',
+    help: 'Ãšltimo DSR calculado por mercado/estratÃ©gia',
     labelNames: ['marketType', 'strategyKey'] as const,
     registers: [metrics.registry],
   }),
   backtestPbo: new PromGauge({
     name: 'trading_backtest_pbo',
-    help: 'Último PBO calculado por mercado/estratégia',
+    help: 'Ãšltimo PBO calculado por mercado/estratÃ©gia',
     labelNames: ['marketType', 'strategyKey'] as const,
     registers: [metrics.registry],
   }),
@@ -504,24 +574,24 @@ const tradingMetrics = {
   }),
   datasetVersionCreatedTotal: new PromCounter({
     name: 'training_dataset_version_created_total',
-    help: 'Total de versões de dataset criadas',
+    help: 'Total de versÃµes de dataset criadas',
     registers: [metrics.registry],
   }),
   portfolioAutoRunSeconds: new PromHistogram({
     name: 'trading_portfolio_auto_run_seconds',
-    help: 'Duração de processamento do worker de portfolio auto run',
+    help: 'DuraÃ§Ã£o de processamento do worker de portfolio auto run',
     buckets: [0.1, 0.5, 1, 2, 5, 10, 30],
     registers: [metrics.registry],
   }),
   signalAutoRunSeconds: new PromHistogram({
     name: 'trading_signal_auto_run_seconds',
-    help: 'Duração de processamento do worker de signal auto run',
+    help: 'DuraÃ§Ã£o de processamento do worker de signal auto run',
     buckets: [0.1, 0.5, 1, 2, 5, 10, 30],
     registers: [metrics.registry],
   }),
   signalAutoLlmStepSeconds: new PromHistogram({
     name: 'trading_signal_auto_llm_step_seconds',
-    help: 'Duração do step signal-llm do auto engine',
+    help: 'DuraÃ§Ã£o do step signal-llm do auto engine',
     buckets: [0.1, 0.5, 1, 2, 5, 10, 30],
     registers: [metrics.registry],
   }),
@@ -541,6 +611,12 @@ const tradingQueueNames = {
   portfolioAutoRun: TRADING_STREAMS.portfolioAutoRun,
   signalAutoRun: TRADING_STREAMS.signalAutoRun,
 } as const;
+
+const fineTuningQueueNames = [
+  TRAINING_FINE_TUNING_QUEUE_HIGH,
+  TRAINING_FINE_TUNING_QUEUE_NORMAL,
+  TRAINING_FINE_TUNING_QUEUE_LOW,
+] as const;
 
 const TRAINING_METRICS_INTERVAL_MS = parseEnvInt(
   process.env.TRAINING_METRICS_INTERVAL_MS,
@@ -598,9 +674,79 @@ async function refreshTrainingMetrics(): Promise<void> {
 
     trainingDatasetsTotal.set(datasetsCount);
     metrics.training.activeJobs.set(activeJobsCount);
+
+    const redis = getRedisClient();
+    if (!redis) {
+      return;
+    }
+
+    for (const queueName of fineTuningQueueNames) {
+      const queue = new RedisStreamQueue(queueName, {
+        group: 'training-service',
+        consumer: `training-metrics-${process.pid}`,
+        maxRetries: 3,
+        autoClaimCount: 10,
+      });
+
+      try {
+        const lagMetrics = await queue.getLagMetrics(redis);
+        trainingPipelineMetrics.fineTuningQueuePending.set(
+          { queue: queueName },
+          lagMetrics.pending
+        );
+        trainingPipelineMetrics.fineTuningQueueLag.set(
+          { queue: queueName },
+          lagMetrics.lag
+        );
+        trainingPipelineMetrics.fineTuningQueueDlqTotal.set(
+          { queue: queueName },
+          await queue.dlqSize(redis)
+        );
+      } catch {
+        trainingPipelineMetrics.fineTuningQueuePending.set({ queue: queueName }, 0);
+        trainingPipelineMetrics.fineTuningQueueLag.set({ queue: queueName }, 0);
+        trainingPipelineMetrics.fineTuningQueueDlqTotal.set({ queue: queueName }, 0);
+      }
+    }
   } catch (error) {
-    logger.error({ error }, 'Falha ao atualizar métricas de training');
+    logger.error({ error }, 'Falha ao atualizar metricas de training');
   }
+}
+
+async function getFineTuningQueuesStatus(): Promise<Array<{
+  queue: string;
+  pending: number;
+  lag: number;
+  dlq: number;
+}>> {
+  const redis = getRedisClient();
+  if (!redis) {
+    return fineTuningQueueNames.map((queue) => ({ queue, pending: 0, lag: 0, dlq: 0 }));
+  }
+
+  const output: Array<{ queue: string; pending: number; lag: number; dlq: number }> = [];
+  for (const queueName of fineTuningQueueNames) {
+    const queue = new RedisStreamQueue(queueName, {
+      group: 'training-service',
+      consumer: `training-queue-status-${process.pid}`,
+      maxRetries: 3,
+      autoClaimCount: 10,
+    });
+
+    try {
+      const lagMetrics = await queue.getLagMetrics(redis);
+      const dlq = await queue.dlqSize(redis);
+      output.push({
+        queue: queueName,
+        pending: lagMetrics.pending,
+        lag: lagMetrics.lag,
+        dlq,
+      });
+    } catch {
+      output.push({ queue: queueName, pending: 0, lag: 0, dlq: 0 });
+    }
+  }
+  return output;
 }
 
 function startTrainingMetricsScheduler(): void {
@@ -617,7 +763,7 @@ async function enqueueTradingJob(
 ): Promise<void> {
   const redis = getRedisClient();
   if (!redis) {
-    throw new Error('Redis não disponível para fila de trading');
+    throw new Error('Redis nÃ£o disponÃ­vel para fila de trading');
   }
   const queue = new RedisStreamQueue(queueName, {
     group: 'training-service',
@@ -631,7 +777,7 @@ async function enqueueTradingJob(
 async function enqueueTrainingEmbeddingDedupeJob(payload: z.infer<typeof trainingEmbeddingDedupeQueuePayloadSchema>): Promise<boolean> {
   const redis = getRedisClient();
   if (!redis) {
-    throw new Error('Redis não disponível para fila de embedding/dedupe');
+    throw new Error('Redis nÃ£o disponÃ­vel para fila de embedding/dedupe');
   }
 
   const queue = new RedisStreamQueue<z.infer<typeof trainingEmbeddingDedupeQueuePayloadSchema>>(
@@ -650,7 +796,7 @@ async function enqueueTrainingEmbeddingDedupeJob(payload: z.infer<typeof trainin
 async function enqueueNamespaceProfileReconcileJob(payload: z.infer<typeof trainingNamespaceProfileReconcileQueuePayloadSchema>): Promise<boolean> {
   const redis = getRedisClient();
   if (!redis) {
-    throw new Error('Redis não disponível para fila de reconciliação de namespace_profiles');
+    throw new Error('Redis nÃ£o disponÃ­vel para fila de reconciliaÃ§Ã£o de namespace_profiles');
   }
 
   const queue = new RedisStreamQueue<z.infer<typeof trainingNamespaceProfileReconcileQueuePayloadSchema>>(
@@ -681,14 +827,14 @@ function startNamespaceProfileReconcileScheduler(): void {
         runId,
         enqueued,
       },
-      'Tick de reconciliação de namespace_profiles processado'
+      'Tick de reconciliaÃ§Ã£o de namespace_profiles processado'
     );
   };
 
   void scheduleTick().catch((error: unknown) => {
     logger.warn(
       { error: error instanceof Error ? error.message : String(error) },
-      'Falha no tick inicial de reconciliação de namespace_profiles'
+      'Falha no tick inicial de reconciliaÃ§Ã£o de namespace_profiles'
     );
   });
 
@@ -696,7 +842,7 @@ function startNamespaceProfileReconcileScheduler(): void {
     void scheduleTick().catch((error: unknown) => {
       logger.warn(
         { error: error instanceof Error ? error.message : String(error) },
-        'Falha no tick agendado de reconciliação de namespace_profiles'
+        'Falha no tick agendado de reconciliaÃ§Ã£o de namespace_profiles'
       );
     });
   }, NAMESPACE_PROFILE_RECONCILE_INTERVAL_MS);
@@ -762,20 +908,20 @@ function createTradingWorker<T extends { idempotencyKey: string }>(
   };
 }
 
-// Inicializar métricas RBAC (Regra 16 - Observability Enterprise)
+// Inicializar mÃ©tricas RBAC (Regra 16 - Observability Enterprise)
 initRbacPrometheusMetrics(metrics.rbac);
-logger.info('Métricas RBAC Prometheus inicializadas no training-service');
+logger.info('MÃ©tricas RBAC Prometheus inicializadas no training-service');
 
 // Endpoint /metrics para Prometheus scraper (antes de outros middlewares)
 app.use(metricsRouter);
 
 // ============================================================================
-// OPENAPI/SWAGGER: Documentação da API (OWASP API9)
+// OPENAPI/SWAGGER: DocumentaÃ§Ã£o da API (OWASP API9)
 // ============================================================================
 setupSwaggerUI(app, {
   serviceName: 'training-service',
   version: '1.0.0',
-  description: 'Serviço de fine-tuning com SemHash, auto-learning e GPU Manager Service (Hetzner GEX44).',
+  description: 'ServiÃ§o de fine-tuning com SemHash, auto-learning e GPU Manager Service (Hetzner GEX44).',
   port: Number(PORT),
   tags: TRAINING_SERVICE_TAGS,
   paths: trainingServicePaths,
@@ -783,24 +929,24 @@ setupSwaggerUI(app, {
 });
 logger.info('Swagger UI configurado em /api/docs');
 
-// Middleware para coletar métricas HTTP automaticamente
+// Middleware para coletar mÃ©tricas HTTP automaticamente
 app.use(httpMetricsMiddleware);
 
-// SEGURANÇA: Desabilitar X-Powered-By header (Express.js 2025 + OWASP API8)
+// SEGURANÃ‡A: Desabilitar X-Powered-By header (Express.js 2025 + OWASP API8)
 app.disable('x-powered-by');
 
-// SEGURANÇA: Trust proxy = 1 para confiar apenas no primeiro proxy (Traefik)
+// SEGURANÃ‡A: Trust proxy = 1 para confiar apenas no primeiro proxy (Traefik)
 // Evita bypass de rate limiting (express-rate-limit 2025 best practice)
 app.set('trust proxy', 1);
 
 // ============================================================================
 // CIRCUIT BREAKER - Text Embeddings GPU (GPU Manager Service)
-// Gate 2: Qwen3-Embedding-0.6B INT8 (1024 dim, SSOT) via GPU Manager Service → Qdrant
-// Usa CIRCUIT_BREAKER_PRESETS centralizado (Regra 2 - Não Duplicar)
+// Gate 2: Qwen3-Embedding-0.6B INT8 (1024 dim, SSOT) via GPU Manager Service â†’ Qdrant
+// Usa CIRCUIT_BREAKER_PRESETS centralizado (Regra 2 - NÃ£o Duplicar)
 // ============================================================================
 
-// GPU Manager Service - Gerenciamento centralizado de requisições GPU (25/12/2025)
-// URL é usada internamente pelo requestGpu, não precisa ser exposta aqui
+// GPU Manager Service - Gerenciamento centralizado de requisiÃ§Ãµes GPU (25/12/2025)
+// URL Ã© usada internamente pelo requestGpu, nÃ£o precisa ser exposta aqui
 
 interface TextEmbeddingResponse {
   embedding: number[];
@@ -808,14 +954,14 @@ interface TextEmbeddingResponse {
   processing_time_ms: number;
 }
 
-// RESILIÊNCIA: Timeout para chamadas externas (Best Practices 2025)
+// RESILIÃŠNCIA: Timeout para chamadas externas (Best Practices 2025)
 const EXTERNAL_API_TIMEOUT_MS = 25000;
 
 async function generateEmbeddingInternal(text: string): Promise<number[]> {
-  // Gate 2: Embeddings de texto via GPU Manager Service (dimensão SSOT = EMBEDDING_DIMENSIONS.TEXT)
+  // Gate 2: Embeddings de texto via GPU Manager Service (dimensÃ£o SSOT = EMBEDDING_DIMENSIONS.TEXT)
   
   try {
-    // Enfileirar requisição no GPU Manager com prioridade MEDIUM (embeddings para fine-tuning)
+    // Enfileirar requisiÃ§Ã£o no GPU Manager com prioridade MEDIUM (embeddings para fine-tuning)
     const gpuResponse = await requestGpu({
       serviceType: GpuServiceType.EMBEDDINGS,
       endpoint: '/embed/text',
@@ -839,11 +985,11 @@ async function generateEmbeddingInternal(text: string): Promise<number[]> {
     const resultEmbedding = data.embedding ?? data.embeddings?.[0];
     
     if (!resultEmbedding || resultEmbedding.length === 0) {
-      throw new Error('Serviço de embeddings GPU retornou resultado vazio');
+      throw new Error('ServiÃ§o de embeddings GPU retornou resultado vazio');
     }
     
-    // Validar dimensão (SSOT) - Enterprise-grade
-    // Lança erro se dimensão estiver incorreta (não apenas warning) - Regra 6
+    // Validar dimensÃ£o (SSOT) - Enterprise-grade
+    // LanÃ§a erro se dimensÃ£o estiver incorreta (nÃ£o apenas warning) - Regra 6
     validateEmbeddingDimension(resultEmbedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
     
     return resultEmbedding;
@@ -861,8 +1007,8 @@ const gpuManagerEmbeddingsBreaker = createCircuitBreaker(generateEmbeddingIntern
   ...CIRCUIT_BREAKER_PRESETS.textEmbeddings,
 });
 
-// Instrumentar circuit breaker com métricas Prometheus
-// Type assertion necessária: Opossum CircuitBreaker tem tipos de eventos mais específicos
+// Instrumentar circuit breaker com mÃ©tricas Prometheus
+// Type assertion necessÃ¡ria: Opossum CircuitBreaker tem tipos de eventos mais especÃ­ficos
 instrumentCircuitBreaker(metrics, 'gpu-manager-embeddings', gpuManagerEmbeddingsBreaker as unknown as Parameters<typeof instrumentCircuitBreaker>[2]);
 
 async function generateEmbedding(text: string): Promise<number[]> {
@@ -870,21 +1016,21 @@ async function generateEmbedding(text: string): Promise<number[]> {
     return await gpuManagerEmbeddingsBreaker.fire(text) as number[];
   } catch (error) {
     if (error instanceof Error && error.message.includes('Breaker is open')) {
-      logger.warn('Circuit breaker aberto - Embeddings temporariamente indisponível');
-      throw new Error('Serviço de embeddings temporariamente indisponível. Tente novamente em alguns segundos.');
+      logger.warn('Circuit breaker aberto - Embeddings temporariamente indisponÃ­vel');
+      throw new Error('ServiÃ§o de embeddings temporariamente indisponÃ­vel. Tente novamente em alguns segundos.');
     }
     throw error;
   }
 }
 
-// SEGURANÇA: Helmet com CSP/HSTS enterprise (Express.js 2025 + OWASP 2023)
+// SEGURANÃ‡A: Helmet com CSP/HSTS enterprise (Express.js 2025 + OWASP 2023)
 app.use(createSecurityMiddleware({
   contentSecurityPolicy: process.env.NODE_ENV === 'production',
   isDevelopment: process.env.NODE_ENV !== 'production',
 }));
 
-// OBSERVABILITY: Correlation ID middleware para rastreamento distribuído (Node.js 20 LTS 2025)
-// Propaga correlation IDs entre microsserviços e injeta nos logs automaticamente
+// OBSERVABILITY: Correlation ID middleware para rastreamento distribuÃ­do (Node.js 20 LTS 2025)
+// Propaga correlation IDs entre microsserviÃ§os e injeta nos logs automaticamente
 app.use(createCorrelationMiddleware({ serviceName: 'training-service' }));
 
 // PERFORMANCE: Compression para reduzir tamanho de respostas (Express.js 2025)
@@ -895,7 +1041,7 @@ app.use(cors({
   credentials: CORS_ORIGINS.length > 0,
 }));
 
-// SEGURANÇA: Rate limiting multi-tenant (express-rate-limit 2025)
+// SEGURANÃ‡A: Rate limiting multi-tenant (express-rate-limit 2025)
 app.use(createRateLimiter({
   windowMs: 60 * 1000,
   max: 30,
@@ -903,15 +1049,15 @@ app.use(createRateLimiter({
   serviceName: 'training-service',
 }));
 
-// SEGURANÇA: Limites de payload para prevenir DoS (OWASP API4)
+// SEGURANÃ‡A: Limites de payload para prevenir DoS (OWASP API4)
 app.use(express.json({ limit: '10mb' }));
 
 // =============================================================================
-// MIDDLEWARE: Auth híbrida (WS4) — Sessão (cookie) + Bearer JWT OIDC (JWKS)
+// MIDDLEWARE: Auth hÃ­brida (WS4) â€” SessÃ£o (cookie) + Bearer JWT OIDC (JWKS)
 // =============================================================================
 // SSOT: @alice/shared-utils/createSessionAuthMiddleware
 // - Popular req.user / req.tenantId para RBAC (`requirePermission`)
-// - Aceitar Bearer JWT (OIDC) quando o cookie não está presente
+// - Aceitar Bearer JWT (OIDC) quando o cookie nÃ£o estÃ¡ presente
 // =============================================================================
 app.use(createSessionAuthMiddleware({
   pool: getPool(),
@@ -919,7 +1065,7 @@ app.use(createSessionAuthMiddleware({
 }));
 
 const SIMILARITY_THRESHOLD = TRAINING_DATA_SIMILARITY_THRESHOLD;
-// BUG FIX 26/12/2025: JOB_POLLING_INTERVAL_MS removido - fine-tuning em migração para Hetzner GPU
+// BUG FIX 26/12/2025: JOB_POLLING_INTERVAL_MS removido - fine-tuning em migraÃ§Ã£o para Hetzner GPU
 
 function computeQualityScore(messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>): number {
   if (messages.length < 2) return 0;
@@ -947,7 +1093,7 @@ app.get('/api/training/health', async (_req: Request, res: Response) => {
     service: 'training-service', 
     timestamp: new Date().toISOString(),
     embeddingsProvider: 'gpu-manager-service',
-    model: 'Qwen/Qwen3-Embedding-0.6B (1024 dim → Qdrant)',
+    model: 'Qwen/Qwen3-Embedding-0.6B (1024 dim â†’ Qdrant)',
     fineTuningStatus: 'enabled',
     circuitBreakers: {
       embeddings: {
@@ -964,11 +1110,11 @@ app.get('/api/training/health', async (_req: Request, res: Response) => {
 
 // ============================================================================
 // KUBERNETES PROBES: /ready e /live (Regra 16 - Best Practices 2025)
-// /live: Processo está vivo? Se não, Kubernetes reinicia o container
-// /ready: Pronto para tráfego? Verifica conexão com PostgreSQL e circuit breakers
+// /live: Processo estÃ¡ vivo? Se nÃ£o, Kubernetes reinicia o container
+// /ready: Pronto para trÃ¡fego? Verifica conexÃ£o com PostgreSQL e circuit breakers
 // ============================================================================
 
-// Liveness probe - verificação simples que o processo responde
+// Liveness probe - verificaÃ§Ã£o simples que o processo responde
 app.get('/live', (_req: Request, res: Response) => {
   res.status(200).json({ 
     status: 'alive', 
@@ -977,7 +1123,7 @@ app.get('/live', (_req: Request, res: Response) => {
   });
 });
 
-// Readiness probe - verifica se PostgreSQL e embeddings estão acessíveis
+// Readiness probe - verifica se PostgreSQL e embeddings estÃ£o acessÃ­veis
 app.get('/ready', async (_req: Request, res: Response) => {
   try {
     const dbHealthy = await isPoolHealthy();
@@ -999,7 +1145,7 @@ app.get('/ready', async (_req: Request, res: Response) => {
       res.status(503).json({
         status: 'not_ready',
         service: 'training-service',
-        reason: !dbHealthy ? 'PostgreSQL não está acessível' : 'Embeddings circuit breaker aberto',
+        reason: !dbHealthy ? 'PostgreSQL nÃ£o estÃ¡ acessÃ­vel' : 'Embeddings circuit breaker aberto',
         timestamp: new Date().toISOString(),
         dependencies: {
           postgresql: dbHealthy ? 'ready' : 'not_ready',
@@ -1012,7 +1158,7 @@ app.get('/ready', async (_req: Request, res: Response) => {
     res.status(503).json({
       status: 'not_ready',
       service: 'training-service',
-      reason: 'Erro ao verificar dependências',
+      reason: 'Erro ao verificar dependÃªncias',
       timestamp: new Date().toISOString(),
     });
   }
@@ -1054,7 +1200,7 @@ app.post('/internal/trading/enqueue/model-risk', requireInternalHmacAuth(), asyn
 });
 
 // ============================================================================
-// TRADING AUTO ENGINE - Jobs automáticos de portfólio e sinais IA
+// TRADING AUTO ENGINE - Jobs automÃ¡ticos de portfÃ³lio e sinais IA
 // ============================================================================
 
 const tradingAutoPortfolioPayloadSchema = z.object({
@@ -1075,7 +1221,7 @@ const tradingAutoSignalAssetSchema = z.object({
   if (asset.marginMode && asset.marketType !== 'margin') {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'marginMode é permitido apenas para marketType=margin.',
+      message: 'marginMode Ã© permitido apenas para marketType=margin.',
       path: ['marginMode'],
     });
   }
@@ -1188,7 +1334,7 @@ async function updateAutoRunStep(
     );
 }
 
-/** Processa pipeline automático de portfólio (universe → backtest → calibration → model-risk → rebalance) */
+/** Processa pipeline automÃ¡tico de portfÃ³lio (universe â†’ backtest â†’ calibration â†’ model-risk â†’ rebalance) */
 async function processPortfolioAutoRun(payload: z.infer<typeof tradingAutoPortfolioPayloadSchema>): Promise<void> {
   const { runId, correlationId } = payload;
   logger.info({ runId, correlationId }, 'Iniciando portfolio auto run');
@@ -1240,12 +1386,12 @@ async function processPortfolioAutoRun(payload: z.infer<typeof tradingAutoPortfo
     }
   }
 
-  // Criar decisão final do portfólio
+  // Criar decisÃ£o final do portfÃ³lio
   const run = await db.query.tradingAutoRuns.findFirst({
     where: eq(schema.tradingAutoRuns.id, runId),
   });
   if (!run) {
-    logger.error({ runId, correlationId }, 'Run não encontrado ao criar decisão final');
+    logger.error({ runId, correlationId }, 'Run nÃ£o encontrado ao criar decisÃ£o final');
     return;
   }
 
@@ -1258,14 +1404,14 @@ async function processPortfolioAutoRun(payload: z.infer<typeof tradingAutoPortfo
     modelsUsed: ['trading-pipeline'],
     idempotencyHash: crypto.createHash('sha256').update(`portfolio-auto:${runId}:${correlationId}`).digest('hex'),
     approved: true,
-    reasoning: `Pipeline institucional completo: ${steps.join(' → ')}. Todos os steps enfileirados com sucesso.`,
+    reasoning: `Pipeline institucional completo: ${steps.join(' â†’ ')}. Todos os steps enfileirados com sucesso.`,
   });
 
   await db.update(schema.tradingAutoRuns)
     .set({ status: 'succeeded', finishedAt: new Date() })
     .where(eq(schema.tradingAutoRuns.id, runId));
 
-  logger.info({ runId, correlationId, steps: steps.length }, 'Portfolio auto run concluído com sucesso');
+  logger.info({ runId, correlationId, steps: steps.length }, 'Portfolio auto run concluÃ­do com sucesso');
 }
 
 type AdaptiveThresholds = {
@@ -1362,7 +1508,7 @@ async function resolveAutoDecisionEvidenceIds(params: {
     ...postmortems.map((row) => `postmortem:${row.id}`),
   ];
 
-  // Busca RAG por intent/regime quando disponível (não bloqueante — falha silenciosa)
+  // Busca RAG por intent/regime quando disponÃ­vel (nÃ£o bloqueante â€” falha silenciosa)
   const ragEvidenceIds: string[] = [];
   if (params.namespaceId && params.operationIntent && params.userId) {
     try {
@@ -1372,7 +1518,7 @@ async function resolveAutoDecisionEvidenceIds(params: {
         'x-tenant-id': params.tenantId,
       };
       const queryParts = [
-        `Estratégia: ${params.operationIntent}`,
+        `EstratÃ©gia: ${params.operationIntent}`,
         params.regime ? `Regime: ${params.regime}` : null,
         params.symbol ? `Par: ${params.symbol}` : null,
         params.marketType ? `Mercado: ${params.marketType}` : null,
@@ -1396,8 +1542,8 @@ async function resolveAutoDecisionEvidenceIds(params: {
         }
       }
     } catch {
-      // RAG não disponível — continuar sem contexto (não bloqueante)
-      logger.debug({ tenantId: params.tenantId, operationIntent: params.operationIntent }, 'RAG intent/regime indisponível (não bloqueante)');
+      // RAG nÃ£o disponÃ­vel â€” continuar sem contexto (nÃ£o bloqueante)
+      logger.debug({ tenantId: params.tenantId, operationIntent: params.operationIntent }, 'RAG intent/regime indisponÃ­vel (nÃ£o bloqueante)');
     }
   }
 
@@ -1583,11 +1729,11 @@ async function generateAndTagAutoSignal(params: {
   });
 
   if (!updatedSignal) {
-    throw new Error(`Sinal ${signalId} não encontrado para marcar metadata de signal_auto`);
+    throw new Error(`Sinal ${signalId} nÃ£o encontrado para marcar metadata de signal_auto`);
   }
 }
 
-/** Processa geração automática de sinais */
+/** Processa geraÃ§Ã£o automÃ¡tica de sinais */
 async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPayloadSchema>): Promise<void> {
   const { runId, correlationId } = payload;
   logger.info({ runId, correlationId }, 'Iniciando signal auto run');
@@ -1602,7 +1748,7 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
     const run = await db.query.tradingAutoRuns.findFirst({
       where: eq(schema.tradingAutoRuns.id, runId),
     });
-    if (!run) throw new Error('Run não encontrado');
+    if (!run) throw new Error('Run nÃ£o encontrado');
 
     const normalizedPayloadSymbol = typeof payload.symbol === 'string'
       ? payload.symbol.trim().toUpperCase()
@@ -1806,18 +1952,18 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
     const reasonPriority = ['UNVALIDATED', 'LIQUIDITY_CONSTRAINT', 'GUARDRAIL_BLOCKED', 'NO_CANDIDATES', 'NO_EDGE'];
     const noTradeReasonCode = reasonPriority.find((reason) => noTradeReasons.includes(reason)) ?? 'NO_EDGE';
     const noTradeReasonHumanMap: Record<string, string> = {
-      UNVALIDATED: 'Candidato ainda sem validação estatística mínima (DSR/PBO).',
-      LIQUIDITY_CONSTRAINT: 'Sem liquidez mínima: spread alargado ou profundidade insuficiente.',
+      UNVALIDATED: 'Candidato ainda sem validaÃ§Ã£o estatÃ­stica mÃ­nima (DSR/PBO).',
+      LIQUIDITY_CONSTRAINT: 'Sem liquidez mÃ­nima: spread alargado ou profundidade insuficiente.',
       GUARDRAIL_BLOCKED: 'Guardrails bloquearam o trade por DSR/PBO fora da faixa.',
-      NO_CANDIDATES: 'Nenhum candidato disponível para o escopo atual.',
-      NO_EDGE: 'Edge líquido insuficiente para execução segura.',
+      NO_CANDIDATES: 'Nenhum candidato disponÃ­vel para o escopo atual.',
+      NO_EDGE: 'Edge lÃ­quido insuficiente para execuÃ§Ã£o segura.',
     };
     const nextActionMap: Record<string, string> = {
-      UNVALIDATED: 'Rodar pipeline de backtest+calibration e aguardar próxima janela de mercado.',
+      UNVALIDATED: 'Rodar pipeline de backtest+calibration e aguardar prÃ³xima janela de mercado.',
       LIQUIDITY_CONSTRAINT: 'Aguardar melhora de liquidez (spread/depth) e tentar novamente.',
       NO_CANDIDATES: 'Executar universe scan para ampliar o conjunto de candidates.',
-      GUARDRAIL_BLOCKED: 'Revisar thresholds e aguardar novas condições de regime.',
-      NO_EDGE: 'Revisar thresholds e aguardar novas condições de regime.',
+      GUARDRAIL_BLOCKED: 'Revisar thresholds e aguardar novas condiÃ§Ãµes de regime.',
+      NO_EDGE: 'Revisar thresholds e aguardar novas condiÃ§Ãµes de regime.',
     };
     const noTradeReasonHuman = noTradeReasonHumanMap[noTradeReasonCode] ?? noTradeReasonHumanMap.NO_EDGE;
     const nextAction = nextActionMap[noTradeReasonCode] ?? nextActionMap.NO_EDGE;
@@ -1867,7 +2013,7 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
       idempotencyHash,
       approved: approvedCandidates.length > 0,
       reasoning: approvedCandidates.length > 0
-        ? `${approvedCandidates.length} candidate(s) aprovado(s) após guardrails adaptativos. Melhor: ${bestCandidate?.strategyKey ?? 'N/A'} (${bestCandidate?.operationIntent ?? 'intraday'}).`
+        ? `${approvedCandidates.length} candidate(s) aprovado(s) apÃ³s guardrails adaptativos. Melhor: ${bestCandidate?.strategyKey ?? 'N/A'} (${bestCandidate?.operationIntent ?? 'intraday'}).`
         : `${noTradeReasonHuman} Total avaliados: ${candidates.length}.`,
     }).returning({ id: schema.tradingAutoDecisions.id, tradingSignalId: schema.tradingAutoDecisions.tradingSignalId });
 
@@ -1881,7 +2027,7 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
     });
     const resolvedSymbol = symbol ?? fallbackInstrument?.symbol;
     if (!resolvedSymbol) {
-      throw new Error('Signal auto run sem símbolo disponível para persistência de histórico');
+      throw new Error('Signal auto run sem sÃ­mbolo disponÃ­vel para persistÃªncia de histÃ³rico');
     }
 
     const resolvedMarketType = payload.marketType ?? candidateForReason?.marketType ?? 'futures';
@@ -1958,7 +2104,7 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
     const namespaceId = run.namespaceId ?? payload.namespaceId ?? null;
     const trainingNamespaceId = namespaceId;
     if (!trainingNamespaceId) {
-      throw new Error('TRADING_SCOPE_REQUIRED: Namespace Trading obrigatório para Auto Engine.');
+      throw new Error('TRADING_SCOPE_REQUIRED: Namespace Trading obrigatÃ³rio para Auto Engine.');
     }
     const [trainingSummary] = await db
       .select({ count: sql<number>`count(*)` })
@@ -1969,26 +2115,26 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
         eq(schema.trainingData.status, 'approved'),
       ));
     if (Number(trainingSummary?.count ?? 0) <= 0) {
-      throw new Error('TRADING_SCOPE_REQUIRED: Dataset aprovado de Trading é obrigatório para Auto Engine.');
+      throw new Error('TRADING_SCOPE_REQUIRED: Dataset aprovado de Trading Ã© obrigatÃ³rio para Auto Engine.');
     }
     const activeAdapter = await getActiveAdapter({ tenantId: run.tenantId, namespaceId: trainingNamespaceId });
     if (!activeAdapter?.adapterPath) {
-      throw new Error('TRADING_SCOPE_REQUIRED: Adapter LoRA ativo obrigatório para Auto Engine.');
+      throw new Error('TRADING_SCOPE_REQUIRED: Adapter LoRA ativo obrigatÃ³rio para Auto Engine.');
     }
 
     const llmPrompt = [
-      'Você é um engine institucional de trading.',
+      'VocÃª Ã© um engine institucional de trading.',
       `Candidate side: ${String(bestCandidate?.side ?? 'hold')}`,
       `Entry model base: ${JSON.stringify(entryModel)}`,
       `Guardrails: ${JSON.stringify(guardrailResults)}`,
       `No trade reason code: ${noTradeReasonCode}`,
       `Evidence IDs: ${JSON.stringify(ragEvidenceIds)}`,
-      'Regra obrigatória: não invente preço. Use entryModel.entry e ajuste no máximo 0.3%.',
+      'Regra obrigatÃ³ria: nÃ£o invente preÃ§o. Use entryModel.entry e ajuste no mÃ¡ximo 0.3%.',
       'Responda no JSON schema solicitado.',
     ].join('\n');
 
     const messages = [
-      { role: 'system' as const, content: 'Você gera plano de trade estruturado para Auto Engine.' },
+      { role: 'system' as const, content: 'VocÃª gera plano de trade estruturado para Auto Engine.' },
       { role: 'user' as const, content: llmPrompt },
     ];
 
@@ -2123,7 +2269,7 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
       .set({ status: 'succeeded', finishedAt: new Date() })
       .where(eq(schema.tradingAutoRuns.id, runId));
 
-    logger.info({ runId, correlationId, candidates: candidates.length, approved: approvedCandidates.length }, 'Signal auto run concluído');
+    logger.info({ runId, correlationId, candidates: candidates.length, approved: approvedCandidates.length }, 'Signal auto run concluÃ­do');
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     const currentSteps = await db.query.tradingAutoRunSteps.findMany({
@@ -2145,7 +2291,7 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
   }
 }
 
-/** POST /internal/trading/auto/portfolio-run - Recebe job de pipeline de portfólio */
+/** POST /internal/trading/auto/portfolio-run - Recebe job de pipeline de portfÃ³lio */
 app.post('/internal/trading/auto/portfolio-run', requireInternalHmacAuth(), async (req: Request, res: Response) => {
   try {
     const payload = tradingAutoPortfolioPayloadSchema.parse(req.body);
@@ -2160,7 +2306,7 @@ app.post('/internal/trading/auto/portfolio-run', requireInternalHmacAuth(), asyn
   }
 });
 
-/** POST /internal/trading/auto/signal-run - Recebe job de geração automática de sinais */
+/** POST /internal/trading/auto/signal-run - Recebe job de geraÃ§Ã£o automÃ¡tica de sinais */
 app.post('/internal/trading/auto/signal-run', requireInternalHmacAuth(), async (req: Request, res: Response) => {
   try {
     const payload = tradingAutoSignalPayloadSchema.parse(req.body);
@@ -2176,7 +2322,7 @@ app.post('/internal/trading/auto/signal-run', requireInternalHmacAuth(), async (
 });
 
 // ============================================================================
-// SYSTEM CONFIG - Configurações editáveis via UI (RAG, Chat, Treino)
+// SYSTEM CONFIG - ConfiguraÃ§Ãµes editÃ¡veis via UI (RAG, Chat, Treino)
 // Ref: docs/TREINAMENTO-LIMITES-E-BOAS-PRATICAS.md
 // ============================================================================
 app.get('/api/training/system-config', requirePermission('config:system:read'), async (_req: Request, res: Response) => {
@@ -2185,7 +2331,7 @@ app.get('/api/training/system-config', requirePermission('config:system:read'), 
     res.json(config);
   } catch (error) {
     logger.error({ error }, 'Erro ao obter system config');
-    res.status(500).json({ error: 'Erro ao obter configurações' });
+    res.status(500).json({ error: 'Erro ao obter configuraÃ§Ãµes' });
   }
 });
 
@@ -2207,17 +2353,17 @@ app.patch('/api/training/system-config', requirePermission('config:system:write'
     res.json(config);
   } catch (error) {
     if (error instanceof z.ZodError) {
-      res.status(400).json({ error: 'Payload inválido', details: error.flatten() });
+      res.status(400).json({ error: 'Payload invÃ¡lido', details: error.flatten() });
       return;
     }
     logger.error({ error }, 'Erro ao atualizar system config');
-    res.status(500).json({ error: 'Erro ao atualizar configurações' });
+    res.status(500).json({ error: 'Erro ao atualizar configuraÃ§Ãµes' });
   }
 });
 
 const messageSchema = z.object({
   role: z.enum(['user', 'assistant', 'system']),
-  content: z.string().min(1, 'Conteúdo da mensagem é obrigatório'),
+  content: z.string().min(1, 'ConteÃºdo da mensagem Ã© obrigatÃ³rio'),
 });
 
 const trainingSourceTypeSchema = z.enum([
@@ -2228,7 +2374,7 @@ const trainingSourceTypeSchema = z.enum([
   'trading_postmortem',
   'document',
   'rag_document',
-  'rag_media', // Plano RAG Multimodal Fase 4 - mídia (imagem/áudio) promovida para treinamento
+  'rag_media', // Plano RAG Multimodal Fase 4 - mÃ­dia (imagem/Ã¡udio) promovida para treinamento
   'upload',
   'external',
   'manual',
@@ -2239,22 +2385,22 @@ function parseEnvFloat(envValue: string | undefined, defaultValue: number, varNa
   const raw = envValue ?? String(defaultValue);
   const trimmed = raw.trim();
   if (!/^\d+(\.\d+)?$/.test(trimmed)) {
-    const errorMsg = `${varName} inválido: "${raw}". Deve ser número positivo.`;
+    const errorMsg = `${varName} invÃ¡lido: "${raw}". Deve ser nÃºmero positivo.`;
     if (process.env.NODE_ENV === 'production') {
       logger.error({ varName, rawValue: raw }, errorMsg);
       throw new Error(errorMsg);
     }
-    logger.warn({ varName, rawValue: raw, defaultValue }, `${errorMsg} Usando valor padrão.`);
+    logger.warn({ varName, rawValue: raw, defaultValue }, `${errorMsg} Usando valor padrÃ£o.`);
     return defaultValue;
   }
   const parsed = Number(trimmed);
   if (!Number.isFinite(parsed) || parsed <= 0) {
-    const errorMsg = `${varName} inválido: "${raw}". Deve ser número positivo.`;
+    const errorMsg = `${varName} invÃ¡lido: "${raw}". Deve ser nÃºmero positivo.`;
     if (process.env.NODE_ENV === 'production') {
       logger.error({ varName, rawValue: raw, parsed }, errorMsg);
       throw new Error(errorMsg);
     }
-    logger.warn({ varName, rawValue: raw, parsed, defaultValue }, `${errorMsg} Usando valor padrão.`);
+    logger.warn({ varName, rawValue: raw, parsed, defaultValue }, `${errorMsg} Usando valor padrÃ£o.`);
     return defaultValue;
   }
   return parsed;
@@ -2290,7 +2436,7 @@ async function getDefaultNamespaceProfileConfigForTraining(): Promise<NamespaceP
     parsed = JSON.parse(raw);
   } catch (error) {
     throw new Error(
-      `JSON inválido em NAMESPACE_PROFILE_DEFAULT_CONFIG_JSON: ${error instanceof Error ? error.message : String(error)}`
+      `JSON invÃ¡lido em NAMESPACE_PROFILE_DEFAULT_CONFIG_JSON: ${error instanceof Error ? error.message : String(error)}`
     );
   }
   return NamespaceProfileConfigSchema.parse(parsed);
@@ -2336,16 +2482,16 @@ async function resolveTrainingNamespaceProfile(params: {
 }
 
 const collectTrainingDataSchema = z.object({
-  tenantId: z.string().uuid('Tenant ID deve ser UUID válido'),
-  namespaceId: z.string().uuid('Namespace ID deve ser UUID válido').optional(),
-  agentId: z.string().uuid('Agent ID deve ser UUID válido').optional(),
+  tenantId: z.string().uuid('Tenant ID deve ser UUID vÃ¡lido'),
+  namespaceId: z.string().uuid('Namespace ID deve ser UUID vÃ¡lido').optional(),
+  agentId: z.string().uuid('Agent ID deve ser UUID vÃ¡lido').optional(),
   domain: z.string().min(1).max(120).optional(),
-  conversationId: z.string().uuid('Conversation ID deve ser UUID válido').optional(),
-  source: z.string().min(1, 'Fonte é obrigatória'),
+  conversationId: z.string().uuid('Conversation ID deve ser UUID vÃ¡lido').optional(),
+  source: z.string().min(1, 'Fonte Ã© obrigatÃ³ria'),
   sourceType: trainingSourceTypeSchema.optional(),
   sourceId: z.string().min(1).max(255).optional(),
   sourceMetadata: z.record(z.unknown()).optional(),
-  messages: z.array(messageSchema).min(1, 'Pelo menos uma mensagem é obrigatória'),
+  messages: z.array(messageSchema).min(1, 'Pelo menos uma mensagem Ã© obrigatÃ³ria'),
   rating: z.number().min(1).max(5).optional(),
 });
 
@@ -2359,7 +2505,7 @@ app.post('/api/training/data', requirePermission('training:training_data:write')
     const resolvedTenantId = tenantResolution.tenantId;
     const createdBy = tenantResolution.authContext.userId ?? undefined;
 
-    // SEGURANÇA: Validação cross-tenant - namespaceId/agentId do body devem pertencer ao tenant
+    // SEGURANÃ‡A: ValidaÃ§Ã£o cross-tenant - namespaceId/agentId do body devem pertencer ao tenant
     if (body.namespaceId) {
       await validateNamespaceTenantConsistency(
         body.namespaceId,
@@ -2457,7 +2603,7 @@ app.post('/api/training/data', requirePermission('training:training_data:write')
     const inferredStatusNotes: string[] = [];
     if (scope.needsHumanReview) {
       inferredStatusNotes.push(
-        `Escopo em quarentena automática: confidence=${scope.confidence.toFixed(2)}`
+        `Escopo em quarentena automÃ¡tica: confidence=${scope.confidence.toFixed(2)}`
       );
       trainingPipelineMetrics.scopeQuarantineTotal.inc({
         source_type: body.sourceType ?? 'unknown',
@@ -2483,8 +2629,8 @@ app.post('/api/training/data', requirePermission('training:training_data:write')
     const autoRejectedByQuality = qualityAutoReject && qualityScore < qualityMinScore;
     if (autoRejectedByQuality || privacyResult.action === 'reject') {
       const reviewNotes = autoRejectedByQuality
-        ? `Auto-rejeitado: qualidade ${qualityScore.toFixed(2)} abaixo do mínimo (${qualityMinScore}).`
-        : 'Rejeitado por política de privacidade';
+        ? `Auto-rejeitado: qualidade ${qualityScore.toFixed(2)} abaixo do mÃ­nimo (${qualityMinScore}).`
+        : 'Rejeitado por polÃ­tica de privacidade';
       const processedAt = new Date();
       const [trainingData] = await db.insert(schema.trainingData).values({
         tenantId: resolvedTenantId,
@@ -2557,7 +2703,7 @@ app.post('/api/training/data', requirePermission('training:training_data:write')
         qualityScore,
         queued: false,
         idempotencyKey,
-      }, 'Dados de treinamento rejeitados por qualidade mínima');
+      }, 'Dados de treinamento rejeitados por qualidade mÃ­nima');
 
       return res.json({
         trainingData,
@@ -2590,7 +2736,7 @@ app.post('/api/training/data', requirePermission('training:training_data:write')
         trainingDataId: existingByFingerprint.id,
         queued: !alreadyProcessed && existingByFingerprint.status === 'pending',
         idempotencyKey,
-      }, 'Requisição idempotente detectada em training_data');
+      }, 'RequisiÃ§Ã£o idempotente detectada em training_data');
 
       return res.json({
         trainingData: existingByFingerprint,
@@ -2696,7 +2842,7 @@ app.post('/api/training/data', requirePermission('training:training_data:write')
           similarityScore: 1,
           status: 'rejected',
           reviewNotes: [
-            'Requisição idempotente duplicada: job já enfileirado para fingerprint idêntico.',
+            'RequisiÃ§Ã£o idempotente duplicada: job jÃ¡ enfileirado para fingerprint idÃªntico.',
             trainingData.reviewNotes,
           ].filter(Boolean).join(' | '),
           processedAt,
@@ -2714,7 +2860,7 @@ app.post('/api/training/data', requirePermission('training:training_data:write')
         trainingDataId: updatedDuplicate.id,
         queued: false,
         idempotencyKey,
-      }, 'Requisição idempotente duplicada sem novo enqueue');
+      }, 'RequisiÃ§Ã£o idempotente duplicada sem novo enqueue');
 
       return res.json({
         trainingData: updatedDuplicate,
@@ -2763,10 +2909,10 @@ app.post('/api/training/data', requirePermission('training:training_data:write')
 });
 
 app.get('/api/training/data', requirePermission('training:training_data:read'), async (req: Request, res: Response) => {
-  // OWASP API3: Validação de query params
+  // OWASP API3: ValidaÃ§Ã£o de query params
   const queryResult = trainingDataQuerySchema.safeParse(req.query);
   if (!queryResult.success) {
-    return res.status(400).json({ error: 'Parâmetros inválidos', details: queryResult.error.format() });
+    return res.status(400).json({ error: 'ParÃ¢metros invÃ¡lidos', details: queryResult.error.format() });
   }
   const { status, namespaceId, agentId, inferredDomain, needsHumanReview, sourceType } = queryResult.data;
 
@@ -2797,12 +2943,12 @@ app.get('/api/training/data', requirePermission('training:training_data:read'), 
   }
 });
 
-// OWASP API3 - Schema para validação de parâmetros de rota (UUID)
+// OWASP API3 - Schema para validaÃ§Ã£o de parÃ¢metros de rota (UUID)
 const uuidParamSchema = z.object({
-  id: z.string().uuid('ID deve ser um UUID válido'),
+  id: z.string().uuid('ID deve ser um UUID vÃ¡lido'),
 });
 
-// OWASP API3 - Schema para validação de status
+// OWASP API3 - Schema para validaÃ§Ã£o de status
 const statusUpdateSchema = z.object({
   status: z.enum(['approved', 'rejected']),
   reviewNotes: z.string().max(2000).optional(),
@@ -2814,18 +2960,65 @@ const statusUpdateSchema = z.object({
   }).optional(),
 });
 
+const promotionApprovalBodySchema = z.object({
+  decision: z.enum(['approved', 'rejected']),
+  reason: z.string().max(2000).optional(),
+});
+
+async function getPromotionApprovalSummary(params: {
+  tenantId: string;
+  fineTuningJobId: string;
+  requesterUserId: string;
+}): Promise<{
+  approvedDistinctUsersCount: number;
+  requesterHasApproved: boolean;
+  approvals: Array<{
+    approverUserId: string;
+    decision: 'approved' | 'rejected';
+    reason: string | null;
+    updatedAt: Date;
+  }>;
+}> {
+  const approvals = await db.query.fineTuningPromotionApprovals.findMany({
+    where: and(
+      eq(schema.fineTuningPromotionApprovals.tenantId, params.tenantId),
+      eq(schema.fineTuningPromotionApprovals.fineTuningJobId, params.fineTuningJobId)
+    ),
+    orderBy: [desc(schema.fineTuningPromotionApprovals.updatedAt)],
+  });
+
+  const approvedDistinctUsersCount = approvals
+    .filter((approval) => approval.decision === 'approved')
+    .length;
+  const requesterHasApproved = approvals.some((approval) => (
+    approval.approverUserId === params.requesterUserId
+    && approval.decision === 'approved'
+  ));
+
+  return {
+    approvedDistinctUsersCount,
+    requesterHasApproved,
+    approvals: approvals.map((approval) => ({
+      approverUserId: approval.approverUserId,
+      decision: approval.decision,
+      reason: approval.reason,
+      updatedAt: approval.updatedAt,
+    })),
+  };
+}
+
 app.patch('/api/training/data/:id/status', requirePermission('training:training_data:manage'), async (req: Request, res: Response) => {
-  // OWASP API3: Validação Zod obrigatória de parâmetros de rota
+  // OWASP API3: ValidaÃ§Ã£o Zod obrigatÃ³ria de parÃ¢metros de rota
   const paramsResult = uuidParamSchema.safeParse(req.params);
   if (!paramsResult.success) {
-    return res.status(400).json({ error: 'ID inválido', details: paramsResult.error.format() });
+    return res.status(400).json({ error: 'ID invÃ¡lido', details: paramsResult.error.format() });
   }
   const { id } = paramsResult.data;
   
-  // OWASP API3: Validação de body
+  // OWASP API3: ValidaÃ§Ã£o de body
   const bodyResult = statusUpdateSchema.safeParse(req.body);
   if (!bodyResult.success) {
-    return res.status(400).json({ error: 'Status inválido', details: bodyResult.error.format() });
+    return res.status(400).json({ error: 'Status invÃ¡lido', details: bodyResult.error.format() });
   }
   const { status, reviewNotes, overrideScope } = bodyResult.data;
   const tenantResolution = resolveAuthorizedTenantId(req);
@@ -2840,7 +3033,7 @@ app.patch('/api/training/data/:id/status', requirePermission('training:training_
     });
 
     if (!existing) {
-      return res.status(404).json({ error: 'Registro de treinamento não encontrado' });
+      return res.status(404).json({ error: 'Registro de treinamento nÃ£o encontrado' });
     }
 
     if (existing.tenantId !== tenantResolution.tenantId) {
@@ -2849,7 +3042,7 @@ app.patch('/api/training/data/:id/status', requirePermission('training:training_
 
     if (!existing.namespaceId && status === 'approved' && !overrideScope?.namespaceId) {
       return res.status(400).json({
-        error: 'Não é possível aprovar sem namespace definido. Resolva o escopo primeiro.',
+        error: 'NÃ£o Ã© possÃ­vel aprovar sem namespace definido. Resolva o escopo primeiro.',
       });
     }
 
@@ -2872,7 +3065,7 @@ app.patch('/api/training/data/:id/status', requirePermission('training:training_
 
     if (overrideScope) {
       if (!overrideScope.reason?.trim()) {
-        return res.status(400).json({ error: 'Motivo é obrigatório para override de escopo' });
+        return res.status(400).json({ error: 'Motivo Ã© obrigatÃ³rio para override de escopo' });
       }
 
       if (overrideScope.namespaceId) {
@@ -2881,7 +3074,7 @@ app.patch('/api/training/data/:id/status', requirePermission('training:training_
           columns: { id: true, tenantId: true },
         });
         if (!namespace || namespace.tenantId !== existing.tenantId) {
-          return res.status(403).json({ error: 'Namespace de override inválido para o tenant do item' });
+          return res.status(403).json({ error: 'Namespace de override invÃ¡lido para o tenant do item' });
         }
         nextNamespaceId = namespace.id;
       }
@@ -2892,10 +3085,10 @@ app.patch('/api/training/data/:id/status', requirePermission('training:training_
           columns: { id: true, tenantId: true, namespaceId: true },
         });
         if (!agent || agent.tenantId !== existing.tenantId) {
-          return res.status(403).json({ error: 'Agente de override inválido para o tenant do item' });
+          return res.status(403).json({ error: 'Agente de override invÃ¡lido para o tenant do item' });
         }
         if (nextNamespaceId && agent.namespaceId && agent.namespaceId !== nextNamespaceId) {
-          return res.status(403).json({ error: 'Agente selecionado não pertence ao namespace alvo' });
+          return res.status(403).json({ error: 'Agente selecionado nÃ£o pertence ao namespace alvo' });
         }
         nextAgentId = agent.id;
         if (!nextNamespaceId && agent.namespaceId) {
@@ -2910,7 +3103,7 @@ app.patch('/api/training/data/:id/status', requirePermission('training:training_
       if (overrideApplied && reviewedBy) {
         if (!existing.tenantId) {
           return res.status(400).json({
-            error: 'Item sem tenant válido não pode receber override de escopo',
+            error: 'Item sem tenant vÃ¡lido nÃ£o pode receber override de escopo',
           });
         }
         await db.insert(schema.trainingScopeOverrides).values({
@@ -2972,11 +3165,11 @@ const resolveScopeSchema = z.object({
 app.patch('/api/training/data/:id/resolve-scope', requirePermission('training:training_data:manage'), async (req: Request, res: Response) => {
   const paramsResult = uuidParamSchema.safeParse(req.params);
   if (!paramsResult.success) {
-    return res.status(400).json({ error: 'ID inválido', details: paramsResult.error.format() });
+    return res.status(400).json({ error: 'ID invÃ¡lido', details: paramsResult.error.format() });
   }
   const bodyResult = resolveScopeSchema.safeParse(req.body);
   if (!bodyResult.success) {
-    return res.status(400).json({ error: 'Payload inválido', details: bodyResult.error.format() });
+    return res.status(400).json({ error: 'Payload invÃ¡lido', details: bodyResult.error.format() });
   }
 
   const tenantResolution = resolveAuthorizedTenantId(req);
@@ -2985,7 +3178,7 @@ app.patch('/api/training/data/:id/resolve-scope', requirePermission('training:tr
   }
   const changedBy = tenantResolution.authContext.userId;
   if (!changedBy) {
-    return res.status(403).json({ error: 'Usuário não identificado para resolver escopo' });
+    return res.status(403).json({ error: 'UsuÃ¡rio nÃ£o identificado para resolver escopo' });
   }
 
   try {
@@ -2993,13 +3186,13 @@ app.patch('/api/training/data/:id/resolve-scope', requirePermission('training:tr
       where: eq(schema.trainingData.id, paramsResult.data.id),
     });
     if (!existing) {
-      return res.status(404).json({ error: 'Registro de treinamento não encontrado' });
+      return res.status(404).json({ error: 'Registro de treinamento nÃ£o encontrado' });
     }
     if (existing.tenantId !== tenantResolution.tenantId) {
       return res.status(403).json({ error: 'Registro de treinamento nao pertence ao tenant autenticado' });
     }
     if (!existing.tenantId) {
-      return res.status(400).json({ error: 'Item sem tenant válido não pode ser resolvido' });
+      return res.status(400).json({ error: 'Item sem tenant vÃ¡lido nÃ£o pode ser resolvido' });
     }
 
     const namespace = await db.query.namespaces.findFirst({
@@ -3007,7 +3200,7 @@ app.patch('/api/training/data/:id/resolve-scope', requirePermission('training:tr
       columns: { id: true, tenantId: true },
     });
     if (!namespace || namespace.tenantId !== existing.tenantId) {
-      return res.status(403).json({ error: 'Namespace não pertence ao tenant do item' });
+      return res.status(403).json({ error: 'Namespace nÃ£o pertence ao tenant do item' });
     }
 
     const nextAgentId: string | null = bodyResult.data.agentId ?? null;
@@ -3017,10 +3210,10 @@ app.patch('/api/training/data/:id/resolve-scope', requirePermission('training:tr
         columns: { id: true, tenantId: true, namespaceId: true },
       });
       if (!agent || agent.tenantId !== existing.tenantId) {
-        return res.status(403).json({ error: 'Agente inválido para o tenant do item' });
+        return res.status(403).json({ error: 'Agente invÃ¡lido para o tenant do item' });
       }
       if (agent.namespaceId && agent.namespaceId !== namespace.id) {
-        return res.status(403).json({ error: 'Agente não pertence ao namespace informado' });
+        return res.status(403).json({ error: 'Agente nÃ£o pertence ao namespace informado' });
       }
     }
 
@@ -3066,10 +3259,10 @@ app.patch('/api/training/data/:id/resolve-scope', requirePermission('training:tr
 });
 
 app.get('/api/training/jobs', requirePermission('training:fine_tuning_jobs:read'), async (req: Request, res: Response) => {
-  // OWASP API3: Validação de query params
+  // OWASP API3: ValidaÃ§Ã£o de query params
   const queryResult = jobsQuerySchema.safeParse(req.query);
   if (!queryResult.success) {
-    return res.status(400).json({ error: 'Parâmetros inválidos', details: queryResult.error.format() });
+    return res.status(400).json({ error: 'ParÃ¢metros invÃ¡lidos', details: queryResult.error.format() });
   }
   const { tenantId } = queryResult.data;
 
@@ -3129,6 +3322,16 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
     }
     if (!tenantId) {
       return res.status(400).json({ error: 'Tenant invalido para criacao de job de treinamento' });
+    }
+
+    const governanceConfig = await loadTrainingGovernanceRuntimeConfig();
+    const inflightCount = await getTenantInflightFineTuningJobsCount(db, tenantId);
+    if (inflightCount >= governanceConfig.maxInflightRunsPerTenant) {
+      return res.status(429).json({
+        error: 'Capacidade de treinamento esgotada para este tenant',
+        inflightCount,
+        maxInflightRunsPerTenant: governanceConfig.maxInflightRunsPerTenant,
+      });
     }
 
     if (body.agentId) {
@@ -3226,6 +3429,11 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
       scopeAgentId: body.agentId ?? null,
       configSnapshot: {
         runSource: 'custom_job',
+        execution: {
+          trigger: 'manual',
+          profile: 'advanced_job',
+        },
+        priority: 'normal',
         scope: {
           namespaceId: body.namespaceId,
           agentId: body.agentId ?? null,
@@ -3250,6 +3458,7 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
     const enqueueResult = await enqueueTrainingFineTuningRun({
       fineTuningJobId: job.id,
       tenantId,
+      priority: 'normal',
       requestedBy: tenantResolution.authContext.userId ?? null,
     });
 
@@ -3296,6 +3505,7 @@ async function resumePendingFineTuningJobs(): Promise<void> {
       const enqueueResult = await enqueueTrainingFineTuningRun({
         fineTuningJobId: job.id,
         tenantId: job.tenantId,
+        priority: resolveFineTuningQueuePriorityFromSnapshot(job.runSource, job.configSnapshot),
       });
       logger.info(
         {
@@ -3329,13 +3539,13 @@ async function resumePendingLoraJobs(): Promise<void> {
     );
   }
 }
-// Polling removido (Regra 6): cancelamento e progresso são tratados via DB + gpu-trainer
+// Polling removido (Regra 6): cancelamento e progresso sÃ£o tratados via DB + gpu-trainer
 
 app.get('/api/training/jobs/:id', requirePermission('training:fine_tuning_jobs:read'), async (req: Request, res: Response) => {
-  // OWASP API3: Validação Zod obrigatória de parâmetros de rota
+  // OWASP API3: ValidaÃ§Ã£o Zod obrigatÃ³ria de parÃ¢metros de rota
   const paramsResult = uuidParamSchema.safeParse(req.params);
   if (!paramsResult.success) {
-    return res.status(400).json({ error: 'ID inválido', details: paramsResult.error.format() });
+    return res.status(400).json({ error: 'ID invÃ¡lido', details: paramsResult.error.format() });
   }
   const { id } = paramsResult.data;
 
@@ -3353,7 +3563,7 @@ app.get('/api/training/jobs/:id', requirePermission('training:fine_tuning_jobs:r
     });
 
     if (!job) {
-      return res.status(404).json({ error: 'Job não encontrado' });
+      return res.status(404).json({ error: 'Job nÃ£o encontrado' });
     }
 
     res.json({ job });
@@ -3364,10 +3574,10 @@ app.get('/api/training/jobs/:id', requirePermission('training:fine_tuning_jobs:r
 });
 
 app.delete('/api/training/jobs/:id', requirePermission('training:fine_tuning_jobs:cancel'), async (req: Request, res: Response) => {
-  // OWASP API3: Validação Zod obrigatória de parâmetros de rota
+  // OWASP API3: ValidaÃ§Ã£o Zod obrigatÃ³ria de parÃ¢metros de rota
   const paramsResult = uuidParamSchema.safeParse(req.params);
   if (!paramsResult.success) {
-    return res.status(400).json({ error: 'ID inválido', details: paramsResult.error.format() });
+    return res.status(400).json({ error: 'ID invÃ¡lido', details: paramsResult.error.format() });
   }
   const { id } = paramsResult.data;
 
@@ -3385,11 +3595,11 @@ app.delete('/api/training/jobs/:id', requirePermission('training:fine_tuning_job
     });
 
     if (!job) {
-      return res.status(404).json({ error: 'Job não encontrado' });
+      return res.status(404).json({ error: 'Job nÃ£o encontrado' });
     }
 
     if (job.status === 'completed' || job.status === 'cancelled') {
-      return res.status(400).json({ error: 'Job já finalizado ou cancelado' });
+      return res.status(400).json({ error: 'Job jÃ¡ finalizado ou cancelado' });
     }
 
     // Cancelamento REAL no trainer (persistido em disco via flag CANCEL)
@@ -3418,6 +3628,113 @@ app.delete('/api/training/jobs/:id', requirePermission('training:fine_tuning_job
   } catch (error) {
     logger.error({ error }, 'Falha ao cancelar job');
     res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+app.get('/api/training/jobs/:id/promotion-approvals', requirePermission('training:fine_tuning_jobs:read'), async (req: Request, res: Response) => {
+  const paramsResult = uuidParamSchema.safeParse(req.params);
+  if (!paramsResult.success) {
+    return res.status(400).json({ error: 'ID invalido', details: paramsResult.error.format() });
+  }
+
+  try {
+    const tenantResolution = resolveAuthorizedTenantId(req);
+    if (!tenantResolution.ok) {
+      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
+    }
+    if (!tenantResolution.authContext.userId) {
+      return res.status(403).json({ error: 'Usuario nao identificado para leitura de aprovacoes' });
+    }
+
+    const fineTuningJob = await db.query.fineTuningJobs.findFirst({
+      where: and(
+        eq(schema.fineTuningJobs.id, paramsResult.data.id),
+        eq(schema.fineTuningJobs.tenantId, tenantResolution.tenantId)
+      ),
+      columns: { id: true },
+    });
+    if (!fineTuningJob) {
+      return res.status(404).json({ error: 'Job de fine-tuning nao encontrado' });
+    }
+
+    const summary = await getPromotionApprovalSummary({
+      tenantId: tenantResolution.tenantId,
+      fineTuningJobId: fineTuningJob.id,
+      requesterUserId: tenantResolution.authContext.userId,
+    });
+    return res.json(summary);
+  } catch (error) {
+    logger.error({ error, jobId: req.params.id }, 'Falha ao consultar aprovacoes de promocao');
+    return res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+app.post('/api/training/jobs/:id/promotion-approval', requirePermission('training:fine_tuning_jobs:start'), async (req: Request, res: Response) => {
+  const paramsResult = uuidParamSchema.safeParse(req.params);
+  if (!paramsResult.success) {
+    return res.status(400).json({ error: 'ID invalido', details: paramsResult.error.format() });
+  }
+  const bodyResult = promotionApprovalBodySchema.safeParse(req.body);
+  if (!bodyResult.success) {
+    return res.status(400).json({ error: 'Payload invalido', details: bodyResult.error.format() });
+  }
+
+  try {
+    const tenantResolution = resolveAuthorizedTenantId(req);
+    if (!tenantResolution.ok) {
+      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
+    }
+    if (!tenantResolution.authContext.userId) {
+      return res.status(403).json({ error: 'Usuario nao identificado para aprovar promocao' });
+    }
+
+    const fineTuningJob = await db.query.fineTuningJobs.findFirst({
+      where: and(
+        eq(schema.fineTuningJobs.id, paramsResult.data.id),
+        eq(schema.fineTuningJobs.tenantId, tenantResolution.tenantId)
+      ),
+      columns: { id: true, status: true },
+    });
+    if (!fineTuningJob) {
+      return res.status(404).json({ error: 'Job de fine-tuning nao encontrado' });
+    }
+    if (fineTuningJob.status !== 'completed') {
+      return res.status(409).json({ error: 'Somente jobs concluidos podem receber aprovacao de promocao' });
+    }
+
+    await db.insert(schema.fineTuningPromotionApprovals).values({
+      tenantId: tenantResolution.tenantId,
+      fineTuningJobId: fineTuningJob.id,
+      approverUserId: tenantResolution.authContext.userId,
+      decision: bodyResult.data.decision,
+      reason: bodyResult.data.reason ?? null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }).onConflictDoUpdate({
+      target: [
+        schema.fineTuningPromotionApprovals.fineTuningJobId,
+        schema.fineTuningPromotionApprovals.approverUserId,
+      ],
+      set: {
+        decision: bodyResult.data.decision,
+        reason: bodyResult.data.reason ?? null,
+        updatedAt: new Date(),
+      },
+    });
+
+    const summary = await getPromotionApprovalSummary({
+      tenantId: tenantResolution.tenantId,
+      fineTuningJobId: fineTuningJob.id,
+      requesterUserId: tenantResolution.authContext.userId,
+    });
+
+    return res.json({
+      success: true,
+      ...summary,
+    });
+  } catch (error) {
+    logger.error({ error, jobId: req.params.id }, 'Falha ao registrar aprovacao de promocao');
+    return res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
 
@@ -3451,8 +3768,42 @@ app.post('/api/training/jobs/:id/promote', requirePermission('training:fine_tuni
     if (!fineTuningJob.loraJobId) {
       return res.status(409).json({ error: 'Job sem loraJobId vinculado' });
     }
-    if (fineTuningJob.evaluationStatus === 'failed') {
-      return res.status(409).json({ error: 'Job com avaliacao reprovada nao pode ser promovido' });
+    let scopedModelRegistry: ReturnType<typeof assertValidModelRegistryScope>;
+    try {
+      scopedModelRegistry = assertValidModelRegistryScope({
+        namespaceId: fineTuningJob.scopeNamespaceId,
+        agentId: fineTuningJob.scopeAgentId,
+      });
+    } catch (scopeError) {
+      return res.status(409).json({
+        error: scopeError instanceof Error ? scopeError.message : 'Escopo de promocao invalido',
+      });
+    }
+    const governanceConfig = await loadTrainingGovernanceRuntimeConfig();
+    const evaluationStatus = fineTuningJob.evaluationStatus ?? 'pending';
+    const approvalSummary = await getPromotionApprovalSummary({
+      tenantId: tenantResolution.tenantId,
+      fineTuningJobId: fineTuningJob.id,
+      requesterUserId: tenantResolution.authContext.userId,
+    });
+    const promotionCheck = canPromoteFineTuningJob({
+      evaluationStatus,
+      requireEvalPassedForPromotion: governanceConfig.requireEvalPassedForPromotion,
+      requireDualApprovalForPromotion: governanceConfig.requireDualApprovalForPromotion,
+      promotionMinApprovals: governanceConfig.promotionMinApprovals,
+      approvedDistinctUsersCount: approvalSummary.approvedDistinctUsersCount,
+      requesterHasApproved: approvalSummary.requesterHasApproved,
+    });
+    if (!promotionCheck.allowed) {
+      return res.status(409).json({
+        error: promotionCheck.reason,
+        approvals: {
+          approvedDistinctUsersCount: approvalSummary.approvedDistinctUsersCount,
+          requesterHasApproved: approvalSummary.requesterHasApproved,
+          minApprovals: governanceConfig.promotionMinApprovals,
+          requireDualApprovalForPromotion: governanceConfig.requireDualApprovalForPromotion,
+        },
+      });
     }
 
     const activationResult = await activateLoraAdapter(
@@ -3460,18 +3811,14 @@ app.post('/api/training/jobs/:id/promote', requirePermission('training:fine_tuni
       tenantResolution.authContext.userId
     );
 
-    const namespaceCondition = fineTuningJob.scopeNamespaceId
-      ? eq(schema.modelVersions.namespaceId, fineTuningJob.scopeNamespaceId)
-      : isNull(schema.modelVersions.namespaceId);
-    const fineJobScopeCondition = fineTuningJob.scopeNamespaceId
-      ? eq(schema.fineTuningJobs.scopeNamespaceId, fineTuningJob.scopeNamespaceId)
-      : isNull(schema.fineTuningJobs.scopeNamespaceId);
+    const modelVersionScopeCondition = buildModelVersionScopeCondition(scopedModelRegistry);
+    const fineJobScopeCondition = buildFineTuningScopeCondition(scopedModelRegistry);
 
     const [modelVersion] = await db.transaction(async (tx) => {
       const latestScopedVersion = await tx.query.modelVersions.findFirst({
         where: and(
           eq(schema.modelVersions.tenantId, tenantResolution.tenantId),
-          namespaceCondition
+          modelVersionScopeCondition
         ),
         orderBy: [desc(schema.modelVersions.version)],
         columns: { version: true },
@@ -3485,7 +3832,7 @@ app.post('/api/training/jobs/:id/promote', requirePermission('training:fine_tuni
         })
         .where(and(
           eq(schema.modelVersions.tenantId, tenantResolution.tenantId),
-          namespaceCondition,
+          modelVersionScopeCondition,
           eq(schema.modelVersions.isActive, true)
         ));
 
@@ -3508,7 +3855,8 @@ app.post('/api/training/jobs/:id/promote', requirePermission('training:fine_tuni
         : 0;
       const [createdVersion] = await tx.insert(schema.modelVersions).values({
         tenantId: tenantResolution.tenantId,
-        namespaceId: fineTuningJob.scopeNamespaceId ?? null,
+        namespaceId: scopedModelRegistry.namespaceId,
+        agentId: scopedModelRegistry.agentId,
         name: `${fineTuningJob.name}-v${nextVersion}`,
         version: nextVersion,
         baseModel: fineTuningJob.baseModel,
@@ -3547,6 +3895,12 @@ app.post('/api/training/jobs/:id/promote', requirePermission('training:fine_tuni
       fineTuningJobId: fineTuningJob.id,
       modelVersion,
       activation: activationResult,
+      approvals: {
+        approvedDistinctUsersCount: approvalSummary.approvedDistinctUsersCount,
+        requesterHasApproved: approvalSummary.requesterHasApproved,
+        minApprovals: governanceConfig.promotionMinApprovals,
+        requireDualApprovalForPromotion: governanceConfig.requireDualApprovalForPromotion,
+      },
     });
   } catch (error) {
     logger.error({ error, jobId: req.params.id }, 'Falha ao promover modelo');
@@ -3592,9 +3946,18 @@ app.post('/api/training/jobs/:id/rollback', requirePermission('training:fine_tun
       return res.status(404).json({ error: 'Model version atual nao encontrada' });
     }
 
-    const scopedCondition = currentVersion.namespaceId
-      ? eq(schema.modelVersions.namespaceId, currentVersion.namespaceId)
-      : isNull(schema.modelVersions.namespaceId);
+    let scopedModelRegistry: ReturnType<typeof assertValidModelRegistryScope>;
+    try {
+      scopedModelRegistry = assertValidModelRegistryScope({
+        namespaceId: currentVersion.namespaceId,
+        agentId: currentVersion.agentId,
+      });
+    } catch (scopeError) {
+      return res.status(409).json({
+        error: scopeError instanceof Error ? scopeError.message : 'Escopo do model version invalido para rollback',
+      });
+    }
+    const scopedCondition = buildModelVersionScopeCondition(scopedModelRegistry);
     const previousVersion = await db.query.modelVersions.findFirst({
       where: and(
         eq(schema.modelVersions.tenantId, tenantResolution.tenantId),
@@ -3673,19 +4036,19 @@ app.post('/api/training/jobs/:id/rollback', requirePermission('training:fine_tun
 });
 
 // ============================================================================
-// LoRA ADAPTER MANAGEMENT - Ativação, Consulta e Desativação
+// LoRA ADAPTER MANAGEMENT - AtivaÃ§Ã£o, Consulta e DesativaÃ§Ã£o
 // ============================================================================
 
 /**
  * POST /api/training/lora/activate/:jobId
- * Aprova e ativa um adapter LoRA treinado, tornando-o disponível para inferência no vLLM.
- * O adapter é copiado para /opt/alice/data/lora-adapters/trading-global/
+ * Aprova e ativa um adapter LoRA treinado, tornando-o disponÃ­vel para inferÃªncia no vLLM.
+ * O adapter Ã© copiado para /opt/alice/data/lora-adapters/trading-global/
  * e o vLLM carrega automaticamente via filesystem resolver (sem restart).
  */
 app.post('/api/training/lora/activate/:jobId', requirePermission('training:fine_tuning_jobs:start'), async (req: Request, res: Response) => {
   const paramsResult = uuidParamSchema.safeParse({ id: req.params.jobId });
   if (!paramsResult.success) {
-    return res.status(400).json({ error: 'jobId inválido', details: paramsResult.error.format() });
+    return res.status(400).json({ error: 'jobId invÃ¡lido', details: paramsResult.error.format() });
   }
 
   try {
@@ -3694,7 +4057,7 @@ app.post('/api/training/lora/activate/:jobId', requirePermission('training:fine_
       return res.status(tenantResolution.status).json({ error: tenantResolution.error });
     }
     if (!tenantResolution.authContext.userId) {
-      return res.status(403).json({ error: 'Usuário não identificado para aprovação' });
+      return res.status(403).json({ error: 'UsuÃ¡rio nÃ£o identificado para aprovaÃ§Ã£o' });
     }
 
     const loraJob = await db.query.loraJobs.findFirst({
@@ -3732,7 +4095,7 @@ app.get('/api/training/lora/active', requirePermission('training:fine_tuning_job
     });
     const parsed = querySchema.safeParse(_req.query);
     if (!parsed.success) {
-      return res.status(400).json({ error: 'Parâmetros inválidos', details: parsed.error.format() });
+      return res.status(400).json({ error: 'ParÃ¢metros invÃ¡lidos', details: parsed.error.format() });
     }
     const tenantResolution = resolveAuthorizedTenantId(_req, parsed.data.tenantId ?? null);
     if (!tenantResolution.ok) {
@@ -3763,7 +4126,7 @@ app.delete('/api/training/lora/active', requirePermission('training:fine_tuning_
     });
     const parsed = bodySchema.safeParse(_req.body ?? {});
     if (!parsed.success) {
-      return res.status(400).json({ error: 'Payload inválido', details: parsed.error.format() });
+      return res.status(400).json({ error: 'Payload invÃ¡lido', details: parsed.error.format() });
     }
     const tenantResolution = resolveAuthorizedTenantId(_req, parsed.data.tenantId ?? null);
     if (!tenantResolution.ok) {
@@ -3774,7 +4137,7 @@ app.delete('/api/training/lora/active', requirePermission('training:fine_tuning_
       namespaceId: parsed.data.namespaceId,
       agentId: parsed.data.agentId,
     });
-    res.json({ success: true, message: 'Adapter LoRA desativado. vLLM usará modelo base.' });
+    res.json({ success: true, message: 'Adapter LoRA desativado. vLLM usarÃ¡ modelo base.' });
   } catch (error) {
     logger.error({ error }, 'Falha ao desativar adapter LoRA');
     res.status(500).json({ error: 'Erro interno do servidor' });
@@ -3784,8 +4147,8 @@ app.delete('/api/training/lora/active', requirePermission('training:fine_tuning_
 // ============================================================================
 // GPU ORCHESTRATOR PROXY - Estado e retorno (Frontend usa via /api/training/*)
 // ============================================================================
-// Proxy para GPU Manager Service: frontend não tem acesso direto ao GPU Manager.
-// Training service autentica com INTERNAL_API_SECRET e repassa requisições.
+// Proxy para GPU Manager Service: frontend nÃ£o tem acesso direto ao GPU Manager.
+// Training service autentica com INTERNAL_API_SECRET e repassa requisiÃ§Ãµes.
 // Ref: gpu-orchestrator.ts (switchToLlmEmbeddings, getOrchestratorState)
 // ============================================================================
 
@@ -3794,7 +4157,7 @@ const INTERNAL_API_SECRET_ORCHESTRATOR = process.env.INTERNAL_API_SECRET;
 
 app.get('/api/training/gpu-orchestrator/state', requirePermission('training:fine_tuning_jobs:read'), async (_req: Request, res: Response) => {
   if (!INTERNAL_API_SECRET_ORCHESTRATOR) {
-    return res.status(503).json({ error: 'Serviço indisponível', orchestratorAvailable: false });
+    return res.status(503).json({ error: 'ServiÃ§o indisponÃ­vel', orchestratorAvailable: false });
   }
   try {
     const controller = new AbortController();
@@ -3808,13 +4171,13 @@ app.get('/api/training/gpu-orchestrator/state', requirePermission('training:fine
     res.status(r.status).json(data);
   } catch (err) {
     logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'Proxy gpu-orchestrator/state falhou');
-    res.status(503).json({ error: 'GPU Manager indisponível', orchestratorAvailable: false });
+    res.status(503).json({ error: 'GPU Manager indisponÃ­vel', orchestratorAvailable: false });
   }
 });
 
 app.post('/api/training/gpu-orchestrator/return', requirePermission('training:fine_tuning_jobs:start'), async (_req: Request, res: Response) => {
   if (!INTERNAL_API_SECRET_ORCHESTRATOR) {
-    return res.status(503).json({ error: 'Serviço indisponível' });
+    return res.status(503).json({ error: 'ServiÃ§o indisponÃ­vel' });
   }
   try {
     const controller = new AbortController();
@@ -3829,12 +4192,12 @@ app.post('/api/training/gpu-orchestrator/return', requirePermission('training:fi
     res.status(r.status).json(data);
   } catch (err) {
     logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'Proxy gpu-orchestrator/return falhou');
-    res.status(503).json({ error: 'GPU Manager indisponível' });
+    res.status(503).json({ error: 'GPU Manager indisponÃ­vel' });
   }
 });
 
 // ============================================================================
-// BULK IMPORT - Importação em Lote de Dados de Treinamento
+// BULK IMPORT - ImportaÃ§Ã£o em Lote de Dados de Treinamento
 // ============================================================================
 
 const bulkImportSchema = z.object({
@@ -3858,8 +4221,8 @@ app.post('/api/training/bulk-import', requirePermission('training:training_data:
     const tenantResolution = resolveAuthorizedTenantId(req);
     
     if (!tenantResolution.ok) {
-      logger.warn({ path: req.path }, 'Tentativa de bulk-import sem tenant válido');
-      return res.status(403).json({ error: 'Tenant não identificado. Autenticação obrigatória.' });
+      logger.warn({ path: req.path }, 'Tentativa de bulk-import sem tenant vÃ¡lido');
+      return res.status(403).json({ error: 'Tenant nÃ£o identificado. AutenticaÃ§Ã£o obrigatÃ³ria.' });
     }
 
     const tenantId = tenantResolution.tenantId;
@@ -3867,7 +4230,7 @@ app.post('/api/training/bulk-import', requirePermission('training:training_data:
 
     if (!validation.success) {
       return res.status(400).json({ 
-        error: 'Dados inválidos',
+        error: 'Dados invÃ¡lidos',
         details: validation.error.issues,
       });
     }
@@ -3891,7 +4254,7 @@ app.post('/api/training/bulk-import', requirePermission('training:training_data:
           namespaceId,
           error: validationError instanceof Error ? validationError.message : String(validationError),
         }, 'Bulk import rejeitado por namespace fora do tenant');
-        return res.status(403).json({ error: 'Namespace inválido para o tenant autenticado.' });
+        return res.status(403).json({ error: 'Namespace invÃ¡lido para o tenant autenticado.' });
       }
     }
 
@@ -3908,11 +4271,11 @@ app.post('/api/training/bulk-import', requirePermission('training:training_data:
           agentId,
           error: validationError instanceof Error ? validationError.message : String(validationError),
         }, 'Bulk import rejeitado por agente fora do tenant');
-        return res.status(403).json({ error: 'Agente inválido para o tenant autenticado.' });
+        return res.status(403).json({ error: 'Agente invÃ¡lido para o tenant autenticado.' });
       }
       if (namespaceId && agent?.namespaceId && agent.namespaceId !== namespaceId) {
-        logger.warn({ tenantId, agentId, namespaceId, agentNamespaceId: agent.namespaceId }, 'Bulk import rejeitado por inconsistência agentId/namespaceId');
-        return res.status(403).json({ error: 'O agente informado não pertence ao namespace selecionado.' });
+        logger.warn({ tenantId, agentId, namespaceId, agentNamespaceId: agent.namespaceId }, 'Bulk import rejeitado por inconsistÃªncia agentId/namespaceId');
+        return res.status(403).json({ error: 'O agente informado nÃ£o pertence ao namespace selecionado.' });
       }
     }
 
@@ -3966,7 +4329,7 @@ app.post('/api/training/bulk-import', requirePermission('training:training_data:
         ? 'rejected'
         : (autoApprove && (entry.rating || 0) >= 4 ? 'approved' : 'pending');
       const reviewNotes = autoRejectedByQuality
-        ? `Auto-rejeitado: qualidade ${qualityScore.toFixed(2)} abaixo do mínimo (${TRAINING_DATA_MIN_QUALITY}).`
+        ? `Auto-rejeitado: qualidade ${qualityScore.toFixed(2)} abaixo do mÃ­nimo (${TRAINING_DATA_MIN_QUALITY}).`
         : null;
 
       const [inserted] = await db.insert(schema.trainingData).values({
@@ -4041,7 +4404,7 @@ app.post('/api/training/bulk-import', requirePermission('training:training_data:
       imported: importedIds.length,
       duplicatesSkipped: duplicatesSkipped.length,
       autoApprove,
-    }, 'Bulk import concluído');
+    }, 'Bulk import concluÃ­do');
 
     res.status(201).json({
       success: true,
@@ -4097,7 +4460,7 @@ setInterval(() => {
   }
 }, 60_000);
 
-// OWASP API3 - Schema para aprovação em lote
+// OWASP API3 - Schema para aprovaÃ§Ã£o em lote
 const batchApproveSchema = z.object({
   ids: z.array(z.string().uuid()).min(1).max(1000),
   action: z.enum(['approve', 'reject']),
@@ -4105,7 +4468,7 @@ const batchApproveSchema = z.object({
 });
 
 // ============================================================================
-// OWASP API3 - Schemas Zod para validação de query params
+// OWASP API3 - Schemas Zod para validaÃ§Ã£o de query params
 // Previne type coercion issues e input tampering
 // ============================================================================
 
@@ -4202,7 +4565,7 @@ app.post('/api/training/webhook', async (req: Request, res: Response) => {
 
     if (!validation.success) {
       return res.status(400).json({ 
-        error: 'Payload inválido',
+        error: 'Payload invÃ¡lido',
         details: validation.error.issues,
       });
     }
@@ -4274,7 +4637,7 @@ app.post('/api/training/webhook', async (req: Request, res: Response) => {
       const autoRejectedByQuality = !isDuplicate && qualityScore < TRAINING_DATA_MIN_QUALITY;
       const status = isDuplicate || autoRejectedByQuality ? 'rejected' : 'pending';
       const reviewNotes = autoRejectedByQuality
-        ? `Auto-rejeitado: qualidade ${qualityScore.toFixed(2)} abaixo do mínimo (${TRAINING_DATA_MIN_QUALITY}).`
+        ? `Auto-rejeitado: qualidade ${qualityScore.toFixed(2)} abaixo do mÃ­nimo (${TRAINING_DATA_MIN_QUALITY}).`
         : null;
       const [inserted] = await db.insert(schema.trainingData).values({
         tenantId,
@@ -4329,7 +4692,7 @@ app.post('/api/training/webhook', async (req: Request, res: Response) => {
       logger.info({ conversationId: payload.conversationId, rating: payload.rating }, 'Feedback atualizado via webhook');
       res.json({ success: true });
     } else {
-      res.status(400).json({ error: 'Evento não suportado ou payload incompleto' });
+      res.status(400).json({ error: 'Evento nÃ£o suportado ou payload incompleto' });
     }
   } catch (error) {
     logger.error({ error }, 'Falha ao processar webhook');
@@ -4338,14 +4701,14 @@ app.post('/api/training/webhook', async (req: Request, res: Response) => {
 });
 
 // ============================================================================
-// APROVAÇÃO EM LOTE
+// APROVAÃ‡ÃƒO EM LOTE
 // ============================================================================
 
 app.post('/api/training/data/approve-batch', requirePermission('training:training_data:manage'), async (req: Request, res: Response) => {
-  // OWASP API3 - Validação Zod obrigatória
+  // OWASP API3 - ValidaÃ§Ã£o Zod obrigatÃ³ria
   const parseResult = batchApproveSchema.safeParse(req.body);
   if (!parseResult.success) {
-    return res.status(400).json({ error: 'Input inválido' });
+    return res.status(400).json({ error: 'Input invÃ¡lido' });
   }
   const { ids, action, reviewNotes } = parseResult.data;
   const tenantResolution = resolveAuthorizedTenantId(req);
@@ -4411,11 +4774,11 @@ app.post('/api/training/data/approve-batch', requirePermission('training:trainin
 
     logger.info(
       { action, count: updatedCount, skippedByQuarantine, skippedByMissingNamespace, skippedByTenantMismatch },
-      'Aprovação em lote concluída'
+      'AprovaÃ§Ã£o em lote concluÃ­da'
     );
     res.json({ success: true, updated: updatedCount, skippedByQuarantine, skippedByMissingNamespace, skippedByTenantMismatch });
   } catch (error) {
-    logger.error({ error }, 'Falha na aprovação em lote');
+    logger.error({ error }, 'Falha na aprovaÃ§Ã£o em lote');
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
@@ -4425,10 +4788,10 @@ app.post('/api/training/data/approve-batch', requirePermission('training:trainin
 // ============================================================================
 
 app.get('/api/training/auto-learning/status', requirePermission('training:training_data:read'), async (req: Request, res: Response) => {
-  // OWASP API3: Validação de query params
+  // OWASP API3: ValidaÃ§Ã£o de query params
   const queryResult = autoLearningStatusQuerySchema.safeParse(req.query);
   if (!queryResult.success) {
-    return res.status(400).json({ error: 'Parâmetros inválidos', details: queryResult.error.format() });
+    return res.status(400).json({ error: 'ParÃ¢metros invÃ¡lidos', details: queryResult.error.format() });
   }
   const { tenantId } = queryResult.data;
 
@@ -4448,9 +4811,12 @@ app.get('/api/training/auto-learning/status', requirePermission('training:traini
     const activeVersion = modelVersions.find((v: typeof schema.modelVersions.$inferSelect) => v.isActive);
 
     const schedules = await db.query.autoLearningSchedule.findMany({
-      where: eq(schema.autoLearningSchedule.tenantId, scopedTenantId),
-      orderBy: [desc(schema.autoLearningSchedule.scheduledFor)],
-      limit: 5,
+      where: and(
+        eq(schema.autoLearningSchedule.tenantId, scopedTenantId),
+        eq(schema.autoLearningSchedule.status, 'scheduled')
+      ),
+      orderBy: [asc(schema.autoLearningSchedule.scheduledFor)],
+      limit: 20,
     });
 
     const pendingDataConditions = [
@@ -4488,14 +4854,19 @@ app.get('/api/training/auto-learning/status', requirePermission('training:traini
       recentVersions: modelVersions.slice(0, 5).map((v: typeof schema.modelVersions.$inferSelect) => ({
         version: v.version,
         status: v.status,
+        namespaceId: v.namespaceId ?? null,
+        agentId: v.agentId ?? null,
         createdAt: v.criadoEm,
       })),
-      upcomingSchedules: schedules.map((s: typeof schema.autoLearningSchedule.$inferSelect) => ({
-        id: s.id,
-        type: s.scheduleType,
-        scheduledFor: s.scheduledFor,
-        status: s.status,
-      })),
+      upcomingSchedules: schedules
+        .filter((s: typeof schema.autoLearningSchedule.$inferSelect) => new Date(s.scheduledFor).getTime() > Date.now())
+        .map((s: typeof schema.autoLearningSchedule.$inferSelect) => ({
+          id: s.id,
+          type: s.scheduleType,
+          scheduledFor: s.scheduledFor,
+          status: s.status,
+          namespaceId: readScheduleScopeMetadata(s.metadata).namespaceId ?? null,
+        })),
     });
   } catch (error) {
     logger.error({ error }, 'Falha ao obter status do auto-learning');
@@ -4504,10 +4875,10 @@ app.get('/api/training/auto-learning/status', requirePermission('training:traini
 });
 
 app.get('/api/training/stats', requirePermission('training:training_data:read'), async (req: Request, res: Response) => {
-  // OWASP API3: Validação de query params
+  // OWASP API3: ValidaÃ§Ã£o de query params
   const queryResult = trainingStatsQuerySchema.safeParse(req.query);
   if (!queryResult.success) {
-    return res.status(400).json({ error: 'Parâmetros inválidos', details: queryResult.error.format() });
+    return res.status(400).json({ error: 'ParÃ¢metros invÃ¡lidos', details: queryResult.error.format() });
   }
   const { tenantId } = queryResult.data;
 
@@ -4557,7 +4928,7 @@ app.get('/api/training/stats', requirePermission('training:training_data:read'),
       },
     });
   } catch (error) {
-    logger.error({ error }, 'Falha ao obter estatísticas');
+    logger.error({ error }, 'Falha ao obter estatÃ­sticas');
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
@@ -4567,13 +4938,14 @@ app.get('/api/training/stats', requirePermission('training:training_data:read'),
 // Endpoints enterprise para configurar e executar treinamentos
 // ============================================================================
 
-// Schema para configuração de schedule
+// Schema para configuraÃ§Ã£o de schedule
 const scheduleConfigSchema = z.object({
   tenantId: z.string().uuid(),
   scheduleType: z.enum(['incremental_fine_tuning', 'complete_fine_tuning']),
   enabled: z.boolean().default(true),
-  cronPattern: z.string().optional(), // Ex: '0 3 * * 0' para domingo às 3h
+  cronPattern: z.string().optional(), // Ex: '0 3 * * 0' para domingo Ã s 3h
   minDataRequired: z.number().int().min(1).optional(),
+  namespaceId: z.string().uuid().optional().nullable(),
 });
 
 // Schema para iniciar treinamento on-demand
@@ -4595,21 +4967,39 @@ const cancelTrainingSchema = z.object({
 
 /**
  * POST /api/training/schedule/configure
- * Configura o agendamento automático de treinamento
+ * Configura o agendamento automÃ¡tico de treinamento
  */
 app.post('/api/training/schedule/configure', requirePermission('training:training_data:manage'), async (req: Request, res: Response) => {
   const parseResult = scheduleConfigSchema.safeParse(req.body);
   if (!parseResult.success) {
-    return res.status(400).json({ error: 'Input inválido', details: parseResult.error.format() });
+    return res.status(400).json({ error: 'Input invï¿½lido', details: parseResult.error.format() });
   }
-  
-  const { tenantId, scheduleType, enabled, cronPattern, minDataRequired } = parseResult.data;
-  
+
+  const { tenantId, scheduleType, enabled, cronPattern, minDataRequired, namespaceId } = parseResult.data;
+
   try {
+    const tenantResolution = resolveAuthorizedTenantId(req, tenantId);
+    if (!tenantResolution.ok) {
+      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
+    }
+    const scopedTenantId = tenantResolution.tenantId;
+    const scheduleNamespaceId = namespaceId ?? null;
+
+    if (scheduleNamespaceId) {
+      const namespace = await db.query.namespaces.findFirst({
+        where: eq(schema.namespaces.id, scheduleNamespaceId),
+        columns: { id: true, tenantId: true },
+      });
+      if (!namespace || namespace.tenantId !== scopedTenantId) {
+        return res.status(403).json({ error: 'Namespace nao pertence ao tenant autenticado' });
+      }
+    }
+
     const [trainingRuntimeConfig, trainingEnterpriseConfig] = await Promise.all([
       loadTrainingSystemRuntimeConfig(),
       loadTrainingEnterpriseConfig(),
     ]);
+
     const resolvedMinDataRequired = minDataRequired
       ?? (
         scheduleType === 'incremental_fine_tuning'
@@ -4617,109 +5007,134 @@ app.post('/api/training/schedule/configure', requirePermission('training:trainin
           : trainingEnterpriseConfig.minScheduledFull
       );
 
-    // Verificar se já existe configuração
-    const tenantResolution = resolveAuthorizedTenantId(req, tenantId);
-    if (!tenantResolution.ok) {
-      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
-    }
-    const scopedTenantId = tenantResolution.tenantId;
-
-    const existing = await db.query.autoLearningSchedule.findFirst({
+    const activeSchedules = await db.query.autoLearningSchedule.findMany({
       where: and(
         eq(schema.autoLearningSchedule.tenantId, scopedTenantId),
         eq(schema.autoLearningSchedule.scheduleType, scheduleType),
         eq(schema.autoLearningSchedule.status, 'scheduled')
       ),
+      orderBy: [desc(schema.autoLearningSchedule.criadoEm)],
     });
 
-    if (existing && !enabled) {
-      // Desabilitar schedule existente (usar 'skipped' pois 'cancelled' não existe no enum)
-      await db.update(schema.autoLearningSchedule)
-        .set({ status: 'skipped' })
-        .where(eq(schema.autoLearningSchedule.id, existing.id));
-      
-      logger.info({ tenantId: scopedTenantId, scheduleType }, 'Schedule de treinamento desabilitado');
-      return res.json({ success: true, action: 'disabled', scheduleId: existing.id });
-    }
+    const schedulesForScope = activeSchedules.filter((item) =>
+      isSameScheduleScope(item.metadata, scheduleNamespaceId)
+    );
+    const existing = schedulesForScope[0];
+    const duplicatedScheduleIds = schedulesForScope.slice(1).map((item) => item.id);
 
-    if (enabled) {
-      // FIX: Preparar metadata com configurações customizadas (persistir minDataRequired)
-      const scheduleMetadata = {
-        minDataRequired: resolvedMinDataRequired,
-        cronPattern: cronPattern
-          ?? (
-            scheduleType === 'incremental_fine_tuning'
-              ? trainingRuntimeConfig.autoLearningCronIncremental
-              : trainingRuntimeConfig.autoLearningCronFull
-          ),
-        configuredAt: new Date().toISOString(),
-      };
-      
-      // FIX Bug 2: Se já existe um schedule ativo, atualizar ao invés de criar duplicado
-      if (existing) {
-        // Atualizar schedule existente com nova data e metadata
-        const scheduledFor = calculateNextScheduleDate(scheduleType, scheduleMetadata.cronPattern ?? undefined);
-        
-        await db.update(schema.autoLearningSchedule)
-          .set({ 
-            scheduledFor, 
-            status: 'scheduled',
-            metadata: scheduleMetadata, // FIX: Persistir minDataRequired
-          })
-          .where(eq(schema.autoLearningSchedule.id, existing.id));
-        
-        logger.info({ 
-          tenantId: scopedTenantId,
-          scheduleType, 
-          scheduledFor,
-          scheduleId: existing.id,
-          minDataRequired: resolvedMinDataRequired,
-        }, 'Schedule de treinamento atualizado');
-        
-        return res.json({ 
-          success: true, 
-          action: 'updated', 
-          scheduleId: existing.id,
-          scheduledFor,
-          minDataRequired: resolvedMinDataRequired,
-        });
+    if (!enabled) {
+      if (schedulesForScope.length === 0) {
+        return res.json({ success: true, action: 'no_change', scheduleId: null });
       }
-      
-      // Criar novo schedule (não existe nenhum ativo)
-      const scheduledFor = calculateNextScheduleDate(scheduleType, scheduleMetadata.cronPattern ?? undefined);
-      
-      const [newSchedule] = await db.insert(schema.autoLearningSchedule).values({
+
+      await db.update(schema.autoLearningSchedule)
+        .set({
+          status: 'skipped',
+          completedAt: new Date(),
+          errorMessage: null,
+        })
+        .where(inArray(schema.autoLearningSchedule.id, schedulesForScope.map((item) => item.id)));
+
+      logger.info({
         tenantId: scopedTenantId,
         scheduleType,
-        status: 'scheduled',
-        scheduledFor,
-        metadata: scheduleMetadata, // FIX: Persistir minDataRequired
-      }).returning();
-      
-      logger.info({ 
-        tenantId: scopedTenantId,
-        scheduleType, 
-        scheduledFor,
-        scheduleId: newSchedule.id,
-        minDataRequired: resolvedMinDataRequired,
-      }, 'Schedule de treinamento configurado');
-      
-      return res.json({ 
-        success: true, 
-        action: 'scheduled', 
-        scheduleId: newSchedule.id,
-        scheduledFor,
-        minDataRequired: resolvedMinDataRequired,
+        namespaceId: scheduleNamespaceId,
+        affectedSchedules: schedulesForScope.length,
+      }, 'Schedule de treinamento desabilitado para escopo');
+
+      return res.json({
+        success: true,
+        action: 'disabled',
+        scheduleId: existing?.id ?? null,
+        disabledCount: schedulesForScope.length,
       });
     }
 
-    res.json({ success: true, action: 'no_change' });
+    const scheduleMetadata = {
+      minDataRequired: resolvedMinDataRequired,
+      cronPattern: cronPattern
+        ?? (
+          scheduleType === 'incremental_fine_tuning'
+            ? trainingRuntimeConfig.autoLearningCronIncremental
+            : trainingRuntimeConfig.autoLearningCronFull
+        ),
+      namespaceId: scheduleNamespaceId,
+      configuredAt: new Date().toISOString(),
+    };
+
+    if (existing) {
+      const scheduledFor = calculateNextScheduleDate(scheduleType, scheduleMetadata.cronPattern ?? undefined);
+
+      await db.update(schema.autoLearningSchedule)
+        .set({
+          scheduledFor,
+          status: 'scheduled',
+          metadata: scheduleMetadata,
+          errorMessage: null,
+        })
+        .where(eq(schema.autoLearningSchedule.id, existing.id));
+
+      if (duplicatedScheduleIds.length > 0) {
+        await db.update(schema.autoLearningSchedule)
+          .set({
+            status: 'skipped',
+            completedAt: new Date(),
+            errorMessage: 'Schedule duplicado desativado por reconciliacao de escopo',
+          })
+          .where(inArray(schema.autoLearningSchedule.id, duplicatedScheduleIds));
+      }
+
+      logger.info({
+        tenantId: scopedTenantId,
+        scheduleType,
+        namespaceId: scheduleNamespaceId,
+        scheduledFor,
+        scheduleId: existing.id,
+        minDataRequired: resolvedMinDataRequired,
+        skippedDuplicates: duplicatedScheduleIds.length,
+      }, 'Schedule de treinamento atualizado');
+
+      return res.json({
+        success: true,
+        action: 'updated',
+        scheduleId: existing.id,
+        scheduledFor,
+        minDataRequired: resolvedMinDataRequired,
+        skippedDuplicates: duplicatedScheduleIds.length,
+      });
+    }
+
+    const scheduledFor = calculateNextScheduleDate(scheduleType, scheduleMetadata.cronPattern ?? undefined);
+
+    const [newSchedule] = await db.insert(schema.autoLearningSchedule).values({
+      tenantId: scopedTenantId,
+      scheduleType,
+      status: 'scheduled',
+      scheduledFor,
+      metadata: scheduleMetadata,
+    }).returning();
+
+    logger.info({
+      tenantId: scopedTenantId,
+      scheduleType,
+      namespaceId: scheduleNamespaceId,
+      scheduledFor,
+      scheduleId: newSchedule.id,
+      minDataRequired: resolvedMinDataRequired,
+    }, 'Schedule de treinamento configurado');
+
+    return res.json({
+      success: true,
+      action: 'scheduled',
+      scheduleId: newSchedule.id,
+      scheduledFor,
+      minDataRequired: resolvedMinDataRequired,
+    });
   } catch (error) {
     logger.error({ error }, 'Falha ao configurar schedule de treinamento');
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
-
 /**
  * POST /api/training/run/start
  * Inicia treinamento on-demand
@@ -4730,7 +5145,7 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
     return res.status(400).json({ error: 'Input invalido', details: parseResult.error.format() });
   }
 
-  const { tenantId, trainingType, includeImages, priority: _priority, description, namespaceId } = parseResult.data;
+  const { tenantId, trainingType, includeImages, priority, description, namespaceId } = parseResult.data;
 
   try {
     const tenantResolution = resolveAuthorizedTenantId(req, tenantId);
@@ -4738,6 +5153,7 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
       return res.status(tenantResolution.status).json({ error: tenantResolution.error });
     }
     const scopedTenantId = tenantResolution.tenantId;
+    const governanceConfig = await loadTrainingGovernanceRuntimeConfig();
 
     const runningJobs = await db.query.fineTuningJobs.findMany({
       where: and(
@@ -4745,7 +5161,8 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
         or(
           eq(schema.fineTuningJobs.status, 'pending'),
           eq(schema.fineTuningJobs.status, 'training'),
-          eq(schema.fineTuningJobs.status, 'preparing')
+          eq(schema.fineTuningJobs.status, 'preparing'),
+          eq(schema.fineTuningJobs.status, 'validating')
         )
       ),
     });
@@ -4754,6 +5171,15 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
       return res.status(409).json({
         error: 'Ja existe treinamento em andamento ou enfileirado',
         runningJobId: runningJobs[0].id,
+      });
+    }
+
+    const inflightCount = await getTenantInflightFineTuningJobsCount(db, scopedTenantId);
+    if (inflightCount >= governanceConfig.maxInflightRunsPerTenant) {
+      return res.status(429).json({
+        error: 'Capacidade de treinamento esgotada para este tenant',
+        inflightCount,
+        maxInflightRunsPerTenant: governanceConfig.maxInflightRunsPerTenant,
       });
     }
 
@@ -4791,7 +5217,7 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
     });
     await db.update(schema.loraJobs)
       .set({
-        description: `on_demand:${scheduleType}`,
+        description: `on_demand:${scheduleType}:priority:${priority}`,
       })
       .where(eq(schema.loraJobs.id, loraResult.loraJobId));
 
@@ -4806,7 +5232,12 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
       scopeNamespaceId: namespaceId ?? null,
       configSnapshot: {
         runSource: 'on_demand',
+        execution: {
+          trigger: 'manual',
+          profile: 'quick_run',
+        },
         scheduleType,
+        priority,
         includeImages,
         namespaceId: namespaceId ?? null,
         evaluation,
@@ -4818,6 +5249,7 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
     const enqueueResult = await enqueueTrainingFineTuningRun({
       fineTuningJobId: job.id,
       tenantId: scopedTenantId,
+      priority,
       requestedBy: tenantResolution.authContext.userId ?? null,
     });
 
@@ -4826,6 +5258,7 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
       loraJobId: loraResult.loraJobId,
       tenantId: scopedTenantId,
       trainingType,
+      priority,
       dataCount: evaluation.dataCount,
       imageCount: evaluation.imageCount,
       enqueued: enqueueResult.enqueued,
@@ -4856,13 +5289,13 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
 app.get('/api/training/run/status', requirePermission('training:training_data:read'), async (req: Request, res: Response) => {
   const queryResult = z.object({ tenantId: z.string().uuid().optional() }).safeParse(req.query);
   if (!queryResult.success) {
-    return res.status(400).json({ error: 'Parâmetros inválidos' });
+    return res.status(400).json({ error: 'ParÃ¢metros invÃ¡lidos' });
   }
   const { tenantId } = queryResult.data;
 
   try {
-    // Buscar jobs com status 'training' ou 'preparing' (em execução)
-    // FIX Bug 1: Incluir 'preparing' na verificação (fase de preparação de dados)
+    // Buscar jobs com status 'training' ou 'preparing' (em execuÃ§Ã£o)
+    // FIX Bug 1: Incluir 'preparing' na verificaÃ§Ã£o (fase de preparaÃ§Ã£o de dados)
     const tenantResolution = resolveAuthorizedTenantId(req, tenantId);
     if (!tenantResolution.ok) {
       return res.status(tenantResolution.status).json({ error: tenantResolution.error });
@@ -4913,8 +5346,49 @@ app.get('/api/training/run/status', requirePermission('training:training_data:re
 });
 
 /**
+ * GET /api/training/queue/status
+ * Status enterprise das filas de fine-tuning (prioridades + DLQ + governanÃ§a)
+ */
+app.get('/api/training/queue/status', requirePermission('training:fine_tuning_jobs:read'), async (req: Request, res: Response) => {
+  const queryResult = z.object({ tenantId: z.string().uuid().optional() }).safeParse(req.query);
+  if (!queryResult.success) {
+    return res.status(400).json({ error: 'Parametros invalidos' });
+  }
+
+  try {
+    const tenantResolution = resolveAuthorizedTenantId(req, queryResult.data.tenantId ?? null);
+    if (!tenantResolution.ok) {
+      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
+    }
+
+    const [governanceConfig, queues, inflightCount] = await Promise.all([
+      loadTrainingGovernanceRuntimeConfig(),
+      getFineTuningQueuesStatus(),
+      getTenantInflightFineTuningJobsCount(db, tenantResolution.tenantId),
+    ]);
+
+    return res.json({
+      queues,
+      governance: {
+        maxInflightRunsPerTenant: governanceConfig.maxInflightRunsPerTenant,
+        requireEvalPassedForPromotion: governanceConfig.requireEvalPassedForPromotion,
+        requireDualApprovalForPromotion: governanceConfig.requireDualApprovalForPromotion,
+        promotionMinApprovals: governanceConfig.promotionMinApprovals,
+      },
+      tenant: {
+        id: tenantResolution.tenantId,
+        inflightCount,
+      },
+    });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao obter status das filas de fine-tuning');
+    return res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+/**
  * GET /api/training/run/history
- * Obtém histórico de treinamentos
+ * ObtÃ©m histÃ³rico de treinamentos
  */
 app.get('/api/training/run/history', requirePermission('training:training_data:read'), async (req: Request, res: Response) => {
   const queryResult = z.object({ 
@@ -4923,7 +5397,7 @@ app.get('/api/training/run/history', requirePermission('training:training_data:r
   }).safeParse(req.query);
   
   if (!queryResult.success) {
-    return res.status(400).json({ error: 'Parâmetros inválidos' });
+    return res.status(400).json({ error: 'ParÃ¢metros invÃ¡lidos' });
   }
   const { tenantId, limit } = queryResult.data;
 
@@ -4941,7 +5415,7 @@ app.get('/api/training/run/history', requirePermission('training:training_data:r
 
     const history = jobs.map((job: typeof schema.fineTuningJobs.$inferSelect) => ({
       id: job.id,
-      jobType: job.name, // name contém tipo do job (qlora_incremental, etc)
+      jobType: job.name, // name contÃ©m tipo do job (qlora_incremental, etc)
       status: job.status,
       totalRecords: job.trainingDataCount,
       processedRecords: job.progress ? Math.round((job.progress / 100) * (job.trainingDataCount ?? 0)) : 0,
@@ -4959,7 +5433,7 @@ app.get('/api/training/run/history', requirePermission('training:training_data:r
       history,
     });
   } catch (error) {
-    logger.error({ error }, 'Falha ao obter histórico de treinamentos');
+    logger.error({ error }, 'Falha ao obter histÃ³rico de treinamentos');
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
@@ -4971,7 +5445,7 @@ app.get('/api/training/run/history', requirePermission('training:training_data:r
 app.delete('/api/training/run/cancel', requirePermission('training:training_data:manage'), async (req: Request, res: Response) => {
   const parseResult = cancelTrainingSchema.safeParse(req.body);
   if (!parseResult.success) {
-    return res.status(400).json({ error: 'Input inválido', details: parseResult.error.format() });
+    return res.status(400).json({ error: 'Input invÃ¡lido', details: parseResult.error.format() });
   }
   
   const { trainingRunId, reason } = parseResult.data;
@@ -4990,12 +5464,12 @@ app.delete('/api/training/run/cancel', requirePermission('training:training_data
     });
 
     if (!job) {
-      return res.status(404).json({ error: 'Treinamento não encontrado' });
+      return res.status(404).json({ error: 'Treinamento nÃ£o encontrado' });
     }
 
     if (job.status !== 'training' && job.status !== 'pending' && job.status !== 'preparing') {
       return res.status(400).json({ 
-        error: 'Treinamento não pode ser cancelado',
+        error: 'Treinamento nÃ£o pode ser cancelado',
         currentStatus: job.status,
       });
     }
@@ -5004,7 +5478,7 @@ app.delete('/api/training/run/cancel', requirePermission('training:training_data
       .set({
         status: 'cancelled',
         completadoEm: new Date(),
-        errorMessage: reason || 'Cancelado pelo usuário',
+        errorMessage: reason || 'Cancelado pelo usuÃ¡rio',
       })
       .where(and(
         eq(schema.fineTuningJobs.id, trainingRunId),
@@ -5025,32 +5499,32 @@ app.delete('/api/training/run/cancel', requirePermission('training:training_data
   }
 });
 
-// Funções auxiliares para schedule
+// FunÃ§Ãµes auxiliares para schedule
 
 /**
- * Calcula a próxima data de execução baseado no cron pattern ou intervalo padrão.
+ * Calcula a prÃ³xima data de execuÃ§Ã£o baseado no cron pattern ou intervalo padrÃ£o.
  * 
- * Suporta padrões cron básicos:
- * - '0 3 * * 0' → Domingo às 3:00 AM
- * - '0 1 1,15 * *' → Dias 1 e 15 de cada mês às 1:00 AM
+ * Suporta padrÃµes cron bÃ¡sicos:
+ * - '0 3 * * 0' â†’ Domingo Ã s 3:00 AM
+ * - '0 1 1,15 * *' â†’ Dias 1 e 15 de cada mÃªs Ã s 1:00 AM
  * 
- * FIX Bug 3: Agora honra o cronPattern passado pelo usuário
+ * FIX Bug 3: Agora honra o cronPattern passado pelo usuÃ¡rio
  */
 function calculateNextScheduleDate(scheduleType: string, cronPattern?: string): Date {
   const config = scheduleType === 'incremental_fine_tuning'
     ? SCHEDULE_CONFIG.incrementalFineTuning
     : SCHEDULE_CONFIG.completeFineTuning;
   
-  // Se não tiver cron pattern customizado, usar intervalo padrão
+  // Se nÃ£o tiver cron pattern customizado, usar intervalo padrÃ£o
   if (!cronPattern) {
     return new Date(Date.now() + config.intervalMs);
   }
   
-  // Parse básico do cron pattern: 'minuto hora diaDoMes mes diaDaSemana'
-  // Exemplo: '0 3 * * 0' = minuto 0, hora 3, qualquer dia do mês, qualquer mês, domingo
+  // Parse bÃ¡sico do cron pattern: 'minuto hora diaDoMes mes diaDaSemana'
+  // Exemplo: '0 3 * * 0' = minuto 0, hora 3, qualquer dia do mÃªs, qualquer mÃªs, domingo
   const parts = cronPattern.trim().split(/\s+/);
   if (parts.length !== 5) {
-    logger.warn({ cronPattern }, 'Cron pattern inválido, usando intervalo padrão');
+    logger.warn({ cronPattern }, 'Cron pattern invÃ¡lido, usando intervalo padrÃ£o');
     return new Date(Date.now() + config.intervalMs);
   }
   
@@ -5064,63 +5538,63 @@ function calculateNextScheduleDate(scheduleType: string, cronPattern?: string): 
   
   next.setHours(targetHour, targetMinute, 0, 0);
   
-  // Se for dia da semana específico (ex: '0' = domingo)
+  // Se for dia da semana especÃ­fico (ex: '0' = domingo)
   if (dayOfWeek !== '*') {
-    const targetDay = parseInt(dayOfWeek, 10); // 0 = domingo, 6 = sábado
+    const targetDay = parseInt(dayOfWeek, 10); // 0 = domingo, 6 = sÃ¡bado
     let daysUntil = targetDay - now.getDay();
     
-    // Se o dia já passou esta semana, ir para próxima semana
+    // Se o dia jÃ¡ passou esta semana, ir para prÃ³xima semana
     if (daysUntil < 0 || (daysUntil === 0 && now >= next)) {
       daysUntil += 7;
     }
     
     next.setDate(now.getDate() + daysUntil);
   }
-  // Se for dia do mês específico (ex: '1,15' = dias 1 e 15)
+  // Se for dia do mÃªs especÃ­fico (ex: '1,15' = dias 1 e 15)
   else if (dayOfMonth !== '*') {
     const days = dayOfMonth.split(',').map(d => parseInt(d.trim(), 10)).sort((a, b) => a - b);
     const currentDay = now.getDate();
     
-    // Encontrar próximo dia válido
+    // Encontrar prÃ³ximo dia vÃ¡lido
     let targetDayOfMonth = days.find(d => d > currentDay || (d === currentDay && now < next));
     
     if (targetDayOfMonth === undefined) {
-      // Nenhum dia disponível este mês, ir para próximo mês
+      // Nenhum dia disponÃ­vel este mÃªs, ir para prÃ³ximo mÃªs
       targetDayOfMonth = days[0];
-      // FIX Bug 2: Definir dia como 1 ANTES de incrementar mês para evitar overflow
-      // Exemplo: 31/Jan + 1 mês = 3/Mar se não fizermos isso (Fev não tem 31 dias)
+      // FIX Bug 2: Definir dia como 1 ANTES de incrementar mÃªs para evitar overflow
+      // Exemplo: 31/Jan + 1 mÃªs = 3/Mar se nÃ£o fizermos isso (Fev nÃ£o tem 31 dias)
       next.setDate(1);
       next.setMonth(next.getMonth() + 1);
     }
     
-    // FIX Bug 3 (11/01/2026): Verificar se o dia existe no mês alvo
-    // Exemplo: Cron '0 1 31 * *' após Janeiro → Fevereiro não tem dia 31
-    // JavaScript Date overflow: setDate(31) em Fevereiro → 3 de Março (ERRADO)
-    // Solução: Avançar meses até encontrar um que tenha o dia desejado
+    // FIX Bug 3 (11/01/2026): Verificar se o dia existe no mÃªs alvo
+    // Exemplo: Cron '0 1 31 * *' apÃ³s Janeiro â†’ Fevereiro nÃ£o tem dia 31
+    // JavaScript Date overflow: setDate(31) em Fevereiro â†’ 3 de MarÃ§o (ERRADO)
+    // SoluÃ§Ã£o: AvanÃ§ar meses atÃ© encontrar um que tenha o dia desejado
     const getDaysInMonth = (date: Date): number => {
-      // Criar data no primeiro dia do próximo mês e subtrair 1 dia
+      // Criar data no primeiro dia do prÃ³ximo mÃªs e subtrair 1 dia
       return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
     };
     
-    // Avançar meses se o dia não existir no mês atual (máximo 12 iterações para segurança)
+    // AvanÃ§ar meses se o dia nÃ£o existir no mÃªs atual (mÃ¡ximo 12 iteraÃ§Ãµes para seguranÃ§a)
     for (let i = 0; i < 12; i++) {
       const daysInMonth = getDaysInMonth(next);
       if (targetDayOfMonth <= daysInMonth) {
-        break; // Mês atual tem o dia desejado
+        break; // MÃªs atual tem o dia desejado
       }
-      // Mês não tem o dia (ex: Fevereiro não tem 31), ir para próximo mês
+      // MÃªs nÃ£o tem o dia (ex: Fevereiro nÃ£o tem 31), ir para prÃ³ximo mÃªs
       next.setDate(1);
       next.setMonth(next.getMonth() + 1);
     }
     
     next.setDate(targetDayOfMonth);
   }
-  // Se já passou o horário de hoje, ir para amanhã
+  // Se jÃ¡ passou o horÃ¡rio de hoje, ir para amanhÃ£
   else if (now >= next) {
     next.setDate(next.getDate() + 1);
   }
   
-  logger.debug({ cronPattern, nextSchedule: next.toISOString() }, 'Próximo schedule calculado');
+  logger.debug({ cronPattern, nextSchedule: next.toISOString() }, 'PrÃ³ximo schedule calculado');
   return next;
 }
 
@@ -5128,7 +5602,7 @@ function _estimateRemainingTime(job: typeof schema.fineTuningJobs.$inferSelect):
   if (!job.iniciadoEm || !job.trainingDataCount || !job.progress) return null;
   
   const elapsedMs = Date.now() - new Date(job.iniciadoEm).getTime();
-  const progress = job.progress / 100; // progress é 0-100
+  const progress = job.progress / 100; // progress Ã© 0-100
   
   if (progress <= 0) return null;
   
@@ -5138,7 +5612,7 @@ function _estimateRemainingTime(job: typeof schema.fineTuningJobs.$inferSelect):
   return Math.round(Math.max(0, remainingMs) / 1000);
 }
 
-// Importar funções do auto-learning scheduler
+// Importar funÃ§Ãµes do auto-learning scheduler
 import { 
   SCHEDULE_CONFIG, 
   evaluateDataQuality, 
@@ -5161,8 +5635,8 @@ app.use(createErrorHandler({
   includeStackInDev: true,
 }));
 
-// CORREÇÃO 31/12/2025: Usar connectWithRetry para garantir PostgreSQL + pgvector prontos
-// Previne crash loop quando PostgreSQL ainda está inicializando
+// CORREÃ‡ÃƒO 31/12/2025: Usar connectWithRetry para garantir PostgreSQL + pgvector prontos
+// Previne crash loop quando PostgreSQL ainda estÃ¡ inicializando
 import { connectWithRetry } from '@alice/database';
 
 // SSOT validation (Plano 11/02/2026): TEXT_EMBEDDING_DIM (embeddings-gpu) = EMBEDDING_DIMENSIONS.TEXT
@@ -5188,19 +5662,19 @@ async function validateEmbeddingDimensionsSSOT(): Promise<void> {
           await new Promise((r) => setTimeout(r, delayMs));
           continue;
         }
-        logger.warn({ status: res.status }, 'Embeddings health unreachable após retries - continuando (readiness falhará)');
+        logger.warn({ status: res.status }, 'Embeddings health unreachable apÃ³s retries - continuando (readiness falharÃ¡)');
         return;
       }
       const data = (await res.json()) as { text_dimensions?: number };
       const dim = data.text_dimensions;
       if (typeof dim !== 'number') {
-        logger.warn({ data }, 'Embeddings health não retornou text_dimensions');
+        logger.warn({ data }, 'Embeddings health nÃ£o retornou text_dimensions');
         return;
       }
       if (dim !== EMBEDDING_DIMENSIONS.TEXT) {
         logger.error(
           { text_dimensions: dim, expected: EMBEDDING_DIMENSIONS.TEXT },
-          'SSOT INCONSISTENTE: embeddings-gpu retorna dimensão diferente de @alice/database. Verifique configuração.'
+          'SSOT INCONSISTENTE: embeddings-gpu retorna dimensÃ£o diferente de @alice/database. Verifique configuraÃ§Ã£o.'
         );
         process.exit(1);
       }
@@ -5211,7 +5685,7 @@ async function validateEmbeddingDimensionsSSOT(): Promise<void> {
         logger.warn({ attempt, err: err instanceof Error ? err.message : String(err) }, 'Embeddings health unreachable - retrying');
         await new Promise((r) => setTimeout(r, delayMs));
       } else {
-        logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'Embeddings health unreachable após retries - continuando');
+        logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'Embeddings health unreachable apÃ³s retries - continuando');
       }
     }
   }
@@ -5227,19 +5701,19 @@ let autoLearningLoopActive = false;
     await connectWithRetry({
       maxRetries: 15,
       initialDelayMs: 2000,
-      checkPgvector: true, // Verificar extensão pgvector (obrigatório para embeddings)
+      checkPgvector: true, // Verificar extensÃ£o pgvector (obrigatÃ³rio para embeddings)
     });
 
-    // Inicializar auto-learning scheduler com instância do banco (Regra 6: sem db undefined)
-    // CORREÇÃO 11/02/2026: initAutoLearningScheduler NUNCA era chamada, causando
-    // db=undefined → TypeError a cada 60s no processScheduledJobs → alerta Grafana
+    // Inicializar auto-learning scheduler com instÃ¢ncia do banco (Regra 6: sem db undefined)
+    // CORREÃ‡ÃƒO 11/02/2026: initAutoLearningScheduler NUNCA era chamada, causando
+    // db=undefined â†’ TypeError a cada 60s no processScheduledJobs â†’ alerta Grafana
     initAutoLearningScheduler(getDatabase());
 
     // SSOT validation (Plano 11/02/2026): embeddings-gpu text_dimensions = EMBEDDING_DIMENSIONS.TEXT
     await validateEmbeddingDimensionsSSOT();
 
     // WS4: Redis cache + session-auth cache (evita queries repetitivas em PostgreSQL)
-    // - Em produção: Redis é obrigatório (fail-fast dentro de initializeSessionAuthCache)
+    // - Em produÃ§Ã£o: Redis Ã© obrigatÃ³rio (fail-fast dentro de initializeSessionAuthCache)
     // - Em dev/test: cache fica desabilitado (sem in-memory)
     await initializeRedisCache();
     await initializeSessionAuthCache();
@@ -5264,7 +5738,11 @@ let autoLearningLoopActive = false;
     );
     logger.info(
       {
-        queue: TRAINING_FINE_TUNING_QUEUE,
+        queues: [
+          TRAINING_FINE_TUNING_QUEUE_HIGH,
+          TRAINING_FINE_TUNING_QUEUE_NORMAL,
+          TRAINING_FINE_TUNING_QUEUE_LOW,
+        ],
         pollIntervalMs: TRAINING_FINE_TUNING_WORKER_POLL_INTERVAL_MS,
       },
       'Worker de fila fine-tuning inicializado'
@@ -5287,7 +5765,7 @@ let autoLearningLoopActive = false;
         queue: TRAINING_NAMESPACE_PROFILE_RECONCILE_QUEUE,
         intervalMs: NAMESPACE_PROFILE_RECONCILE_INTERVAL_MS,
       },
-      'Worker de reconciliação de namespace_profiles inicializado'
+      'Worker de reconciliaÃ§Ã£o de namespace_profiles inicializado'
     );
     tradingWorkerStoppers.push(
       createTrainingEmbeddingDedupeWorker({
@@ -5398,11 +5876,11 @@ let autoLearningLoopActive = false;
       }, 'Training service iniciado com Circuit Breaker');
 
       startTrainingMetricsScheduler();
-      logger.info({ intervalMs: TRAINING_METRICS_INTERVAL_MS }, 'Scheduler de métricas de training iniciado');
+      logger.info({ intervalMs: TRAINING_METRICS_INTERVAL_MS }, 'Scheduler de mÃ©tricas de training iniciado');
       startNamespaceProfileReconcileScheduler();
       logger.info(
         { intervalMs: NAMESPACE_PROFILE_RECONCILE_INTERVAL_MS },
-        'Scheduler de reconciliação de namespace_profiles iniciado'
+        'Scheduler de reconciliaÃ§Ã£o de namespace_profiles iniciado'
       );
 
       autoLearningLoopActive = true;
@@ -5421,7 +5899,7 @@ let autoLearningLoopActive = false;
       })();
       logger.info({ intervalMs: TRAINING_SCHEDULER_POLL_MS }, 'Scheduler de auto-learning iniciado');
 
-      // Retomar jobs pendentes após restart (Regra 6: sem dependência de state em memória)
+      // Retomar jobs pendentes apÃ³s restart (Regra 6: sem dependÃªncia de state em memÃ³ria)
       resumePendingFineTuningJobs().catch((error: unknown) => {
         const errObj = error instanceof Error ? error : new Error(String(error));
         logger.error({ err: errObj }, 'Falha ao retomar jobs de fine-tuning pendentes');
@@ -5431,18 +5909,18 @@ let autoLearningLoopActive = false;
         logger.error({ err: errObj }, 'Falha ao retomar jobs de trading LoRA pendentes');
       });
 
-      // Tick periódico: garante execução de jobs criados por scheduler/rotas mesmo após long uptimes
+      // Tick periÃ³dico: garante execuÃ§Ã£o de jobs criados por scheduler/rotas mesmo apÃ³s long uptimes
       setInterval(() => {
         resumePendingFineTuningJobs().catch(() => {});
         resumePendingLoraJobs().catch(() => {});
       }, 30000);
     });
 
-    // SEGURANÇA: Timeouts para prevenir conexões pendentes (Node.js 20 LTS Best Practices)
+    // SEGURANÃ‡A: Timeouts para prevenir conexÃµes pendentes (Node.js 20 LTS Best Practices)
     // Bulk import pode processar centenas de entradas e exceder 30s.
-    // Em produção, 30s causava socket close no upstream e 502 no Caddy (EOF).
+    // Em produÃ§Ã£o, 30s causava socket close no upstream e 502 no Caddy (EOF).
     server.timeout = TRAINING_HTTP_SERVER_TIMEOUT_MS;
-    server.keepAliveTimeout = 65000; // 65s (maior que ALB timeout padrão de 60s)
+    server.keepAliveTimeout = 65000; // 65s (maior que ALB timeout padrÃ£o de 60s)
     server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
     logger.info(
       {
@@ -5455,10 +5933,10 @@ let autoLearningLoopActive = false;
     
     // ============================================================================
     // GRACEFUL SHUTDOWN (Enterprise-Grade - Regra 16 CLAUDE.md)
-    // CORREÇÃO 31/12/2025: Callbacks movidos para dentro do IIFE para garantir
-    // que 'server' está definido antes de registrar o callback
-    // ShutdownManager centralizado elimina duplicação de listeners (Regra 6)
-    // Ordem: HTTP server → Database pool
+    // CORREÃ‡ÃƒO 31/12/2025: Callbacks movidos para dentro do IIFE para garantir
+    // que 'server' estÃ¡ definido antes de registrar o callback
+    // ShutdownManager centralizado elimina duplicaÃ§Ã£o de listeners (Regra 6)
+    // Ordem: HTTP server â†’ Database pool
     // ============================================================================
 
     registerShutdownCallback(
@@ -5531,22 +6009,17 @@ let autoLearningLoopActive = false;
     registerShutdownCallback(
       'training-database-pool',
       async () => {
-        logger.info('Encerrando pool de conexões database...');
+        logger.info('Encerrando pool de conexÃµes database...');
         await closeDatabasePool();
-        logger.info('Pool de conexões encerrado com sucesso');
+        logger.info('Pool de conexÃµes encerrado com sucesso');
       },
       { priority: ShutdownPriority.DATABASE }
     );
     
   } catch (error) {
     logger.fatal({ error: error instanceof Error ? error.message : String(error) }, 
-      '❌ FATAL: Falha ao conectar ao PostgreSQL - training-service não pode iniciar');
+      'âŒ FATAL: Falha ao conectar ao PostgreSQL - training-service nÃ£o pode iniciar');
     process.exit(1);
   }
 })();
-
-
-
-
-
 

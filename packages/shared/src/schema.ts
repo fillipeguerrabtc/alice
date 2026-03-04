@@ -2318,6 +2318,11 @@ export const fineTuningPromotionStatusEnum = pgEnum("fine_tuning_promotion_statu
   "rolled_back",
 ]);
 
+export const fineTuningPromotionApprovalDecisionEnum = pgEnum("fine_tuning_promotion_approval_decision", [
+  "approved",
+  "rejected",
+]);
+
 export const fineTuningJobs = pgTable(
   "fine_tuning_jobs",
   {
@@ -2366,6 +2371,29 @@ export const fineTuningJobs = pgTable(
     idxFinetuningPromotionStatus: index("idx_finetuning_promotion_status").on(table.promotionStatus),
     idxFinetuningLoraJob: index("idx_finetuning_lora_job").on(table.loraJobId),
     idxFinetuningModelVersion: index("idx_finetuning_model_version").on(table.modelVersionId),
+  })
+);
+
+export const fineTuningPromotionApprovals = pgTable(
+  "fine_tuning_promotion_approvals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").notNull().references(() => tenants.id),
+    fineTuningJobId: uuid("fine_tuning_job_id").notNull().references(() => fineTuningJobs.id, {
+      onDelete: "cascade",
+    }),
+    approverUserId: uuid("approver_user_id").notNull().references(() => users.id),
+    decision: fineTuningPromotionApprovalDecisionEnum("decision").notNull(),
+    reason: text("reason"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    idxFineTuningPromotionApprovalsTenant: index("idx_ft_promotion_approvals_tenant").on(table.tenantId),
+    idxFineTuningPromotionApprovalsJob: index("idx_ft_promotion_approvals_job").on(table.fineTuningJobId),
+    idxFineTuningPromotionApprovalsDecision: index("idx_ft_promotion_approvals_decision").on(table.decision),
+    idxFineTuningPromotionApprovalsUniqueApproverByJob: uniqueIndex("idx_ft_promotion_approvals_unique_job_user")
+      .on(table.fineTuningJobId, table.approverUserId),
   })
 );
 
@@ -4679,6 +4707,8 @@ export const modelVersions = pgTable(
     tenantId: uuid("tenant_id").references(() => tenants.id),
     /** Escopo do adapter: null = tenant-wide; preenchido = adapter exclusivo do namespace (LoRA por namespace). */
     namespaceId: uuid("namespace_id").references(() => namespaces.id),
+    /** Escopo opcional por agente: requer namespaceId preenchido. */
+    agentId: uuid("agent_id").references(() => agents.id),
     name: varchar("name", { length: 255 }).notNull(),
     version: integer("version").notNull().default(1),
     // Gate 2: modelo base do LLM (texto) para versionamento/LoRA
@@ -4701,6 +4731,7 @@ export const modelVersions = pgTable(
   (table) => ({
     idxModelVersionsTenant: index("idx_model_versions_tenant").on(table.tenantId),
     idxModelVersionsNamespace: index("idx_model_versions_namespace").on(table.namespaceId),
+    idxModelVersionsAgent: index("idx_model_versions_agent").on(table.agentId),
     idxModelVersionsStatus: index("idx_model_versions_status").on(table.status),
     idxModelVersionsActive: index("idx_model_versions_active").on(table.isActive),
     idxModelVersionsVersion: index("idx_model_versions_version").on(table.version),
@@ -5698,6 +5729,8 @@ export type InsertTrainingScopeOverride = typeof trainingScopeOverrides.$inferIn
 
 export type FineTuningJob = typeof fineTuningJobs.$inferSelect;
 export type InsertFineTuningJob = typeof fineTuningJobs.$inferInsert;
+export type FineTuningPromotionApproval = typeof fineTuningPromotionApprovals.$inferSelect;
+export type InsertFineTuningPromotionApproval = typeof fineTuningPromotionApprovals.$inferInsert;
 
 // Wise Sync Types (FASE 5.5)
 

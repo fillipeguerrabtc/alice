@@ -19,20 +19,56 @@
  * @module training-service/auto-learning-scheduler
  */
 
+import crypto from 'node:crypto';
 import { createLogger } from '@alice/logger';
 import { eq, and, or, lt, desc, isNull, inArray, not } from '@alice/database';
 import { getAllSystemConfig } from '@alice/database/system-config';
 import * as schema from '@alice/shared/schema';
 import type { Database } from '@alice/database';
-import { GPU_MANAGER_CONFIG } from '@alice/shared-utils';
+import { getRedisClient, GPU_MANAGER_CONFIG } from '@alice/shared-utils';
 import { enqueueTrainingFineTuningRun } from './training-fine-tuning-queue.js';
 import { loadTrainingEnterpriseConfig } from './training-config.js';
+import {
+  getTenantInflightFineTuningJobsCount,
+  loadTrainingGovernanceRuntimeConfig,
+} from './training-governance.js';
+import {
+  assertValidModelRegistryScope,
+  buildModelVersionScopeCondition,
+  type ModelRegistryScope,
+} from './model-registry-scope.js';
 
 // CORREÇÃO AUDITORIA 17/12/2025: Usar createLogger padronizado da plataforma
 // Bug: pino direto com pino-pretty não segue padrão enterprise (Regra 2)
 const logger = createLogger('auto-learning-scheduler');
+const SCHEDULER_LOCK_KEY = 'alice:training:auto-learning:scheduler:lock';
+const SCHEDULER_LOCK_TTL_SECONDS = 180;
+const SCHEDULER_LOCK_RENEW_INTERVAL_MS = 30_000;
 
 let db: Database;
+
+type SchedulerRedisClient = NonNullable<ReturnType<typeof getRedisClient>>;
+
+async function refreshSchedulerLock(
+  redis: SchedulerRedisClient,
+  lockToken: string
+): Promise<boolean> {
+  const result = await redis.eval(
+    "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('EXPIRE', KEYS[1], ARGV[2]) else return 0 end",
+    { keys: [SCHEDULER_LOCK_KEY], arguments: [lockToken, String(SCHEDULER_LOCK_TTL_SECONDS)] }
+  );
+  return Number(result) === 1;
+}
+
+async function releaseSchedulerLock(
+  redis: SchedulerRedisClient,
+  lockToken: string
+): Promise<void> {
+  await redis.eval(
+    "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end",
+    { keys: [SCHEDULER_LOCK_KEY], arguments: [lockToken] }
+  );
+}
 
 export function initAutoLearningScheduler(dbClient: Database): void {
   db = dbClient;
@@ -286,6 +322,26 @@ interface QualityEvaluation {
   reason: string;
 }
 
+export type ScheduleMetadata = {
+  minDataRequired?: number;
+  cronPattern?: string;
+  namespaceId?: string | null;
+  configuredAt?: string;
+};
+
+function asScheduleMetadata(raw: unknown): ScheduleMetadata {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const metadata = raw as Record<string, unknown>;
+  return {
+    minDataRequired: typeof metadata.minDataRequired === 'number' ? metadata.minDataRequired : undefined,
+    cronPattern: typeof metadata.cronPattern === 'string' ? metadata.cronPattern : undefined,
+    namespaceId: typeof metadata.namespaceId === 'string'
+      ? metadata.namespaceId
+      : (metadata.namespaceId === null ? null : undefined),
+    configuredAt: typeof metadata.configuredAt === 'string' ? metadata.configuredAt : undefined,
+  };
+}
+
 /**
  * Quando true (ex.: jobs agendados), o threshold de "dados suficientes" usa apenas
  * training_data aprovados (approvedDataCount). Trading dataset NÃO é obrigatório para rodar.
@@ -457,27 +513,43 @@ export async function compareWithBaseline(
 export async function rollbackToVersion(
   tenantId: string,
   targetVersion: number,
-  reason: string
+  reason: string,
+  scope?: ModelRegistryScope
 ): Promise<void> {
-  logger.warn({ tenantId, targetVersion, reason }, 'Iniciando rollback de modelo');
+  const normalizedScope = assertValidModelRegistryScope(scope);
+  const scopeCondition = buildModelVersionScopeCondition(normalizedScope);
+  logger.warn({
+    tenantId,
+    targetVersion,
+    reason,
+    namespaceId: normalizedScope.namespaceId,
+    agentId: normalizedScope.agentId,
+  }, 'Iniciando rollback de modelo');
 
   await db.update(schema.modelVersions)
     .set({ isActive: false })
-    .where(eq(schema.modelVersions.tenantId, tenantId));
+    .where(and(
+      eq(schema.modelVersions.tenantId, tenantId),
+      scopeCondition
+    ));
 
   await db.update(schema.modelVersions)
-    .set({ 
+    .set({
       isActive: true,
       status: 'active',
       ativadoEm: new Date(),
     })
     .where(and(
       eq(schema.modelVersions.tenantId, tenantId),
+      scopeCondition,
       eq(schema.modelVersions.version, targetVersion)
     ));
 
   const latestVersion = await db.query.modelVersions.findFirst({
-    where: eq(schema.modelVersions.tenantId, tenantId),
+    where: and(
+      eq(schema.modelVersions.tenantId, tenantId),
+      scopeCondition
+    ),
     orderBy: [desc(schema.modelVersions.version)],
   });
 
@@ -491,7 +563,12 @@ export async function rollbackToVersion(
       .where(eq(schema.modelVersions.id, latestVersion.id));
   }
 
-  logger.info({ tenantId, targetVersion }, 'Rollback concluído');
+  logger.info({
+    tenantId,
+    targetVersion,
+    namespaceId: normalizedScope.namespaceId,
+    agentId: normalizedScope.agentId,
+  }, 'Rollback concluido');
 }
 
 // ============================================================================
@@ -500,9 +577,14 @@ export async function rollbackToVersion(
 
 export async function scheduleNextRun(
   scheduleType: string,
-  tenantId?: string
+  tenantId?: string,
+  metadata?: ScheduleMetadata
 ): Promise<string> {
-  const cronPattern = await resolveScheduleCronPattern(scheduleType);
+  const normalizedMetadata = {
+    ...asScheduleMetadata(metadata),
+    namespaceId: metadata?.namespaceId ?? null,
+  };
+  const cronPattern = normalizedMetadata.cronPattern ?? await resolveScheduleCronPattern(scheduleType);
   const scheduledFor = calculateNextScheduledDate(scheduleType, cronPattern);
 
   const [schedule] = await db.insert(schema.autoLearningSchedule).values({
@@ -510,12 +592,14 @@ export async function scheduleNextRun(
     scheduleType,
     status: 'scheduled',
     scheduledFor,
+    metadata: normalizedMetadata,
   }).returning();
 
   logger.info({
     scheduleId: schedule.id,
     scheduleType,
     scheduledFor,
+    namespaceId: normalizedMetadata.namespaceId ?? null,
   }, 'Próxima execução agendada');
 
   return schedule.id;
@@ -540,8 +624,44 @@ export async function getScheduleStatus(tenantId?: string) {
 }
 
 export async function processScheduledJobs(): Promise<number> {
+  const redis = getRedisClient();
+  if (!redis) {
+    logger.warn({ lockKey: SCHEDULER_LOCK_KEY }, 'Redis indisponível; processamento de scheduler ignorado para evitar corrida');
+    return 0;
+  }
+
+  const lockToken = crypto.randomUUID();
+  const lockAcquired = await redis.set(SCHEDULER_LOCK_KEY, lockToken, {
+    NX: true,
+    EX: SCHEDULER_LOCK_TTL_SECONDS,
+  });
+  if (!lockAcquired) {
+    logger.debug({ lockKey: SCHEDULER_LOCK_KEY }, 'Outro worker já está processando scheduler');
+    return 0;
+  }
+
+  let lockLost = false;
+  const lockRefreshTimer = setInterval(async () => {
+    try {
+      const renewed = await refreshSchedulerLock(redis, lockToken);
+      if (!renewed) {
+        lockLost = true;
+        logger.error({ lockKey: SCHEDULER_LOCK_KEY }, 'Lock do scheduler perdido durante processamento');
+      }
+    } catch (error) {
+      lockLost = true;
+      logger.error(
+        { lockKey: SCHEDULER_LOCK_KEY, error: error instanceof Error ? error.message : String(error) },
+        'Falha ao renovar lock do scheduler'
+      );
+    }
+  }, SCHEDULER_LOCK_RENEW_INTERVAL_MS);
+  lockRefreshTimer.unref?.();
+
+  try {
   const now = new Date();
   const includeImagesDefault = await resolveAutoLearningIncludeImages();
+  const governanceConfig = await loadTrainingGovernanceRuntimeConfig();
   
   const dueJobs = await db.query.autoLearningSchedule.findMany({
     where: and(
@@ -553,43 +673,81 @@ export async function processScheduledJobs(): Promise<number> {
   let processedCount = 0;
 
   for (const job of dueJobs) {
+    if (lockLost) {
+      logger.warn({ processedCount }, 'Processamento interrompido por perda de lock do scheduler');
+      break;
+    }
+
     try {
       await db.update(schema.autoLearningSchedule)
         .set({ status: 'running', startedAt: now })
         .where(eq(schema.autoLearningSchedule.id, job.id));
 
       // FIX: Ler minDataRequired do metadata (se configurado pelo usuário)
-      const customMinDataRequired = (job.metadata as { minDataRequired?: number } | null)?.minDataRequired;
+      const scheduleMetadata = asScheduleMetadata(job.metadata);
+      const scheduleNamespaceId = scheduleMetadata.namespaceId ?? undefined;
+      if (job.tenantId) {
+        const inflightCount = await getTenantInflightFineTuningJobsCount(db, job.tenantId);
+        if (inflightCount >= governanceConfig.maxInflightRunsPerTenant) {
+          const capacityMessage = `Capacidade de treinamento esgotada (${inflightCount}/${governanceConfig.maxInflightRunsPerTenant})`;
+          await db.update(schema.autoLearningSchedule)
+            .set({
+              status: 'skipped',
+              completedAt: new Date(),
+              errorMessage: capacityMessage,
+            })
+            .where(eq(schema.autoLearningSchedule.id, job.id));
+          await scheduleNextRun(job.scheduleType, job.tenantId || undefined, scheduleMetadata);
+          logger.warn({
+            scheduleId: job.id,
+            tenantId: job.tenantId,
+            scheduleType: job.scheduleType,
+            namespaceId: scheduleNamespaceId ?? null,
+            inflightCount,
+            maxInflightRunsPerTenant: governanceConfig.maxInflightRunsPerTenant,
+          }, 'Job agendado pulado por falta de capacidade de treinamento');
+          continue;
+        }
+      }
+      const customMinDataRequired = scheduleMetadata.minDataRequired;
       const evaluation = await evaluateDataQuality(
         job.scheduleType,
         job.tenantId || undefined,
         customMinDataRequired,
-        undefined,
+        scheduleNamespaceId,
         true
       );
 
       if (evaluation.recommendation === 'proceed' && job.tenantId) {
         const result = await startProgressiveLoRA(job.tenantId, {
           includeImages: includeImagesDefault,
+          namespaceId: scheduleNamespaceId,
         });
         await db.update(schema.loraJobs)
           .set({
-            description: `scheduled:${job.scheduleType}`,
+            description: `scheduled:${job.scheduleType}:priority:low`,
           })
           .where(eq(schema.loraJobs.id, result.loraJobId));
 
         const [fineTuningJob] = await db.insert(schema.fineTuningJobs).values({
           tenantId: job.tenantId,
-          name: `Treinamento agendado ${job.scheduleType}`,
+          name: `Treinamento agendado ${job.scheduleType}${scheduleNamespaceId ? ` ns:${scheduleNamespaceId.slice(0, 8)}` : ''}`,
           baseModel: GPU_MANAGER_CONFIG.models.llm,
           status: 'pending',
           runSource: 'scheduled',
           trainingDataCount: evaluation.dataCount,
           loraJobId: result.loraJobId,
+          scopeNamespaceId: scheduleNamespaceId ?? null,
           configSnapshot: {
             runSource: 'scheduled',
+            execution: {
+              trigger: 'schedule',
+              profile: 'scheduled_policy',
+            },
             scheduleId: job.id,
             scheduleType: job.scheduleType,
+            priority: 'low',
+            namespaceId: scheduleNamespaceId ?? null,
             evaluation,
             includeImages: includeImagesDefault,
             scheduleMetadata: job.metadata ?? {},
@@ -601,6 +759,7 @@ export async function processScheduledJobs(): Promise<number> {
         const enqueueResult = await enqueueTrainingFineTuningRun({
           fineTuningJobId: fineTuningJob.id,
           tenantId: job.tenantId,
+          priority: 'low',
         });
 
         await db.update(schema.autoLearningSchedule)
@@ -614,9 +773,11 @@ export async function processScheduledJobs(): Promise<number> {
           })
           .where(eq(schema.autoLearningSchedule.id, job.id));
 
-        await scheduleNextRun(job.scheduleType, job.tenantId || undefined);
+        await scheduleNextRun(job.scheduleType, job.tenantId || undefined, scheduleMetadata);
         logger.info({
           scheduleId: job.id,
+          scheduleType: job.scheduleType,
+          namespaceId: scheduleNamespaceId ?? null,
           fineTuningJobId: fineTuningJob.id,
           loraJobId: result.loraJobId,
           enqueued: enqueueResult.enqueued,
@@ -631,10 +792,22 @@ export async function processScheduledJobs(): Promise<number> {
           })
           .where(eq(schema.autoLearningSchedule.id, job.id));
 
-        await scheduleNextRun(job.scheduleType, job.tenantId || undefined);
+        await scheduleNextRun(job.scheduleType, job.tenantId || undefined, scheduleMetadata);
+        logger.info({
+          scheduleId: job.id,
+          scheduleType: job.scheduleType,
+          namespaceId: scheduleNamespaceId ?? null,
+          reason: evaluation.reason,
+        }, 'Job agendado pulado por gate de qualidade');
       }
     } catch (error) {
-      logger.error({ error, jobId: job.id }, 'Erro ao processar job agendado');
+      const metadata = asScheduleMetadata(job.metadata);
+      logger.error({
+        error,
+        jobId: job.id,
+        scheduleType: job.scheduleType,
+        namespaceId: metadata.namespaceId ?? null,
+      }, 'Erro ao processar job agendado');
       
       await db.update(schema.autoLearningSchedule)
         .set({
@@ -651,6 +824,15 @@ export async function processScheduledJobs(): Promise<number> {
   }
 
   return processedCount;
+  } finally {
+    clearInterval(lockRefreshTimer);
+    await releaseSchedulerLock(redis, lockToken).catch((error) => {
+      logger.warn(
+        { lockKey: SCHEDULER_LOCK_KEY, error: error instanceof Error ? error.message : String(error) },
+        'Falha ao liberar lock do scheduler'
+      );
+    });
+  }
 }
 
 // ============================================================================
@@ -701,5 +883,6 @@ export async function getAutoLearningStats(tenantId?: string) {
     lastLoraJobId: lastSchedule?.loraJobId ?? null,
   };
 }
+
 
 
