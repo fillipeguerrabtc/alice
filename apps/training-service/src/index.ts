@@ -155,6 +155,7 @@ import {
   extractRequestUserAgent,
   releaseTrainingOperationLock,
 } from './training-enterprise-controls.js';
+import { validateWebhookSignature } from './webhook-security.js';
 // Fine-tuning Ã© executado localmente via GPU Manager Service (Regra 6 - sem stubs/migraÃ§Ã£o)
 
 // Logger centralizado: JSON em produÃ§Ã£o, pino-pretty em desenvolvimento
@@ -4972,46 +4973,6 @@ type WebhookNonceValidationResult = {
   result: 'accepted' | 'replay' | 'fallback_after_redis_error';
 };
 
-type WebhookSignatureValidationResult = {
-  ok: boolean;
-  mode: 'internal_api_secret' | 'legacy_webhook_secret' | 'none';
-};
-
-const TRAINING_WEBHOOK_ALLOW_LEGACY_SIGNATURE = process.env.TRAINING_WEBHOOK_ALLOW_LEGACY_SIGNATURE === 'true';
-
-function validateWebhookSignature(params: {
-  signature: string;
-  payload: string;
-  webhookSecret: string;
-}): WebhookSignatureValidationResult {
-  const internalSecret = process.env.INTERNAL_API_SECRET;
-  if (internalSecret) {
-    const expectedInternalSignature = crypto
-      .createHmac('sha256', internalSecret)
-      .update(params.payload)
-      .digest('hex');
-    const internalMatch = params.signature.length === expectedInternalSignature.length
-      && crypto.timingSafeEqual(Buffer.from(params.signature, 'utf8'), Buffer.from(expectedInternalSignature, 'utf8'));
-    if (internalMatch) {
-      return { ok: true, mode: 'internal_api_secret' };
-    }
-  }
-
-  if (TRAINING_WEBHOOK_ALLOW_LEGACY_SIGNATURE) {
-    const expectedLegacySignature = crypto
-      .createHmac('sha256', params.webhookSecret)
-      .update(params.payload)
-      .digest('hex');
-    const legacyMatch = params.signature.length === expectedLegacySignature.length
-      && crypto.timingSafeEqual(Buffer.from(params.signature, 'utf8'), Buffer.from(expectedLegacySignature, 'utf8'));
-    if (legacyMatch) {
-      return { ok: true, mode: 'legacy_webhook_secret' };
-    }
-  }
-
-  return { ok: false, mode: 'none' };
-}
-
 async function validateAndStoreWebhookNonce(params: {
   tenantId: string;
   nonce: string;
@@ -5134,6 +5095,8 @@ app.post('/api/training/webhook', async (req: Request, res: Response) => {
     signature: internalSignature,
     payload: signaturePayload,
     webhookSecret: expectedSecret,
+    internalApiSecret: process.env.INTERNAL_API_SECRET,
+    allowLegacySignature: process.env.TRAINING_WEBHOOK_ALLOW_LEGACY_SIGNATURE === 'true',
   });
   trainingPipelineMetrics.webhookAuthValidationTotal.inc({
     mode: signatureValidation.mode,
