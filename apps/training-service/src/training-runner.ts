@@ -7,7 +7,10 @@ import {
   type LoraJob,
   type TradingLoraHyperparams,
 } from '@alice/shared';
-import type { TrainingFineTuningQueuePayload } from '@alice/shared-utils';
+import {
+  getRedisClient,
+  type TrainingFineTuningQueuePayload,
+} from '@alice/shared-utils';
 import { z } from 'zod';
 import {
   activateLoraAdapter,
@@ -25,8 +28,14 @@ import {
   buildFineTuningScopeCondition,
   buildModelVersionScopeCondition,
 } from './model-registry-scope.js';
+import {
+  acquireTrainingOperationLock,
+  buildTrainingScopeOperationLockKey,
+  releaseTrainingOperationLock,
+} from './training-enterprise-controls.js';
 
 const runnerLogger = createLogger('training-runner');
+const TRAINING_AUTO_PROMOTION_LOCK_TTL_SECONDS = 45;
 
 const booleanStringSchema = z.string().transform((raw) => {
   const normalized = raw.trim().toLowerCase();
@@ -369,90 +378,144 @@ async function promoteFineTuningJobAsActive(params: {
   if (!params.fineTuningJob.tenantId) {
     throw new Error(`fine_tuning_job sem tenantId: ${params.fineTuningJob.id}`);
   }
-
-  const activationResult = await activateLoraAdapter(loraJobId, null);
   const scopedModelRegistry = assertValidModelRegistryScope({
     namespaceId: params.fineTuningJob.scopeNamespaceId,
     agentId: params.fineTuningJob.scopeAgentId,
   });
-  const modelVersionScopeCondition = buildModelVersionScopeCondition(scopedModelRegistry);
-  const fineTuningScopeCondition = buildFineTuningScopeCondition(scopedModelRegistry);
-
-  const [modelVersion] = await params.db.transaction(async (tx) => {
-    const latestScopedVersion = await tx.query.modelVersions.findFirst({
-      where: and(
-        eq(schema.modelVersions.tenantId, params.fineTuningJob.tenantId as string),
-        modelVersionScopeCondition
-      ),
-      orderBy: [desc(schema.modelVersions.version)],
-      columns: { version: true },
-    });
-
-    await tx.update(schema.modelVersions)
-      .set({
-        isActive: false,
-        status: 'deprecated',
-        deprecadoEm: new Date(),
-      })
-      .where(and(
-        eq(schema.modelVersions.tenantId, params.fineTuningJob.tenantId as string),
-        modelVersionScopeCondition,
-        eq(schema.modelVersions.isActive, true)
-      ));
-
-    await tx.update(schema.fineTuningJobs)
-      .set({ promotionStatus: 'staged' })
-      .where(and(
-        eq(schema.fineTuningJobs.tenantId, params.fineTuningJob.tenantId as string),
-        fineTuningScopeCondition,
-        eq(schema.fineTuningJobs.promotionStatus, 'active')
-      ));
-
-    const nextVersion = (latestScopedVersion?.version ?? 0) + 1;
-    const datasetMetrics = typeof params.metrics.dataset === 'object' && params.metrics.dataset !== null
-      ? (params.metrics.dataset as Record<string, unknown>)
-      : {};
-    const imagesUsedRaw = datasetMetrics.imagesUsed;
-    const imageDataCount = typeof imagesUsedRaw === 'number' && Number.isFinite(imagesUsedRaw)
-      ? imagesUsedRaw
-      : 0;
-
-    const [createdVersion] = await tx.insert(schema.modelVersions).values({
+  const redis = getRedisClient();
+  if (!redis) {
+    throw new Error(`Redis indisponivel para lock de promocao automatica: ${params.fineTuningJob.id}`);
+  }
+  const lockKey = buildTrainingScopeOperationLockKey({
+    scope: {
       tenantId: params.fineTuningJob.tenantId,
       namespaceId: scopedModelRegistry.namespaceId,
       agentId: scopedModelRegistry.agentId,
-      name: `${params.fineTuningJob.name}-v${nextVersion}`,
-      version: nextVersion,
-      baseModel: params.fineTuningJob.baseModel,
-      loraPath: activationResult.adapterPath ?? params.resultAdapterPath,
-      status: 'active',
-      fineTuningJobId: params.fineTuningJob.id,
-      trainingDataCount: params.fineTuningJob.trainingDataCount ?? 0,
-      imageDataCount,
-      metrics: params.metrics,
-      baselineMetrics: {},
-      isActive: true,
-      ativadoEm: new Date(),
-    }).returning();
-
-    await tx.update(schema.fineTuningJobs)
-      .set({
-        modelVersionId: createdVersion.id,
-        promotionStatus: 'active',
-      })
-      .where(eq(schema.fineTuningJobs.id, params.fineTuningJob.id));
-
-    return [createdVersion];
-  });
-
-  runnerLogger.info(
-    {
-      fineTuningJobId: params.fineTuningJob.id,
-      loraJobId,
-      modelVersionId: modelVersion.id,
     },
-    'Promocao automatica de modelo concluida'
-  );
+    operation: 'promote',
+  });
+  const lockHandle = await acquireTrainingOperationLock({
+    redis,
+    key: lockKey,
+    ttlSeconds: TRAINING_AUTO_PROMOTION_LOCK_TTL_SECONDS,
+  });
+  if (!lockHandle) {
+    throw new Error(`Promocao automatica em andamento neste escopo: ${params.fineTuningJob.id}`);
+  }
+
+  try {
+    const activationResult = await activateLoraAdapter(loraJobId, null);
+    const modelVersionScopeCondition = buildModelVersionScopeCondition(scopedModelRegistry);
+    const fineTuningScopeCondition = buildFineTuningScopeCondition(scopedModelRegistry);
+
+    const [modelVersion] = await params.db.transaction(async (tx) => {
+      const latestScopedVersion = await tx.query.modelVersions.findFirst({
+        where: and(
+          eq(schema.modelVersions.tenantId, params.fineTuningJob.tenantId as string),
+          modelVersionScopeCondition
+        ),
+        orderBy: [desc(schema.modelVersions.version)],
+        columns: { version: true },
+      });
+
+      await tx.update(schema.modelVersions)
+        .set({
+          isActive: false,
+          status: 'deprecated',
+          deprecadoEm: new Date(),
+        })
+        .where(and(
+          eq(schema.modelVersions.tenantId, params.fineTuningJob.tenantId as string),
+          modelVersionScopeCondition,
+          eq(schema.modelVersions.isActive, true)
+        ));
+
+      await tx.update(schema.fineTuningJobs)
+        .set({ promotionStatus: 'staged' })
+        .where(and(
+          eq(schema.fineTuningJobs.tenantId, params.fineTuningJob.tenantId as string),
+          fineTuningScopeCondition,
+          eq(schema.fineTuningJobs.promotionStatus, 'active')
+        ));
+
+      const nextVersion = (latestScopedVersion?.version ?? 0) + 1;
+      const datasetMetrics = typeof params.metrics.dataset === 'object' && params.metrics.dataset !== null
+        ? (params.metrics.dataset as Record<string, unknown>)
+        : {};
+      const imagesUsedRaw = datasetMetrics.imagesUsed;
+      const imageDataCount = typeof imagesUsedRaw === 'number' && Number.isFinite(imagesUsedRaw)
+        ? imagesUsedRaw
+        : 0;
+
+      const [createdVersion] = await tx.insert(schema.modelVersions).values({
+        tenantId: params.fineTuningJob.tenantId,
+        namespaceId: scopedModelRegistry.namespaceId,
+        agentId: scopedModelRegistry.agentId,
+        name: `${params.fineTuningJob.name}-v${nextVersion}`,
+        version: nextVersion,
+        baseModel: params.fineTuningJob.baseModel,
+        loraPath: activationResult.adapterPath ?? params.resultAdapterPath,
+        status: 'active',
+        fineTuningJobId: params.fineTuningJob.id,
+        trainingDataCount: params.fineTuningJob.trainingDataCount ?? 0,
+        imageDataCount,
+        metrics: params.metrics,
+        baselineMetrics: {},
+        isActive: true,
+        ativadoEm: new Date(),
+      }).returning();
+
+      await tx.update(schema.fineTuningJobs)
+        .set({
+          modelVersionId: createdVersion.id,
+          promotionStatus: 'active',
+        })
+        .where(eq(schema.fineTuningJobs.id, params.fineTuningJob.id));
+
+      await tx.insert(schema.auditLogs).values({
+        tenantId: params.fineTuningJob.tenantId,
+        userId: null,
+        acao: 'training_model_promoted',
+        recurso: 'fine_tuning_job',
+        recursoId: params.fineTuningJob.id,
+        detalhes: {
+          after: {
+            modelVersionId: createdVersion.id,
+            promotionStatus: 'active',
+          },
+          metadata: {
+            operation: 'promote',
+            trigger: 'auto_scheduled',
+            scope: scopedModelRegistry,
+            loraJobId,
+          },
+        },
+        ip: null,
+        userAgent: null,
+      });
+
+      return [createdVersion];
+    });
+
+    runnerLogger.info(
+      {
+        fineTuningJobId: params.fineTuningJob.id,
+        loraJobId,
+        modelVersionId: modelVersion.id,
+      },
+      'Promocao automatica de modelo concluida'
+    );
+  } finally {
+    await releaseTrainingOperationLock({
+      redis,
+      handle: lockHandle,
+    }).catch((lockError) => {
+      runnerLogger.warn(
+        { lockKey: lockHandle.key, error: lockError instanceof Error ? lockError.message : String(lockError) },
+        'Falha ao liberar lock de promocao automatica'
+      );
+    });
+  }
 }
 
 export async function runTrainingFineTuningJob(params: {
