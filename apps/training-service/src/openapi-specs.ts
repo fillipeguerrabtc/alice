@@ -502,6 +502,7 @@ export const trainingServicePaths = {
         { name: 'x-internal-tenant-id', in: 'header', required: true, schema: { type: 'string', format: 'uuid' } },
         { name: 'x-internal-role', in: 'header', required: true, schema: { type: 'string' } },
         { name: 'x-internal-nonce', in: 'header', required: true, schema: { type: 'string', format: 'uuid' } },
+        { name: 'x-internal-body-sha256', in: 'header', required: false, schema: { type: 'string' } },
       ],
       requestBody: {
         required: true,

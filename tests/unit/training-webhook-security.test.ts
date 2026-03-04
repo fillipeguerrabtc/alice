@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { describe, expect, it } from 'vitest';
-import { validateWebhookSignature } from '../../apps/training-service/src/webhook-security';
+import { validateWebhookBodyDigest, validateWebhookSignature } from '../../apps/training-service/src/webhook-security';
 
 function sign(payload: string, secret: string): string {
   return crypto.createHmac('sha256', secret).update(payload).digest('hex');
@@ -77,5 +77,40 @@ describe('training webhook security', () => {
     });
 
     expect(result).toEqual({ ok: false, mode: 'none' });
+  });
+
+  it('validates request body digest when header is provided', () => {
+    const payloadObject = {
+      event: 'training_data',
+      payload: {
+        conversationId: 'conv-1',
+        messages: [{ role: 'user', content: 'hello' }],
+      },
+    };
+    const digest = crypto
+      .createHash('sha256')
+      .update(JSON.stringify(payloadObject))
+      .digest('hex');
+
+    const accepted = validateWebhookBodyDigest({
+      payload: payloadObject,
+      expectedDigest: digest,
+    });
+    expect(accepted).toEqual({ ok: true, result: 'accepted' });
+
+    const rejected = validateWebhookBodyDigest({
+      payload: payloadObject,
+      expectedDigest: 'deadbeef',
+    });
+    expect(rejected).toEqual({ ok: false, result: 'rejected' });
+  });
+
+  it('skips body digest validation when header is not provided', () => {
+    const skipped = validateWebhookBodyDigest({
+      payload: { ping: true },
+      expectedDigest: undefined,
+    });
+
+    expect(skipped).toEqual({ ok: true, result: 'skipped' });
   });
 });

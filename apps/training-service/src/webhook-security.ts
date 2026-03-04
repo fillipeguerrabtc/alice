@@ -5,6 +5,11 @@ export type WebhookSignatureValidationResult = {
   mode: 'internal_api_secret' | 'legacy_webhook_secret' | 'none';
 };
 
+export type WebhookBodyDigestValidationResult = {
+  ok: boolean;
+  result: 'accepted' | 'rejected' | 'skipped';
+};
+
 export function validateWebhookSignature(params: {
   signature: string;
   payload: string;
@@ -43,4 +48,32 @@ export function validateWebhookSignature(params: {
   }
 
   return { ok: false, mode: 'none' };
+}
+
+export function validateWebhookBodyDigest(params: {
+  payload: unknown;
+  expectedDigest?: string | null;
+}): WebhookBodyDigestValidationResult {
+  const expected = params.expectedDigest?.trim().toLowerCase() ?? '';
+  if (!expected) {
+    return { ok: true, result: 'skipped' };
+  }
+  if (!/^[a-f0-9]{64}$/i.test(expected)) {
+    return { ok: false, result: 'rejected' };
+  }
+
+  const computed = crypto
+    .createHash('sha256')
+    .update(JSON.stringify(params.payload))
+    .digest('hex');
+
+  const matches = expected.length === computed.length
+    && crypto.timingSafeEqual(
+      Buffer.from(expected, 'utf8'),
+      Buffer.from(computed, 'utf8')
+    );
+
+  return matches
+    ? { ok: true, result: 'accepted' }
+    : { ok: false, result: 'rejected' };
 }

@@ -155,7 +155,7 @@ import {
   extractRequestUserAgent,
   releaseTrainingOperationLock,
 } from './training-enterprise-controls.js';
-import { validateWebhookSignature } from './webhook-security.js';
+import { validateWebhookBodyDigest, validateWebhookSignature } from './webhook-security.js';
 // Fine-tuning Ã© executado localmente via GPU Manager Service (Regra 6 - sem stubs/migraÃ§Ã£o)
 
 // Logger centralizado: JSON em produÃ§Ã£o, pino-pretty em desenvolvimento
@@ -535,6 +535,12 @@ const trainingPipelineMetrics = {
     name: 'alice_training_webhook_auth_validation_total',
     help: 'Resultado da validacao de autenticacao do webhook de treinamento',
     labelNames: ['mode', 'result'] as const,
+    registers: [metrics.registry],
+  }),
+  webhookBodyDigestValidationTotal: new PromCounter({
+    name: 'alice_training_webhook_body_digest_validation_total',
+    help: 'Resultado da validacao de integridade do payload do webhook de treinamento',
+    labelNames: ['result'] as const,
     registers: [metrics.registry],
   }),
 };
@@ -4951,6 +4957,7 @@ const webhookInternalHeadersSchema = z.object({
   'x-internal-tenant-id': z.string().uuid(),
   'x-internal-role': z.string().min(1),
   'x-internal-nonce': z.string().uuid(),
+  'x-internal-body-sha256': z.string().regex(/^[a-f0-9]{64}$/i).optional(),
 });
 
 const webhookNonceStore = new Map<string, number>();
@@ -5073,6 +5080,7 @@ app.post('/api/training/webhook', async (req: Request, res: Response) => {
     'x-internal-tenant-id': internalTenantId,
     'x-internal-role': internalRole,
     'x-internal-nonce': internalNonce,
+    'x-internal-body-sha256': internalBodySha256,
   } = headersValidation.data;
 
   const secretBuffer = Buffer.from(webhookSecret, 'utf-8');
@@ -5114,6 +5122,17 @@ app.post('/api/training/webhook', async (req: Request, res: Response) => {
       { tenantId: internalTenantId },
       'Webhook autenticado via assinatura legada; migre para assinatura com INTERNAL_API_SECRET'
     );
+  }
+
+  const bodyDigestValidation = validateWebhookBodyDigest({
+    payload: req.body,
+    expectedDigest: internalBodySha256,
+  });
+  trainingPipelineMetrics.webhookBodyDigestValidationTotal.inc({
+    result: bodyDigestValidation.result,
+  });
+  if (!bodyDigestValidation.ok) {
+    return res.status(401).json({ error: 'Integridade do payload do webhook invalida' });
   }
 
   const nonceValidation = await validateAndStoreWebhookNonce({
