@@ -445,6 +445,17 @@ function buildTrainingIdempotencyFingerprint(value: unknown): string {
   return stableSerialize(value);
 }
 
+function getRetryAfterHint(
+  error: unknown,
+  t: (key: string, options?: Record<string, unknown>) => string
+): string | null {
+  if (!(error instanceof ApiError)) return null;
+  if (!Number.isFinite(error.retryAfterSeconds) || !error.retryAfterSeconds || error.retryAfterSeconds <= 0) {
+    return null;
+  }
+  return t('training.autoLearning.retryAfterHint', { seconds: error.retryAfterSeconds });
+}
+
 function getScopeLabel(job: FineTuningJob, namespacesById: Map<string, string>, t: (key: string, options?: Record<string, unknown>) => string): string {
   if (job.scopeAgentId) {
     return t('training.scope.agent', { id: job.scopeAgentId.slice(0, 8) });
@@ -1220,8 +1231,10 @@ function CreateJobDialog({
       createJobIdempotencyRef.current = null;
     },
     onError: (error) => {
+      const retryAfterHint = getRetryAfterHint(error, t);
       toast({
         title: error instanceof Error ? error.message : t('training.errors.createJob'),
+        description: retryAfterHint ?? undefined,
         variant: 'destructive',
       });
     },
@@ -3338,6 +3351,8 @@ export default function Training() {
       toast({ title: t('training.autoLearning.onDemandStarted') });
     },
     onError: (error) => {
+      const retryAfterHint = getRetryAfterHint(error, t);
+      const errorMessage = error instanceof ApiError ? error.message : null;
       frontendLogger.error('Erro ao iniciar treinamento on-demand', {
         error: error instanceof Error ? error.message : String(error),
         errorStack: error instanceof Error ? error.stack : undefined,
@@ -3347,7 +3362,11 @@ export default function Training() {
         priority: onDemandPriority,
         description: onDemandDescription,
       });
-      toast({ title: t('training.autoLearning.onDemandError'), variant: 'destructive' });
+      toast({
+        title: t('training.autoLearning.onDemandError'),
+        description: retryAfterHint ?? errorMessage ?? undefined,
+        variant: 'destructive',
+      });
     },
   });
 

@@ -346,6 +346,33 @@ function applyIdempotencyResponseHeaders(
   res.setHeader('X-Idempotency-Status', status);
 }
 
+type TrainingRunStartErrorCode =
+  | 'IDEMPOTENCY_KEY_PAYLOAD_MISMATCH'
+  | 'RUN_START_LOCK_CONTENTION'
+  | 'RUN_START_ALREADY_ACTIVE'
+  | 'RUN_START_CAPACITY_EXHAUSTED';
+
+function sendTrainingRunStartError(params: {
+  res: Response;
+  status: 409 | 429;
+  error: string;
+  code: TrainingRunStartErrorCode;
+  retryAfterSeconds?: number;
+  idempotencyKey?: string | null;
+}): Response {
+  if (params.retryAfterSeconds && params.retryAfterSeconds > 0) {
+    params.res.setHeader('Retry-After', String(params.retryAfterSeconds));
+  }
+  if (params.idempotencyKey) {
+    applyIdempotencyResponseHeaders(params.res, params.idempotencyKey, 'conflict');
+  }
+  return params.res.status(params.status).json({
+    error: params.error,
+    code: params.code,
+    retryAfterSeconds: params.retryAfterSeconds ?? null,
+  });
+}
+
 type TrainingRunStartReplayLookup =
   | { status: 'miss' }
   | { status: 'payload_mismatch' }
@@ -512,6 +539,16 @@ const TRAINING_RUN_START_IDEMPOTENCY_TTL_SECONDS = parseEnvInt(
   process.env.TRAINING_RUN_START_IDEMPOTENCY_TTL_SECONDS,
   86400,
   'TRAINING_RUN_START_IDEMPOTENCY_TTL_SECONDS'
+);
+const TRAINING_RUN_START_CONTENTION_RETRY_AFTER_SECONDS = parseEnvInt(
+  process.env.TRAINING_RUN_START_CONTENTION_RETRY_AFTER_SECONDS,
+  15,
+  'TRAINING_RUN_START_CONTENTION_RETRY_AFTER_SECONDS'
+);
+const TRAINING_RUN_START_CAPACITY_RETRY_AFTER_SECONDS = parseEnvInt(
+  process.env.TRAINING_RUN_START_CAPACITY_RETRY_AFTER_SECONDS,
+  60,
+  'TRAINING_RUN_START_CAPACITY_RETRY_AFTER_SECONDS'
 );
 const DATABASE_URL = process.env.DATABASE_URL;
 const RAG_SERVICE_URL = process.env.RAG_SERVICE_URL ?? 'http://alice-rag:3003';
@@ -3678,8 +3715,13 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
         fingerprint: requestFingerprint,
       });
       if (replay.status === 'payload_mismatch') {
-        applyIdempotencyResponseHeaders(res, idempotencyHeader.key, 'conflict');
-        return res.status(409).json({ error: 'Idempotency-Key reutilizada com payload diferente' });
+        return sendTrainingRunStartError({
+          res,
+          status: 409,
+          error: 'Idempotency-Key reutilizada com payload diferente',
+          code: 'IDEMPOTENCY_KEY_PAYLOAD_MISMATCH',
+          idempotencyKey: idempotencyHeader.key,
+        });
       }
       if (replay.status === 'hit') {
         applyIdempotencyResponseHeaders(res, idempotencyHeader.key, 'replayed');
@@ -3709,7 +3751,14 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
         operation: 'run_start',
         result: 'contention',
       });
-      return res.status(409).json({ error: 'Ja existe inicializacao de treino em andamento para este tenant' });
+      return sendTrainingRunStartError({
+        res,
+        status: 409,
+        error: 'Ja existe inicializacao de treino em andamento para este tenant',
+        code: 'RUN_START_LOCK_CONTENTION',
+        retryAfterSeconds: TRAINING_RUN_START_CONTENTION_RETRY_AFTER_SECONDS,
+        idempotencyKey: idempotencyHeader.key,
+      });
     }
     trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
       operation: 'run_start',
@@ -3720,10 +3769,13 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
       const governanceConfig = await loadTrainingGovernanceRuntimeConfig();
       const inflightCount = await getTenantInflightFineTuningJobsCount(db, tenantId);
       if (inflightCount >= governanceConfig.maxInflightRunsPerTenant) {
-        return res.status(429).json({
-          error: 'Capacidade de treinamento esgotada para este tenant',
-          inflightCount,
-          maxInflightRunsPerTenant: governanceConfig.maxInflightRunsPerTenant,
+        return sendTrainingRunStartError({
+          res,
+          status: 429,
+          error: `Capacidade de treinamento esgotada para este tenant (inflight=${inflightCount}, max=${governanceConfig.maxInflightRunsPerTenant})`,
+          code: 'RUN_START_CAPACITY_EXHAUSTED',
+          retryAfterSeconds: TRAINING_RUN_START_CAPACITY_RETRY_AFTER_SECONDS,
+          idempotencyKey: idempotencyHeader.key,
         });
       }
 
@@ -6167,8 +6219,13 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
         fingerprint: requestFingerprint,
       });
       if (replay.status === 'payload_mismatch') {
-        applyIdempotencyResponseHeaders(res, idempotencyHeader.key, 'conflict');
-        return res.status(409).json({ error: 'Idempotency-Key reutilizada com payload diferente' });
+        return sendTrainingRunStartError({
+          res,
+          status: 409,
+          error: 'Idempotency-Key reutilizada com payload diferente',
+          code: 'IDEMPOTENCY_KEY_PAYLOAD_MISMATCH',
+          idempotencyKey: idempotencyHeader.key,
+        });
       }
       if (replay.status === 'hit') {
         applyIdempotencyResponseHeaders(res, idempotencyHeader.key, 'replayed');
@@ -6204,7 +6261,14 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
         operation: 'run_start',
         result: 'contention',
       });
-      return res.status(409).json({ error: 'Ja existe inicializacao de treino em andamento para este tenant' });
+      return sendTrainingRunStartError({
+        res,
+        status: 409,
+        error: 'Ja existe inicializacao de treino em andamento para este tenant',
+        code: 'RUN_START_LOCK_CONTENTION',
+        retryAfterSeconds: TRAINING_RUN_START_CONTENTION_RETRY_AFTER_SECONDS,
+        idempotencyKey: idempotencyHeader.key,
+      });
     }
     trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
       operation: 'run_start',
@@ -6225,18 +6289,25 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
       });
 
       if (runningJobs.length > 0) {
-        return res.status(409).json({
-          error: 'Ja existe treinamento em andamento ou enfileirado',
-          runningJobId: runningJobs[0].id,
+        return sendTrainingRunStartError({
+          res,
+          status: 409,
+          error: `Ja existe treinamento em andamento ou enfileirado (jobId=${runningJobs[0].id})`,
+          code: 'RUN_START_ALREADY_ACTIVE',
+          retryAfterSeconds: TRAINING_RUN_START_CONTENTION_RETRY_AFTER_SECONDS,
+          idempotencyKey: idempotencyHeader.key,
         });
       }
 
       const inflightCount = await getTenantInflightFineTuningJobsCount(db, scopedTenantId);
       if (inflightCount >= governanceConfig.maxInflightRunsPerTenant) {
-        return res.status(429).json({
-          error: 'Capacidade de treinamento esgotada para este tenant',
-          inflightCount,
-          maxInflightRunsPerTenant: governanceConfig.maxInflightRunsPerTenant,
+        return sendTrainingRunStartError({
+          res,
+          status: 429,
+          error: `Capacidade de treinamento esgotada para este tenant (inflight=${inflightCount}, max=${governanceConfig.maxInflightRunsPerTenant})`,
+          code: 'RUN_START_CAPACITY_EXHAUSTED',
+          retryAfterSeconds: TRAINING_RUN_START_CAPACITY_RETRY_AFTER_SECONDS,
+          idempotencyKey: idempotencyHeader.key,
         });
       }
 

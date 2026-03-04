@@ -126,8 +126,12 @@ describe('Training Service - OpenAPI (critical contracts)', () => {
     expect(runStartResponses['200']?.headers).toHaveProperty('X-Idempotency-Status');
     expect(runStartResponses['202']?.headers).toHaveProperty('X-Idempotency-Key');
     expect(runStartResponses['202']?.headers).toHaveProperty('X-Idempotency-Status');
+    expect(runStartResponses['409']?.headers).toHaveProperty('Retry-After');
+    expect(runStartResponses['429']?.headers).toHaveProperty('Retry-After');
     expect(customJobResponses['200']?.headers).toHaveProperty('X-Idempotency-Key');
     expect(customJobResponses['202']?.headers).toHaveProperty('X-Idempotency-Status');
+    expect(customJobResponses['409']?.headers).toHaveProperty('Retry-After');
+    expect(customJobResponses['429']?.headers).toHaveProperty('Retry-After');
   });
 });
 

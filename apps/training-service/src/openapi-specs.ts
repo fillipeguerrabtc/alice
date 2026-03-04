@@ -335,9 +335,17 @@ export const trainingServicePaths = {
           headers: {
             'X-Idempotency-Key': { schema: { type: 'string' } },
             'X-Idempotency-Status': { schema: { type: 'string', enum: ['conflict'] } },
+            'Retry-After': { schema: { type: 'string' } },
           },
         },
-        429: { description: 'Tenant run capacity exhausted' },
+        429: {
+          description: 'Tenant run capacity exhausted',
+          headers: {
+            'X-Idempotency-Key': { schema: { type: 'string' } },
+            'X-Idempotency-Status': { schema: { type: 'string', enum: ['conflict'] } },
+            'Retry-After': { schema: { type: 'string' } },
+          },
+        },
       },
     },
   },
@@ -662,9 +670,17 @@ export const trainingServicePaths = {
           headers: {
             'X-Idempotency-Key': { schema: { type: 'string' } },
             'X-Idempotency-Status': { schema: { type: 'string', enum: ['conflict'] } },
+            'Retry-After': { schema: { type: 'string' } },
           },
         },
-        429: { description: 'Tenant run capacity exhausted' },
+        429: {
+          description: 'Tenant run capacity exhausted',
+          headers: {
+            'X-Idempotency-Key': { schema: { type: 'string' } },
+            'X-Idempotency-Status': { schema: { type: 'string', enum: ['conflict'] } },
+            'Retry-After': { schema: { type: 'string' } },
+          },
+        },
       },
     },
   },
