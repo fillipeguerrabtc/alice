@@ -297,6 +297,14 @@ export const trainingServicePaths = {
     post: {
       summary: 'Create custom scoped fine-tuning job',
       tags: ['Training Jobs'],
+      parameters: [
+        {
+          name: 'x-idempotency-key',
+          in: 'header',
+          required: false,
+          schema: { type: 'string', minLength: 16, maxLength: 128 },
+        },
+      ],
       requestBody: {
         required: true,
         content: {
@@ -306,6 +314,7 @@ export const trainingServicePaths = {
         },
       },
       responses: {
+        200: { description: 'Idempotent replay: existing job returned' },
         202: { description: 'Job created and enqueued' },
         400: { $ref: '#/components/responses/ValidationError' },
         403: { $ref: '#/components/responses/Forbidden' },
@@ -588,6 +597,14 @@ export const trainingServicePaths = {
     post: {
       summary: 'Start on-demand training run',
       tags: ['Auto-Learning'],
+      parameters: [
+        {
+          name: 'x-idempotency-key',
+          in: 'header',
+          required: false,
+          schema: { type: 'string', minLength: 16, maxLength: 128 },
+        },
+      ],
       requestBody: {
         required: true,
         content: {
@@ -597,6 +614,14 @@ export const trainingServicePaths = {
         },
       },
       responses: {
+        200: {
+          description: 'Idempotent replay: existing run returned',
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/TrainingRunStartResponse' },
+            },
+          },
+        },
         202: {
           description: 'Run accepted and enqueued',
           content: {
@@ -844,6 +869,7 @@ export const trainingServiceSchemas = {
       imagesUsed: { type: 'integer', nullable: true },
       status: { type: 'string' },
       enqueued: { type: 'boolean' },
+      idempotencyHit: { type: 'boolean' },
     },
   },
   TrainingRunStatusResponse: {

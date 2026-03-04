@@ -3,6 +3,7 @@ import type { Request } from 'express';
 import {
   acquireTrainingOperationLock,
   buildTrainingJobOperationLockKey,
+  buildTrainingRunStartIdempotencyRedisKey,
   buildTrainingScopeOperationLockKey,
   extractRequestIp,
   extractRequestUserAgent,
@@ -53,6 +54,21 @@ describe('training-enterprise-controls', () => {
       operation: 'promotion_approval',
     });
     expect(key).toBe('alice:training:model-registry:job-lock:tenant-a:job-1:promotion_approval');
+  });
+
+  it('gera chave de idempotencia deterministica para run start', () => {
+    const first = buildTrainingRunStartIdempotencyRedisKey({
+      tenantId: 'tenant-a',
+      operation: 'on_demand',
+      idempotencyKey: '  req-12345-ABCDE  ',
+    });
+    const second = buildTrainingRunStartIdempotencyRedisKey({
+      tenantId: 'tenant-a',
+      operation: 'on_demand',
+      idempotencyKey: 'req-12345-ABCDE',
+    });
+    expect(first).toBe(second);
+    expect(first).toMatch(/^alice:training:run-start:idempotency:tenant-a:on_demand:[a-f0-9]{64}$/);
   });
 
   it('extrai IP via x-forwarded-for quando presente', () => {

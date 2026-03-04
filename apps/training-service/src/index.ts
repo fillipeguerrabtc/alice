@@ -150,10 +150,12 @@ import {
 import {
   acquireTrainingOperationLock,
   buildTrainingJobOperationLockKey,
+  buildTrainingRunStartIdempotencyRedisKey,
   buildTrainingScopeOperationLockKey,
   extractRequestIp,
   extractRequestUserAgent,
   releaseTrainingOperationLock,
+  type TrainingRunStartIdempotencyOperation,
 } from './training-enterprise-controls.js';
 import { validateWebhookBodyDigest, validateWebhookSignature } from './webhook-security.js';
 // Fine-tuning Ã© executado localmente via GPU Manager Service (Regra 6 - sem stubs/migraÃ§Ã£o)
@@ -276,6 +278,212 @@ function resolveAuthorizedTenantId(
   return { ok: true, tenantId: superAdminTenantId, authContext };
 }
 
+const trainingIdempotencyHeaderSchema = z.object({
+  'x-idempotency-key': z.string().trim().min(16).max(128).regex(/^[A-Za-z0-9:_-]+$/),
+});
+
+const trainingRunStartIdempotencyRecordSchema = z.object({
+  jobId: z.string().uuid(),
+  fingerprint: z.string().length(64),
+  createdAt: z.string().datetime(),
+});
+
+type TrainingRunStartIdempotencyRecord = z.infer<typeof trainingRunStartIdempotencyRecordSchema>;
+type FineTuningJobRow = typeof schema.fineTuningJobs.$inferSelect;
+
+function readOptionalTrainingIdempotencyKey(req: Request): { key: string | null; error: string | null } {
+  const raw = req.headers['x-idempotency-key'];
+  if (typeof raw === 'undefined') return { key: null, error: null };
+  if (Array.isArray(raw)) {
+    return { key: null, error: 'Header X-Idempotency-Key invalido' };
+  }
+  const parsed = trainingIdempotencyHeaderSchema.safeParse({ 'x-idempotency-key': raw });
+  if (!parsed.success) {
+    return {
+      key: null,
+      error: 'Header X-Idempotency-Key invalido. Use 16-128 caracteres alfanumericos, ":", "_" ou "-".',
+    };
+  }
+  return { key: parsed.data['x-idempotency-key'], error: null };
+}
+
+function stableStringifyForFingerprint(value: unknown): string {
+  if (value === null) return 'null';
+  if (typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableStringifyForFingerprint(item)).join(',')}]`;
+  }
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, entryValue]) => typeof entryValue !== 'undefined')
+    .sort(([keyA], [keyB]) => keyA.localeCompare(keyB));
+  return `{${entries
+    .map(([entryKey, entryValue]) => `${JSON.stringify(entryKey)}:${stableStringifyForFingerprint(entryValue)}`)
+    .join(',')}}`;
+}
+
+function buildRunStartRequestFingerprint(params: {
+  operation: TrainingRunStartIdempotencyOperation;
+  tenantId: string;
+  payload: Record<string, unknown>;
+}): string {
+  return crypto.createHash('sha256').update(stableStringifyForFingerprint({
+    operation: params.operation,
+    tenantId: params.tenantId,
+    payload: params.payload,
+  })).digest('hex');
+}
+
+type TrainingRunStartReplayLookup =
+  | { status: 'miss' }
+  | { status: 'payload_mismatch' }
+  | { status: 'hit'; job: FineTuningJobRow };
+
+async function lookupRunStartIdempotencyReplay(params: {
+  redis: NonNullable<ReturnType<typeof getRedisClient>>;
+  operation: TrainingRunStartIdempotencyOperation;
+  tenantId: string;
+  idempotencyKey: string;
+  fingerprint: string;
+}): Promise<TrainingRunStartReplayLookup> {
+  const redisKey = buildTrainingRunStartIdempotencyRedisKey({
+    tenantId: params.tenantId,
+    operation: params.operation,
+    idempotencyKey: params.idempotencyKey,
+  });
+
+  let rawRecord: string | null = null;
+  try {
+    rawRecord = await params.redis.get(redisKey);
+  } catch (error) {
+    trainingPipelineMetrics.runStartIdempotencyTotal.inc({
+      endpoint: params.operation,
+      result: 'lookup_error',
+    });
+    logger.warn(
+      {
+        endpoint: params.operation,
+        tenantId: params.tenantId,
+        error: error instanceof Error ? error.message : String(error),
+      },
+      'Falha ao consultar idempotencia de run start; seguindo fluxo normal'
+    );
+    return { status: 'miss' };
+  }
+
+  if (!rawRecord) {
+    trainingPipelineMetrics.runStartIdempotencyTotal.inc({
+      endpoint: params.operation,
+      result: 'miss',
+    });
+    return { status: 'miss' };
+  }
+
+  let record: TrainingRunStartIdempotencyRecord | null = null;
+  const parsedRecord = trainingRunStartIdempotencyRecordSchema.safeParse(
+    rawRecord.trim().startsWith('{')
+      ? (() => {
+          try {
+            return JSON.parse(rawRecord);
+          } catch {
+            return null;
+          }
+        })()
+      : null
+  );
+  if (parsedRecord.success) {
+    record = parsedRecord.data;
+  } else if (/^[0-9a-f-]{36}$/i.test(rawRecord.trim())) {
+    record = {
+      jobId: rawRecord.trim(),
+      fingerprint: params.fingerprint,
+      createdAt: new Date(0).toISOString(),
+    };
+  } else {
+    trainingPipelineMetrics.runStartIdempotencyTotal.inc({
+      endpoint: params.operation,
+      result: 'invalid_record',
+    });
+    return { status: 'miss' };
+  }
+
+  if (record.fingerprint !== params.fingerprint) {
+    trainingPipelineMetrics.runStartIdempotencyTotal.inc({
+      endpoint: params.operation,
+      result: 'payload_mismatch',
+    });
+    return { status: 'payload_mismatch' };
+  }
+
+  const existingJob = await db.query.fineTuningJobs.findFirst({
+    where: and(
+      eq(schema.fineTuningJobs.id, record.jobId),
+      eq(schema.fineTuningJobs.tenantId, params.tenantId)
+    ),
+  });
+  if (!existingJob) {
+    trainingPipelineMetrics.runStartIdempotencyTotal.inc({
+      endpoint: params.operation,
+      result: 'orphaned',
+    });
+    try {
+      await params.redis.del(redisKey);
+    } catch {
+      // best-effort cleanup
+    }
+    return { status: 'miss' };
+  }
+
+  trainingPipelineMetrics.runStartIdempotencyTotal.inc({
+    endpoint: params.operation,
+    result: 'hit',
+  });
+  return { status: 'hit', job: existingJob };
+}
+
+async function storeRunStartIdempotencyRecord(params: {
+  redis: NonNullable<ReturnType<typeof getRedisClient>>;
+  operation: TrainingRunStartIdempotencyOperation;
+  tenantId: string;
+  idempotencyKey: string;
+  fingerprint: string;
+  jobId: string;
+}): Promise<void> {
+  const redisKey = buildTrainingRunStartIdempotencyRedisKey({
+    tenantId: params.tenantId,
+    operation: params.operation,
+    idempotencyKey: params.idempotencyKey,
+  });
+  const serializedRecord = JSON.stringify({
+    jobId: params.jobId,
+    fingerprint: params.fingerprint,
+    createdAt: new Date().toISOString(),
+  } satisfies TrainingRunStartIdempotencyRecord);
+  try {
+    const result = await params.redis.set(redisKey, serializedRecord, {
+      EX: TRAINING_RUN_START_IDEMPOTENCY_TTL_SECONDS,
+      NX: true,
+    });
+    trainingPipelineMetrics.runStartIdempotencyTotal.inc({
+      endpoint: params.operation,
+      result: result === 'OK' ? 'stored' : 'store_conflict',
+    });
+  } catch (error) {
+    trainingPipelineMetrics.runStartIdempotencyTotal.inc({
+      endpoint: params.operation,
+      result: 'store_error',
+    });
+    logger.warn(
+      {
+        endpoint: params.operation,
+        tenantId: params.tenantId,
+        jobId: params.jobId,
+        error: error instanceof Error ? error.message : String(error),
+      },
+      'Falha ao persistir registro de idempotencia para run start'
+    );
+  }
+}
+
 const PORT = parseEnvInt(process.env.PORT, 3004, 'PORT');
 const TRAINING_HTTP_SERVER_TIMEOUT_MS = parseEnvInt(
   process.env.TRAINING_HTTP_SERVER_TIMEOUT_MS,
@@ -286,6 +494,11 @@ const TRAINING_OPERATION_LOCK_TTL_SECONDS = parseEnvInt(
   process.env.TRAINING_OPERATION_LOCK_TTL_SECONDS,
   45,
   'TRAINING_OPERATION_LOCK_TTL_SECONDS'
+);
+const TRAINING_RUN_START_IDEMPOTENCY_TTL_SECONDS = parseEnvInt(
+  process.env.TRAINING_RUN_START_IDEMPOTENCY_TTL_SECONDS,
+  86400,
+  'TRAINING_RUN_START_IDEMPOTENCY_TTL_SECONDS'
 );
 const DATABASE_URL = process.env.DATABASE_URL;
 const RAG_SERVICE_URL = process.env.RAG_SERVICE_URL ?? 'http://alice-rag:3003';
@@ -523,6 +736,12 @@ const trainingPipelineMetrics = {
     name: 'alice_training_governance_audit_writes_total',
     help: 'Total de eventos de auditoria de governanca persistidos',
     labelNames: ['action', 'result'] as const,
+    registers: [metrics.registry],
+  }),
+  runStartIdempotencyTotal: new PromCounter({
+    name: 'alice_training_run_start_idempotency_total',
+    help: 'Resultado das validacoes e persistencia de idempotencia em start de treino',
+    labelNames: ['endpoint', 'result'] as const,
     registers: [metrics.registry],
   }),
   webhookNonceValidationTotal: new PromCounter({
@@ -3381,6 +3600,14 @@ const createJobSchema = z.object({
 app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:start'), async (req: Request, res: Response) => {
   try {
     const body = createJobSchema.parse(req.body);
+    const idempotencyHeader = readOptionalTrainingIdempotencyKey(req);
+    if (idempotencyHeader.error) {
+      trainingPipelineMetrics.runStartIdempotencyTotal.inc({
+        endpoint: 'custom_job',
+        result: 'invalid_header',
+      });
+      return res.status(400).json({ error: idempotencyHeader.error });
+    }
     const tenantResolution = resolveAuthorizedTenantId(req, body.tenantId ?? null);
     if (!tenantResolution.ok) {
       return res.status(tenantResolution.status).json({ error: tenantResolution.error });
@@ -3404,6 +3631,20 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
     if (!tenantId) {
       return res.status(400).json({ error: 'Tenant invalido para criacao de job de treinamento' });
     }
+    const requestFingerprint = buildRunStartRequestFingerprint({
+      operation: 'custom_job',
+      tenantId,
+      payload: {
+        namespaceId: body.namespaceId,
+        agentId: body.agentId ?? null,
+        domain: body.domain ?? null,
+        name: body.name,
+        baseModel: body.baseModel,
+        hyperparametersPreset: body.hyperparametersPreset ?? null,
+        hyperparameters: body.hyperparameters ?? null,
+        forceMinSize: body.forceMinSize ?? false,
+      },
+    });
 
     const redis = getRedisClient();
     let lockHandle: Awaited<ReturnType<typeof acquireTrainingOperationLock>> = null;
@@ -3413,6 +3654,26 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
         result: 'redis_unavailable',
       });
       return res.status(503).json({ error: 'Redis indisponivel para controle de concorrencia de inicio de treino' });
+    }
+    if (idempotencyHeader.key) {
+      const replay = await lookupRunStartIdempotencyReplay({
+        redis,
+        operation: 'custom_job',
+        tenantId,
+        idempotencyKey: idempotencyHeader.key,
+        fingerprint: requestFingerprint,
+      });
+      if (replay.status === 'payload_mismatch') {
+        return res.status(409).json({ error: 'Idempotency-Key reutilizada com payload diferente' });
+      }
+      if (replay.status === 'hit') {
+        return res.status(200).json({
+          job: replay.job,
+          loraJobId: replay.job.loraJobId,
+          enqueued: false,
+          idempotencyHit: true,
+        });
+      }
     }
     const startLockKey = buildTrainingScopeOperationLockKey({
       scope: {
@@ -3577,6 +3838,16 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
       priority: 'normal',
       requestedBy: tenantResolution.authContext.userId ?? null,
     });
+    if (idempotencyHeader.key) {
+      await storeRunStartIdempotencyRecord({
+        redis,
+        operation: 'custom_job',
+        tenantId,
+        idempotencyKey: idempotencyHeader.key,
+        fingerprint: requestFingerprint,
+        jobId: job.id,
+      });
+    }
 
     try {
       await db.insert(schema.auditLogs).values(buildTrainingGovernanceAuditValues({
@@ -5826,6 +6097,14 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
   if (!parseResult.success) {
     return res.status(400).json({ error: 'Input invalido', details: parseResult.error.format() });
   }
+  const idempotencyHeader = readOptionalTrainingIdempotencyKey(req);
+  if (idempotencyHeader.error) {
+    trainingPipelineMetrics.runStartIdempotencyTotal.inc({
+      endpoint: 'on_demand',
+      result: 'invalid_header',
+    });
+    return res.status(400).json({ error: idempotencyHeader.error });
+  }
 
   const { tenantId, trainingType, includeImages, priority, description, namespaceId } = parseResult.data;
 
@@ -5844,6 +6123,43 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
         result: 'redis_unavailable',
       });
       return res.status(503).json({ error: 'Redis indisponivel para controle de concorrencia de inicio de treino' });
+    }
+    const requestFingerprint = buildRunStartRequestFingerprint({
+      operation: 'on_demand',
+      tenantId: scopedTenantId,
+      payload: {
+        trainingType,
+        includeImages,
+        priority,
+        description: description ?? null,
+        namespaceId: namespaceId ?? null,
+      },
+    });
+    if (idempotencyHeader.key) {
+      const replay = await lookupRunStartIdempotencyReplay({
+        redis,
+        operation: 'on_demand',
+        tenantId: scopedTenantId,
+        idempotencyKey: idempotencyHeader.key,
+        fingerprint: requestFingerprint,
+      });
+      if (replay.status === 'payload_mismatch') {
+        return res.status(409).json({ error: 'Idempotency-Key reutilizada com payload diferente' });
+      }
+      if (replay.status === 'hit') {
+        return res.status(200).json({
+          success: true,
+          jobId: replay.job.id,
+          loraJobId: replay.job.loraJobId,
+          modelVersionId: replay.job.modelVersionId,
+          version: null,
+          trainingDataUsed: replay.job.trainingDataCount,
+          imagesUsed: null,
+          status: replay.job.status,
+          enqueued: false,
+          idempotencyHit: true,
+        });
+      }
     }
     const startLockKey = buildTrainingScopeOperationLockKey({
       scope: {
@@ -5968,6 +6284,16 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
       priority,
       requestedBy: tenantResolution.authContext.userId ?? null,
     });
+    if (idempotencyHeader.key) {
+      await storeRunStartIdempotencyRecord({
+        redis,
+        operation: 'on_demand',
+        tenantId: scopedTenantId,
+        idempotencyKey: idempotencyHeader.key,
+        fingerprint: requestFingerprint,
+        jobId: job.id,
+      });
+    }
 
       try {
         await db.insert(schema.auditLogs).values(buildTrainingGovernanceAuditValues({

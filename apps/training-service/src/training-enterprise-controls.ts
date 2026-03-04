@@ -12,6 +12,7 @@ type RedisClient = NonNullable<ReturnType<typeof getRedisClient>>;
 
 export type TrainingScopedOperation = 'promote' | 'rollback' | 'run_start';
 export type TrainingJobOperation = 'promotion_approval';
+export type TrainingRunStartIdempotencyOperation = 'on_demand' | 'custom_job';
 
 export type TrainingOperationLockHandle = {
   key: string;
@@ -20,6 +21,7 @@ export type TrainingOperationLockHandle = {
 
 const TRAINING_SCOPE_LOCK_PREFIX = 'alice:training:model-registry:scope-lock';
 const TRAINING_JOB_LOCK_PREFIX = 'alice:training:model-registry:job-lock';
+const TRAINING_RUN_START_IDEMPOTENCY_PREFIX = 'alice:training:run-start:idempotency';
 
 function normalizeKeyPart(value: string | null | undefined): string {
   if (typeof value !== 'string') return 'global';
@@ -50,6 +52,22 @@ export function buildTrainingJobOperationLockKey(params: {
     normalizeKeyPart(params.tenantId),
     normalizeKeyPart(params.fineTuningJobId),
     params.operation,
+  ].join(':');
+}
+
+export function buildTrainingRunStartIdempotencyRedisKey(params: {
+  tenantId: string;
+  operation: TrainingRunStartIdempotencyOperation;
+  idempotencyKey: string;
+}): string {
+  const digest = crypto.createHash('sha256')
+    .update(params.idempotencyKey.trim())
+    .digest('hex');
+  return [
+    TRAINING_RUN_START_IDEMPOTENCY_PREFIX,
+    normalizeKeyPart(params.tenantId),
+    params.operation,
+    digest,
   ].join(':');
 }
 

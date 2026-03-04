@@ -95,6 +95,24 @@ describe('Training Service - OpenAPI (critical contracts)', () => {
     ).enum;
     expect(modeEnum).toEqual(['quick_run', 'advanced_job', 'auto_schedule']);
   });
+
+  it('documents optional X-Idempotency-Key for training start endpoints', () => {
+    const runStartParameters = (
+      trainingServicePaths['/api/training/run/start'].post.parameters as Array<{ name: string }>
+    ) ?? [];
+    const customJobParameters = (
+      trainingServicePaths['/api/training/jobs'].post.parameters as Array<{ name: string }>
+    ) ?? [];
+    expect(runStartParameters.some((parameter) => parameter.name === 'x-idempotency-key')).toBe(true);
+    expect(customJobParameters.some((parameter) => parameter.name === 'x-idempotency-key')).toBe(true);
+  });
+
+  it('documents idempotency hit flag on run start response', () => {
+    const responseSchema = trainingServiceSchemas.TrainingRunStartResponse as {
+      properties: Record<string, unknown>;
+    };
+    expect(responseSchema.properties).toHaveProperty('idempotencyHit');
+  });
 });
 
 // ============================================================================
