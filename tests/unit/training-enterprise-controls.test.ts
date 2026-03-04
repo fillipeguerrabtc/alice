@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { Request } from 'express';
 import {
+  acquireTrainingOperationLock,
   buildTrainingJobOperationLockKey,
   buildTrainingScopeOperationLockKey,
   extractRequestIp,
   extractRequestUserAgent,
+  releaseTrainingOperationLock,
 } from '../../apps/training-service/src/training-enterprise-controls';
 
 describe('training-enterprise-controls', () => {
@@ -71,5 +73,75 @@ describe('training-enterprise-controls', () => {
       ip: '127.0.0.1',
     } as unknown as Request;
     expect(extractRequestUserAgent(req)).toBe('curl/8.6.0');
+  });
+
+  it('adquire lock distribuido e detecta contencao', async () => {
+    const locks = new Map<string, string>();
+    const redis = {
+      set: async (key: string, value: string, opts: { NX?: boolean }) => {
+        if (opts?.NX && locks.has(key)) return null;
+        locks.set(key, value);
+        return 'OK';
+      },
+    } as unknown as NonNullable<ReturnType<typeof import('@alice/shared-utils').getRedisClient>>;
+
+    const first = await acquireTrainingOperationLock({
+      redis,
+      key: 'alice:test:lock',
+      ttlSeconds: 60,
+    });
+    expect(first).not.toBeNull();
+
+    const second = await acquireTrainingOperationLock({
+      redis,
+      key: 'alice:test:lock',
+      ttlSeconds: 60,
+    });
+    expect(second).toBeNull();
+  });
+
+  it('libera lock apenas quando token confere', async () => {
+    const locks = new Map<string, string>();
+    const redis = {
+      set: async (key: string, value: string, opts: { NX?: boolean }) => {
+        if (opts?.NX && locks.has(key)) return null;
+        locks.set(key, value);
+        return 'OK';
+      },
+      eval: async (_script: string, params: { keys: string[]; arguments: string[] }) => {
+        const key = params.keys[0];
+        const token = params.arguments[0];
+        if (locks.get(key) === token) {
+          locks.delete(key);
+          return 1;
+        }
+        return 0;
+      },
+    } as unknown as NonNullable<ReturnType<typeof import('@alice/shared-utils').getRedisClient>>;
+
+    const handle = await acquireTrainingOperationLock({
+      redis,
+      key: 'alice:test:release',
+      ttlSeconds: 60,
+    });
+    expect(handle).not.toBeNull();
+    if (!handle) return;
+
+    // lock permanece quando token não confere
+    await releaseTrainingOperationLock({
+      redis,
+      handle: {
+        key: handle.key,
+        token: 'wrong-token',
+      },
+    });
+    expect(locks.has(handle.key)).toBe(true);
+
+    // lock é removido quando token confere
+    await releaseTrainingOperationLock({
+      redis,
+      handle,
+    });
+    expect(locks.has(handle.key)).toBe(false);
   });
 });
