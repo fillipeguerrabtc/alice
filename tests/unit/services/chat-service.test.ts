@@ -61,6 +61,17 @@ describe('Chat Service - OpenAPI (contratos críticos)', () => {
   it('deve expor o endpoint SSOT GET /api/agents/model-options', () => {
     expect(Object.keys(chatServicePaths)).toContain('/api/agents/model-options');
   });
+
+  it('deve documentar GET /api/chat/ws-token com audience ws e ws-agent', () => {
+    expect(Object.keys(chatServicePaths)).toContain('/api/chat/ws-token');
+    const wsTokenGet = chatServicePaths['/api/chat/ws-token']?.get as {
+      parameters?: Array<{ name: string; schema?: { enum?: string[]; default?: string } }>;
+    };
+    expect(wsTokenGet).toBeDefined();
+    const audParam = wsTokenGet.parameters?.find((parameter) => parameter.name === 'aud');
+    expect(audParam?.schema?.enum).toEqual(['ws', 'ws-agent']);
+    expect(audParam?.schema?.default).toBe('ws');
+  });
 });
 
 // ============================================================================

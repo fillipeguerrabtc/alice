@@ -423,6 +423,72 @@ export const chatServicePaths = {
       },
     },
   },
+  '/api/chat/ws-token': {
+    get: {
+      summary: 'Gerar token efemero para WebSocket',
+      description:
+        'Retorna token HMAC de curta duracao para autenticacao de conexoes WebSocket. aud=ws-agent exige permissao de takeover.',
+      tags: ['WebSocket'],
+      parameters: [
+        {
+          name: 'aud',
+          in: 'query',
+          required: false,
+          schema: { type: 'string', enum: ['ws', 'ws-agent'], default: 'ws' },
+          description: 'Audience do token WebSocket',
+        },
+      ],
+      responses: {
+        200: {
+          description: 'Token gerado com sucesso',
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/ChatWsTokenResponse' },
+            },
+          },
+        },
+        400: {
+          description: 'Parametro aud invalido',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  error: { type: 'string', example: 'Parametro aud invalido' },
+                },
+              },
+            },
+          },
+        },
+        401: {
+          description: 'Autenticacao necessaria',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  error: { type: 'string', example: 'Autenticacao necessaria' },
+                },
+              },
+            },
+          },
+        },
+        403: {
+          description: 'Permissao insuficiente para ws-agent',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  error: { type: 'string', example: 'Permissao insuficiente para ws-agent' },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
   '/api/chat/takeover-stats': {
     get: {
       summary: 'Estatísticas de takeover/handover',
@@ -686,6 +752,22 @@ export const chatServicePaths = {
 };
 
 export const chatServiceSchemas = {
+  ChatWsTokenResponse: {
+    type: 'object',
+    required: ['success', 'data'],
+    properties: {
+      success: { type: 'boolean', example: true },
+      data: {
+        type: 'object',
+        required: ['token', 'expiresIn', 'aud'],
+        properties: {
+          token: { type: 'string' },
+          expiresIn: { type: 'integer', example: 60 },
+          aud: { type: 'string', enum: ['ws', 'ws-agent'] },
+        },
+      },
+    },
+  },
   Conversation: {
     type: 'object',
     properties: {
