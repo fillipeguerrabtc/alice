@@ -1682,8 +1682,9 @@
   },
   "training": {
     "title": "Fine-tuning & Treinamento",
-    "subtitle": "Aprove dados, acompanhe jobs e controle o aprendizado contínuo do LLM com segurança.",
+    "subtitle": "Escolha o modo de execução, aprove dados e acompanhe a governança de treinamento.",
     "newJob": "Job avancado",
+    "executionModesHint": "Run rapido = imediato com politica padrao | Job avancado = fine-tuning por escopo com preset/overrides | Schedule = runs recorrentes automatizados.",
     "postTraining": {
       "title": "Treinamento concluído",
       "desc": "O job \"{{jobName}}\" foi finalizado. Deseja continuar treinando ou voltar ao chat?",

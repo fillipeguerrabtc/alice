@@ -1631,8 +1631,9 @@
   },
   "training": {
     "title": "Fine-tuning & Training",
-    "subtitle": "Approve data, track jobs, and control continuous learning with safety.",
+    "subtitle": "Choose the execution mode, approve data, and track training governance.",
     "newJob": "Advanced Job",
+    "executionModesHint": "Quick run = immediate with standard policy | Advanced Job = scoped fine-tuning with preset/overrides | Schedule = recurring automated runs.",
     "postTraining": {
       "title": "Training completed",
       "desc": "Job \"{{jobName}}\" has finished. Continue training or go back to chat?",

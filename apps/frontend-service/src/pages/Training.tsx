@@ -3828,6 +3828,9 @@ export default function Training() {
             </Button>
           </div>
         </div>
+        <p className="mb-4 text-xs text-muted-foreground">
+          {t('training.executionModesHint')}
+        </p>
 
         {!tenantId && (
           <Alert className="mb-4" variant="destructive">
