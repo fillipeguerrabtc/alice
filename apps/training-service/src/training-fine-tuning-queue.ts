@@ -3,7 +3,8 @@ import {
   buildTrainingFineTuningIdempotencyKey,
   getRedisClient,
   RedisStreamQueue,
-  TRAINING_FINE_TUNING_QUEUE,
+  resolveTrainingFineTuningQueue,
+  trainingRunPrioritySchema,
   trainingFineTuningQueuePayloadSchema,
 } from '@alice/shared-utils';
 
@@ -12,6 +13,7 @@ const QUEUE_STREAM_MAX_LEN = 20_000;
 export async function enqueueTrainingFineTuningRun(params: {
   fineTuningJobId: string;
   tenantId: string;
+  priority?: 'low' | 'normal' | 'high';
   requestedBy?: string | null;
   runId?: string;
 }): Promise<{ enqueued: boolean; idempotencyKey: string; runId: string }> {
@@ -20,7 +22,9 @@ export async function enqueueTrainingFineTuningRun(params: {
     throw new Error('Redis nao disponivel para fila de fine-tuning');
   }
 
-  const queue = new RedisStreamQueue(TRAINING_FINE_TUNING_QUEUE, {
+  const priority = trainingRunPrioritySchema.parse(params.priority ?? 'normal');
+  const queueName = resolveTrainingFineTuningQueue(priority);
+  const queue = new RedisStreamQueue(queueName, {
     group: 'training-service',
     consumer: `training-${process.pid}`,
     maxRetries: 3,
@@ -37,6 +41,7 @@ export async function enqueueTrainingFineTuningRun(params: {
     runId,
     fineTuningJobId: params.fineTuningJobId,
     tenantId: params.tenantId,
+    priority,
     requestedBy: params.requestedBy ?? undefined,
     idempotencyKey,
     createdAt: new Date().toISOString(),

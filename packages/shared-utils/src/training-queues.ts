@@ -5,6 +5,12 @@ export const TRAINING_EMBEDDING_DEDUPE_QUEUE = 'alice:training:embedding-dedupe'
 export const TRAINING_NAMESPACE_PROFILE_RECONCILE_QUEUE = 'alice:training:namespace-profile-reconcile';
 export const TRAINING_DATA_POLICY_GATE_QUEUE = 'alice:training:data-policy-gate';
 export const TRAINING_FINE_TUNING_QUEUE = 'alice:training:fine-tuning';
+export const TRAINING_FINE_TUNING_QUEUE_HIGH = `${TRAINING_FINE_TUNING_QUEUE}:high`;
+export const TRAINING_FINE_TUNING_QUEUE_NORMAL = `${TRAINING_FINE_TUNING_QUEUE}:normal`;
+export const TRAINING_FINE_TUNING_QUEUE_LOW = `${TRAINING_FINE_TUNING_QUEUE}:low`;
+
+export const trainingRunPrioritySchema = z.enum(['low', 'normal', 'high']);
+export type TrainingRunPriority = z.infer<typeof trainingRunPrioritySchema>;
 
 export const trainingEmbeddingDedupeQueuePayloadSchema = z.object({
   trainingDataId: z.string().uuid(),
@@ -44,6 +50,7 @@ export const trainingFineTuningQueuePayloadSchema = z.object({
   runId: z.string().uuid(),
   fineTuningJobId: z.string().uuid(),
   tenantId: z.string().uuid(),
+  priority: trainingRunPrioritySchema.default('normal'),
   requestedBy: z.string().uuid().optional(),
   idempotencyKey: z.string().regex(/^[a-f0-9]{64}$/),
   createdAt: z.string().datetime(),
@@ -91,4 +98,10 @@ export function buildTrainingFineTuningIdempotencyKey(params: {
 }): string {
   const input = [params.fineTuningJobId.trim()].join(':');
   return crypto.createHash('sha256').update(input).digest('hex');
+}
+
+export function resolveTrainingFineTuningQueue(priority: TrainingRunPriority | null | undefined): string {
+  if (priority === 'high') return TRAINING_FINE_TUNING_QUEUE_HIGH;
+  if (priority === 'low') return TRAINING_FINE_TUNING_QUEUE_LOW;
+  return TRAINING_FINE_TUNING_QUEUE_NORMAL;
 }
