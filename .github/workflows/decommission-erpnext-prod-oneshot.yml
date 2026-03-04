@@ -41,10 +41,17 @@ jobs:
         run: |
           set -euo pipefail
 
-          EXPECTED_PHRASE="DECOMMISSION ERPNext PROD ONE SHOT"
-          if [ "${{ github.event.inputs.confirm_phrase }}" != "$EXPECTED_PHRASE" ]; then
+          EXPECTED_PHRASE_NORMALIZED="decommission erpnext prod one shot"
+          INPUT_PHRASE_RAW="${{ github.event.inputs.confirm_phrase }}"
+          INPUT_PHRASE_NORMALIZED="$(
+            printf '%s' "$INPUT_PHRASE_RAW" \
+              | tr '[:upper:]' '[:lower:]' \
+              | awk '{$1=$1; print}'
+          )"
+
+          if [ "$INPUT_PHRASE_NORMALIZED" != "$EXPECTED_PHRASE_NORMALIZED" ]; then
             echo "❌ Invalid confirmation phrase."
-            echo "Expected exactly: $EXPECTED_PHRASE"
+            echo "Expected phrase (case-insensitive): DECOMMISSION ERPNext PROD ONE SHOT"
             exit 1
           fi
 
