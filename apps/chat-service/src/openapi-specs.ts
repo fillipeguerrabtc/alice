@@ -288,12 +288,26 @@ export const chatServicePaths = {
       },
     },
   },
-  '/api/chat/conversations/{id}/handover': {
+  '/api/chat/conversations/{id}/handback': {
     post: {
-      summary: 'Devolver controle para IA (handover)',
+      summary: 'Devolver controle para IA (handback)',
       tags: ['Takeover'],
       parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
-      responses: { 200: { description: 'Controle devolvido' } },
+      requestBody: {
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              properties: { resolutionNotes: { type: 'string' } },
+            },
+          },
+        },
+      },
+      responses: {
+        200: { description: 'Controle devolvido' },
+        400: { $ref: '#/components/responses/ValidationError' },
+        403: { $ref: '#/components/responses/Forbidden' },
+      },
     },
   },
   // Gate 2: Geração de imagens via OpenAI (gpt-image-1).
