@@ -47,6 +47,7 @@ import { queryClient } from '@/lib/queryClient';
 import { useAuth } from '@/hooks/use-auth';
 import { TIMEZONE } from '@/lib/i18n';
 import { formatDateTime } from '@/lib/utils';
+import { hasPermission } from '@/lib/authUtils';
 
 interface ServiceStatus {
   name: string;
@@ -460,8 +461,16 @@ function MetricsOverview() {
 export default function Observability() {
   const { t } = useTranslation();
   const { user } = useAuth();
+  const userRoles = user?.roles ?? (user?.role ? [user.role] : []);
   const locale = user?.idioma ?? 'pt-BR';
   const timeZone = user?.timezone ?? TIMEZONE;
+
+  const { data: permissionsData, isLoading: permissionsLoading } = useQuery<{ permissions: string[] }>({
+    queryKey: ['/api/auth/rbac/permissions'],
+    enabled: Boolean(user?.id),
+    staleTime: 1000 * 60 * 5,
+    retry: 1,
+  });
 
   const { data: healthData, isLoading: healthLoading, isError: healthError, refetch } = useQuery<StackHealth>({
     queryKey: ['/api/observability/health'],
@@ -475,6 +484,37 @@ export default function Observability() {
   });
 
   const apiUnavailable = healthError && urlsError;
+  const canReadObservability = hasPermission(
+    permissionsData?.permissions,
+    'observability:read',
+    userRoles
+  );
+
+  if (permissionsLoading) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="flex flex-col items-center gap-2 text-muted-foreground">
+          <RefreshCw className="h-5 w-5 animate-spin" />
+          <span className="text-sm">{t('common.loading', { defaultValue: 'Carregando...' })}</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!canReadObservability) {
+    return (
+      <div className="flex h-full items-center justify-center p-6">
+        <Card className="w-full max-w-md" data-testid="card-observability-forbidden">
+          <CardHeader>
+            <CardTitle>{t('common.forbidden', { defaultValue: 'Acesso negado' })}</CardTitle>
+            <CardDescription>
+              {t('auth.requiredMessage', { defaultValue: 'Você não possui permissão para acessar este módulo.' })}
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </div>
+    );
+  }
 
   const handleRefresh = () => {
     refetch();

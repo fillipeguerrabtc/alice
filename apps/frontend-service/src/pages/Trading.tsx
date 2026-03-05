@@ -123,6 +123,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useKucoinWebSocket } from '@/hooks/useKucoinWebSocket';
 import { apiRequest, ApiError, queryClient } from '@/lib/queryClient';
 import { frontendLogger } from '@/lib/logger';
+import { hasPermission } from '@/lib/authUtils';
 import {
   enqueueTradingJob,
   getTradingCandidates,
@@ -6765,6 +6766,13 @@ function TradingContent() {
 export default function Trading() {
   const { t } = useTranslation();
   const { user, isLoading: isAuthLoading } = useAuth();
+  const userRoles = user?.roles ?? (user?.role ? [user.role] : []);
+  const { data: permissionsData, isLoading: isPermissionsLoading } = useQuery<{ permissions: string[] }>({
+    queryKey: ['/api/auth/rbac/permissions'],
+    enabled: Boolean(user?.id),
+    staleTime: 1000 * 60 * 5,
+    retry: 1,
+  });
 
   // Aguardar autenticação antes de montar componente com múltiplos hooks
   if (isAuthLoading) {
@@ -6794,6 +6802,38 @@ export default function Trading() {
               {t('auth.login', { defaultValue: 'Fazer Login' })}
             </Button>
           </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (isPermissionsLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-sm text-muted-foreground">{t('common.loading', { defaultValue: 'Carregando...' })}</p>
+        </div>
+      </div>
+    );
+  }
+
+  const canReadTrading = hasPermission(
+    permissionsData?.permissions,
+    'integrations:trading:read',
+    userRoles
+  );
+
+  if (!canReadTrading) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <CardTitle>{t('common.forbidden', { defaultValue: 'Acesso negado' })}</CardTitle>
+            <CardDescription>
+              {t('auth.requiredMessage', { defaultValue: 'Você não possui permissão para acessar este módulo.' })}
+            </CardDescription>
+          </CardHeader>
         </Card>
       </div>
     );
