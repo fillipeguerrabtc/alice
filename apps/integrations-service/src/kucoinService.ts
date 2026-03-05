@@ -587,6 +587,27 @@ async function logTradingAction(
   return result.id;
 }
 
+export async function recordTradingAuditEvent(params: {
+  authContext: TradingAuthContext;
+  action: string;
+  entityType: string;
+  entityId: string;
+  details: Record<string, unknown>;
+  previousState?: Record<string, unknown>;
+  newState?: Record<string, unknown>;
+}): Promise<{ auditLogId: string }> {
+  const auditLogId = await logTradingAction(
+    params.authContext,
+    params.action,
+    params.entityType,
+    params.entityId,
+    params.details,
+    params.previousState,
+    params.newState
+  );
+  return { auditLogId };
+}
+
 // ============================================================================
 // GESTÃO DE RISCO
 // ============================================================================

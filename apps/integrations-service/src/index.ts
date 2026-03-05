@@ -13229,13 +13229,33 @@ app.post('/api/integrations/trading/signals/:id/approve', requirePermission('int
         approvalReason: bodyResult.data.reason ?? undefined,
         approvalType: 'training_only',
       };
-      await db
+      const [updatedSignal] = await db
         .update(schema.tradingSignals)
         .set({
           metadata: updatedMetadata as typeof signal.metadata,
           isActive: false,
         })
-        .where(eq(schema.tradingSignals.id, signal.id));
+        .where(eq(schema.tradingSignals.id, signal.id))
+        .returning();
+
+      const auditResult = await kucoinService.recordTradingAuditEvent({
+        authContext: { tenantId: authContext.tenantId, userId: authContext.userId },
+        action: 'APPROVE_SIGNAL_TRAINING_ONLY',
+        entityType: 'signal',
+        entityId: signal.id,
+        details: {
+          reason: bodyResult.data.reason ?? null,
+          dataset: {
+            id: datasetResult.dataset.id,
+            status: datasetResult.status,
+            created: datasetResult.created,
+            qualityScore: datasetResult.qualityScore,
+            isDuplicate: datasetResult.duplicate.isDuplicate,
+          },
+        },
+        previousState: signal as unknown as Record<string, unknown>,
+        newState: updatedSignal as unknown as Record<string, unknown>,
+      });
 
       logger.info(
         {
@@ -13245,6 +13265,7 @@ app.post('/api/integrations/trading/signals/:id/approve', requirePermission('int
           datasetId: datasetResult.dataset.id,
           datasetStatus: datasetResult.status,
           datasetCreated: datasetResult.created,
+          auditLogId: auditResult.auditLogId,
         },
         'Sinal neutral/hold aprovado para treinamento com dataset gerado (sem ordem criada)'
       );
@@ -13269,6 +13290,7 @@ app.post('/api/integrations/trading/signals/:id/approve', requirePermission('int
             qualityScore: datasetResult.qualityScore,
             isDuplicate: datasetResult.duplicate.isDuplicate,
           },
+          auditLogId: auditResult.auditLogId,
           message: `Sinal ${signal.signalType.toUpperCase()} aprovado para treinamento e ${datasetReviewMessage}. Nenhuma ordem foi criada.`,
         },
       });
