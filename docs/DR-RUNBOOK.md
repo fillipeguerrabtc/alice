@@ -42,6 +42,14 @@ Objetivo: validar recuperação ponta a ponta com evidência operacional
    - sucesso/falha;
    - trilha de auditoria da operação.
 
+### Automação recomendada
+```bash
+bash infra/scripts/run-dr-game-day.sh \
+  --base-url https://yesyoudeserve.duckdns.org \
+  --auth-token "$ADMIN_BEARER_TOKEN" \
+  --backup-id "<backup-id>"
+```
+
 ## 4. Critérios de sucesso
 - Restore concluído sem erro crítico.
 - RTO dentro da meta definida.

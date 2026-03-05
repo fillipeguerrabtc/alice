@@ -222,6 +222,19 @@ powershell -ExecutionPolicy Bypass -File infra/scripts/preflight-secrets.ps1 -St
 
 No pipeline oficial (`deploy-stack-modular.yml`), esse preflight também roda de forma automática por stack imediatamente antes do `compose up`.
 
+### Validações operacionais pós-deploy (enterprise)
+
+```bash
+# DR game day (dry-run)
+bash infra/scripts/run-dr-game-day.sh --backup-id <backup-id>
+
+# Fine-tuning real em GPU (validação)
+bash infra/scripts/validate-gpu-fine-tuning.sh --auth-token "$ADMIN_BEARER_TOKEN" --tenant-id <tenant-uuid>
+
+# SLO burn-rate por jornada (Prometheus)
+bash infra/scripts/validate-slo-burn-rates.sh --prometheus-url https://metrics.yesyoudeserve.duckdns.org
+```
+
 ## Secrets obrigatórios (referência)
 
 Consulte `docs/SECRETS.md` para a lista completa. O deploy é fail-fast se secrets críticos estiverem ausentes.
