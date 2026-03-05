@@ -458,6 +458,22 @@ export const integrationsServicePaths = {
       },
     },
   },
+  '/api/integrations/trading/audit/high-risk': {
+    get: {
+      summary: 'Listar eventos de alto risco do ledger imutavel de trading',
+      tags: ['Trading'],
+      'x-required-permission': 'integrations:trading:read',
+      parameters: [
+        { name: 'action', in: 'query', schema: { type: 'string' } },
+        { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 200 } },
+      ],
+      responses: {
+        200: { description: 'Eventos de alto risco retornados' },
+        400: { description: 'Parametros invalidos' },
+        401: { description: 'Nao autenticado' },
+      },
+    },
+  },
   '/api/integrations/trading/orders/history/delete': {
     post: {
       summary: 'Excluir ordens do histórico (exclusão lógica)',

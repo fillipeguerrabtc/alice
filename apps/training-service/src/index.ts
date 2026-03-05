@@ -887,6 +887,12 @@ const trainingPipelineMetrics = {
     help: 'Timestamp unix em segundos da ultima verificacao de integridade do ledger imutavel',
     registers: [metrics.registry],
   }),
+  highRiskAuditEventsTotal: new PromCounter({
+    name: 'alice_high_risk_audit_events_total',
+    help: 'Total de eventos de auditoria de alto risco registrados',
+    labelNames: ['service', 'event_type', 'result'] as const,
+    registers: [metrics.registry],
+  }),
 };
 
 const tradingMetrics = {
@@ -1652,6 +1658,57 @@ app.get('/api/training/audit/integrity', requirePermission('training:fine_tuning
   return res.json({
     stream: 'training_governance',
     state: trainingImmutableAuditIntegrityState,
+  });
+});
+
+app.get('/api/training/audit/high-risk', requirePermission('training:fine_tuning_jobs:read'), async (req: Request, res: Response) => {
+  const tenantResolution = resolveAuthorizedTenantId(req);
+  if (!tenantResolution.ok) {
+    return res.status(tenantResolution.status).json({ error: tenantResolution.error });
+  }
+
+  const limitParsed = Number(req.query.limit ?? 100);
+  if (!Number.isFinite(limitParsed) || !Number.isInteger(limitParsed) || limitParsed < 1 || limitParsed > 200) {
+    return res.status(400).json({ error: 'Parâmetro limit inválido (1-200)' });
+  }
+  const actionParam = typeof req.query.action === 'string' ? req.query.action : undefined;
+  if (actionParam && !TRAINING_GOVERNANCE_AUDIT_ACTIONS.includes(actionParam as TrainingGovernanceAuditAction)) {
+    return res.status(400).json({ error: 'Parâmetro action inválido' });
+  }
+
+  const whereClauses = [
+    eq(schema.immutableAuditEvents.tenantId, tenantResolution.tenantId),
+    eq(schema.immutableAuditEvents.stream, 'training_governance'),
+  ];
+  if (actionParam) {
+    whereClauses.push(eq(schema.immutableAuditEvents.eventType, actionParam));
+  }
+
+  const events = await db.query.immutableAuditEvents.findMany({
+    where: and(...whereClauses),
+    orderBy: [desc(schema.immutableAuditEvents.chainPosition)],
+    limit: limitParsed,
+  });
+
+  return res.json({
+    stream: 'training_governance',
+    count: events.length,
+    filters: {
+      action: actionParam ?? null,
+      limit: limitParsed,
+    },
+    events: events.map((event) => ({
+      id: event.id,
+      chainPosition: event.chainPosition,
+      eventType: event.eventType,
+      resourceType: event.resourceType,
+      resourceId: event.resourceId,
+      actorUserId: event.actorUserId,
+      requestId: event.requestId,
+      payload: event.payload,
+      occurredAt: event.occurredAt,
+      createdAt: event.createdAt,
+    })),
   });
 });
 
@@ -3657,22 +3714,41 @@ async function persistTrainingGovernanceAudit(params: {
     payload: params.details,
   } as const;
 
-  if (params.executor) {
-    await params.executor.insert(schema.auditLogs).values(auditValues);
-    await appendImmutableAuditEventWithExecutor({
-      executor: params.executor,
-      input: immutableInput,
-    });
-    return;
-  }
+  try {
+    if (params.executor) {
+      await params.executor.insert(schema.auditLogs).values(auditValues);
+      await appendImmutableAuditEventWithExecutor({
+        executor: params.executor,
+        input: immutableInput,
+      });
+      trainingPipelineMetrics.highRiskAuditEventsTotal.inc({
+        service: 'training-service',
+        event_type: params.action,
+        result: 'success',
+      });
+      return;
+    }
 
-  await db.transaction(async (tx) => {
-    await tx.insert(schema.auditLogs).values(auditValues);
-    await appendImmutableAuditEventWithExecutor({
-      executor: tx,
-      input: immutableInput,
+    await db.transaction(async (tx) => {
+      await tx.insert(schema.auditLogs).values(auditValues);
+      await appendImmutableAuditEventWithExecutor({
+        executor: tx,
+        input: immutableInput,
+      });
     });
-  });
+    trainingPipelineMetrics.highRiskAuditEventsTotal.inc({
+      service: 'training-service',
+      event_type: params.action,
+      result: 'success',
+    });
+  } catch (error) {
+    trainingPipelineMetrics.highRiskAuditEventsTotal.inc({
+      service: 'training-service',
+      event_type: params.action,
+      result: 'error',
+    });
+    throw error;
+  }
 }
 
 app.patch('/api/training/data/:id/status', requirePermission('training:training_data:manage'), async (req: Request, res: Response) => {

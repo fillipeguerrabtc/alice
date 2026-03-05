@@ -80,6 +80,23 @@ export const trainingServicePaths = {
       },
     },
   },
+  '/api/training/audit/high-risk': {
+    get: {
+      summary: 'List high-risk immutable audit events for training governance',
+      tags: ['Training Jobs'],
+      'x-required-permission': 'training:fine_tuning_jobs:read',
+      parameters: [
+        { name: 'action', in: 'query', schema: { type: 'string' } },
+        { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 200 } },
+      ],
+      responses: {
+        200: { description: 'High-risk events list' },
+        400: { $ref: '#/components/responses/ValidationError' },
+        401: { $ref: '#/components/responses/Unauthorized' },
+        403: { $ref: '#/components/responses/Forbidden' },
+      },
+    },
+  },
   '/api/training/system-config': {
     get: {
       summary: 'List effective training runtime config',

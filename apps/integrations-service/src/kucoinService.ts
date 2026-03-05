@@ -37,6 +37,13 @@ import { enqueuePostMortem } from './postmortem-worker.js';
 
 const logger = createLogger('kucoin-service');
 
+type HighRiskAuditMetricObserver = (eventType: string, result: 'success' | 'error') => void;
+let observeHighRiskAuditMetric: HighRiskAuditMetricObserver = () => {};
+
+export function setHighRiskAuditMetricObserver(observer: HighRiskAuditMetricObserver): void {
+  observeHighRiskAuditMetric = observer;
+}
+
 // Símbolo default é resolvido dinamicamente via API KuCoin (sem hardcoded).
 
 // ============================================================================
@@ -532,59 +539,75 @@ async function logTradingAction(
   newState?: Record<string, unknown>
 ): Promise<string> {
   const db = getDatabase();
+  const normalizedAction = action.toLowerCase();
+  const isHighRiskAction = normalizedAction.includes('approve')
+    || normalizedAction.includes('reject')
+    || normalizedAction.includes('risk')
+    || normalizedAction.includes('override');
 
-  const [result] = await db.transaction(async (tx) => {
-    // CORRECAO: Mesclar details com newState ja que schema nao tem campo details
-    const mergedNewState = newState ? { ...newState, _details: details } : details;
+  try {
+    const [result] = await db.transaction(async (tx) => {
+      // CORRECAO: Mesclar details com newState ja que schema nao tem campo details
+      const mergedNewState = newState ? { ...newState, _details: details } : details;
 
-    const auditEntry: InsertTradingAuditLog = {
-      tenantId: authContext.tenantId,
-      userId: authContext.userId,
-      action,
-      entityType,
-      entityId,
-      previousState: previousState ?? null,
-      newState: mergedNewState,
-      ipAddress: null, // Sera preenchido pelo middleware
-      userAgent: null, // Sera preenchido pelo middleware
-    };
-
-    const inserted = await tx
-      .insert(schema.tradingAuditLog)
-      .values(auditEntry)
-      .returning({ id: schema.tradingAuditLog.id });
-
-    await appendImmutableAuditEventWithExecutor({
-      executor: tx,
-      input: {
+      const auditEntry: InsertTradingAuditLog = {
         tenantId: authContext.tenantId,
-        actorUserId: authContext.userId,
-        sourceService: 'integrations-service',
-        stream: 'trading_operations',
-        streamKey: `${entityType}:${entityId}`,
-        eventType: action,
-        resourceType: entityType,
-        resourceId: entityId,
-        requestId: authContext.sessionId ?? null,
-        ipAddress: null,
-        userAgent: null,
-        payload: {
-          details,
-          previousState: previousState ?? null,
-          newState: newState ?? null,
+        userId: authContext.userId,
+        action,
+        entityType,
+        entityId,
+        previousState: previousState ?? null,
+        newState: mergedNewState,
+        ipAddress: null, // Sera preenchido pelo middleware
+        userAgent: null, // Sera preenchido pelo middleware
+      };
+
+      const inserted = await tx
+        .insert(schema.tradingAuditLog)
+        .values(auditEntry)
+        .returning({ id: schema.tradingAuditLog.id });
+
+      await appendImmutableAuditEventWithExecutor({
+        executor: tx,
+        input: {
+          tenantId: authContext.tenantId,
+          actorUserId: authContext.userId,
+          sourceService: 'integrations-service',
+          stream: 'trading_operations',
+          streamKey: `${entityType}:${entityId}`,
+          eventType: action,
+          resourceType: entityType,
+          resourceId: entityId,
+          requestId: authContext.sessionId ?? null,
+          ipAddress: null,
+          userAgent: null,
+          payload: {
+            details,
+            previousState: previousState ?? null,
+            newState: newState ?? null,
+          },
         },
-      },
+      });
+
+      return inserted;
     });
 
-    return inserted;
-  });
+    if (isHighRiskAction) {
+      observeHighRiskAuditMetric(normalizedAction, 'success');
+    }
 
-  logger.info(
-    { auditLogId: result.id, action, entityType, entityId },
-    'Ação de trading registrada no audit log'
-  );
+    logger.info(
+      { auditLogId: result.id, action, entityType, entityId },
+      'Acao de trading registrada no audit log'
+    );
 
-  return result.id;
+    return result.id;
+  } catch (error) {
+    if (isHighRiskAction) {
+      observeHighRiskAuditMetric(normalizedAction, 'error');
+    }
+    throw error;
+  }
 }
 
 export async function recordTradingAuditEvent(params: {

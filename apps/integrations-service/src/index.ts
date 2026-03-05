@@ -2388,6 +2388,21 @@ const immutableAuditIntegrityLastCheckTimestampSecondsGauge = new PromGauge({
   registers: [metrics.registry],
 });
 
+const highRiskAuditEventsTotal = new PromCounter({
+  name: 'alice_high_risk_audit_events_total',
+  help: 'Total de eventos de auditoria de alto risco registrados',
+  labelNames: ['service', 'event_type', 'result'] as const,
+  registers: [metrics.registry],
+});
+
+kucoinService.setHighRiskAuditMetricObserver((eventType, result) => {
+  highRiskAuditEventsTotal.inc({
+    service: 'integrations-service',
+    event_type: eventType,
+    result,
+  });
+});
+
 function classifyIntegrationError(error: unknown): string {
   if (error instanceof Error) {
     const message = error.message.toLowerCase();
@@ -3560,6 +3575,70 @@ app.get('/api/integrations/trading/audit/integrity', requirePermission('integrat
   res.json({
     stream: 'trading_operations',
     state: integrationsImmutableAuditIntegrityState,
+  });
+});
+
+function isTradingHighRiskEventType(eventType: string): boolean {
+  const normalized = eventType.toLowerCase();
+  return normalized.includes('approve')
+    || normalized.includes('reject')
+    || normalized.includes('risk')
+    || normalized.includes('override');
+}
+
+app.get('/api/integrations/trading/audit/high-risk', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  const authContext = extractAuthContext(req);
+  if (!authContext?.tenantId || !authContext?.userId) {
+    return res.status(401).json({ error: 'Autenticação necessária' });
+  }
+  const dbInstance = getDatabase();
+
+  const limitParsed = Number(req.query.limit ?? 100);
+  if (!Number.isFinite(limitParsed) || !Number.isInteger(limitParsed) || limitParsed < 1 || limitParsed > 200) {
+    return res.status(400).json({ error: 'Parâmetro limit inválido (1-200)' });
+  }
+  const actionParam = typeof req.query.action === 'string' ? req.query.action : undefined;
+  if (actionParam && !isTradingHighRiskEventType(actionParam)) {
+    return res.status(400).json({ error: 'Parâmetro action não é classificado como alto risco' });
+  }
+
+  const whereClauses = [
+    eq(schema.immutableAuditEvents.tenantId, authContext.tenantId),
+    eq(schema.immutableAuditEvents.stream, 'trading_operations'),
+  ];
+  if (actionParam) {
+    whereClauses.push(eq(schema.immutableAuditEvents.eventType, actionParam));
+  }
+
+  const rawEvents = await dbInstance.query.immutableAuditEvents.findMany({
+    where: and(...whereClauses),
+    orderBy: [desc(schema.immutableAuditEvents.chainPosition)],
+    limit: actionParam ? limitParsed : Math.min(500, limitParsed * 4),
+  });
+  const events = (actionParam
+    ? rawEvents
+    : rawEvents.filter((event: typeof rawEvents[number]) => isTradingHighRiskEventType(event.eventType)))
+    .slice(0, limitParsed);
+
+  return res.json({
+    stream: 'trading_operations',
+    count: events.length,
+    filters: {
+      action: actionParam ?? null,
+      limit: limitParsed,
+    },
+    events: events.map((event: typeof events[number]) => ({
+      id: event.id,
+      chainPosition: event.chainPosition,
+      eventType: event.eventType,
+      resourceType: event.resourceType,
+      resourceId: event.resourceId,
+      actorUserId: event.actorUserId,
+      requestId: event.requestId,
+      payload: event.payload,
+      occurredAt: event.occurredAt,
+      createdAt: event.createdAt,
+    })),
   });
 });
 

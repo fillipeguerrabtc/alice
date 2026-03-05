@@ -19,9 +19,9 @@ describe('integrations immutable audit monitoring guards', () => {
   it('exposes health and operational endpoint with immutable audit state', () => {
     const source = loadIntegrationsSource();
     expect(source.includes("app.get('/api/integrations/trading/audit/integrity'")).toBe(true);
+    expect(source.includes("app.get('/api/integrations/trading/audit/high-risk'")).toBe(true);
     expect(source.includes("requirePermission('integrations:trading:read')")).toBe(true);
     expect(source.includes('immutableAuditIntegrity: integrationsImmutableAuditIntegrityState')).toBe(true);
     expect(source.includes("stream: 'trading_operations'")).toBe(true);
   });
 });
-

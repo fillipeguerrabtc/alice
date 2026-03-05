@@ -23,5 +23,12 @@ describe('integrations immutable audit guards', () => {
     expect(source.includes('previousState: previousState ?? null,')).toBe(true);
     expect(source.includes('newState: newState ?? null,')).toBe(true);
   });
-});
 
+  it('exposes high-risk audit observer hooks for approval/rejection/risk actions', () => {
+    const source = loadKucoinServiceSource();
+    expect(source.includes('setHighRiskAuditMetricObserver')).toBe(true);
+    expect(source.includes('observeHighRiskAuditMetric(')).toBe(true);
+    expect(source.includes("normalizedAction.includes('approve')")).toBe(true);
+    expect(source.includes("normalizedAction.includes('reject')")).toBe(true);
+  });
+});

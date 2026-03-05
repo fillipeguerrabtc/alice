@@ -19,9 +19,10 @@ describe('training immutable audit monitoring guards', () => {
   it('exposes operational integrity endpoint and health snapshot', () => {
     const source = loadTrainingSource();
     expect(source.includes("app.get('/api/training/audit/integrity'")).toBe(true);
+    expect(source.includes("app.get('/api/training/audit/high-risk'")).toBe(true);
     expect(source.includes("requirePermission('training:fine_tuning_jobs:read')")).toBe(true);
     expect(source.includes('immutableAuditIntegrity: trainingImmutableAuditIntegrityState')).toBe(true);
     expect(source.includes("stream: 'training_governance'")).toBe(true);
+    expect(source.includes('alice_high_risk_audit_events_total')).toBe(true);
   });
 });
-
