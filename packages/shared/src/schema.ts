@@ -3413,6 +3413,8 @@ export const tradingOrders = pgTable(
     stopPrice: real("stop_price"),                     // Preço de stop (para stop orders)
     size: real("size").notNull(),                      // Quantidade (contratos)
     leverage: integer("leverage").default(1),          // Alavancagem (1-100x)
+    riskGateDecision: varchar("risk_gate_decision", { length: 16 }).default("allow"),
+    riskGateReason: text("risk_gate_reason"),
     filledSize: real("filled_size").default(0),        // Quantidade executada
     avgFilledPrice: real("avg_filled_price"),          // Preço médio de execução
     fees: real("fees").default(0),                     // Taxas pagas

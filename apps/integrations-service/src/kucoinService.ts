@@ -44,6 +44,23 @@ export function setHighRiskAuditMetricObserver(observer: HighRiskAuditMetricObse
   observeHighRiskAuditMetric = observer;
 }
 
+type TradingRiskGateMetricObserver = (reasonCode: string, decision: 'allow' | 'block') => void;
+let observeTradingRiskGateMetric: TradingRiskGateMetricObserver = () => {};
+
+export function setTradingRiskGateMetricObserver(observer: TradingRiskGateMetricObserver): void {
+  observeTradingRiskGateMetric = observer;
+}
+
+type TradingRealOrderAttemptMetricObserver = (
+  status: 'success' | 'blocked' | 'error',
+  marketType: string
+) => void;
+let observeTradingRealOrderAttemptMetric: TradingRealOrderAttemptMetricObserver = () => {};
+
+export function setTradingRealOrderAttemptMetricObserver(observer: TradingRealOrderAttemptMetricObserver): void {
+  observeTradingRealOrderAttemptMetric = observer;
+}
+
 // Símbolo default é resolvido dinamicamente via API KuCoin (sem hardcoded).
 
 // ============================================================================
@@ -726,66 +743,66 @@ export async function validateTradingAllowed(
   authContext: TradingAuthContext,
   orderSize: number,
   orderValue: number
-): Promise<{ allowed: boolean; reason?: string }> {
+): Promise<{ allowed: boolean; reason?: string; reasonCode: string; decision: 'allow' | 'block' }> {
+  const block = (reasonCode: string, reason: string) => {
+    observeTradingRiskGateMetric(reasonCode, 'block');
+    return { allowed: false as const, reason, reasonCode, decision: 'block' as const };
+  };
+
   // CORREÇÃO 17/12/2025: Validação defensiva contra NaN/Infinity
   // Garante que valores inválidos não passem silenciosamente pela validação
   if (!Number.isFinite(orderSize) || orderSize <= 0) {
-    return { 
-      allowed: false, 
-      reason: `Tamanho da ordem inválido: ${orderSize}. Deve ser um número positivo.` 
-    };
+    return block('invalid_order_size', `Tamanho da ordem inválido: ${orderSize}. Deve ser um número positivo.`);
   }
   
   if (!Number.isFinite(orderValue) || orderValue <= 0) {
-    return { 
-      allowed: false, 
-      reason: `Valor da ordem inválido: ${orderValue}. Deve ser um número positivo.` 
-    };
+    return block('invalid_order_value', `Valor da ordem inválido: ${orderValue}. Deve ser um número positivo.`);
   }
 
   const config = await getRiskConfig(authContext);
   
   if (!config) {
-    return { allowed: false, reason: 'Configuração de risco não encontrada. Configure antes de operar.' };
+    return block('risk_config_missing', 'Configuração de risco não encontrada. Configure antes de operar.');
   }
 
   if (!config.tradingEnabled) {
-    return { allowed: false, reason: 'Trading desabilitado para este tenant.' };
+    return block('trading_disabled', 'Trading desabilitado para este tenant.');
   }
 
   // Validar maxPositionSize com proteção contra NaN
   const maxPositionSize = Number(config.maxPositionSize);
   if (!Number.isFinite(maxPositionSize)) {
-    return { 
-      allowed: false, 
-      reason: `Configuração maxPositionSize inválida: ${config.maxPositionSize}. Contate administrador.` 
-    };
+    return block(
+      'invalid_max_position_size_config',
+      `Configuração maxPositionSize inválida: ${config.maxPositionSize}. Contate administrador.`
+    );
   }
   
   if (orderSize > maxPositionSize) {
-    return { 
-      allowed: false, 
-      reason: `Tamanho da ordem (${orderSize}) excede limite máximo (${maxPositionSize}).` 
-    };
+    return block(
+      'max_position_size_exceeded',
+      `Tamanho da ordem (${orderSize}) excede limite máximo (${maxPositionSize}).`
+    );
   }
 
   // Validar maxOrderValue com proteção contra NaN
   const maxOrderValue = Number(config.maxOrderValue);
   if (!Number.isFinite(maxOrderValue)) {
-    return { 
-      allowed: false, 
-      reason: `Configuração maxOrderValue inválida: ${config.maxOrderValue}. Contate administrador.` 
-    };
+    return block(
+      'invalid_max_order_value_config',
+      `Configuração maxOrderValue inválida: ${config.maxOrderValue}. Contate administrador.`
+    );
   }
   
   if (orderValue > maxOrderValue) {
-    return { 
-      allowed: false, 
-      reason: `Valor da ordem (${orderValue.toFixed(2)} USD) excede limite máximo (${maxOrderValue.toFixed(2)} USD).` 
-    };
+    return block(
+      'max_order_value_exceeded',
+      `Valor da ordem (${orderValue.toFixed(2)} USD) excede limite máximo (${maxOrderValue.toFixed(2)} USD).`
+    );
   }
 
-  return { allowed: true };
+  observeTradingRiskGateMetric('allowed', 'allow');
+  return { allowed: true, reasonCode: 'allowed', decision: 'allow' };
 }
 
 // ============================================================================
@@ -1239,12 +1256,17 @@ export async function createPendingOrderFromSignal(
       ? null
       : (overrides?.price ?? signal.suggestedPrice ?? currentPrice);
 
+    let pendingOrderRiskGateDecision: 'allow' | 'block' = 'allow';
+    let pendingOrderRiskGateReason: string | null = null;
+
     if (!closePosition) {
       const multiplier = marketType === 'futures' ? Number(contractMultiplier ?? 1) : 1;
       const orderValue = marketType === 'futures'
         ? size * multiplier * (price ?? currentPrice)
         : size * (price ?? currentPrice);
       const riskCheck = await validateTradingAllowed(authContext, size, orderValue);
+      pendingOrderRiskGateDecision = riskCheck.decision;
+      pendingOrderRiskGateReason = riskCheck.allowed ? null : (riskCheck.reason ?? riskCheck.reasonCode);
       if (!riskCheck.allowed) {
         return { success: false, error: riskCheck.reason };
       }
@@ -1274,6 +1296,8 @@ export async function createPendingOrderFromSignal(
           suggestedSize: suggestedSize ?? undefined,
         },
       },
+      riskGateDecision: pendingOrderRiskGateDecision,
+      riskGateReason: pendingOrderRiskGateReason,
     };
 
     const [order] = await db.insert(schema.tradingOrders).values(orderData).returning();
@@ -1409,6 +1433,14 @@ export async function updatePendingOrder(
 
     const riskCheck = await validateTradingAllowed(authContext, sizeValue, orderValue);
     if (!riskCheck.allowed) {
+      await db
+        .update(schema.tradingOrders)
+        .set({
+          riskGateDecision: riskCheck.decision,
+          riskGateReason: riskCheck.reason ?? riskCheck.reasonCode,
+          atualizadoEm: new Date(),
+        })
+        .where(eq(schema.tradingOrders.id, order.id));
       return { success: false, error: riskCheck.reason };
     }
 
@@ -1427,6 +1459,8 @@ export async function updatePendingOrder(
         leverage: updates.leverage ?? order.leverage,
         orderType,
         metadata: nextMetadata,
+        riskGateDecision: riskCheck.decision,
+        riskGateReason: null,
         atualizadoEm: new Date(),
       })
       .where(eq(schema.tradingOrders.id, order.id))
@@ -1515,6 +1549,15 @@ export async function approvePendingOrder(
         : order.size * priceForValidation;
       const riskCheck = await validateTradingAllowed(authContext, order.size, orderValue);
       if (!riskCheck.allowed) {
+        await db
+          .update(schema.tradingOrders)
+          .set({
+            riskGateDecision: riskCheck.decision,
+            riskGateReason: riskCheck.reason ?? riskCheck.reasonCode,
+            atualizadoEm: new Date(),
+          })
+          .where(eq(schema.tradingOrders.id, order.id));
+        observeTradingRealOrderAttemptMetric('blocked', marketType);
         return { success: false, error: riskCheck.reason };
       }
       clientOid = kucoinClient.generateClientOid();
@@ -1567,6 +1610,8 @@ export async function approvePendingOrder(
           kucoinOrderId,
           kucoinClientOid: clientOid,
         },
+        riskGateDecision: 'allow',
+        riskGateReason: null,
         atualizadoEm: new Date(),
       })
       .where(eq(schema.tradingOrders.id, order.id))
@@ -1592,9 +1637,12 @@ export async function approvePendingOrder(
       updated as unknown as Record<string, unknown>
     );
 
+    observeTradingRealOrderAttemptMetric('success', marketType);
+
     return { success: true, data: updated };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    observeTradingRealOrderAttemptMetric('error', 'unknown');
     logger.error({ error: errorMessage, orderId }, 'Erro ao aprovar ordem pendente');
     return { success: false, error: errorMessage };
   }
@@ -1779,6 +1827,7 @@ export async function createOrderFromSignal(
     // Validar limites de risco
     const riskCheck = await validateTradingAllowed(authContext, orderSizeForRisk, orderValue);
     if (!riskCheck.allowed) {
+      observeTradingRealOrderAttemptMetric('blocked', marketType);
       return { success: false, error: riskCheck.reason };
     }
 
@@ -1877,6 +1926,8 @@ export async function createOrderFromSignal(
         createdByUserId: authContext.userId,
         source: validSignalId ? 'signal' : 'manual',
       },
+      riskGateDecision: riskCheck.decision,
+      riskGateReason: null,
     };
 
     const [order] = await db
@@ -1905,6 +1956,8 @@ export async function createOrderFromSignal(
       'Ordem criada com sucesso'
     );
 
+    observeTradingRealOrderAttemptMetric('success', marketType);
+
     return { success: true, data: order, auditLogId };
   } catch (error) {
     // Falhas KuCoin (429/timeout/breaker open) devem ser mapeadas na borda HTTP (integrations-service).
@@ -1913,6 +1966,7 @@ export async function createOrderFromSignal(
       throw error;
     }
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    observeTradingRealOrderAttemptMetric('error', params.marketType ?? 'unknown');
     logger.error({ error: errorMessage, params }, 'Erro ao criar ordem');
     
     // Registrar falha no audit log
@@ -2962,6 +3016,8 @@ export default {
   getRiskConfig,
   upsertRiskConfig,
   validateTradingAllowed,
+  setTradingRiskGateMetricObserver,
+  setTradingRealOrderAttemptMetricObserver,
   
   // Sinais
   createSignal,

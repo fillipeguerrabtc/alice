@@ -2395,11 +2395,38 @@ const highRiskAuditEventsTotal = new PromCounter({
   registers: [metrics.registry],
 });
 
+const tradingRiskGateBlockTotal = new PromCounter({
+  name: 'alice_trading_risk_gate_block_total',
+  help: 'Total de bloqueios aplicados pelo risk gate de trading',
+  labelNames: ['reason'] as const,
+  registers: [metrics.registry],
+});
+
+const tradingRealOrderAttemptTotal = new PromCounter({
+  name: 'alice_trading_real_order_attempt_total',
+  help: 'Total de tentativas de execucao de ordem real',
+  labelNames: ['status', 'market_type'] as const,
+  registers: [metrics.registry],
+});
+
 kucoinService.setHighRiskAuditMetricObserver((eventType, result) => {
   highRiskAuditEventsTotal.inc({
     service: 'integrations-service',
     event_type: eventType,
     result,
+  });
+});
+
+kucoinService.setTradingRiskGateMetricObserver((reasonCode, decision) => {
+  if (decision === 'block') {
+    tradingRiskGateBlockTotal.inc({ reason: reasonCode });
+  }
+});
+
+kucoinService.setTradingRealOrderAttemptMetricObserver((status, marketType) => {
+  tradingRealOrderAttemptTotal.inc({
+    status,
+    market_type: marketType,
   });
 });
 
