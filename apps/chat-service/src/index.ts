@@ -130,7 +130,7 @@ import {
 // - OpenAI API: Vision (gpt-4.1), ASR (gpt-4o-transcribe), Geração de imagens (gpt-image-1)
 import { initTradingOrchestrator } from './trading-orchestrator.js';
 import { checkResponseCache, isGreeting as isGreetingMessage } from './response-cache.js';
-import { loadWsAgentAuthGovernancePolicyFromEnv } from './ws-agent-auth-governance.js';
+import { loadWsAgentAuthGovernancePolicyFromEnv, resolveWsAgentAuthDecision } from './ws-agent-auth-governance.js';
 
 // Logger centralizado: JSON em produção, pino-pretty em desenvolvimento
 const logger = createLogger('chat-service');
@@ -16130,10 +16130,13 @@ agentWss.on('connection', async (ws, req) => {
   const hasWsToken = normalizedWsToken.length > 0;
   let tokenPayload = hasWsToken ? verifyWsToken(normalizedWsToken, 'ws-agent') : null;
   let authRejectedReason: 'missing_token' | 'invalid_token' | 'legacy_session_invalid' | 'missing_token_fallback_disabled' | null = null;
+  const authDecision = resolveWsAgentAuthDecision({
+    hasWsToken,
+    tokenPayloadValid: Boolean(tokenPayload),
+    policy: WS_AGENT_AUTH_GOVERNANCE,
+  });
 
-  if (hasWsToken && !tokenPayload) {
-    authRejectedReason = 'invalid_token';
-  } else if (!hasWsToken && WS_AGENT_AUTH_GOVERNANCE.allowLegacySessionFallback) {
+  if (authDecision.shouldAttemptLegacySessionFallback) {
     // Compatibilidade controlada por governanca (opt-in):
     // usa sessao apenas para clientes legados sem suporte a ws-agent token.
     const sessionAuth = await authenticateWebSocketConnection(req.headers.cookie, req.headers.origin);
@@ -16155,10 +16158,8 @@ agentWss.on('connection', async (ws, req) => {
       authRejectedReason = 'legacy_session_invalid';
       wsAgentLegacySessionFallbackTotal.inc({ result: 'failure' });
     }
-  } else if (!hasWsToken && WS_AGENT_AUTH_GOVERNANCE.requireWsAgentToken) {
-    authRejectedReason = 'missing_token';
-  } else if (!hasWsToken) {
-    authRejectedReason = 'missing_token_fallback_disabled';
+  } else if (authDecision.rejectReason) {
+    authRejectedReason = authDecision.rejectReason;
   }
 
   if (!tokenPayload) {

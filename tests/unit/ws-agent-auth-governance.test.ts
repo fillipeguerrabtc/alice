@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { loadWsAgentAuthGovernancePolicyFromEnv } from '../../apps/chat-service/src/ws-agent-auth-governance';
+import {
+  loadWsAgentAuthGovernancePolicyFromEnv,
+  resolveWsAgentAuthDecision,
+} from '../../apps/chat-service/src/ws-agent-auth-governance';
 
 describe('ws-agent auth governance', () => {
   it('defaults to strict token requirement (fail-closed)', () => {
@@ -41,5 +44,55 @@ describe('ws-agent auth governance', () => {
     });
     expect(policy.requireWsAgentToken).toBe(true);
     expect(policy.allowLegacySessionFallback).toBe(false);
+  });
+});
+
+describe('ws-agent auth decision resolver', () => {
+  const strictPolicy = loadWsAgentAuthGovernancePolicyFromEnv({});
+  const migrationPolicy = loadWsAgentAuthGovernancePolicyFromEnv({
+    WS_AGENT_REQUIRE_TOKEN: 'false',
+  });
+
+  it('accepts valid ws-agent token payload', () => {
+    const decision = resolveWsAgentAuthDecision({
+      hasWsToken: true,
+      tokenPayloadValid: true,
+      policy: strictPolicy,
+    });
+    expect(decision.shouldAcceptTokenPayload).toBe(true);
+    expect(decision.shouldAttemptLegacySessionFallback).toBe(false);
+    expect(decision.rejectReason).toBeNull();
+  });
+
+  it('rejects invalid token without allowing legacy fallback', () => {
+    const decision = resolveWsAgentAuthDecision({
+      hasWsToken: true,
+      tokenPayloadValid: false,
+      policy: migrationPolicy,
+    });
+    expect(decision.shouldAcceptTokenPayload).toBe(false);
+    expect(decision.shouldAttemptLegacySessionFallback).toBe(false);
+    expect(decision.rejectReason).toBe('invalid_token');
+  });
+
+  it('requires token by default when none is provided', () => {
+    const decision = resolveWsAgentAuthDecision({
+      hasWsToken: false,
+      tokenPayloadValid: false,
+      policy: strictPolicy,
+    });
+    expect(decision.shouldAttemptLegacySessionFallback).toBe(false);
+    expect(decision.rejectReason).toBe('missing_token');
+  });
+
+  it('allows legacy session fallback only in migration policy mode', () => {
+    const decision = resolveWsAgentAuthDecision({
+      hasWsToken: false,
+      tokenPayloadValid: false,
+      policy: migrationPolicy,
+    });
+    expect(decision.shouldAcceptTokenPayload).toBe(false);
+    expect(decision.shouldAttemptLegacySessionFallback).toBe(true);
+    expect(decision.rejectReason).toBeNull();
   });
 });

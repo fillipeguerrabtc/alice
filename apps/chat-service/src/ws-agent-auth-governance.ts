@@ -3,6 +3,16 @@ export type WsAgentAuthGovernancePolicy = {
   allowLegacySessionFallback: boolean;
 };
 
+export type WsAgentAuthDecision = {
+  shouldAcceptTokenPayload: boolean;
+  shouldAttemptLegacySessionFallback: boolean;
+  rejectReason:
+    | 'missing_token'
+    | 'invalid_token'
+    | 'missing_token_fallback_disabled'
+    | null;
+};
+
 function parseEnvBoolean(rawValue: string | undefined, defaultValue: boolean): boolean {
   if (typeof rawValue === 'undefined') return defaultValue;
   const normalized = rawValue.trim().toLowerCase();
@@ -22,5 +32,48 @@ export function loadWsAgentAuthGovernancePolicyFromEnv(
   return {
     requireWsAgentToken,
     allowLegacySessionFallback,
+  };
+}
+
+export function resolveWsAgentAuthDecision(params: {
+  hasWsToken: boolean;
+  tokenPayloadValid: boolean;
+  policy: WsAgentAuthGovernancePolicy;
+}): WsAgentAuthDecision {
+  if (params.hasWsToken) {
+    if (params.tokenPayloadValid) {
+      return {
+        shouldAcceptTokenPayload: true,
+        shouldAttemptLegacySessionFallback: false,
+        rejectReason: null,
+      };
+    }
+    return {
+      shouldAcceptTokenPayload: false,
+      shouldAttemptLegacySessionFallback: false,
+      rejectReason: 'invalid_token',
+    };
+  }
+
+  if (params.policy.allowLegacySessionFallback) {
+    return {
+      shouldAcceptTokenPayload: false,
+      shouldAttemptLegacySessionFallback: true,
+      rejectReason: null,
+    };
+  }
+
+  if (params.policy.requireWsAgentToken) {
+    return {
+      shouldAcceptTokenPayload: false,
+      shouldAttemptLegacySessionFallback: false,
+      rejectReason: 'missing_token',
+    };
+  }
+
+  return {
+    shouldAcceptTokenPayload: false,
+    shouldAttemptLegacySessionFallback: false,
+    rejectReason: 'missing_token_fallback_disabled',
   };
 }
