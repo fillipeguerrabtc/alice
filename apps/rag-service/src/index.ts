@@ -1019,6 +1019,20 @@ function parseEnvFloat(envValue: string | undefined, defaultValue: number, varNa
 const WORKER_POLL_MS = parseEnvInt(process.env.WORKER_POLL_MS, 3000, 'WORKER_POLL_MS');
 const WORKER_CONCURRENCY = parseEnvInt(process.env.WORKER_CONCURRENCY, 2, 'WORKER_CONCURRENCY');
 const WORKER_MAX_ATTEMPTS = parseEnvInt(process.env.WORKER_MAX_ATTEMPTS, 3, 'WORKER_MAX_ATTEMPTS');
+const WEB_CRAWL_REQUIRE_ALLOWLIST = parseEnvBool(
+  process.env.WEB_CRAWL_REQUIRE_ALLOWLIST,
+  process.env.NODE_ENV === 'production',
+  'WEB_CRAWL_REQUIRE_ALLOWLIST'
+);
+const WEB_CRAWL_ALLOWED_DOMAINS = (process.env.WEB_CRAWL_ALLOWED_DOMAINS ?? '')
+  .split(',')
+  .map((domain) => domain.trim().toLowerCase())
+  .filter(Boolean);
+if (WEB_CRAWL_REQUIRE_ALLOWLIST && WEB_CRAWL_ALLOWED_DOMAINS.length === 0) {
+  const errorMsg = 'WEB_CRAWL_ALLOWED_DOMAINS e obrigatorio quando WEB_CRAWL_REQUIRE_ALLOWLIST=true.';
+  logger.error({ requireAllowlist: WEB_CRAWL_REQUIRE_ALLOWLIST }, errorMsg);
+  throw new Error(errorMsg);
+}
 const DOC_PROCESS_MAX_ATTEMPTS = parseEnvInt(process.env.DOC_PROCESS_MAX_ATTEMPTS, 3, 'DOC_PROCESS_MAX_ATTEMPTS');
 const DOC_CHUNK_SIZE_CHARS = parseEnvInt(process.env.DOC_CHUNK_SIZE_CHARS, 1000, 'DOC_CHUNK_SIZE_CHARS');
 const DOC_CHUNK_OVERLAP_CHARS_RAW = parseEnvInt(process.env.DOC_CHUNK_OVERLAP_CHARS, 200, 'DOC_CHUNK_OVERLAP_CHARS');
@@ -1588,6 +1602,8 @@ function startTenantScopedWorkers(workerTenantId: string): void {
     maxAttempts: WORKER_MAX_ATTEMPTS,
     searxngUrl: SEARXNG_URL,
     searxngKey: SEARXNG_SECRET_KEY,
+    allowedDomains: WEB_CRAWL_ALLOWED_DOMAINS,
+    requireAllowlist: WEB_CRAWL_REQUIRE_ALLOWLIST,
   });
 
   logger.info({
@@ -1595,6 +1611,8 @@ function startTenantScopedWorkers(workerTenantId: string): void {
     concurrency: WORKER_CONCURRENCY,
     pollIntervalMs: WORKER_POLL_MS,
     maxAttempts: WORKER_MAX_ATTEMPTS,
+    webCrawlRequireAllowlist: WEB_CRAWL_REQUIRE_ALLOWLIST,
+    webCrawlAllowlistSize: WEB_CRAWL_ALLOWED_DOMAINS.length,
   }, 'Workers tenant-scoped iniciados (learning + web-crawl)');
 }
 

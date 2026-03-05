@@ -82,6 +82,25 @@ function isBlockedHostname(hostname: string): boolean {
   return false;
 }
 
+function normalizeDomain(domain: string): string {
+  return domain.trim().toLowerCase().replace(/^\.+/, '').replace(/\.+$/, '');
+}
+
+export function isHostnameAllowedByList(hostname: string, allowedDomains: readonly string[]): boolean {
+  const normalizedHost = normalizeDomain(hostname);
+  if (!normalizedHost) return false;
+
+  const normalizedAllowed = allowedDomains
+    .map((domain) => normalizeDomain(domain))
+    .filter((domain) => domain.length > 0);
+
+  if (!normalizedAllowed.length) return false;
+
+  return normalizedAllowed.some((allowed) => (
+    normalizedHost === allowed || normalizedHost.endsWith(`.${allowed}`)
+  ));
+}
+
 export async function assertSafeOutboundUrl(
   rawUrl: string,
   lookupHost: HostLookupFn = defaultLookup

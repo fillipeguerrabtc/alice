@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { assertSafeOutboundUrl, isPrivateOrReservedIp, type HostLookupFn } from '../../apps/rag-service/src/url-security';
+import {
+  assertSafeOutboundUrl,
+  isHostnameAllowedByList,
+  isPrivateOrReservedIp,
+  type HostLookupFn,
+} from '../../apps/rag-service/src/url-security';
 
 describe('rag url security', () => {
   it('blocks non-http protocols', async () => {
@@ -54,5 +59,14 @@ describe('rag url security', () => {
     expect(isPrivateOrReservedIp('127.0.0.1')).toBe(true);
     expect(isPrivateOrReservedIp('8.8.8.8')).toBe(false);
     expect(isPrivateOrReservedIp('::1')).toBe(true);
+  });
+
+  it('matches hostname against allowlist entries and subdomains', () => {
+    const allowlist = ['example.com', 'trusted.org'];
+    expect(isHostnameAllowedByList('example.com', allowlist)).toBe(true);
+    expect(isHostnameAllowedByList('api.example.com', allowlist)).toBe(true);
+    expect(isHostnameAllowedByList('evil-example.com', allowlist)).toBe(false);
+    expect(isHostnameAllowedByList('internal.trusted.org', allowlist)).toBe(true);
+    expect(isHostnameAllowedByList('malicious.org', allowlist)).toBe(false);
   });
 });

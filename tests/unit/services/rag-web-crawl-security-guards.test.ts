@@ -10,8 +10,11 @@ function loadWorkerSource(): string {
 describe('rag web-crawl worker security guards', () => {
   it('validates outbound crawl urls before fetching', () => {
     const source = loadWorkerSource();
-    expect(source.includes("import { assertSafeOutboundUrl } from '../url-security.js';")).toBe(true);
+    expect(source.includes("import { assertSafeOutboundUrl, isHostnameAllowedByList } from '../url-security.js';")).toBe(true);
+    expect(source.includes('function assertAllowedDomain(url: URL): void {')).toBe(true);
+    expect(source.includes('if (!isHostnameAllowedByList(url.hostname, config.allowedDomains)) {')).toBe(true);
     expect(source.includes('const currentUrl = await assertSafeOutboundUrl(url);')).toBe(true);
+    expect(source.includes('assertAllowedDomain(currentUrl);')).toBe(true);
   });
 
   it('enforces manual redirect handling with safe revalidation', () => {

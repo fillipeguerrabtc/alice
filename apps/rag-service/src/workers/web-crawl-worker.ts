@@ -4,7 +4,7 @@ import { createLogger } from '@alice/logger';
 import type { Database } from '@alice/database';
 import { eq, and, asc, sql, schema } from '@alice/database';
 import * as cheerio from 'cheerio';
-import { assertSafeOutboundUrl } from '../url-security.js';
+import { assertSafeOutboundUrl, isHostnameAllowedByList } from '../url-security.js';
 
 const logger = createLogger('web-crawl-worker');
 
@@ -15,6 +15,8 @@ interface WebCrawlWorkerConfig {
   maxAttempts: number;
   searxngUrl: string;
   searxngKey?: string;
+  allowedDomains: string[];
+  requireAllowlist: boolean;
 }
 
 const DEFAULT_USER_AGENT = 'AliceCrawler/1.0 (+https://yesyoudeserve.duckdns.org)';
@@ -25,6 +27,20 @@ type WebCrawlRequest = typeof schema.webCrawlRequests.$inferSelect;
 
 export function startWebCrawlWorker(db: Database, config: WebCrawlWorkerConfig) {
   const limit = pLimit(config.concurrency);
+  
+  function assertAllowedDomain(url: URL): void {
+    if (!config.requireAllowlist) {
+      return;
+    }
+
+    if (!config.allowedDomains.length) {
+      throw new Error('Allowlist de dominios de crawl esta vazia');
+    }
+
+    if (!isHostnameAllowedByList(url.hostname, config.allowedDomains)) {
+      throw new Error('Dominio fora da allowlist de crawl');
+    }
+  }
   // Nota: crawl é feito via HTTP direto; SearXNG não é usado como proxy aqui.
 
   async function fetchAndMarkNextRequest(): Promise<WebCrawlRequest | null> {
@@ -128,6 +144,7 @@ export function startWebCrawlWorker(db: Database, config: WebCrawlWorkerConfig) 
     }
 
     const currentUrl = await assertSafeOutboundUrl(url);
+    assertAllowedDomain(currentUrl);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
