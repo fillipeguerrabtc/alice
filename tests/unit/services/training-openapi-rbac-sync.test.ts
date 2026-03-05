@@ -13,6 +13,7 @@ const CRITICAL_TRAINING_RBAC_CONTRACTS: Array<{
   { method: 'post', openapiPath: '/api/training/jobs', requiredPermission: 'training:fine_tuning_jobs:start' },
   { method: 'get', openapiPath: '/api/training/jobs/{id}', requiredPermission: 'training:fine_tuning_jobs:read' },
   { method: 'get', openapiPath: '/api/training/jobs/{id}/audit-trail', requiredPermission: 'training:fine_tuning_jobs:read' },
+  { method: 'get', openapiPath: '/api/training/jobs/{id}/promotion-approvals', requiredPermission: 'training:fine_tuning_jobs:read' },
   { method: 'post', openapiPath: '/api/training/jobs/{id}/promotion-approval', requiredPermission: 'training:fine_tuning_jobs:start' },
   { method: 'post', openapiPath: '/api/training/jobs/{id}/promote', requiredPermission: 'training:fine_tuning_jobs:start' },
   { method: 'post', openapiPath: '/api/training/jobs/{id}/rollback', requiredPermission: 'training:fine_tuning_jobs:start' },

@@ -9,6 +9,7 @@ const CRITICAL_OPENAPI_ROUTES: Array<{ method: HttpMethod; path: string }> = [
   { method: 'post', path: '/api/training/jobs' },
   { method: 'get', path: '/api/training/jobs/{id}' },
   { method: 'get', path: '/api/training/jobs/{id}/audit-trail' },
+  { method: 'get', path: '/api/training/jobs/{id}/promotion-approvals' },
   { method: 'post', path: '/api/training/jobs/{id}/promotion-approval' },
   { method: 'post', path: '/api/training/jobs/{id}/promote' },
   { method: 'post', path: '/api/training/jobs/{id}/rollback' },
