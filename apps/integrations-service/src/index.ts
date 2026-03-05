@@ -177,6 +177,57 @@ const TRADING_OPERATION_INTENTS: TradingOperationIntent[] = [
 ];
 const TRADING_LLM_PROMPT_MODE = (process.env.TRADING_LLM_PROMPT_MODE ?? 'compact') as 'compact' | 'verbose';
 
+function verifyImmutableChain(events: Array<{
+  chainPosition: number;
+  prevEventHash: string | null;
+  eventHash: string;
+}>): {
+  ok: boolean;
+  checkedEvents: number;
+  brokenAtChainPosition: number | null;
+  reason: string | null;
+} {
+  if (events.length === 0) {
+    return {
+      ok: true,
+      checkedEvents: 0,
+      brokenAtChainPosition: null,
+      reason: null,
+    };
+  }
+
+  let previousHash: string | null = null;
+  let previousPosition = 0;
+  for (const event of events) {
+    const expectedPosition = previousPosition + 1;
+    if (event.chainPosition !== expectedPosition) {
+      return {
+        ok: false,
+        checkedEvents: events.length,
+        brokenAtChainPosition: event.chainPosition,
+        reason: `CHAIN_POSITION_MISMATCH expected=${expectedPosition} actual=${event.chainPosition}`,
+      };
+    }
+    if (event.prevEventHash !== previousHash) {
+      return {
+        ok: false,
+        checkedEvents: events.length,
+        brokenAtChainPosition: event.chainPosition,
+        reason: 'PREV_HASH_MISMATCH',
+      };
+    }
+    previousHash = event.eventHash;
+    previousPosition = event.chainPosition;
+  }
+
+  return {
+    ok: true,
+    checkedEvents: events.length,
+    brokenAtChainPosition: null,
+    reason: null,
+  };
+}
+
 // ============================================================================
 // GRAFANA API (Observability) - Integração enterprise
 // ============================================================================
@@ -13545,6 +13596,88 @@ app.post('/api/integrations/trading/orders/:id/reject', requirePermission('integ
     if (sendKucoinErrorResponse(res, error)) return;
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao rejeitar ordem pendente');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/audit/:entityType/:id - Trilha de auditoria com prova de integridade
+app.get('/api/integrations/trading/audit/:entityType/:id', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    const paramsSchema = z.object({
+      entityType: z.enum(['signal', 'order', 'risk_config', 'position']),
+      id: z.string().uuid(),
+    });
+    const paramsResult = paramsSchema.safeParse(req.params);
+    if (!paramsResult.success) {
+      res.status(400).json({ error: 'Parâmetros inválidos', details: paramsResult.error.flatten() });
+      return;
+    }
+
+    const db = getDatabase();
+    const { entityType, id } = paramsResult.data;
+
+    const events = await db.query.tradingAuditLog.findMany({
+      where: and(
+        eq(schema.tradingAuditLog.tenantId, authContext.tenantId),
+        eq(schema.tradingAuditLog.entityType, entityType),
+        eq(schema.tradingAuditLog.entityId, id),
+      ),
+      orderBy: [desc(schema.tradingAuditLog.criadoEm)],
+      limit: 200,
+    });
+
+    const immutableStreamKey = `${entityType}:${id}`;
+    const immutableEvents = await db.query.immutableAuditEvents.findMany({
+      where: and(
+        eq(schema.immutableAuditEvents.tenantId, authContext.tenantId),
+        eq(schema.immutableAuditEvents.stream, 'trading_operations'),
+        eq(schema.immutableAuditEvents.streamKey, immutableStreamKey),
+      ),
+      orderBy: [asc(schema.immutableAuditEvents.chainPosition)],
+      limit: 500,
+    });
+
+    const immutableIntegrity = verifyImmutableChain(
+      immutableEvents.map((event) => ({
+        chainPosition: event.chainPosition,
+        prevEventHash: event.prevEventHash,
+        eventHash: event.eventHash,
+      }))
+    );
+
+    res.json({
+      success: true,
+      entityType,
+      entityId: id,
+      events,
+      immutableAudit: {
+        stream: 'trading_operations',
+        streamKey: immutableStreamKey,
+        integrity: immutableIntegrity,
+        events: immutableEvents.map((event) => ({
+          id: event.id,
+          chainPosition: event.chainPosition,
+          eventType: event.eventType,
+          resourceType: event.resourceType,
+          resourceId: event.resourceId,
+          payload: event.payload,
+          prevEventHash: event.prevEventHash,
+          eventHash: event.eventHash,
+          occurredAt: event.occurredAt,
+          createdAt: event.createdAt,
+        })),
+      },
+    });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao consultar trilha de auditoria de trading');
     res.status(500).json({ error: errorMessage });
   }
 });
