@@ -1041,3 +1041,168 @@ groups:
         labels:
           severity: warning
           service: integrations-service
+
+  - orgId: 1
+    name: Immutable Audit Integrity Alerts
+    folder: Alice Enterprise
+    interval: 60s
+    rules:
+      - uid: training-immutable-audit-broken
+        title: Training Ledger Imutavel com Integridade Quebrada
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: max(alice_training_immutable_audit_integrity_status) or on() vector(0)
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: lt
+                    params: [1]
+              refId: C
+        noDataState: Alerting
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: "Integridade do ledger imutavel quebrada no training-service"
+          description: "Uma ou mais streams do hash-chain de auditoria falharam na verificacao de integridade."
+        labels:
+          severity: critical
+          service: training-service
+          journey: model-governance
+
+      - uid: integrations-immutable-audit-broken
+        title: Integrations Ledger Imutavel com Integridade Quebrada
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: max(alice_integrations_immutable_audit_integrity_status) or on() vector(0)
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: lt
+                    params: [1]
+              refId: C
+        noDataState: Alerting
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: "Integridade do ledger imutavel quebrada no integrations-service"
+          description: "Uma ou mais streams do hash-chain de auditoria de trading falharam na verificacao de integridade."
+        labels:
+          severity: critical
+          service: integrations-service
+          journey: model-governance
+
+      - uid: training-immutable-audit-stale
+        title: Training Verificacao de Integridade Imutavel Sem Atualizacao
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 1800
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: time() - (max(alice_training_immutable_audit_integrity_last_check_timestamp_seconds) or on() vector(0))
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [900]
+              refId: C
+        noDataState: Alerting
+        execErrState: Error
+        for: 10m
+        annotations:
+          summary: "Training sem verificacao recente de integridade do ledger imutavel"
+          description: "Nao houve verificacao de integridade do hash-chain por mais de 15 minutos."
+        labels:
+          severity: warning
+          service: training-service
+          journey: model-governance
+
+      - uid: integrations-immutable-audit-stale
+        title: Integrations Verificacao de Integridade Imutavel Sem Atualizacao
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 1800
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: time() - (max(alice_integrations_immutable_audit_integrity_last_check_timestamp_seconds) or on() vector(0))
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [900]
+              refId: C
+        noDataState: Alerting
+        execErrState: Error
+        for: 10m
+        annotations:
+          summary: "Integrations sem verificacao recente de integridade do ledger imutavel"
+          description: "Nao houve verificacao de integridade do hash-chain por mais de 15 minutos."
+        labels:
+          severity: warning
+          service: integrations-service
+          journey: model-governance
