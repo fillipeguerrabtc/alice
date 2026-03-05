@@ -393,16 +393,23 @@ Permitir que o Chat consulte e **atualize dashboards** do Grafana com RBAC, audi
 - **Jobs completados:** `alice_training_completed_jobs_total`
 - **Jobs falhos:** `alice_training_failed_jobs_total`
 - **Datasets totais:** `alice_training_datasets_total`
+- **Integridade ledger imutavel:** `alice_training_immutable_audit_integrity_status`, `alice_training_immutable_audit_integrity_broken_streams`
+- **Saude de filas training/trading:** `alice_training_fine_tuning_queue_pending`, `alice_training_fine_tuning_queue_dlq_total`, `trading_queue_pending`, `trading_dlq_total`
 
 **Painéis:**
 
 1. **KPIs Training:** jobs ativos, completados e falhos
 2. **Datasets:** volume total e evolução
-3. **GPU/VRAM:** utilização durante o treinamento
+3. **GPU/VRAM:** utilizacao durante o treinamento
+4. **Immutable Audit Integrity:** status da hash-chain, streams quebradas, checks/hora
+5. **Training & Trading Queue Health:** backlog e DLQ das filas criticas
 
 **Alertas:**
 
-- Jobs falhos com aumento contínuo
+- Jobs falhos com aumento continuo
+- Integridade do ledger imutavel quebrada (training/integrations)
+- Check de integridade imutavel sem atualizacao (>15 min)
+- Backlog/DLQ de fine-tuning e trading workers
 
 ---
 
@@ -579,6 +586,20 @@ Permitir que o Chat consulte e **atualize dashboards** do Grafana com RBAC, audi
 1. **KuCoin Circuit Breaker Open** - Circuit breaker OPEN > 5min
 2. **KuCoin High Latency (P95)** - P95 > 1s por 5min
 3. **KuCoin High Error Rate** - taxa de erro > 10% por 5min
+
+#### Training Governance Alerts
+
+1. **Training Immutable Ledger Broken** - `alice_training_immutable_audit_integrity_status < 1`
+2. **Integrations Immutable Ledger Broken** - `alice_integrations_immutable_audit_integrity_status < 1`
+3. **Training Immutable Check Stale** - sem check por > 15min
+4. **Integrations Immutable Check Stale** - sem check por > 15min
+
+#### Queue SLO Alerts
+
+1. **Training Fine-tuning Queue Backlog** - `sum(alice_training_fine_tuning_queue_pending) > 100` por 15min
+2. **Training Fine-tuning DLQ Growth** - `sum(alice_training_fine_tuning_queue_dlq_total) > 0` por 10min
+3. **Trading Worker Queue Backlog** - `sum(trading_queue_pending) > 50` por 15min
+4. **Trading Worker DLQ Growth** - `sum(trading_dlq_total) > 0` por 10min
 
 #### GPU Alerts
 
