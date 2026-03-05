@@ -273,6 +273,7 @@ export const trainingServicePaths = {
     get: {
       summary: 'List fine-tuning jobs',
       tags: ['Training Jobs'],
+      'x-required-permission': 'training:fine_tuning_jobs:read',
       parameters: [{ name: 'tenantId', in: 'query', schema: { type: 'string', format: 'uuid' } }],
       responses: {
         200: {
@@ -297,6 +298,7 @@ export const trainingServicePaths = {
     post: {
       summary: 'Create custom scoped fine-tuning job',
       tags: ['Training Jobs'],
+      'x-required-permission': 'training:fine_tuning_jobs:start',
       parameters: [
         {
           name: 'x-idempotency-key',
@@ -353,6 +355,7 @@ export const trainingServicePaths = {
     get: {
       summary: 'Get job details',
       tags: ['Training Jobs'],
+      'x-required-permission': 'training:fine_tuning_jobs:read',
       parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
       responses: {
         200: {
@@ -374,6 +377,7 @@ export const trainingServicePaths = {
     delete: {
       summary: 'Cancel one fine-tuning job',
       tags: ['Training Jobs'],
+      'x-required-permission': 'training:fine_tuning_jobs:cancel',
       parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
       responses: {
         200: { description: 'Job cancelled' },
@@ -402,6 +406,7 @@ export const trainingServicePaths = {
     get: {
       summary: 'Get governance audit trail for job',
       tags: ['Training Jobs'],
+      'x-required-permission': 'training:fine_tuning_jobs:read',
       parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
       responses: {
         200: {
@@ -427,6 +432,7 @@ export const trainingServicePaths = {
     post: {
       summary: 'Register promotion approval decision',
       tags: ['Training Jobs'],
+      'x-required-permission': 'training:fine_tuning_jobs:start',
       parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
       requestBody: {
         required: true,
@@ -453,6 +459,7 @@ export const trainingServicePaths = {
     post: {
       summary: 'Promote completed job to active model',
       tags: ['Training Jobs'],
+      'x-required-permission': 'training:fine_tuning_jobs:start',
       parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
       responses: {
         200: { description: 'Promotion completed or idempotent' },
@@ -464,6 +471,7 @@ export const trainingServicePaths = {
     post: {
       summary: 'Rollback active model version for scope',
       tags: ['Training Jobs'],
+      'x-required-permission': 'training:fine_tuning_jobs:start',
       parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
       requestBody: {
         required: true,
@@ -561,6 +569,7 @@ export const trainingServicePaths = {
     get: {
       summary: 'Get auto-learning status',
       tags: ['Auto-Learning'],
+      'x-required-permission': 'training:training_data:read',
       parameters: [{ name: 'tenantId', in: 'query', schema: { type: 'string', format: 'uuid' } }],
       responses: { 200: { description: 'Auto-learning status' } },
     },
@@ -569,6 +578,7 @@ export const trainingServicePaths = {
     get: {
       summary: 'Get objective training execution mode definitions',
       tags: ['Auto-Learning'],
+      'x-required-permission': 'training:training_data:read',
       parameters: [{ name: 'tenantId', in: 'query', schema: { type: 'string', format: 'uuid' } }],
       responses: {
         200: {
@@ -594,6 +604,7 @@ export const trainingServicePaths = {
     post: {
       summary: 'Configure auto-learning schedule',
       tags: ['Auto-Learning'],
+      'x-required-permission': 'training:training_data:manage',
       requestBody: {
         required: true,
         content: {
@@ -623,6 +634,7 @@ export const trainingServicePaths = {
     post: {
       summary: 'Start on-demand training run',
       tags: ['Auto-Learning'],
+      'x-required-permission': 'training:training_data:manage',
       parameters: [
         {
           name: 'x-idempotency-key',
@@ -688,6 +700,7 @@ export const trainingServicePaths = {
     get: {
       summary: 'Get current training run status',
       tags: ['Auto-Learning'],
+      'x-required-permission': 'training:training_data:read',
       parameters: [{ name: 'tenantId', in: 'query', schema: { type: 'string', format: 'uuid' } }],
       responses: {
         200: {
@@ -705,6 +718,7 @@ export const trainingServicePaths = {
     get: {
       summary: 'Get fine-tuning queue/governance status',
       tags: ['Auto-Learning'],
+      'x-required-permission': 'training:fine_tuning_jobs:read',
       parameters: [{ name: 'tenantId', in: 'query', schema: { type: 'string', format: 'uuid' } }],
       responses: {
         200: {
@@ -722,6 +736,7 @@ export const trainingServicePaths = {
     get: {
       summary: 'Get training run history',
       tags: ['Auto-Learning'],
+      'x-required-permission': 'training:training_data:read',
       parameters: [
         { name: 'tenantId', in: 'query', schema: { type: 'string', format: 'uuid' } },
         { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 } },
@@ -742,6 +757,7 @@ export const trainingServicePaths = {
     delete: {
       summary: 'Cancel one in-flight training run',
       tags: ['Auto-Learning'],
+      'x-required-permission': 'training:training_data:manage',
       requestBody: {
         required: true,
         content: {
