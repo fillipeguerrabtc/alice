@@ -57,6 +57,20 @@ describe('Integrations Service - Stripe', () => {
 // ============================================================================
 
 describe('Integrations Service - OpenAPI (contratos críticos)', () => {
+  it('deve expor o endpoint GET /api/integrations/health', () => {
+    expect(Object.keys(integrationsServicePaths)).toContain('/api/integrations/health');
+  });
+
+  it('deve documentar /api/integrations/health como endpoint autenticado com RBAC', () => {
+    const healthGet = integrationsServicePaths['/api/integrations/health']?.get as
+      | { security?: unknown[]; responses?: Record<string, unknown> }
+      | undefined;
+    expect(healthGet).toBeDefined();
+    expect(healthGet?.security).toBeUndefined();
+    expect(healthGet?.responses).toHaveProperty('401');
+    expect(healthGet?.responses).toHaveProperty('403');
+  });
+
   it('deve expor o endpoint GET /api/integrations/trading/ws/status', () => {
     expect(Object.keys(integrationsServicePaths)).toContain('/api/integrations/trading/ws/status');
   });

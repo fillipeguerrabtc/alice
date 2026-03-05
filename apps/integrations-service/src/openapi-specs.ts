@@ -10,9 +10,10 @@ export const integrationsServicePaths = {
     get: {
       summary: 'Status operacional das integrações',
       tags: ['Health'],
-      security: [],
       responses: {
         200: { description: 'Status das integrações' },
+        401: { description: 'Não autenticado' },
+        403: { description: 'Sem permissão para visualizar integrações' },
         500: { description: 'Falha ao verificar integrações' },
       },
     },
