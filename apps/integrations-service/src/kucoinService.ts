@@ -17,7 +17,7 @@
 
 import { createLogger } from '@alice/logger';
 import { getDatabase, schema, eq, and, desc, sql } from '@alice/database';
-import { getRedisClient } from '@alice/shared-utils';
+import { appendImmutableAuditEventWithExecutor, getRedisClient } from '@alice/shared-utils';
 // CORREÇÃO 19/12/2025: Remover tipos não utilizados (no-unused-vars)
 // TradingPosition, TradingAuditLog, InsertTradingPosition removidos
 import {
@@ -532,26 +532,52 @@ async function logTradingAction(
   newState?: Record<string, unknown>
 ): Promise<string> {
   const db = getDatabase();
-  
-  // CORREÇÃO: Mesclar details com newState já que schema não tem campo details
-  const mergedNewState = newState ? { ...newState, _details: details } : details;
-  
-  const auditEntry: InsertTradingAuditLog = {
-    tenantId: authContext.tenantId,
-    userId: authContext.userId,
-    action,
-    entityType,
-    entityId,
-    previousState: previousState ?? null,
-    newState: mergedNewState,
-    ipAddress: null, // Será preenchido pelo middleware
-    userAgent: null, // Será preenchido pelo middleware
-  };
 
-  const [result] = await db
-    .insert(schema.tradingAuditLog)
-    .values(auditEntry)
-    .returning({ id: schema.tradingAuditLog.id });
+  const [result] = await db.transaction(async (tx) => {
+    // CORRECAO: Mesclar details com newState ja que schema nao tem campo details
+    const mergedNewState = newState ? { ...newState, _details: details } : details;
+
+    const auditEntry: InsertTradingAuditLog = {
+      tenantId: authContext.tenantId,
+      userId: authContext.userId,
+      action,
+      entityType,
+      entityId,
+      previousState: previousState ?? null,
+      newState: mergedNewState,
+      ipAddress: null, // Sera preenchido pelo middleware
+      userAgent: null, // Sera preenchido pelo middleware
+    };
+
+    const inserted = await tx
+      .insert(schema.tradingAuditLog)
+      .values(auditEntry)
+      .returning({ id: schema.tradingAuditLog.id });
+
+    await appendImmutableAuditEventWithExecutor({
+      executor: tx,
+      input: {
+        tenantId: authContext.tenantId,
+        actorUserId: authContext.userId,
+        sourceService: 'integrations-service',
+        stream: 'trading_operations',
+        streamKey: `${entityType}:${entityId}`,
+        eventType: action,
+        resourceType: entityType,
+        resourceId: entityId,
+        requestId: authContext.sessionId ?? null,
+        ipAddress: null,
+        userAgent: null,
+        payload: {
+          details,
+          previousState: previousState ?? null,
+          newState: newState ?? null,
+        },
+      },
+    });
+
+    return inserted;
+  });
 
   logger.info(
     { auditLogId: result.id, action, entityType, entityId },

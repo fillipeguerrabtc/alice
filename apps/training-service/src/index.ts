@@ -23,7 +23,7 @@ import cors from 'cors';
 import compression from 'compression';
 import crypto from 'crypto';
 import { createLogger } from '@alice/logger';
-import { getDatabase, getPool, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, validateEmbeddingDimension, EMBEDDING_DIMENSIONS, withTenantContext } from '@alice/database';
+import { getDatabase, getPool, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, validateEmbeddingDimension, EMBEDDING_DIMENSIONS, withTenantContext, type Database } from '@alice/database';
 import { 
   createCorrelationMiddleware, 
   createSecurityMiddleware,
@@ -85,6 +85,7 @@ import {
   applyPrivacyPolicy,
   cosineSimilarity,
   generateInternalAuthHeaders,
+  appendImmutableAuditEventWithExecutor,
 } from '@alice/shared-utils';
 import { trainingServicePaths, trainingServiceSchemas } from './openapi-specs.js';
 import { eq, and, or, desc, asc, sql, isNull, not, inArray, lte, ne } from '@alice/database';
@@ -3406,6 +3407,16 @@ const TRAINING_GOVERNANCE_AUDIT_ACTIONS: TrainingGovernanceAuditAction[] = [
   'training_scope_binding_changed',
 ];
 
+type TrainingAuditExecutor = Pick<Database, 'execute' | 'select' | 'insert'>;
+
+function extractRequestCorrelationId(request: Request): string | null {
+  const raw = request.headers['x-correlation-id'];
+  const parsed = Array.isArray(raw) ? raw[0] : raw;
+  if (typeof parsed !== 'string') return null;
+  const trimmed = parsed.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 function buildTrainingGovernanceAuditValues(params: {
   tenantId: string;
   userId: string | null;
@@ -3425,6 +3436,58 @@ function buildTrainingGovernanceAuditValues(params: {
     ip: extractRequestIp(params.request),
     userAgent: extractRequestUserAgent(params.request),
   };
+}
+
+async function persistTrainingGovernanceAudit(params: {
+  tenantId: string;
+  userId: string | null;
+  action: TrainingGovernanceAuditAction;
+  resource?: 'fine_tuning_job' | 'training_data';
+  resourceId: string;
+  request: Request;
+  details: Record<string, unknown>;
+  executor?: TrainingAuditExecutor;
+}): Promise<void> {
+  const auditValues = buildTrainingGovernanceAuditValues({
+    tenantId: params.tenantId,
+    userId: params.userId,
+    action: params.action,
+    resource: params.resource,
+    resourceId: params.resourceId,
+    request: params.request,
+    details: params.details,
+  });
+  const immutableInput = {
+    tenantId: params.tenantId,
+    stream: 'training_governance',
+    streamKey: `${auditValues.recurso}:${auditValues.recursoId}`,
+    eventType: params.action,
+    resourceType: auditValues.recurso,
+    resourceId: auditValues.recursoId ?? null,
+    actorUserId: params.userId,
+    sourceService: 'training-service',
+    requestId: extractRequestCorrelationId(params.request),
+    ipAddress: auditValues.ip ?? null,
+    userAgent: auditValues.userAgent ?? null,
+    payload: params.details,
+  } as const;
+
+  if (params.executor) {
+    await params.executor.insert(schema.auditLogs).values(auditValues);
+    await appendImmutableAuditEventWithExecutor({
+      executor: params.executor,
+      input: immutableInput,
+    });
+    return;
+  }
+
+  await db.transaction(async (tx) => {
+    await tx.insert(schema.auditLogs).values(auditValues);
+    await appendImmutableAuditEventWithExecutor({
+      executor: tx,
+      input: immutableInput,
+    });
+  });
 }
 
 app.patch('/api/training/data/:id/status', requirePermission('training:training_data:manage'), async (req: Request, res: Response) => {
@@ -3538,7 +3601,7 @@ app.patch('/api/training/data/:id/status', requirePermission('training:training_
         });
         trainingPipelineMetrics.scopeOverrideTotal.inc({ source: 'training_review' });
         try {
-          await db.insert(schema.auditLogs).values(buildTrainingGovernanceAuditValues({
+          await persistTrainingGovernanceAudit({
             tenantId: existing.tenantId,
             userId: reviewedBy,
             action: 'training_scope_binding_changed',
@@ -3559,7 +3622,7 @@ app.patch('/api/training/data/:id/status', requirePermission('training:training_
                 domain: nextDomain,
               },
             },
-          }));
+          });
           trainingPipelineMetrics.governanceAuditWritesTotal.inc({
             action: 'training_scope_binding_changed',
             result: 'success',
@@ -3678,7 +3741,7 @@ app.patch('/api/training/data/:id/resolve-scope', requirePermission('training:tr
     trainingPipelineMetrics.scopeOverrideTotal.inc({ source: 'quarantine_resolution' });
     trainingPipelineMetrics.scopeResolvedTotal.inc({ source: 'quarantine_resolution' });
     try {
-      await db.insert(schema.auditLogs).values(buildTrainingGovernanceAuditValues({
+      await persistTrainingGovernanceAudit({
         tenantId: existing.tenantId,
         userId: changedBy,
         action: 'training_scope_binding_changed',
@@ -3699,7 +3762,7 @@ app.patch('/api/training/data/:id/resolve-scope', requirePermission('training:tr
             domain: bodyResult.data.domain ?? existing.inferredDomain,
           },
         },
-      }));
+      });
       trainingPipelineMetrics.governanceAuditWritesTotal.inc({
         action: 'training_scope_binding_changed',
         result: 'success',
@@ -4051,7 +4114,7 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
     }
 
     try {
-      await db.insert(schema.auditLogs).values(buildTrainingGovernanceAuditValues({
+      await persistTrainingGovernanceAudit({
         tenantId,
         userId: tenantResolution.authContext.userId ?? null,
         action: 'training_run_start_requested',
@@ -4073,7 +4136,7 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
             idempotencyKeyHash,
           },
         },
-      }));
+      });
       trainingPipelineMetrics.governanceAuditWritesTotal.inc({
         action: 'training_run_start_requested',
         result: 'success',
@@ -4500,7 +4563,7 @@ app.post('/api/training/jobs/:id/promotion-approval', requirePermission('trainin
         },
       });
 
-      await tx.insert(schema.auditLogs).values(buildTrainingGovernanceAuditValues({
+      await persistTrainingGovernanceAudit({
         tenantId: tenantResolution.tenantId,
         userId: tenantResolution.authContext.userId,
         action: 'training_promotion_approval_recorded',
@@ -4521,7 +4584,8 @@ app.post('/api/training/jobs/:id/promotion-approval', requirePermission('trainin
             operation: 'promotion_approval',
           },
         },
-      }));
+        executor: tx,
+      });
     });
     trainingPipelineMetrics.governanceAuditWritesTotal.inc({
       action: 'training_promotion_approval_recorded',
@@ -4748,7 +4812,7 @@ app.post('/api/training/jobs/:id/promote', requirePermission('training:fine_tuni
         })
         .where(eq(schema.fineTuningJobs.id, fineTuningJob.id));
 
-      await tx.insert(schema.auditLogs).values(buildTrainingGovernanceAuditValues({
+      await persistTrainingGovernanceAudit({
         tenantId: tenantResolution.tenantId,
         userId: tenantResolution.authContext.userId,
         action: 'training_model_promoted',
@@ -4767,7 +4831,8 @@ app.post('/api/training/jobs/:id/promote', requirePermission('training:fine_tuni
             requesterHasApproved: approvalSummary.requesterHasApproved,
           },
         },
-      }));
+        executor: tx,
+      });
 
       return [createdVersion];
     });
@@ -4963,7 +5028,7 @@ app.post('/api/training/jobs/:id/rollback', requirePermission('training:fine_tun
         .set({ promotionStatus: 'active' })
         .where(eq(schema.fineTuningJobs.id, previousJob.id));
 
-      await tx.insert(schema.auditLogs).values(buildTrainingGovernanceAuditValues({
+      await persistTrainingGovernanceAudit({
         tenantId: tenantResolution.tenantId,
         userId: tenantResolution.authContext.userId,
         action: 'training_model_rollback_executed',
@@ -4986,7 +5051,8 @@ app.post('/api/training/jobs/:id/rollback', requirePermission('training:fine_tun
             previousVersion: previousVersion.version,
           },
         },
-      }));
+        executor: tx,
+      });
     });
     trainingPipelineMetrics.governanceAuditWritesTotal.inc({
       action: 'training_model_rollback_executed',
@@ -6551,7 +6617,7 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
     }
 
       try {
-        await db.insert(schema.auditLogs).values(buildTrainingGovernanceAuditValues({
+        await persistTrainingGovernanceAudit({
           tenantId: scopedTenantId,
           userId: tenantResolution.authContext.userId ?? null,
           action: 'training_run_start_requested',
@@ -6575,7 +6641,7 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
               idempotencyKeyHash,
             },
           },
-        }));
+        });
         trainingPipelineMetrics.governanceAuditWritesTotal.inc({
           action: 'training_run_start_requested',
           result: 'success',

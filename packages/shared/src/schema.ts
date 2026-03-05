@@ -2041,6 +2041,43 @@ export const auditLogs = pgTable(
   })
 );
 
+// Ledger imutavel para auditoria de eventos de alto risco.
+// Encadeia hashes por stream+stream_key para detectar qualquer adulteracao.
+export const immutableAuditEvents = pgTable(
+  "immutable_audit_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").notNull().references(() => tenants.id),
+    actorUserId: uuid("actor_user_id").references(() => users.id),
+    sourceService: varchar("source_service", { length: 64 }).notNull(),
+    stream: varchar("stream", { length: 120 }).notNull(),
+    streamKey: varchar("stream_key", { length: 255 }).notNull(),
+    chainPosition: integer("chain_position").notNull(),
+    eventType: varchar("event_type", { length: 120 }).notNull(),
+    resourceType: varchar("resource_type", { length: 120 }).notNull(),
+    resourceId: varchar("resource_id", { length: 255 }),
+    requestId: varchar("request_id", { length: 128 }),
+    ipAddress: varchar("ip_address", { length: 45 }),
+    userAgent: text("user_agent"),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default({}),
+    prevEventHash: varchar("prev_event_hash", { length: 64 }),
+    eventHash: varchar("event_hash", { length: 64 }).notNull(),
+    hashAlgorithm: varchar("hash_algorithm", { length: 16 }).notNull().default("sha256"),
+    occurredAt: timestamp("occurred_at").notNull().defaultNow(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    idxImmutableAuditTenant: index("idx_immutable_audit_tenant").on(table.tenantId),
+    idxImmutableAuditStream: index("idx_immutable_audit_stream")
+      .on(table.tenantId, table.stream, table.streamKey, table.chainPosition),
+    idxImmutableAuditEventType: index("idx_immutable_audit_event_type").on(table.tenantId, table.eventType),
+    idxImmutableAuditCreated: index("idx_immutable_audit_created").on(table.createdAt),
+    uqImmutableAuditStreamChain: uniqueIndex("uq_immutable_audit_stream_chain")
+      .on(table.tenantId, table.stream, table.streamKey, table.chainPosition),
+    uqImmutableAuditEventHash: uniqueIndex("uq_immutable_audit_event_hash").on(table.tenantId, table.eventHash),
+  })
+);
+
 // ============================================================================
 // MÉTRICAS DE USO
 // ============================================================================
@@ -5173,6 +5210,7 @@ export const tenantsRelations = relations(tenants, ({ many }) => ({
   integrations: many(integrations),
   llmConfigs: many(llmConfig),
   auditLogs: many(auditLogs),
+  immutableAuditEvents: many(immutableAuditEvents),
   usageMetrics: many(usageMetrics),
   assistantSettings: many(assistantSettings),
   agenticSettings: many(agenticSettings),
@@ -5199,6 +5237,7 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   conversations: many(conversations),
   messages: many(messages),
   auditLogs: many(auditLogs),
+  immutableAuditEvents: many(immutableAuditEvents),
   usageMetrics: many(usageMetrics),
   groupMemberships: many(userGroupMembers),
 }));
@@ -5487,6 +5526,17 @@ export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
   }),
 }));
 
+export const immutableAuditEventsRelations = relations(immutableAuditEvents, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [immutableAuditEvents.tenantId],
+    references: [tenants.id],
+  }),
+  actorUser: one(users, {
+    fields: [immutableAuditEvents.actorUserId],
+    references: [users.id],
+  }),
+}));
+
 // ============================================================================
 // IDENTITY PROVISIONING (Outbox Pattern - Tarefa 6)
 // Sincronização Alice → Grafana
@@ -5716,6 +5766,8 @@ export type LlmConfig = typeof llmConfig.$inferSelect;
 export type InsertLlmConfig = z.infer<typeof insertLlmConfigSchema>;
 
 export type AuditLog = typeof auditLogs.$inferSelect;
+export type ImmutableAuditEvent = typeof immutableAuditEvents.$inferSelect;
+export type InsertImmutableAuditEvent = typeof immutableAuditEvents.$inferInsert;
 export type UsageMetric = typeof usageMetrics.$inferSelect;
 
 export type TrainingData = typeof trainingData.$inferSelect;
