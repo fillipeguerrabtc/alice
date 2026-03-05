@@ -7,6 +7,7 @@ export const integrationsServicePaths = {
   '/health': { get: { summary: 'Health check', tags: ['Health'], security: [], responses: { 200: { description: 'OK' } } } },
   '/ready': { get: { summary: 'Readiness check', tags: ['Health'], security: [], responses: { 200: { description: 'Ready' } } } },
   '/api/integrations/health': {
+      'x-required-permission': 'integrations:integrations:read',
     get: {
       summary: 'Status operacional das integrações',
       tags: ['Health'],
@@ -497,6 +498,7 @@ export const integrationsServicePaths = {
     },
   },
   '/api/integrations/postmortem/{positionId}': {
+      'x-required-permission': 'integrations:trading:read',
     get: {
       summary: 'Buscar post-mortem por posicao',
       tags: ['Trading'],
@@ -510,6 +512,7 @@ export const integrationsServicePaths = {
     },
   },
   '/api/integrations/postmortem': {
+      'x-required-permission': 'integrations:trading:read',
     get: {
       summary: 'Listar post-mortems do tenant',
       tags: ['Trading'],
@@ -525,6 +528,7 @@ export const integrationsServicePaths = {
     },
   },
   '/api/integrations/postmortem/queue/stats': {
+      'x-required-permission': 'integrations:trading:manage',
     get: {
       summary: 'Estatisticas da fila de post-mortem',
       tags: ['Trading'],
@@ -536,6 +540,7 @@ export const integrationsServicePaths = {
     },
   },
   '/api/integrations/postmortem/queue/retry/{jobId}': {
+      'x-required-permission': 'integrations:trading:manage',
     post: {
       summary: 'Reenfileirar job da DLQ de post-mortem',
       tags: ['Trading'],
@@ -549,6 +554,7 @@ export const integrationsServicePaths = {
     },
   },
   '/api/integrations/postmortem/snapshots/{positionId}': {
+      'x-required-permission': 'integrations:trading:read',
     get: {
       summary: 'Buscar snapshots associados a uma posicao',
       tags: ['Trading'],
@@ -561,6 +567,7 @@ export const integrationsServicePaths = {
     },
   },
   '/api/integrations/postmortem/send-to-training': {
+      'x-required-permission': 'integrations:trading:write',
     post: {
       summary: 'Criar dataset de training a partir de um post-mortem',
       tags: ['Trading'],
@@ -589,6 +596,7 @@ export const integrationsServicePaths = {
     },
   },
   '/api/integrations/postmortem/send-to-training/batch': {
+      'x-required-permission': 'integrations:trading:write',
     post: {
       summary: 'Criar datasets em batch a partir de post-mortems',
       tags: ['Trading'],
