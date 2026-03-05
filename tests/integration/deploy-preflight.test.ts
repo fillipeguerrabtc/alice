@@ -24,7 +24,11 @@ describe('deploy preflight scripts', () => {
   it('supports compose config validation as a fail-fast preflight gate', () => {
     const shellSource = read('infra/scripts/preflight-secrets.sh');
     const powershellSource = read('infra/scripts/preflight-secrets.ps1');
-    expect(shellSource.includes('docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" config')).toBe(true);
-    expect(powershellSource.includes('docker compose --env-file $EnvFile -f $ComposeFile config')).toBe(true);
+    expect(shellSource.includes('COMPOSE_FILES=()')).toBe(true);
+    expect(shellSource.includes('compose_args+=(-f "$compose_file")')).toBe(true);
+    expect(shellSource.includes('docker compose --env-file "$ENV_FILE" "${compose_args[@]}" config')).toBe(true);
+    expect(powershellSource.includes('[string[]]$ComposeFile = @()')).toBe(true);
+    expect(powershellSource.includes('$composeArgs += @(\'-f\', $file)')).toBe(true);
+    expect(powershellSource.includes('& docker compose --env-file $EnvFile @composeArgs config')).toBe(true);
   });
 });

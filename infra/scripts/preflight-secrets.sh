@@ -3,7 +3,7 @@ set -euo pipefail
 
 STACK="all"
 ENV_FILE=""
-COMPOSE_FILE=""
+COMPOSE_FILES=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -16,11 +16,11 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --compose-file)
-      COMPOSE_FILE="${2:-}"
+      COMPOSE_FILES+=("${2:-}")
       shift 2
       ;;
     *)
-      echo "Usage: $0 [--stack all|alice|infra|observability|backup] [--env-file .env] [--compose-file docker-compose.yml]"
+      echo "Usage: $0 [--stack all|alice|infra|observability|backup] [--env-file .env] [--compose-file docker-compose.yml]..."
       exit 1
       ;;
   esac
@@ -100,16 +100,25 @@ if [[ ${#missing[@]} -gt 0 ]]; then
   exit 1
 fi
 
-if [[ -n "$COMPOSE_FILE" ]]; then
+if [[ ${#COMPOSE_FILES[@]} -gt 0 ]]; then
   if ! command -v docker >/dev/null 2>&1; then
     echo "ERROR: docker command not found (required for compose preflight)."
     exit 1
   fi
 
+  compose_args=()
+  for compose_file in "${COMPOSE_FILES[@]}"; do
+    if [[ ! -f "$compose_file" ]]; then
+      echo "ERROR: compose file not found: $compose_file"
+      exit 1
+    fi
+    compose_args+=(-f "$compose_file")
+  done
+
   if [[ -n "$ENV_FILE" ]]; then
-    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" config >/dev/null
+    docker compose --env-file "$ENV_FILE" "${compose_args[@]}" config >/dev/null
   else
-    docker compose -f "$COMPOSE_FILE" config >/dev/null
+    docker compose "${compose_args[@]}" config >/dev/null
   fi
 fi
 

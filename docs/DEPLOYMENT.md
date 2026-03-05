@@ -214,10 +214,10 @@ Antes de qualquer `docker compose up`, execute o preflight fail-fast:
 
 ```bash
 # Linux/macOS (na pasta do repo)
-bash infra/scripts/preflight-secrets.sh --stack all --env-file infra/docker/.env.prod --compose-file infra/docker/stacks/docker-compose.alice.yml
+bash infra/scripts/preflight-secrets.sh --stack alice --env-file infra/docker/.env.prod --compose-file infra/docker/stacks/docker-compose.base.yml --compose-file infra/docker/stacks/docker-compose.alice.yml
 
 # Windows PowerShell
-powershell -ExecutionPolicy Bypass -File infra/scripts/preflight-secrets.ps1 -Stack all -EnvFile infra/docker/.env.prod -ComposeFile infra/docker/stacks/docker-compose.alice.yml
+powershell -ExecutionPolicy Bypass -File infra/scripts/preflight-secrets.ps1 -Stack alice -EnvFile infra/docker/.env.prod -ComposeFile infra/docker/stacks/docker-compose.base.yml,infra/docker/stacks/docker-compose.alice.yml
 ```
 
 No pipeline oficial (`deploy-stack-modular.yml`), esse preflight também roda de forma automática por stack imediatamente antes do `compose up`.

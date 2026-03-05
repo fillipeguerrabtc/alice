@@ -13,8 +13,8 @@ Objetivo: validar recuperação ponta a ponta com evidência operacional
 - Janela de manutenção aprovada.
 - Backup manifesto válido disponível em `/opt/alice/backups/manifests`.
 - Secrets e compose validados antes do início:
-  - `infra/scripts/preflight-secrets.sh --stack all --env-file .env --compose-file infra/docker/docker-compose.yml`
-  - `infra/scripts/preflight-secrets.ps1 -Stack all -EnvFile .env -ComposeFile infra/docker/docker-compose.yml`
+  - `infra/scripts/preflight-secrets.sh --stack backup --env-file .env --compose-file infra/docker/stacks/docker-compose.base.yml --compose-file infra/docker/stacks/docker-compose.backup.yml`
+  - `infra/scripts/preflight-secrets.ps1 -Stack backup -EnvFile .env -ComposeFile infra/docker/stacks/docker-compose.base.yml,infra/docker/stacks/docker-compose.backup.yml`
 - Acesso operacional aos endpoints:
   - `POST /api/backup/restore`
   - `GET /api/backup/status`

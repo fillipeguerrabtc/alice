@@ -2,7 +2,7 @@ param(
   [ValidateSet('all', 'alice', 'infra', 'observability', 'backup')]
   [string]$Stack = 'all',
   [string]$EnvFile = '',
-  [string]$ComposeFile = ''
+  [string[]]$ComposeFile = @()
 )
 
 Set-StrictMode -Version Latest
@@ -71,16 +71,31 @@ if ($missing.Count -gt 0) {
   exit 1
 }
 
-if ($ComposeFile -ne '') {
+if ($ComposeFile.Count -gt 0) {
   $dockerCmd = Get-Command docker -ErrorAction SilentlyContinue
   if ($null -eq $dockerCmd) {
     throw 'docker command not found (required for compose preflight).'
   }
 
+  $composeArgs = @()
+  foreach ($file in $ComposeFile) {
+    if ([string]::IsNullOrWhiteSpace($file)) {
+      continue
+    }
+    if (-not (Test-Path $file)) {
+      throw "Compose file not found: $file"
+    }
+    $composeArgs += @('-f', $file)
+  }
+
+  if ($composeArgs.Count -eq 0) {
+    throw 'No valid compose files were provided.'
+  }
+
   if ($EnvFile -ne '') {
-    docker compose --env-file $EnvFile -f $ComposeFile config | Out-Null
+    & docker compose --env-file $EnvFile @composeArgs config | Out-Null
   } else {
-    docker compose -f $ComposeFile config | Out-Null
+    & docker compose @composeArgs config | Out-Null
   }
 }
 

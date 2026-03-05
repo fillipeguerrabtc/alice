@@ -3889,7 +3889,7 @@ jobs:
             echo "🚀 UP: Iniciando containers..."
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "🔐 Preflight: validating required secrets and compose config for INFRA..."
-            if ! bash ../../scripts/preflight-secrets.sh --stack infra --env-file ../.env.prod --compose-file docker-compose.infra.yml; then
+            if ! bash ../../scripts/preflight-secrets.sh --stack infra --env-file ../.env.prod --compose-file docker-compose.base.yml --compose-file docker-compose.infra.yml; then
               echo "❌ ERRO: preflight de secrets/config falhou para stack INFRA."
               exit 1
             fi
@@ -5006,7 +5006,7 @@ jobs:
             # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Mudanças cirúrgicas)
             # =================================================================
             echo "🔐 Preflight: validating required secrets and compose config for ALICE..."
-            if ! bash ../../scripts/preflight-secrets.sh --stack alice --env-file ../.env.prod --compose-file docker-compose.alice.yml; then
+            if ! bash ../../scripts/preflight-secrets.sh --stack alice --env-file ../.env.prod --compose-file docker-compose.base.yml --compose-file docker-compose.alice.yml; then
               echo "❌ ERRO: preflight de secrets/config falhou para stack ALICE."
               exit 1
             fi
@@ -5746,7 +5746,7 @@ jobs:
             echo "🚀 UP: Iniciando containers..."
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "🔐 Preflight: validating required secrets and compose config for OBSERVABILITY..."
-            if ! bash ../../scripts/preflight-secrets.sh --stack observability --env-file ../.env.prod --compose-file docker-compose.observability.yml; then
+            if ! bash ../../scripts/preflight-secrets.sh --stack observability --env-file ../.env.prod --compose-file docker-compose.base.yml --compose-file docker-compose.observability.yml; then
               echo "❌ ERRO: preflight de secrets/config falhou para stack OBSERVABILITY."
               exit 1
             fi
@@ -6410,7 +6410,7 @@ jobs:
             echo "🚀 UP: Iniciando containers..."
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "🔐 Preflight: validating required secrets and compose config for BACKUP..."
-            if ! bash ../../scripts/preflight-secrets.sh --stack backup --env-file ../.env.prod --compose-file docker-compose.backup.yml; then
+            if ! bash ../../scripts/preflight-secrets.sh --stack backup --env-file ../.env.prod --compose-file docker-compose.base.yml --compose-file docker-compose.backup.yml; then
               echo "❌ ERRO: preflight de secrets/config falhou para stack BACKUP."
               exit 1
             fi
