@@ -368,6 +368,13 @@ const wsAgentConnectionTotal = new PromCounter({
   registers: [metrics.registry],
 });
 
+const wsTokenNonceValidationTotal = new PromCounter({
+  name: 'alice_ws_token_nonce_validation_total',
+  help: 'Resultado da validacao one-time-use dos tokens WebSocket',
+  labelNames: ['result'] as const,
+  registers: [metrics.registry],
+});
+
 type AgenticActionLabel = 'trading' | 'payments' | 'stack_ops' | 'agentic_task' | 'grafana';
 type AgenticDecisionLabel = 'approve' | 'reject';
 type AgenticStatusLabel = 'pending' | 'executed' | 'rejected' | 'failed';
@@ -898,6 +905,22 @@ const wss = new WebSocketServer({
     if (wsToken) {
       const tokenPayload = verifyWsToken(wsToken, 'ws');
       if (tokenPayload) {
+        const nonceValidation = await consumeWsTokenNonce(tokenPayload);
+        wsTokenNonceValidationTotal.inc({ result: nonceValidation.result });
+        if (!nonceValidation.accepted) {
+          logger.warn(
+            {
+              ip: info.req.socket?.remoteAddress,
+              result: nonceValidation.result,
+              aud: tokenPayload.aud,
+              tenantId: tokenPayload.tenantId,
+            },
+            'WebSocket: token efemero rejeitado por one-time-use'
+          );
+          callback(false, 401, 'Unauthorized');
+          return;
+        }
+
         const authResult: WebSocketAuthResult = {
           authenticated: true,
           userId: tokenPayload.userId,
@@ -910,7 +933,9 @@ const wss = new WebSocketServer({
         callback(true);
         return;
       }
-      logger.warn({ ip: info.req.socket?.remoteAddress }, 'WebSocket: Token efêmero inválido ou expirado');
+      logger.warn({ ip: info.req.socket?.remoteAddress }, 'WebSocket: token efemero invalido ou expirado');
+      callback(false, 401, 'Unauthorized');
+      return;
     }
     
     // Fallback: autenticação via cookie de sessão
@@ -7909,7 +7934,21 @@ app.get('/api/chat/version', (_req: Request, res: Response) => {
 
 const WS_TOKEN_SECRET = process.env.WS_TOKEN_SECRET || SESSION_SECRET;
 const WS_TOKEN_TTL_SECONDS = Number(process.env.WS_TOKEN_TTL_SECONDS ?? '60');
+const WS_TOKEN_ONE_TIME_USE_REQUIRED = parseEnvBool(
+  process.env.WS_TOKEN_ONE_TIME_USE_REQUIRED,
+  process.env.NODE_ENV === 'production',
+  'WS_TOKEN_ONE_TIME_USE_REQUIRED'
+);
+const WS_TOKEN_NONCE_REDIS_PREFIX = 'alice:chat:ws-token:nonce';
 type WsTokenAudience = 'ws' | 'ws-agent';
+type WsTokenPayload = {
+  userId: string;
+  tenantId: string;
+  role: string;
+  nonce: string;
+  exp: number;
+  aud: WsTokenAudience;
+};
 
 /** Gera token HMAC efêmero para autenticação WebSocket */
 function generateWsToken(
@@ -7928,7 +7967,7 @@ function generateWsToken(
 function verifyWsToken(
   token: string,
   expectedAud: WsTokenAudience = 'ws'
-): { userId: string; tenantId: string; role: string } | null {
+): WsTokenPayload | null {
   try {
     const decoded = Buffer.from(token, 'base64url').toString('utf-8');
     const dotIndex = decoded.lastIndexOf('.');
@@ -7942,13 +7981,49 @@ function verifyWsToken(
       return null;
     }
 
-    const payload = JSON.parse(data) as { userId: string; tenantId: string; role: string; exp: number; aud: WsTokenAudience };
+    const payload = JSON.parse(data) as WsTokenPayload;
     if (payload.aud !== expectedAud) return null;
     if (payload.exp < Math.floor(Date.now() / 1000)) return null;
+    if (!payload.nonce || typeof payload.nonce !== 'string') return null;
 
-    return { userId: payload.userId, tenantId: payload.tenantId, role: payload.role };
+    return payload;
   } catch {
     return null;
+  }
+}
+
+async function consumeWsTokenNonce(
+  payload: WsTokenPayload
+): Promise<{ accepted: boolean; result: 'accepted' | 'replay' | 'redis_unavailable' | 'redis_error' | 'disabled' }> {
+  if (!WS_TOKEN_ONE_TIME_USE_REQUIRED) {
+    return { accepted: true, result: 'disabled' };
+  }
+
+  const redis = getRedisClient();
+  if (!redis) {
+    return { accepted: false, result: 'redis_unavailable' };
+  }
+
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const ttlMs = Math.max(1000, (payload.exp - nowSeconds + 5) * 1000);
+  const redisKey = `${WS_TOKEN_NONCE_REDIS_PREFIX}:${payload.aud}:${payload.tenantId}:${payload.nonce}`;
+
+  try {
+    const lock = await redis.set(redisKey, '1', { NX: true, PX: ttlMs });
+    if (lock !== 'OK') {
+      return { accepted: false, result: 'replay' };
+    }
+    return { accepted: true, result: 'accepted' };
+  } catch (error) {
+    logger.error(
+      {
+        error: error instanceof Error ? error.message : String(error),
+        tenantId: payload.tenantId,
+        aud: payload.aud,
+      },
+      'Falha ao validar nonce one-time-use do ws-token'
+    );
+    return { accepted: false, result: 'redis_error' };
   }
 }
 
@@ -16125,7 +16200,7 @@ agentWss.on('connection', async (ws, req) => {
   const wsToken = urlParams.get('token');
   const normalizedWsToken = wsToken?.trim() ?? '';
   const hasWsToken = normalizedWsToken.length > 0;
-  const tokenPayload = hasWsToken ? verifyWsToken(normalizedWsToken, 'ws-agent') : null;
+  let tokenPayload = hasWsToken ? verifyWsToken(normalizedWsToken, 'ws-agent') : null;
   let authRejectedReason: 'missing_token' | 'invalid_token' | null = null;
   const authDecision = resolveWsAgentAuthDecision({
     hasWsToken,
@@ -16135,6 +16210,23 @@ agentWss.on('connection', async (ws, req) => {
 
   if (authDecision.rejectReason) {
     authRejectedReason = authDecision.rejectReason;
+  }
+
+  if (hasWsToken && tokenPayload) {
+    const nonceValidation = await consumeWsTokenNonce(tokenPayload);
+    wsTokenNonceValidationTotal.inc({ result: nonceValidation.result });
+    if (!nonceValidation.accepted) {
+      logger.warn(
+        {
+          result: nonceValidation.result,
+          tenantId: tokenPayload.tenantId,
+          aud: tokenPayload.aud,
+        },
+        'Conexao /ws/agent rejeitada por replay/invalidacao de ws-token'
+      );
+      authRejectedReason = 'invalid_token';
+      tokenPayload = null;
+    }
   }
 
   if (!tokenPayload) {
