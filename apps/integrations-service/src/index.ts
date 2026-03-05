@@ -20739,7 +20739,9 @@ app.get('/api/integrations/postmortem/queue/stats', requirePermission('integrati
 // POST /api/integrations/postmortem/queue/retry/:jobId - Retry job da DLQ
 app.post('/api/integrations/postmortem/queue/retry/:jobId', requirePermission('integrations:trading:manage'), async (req: Request, res: Response) => {
   try {
-    const success = await retryPostMortemDlqJob(req.params.jobId);
+    const tenantId = req.tenantId;
+    if (!tenantId) { res.status(403).json({ error: 'Tenant nÃ£o identificado' }); return; }
+    const success = await retryPostMortemDlqJob(req.params.jobId, tenantId);
     if (!success) {
       res.status(404).json({ error: 'Job não encontrado na DLQ' });
       return;

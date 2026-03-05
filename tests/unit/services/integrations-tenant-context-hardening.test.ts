@@ -33,6 +33,13 @@ describe('integrations tenant-context hardening', () => {
     expect(batchPattern.test(source)).toBe(true);
   });
 
+  it('passes tenant context into postmortem DLQ retry operation', () => {
+    const source = loadIntegrationsSource();
+    const retryRoutePattern =
+      /app\.post\('\/api\/integrations\/postmortem\/queue\/retry\/:jobId'[\s\S]*?const tenantId = req\.tenantId;[\s\S]*?retryPostMortemDlqJob\(req\.params\.jobId,\s*tenantId\)/;
+    expect(retryRoutePattern.test(source)).toBe(true);
+  });
+
   it('keeps dataset generator wrapped by withTenantContext fail-closed scope', () => {
     const source = loadDatasetGeneratorSource();
     expect(source.includes('return withTenantContext(tenantId, false, async (db) => {')).toBe(true);

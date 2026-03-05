@@ -32,7 +32,7 @@ vi.mock('@alice/shared-utils', async (importOriginal) => {
 });
 
 const workerModule = await import('../../../apps/integrations-service/src/postmortem-worker');
-const { enqueuePostMortem, PostMortemQueueUnavailableError } = workerModule;
+const { enqueuePostMortem, retryDlqJob, PostMortemQueueUnavailableError } = workerModule;
 
 function buildPositionData() {
   return {
@@ -107,6 +107,55 @@ describe('postmortem-worker fail-closed enqueue', () => {
       })
     );
 
+    nowSpy.mockRestore();
+  });
+});
+
+describe('postmortem-worker dlq retry tenant isolation', () => {
+  afterEach(() => {
+    sharedUtilsState.redisClient = null;
+    vi.clearAllMocks();
+    vi.restoreAllMocks();
+  });
+
+  it('rejects retry when DLQ job tenant differs from caller tenant', async () => {
+    const redis = {
+      zScore: vi.fn().mockResolvedValue(1),
+      get: vi.fn().mockResolvedValue(JSON.stringify({ id: 'job-1', tenantId: 'tenant-2', retryCount: 2 })),
+      set: vi.fn().mockResolvedValue('OK'),
+      zRem: vi.fn().mockResolvedValue(1),
+      zAdd: vi.fn().mockResolvedValue(1),
+    };
+    sharedUtilsState.redisClient = redis;
+
+    const success = await retryDlqJob('job-1', 'tenant-1');
+
+    expect(success).toBe(false);
+    expect(redis.set).not.toHaveBeenCalled();
+    expect(redis.zRem).not.toHaveBeenCalled();
+    expect(redis.zAdd).not.toHaveBeenCalled();
+  });
+
+  it('allows retry when DLQ job tenant matches caller tenant', async () => {
+    const redis = {
+      zScore: vi.fn().mockResolvedValue(1),
+      get: vi.fn().mockResolvedValue(JSON.stringify({ id: 'job-1', tenantId: 'tenant-1', retryCount: 2 })),
+      set: vi.fn().mockResolvedValue('OK'),
+      zRem: vi.fn().mockResolvedValue(1),
+      zAdd: vi.fn().mockResolvedValue(1),
+    };
+    sharedUtilsState.redisClient = redis;
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1_709_100_000_000);
+
+    const success = await retryDlqJob('job-1', 'tenant-1');
+
+    expect(success).toBe(true);
+    expect(redis.set).toHaveBeenCalledTimes(1);
+    expect(redis.zRem).toHaveBeenCalledWith('alice:postmortem:dlq', 'job-1');
+    expect(redis.zAdd).toHaveBeenCalledWith(
+      'alice:postmortem:queue',
+      expect.objectContaining({ score: 1_709_100_000_000, value: 'job-1' })
+    );
     nowSpy.mockRestore();
   });
 });

@@ -445,7 +445,7 @@ export async function getQueueStats(): Promise<{
 /**
  * Reprocessa um job da DLQ (move de volta para a fila principal)
  */
-export async function retryDlqJob(jobId: string): Promise<boolean> {
+export async function retryDlqJob(jobId: string, tenantId?: string): Promise<boolean> {
   const redis = getRedisClient();
   if (!redis) return false;
 
@@ -459,6 +459,13 @@ export async function retryDlqJob(jobId: string): Promise<boolean> {
 
   try {
     const job = JSON.parse(jobDataRaw) as PostMortemJob & { lastError?: string };
+    if (tenantId && job.tenantId !== tenantId) {
+      logger.warn(
+        { jobId, expectedTenantId: tenantId, jobTenantId: job.tenantId },
+        'Tentativa de retry DLQ com tenant divergente'
+      );
+      return false;
+    }
     job.retryCount = 0;
     delete job.lastError;
 
@@ -478,4 +485,3 @@ export async function retryDlqJob(jobId: string): Promise<boolean> {
   logger.info({ jobId }, 'Job movido da DLQ para fila principal');
   return true;
 }
-
