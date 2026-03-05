@@ -130,7 +130,11 @@ import {
 // - OpenAI API: Vision (gpt-4.1), ASR (gpt-4o-transcribe), Geração de imagens (gpt-image-1)
 import { initTradingOrchestrator } from './trading-orchestrator.js';
 import { checkResponseCache, isGreeting as isGreetingMessage } from './response-cache.js';
-import { loadWsAgentAuthGovernancePolicyFromEnv, resolveWsAgentAuthDecision } from './ws-agent-auth-governance.js';
+import {
+  loadWsAgentAuthGovernancePolicyFromEnv,
+  resolveWsAgentAuthDecision,
+  resolveWsAgentCloseFrame,
+} from './ws-agent-auth-governance.js';
 
 // Logger centralizado: JSON em produção, pino-pretty em desenvolvimento
 const logger = createLogger('chat-service');
@@ -16174,11 +16178,8 @@ agentWss.on('connection', async (ws, req) => {
       },
       'Conexao /ws/agent rejeitada por autenticacao'
     );
-    const closeReason =
-      authRejectedReason === 'missing_token'
-        ? 'Token ws-agent obrigatorio'
-        : 'Token ws-agent invalido ou expirado';
-    ws.close(4001, closeReason);
+    const closeFrame = resolveWsAgentCloseFrame(authRejectedReason ?? 'unknown');
+    ws.close(closeFrame.code, closeFrame.reason);
     return;
   }
 

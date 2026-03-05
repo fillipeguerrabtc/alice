@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   loadWsAgentAuthGovernancePolicyFromEnv,
   resolveWsAgentAuthDecision,
+  resolveWsAgentCloseFrame,
 } from '../../apps/chat-service/src/ws-agent-auth-governance';
 
 describe('ws-agent auth governance', () => {
@@ -94,5 +95,22 @@ describe('ws-agent auth decision resolver', () => {
     expect(decision.shouldAcceptTokenPayload).toBe(false);
     expect(decision.shouldAttemptLegacySessionFallback).toBe(true);
     expect(decision.rejectReason).toBeNull();
+  });
+});
+
+describe('ws-agent close frame resolver', () => {
+  it('returns explicit missing-token close reason', () => {
+    const frame = resolveWsAgentCloseFrame('missing_token');
+    expect(frame.code).toBe(4001);
+    expect(frame.reason).toBe('Token ws-agent obrigatorio');
+  });
+
+  it('returns invalid-token close reason for other rejection reasons', () => {
+    const invalidToken = resolveWsAgentCloseFrame('invalid_token');
+    const fallbackInvalid = resolveWsAgentCloseFrame('legacy_session_invalid');
+    const unknown = resolveWsAgentCloseFrame('unknown');
+    expect(invalidToken).toEqual({ code: 4001, reason: 'Token ws-agent invalido ou expirado' });
+    expect(fallbackInvalid).toEqual({ code: 4001, reason: 'Token ws-agent invalido ou expirado' });
+    expect(unknown).toEqual({ code: 4001, reason: 'Token ws-agent invalido ou expirado' });
   });
 });

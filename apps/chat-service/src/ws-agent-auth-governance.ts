@@ -13,6 +13,11 @@ export type WsAgentAuthDecision = {
     | null;
 };
 
+export type WsAgentCloseFrame = {
+  code: number;
+  reason: string;
+};
+
 function parseEnvBoolean(rawValue: string | undefined, defaultValue: boolean): boolean {
   if (typeof rawValue === 'undefined') return defaultValue;
   const normalized = rawValue.trim().toLowerCase();
@@ -76,4 +81,14 @@ export function resolveWsAgentAuthDecision(params: {
     shouldAttemptLegacySessionFallback: false,
     rejectReason: 'missing_token_fallback_disabled',
   };
+}
+
+export function resolveWsAgentCloseFrame(
+  rejectReason: WsAgentAuthDecision['rejectReason'] | 'legacy_session_invalid' | 'unknown'
+): WsAgentCloseFrame {
+  if (rejectReason === 'missing_token') {
+    return { code: 4001, reason: 'Token ws-agent obrigatorio' };
+  }
+
+  return { code: 4001, reason: 'Token ws-agent invalido ou expirado' };
 }

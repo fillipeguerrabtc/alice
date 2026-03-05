@@ -25,10 +25,8 @@ describe('chat-service ws-agent handshake guards', () => {
 
   it('keeps explicit close reason mapping for missing vs invalid ws-agent token', () => {
     const source = loadChatServiceSource();
-    const closeReasonPattern =
-      /const closeReason =\s*authRejectedReason === 'missing_token'\s*\?\s*'Token ws-agent obrigatorio'\s*:\s*'Token ws-agent invalido ou expirado';/;
-    expect(closeReasonPattern.test(source)).toBe(true);
-    expect(source.includes("ws.close(4001, closeReason);")).toBe(true);
+    expect(source.includes("resolveWsAgentCloseFrame(authRejectedReason ?? 'unknown')")).toBe(true);
+    expect(source.includes('ws.close(closeFrame.code, closeFrame.reason);')).toBe(true);
   });
 
   it('enforces token claim and query param consistency for agentId and tenantId', () => {
