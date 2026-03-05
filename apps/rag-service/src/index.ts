@@ -2179,18 +2179,14 @@ app.post('/api/rag/documents/:id/send-to-training', requireAuth(), requirePermis
     const targetNamespaceId = bodyValidation.data.scope?.namespaceId ?? document.namespaceId;
 
     if (bodyValidation.data.scope?.namespaceId) {
-      const targetNamespace = await db.query.namespaces.findFirst({
-        where: eq(schema.namespaces.id, bodyValidation.data.scope.namespaceId),
-      });
-      if (!targetNamespace || targetNamespace.tenantId !== tenantId) {
+      const targetNamespace = await findNamespaceByIdInTenant(tenantId, bodyValidation.data.scope.namespaceId);
+      if (!targetNamespace) {
         return res.status(403).json({ error: 'Namespace de destino não pertence ao tenant' });
       }
     }
     if (bodyValidation.data.scope?.agentId) {
-      const targetAgent = await db.query.agents.findFirst({
-        where: eq(schema.agents.id, bodyValidation.data.scope.agentId),
-      });
-      if (!targetAgent || targetAgent.tenantId !== tenantId) {
+      const targetAgent = await findAgentByIdInTenant(tenantId, bodyValidation.data.scope.agentId);
+      if (!targetAgent) {
         return res.status(403).json({ error: 'Agente de destino não pertence ao tenant' });
       }
       if (targetAgent.namespaceId !== targetNamespaceId) {
@@ -2401,12 +2397,26 @@ const updateDocumentSchema = z.object({
   { message: 'Nenhum campo fornecido para atualização' }
 );
 
+async function findNamespaceByIdInTenant(tenantId: string, namespaceId: string) {
+  return withTenantContext(tenantId, false, (tenantDb) =>
+    tenantDb.query.namespaces.findFirst({
+      where: eq(schema.namespaces.id, namespaceId),
+    })
+  );
+}
+
+async function findAgentByIdInTenant(tenantId: string, agentId: string) {
+  return withTenantContext(tenantId, false, (tenantDb) =>
+    tenantDb.query.agents.findFirst({
+      where: eq(schema.agents.id, agentId),
+    })
+  );
+}
+
 async function assertNamespaceOwnership(namespaceId: string | undefined, tenantId: string): Promise<void> {
   if (!namespaceId) return;
-  const namespace = await db.query.namespaces.findFirst({
-    where: eq(schema.namespaces.id, namespaceId),
-  });
-  if (!namespace || namespace.tenantId !== tenantId) {
+  const namespace = await findNamespaceByIdInTenant(tenantId, namespaceId);
+  if (!namespace) {
     throw new Error('Namespace inválido ou não pertence ao tenant');
   }
 }
@@ -5328,3 +5338,4 @@ registerShutdownCallback(
 // BUG FIX 23/12/2025: registerShutdownCallback para rag-database-pool movido para dentro do async IIFE
 // Isso garante que o callback seja registrado mesmo se a inicialização falhar parcialmente
 // O callback agora está registrado após o servidor estar inicializado com sucesso (linha 3488)
+
