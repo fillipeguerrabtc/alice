@@ -6,6 +6,14 @@ import { authServicePaths } from '../../../apps/auth-service/src/openapi-specs';
 type HttpMethod = 'get' | 'post' | 'patch' | 'delete' | 'put';
 
 const CRITICAL_AUTH_OPENAPI_ROUTES: Array<{ method: HttpMethod; path: string }> = [
+  { method: 'get', path: '/api/audit/recent' },
+  { method: 'get', path: '/api/auth/roles' },
+  { method: 'get', path: '/api/auth/custom-roles' },
+  { method: 'post', path: '/api/auth/custom-roles' },
+  { method: 'patch', path: '/api/auth/custom-roles/{id}' },
+  { method: 'delete', path: '/api/auth/custom-roles/{id}' },
+  { method: 'get', path: '/api/auth/custom-roles/{id}/permissions' },
+  { method: 'put', path: '/api/auth/custom-roles/{id}/permissions' },
   { method: 'get', path: '/api/auth/permissions' },
   { method: 'get', path: '/api/auth/permissions/{id}' },
   { method: 'post', path: '/api/auth/permissions' },

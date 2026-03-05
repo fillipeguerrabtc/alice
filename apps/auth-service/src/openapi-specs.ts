@@ -698,6 +698,122 @@ export const authServicePaths = {
       },
     },
   },
+  '/api/audit/recent': {
+    get: {
+      summary: 'Listar eventos recentes de auditoria',
+      tags: ['Audit'],
+      'x-required-permission': 'audit:logs:read',
+      responses: {
+        200: {
+          description: 'Eventos recentes de auditoria',
+        },
+      },
+    },
+  },
+  '/api/auth/roles': {
+    get: {
+      summary: 'Listar roles padrao',
+      tags: ['Roles'],
+      'x-required-permission': 'admin:roles:read',
+      responses: {
+        200: { description: 'Lista de roles' },
+      },
+    },
+  },
+  '/api/auth/custom-roles': {
+    get: {
+      summary: 'Listar custom roles',
+      tags: ['Roles'],
+      'x-required-permission': 'admin:roles:read',
+      responses: {
+        200: { description: 'Lista de custom roles' },
+      },
+    },
+    post: {
+      summary: 'Criar custom role',
+      tags: ['Roles'],
+      'x-required-permission': 'admin:roles:write',
+      requestBody: {
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['name'],
+              properties: {
+                name: { type: 'string' },
+                description: { type: 'string' },
+                scope: { type: 'string', enum: ['tenant', 'system'] },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        201: { description: 'Custom role criada' },
+      },
+    },
+  },
+  '/api/auth/custom-roles/{id}': {
+    patch: {
+      summary: 'Atualizar custom role',
+      tags: ['Roles'],
+      'x-required-permission': 'admin:roles:write',
+      parameters: [
+        { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+      ],
+      responses: {
+        200: { description: 'Custom role atualizada' },
+      },
+    },
+    delete: {
+      summary: 'Excluir custom role',
+      tags: ['Roles'],
+      'x-required-permission': 'admin:roles:delete',
+      parameters: [
+        { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+      ],
+      responses: {
+        200: { description: 'Custom role excluida' },
+      },
+    },
+  },
+  '/api/auth/custom-roles/{id}/permissions': {
+    get: {
+      summary: 'Listar permissoes da custom role',
+      tags: ['Roles'],
+      'x-required-permission': 'admin:roles:read',
+      parameters: [
+        { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+      ],
+      responses: {
+        200: { description: 'Permissoes da custom role' },
+      },
+    },
+    put: {
+      summary: 'Definir permissoes da custom role',
+      tags: ['Roles'],
+      'x-required-permission': 'admin:roles:manage',
+      parameters: [
+        { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+      ],
+      requestBody: {
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['permissionCodes'],
+              properties: {
+                permissionCodes: { type: 'array', items: { type: 'string' } },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        200: { description: 'Permissoes da custom role atualizadas' },
+      },
+    },
+  },
   '/api/auth/permissions': {
     get: {
       summary: 'Listar permissões do sistema',
@@ -1017,4 +1133,5 @@ export const authServiceSchemas = {
     },
   },
 };
+
 

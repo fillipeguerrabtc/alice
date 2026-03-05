@@ -10,6 +10,22 @@ const CRITICAL_AUTH_RBAC_CONTRACTS: Array<{
   openapiPath: string;
   requiredPermission: string;
 }> = [
+  { method: 'get', openapiPath: '/api/audit/recent', requiredPermission: 'audit:logs:read' },
+  { method: 'get', openapiPath: '/api/auth/roles', requiredPermission: 'admin:roles:read' },
+  { method: 'get', openapiPath: '/api/auth/custom-roles', requiredPermission: 'admin:roles:read' },
+  { method: 'post', openapiPath: '/api/auth/custom-roles', requiredPermission: 'admin:roles:write' },
+  { method: 'patch', openapiPath: '/api/auth/custom-roles/{id}', requiredPermission: 'admin:roles:write' },
+  { method: 'delete', openapiPath: '/api/auth/custom-roles/{id}', requiredPermission: 'admin:roles:delete' },
+  {
+    method: 'get',
+    openapiPath: '/api/auth/custom-roles/{id}/permissions',
+    requiredPermission: 'admin:roles:read',
+  },
+  {
+    method: 'put',
+    openapiPath: '/api/auth/custom-roles/{id}/permissions',
+    requiredPermission: 'admin:roles:manage',
+  },
   { method: 'get', openapiPath: '/api/auth/permissions', requiredPermission: 'admin:permissions:read' },
   { method: 'get', openapiPath: '/api/auth/permissions/{id}', requiredPermission: 'admin:permissions:read' },
   { method: 'post', openapiPath: '/api/auth/permissions', requiredPermission: 'admin:permissions:write' },
