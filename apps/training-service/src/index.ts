@@ -592,6 +592,24 @@ logger.info('Training service inicializado - fine-tuning LoRA ativo via GPU Mana
 
 // Usar package @alice/database centralizado (node-postgres para produÃ§Ã£o Hetzner)
 const db = getDatabase();
+
+async function findNamespaceByIdInTenant(tenantId: string, namespaceId: string) {
+  return withTenantContext(tenantId, false, async (tenantDb) =>
+    tenantDb.query.namespaces.findFirst({
+      where: eq(schema.namespaces.id, namespaceId),
+      columns: { id: true, tenantId: true },
+    })
+  );
+}
+
+async function findAgentByIdInTenant(tenantId: string, agentId: string) {
+  return withTenantContext(tenantId, false, async (tenantDb) =>
+    tenantDb.query.agents.findFirst({
+      where: eq(schema.agents.id, agentId),
+      columns: { id: true, tenantId: true, namespaceId: true },
+    })
+  );
+}
 setPermissionResolver(async (auth) => {
   let customRoleId = auth.customRoleId;
   if (!customRoleId) {
@@ -2872,11 +2890,11 @@ app.post('/api/training/data', requirePermission('training:training_data:write')
       await validateNamespaceTenantConsistency(
         body.namespaceId,
         resolvedTenantId,
-        async (id) => getDatabase().query.namespaces.findFirst({ where: eq(schema.namespaces.id, id), columns: { id: true, tenantId: true } })
+        async (id) => findNamespaceByIdInTenant(resolvedTenantId, id)
       );
     }
     if (body.agentId) {
-      const agent = await getDatabase().query.agents.findFirst({ where: eq(schema.agents.id, body.agentId), columns: { id: true, tenantId: true } });
+      const agent = await findAgentByIdInTenant(resolvedTenantId, body.agentId);
       validateTenantConsistency('agent', agent, resolvedTenantId, 'training_data');
     }
 
@@ -5229,10 +5247,7 @@ app.post('/api/training/bulk-import', requirePermission('training:training_data:
         await validateNamespaceTenantConsistency(
           namespaceId,
           tenantId,
-          async (id) => getDatabase().query.namespaces.findFirst({
-            where: eq(schema.namespaces.id, id),
-            columns: { id: true, tenantId: true },
-          })
+          async (id) => findNamespaceByIdInTenant(tenantId, id)
         );
       } catch (validationError) {
         logger.warn({
@@ -5245,10 +5260,7 @@ app.post('/api/training/bulk-import', requirePermission('training:training_data:
     }
 
     if (agentId) {
-      const agent = await db.query.agents.findFirst({
-        where: eq(schema.agents.id, agentId),
-        columns: { id: true, tenantId: true, namespaceId: true },
-      });
+      const agent = await findAgentByIdInTenant(tenantId, agentId);
       try {
         validateTenantConsistency('agent', agent, tenantId, 'training_bulk_import');
       } catch (validationError) {
@@ -7378,3 +7390,5 @@ let autoLearningLoopActive = false;
     process.exit(1);
   }
 })();
+
+
