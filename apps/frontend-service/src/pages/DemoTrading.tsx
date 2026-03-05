@@ -395,7 +395,8 @@ function DemoTradingContent() {
       return res.json();
     },
     enabled: !!user?.id && isConfigured && isSymbolValid, // Só executar após auth e config OK
-    refetchInterval: 3_000,
+    // FE-001: mercado deve usar WS como fonte primária; polling só como fallback.
+    refetchInterval: wsHealthy ? false : 3_000,
   });
 
   const market = marketData?.data;
