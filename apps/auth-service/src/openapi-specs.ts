@@ -702,6 +702,7 @@ export const authServicePaths = {
     get: {
       summary: 'Listar permissões do sistema',
       tags: ['Permissions'],
+      'x-required-permission': 'admin:permissions:read',
       responses: {
         200: {
           description: 'Lista de permissões',
@@ -721,6 +722,7 @@ export const authServicePaths = {
     post: {
       summary: 'Criar permissão',
       tags: ['Permissions'],
+      'x-required-permission': 'admin:permissions:write',
       requestBody: {
         content: {
           'application/json': {
@@ -747,6 +749,7 @@ export const authServicePaths = {
     get: {
       summary: 'Buscar permissão por ID',
       tags: ['Permissions'],
+      'x-required-permission': 'admin:permissions:read',
       parameters: [
         { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
       ],
@@ -758,6 +761,7 @@ export const authServicePaths = {
     patch: {
       summary: 'Atualizar permissão',
       tags: ['Permissions'],
+      'x-required-permission': 'admin:permissions:write',
       parameters: [
         { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
       ],
@@ -783,6 +787,7 @@ export const authServicePaths = {
     delete: {
       summary: 'Excluir permissão',
       tags: ['Permissions'],
+      'x-required-permission': 'admin:permissions:delete',
       parameters: [
         { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
       ],
@@ -796,6 +801,7 @@ export const authServicePaths = {
     get: {
       summary: 'Listar permissões por role',
       tags: ['Permissions'],
+      'x-required-permission': 'admin:permissions:read',
       parameters: [
         { name: 'role', in: 'path', required: true, schema: { type: 'string' } },
       ],
@@ -806,6 +812,7 @@ export const authServicePaths = {
     put: {
       summary: 'Definir permissões da role',
       tags: ['Permissions'],
+      'x-required-permission': 'admin:permissions:manage',
       parameters: [
         { name: 'role', in: 'path', required: true, schema: { type: 'string' } },
       ],
@@ -832,6 +839,7 @@ export const authServicePaths = {
     get: {
       summary: 'Listar grupos organizacionais',
       tags: ['Groups'],
+      'x-required-permission': 'admin:groups:read',
       responses: {
         200: { description: 'Lista de grupos' },
       },
@@ -839,6 +847,7 @@ export const authServicePaths = {
     post: {
       summary: 'Criar grupo organizacional',
       tags: ['Groups'],
+      'x-required-permission': 'admin:groups:write',
       requestBody: {
         content: {
           'application/json': {
@@ -864,6 +873,7 @@ export const authServicePaths = {
     patch: {
       summary: 'Atualizar grupo organizacional',
       tags: ['Groups'],
+      'x-required-permission': 'admin:groups:write',
       parameters: [
         { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
       ],
@@ -889,6 +899,7 @@ export const authServicePaths = {
     delete: {
       summary: 'Excluir grupo organizacional',
       tags: ['Groups'],
+      'x-required-permission': 'admin:groups:delete',
       parameters: [
         { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
       ],
@@ -902,6 +913,7 @@ export const authServicePaths = {
     get: {
       summary: 'Listar membros do grupo',
       tags: ['Groups'],
+      'x-required-permission': 'admin:groups:read',
       parameters: [
         { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
       ],
@@ -913,6 +925,7 @@ export const authServicePaths = {
     post: {
       summary: 'Adicionar usuário ao grupo',
       tags: ['Groups'],
+      'x-required-permission': 'admin:groups:manage',
       parameters: [
         { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
       ],
@@ -937,6 +950,7 @@ export const authServicePaths = {
     delete: {
       summary: 'Remover usuário do grupo',
       tags: ['Groups'],
+      'x-required-permission': 'admin:groups:manage',
       parameters: [
         { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
         { name: 'userId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
@@ -1003,3 +1017,4 @@ export const authServiceSchemas = {
     },
   },
 };
+
