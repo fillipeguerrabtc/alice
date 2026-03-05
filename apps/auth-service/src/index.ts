@@ -2079,7 +2079,7 @@ const changePasswordSchema = z.object({
 
 async function callBiometricsService<T>(endpoint: string, body: Record<string, unknown>): Promise<T> {
   if (!BIOMETRICS_SERVICE_URL || !INTERNAL_API_SECRET) {
-    throw new Error('Biometria não configurada.');
+    throw new BiometricsServiceError('Biometria nao configurada.', 503);
   }
   const response = await fetch(`${BIOMETRICS_SERVICE_URL}${endpoint}`, {
     method: 'POST',
@@ -2091,9 +2091,49 @@ async function callBiometricsService<T>(endpoint: string, body: Record<string, u
   });
   if (!response.ok) {
     const errText = await response.text().catch(() => '');
-    throw new Error(errText || 'Falha ao chamar biometria.');
+    let message = 'Falha ao chamar biometria.';
+    if (errText) {
+      try {
+        const parsed = JSON.parse(errText) as { error?: unknown; message?: unknown };
+        const upstreamMessage =
+          (typeof parsed.error === 'string' && parsed.error.trim()) ||
+          (typeof parsed.message === 'string' && parsed.message.trim()) ||
+          '';
+        if (upstreamMessage) {
+          message = upstreamMessage;
+        }
+      } catch {
+        message = errText;
+      }
+    }
+    throw new BiometricsServiceError(message, response.status);
   }
   return response.json() as Promise<T>;
+}
+
+class BiometricsServiceError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'BiometricsServiceError';
+    this.status = status;
+  }
+}
+
+function resolveBiometricsError(error: unknown): { status: number; message: string } {
+  if (error instanceof BiometricsServiceError) {
+    return {
+      status: error.status >= 400 && error.status < 600 ? error.status : 502,
+      message: error.message || 'Falha ao chamar biometria.',
+    };
+  }
+
+  if (error instanceof Error) {
+    return { status: 500, message: error.message || 'Erro desconhecido' };
+  }
+
+  return { status: 500, message: 'Erro desconhecido' };
 }
 
 // Middleware de validação Zod para login (OWASP API3)
@@ -2218,9 +2258,9 @@ app.post('/api/auth/biometrics/login', biometricsLoginRateLimiter, async (req: R
       return res.json({ user: authContext });
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Erro desconhecido';
-    logger.error({ error: message }, 'Falha no login biométrico');
-    res.status(500).json({ error: message });
+    const mapped = resolveBiometricsError(error);
+    logger.error({ error: mapped.message, status: mapped.status }, 'Falha no login biometrico');
+    res.status(mapped.status).json({ error: mapped.message });
   }
 });
 
@@ -2233,8 +2273,8 @@ app.post('/api/auth/biometrics/status', requireAuth(), async (req: Request, res:
     });
     res.json(result);
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Erro desconhecido';
-    res.status(500).json({ error: message });
+    const mapped = resolveBiometricsError(error);
+    res.status(mapped.status).json({ error: mapped.message });
   }
 });
 
@@ -2253,8 +2293,8 @@ app.post('/api/auth/biometrics/enroll', requireAuth(), async (req: Request, res:
     });
     res.json(result);
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Erro desconhecido';
-    res.status(500).json({ error: message });
+    const mapped = resolveBiometricsError(error);
+    res.status(mapped.status).json({ error: mapped.message });
   }
 });
 
@@ -2274,8 +2314,8 @@ app.post('/api/auth/biometrics/verify', requireAuth(), async (req: Request, res:
     });
     res.json(result);
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Erro desconhecido';
-    res.status(500).json({ error: message });
+    const mapped = resolveBiometricsError(error);
+    res.status(mapped.status).json({ error: mapped.message });
   }
 });
 
@@ -4383,5 +4423,3 @@ let server: ReturnType<typeof app.listen>;
     process.exit(1);
   }
 })();
-
-

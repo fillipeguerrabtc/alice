@@ -42,6 +42,8 @@ BIOMETRICS_ENCRYPTION_KEY = os.getenv("BIOMETRICS_ENCRYPTION_KEY", "").strip()
 BIOMETRICS_MATCH_THRESHOLD = os.getenv("BIOMETRICS_MATCH_THRESHOLD", "").strip()
 BIOMETRICS_VERIFY_RATE_LIMIT = os.getenv("BIOMETRICS_VERIFY_RATE_LIMIT", "").strip()
 BIOMETRICS_ENROLL_RATE_LIMIT = os.getenv("BIOMETRICS_ENROLL_RATE_LIMIT", "").strip()
+BIOMETRICS_LIVENESS_THRESHOLD = os.getenv("BIOMETRICS_LIVENESS_THRESHOLD", "").strip()
+BIOMETRICS_ENFORCE_LIVENESS = os.getenv("BIOMETRICS_ENFORCE_LIVENESS", "").strip()
 
 if not INTERNAL_API_SECRET:
   raise RuntimeError("INTERNAL_API_SECRET é obrigatório para biometria.")
@@ -66,9 +68,21 @@ def parse_rate_limit(raw: str, fallback: int) -> int:
     raise RuntimeError("Rate limit inválido para biometria.")
   return value
 
+def parse_env_boolean(raw: str, fallback: bool) -> bool:
+  if not raw:
+    return fallback
+  normalized = raw.strip().lower()
+  if normalized in ("1", "true", "yes", "on"):
+    return True
+  if normalized in ("0", "false", "no", "off"):
+    return False
+  raise RuntimeError("Valor booleano invalido para biometria.")
+
 MATCH_THRESHOLD = parse_threshold(BIOMETRICS_MATCH_THRESHOLD)
 VERIFY_RATE_LIMIT = parse_rate_limit(BIOMETRICS_VERIFY_RATE_LIMIT, 5)
 ENROLL_RATE_LIMIT = parse_rate_limit(BIOMETRICS_ENROLL_RATE_LIMIT, 3)
+LIVENESS_THRESHOLD = parse_threshold(BIOMETRICS_LIVENESS_THRESHOLD) if BIOMETRICS_LIVENESS_THRESHOLD else 0.45
+ENFORCE_LIVENESS = parse_env_boolean(BIOMETRICS_ENFORCE_LIVENESS, True)
 MAX_ACTIVE_EMBEDDINGS = 3
 
 def decode_encryption_key(raw: str) -> bytes:
@@ -95,6 +109,13 @@ _BIOMETRICS_REQUESTS_TOTAL = Counter(
     "alice_biometrics_requests_total",
     "Total de requisições do Biometrics Service",
     ["method", "route", "status_code"],
+    registry=REGISTRY,
+)
+
+_BIOMETRICS_LIVENESS_REJECTIONS_TOTAL = Counter(
+    "alice_biometrics_liveness_rejections_total",
+    "Total de bloqueios por liveness/anti-spoof no Biometrics Service",
+    ["action_type", "reason"],
     registry=REGISTRY,
 )
 
@@ -170,6 +191,65 @@ def extract_embedding(image: np.ndarray) -> np.ndarray:
   if embedding.shape[0] != 128:
     raise HTTPException(status_code=500, detail="Embedding inválido.")
   return embedding
+
+def clamp01(value: float) -> float:
+  return max(0.0, min(1.0, value))
+
+def compute_passive_liveness(image: np.ndarray) -> tuple[float, dict[str, float]]:
+  locations = face_recognition.face_locations(image)
+  if len(locations) == 0:
+    raise HTTPException(status_code=400, detail="Nenhuma face detectada para liveness.")
+  if len(locations) > 1:
+    raise HTTPException(status_code=400, detail="Mais de uma face detectada para liveness.")
+
+  top, right, bottom, left = locations[0]
+  if image.ndim != 3 or image.shape[2] < 3:
+    raise HTTPException(status_code=400, detail="Imagem invalida para analise de liveness.")
+
+  height, width = image.shape[:2]
+  if height == 0 or width == 0:
+    raise HTTPException(status_code=400, detail="Imagem invalida para analise de liveness.")
+
+  face_top = max(0, min(top, height - 1))
+  face_bottom = max(face_top + 1, min(bottom, height))
+  face_left = max(0, min(left, width - 1))
+  face_right = max(face_left + 1, min(right, width))
+
+  grayscale = np.mean(image.astype(np.float32), axis=2)
+  face_crop = grayscale[face_top:face_bottom, face_left:face_right]
+  if face_crop.size == 0:
+    raise HTTPException(status_code=400, detail="Falha ao extrair regiao facial para liveness.")
+
+  face_area_ratio = (face_crop.shape[0] * face_crop.shape[1]) / float(height * width)
+  brightness = float(np.mean(face_crop) / 255.0)
+  contrast = float(np.std(face_crop) / 64.0)
+
+  grad_x = np.abs(np.diff(face_crop, axis=1))
+  grad_y = np.abs(np.diff(face_crop, axis=0))
+  gradient_energy = float((np.mean(grad_x) + np.mean(grad_y)) / 255.0)
+
+  brightness_score = 1.0 - clamp01(abs(brightness - 0.5) / 0.5)
+  contrast_score = clamp01(contrast)
+  sharpness_score = clamp01(gradient_energy * 2.5)
+  face_size_score = clamp01((face_area_ratio - 0.05) / 0.20)
+
+  final_score = clamp01(
+    (brightness_score * 0.20)
+    + (contrast_score * 0.25)
+    + (sharpness_score * 0.35)
+    + (face_size_score * 0.20)
+  )
+
+  return final_score, {
+    "brightness": round(brightness, 4),
+    "contrast": round(contrast, 4),
+    "gradientEnergy": round(gradient_energy, 4),
+    "faceAreaRatio": round(face_area_ratio, 4),
+    "brightnessScore": round(brightness_score, 4),
+    "contrastScore": round(contrast_score, 4),
+    "sharpnessScore": round(sharpness_score, 4),
+    "faceSizeScore": round(face_size_score, 4),
+  }
 
 def encrypt_embedding(embedding: np.ndarray) -> bytes:
   nonce = os.urandom(12)
@@ -331,10 +411,13 @@ async def enroll(
         payload.userId,
         payload.tenantId,
       )
+      liveness_score = 0.0
+      liveness_details: dict[str, float] = {}
 
       try:
         image = decode_image(payload.imageBase64)
         embedding = extract_embedding(image)
+        liveness_score, liveness_details = compute_passive_liveness(image)
       except HTTPException as exc:
         await record_verification_attempt(
           db,
@@ -351,6 +434,30 @@ async def enroll(
           str(exc.detail),
         )
         raise
+
+      if ENFORCE_LIVENESS and liveness_score < LIVENESS_THRESHOLD:
+        _BIOMETRICS_LIVENESS_REJECTIONS_TOTAL.labels(action_type="enroll", reason="below_threshold").inc()
+        await record_verification_attempt(
+          db,
+          profile_id,
+          payload.tenantId,
+          payload.userId,
+          "enroll",
+          "failed",
+          liveness_score,
+          LIVENESS_THRESHOLD,
+          None,
+          None,
+          {
+            "liveness": {
+              "score": liveness_score,
+              "threshold": LIVENESS_THRESHOLD,
+              "details": liveness_details,
+            },
+          },
+          "Liveness abaixo do limiar configurado.",
+        )
+        raise HTTPException(status_code=422, detail="Falha no liveness check. Tente novamente em melhor iluminacao.")
 
       encrypted = encrypt_embedding(embedding)
       embedding_hash = hashlib.sha256(embedding.tobytes()).hexdigest()
@@ -417,16 +524,22 @@ async def enroll(
           payload.userId,
           "enroll",
           "success",
+          liveness_score,
+          LIVENESS_THRESHOLD if ENFORCE_LIVENESS else None,
           None,
           None,
-          None,
-          None,
-          {},
+          {
+            "liveness": {
+              "score": liveness_score,
+              "threshold": LIVENESS_THRESHOLD if ENFORCE_LIVENESS else None,
+              "details": liveness_details,
+            },
+          },
           None,
         )
-      return profile_id
+      return profile_id, liveness_score, liveness_details
 
-    profile_id = await with_rate_limit_lock(
+    profile_id, liveness_score, liveness_details = await with_rate_limit_lock(
       db,
       payload.tenantId,
       payload.userId,
@@ -438,6 +551,12 @@ async def enroll(
     "profileId": str(profile_id),
     "status": "active",
     "model": "face_recognition_128d",
+    "liveness": {
+      "score": liveness_score,
+      "threshold": LIVENESS_THRESHOLD if ENFORCE_LIVENESS else None,
+      "passed": (not ENFORCE_LIVENESS) or (liveness_score >= LIVENESS_THRESHOLD),
+      "details": liveness_details,
+    },
   }
 
 @app.post("/verify")
@@ -464,10 +583,13 @@ async def verify(
         payload.userId,
         payload.tenantId,
       )
+      liveness_score = 0.0
+      liveness_details: dict[str, float] = {}
 
       try:
         image = decode_image(payload.imageBase64)
         embedding = extract_embedding(image)
+        liveness_score, liveness_details = compute_passive_liveness(image)
       except HTTPException as exc:
         await record_verification_attempt(
           db,
@@ -484,6 +606,31 @@ async def verify(
           str(exc.detail),
         )
         raise
+
+      if ENFORCE_LIVENESS and liveness_score < LIVENESS_THRESHOLD:
+        _BIOMETRICS_LIVENESS_REJECTIONS_TOTAL.labels(action_type=payload.actionType, reason="below_threshold").inc()
+        await record_verification_attempt(
+          db,
+          profile_id,
+          payload.tenantId,
+          payload.userId,
+          payload.actionType,
+          "failed",
+          liveness_score,
+          LIVENESS_THRESHOLD,
+          x_forwarded_for,
+          user_agent,
+          {
+            **(payload.actionContext or {}),
+            "liveness": {
+              "score": liveness_score,
+              "threshold": LIVENESS_THRESHOLD,
+              "details": liveness_details,
+            },
+          },
+          "Liveness abaixo do limiar configurado.",
+        )
+        return False, 1.0, profile_id, liveness_score, liveness_details
 
       record = await db.fetchrow(
         """
@@ -557,7 +704,14 @@ async def verify(
         MATCH_THRESHOLD,
         x_forwarded_for,
         user_agent,
-        payload.actionContext,
+        {
+          **(payload.actionContext or {}),
+          "liveness": {
+            "score": liveness_score,
+            "threshold": LIVENESS_THRESHOLD if ENFORCE_LIVENESS else None,
+            "details": liveness_details,
+          },
+        },
         None,
       )
 
@@ -567,9 +721,9 @@ async def verify(
           record["profile_id"],
         )
 
-      return match, min_distance, record["profile_id"]
+      return match, min_distance, record["profile_id"], liveness_score, liveness_details
 
-    match, distance, profile_id = await with_rate_limit_lock(
+    match, distance, profile_id, liveness_score, liveness_details = await with_rate_limit_lock(
       db,
       payload.tenantId,
       payload.userId,
@@ -582,5 +736,10 @@ async def verify(
     "score": distance,
     "threshold": MATCH_THRESHOLD,
     "profileId": str(profile_id),
+    "liveness": {
+      "score": liveness_score,
+      "threshold": LIVENESS_THRESHOLD if ENFORCE_LIVENESS else None,
+      "passed": (not ENFORCE_LIVENESS) or (liveness_score >= LIVENESS_THRESHOLD),
+      "details": liveness_details,
+    },
   }
-
