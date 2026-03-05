@@ -3098,7 +3098,6 @@ app.use(express.json({ limit: '10mb' }));
 app.use(createSessionAuthMiddleware({
   pool: getPool(),
   publicPaths: [
-    '/api/integrations/health', 
     '/live', 
     '/ready', 
     '/metrics',
@@ -3125,7 +3124,6 @@ app.use(createRateLimiter({
   windowMs: rateLimitWindowMs,
   max: apiRateLimitMax,
   skipRoutes: [
-    '/api/integrations/health',
     '/api/integrations/stripe/webhook',
     '/api/integrations/wise/webhook',
     '/api/integrations/twilio/webhook',
@@ -3306,7 +3304,7 @@ async function refreshIntegrationHealthMetrics(): Promise<Record<string, Integra
   return services;
 }
 
-app.get('/api/integrations/health', (_req: Request, res: Response) => {
+app.get('/api/integrations/health', requirePermission('integrations:integrations:read'), (_req: Request, res: Response) => {
   refreshIntegrationHealthMetrics()
     .then((services) => {
       const tradingHealth = services.trading;
