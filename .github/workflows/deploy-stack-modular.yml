@@ -3888,6 +3888,13 @@ jobs:
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "🚀 UP: Iniciando containers..."
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "🔐 Preflight: validating required secrets and compose config for INFRA..."
+            if ! bash ../../scripts/preflight-secrets.sh --stack infra --env-file ../.env.prod --compose-file docker-compose.infra.yml; then
+              echo "❌ ERRO: preflight de secrets/config falhou para stack INFRA."
+              exit 1
+            fi
+            echo ""
+
             if ! docker compose -p alice-infra --env-file ../.env.prod \
                            -f docker-compose.base.yml \
                            -f docker-compose.infra.yml \
@@ -4998,6 +5005,13 @@ jobs:
             # BENEFÍCIO: Economia de 15-20 minutos no deploy (pull já foi feito acima)
             # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Mudanças cirúrgicas)
             # =================================================================
+            echo "🔐 Preflight: validating required secrets and compose config for ALICE..."
+            if ! bash ../../scripts/preflight-secrets.sh --stack alice --env-file ../.env.prod --compose-file docker-compose.alice.yml; then
+              echo "❌ ERRO: preflight de secrets/config falhou para stack ALICE."
+              exit 1
+            fi
+            echo ""
+
             if ! docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml up -d --remove-orphans 2>&1; then
               echo ""
               echo "❌ ERRO: Falha no docker compose up!"
@@ -5731,6 +5745,13 @@ jobs:
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "🚀 UP: Iniciando containers..."
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "🔐 Preflight: validating required secrets and compose config for OBSERVABILITY..."
+            if ! bash ../../scripts/preflight-secrets.sh --stack observability --env-file ../.env.prod --compose-file docker-compose.observability.yml; then
+              echo "❌ ERRO: preflight de secrets/config falhou para stack OBSERVABILITY."
+              exit 1
+            fi
+            echo ""
+
             if ! docker compose -p alice-observability --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.observability.yml up -d --remove-orphans 2>&1; then
               echo ""
               echo "❌ ERRO: Falha no docker compose up!"
@@ -6388,6 +6409,13 @@ jobs:
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "🚀 UP: Iniciando containers..."
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "🔐 Preflight: validating required secrets and compose config for BACKUP..."
+            if ! bash ../../scripts/preflight-secrets.sh --stack backup --env-file ../.env.prod --compose-file docker-compose.backup.yml; then
+              echo "❌ ERRO: preflight de secrets/config falhou para stack BACKUP."
+              exit 1
+            fi
+            echo ""
+
             if ! docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.backup.yml up -d --remove-orphans 2>&1; then
               echo ""
               echo "❌ ERRO: Falha no docker compose up!"

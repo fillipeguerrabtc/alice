@@ -208,6 +208,20 @@ docker logs alice-gpu-llm 2>&1 | grep -i lora
 - [ ] Deploy disparado via workflow
 - [ ] Health checks passaram para todos os stacks
 
+### Preflight obrigatório (secrets + compose)
+
+Antes de qualquer `docker compose up`, execute o preflight fail-fast:
+
+```bash
+# Linux/macOS (na pasta do repo)
+bash infra/scripts/preflight-secrets.sh --stack all --env-file infra/docker/.env.prod --compose-file infra/docker/stacks/docker-compose.alice.yml
+
+# Windows PowerShell
+powershell -ExecutionPolicy Bypass -File infra/scripts/preflight-secrets.ps1 -Stack all -EnvFile infra/docker/.env.prod -ComposeFile infra/docker/stacks/docker-compose.alice.yml
+```
+
+No pipeline oficial (`deploy-stack-modular.yml`), esse preflight também roda de forma automática por stack imediatamente antes do `compose up`.
+
 ## Secrets obrigatórios (referência)
 
 Consulte `docs/SECRETS.md` para a lista completa. O deploy é fail-fast se secrets críticos estiverem ausentes.
@@ -263,6 +277,12 @@ gh workflow run deploy-stack-modular.yml \
 
 - Se o repositório **não possui backups** para a stanza (`/var/lib/pgbackrest/backup/<stanza>` vazio), o init container executa **reset automático** para destravar a criação da stanza.
 - Se **existirem backups**, o reset **continua bloqueado** e exige `PGBACKREST_ALLOW_STANZA_RESET=true`.
+
+### DR e Game Day
+
+O procedimento operacional de restore (com metas de RTO/RPO e evidências obrigatórias) está em:
+
+- `docs/DR-RUNBOOK.md`
 
 ## Troubleshooting rápido
 
