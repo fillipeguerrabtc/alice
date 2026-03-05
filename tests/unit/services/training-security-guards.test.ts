@@ -41,6 +41,10 @@ describe('training-service security guards', () => {
     expect(source.includes('validateWebhookSignature({')).toBe(true);
     expect(source.includes('validateWebhookBodyDigest({')).toBe(true);
     expect(source.includes('validateAndStoreWebhookNonce({')).toBe(true);
+    expect(source.includes('WEBHOOK_NONCE_REQUIRE_REDIS')).toBe(true);
+    expect(
+      source.includes("return res.status(503).json({ error: 'Validacao de nonce indisponivel; webhook bloqueado (fail-closed)' });")
+    ).toBe(true);
     expect(source.includes("return res.status(409).json({ error: 'Nonce ja utilizado (replay detectado)' });")).toBe(true);
   });
 

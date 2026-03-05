@@ -5437,6 +5437,10 @@ const webhookNonceStore = new Map<string, number>();
 const WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS = 300;
 const WEBHOOK_NONCE_TTL_MS = 10 * 60 * 1000;
 const WEBHOOK_NONCE_REDIS_PREFIX = 'alice:training:webhook:nonce';
+const WEBHOOK_NONCE_REQUIRE_REDIS = parseEnvBoolean(
+  process.env.TRAINING_WEBHOOK_NONCE_REQUIRE_REDIS,
+  process.env.NODE_ENV === 'production'
+);
 const webhookNonceCleanupTimer = setInterval(() => {
   const now = Date.now();
   for (const [nonce, expiresAt] of webhookNonceStore.entries()) {
@@ -5450,7 +5454,12 @@ webhookNonceCleanupTimer.unref?.();
 type WebhookNonceValidationResult = {
   accepted: boolean;
   storage: 'redis' | 'memory';
-  result: 'accepted' | 'replay' | 'fallback_after_redis_error';
+  result:
+    | 'accepted'
+    | 'replay'
+    | 'fallback_after_redis_error'
+    | 'redis_error_blocked'
+    | 'redis_unavailable_blocked';
 };
 
 async function validateAndStoreWebhookNonce(params: {
@@ -5471,8 +5480,11 @@ async function validateAndStoreWebhookNonce(params: {
     } catch (error) {
       logger.error(
         { error, tenantId: params.tenantId },
-        'Falha ao validar nonce do webhook no Redis; aplicando fallback em memoria'
+        'Falha ao validar nonce do webhook no Redis'
       );
+      if (WEBHOOK_NONCE_REQUIRE_REDIS) {
+        return { accepted: false, storage: 'redis', result: 'redis_error_blocked' };
+      }
       const nonceExpiry = webhookNonceStore.get(inMemoryKey);
       if (nonceExpiry && nonceExpiry > Date.now()) {
         return { accepted: false, storage: 'memory', result: 'replay' };
@@ -5480,6 +5492,10 @@ async function validateAndStoreWebhookNonce(params: {
       webhookNonceStore.set(inMemoryKey, Date.now() + WEBHOOK_NONCE_TTL_MS);
       return { accepted: true, storage: 'memory', result: 'fallback_after_redis_error' };
     }
+  }
+
+  if (WEBHOOK_NONCE_REQUIRE_REDIS) {
+    return { accepted: false, storage: 'redis', result: 'redis_unavailable_blocked' };
   }
 
   const nonceExpiry = webhookNonceStore.get(inMemoryKey);
@@ -5617,6 +5633,12 @@ app.post('/api/training/webhook', async (req: Request, res: Response) => {
     result: nonceValidation.result,
   });
   if (!nonceValidation.accepted) {
+    if (
+      nonceValidation.result === 'redis_error_blocked' ||
+      nonceValidation.result === 'redis_unavailable_blocked'
+    ) {
+      return res.status(503).json({ error: 'Validacao de nonce indisponivel; webhook bloqueado (fail-closed)' });
+    }
     return res.status(409).json({ error: 'Nonce ja utilizado (replay detectado)' });
   }
 
