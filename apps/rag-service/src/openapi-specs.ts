@@ -1,7 +1,7 @@
 /**
  * Alice Enterprise Platform - RAG Service OpenAPI Specs
- * Autor: Fillipe Guerra
- * Data: 11 de Dezembro de 2025
+ * Author: Fillipe Guerra
+ * Date: 11 Dec 2025
  */
 
 export const ragServicePaths = {
@@ -21,10 +21,29 @@ export const ragServicePaths = {
       responses: { 200: { description: 'Ready' } },
     },
   },
+  '/metrics': {
+    get: {
+      summary: 'Prometheus metrics',
+      tags: ['Health'],
+      security: [],
+      responses: { 200: { description: 'Metrics' } },
+    },
+  },
+
+  '/api/rag/workers/document-processing': {
+    get: {
+      summary: 'Document processing worker status',
+      tags: ['Workers'],
+      'x-required-permission': 'rag:documents:read',
+      responses: { 200: { description: 'Worker status' } },
+    },
+  },
+
   '/api/rag/documents': {
     get: {
-      summary: 'Listar documentos',
+      summary: 'List documents',
       tags: ['Documents'],
+      'x-required-permission': 'rag:documents:read',
       parameters: [
         { name: 'page', in: 'query', schema: { type: 'integer' } },
         { name: 'limit', in: 'query', schema: { type: 'integer' } },
@@ -33,16 +52,16 @@ export const ragServicePaths = {
           in: 'query',
           schema: {
             type: 'string',
-            // ATUALIZADO 23/12/2025: Removido 'video' (muito pesado para GPU)
             enum: ['text', 'image', 'audio', 'document'],
           },
         },
       ],
-      responses: { 200: { description: 'Lista de documentos' } },
+      responses: { 200: { description: 'Document list' } },
     },
     post: {
-      summary: 'Upload de documento',
+      summary: 'Create document',
       tags: ['Documents'],
+      'x-required-permission': 'rag:documents:write',
       requestBody: {
         content: {
           'multipart/form-data': {
@@ -59,14 +78,39 @@ export const ragServicePaths = {
         },
       },
       responses: {
-        201: { description: 'Documento criado' },
-        400: { description: 'Tipo não suportado' },
+        201: { description: 'Document created' },
+        400: { description: 'Unsupported type' },
       },
     },
   },
+
+  '/api/rag/documents/upload': {
+    post: {
+      summary: 'Upload document file',
+      tags: ['Documents'],
+      'x-required-permission': 'rag:documents:upload',
+      requestBody: {
+        content: {
+          'multipart/form-data': {
+            schema: {
+              type: 'object',
+              required: ['file'],
+              properties: {
+                file: { type: 'string', format: 'binary' },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        201: { description: 'Upload accepted' },
+      },
+    },
+  },
+
   '/api/rag/documents/{id}': {
     get: {
-      summary: 'Buscar documento',
+      summary: 'Get document',
       tags: ['Documents'],
       parameters: [
         {
@@ -77,13 +121,14 @@ export const ragServicePaths = {
         },
       ],
       responses: {
-        200: { description: 'Documento' },
+        200: { description: 'Document' },
         404: { $ref: '#/components/responses/NotFound' },
       },
     },
-    delete: {
-      summary: 'Remover documento',
+    patch: {
+      summary: 'Update document',
       tags: ['Documents'],
+      'x-required-permission': 'rag:documents:write',
       parameters: [
         {
           name: 'id',
@@ -92,14 +137,81 @@ export const ragServicePaths = {
           schema: { type: 'string' },
         },
       ],
-      responses: { 204: { description: 'Removido' } },
+      responses: { 200: { description: 'Document updated' } },
+    },
+    delete: {
+      summary: 'Delete document',
+      tags: ['Documents'],
+      'x-required-permission': 'rag:documents:delete',
+      parameters: [
+        {
+          name: 'id',
+          in: 'path',
+          required: true,
+          schema: { type: 'string' },
+        },
+      ],
+      responses: { 204: { description: 'Deleted' } },
     },
   },
+
+  '/api/rag/documents/{id}/status': {
+    get: {
+      summary: 'Get document processing status',
+      tags: ['Documents'],
+      'x-required-permission': 'rag:documents:read',
+      parameters: [
+        {
+          name: 'id',
+          in: 'path',
+          required: true,
+          schema: { type: 'string' },
+        },
+      ],
+      responses: { 200: { description: 'Document status' } },
+    },
+  },
+
+  '/api/rag/documents/{id}/reprocess': {
+    post: {
+      summary: 'Reprocess document',
+      tags: ['Documents'],
+      'x-required-permission': 'rag:documents:write',
+      parameters: [
+        {
+          name: 'id',
+          in: 'path',
+          required: true,
+          schema: { type: 'string' },
+        },
+      ],
+      responses: { 202: { description: 'Reprocess queued' } },
+    },
+  },
+
+  '/api/rag/documents/{id}/send-to-training': {
+    post: {
+      summary: 'Send document to training',
+      tags: ['Documents', 'Training'],
+      'x-required-permission': 'training:training_data:write',
+      parameters: [
+        {
+          name: 'id',
+          in: 'path',
+          required: true,
+          schema: { type: 'string' },
+        },
+      ],
+      responses: { 200: { description: 'Document sent to training' } },
+    },
+  },
+
   '/api/rag/search': {
     post: {
-      summary: 'Busca semântica',
-      description: 'Realiza busca semântica usando pgvector.',
+      summary: 'Semantic search',
+      description: 'Run semantic retrieval using pgvector.',
       tags: ['Search'],
+      'x-required-permission': 'rag:documents:read',
       requestBody: {
         content: {
           'application/json': {
@@ -124,7 +236,7 @@ export const ragServicePaths = {
       },
       responses: {
         200: {
-          description: 'Resultados da busca',
+          description: 'Search results',
           content: {
             'application/json': {
               schema: {
@@ -150,9 +262,34 @@ export const ragServicePaths = {
       },
     },
   },
+
+  '/api/rag/context': {
+    post: {
+      summary: 'Build RAG context',
+      tags: ['Search'],
+      'x-required-permission': 'rag:documents:read',
+      requestBody: {
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['query'],
+              properties: {
+                query: { type: 'string' },
+                conversationId: { type: 'string' },
+                namespaceId: { type: 'string' },
+              },
+            },
+          },
+        },
+      },
+      responses: { 200: { description: 'Context response' } },
+    },
+  },
+
   '/api/rag/search/multimodal': {
     post: {
-      summary: 'Busca multimodal',
+      summary: 'Multimodal search',
       tags: ['Search'],
       requestBody: {
         content: {
@@ -168,12 +305,13 @@ export const ragServicePaths = {
           },
         },
       },
-      responses: { 200: { description: 'Resultados' } },
+      responses: { 200: { description: 'Results' } },
     },
   },
+
   '/api/rag/chunks': {
     get: {
-      summary: 'Listar chunks',
+      summary: 'List chunks',
       tags: ['Chunks'],
       parameters: [
         {
@@ -182,12 +320,13 @@ export const ragServicePaths = {
           schema: { type: 'string' },
         },
       ],
-      responses: { 200: { description: 'Lista de chunks' } },
+      responses: { 200: { description: 'Chunk list' } },
     },
   },
+
   '/api/rag/chunks/{id}': {
     get: {
-      summary: 'Buscar chunk',
+      summary: 'Get chunk',
       tags: ['Chunks'],
       parameters: [
         {
@@ -200,9 +339,27 @@ export const ragServicePaths = {
       responses: { 200: { description: 'Chunk' } },
     },
   },
+
+  '/api/rag/namespaces/{id}/stats': {
+    get: {
+      summary: 'Namespace stats',
+      tags: ['Namespaces'],
+      'x-required-permission': 'rag:namespaces:read',
+      parameters: [
+        {
+          name: 'id',
+          in: 'path',
+          required: true,
+          schema: { type: 'string' },
+        },
+      ],
+      responses: { 200: { description: 'Namespace stats' } },
+    },
+  },
+
   '/api/rag/web-search': {
     post: {
-      summary: 'Busca web via SearXNG',
+      summary: 'Web search via SearXNG',
       tags: ['Search'],
       requestBody: {
         content: {
@@ -225,14 +382,15 @@ export const ragServicePaths = {
         },
       },
       responses: {
-        200: { description: 'Resultados da web' },
-        503: { description: 'Busca web não configurada' },
+        200: { description: 'Web results' },
+        503: { description: 'Web search not configured' },
       },
     },
   },
+
   '/api/rag/web-search/images': {
     post: {
-      summary: 'Busca de imagens via SearXNG',
+      summary: 'Image search via SearXNG',
       tags: ['Search'],
       requestBody: {
         content: {
@@ -249,14 +407,15 @@ export const ragServicePaths = {
         },
       },
       responses: {
-        200: { description: 'Resultados de imagens na web' },
-        503: { description: 'Busca web não configurada' },
+        200: { description: 'Image search results' },
+        503: { description: 'Web search not configured' },
       },
     },
   },
+
   '/api/rag/classify': {
     post: {
-      summary: 'Classificar consulta (internal/web/hybrid)',
+      summary: 'Classify query (internal/web/hybrid)',
       tags: ['Search'],
       requestBody: {
         content: {
@@ -271,12 +430,13 @@ export const ragServicePaths = {
           },
         },
       },
-      responses: { 200: { description: 'Classificação da consulta' } },
+      responses: { 200: { description: 'Query classification' } },
     },
   },
+
   '/api/rag/agentic': {
     post: {
-      summary: 'Busca agentic (RAG interno + web/deep web)',
+      summary: 'Agentic search (internal + web/deep web)',
       tags: ['Search'],
       requestBody: {
         content: {
@@ -296,19 +456,21 @@ export const ragServicePaths = {
           },
         },
       },
-      responses: { 200: { description: 'Contexto agentic consolidado' } },
+      responses: { 200: { description: 'Agentic context response' } },
     },
   },
+
   '/api/rag/agentic/status': {
     get: {
-      summary: 'Status agentic (circuit breakers)',
+      summary: 'Agentic status (circuit breakers)',
       tags: ['Search'],
-      responses: { 200: { description: 'Status do agentic' } },
+      responses: { 200: { description: 'Agentic status' } },
     },
   },
+
   '/api/rag/embeddings': {
     post: {
-      summary: 'Gerar embedding',
+      summary: 'Generate embedding',
       tags: ['Embeddings'],
       requestBody: {
         content: {
@@ -325,7 +487,7 @@ export const ragServicePaths = {
       },
       responses: {
         200: {
-          description: 'Embedding (1024 dim - Qwen3-Embedding-0.6B GPU via GPU Manager Service → Qdrant)',
+          description: 'Embedding response',
           content: {
             'application/json': {
               schema: {
@@ -344,9 +506,10 @@ export const ragServicePaths = {
       },
     },
   },
+
   '/api/rag/stats': {
     get: {
-      summary: 'Estatísticas',
+      summary: 'Service stats',
       tags: ['Health'],
       responses: {
         200: {
@@ -367,9 +530,10 @@ export const ragServicePaths = {
       },
     },
   },
+
   '/api/rag/reindex': {
     post: {
-      summary: 'Reindexar documento',
+      summary: 'Reindex document',
       tags: ['Documents'],
       requestBody: {
         content: {
@@ -384,15 +548,24 @@ export const ragServicePaths = {
           },
         },
       },
-      responses: { 202: { description: 'Iniciado' } },
+      responses: { 202: { description: 'Started' } },
     },
   },
-  '/metrics': {
-    get: {
-      summary: 'Métricas Prometheus',
-      tags: ['Health'],
-      security: [],
-      responses: { 200: { description: 'Métricas' } },
+
+  '/api/media/uploads/{id}/send-to-training': {
+    post: {
+      summary: 'Send media upload to training',
+      tags: ['Media', 'Training'],
+      'x-required-permission': 'training:training_data:write',
+      parameters: [
+        {
+          name: 'id',
+          in: 'path',
+          required: true,
+          schema: { type: 'string' },
+        },
+      ],
+      responses: { 200: { description: 'Media sent to training' } },
     },
   },
 };
