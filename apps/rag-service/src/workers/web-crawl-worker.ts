@@ -4,6 +4,7 @@ import { createLogger } from '@alice/logger';
 import type { Database } from '@alice/database';
 import { eq, and, asc, sql, schema } from '@alice/database';
 import * as cheerio from 'cheerio';
+import { assertSafeOutboundUrl } from '../url-security.js';
 
 const logger = createLogger('web-crawl-worker');
 
@@ -17,6 +18,7 @@ interface WebCrawlWorkerConfig {
 }
 
 const DEFAULT_USER_AGENT = 'AliceCrawler/1.0 (+https://yesyoudeserve.duckdns.org)';
+const MAX_REDIRECTS = 5;
 
 // Tipo WebCrawlRequest inferido do schema Drizzle (Regra 2 CLAUDE.md - NÃO DUPLICAR)
 type WebCrawlRequest = typeof schema.webCrawlRequests.$inferSelect;
@@ -120,15 +122,30 @@ export function startWebCrawlWorker(db: Database, config: WebCrawlWorkerConfig) 
     }
   }
 
-  async function fetchPage(url: string, bytesMax: number, timeoutMs: number) {
+  async function fetchPage(url: string, bytesMax: number, timeoutMs: number, redirectDepth = 0) {
+    if (redirectDepth > MAX_REDIRECTS) {
+      throw new Error('Limite de redirects excedido no crawl');
+    }
+
+    const currentUrl = await assertSafeOutboundUrl(url);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const res = await fetch(url, {
+      const res = await fetch(currentUrl.toString(), {
         method: 'GET',
         headers: { 'User-Agent': DEFAULT_USER_AGENT, Accept: 'text/html,application/xhtml+xml' },
+        redirect: 'manual',
         signal: controller.signal,
       });
+
+      if (res.status >= 300 && res.status < 400) {
+        const location = res.headers.get('location');
+        if (!location) {
+          throw new Error('Redirect sem header Location no crawl');
+        }
+        const nextUrl = new URL(location, currentUrl);
+        return fetchPage(nextUrl.toString(), bytesMax, timeoutMs, redirectDepth + 1);
+      }
 
       const buf = Buffer.from(await res.arrayBuffer());
       if (buf.byteLength > bytesMax) {
@@ -147,6 +164,7 @@ export function startWebCrawlWorker(db: Database, config: WebCrawlWorkerConfig) 
         conteudo: content,
         description,
         hashConteudo,
+        resolvedUrl: currentUrl.toString(),
       };
     } finally {
       clearTimeout(timeout);
@@ -165,7 +183,7 @@ export function startWebCrawlWorker(db: Database, config: WebCrawlWorkerConfig) 
           await db.insert(schema.webCrawlResults).values({
             tenantId: config.tenantId,
             requestId: req.id,
-            url: req.url,
+            url: page.resolvedUrl,
             titulo: page.titulo,
             conteudo: page.conteudo,
             statusCode: page.statusCode,
