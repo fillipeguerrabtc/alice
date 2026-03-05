@@ -18,10 +18,8 @@ describe('training audit-trail integrity guards', () => {
 
   it('verifies chain order and previous-hash linkage before responding', () => {
     const source = loadTrainingSource();
-    expect(source.includes('function verifyImmutableChain(events: Array<{')).toBe(true);
-    expect(source.includes('CHAIN_POSITION_MISMATCH')).toBe(true);
-    expect(source.includes('PREV_HASH_MISMATCH')).toBe(true);
-    expect(source.includes('const immutableIntegrity = verifyImmutableChain(')).toBe(true);
+    expect(source.includes('verifyImmutableAuditChain')).toBe(true);
+    expect(source.includes('const immutableIntegrity = verifyImmutableAuditChain(')).toBe(true);
+    expect(source.includes("stream: 'training_governance',")).toBe(true);
   });
 });
-

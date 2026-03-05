@@ -430,6 +430,34 @@ export const integrationsServicePaths = {
       },
     },
   },
+  '/api/integrations/trading/audit/{entityType}/{id}': {
+    get: {
+      summary: 'Trilha de auditoria de trading com prova de integridade',
+      tags: ['Trading'],
+      parameters: [
+        { name: 'entityType', in: 'path', required: true, schema: { type: 'string', enum: ['signal', 'order', 'risk_config', 'position'] } },
+        { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+      ],
+      responses: {
+        200: { description: 'Trilha de auditoria retornada' },
+        400: { description: 'Parametros invalidos' },
+        401: { description: 'Nao autenticado' },
+      },
+    },
+  },
+  '/api/integrations/trading/audit/integrity': {
+    get: {
+      summary: 'Estado do monitor de integridade do ledger imutável de trading',
+      tags: ['Trading'],
+      parameters: [
+        { name: 'force', in: 'query', schema: { type: 'string', enum: ['true', 'false'] } },
+      ],
+      responses: {
+        200: { description: 'Estado de integridade retornado' },
+        401: { description: 'Nao autenticado' },
+      },
+    },
+  },
   '/api/integrations/trading/orders/history/delete': {
     post: {
       summary: 'Excluir ordens do histórico (exclusão lógica)',

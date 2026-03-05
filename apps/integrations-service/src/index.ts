@@ -46,6 +46,7 @@ import {
   Counter as PromCounter,
   Histogram as PromHistogram,
   Role,
+  verifyImmutableAuditChain,
 } from '@alice/shared-utils';
 import type { AuthContext } from '@alice/shared-utils';
 import { integrationsServicePaths, integrationsServiceSchemas } from './openapi-specs.js';
@@ -158,6 +159,30 @@ function parseEnvFloat(envValue: string | undefined, defaultValue: number, varNa
   return parsed;
 }
 
+function parsePositiveEnvInt(envValue: string | undefined, defaultValue: number, varName: string): number {
+  const raw = (envValue ?? String(defaultValue)).trim();
+  if (!/^\d+$/.test(raw)) {
+    const errorMsg = `${varName} inválido: "${raw}". Deve ser inteiro positivo.`;
+    if (process.env.NODE_ENV === 'production') {
+      logger.error({ varName, rawValue: raw }, errorMsg);
+      throw new Error(errorMsg);
+    }
+    logger.warn({ varName, rawValue: raw, defaultValue }, `${errorMsg} Usando valor padrão.`);
+    return defaultValue;
+  }
+  const parsed = parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    const errorMsg = `${varName} inválido: "${raw}". Deve ser inteiro positivo.`;
+    if (process.env.NODE_ENV === 'production') {
+      logger.error({ varName, rawValue: raw, parsed }, errorMsg);
+      throw new Error(errorMsg);
+    }
+    logger.warn({ varName, rawValue: raw, parsed, defaultValue }, `${errorMsg} Usando valor padrão.`);
+    return defaultValue;
+  }
+  return parsed;
+}
+
 const TRADING_DATASET_MIN_QUALITY = parseEnvFloat(
   process.env.TRADING_DATASET_MIN_QUALITY,
   0.35,
@@ -176,57 +201,6 @@ const TRADING_OPERATION_INTENTS: TradingOperationIntent[] = [
   'volatility_breakout',
 ];
 const TRADING_LLM_PROMPT_MODE = (process.env.TRADING_LLM_PROMPT_MODE ?? 'compact') as 'compact' | 'verbose';
-
-function verifyImmutableChain(events: Array<{
-  chainPosition: number;
-  prevEventHash: string | null;
-  eventHash: string;
-}>): {
-  ok: boolean;
-  checkedEvents: number;
-  brokenAtChainPosition: number | null;
-  reason: string | null;
-} {
-  if (events.length === 0) {
-    return {
-      ok: true,
-      checkedEvents: 0,
-      brokenAtChainPosition: null,
-      reason: null,
-    };
-  }
-
-  let previousHash: string | null = null;
-  let previousPosition = 0;
-  for (const event of events) {
-    const expectedPosition = previousPosition + 1;
-    if (event.chainPosition !== expectedPosition) {
-      return {
-        ok: false,
-        checkedEvents: events.length,
-        brokenAtChainPosition: event.chainPosition,
-        reason: `CHAIN_POSITION_MISMATCH expected=${expectedPosition} actual=${event.chainPosition}`,
-      };
-    }
-    if (event.prevEventHash !== previousHash) {
-      return {
-        ok: false,
-        checkedEvents: events.length,
-        brokenAtChainPosition: event.chainPosition,
-        reason: 'PREV_HASH_MISMATCH',
-      };
-    }
-    previousHash = event.eventHash;
-    previousPosition = event.chainPosition;
-  }
-
-  return {
-    ok: true,
-    checkedEvents: events.length,
-    brokenAtChainPosition: null,
-    reason: null,
-  };
-}
 
 // ============================================================================
 // GRAFANA API (Observability) - Integração enterprise
@@ -2383,6 +2357,37 @@ const tradingAutoRunErrorsTotal = new PromCounter({
   registers: [metrics.registry],
 });
 
+const immutableAuditIntegrityChecksTotal = new PromCounter({
+  name: 'alice_integrations_immutable_audit_integrity_checks_total',
+  help: 'Total de verificacoes periodicas de integridade do ledger imutavel no integrations-service',
+  labelNames: ['result'] as const,
+  registers: [metrics.registry],
+});
+
+const immutableAuditIntegrityStatusGauge = new PromGauge({
+  name: 'alice_integrations_immutable_audit_integrity_status',
+  help: 'Status da ultima verificacao de integridade do ledger imutavel (1=ok,0=erro)',
+  registers: [metrics.registry],
+});
+
+const immutableAuditIntegrityBrokenStreamsGauge = new PromGauge({
+  name: 'alice_integrations_immutable_audit_integrity_broken_streams',
+  help: 'Quantidade de streams com integridade quebrada na ultima verificacao',
+  registers: [metrics.registry],
+});
+
+const immutableAuditIntegrityCheckedStreamsGauge = new PromGauge({
+  name: 'alice_integrations_immutable_audit_integrity_checked_streams',
+  help: 'Quantidade de streams avaliadas na ultima verificacao',
+  registers: [metrics.registry],
+});
+
+const immutableAuditIntegrityLastCheckTimestampSecondsGauge = new PromGauge({
+  name: 'alice_integrations_immutable_audit_integrity_last_check_timestamp_seconds',
+  help: 'Timestamp unix em segundos da ultima verificacao de integridade do ledger imutavel',
+  registers: [metrics.registry],
+});
+
 function classifyIntegrationError(error: unknown): string {
   if (error instanceof Error) {
     const message = error.message.toLowerCase();
@@ -2497,8 +2502,39 @@ const tradingPromptTokensEstimate = new PromGauge({
   registers: [metrics.registry],
 });
 
-const TRADING_METRICS_INTERVAL_MS = Number(process.env.TRADING_METRICS_INTERVAL_MS ?? 60000);
-const TRADING_PNL_WINDOW_HOURS = Number(process.env.TRADING_PNL_WINDOW_HOURS ?? 24);
+const TRADING_METRICS_INTERVAL_MS = parsePositiveEnvInt(
+  process.env.TRADING_METRICS_INTERVAL_MS,
+  60_000,
+  'TRADING_METRICS_INTERVAL_MS'
+);
+const TRADING_PNL_WINDOW_HOURS = parsePositiveEnvInt(
+  process.env.TRADING_PNL_WINDOW_HOURS,
+  24,
+  'TRADING_PNL_WINDOW_HOURS'
+);
+const INTEGRATIONS_IMMUTABLE_AUDIT_CHECK_INTERVAL_MS = parsePositiveEnvInt(
+  process.env.INTEGRATIONS_IMMUTABLE_AUDIT_CHECK_INTERVAL_MS,
+  300_000,
+  'INTEGRATIONS_IMMUTABLE_AUDIT_CHECK_INTERVAL_MS'
+);
+const INTEGRATIONS_IMMUTABLE_AUDIT_STREAMS_PER_CHECK = parsePositiveEnvInt(
+  process.env.INTEGRATIONS_IMMUTABLE_AUDIT_STREAMS_PER_CHECK,
+  30,
+  'INTEGRATIONS_IMMUTABLE_AUDIT_STREAMS_PER_CHECK'
+);
+const INTEGRATIONS_IMMUTABLE_AUDIT_EVENTS_PER_STREAM_LIMIT = parsePositiveEnvInt(
+  process.env.INTEGRATIONS_IMMUTABLE_AUDIT_EVENTS_PER_STREAM_LIMIT,
+  5_000,
+  'INTEGRATIONS_IMMUTABLE_AUDIT_EVENTS_PER_STREAM_LIMIT'
+);
+
+type ImmutableAuditIntegrityHealthState = {
+  status: 'unknown' | 'ok' | 'error';
+  checkedAt: string | null;
+  checkedStreams: number;
+  brokenStreams: number;
+  reason: string | null;
+};
 
 function resolveTradingMetricsInterval(): number {
   if (!Number.isFinite(TRADING_METRICS_INTERVAL_MS) || TRADING_METRICS_INTERVAL_MS < 10000) {
@@ -2517,6 +2553,14 @@ function resolveTradingPnlWindowHours(): number {
 }
 
 let tradingMetricsInterval: NodeJS.Timeout | null = null;
+let integrationsImmutableAuditIntegrityInterval: NodeJS.Timeout | null = null;
+let integrationsImmutableAuditIntegrityState: ImmutableAuditIntegrityHealthState = {
+  status: 'unknown',
+  checkedAt: null,
+  checkedStreams: 0,
+  brokenStreams: 0,
+  reason: null,
+};
 
 async function refreshTradingMetrics(): Promise<void> {
   try {
@@ -2587,6 +2631,126 @@ function startTradingMetricsScheduler(): void {
     void refreshTradingMetrics();
   }, intervalMs);
   logger.info({ intervalMs }, 'Scheduler de métricas de trading iniciado');
+}
+
+
+async function runIntegrationsImmutableAuditIntegrityCheck(): Promise<void> {
+  try {
+    const db = getDatabase();
+    const recentEvents = await db.query.immutableAuditEvents.findMany({
+      where: eq(schema.immutableAuditEvents.stream, 'trading_operations'),
+      columns: {
+        streamKey: true,
+      },
+      orderBy: [desc(schema.immutableAuditEvents.createdAt)],
+      limit: INTEGRATIONS_IMMUTABLE_AUDIT_STREAMS_PER_CHECK * 50,
+    });
+
+    const streamKeys = Array.from(new Set(
+      recentEvents
+        .map((event) => event.streamKey)
+        .filter((streamKey): streamKey is string => typeof streamKey === 'string' && streamKey.length > 0)
+    )).slice(0, INTEGRATIONS_IMMUTABLE_AUDIT_STREAMS_PER_CHECK);
+
+    let brokenStreams = 0;
+    let firstReason: string | null = null;
+
+    for (const streamKey of streamKeys) {
+      const [latest] = await db.query.immutableAuditEvents.findMany({
+        where: and(
+          eq(schema.immutableAuditEvents.stream, 'trading_operations'),
+          eq(schema.immutableAuditEvents.streamKey, streamKey),
+        ),
+        columns: {
+          chainPosition: true,
+        },
+        orderBy: [desc(schema.immutableAuditEvents.chainPosition)],
+        limit: 1,
+      });
+
+      const events = await db.query.immutableAuditEvents.findMany({
+        where: and(
+          eq(schema.immutableAuditEvents.stream, 'trading_operations'),
+          eq(schema.immutableAuditEvents.streamKey, streamKey),
+        ),
+        columns: {
+          chainPosition: true,
+          prevEventHash: true,
+          eventHash: true,
+        },
+        orderBy: [asc(schema.immutableAuditEvents.chainPosition)],
+        limit: INTEGRATIONS_IMMUTABLE_AUDIT_EVENTS_PER_STREAM_LIMIT,
+      });
+
+      const maxChainPosition = Number(latest?.chainPosition ?? 0);
+      if (maxChainPosition > events.length) {
+        brokenStreams += 1;
+        if (!firstReason) {
+          firstReason = `${streamKey}:CHAIN_SAMPLE_TRUNCATED max=${maxChainPosition} sampled=${events.length}`;
+        }
+        continue;
+      }
+
+      const integrity = verifyImmutableAuditChain(events);
+      if (!integrity.ok) {
+        brokenStreams += 1;
+        if (!firstReason) {
+          firstReason = `${streamKey}:${integrity.reason ?? 'INTEGRITY_CHECK_FAILED'}`;
+        }
+      }
+    }
+
+    const status: ImmutableAuditIntegrityHealthState['status'] = brokenStreams > 0 ? 'error' : 'ok';
+    const checkedAt = new Date().toISOString();
+    integrationsImmutableAuditIntegrityState = {
+      status,
+      checkedAt,
+      checkedStreams: streamKeys.length,
+      brokenStreams,
+      reason: firstReason,
+    };
+
+    immutableAuditIntegrityChecksTotal.inc({ result: status });
+    immutableAuditIntegrityStatusGauge.set(status === 'ok' ? 1 : 0);
+    immutableAuditIntegrityBrokenStreamsGauge.set(brokenStreams);
+    immutableAuditIntegrityCheckedStreamsGauge.set(streamKeys.length);
+    immutableAuditIntegrityLastCheckTimestampSecondsGauge.set(Math.floor(Date.now() / 1000));
+
+    if (status === 'error') {
+      logger.error(
+        { checkedStreams: streamKeys.length, brokenStreams, reason: firstReason },
+        'Verificacao de integridade do ledger imutavel (integrations) falhou'
+      );
+    }
+  } catch (error) {
+    integrationsImmutableAuditIntegrityState = {
+      status: 'error',
+      checkedAt: new Date().toISOString(),
+      checkedStreams: 0,
+      brokenStreams: 0,
+      reason: error instanceof Error ? error.message : String(error),
+    };
+    immutableAuditIntegrityChecksTotal.inc({ result: 'error' });
+    immutableAuditIntegrityStatusGauge.set(0);
+    immutableAuditIntegrityBrokenStreamsGauge.set(0);
+    immutableAuditIntegrityCheckedStreamsGauge.set(0);
+    immutableAuditIntegrityLastCheckTimestampSecondsGauge.set(Math.floor(Date.now() / 1000));
+    logger.error(
+      { error: error instanceof Error ? error.message : String(error) },
+      'Falha ao executar verificacao de integridade do ledger imutavel (integrations)'
+    );
+  }
+}
+
+function startIntegrationsImmutableAuditIntegrityScheduler(): void {
+  void runIntegrationsImmutableAuditIntegrityCheck();
+  integrationsImmutableAuditIntegrityInterval = setInterval(() => {
+    void runIntegrationsImmutableAuditIntegrityCheck();
+  }, INTEGRATIONS_IMMUTABLE_AUDIT_CHECK_INTERVAL_MS);
+  logger.info(
+    { intervalMs: INTEGRATIONS_IMMUTABLE_AUDIT_CHECK_INTERVAL_MS },
+    'Scheduler de verificacao de integridade do ledger imutavel iniciado (integrations)'
+  );
 }
 
 // ============================================================================
@@ -3360,8 +3524,9 @@ app.get('/api/integrations/health', requirePermission('integrations:integrations
     .then((services) => {
       const tradingHealth = services.trading;
       const wiseHealth = services.wise;
+      const overallStatus = integrationsImmutableAuditIntegrityState.status === 'error' ? 'degraded' : 'ok';
       res.json({ 
-        status: 'ok', 
+        status: overallStatus, 
         service: 'integrations-service', 
         version: process.env.APP_VERSION ?? null,
         timestamp: new Date().toISOString(),
@@ -3378,12 +3543,24 @@ app.get('/api/integrations/health', requirePermission('integrations:integrations
           wise: wiseHealth.configured ? getWiseCircuitBreakerStatus() : null,
           trading: tradingHealth.details?.circuitBreaker ?? null,
         },
+        immutableAuditIntegrity: integrationsImmutableAuditIntegrityState,
       });
     })
     .catch((error) => {
       logger.error({ error }, 'Falha ao calcular integrações/health');
       res.status(500).json({ error: 'Falha ao verificar integrações' });
     });
+});
+
+app.get('/api/integrations/trading/audit/integrity', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  const force = String(req.query.force ?? '').toLowerCase() === 'true';
+  if (force) {
+    await runIntegrationsImmutableAuditIntegrityCheck();
+  }
+  res.json({
+    stream: 'trading_operations',
+    state: integrationsImmutableAuditIntegrityState,
+  });
 });
 
 app.get('/api/integrations/stats', requirePermission('integrations:integrations:read'), async (req: Request, res: Response) => {
@@ -13643,7 +13820,7 @@ app.get('/api/integrations/trading/audit/:entityType/:id', requirePermission('in
       limit: 500,
     });
 
-    const immutableIntegrity = verifyImmutableChain(
+    const immutableIntegrity = verifyImmutableAuditChain(
       immutableEvents.map((event) => ({
         chainPosition: event.chainPosition,
         prevEventHash: event.prevEventHash,
@@ -21202,6 +21379,7 @@ initializeCaches().then(() => {
   }
 
   startTradingMetricsScheduler();
+  startIntegrationsImmutableAuditIntegrityScheduler();
   startTradingSignalScheduler();
   startTradingAnalysisScheduler();
 
@@ -21263,6 +21441,17 @@ initializeCaches().then(() => {
       if (tradingMetricsInterval) {
         clearInterval(tradingMetricsInterval);
         tradingMetricsInterval = null;
+      }
+    },
+    { priority: ShutdownPriority.BACKGROUND_JOBS }
+  );
+
+  registerShutdownCallback(
+    'integrations-immutable-audit-integrity',
+    async () => {
+      if (integrationsImmutableAuditIntegrityInterval) {
+        clearInterval(integrationsImmutableAuditIntegrityInterval);
+        integrationsImmutableAuditIntegrityInterval = null;
       }
     },
     { priority: ShutdownPriority.BACKGROUND_JOBS }

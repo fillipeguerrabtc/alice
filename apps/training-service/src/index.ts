@@ -86,6 +86,7 @@ import {
   cosineSimilarity,
   generateInternalAuthHeaders,
   appendImmutableAuditEventWithExecutor,
+  verifyImmutableAuditChain,
 } from '@alice/shared-utils';
 import { trainingServicePaths, trainingServiceSchemas } from './openapi-specs.js';
 import { eq, and, or, desc, asc, sql, isNull, not, inArray, lte, ne } from '@alice/database';
@@ -860,6 +861,32 @@ const trainingPipelineMetrics = {
     labelNames: ['result'] as const,
     registers: [metrics.registry],
   }),
+  immutableAuditIntegrityChecksTotal: new PromCounter({
+    name: 'alice_training_immutable_audit_integrity_checks_total',
+    help: 'Total de verificacoes periodicas de integridade do ledger imutavel',
+    labelNames: ['result'] as const,
+    registers: [metrics.registry],
+  }),
+  immutableAuditIntegrityStatus: new PromGauge({
+    name: 'alice_training_immutable_audit_integrity_status',
+    help: 'Status da ultima verificacao de integridade do ledger imutavel (1=ok,0=erro)',
+    registers: [metrics.registry],
+  }),
+  immutableAuditIntegrityBrokenStreams: new PromGauge({
+    name: 'alice_training_immutable_audit_integrity_broken_streams',
+    help: 'Quantidade de streams com integridade quebrada na ultima verificacao',
+    registers: [metrics.registry],
+  }),
+  immutableAuditIntegrityCheckedStreams: new PromGauge({
+    name: 'alice_training_immutable_audit_integrity_checked_streams',
+    help: 'Quantidade de streams avaliadas na ultima verificacao de integridade',
+    registers: [metrics.registry],
+  }),
+  immutableAuditIntegrityLastCheckTimestampSeconds: new PromGauge({
+    name: 'alice_training_immutable_audit_integrity_last_check_timestamp_seconds',
+    help: 'Timestamp unix em segundos da ultima verificacao de integridade do ledger imutavel',
+    registers: [metrics.registry],
+  }),
 };
 
 const tradingMetrics = {
@@ -1011,10 +1038,42 @@ const TRADING_SIGNAL_AUTO_AUTOMIX_CANDIDATE_FETCH_LIMIT = parseEnvInt(
   2_000,
   'TRADING_SIGNAL_AUTO_AUTOMIX_CANDIDATE_FETCH_LIMIT',
 );
+const TRAINING_IMMUTABLE_AUDIT_CHECK_INTERVAL_MS = parseEnvInt(
+  process.env.TRAINING_IMMUTABLE_AUDIT_CHECK_INTERVAL_MS,
+  300_000,
+  'TRAINING_IMMUTABLE_AUDIT_CHECK_INTERVAL_MS',
+);
+const TRAINING_IMMUTABLE_AUDIT_STREAMS_PER_CHECK = parseEnvInt(
+  process.env.TRAINING_IMMUTABLE_AUDIT_STREAMS_PER_CHECK,
+  20,
+  'TRAINING_IMMUTABLE_AUDIT_STREAMS_PER_CHECK',
+);
+const TRAINING_IMMUTABLE_AUDIT_EVENTS_PER_STREAM_LIMIT = parseEnvInt(
+  process.env.TRAINING_IMMUTABLE_AUDIT_EVENTS_PER_STREAM_LIMIT,
+  5_000,
+  'TRAINING_IMMUTABLE_AUDIT_EVENTS_PER_STREAM_LIMIT',
+);
 
 let trainingMetricsInterval: NodeJS.Timeout | null = null;
 let namespaceProfileReconcileInterval: NodeJS.Timeout | null = null;
+let trainingImmutableAuditIntegrityInterval: NodeJS.Timeout | null = null;
 const tradingWorkerStoppers: Array<() => Promise<void>> = [];
+
+type ImmutableAuditIntegrityHealthState = {
+  status: 'unknown' | 'ok' | 'error';
+  checkedAt: string | null;
+  checkedStreams: number;
+  brokenStreams: number;
+  reason: string | null;
+};
+
+let trainingImmutableAuditIntegrityState: ImmutableAuditIntegrityHealthState = {
+  status: 'unknown',
+  checkedAt: null,
+  checkedStreams: 0,
+  brokenStreams: 0,
+  reason: null,
+};
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -1116,6 +1175,120 @@ function startTrainingMetricsScheduler(): void {
   trainingMetricsInterval = setInterval(() => {
     void refreshTrainingMetrics();
   }, TRAINING_METRICS_INTERVAL_MS);
+}
+
+async function runTrainingImmutableAuditIntegrityCheck(): Promise<void> {
+  try {
+    const recentEvents = await db.query.immutableAuditEvents.findMany({
+      where: eq(schema.immutableAuditEvents.stream, 'training_governance'),
+      columns: {
+        streamKey: true,
+      },
+      orderBy: [desc(schema.immutableAuditEvents.createdAt)],
+      limit: TRAINING_IMMUTABLE_AUDIT_STREAMS_PER_CHECK * 50,
+    });
+
+    const streamKeys = Array.from(new Set(
+      recentEvents
+        .map((event) => event.streamKey)
+        .filter((streamKey): streamKey is string => typeof streamKey === 'string' && streamKey.length > 0)
+    )).slice(0, TRAINING_IMMUTABLE_AUDIT_STREAMS_PER_CHECK);
+
+    let brokenStreams = 0;
+    let firstReason: string | null = null;
+
+    for (const streamKey of streamKeys) {
+      const [latest] = await db.query.immutableAuditEvents.findMany({
+        where: and(
+          eq(schema.immutableAuditEvents.stream, 'training_governance'),
+          eq(schema.immutableAuditEvents.streamKey, streamKey),
+        ),
+        columns: {
+          chainPosition: true,
+        },
+        orderBy: [desc(schema.immutableAuditEvents.chainPosition)],
+        limit: 1,
+      });
+
+      const events = await db.query.immutableAuditEvents.findMany({
+        where: and(
+          eq(schema.immutableAuditEvents.stream, 'training_governance'),
+          eq(schema.immutableAuditEvents.streamKey, streamKey),
+        ),
+        columns: {
+          chainPosition: true,
+          prevEventHash: true,
+          eventHash: true,
+        },
+        orderBy: [asc(schema.immutableAuditEvents.chainPosition)],
+        limit: TRAINING_IMMUTABLE_AUDIT_EVENTS_PER_STREAM_LIMIT,
+      });
+
+      const maxChainPosition = Number(latest?.chainPosition ?? 0);
+      if (maxChainPosition > events.length) {
+        brokenStreams += 1;
+        if (!firstReason) {
+          firstReason = `${streamKey}:CHAIN_SAMPLE_TRUNCATED max=${maxChainPosition} sampled=${events.length}`;
+        }
+        continue;
+      }
+
+      const integrity = verifyImmutableAuditChain(events);
+      if (!integrity.ok) {
+        brokenStreams += 1;
+        if (!firstReason) {
+          firstReason = `${streamKey}:${integrity.reason ?? 'INTEGRITY_CHECK_FAILED'}`;
+        }
+      }
+    }
+
+    const status: ImmutableAuditIntegrityHealthState['status'] = brokenStreams > 0 ? 'error' : 'ok';
+    const checkedAt = new Date().toISOString();
+    trainingImmutableAuditIntegrityState = {
+      status,
+      checkedAt,
+      checkedStreams: streamKeys.length,
+      brokenStreams,
+      reason: firstReason,
+    };
+
+    trainingPipelineMetrics.immutableAuditIntegrityChecksTotal.inc({ result: status });
+    trainingPipelineMetrics.immutableAuditIntegrityStatus.set(status === 'ok' ? 1 : 0);
+    trainingPipelineMetrics.immutableAuditIntegrityBrokenStreams.set(brokenStreams);
+    trainingPipelineMetrics.immutableAuditIntegrityCheckedStreams.set(streamKeys.length);
+    trainingPipelineMetrics.immutableAuditIntegrityLastCheckTimestampSeconds.set(Math.floor(Date.now() / 1000));
+
+    if (status === 'error') {
+      logger.error(
+        { checkedStreams: streamKeys.length, brokenStreams, reason: firstReason },
+        'Verificacao de integridade do ledger imutavel falhou'
+      );
+    }
+  } catch (error) {
+    trainingImmutableAuditIntegrityState = {
+      status: 'error',
+      checkedAt: new Date().toISOString(),
+      checkedStreams: 0,
+      brokenStreams: 0,
+      reason: error instanceof Error ? error.message : String(error),
+    };
+    trainingPipelineMetrics.immutableAuditIntegrityChecksTotal.inc({ result: 'error' });
+    trainingPipelineMetrics.immutableAuditIntegrityStatus.set(0);
+    trainingPipelineMetrics.immutableAuditIntegrityBrokenStreams.set(0);
+    trainingPipelineMetrics.immutableAuditIntegrityCheckedStreams.set(0);
+    trainingPipelineMetrics.immutableAuditIntegrityLastCheckTimestampSeconds.set(Math.floor(Date.now() / 1000));
+    logger.error(
+      { error: error instanceof Error ? error.message : String(error) },
+      'Falha ao executar verificacao de integridade do ledger imutavel'
+    );
+  }
+}
+
+function startTrainingImmutableAuditIntegrityScheduler(): void {
+  void runTrainingImmutableAuditIntegrityCheck();
+  trainingImmutableAuditIntegrityInterval = setInterval(() => {
+    void runTrainingImmutableAuditIntegrityCheck();
+  }, TRAINING_IMMUTABLE_AUDIT_CHECK_INTERVAL_MS);
 }
 
 
@@ -1447,8 +1620,8 @@ function computeQualityScore(messages: Array<{ role: 'user' | 'assistant' | 'sys
 
 app.get('/api/training/health', async (_req: Request, res: Response) => {
   const embeddingsCircuitState = gpuManagerEmbeddingsBreaker.opened ? 'open' : (gpuManagerEmbeddingsBreaker.halfOpen ? 'half-open' : 'closed');
-  
-  const overallStatus = embeddingsCircuitState === 'open' ? 'degraded' : 'ok';
+  const immutableAuditDegraded = trainingImmutableAuditIntegrityState.status === 'error';
+  const overallStatus = (embeddingsCircuitState === 'open' || immutableAuditDegraded) ? 'degraded' : 'ok';
   
   res.json({ 
     status: overallStatus, 
@@ -1467,6 +1640,18 @@ app.get('/api/training/health', async (_req: Request, res: Response) => {
         },
       },
     },
+    immutableAuditIntegrity: trainingImmutableAuditIntegrityState,
+  });
+});
+
+app.get('/api/training/audit/integrity', requirePermission('training:fine_tuning_jobs:read'), async (req: Request, res: Response) => {
+  const force = String(req.query.force ?? '').toLowerCase() === 'true';
+  if (force) {
+    await runTrainingImmutableAuditIntegrityCheck();
+  }
+  return res.json({
+    stream: 'training_governance',
+    state: trainingImmutableAuditIntegrityState,
   });
 });
 
@@ -3490,57 +3675,6 @@ async function persistTrainingGovernanceAudit(params: {
   });
 }
 
-function verifyImmutableChain(events: Array<{
-  chainPosition: number;
-  prevEventHash: string | null;
-  eventHash: string;
-}>): {
-  ok: boolean;
-  checkedEvents: number;
-  brokenAtChainPosition: number | null;
-  reason: string | null;
-} {
-  if (events.length === 0) {
-    return {
-      ok: true,
-      checkedEvents: 0,
-      brokenAtChainPosition: null,
-      reason: null,
-    };
-  }
-
-  let previousHash: string | null = null;
-  let previousPosition = 0;
-  for (const event of events) {
-    const expectedPosition = previousPosition + 1;
-    if (event.chainPosition !== expectedPosition) {
-      return {
-        ok: false,
-        checkedEvents: events.length,
-        brokenAtChainPosition: event.chainPosition,
-        reason: `CHAIN_POSITION_MISMATCH expected=${expectedPosition} actual=${event.chainPosition}`,
-      };
-    }
-    if (event.prevEventHash !== previousHash) {
-      return {
-        ok: false,
-        checkedEvents: events.length,
-        brokenAtChainPosition: event.chainPosition,
-        reason: 'PREV_HASH_MISMATCH',
-      };
-    }
-    previousHash = event.eventHash;
-    previousPosition = event.chainPosition;
-  }
-
-  return {
-    ok: true,
-    checkedEvents: events.length,
-    brokenAtChainPosition: null,
-    reason: null,
-  };
-}
-
 app.patch('/api/training/data/:id/status', requirePermission('training:training_data:manage'), async (req: Request, res: Response) => {
   // OWASP API3: ValidaÃ§Ã£o Zod obrigatÃ³ria de parÃ¢metros de rota
   const paramsResult = uuidParamSchema.safeParse(req.params);
@@ -4498,7 +4632,7 @@ app.get('/api/training/jobs/:id/audit-trail', requirePermission('training:fine_t
       orderBy: [asc(schema.immutableAuditEvents.chainPosition)],
       limit: 500,
     });
-    const immutableIntegrity = verifyImmutableChain(
+    const immutableIntegrity = verifyImmutableAuditChain(
       immutableEvents.map((event) => ({
         chainPosition: event.chainPosition,
         prevEventHash: event.prevEventHash,
@@ -7397,6 +7531,11 @@ let autoLearningLoopActive = false;
 
       startTrainingMetricsScheduler();
       logger.info({ intervalMs: TRAINING_METRICS_INTERVAL_MS }, 'Scheduler de mÃ©tricas de training iniciado');
+      startTrainingImmutableAuditIntegrityScheduler();
+      logger.info(
+        { intervalMs: TRAINING_IMMUTABLE_AUDIT_CHECK_INTERVAL_MS },
+        'Scheduler de verificacao de integridade do ledger imutavel iniciado'
+      );
       startNamespaceProfileReconcileScheduler();
       logger.info(
         { intervalMs: NAMESPACE_PROFILE_RECONCILE_INTERVAL_MS },
@@ -7494,6 +7633,17 @@ let autoLearningLoopActive = false;
         if (trainingMetricsInterval) {
           clearInterval(trainingMetricsInterval);
           trainingMetricsInterval = null;
+        }
+      },
+      { priority: ShutdownPriority.BACKGROUND_JOBS }
+    );
+
+    registerShutdownCallback(
+      'training-immutable-audit-integrity-scheduler',
+      async () => {
+        if (trainingImmutableAuditIntegrityInterval) {
+          clearInterval(trainingImmutableAuditIntegrityInterval);
+          trainingImmutableAuditIntegrityInterval = null;
         }
       },
       { priority: ShutdownPriority.BACKGROUND_JOBS }

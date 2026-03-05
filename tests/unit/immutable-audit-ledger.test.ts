@@ -22,5 +22,11 @@ describe('immutable audit ledger implementation guards', () => {
     expect(source.includes('prevEventHash: params.prevEventHash')).toBe(true);
     expect(source.includes("crypto.createHash('sha256').update(canonical).digest('hex')")).toBe(true);
   });
-});
 
+  it('exports reusable chain verification helper for service monitors', () => {
+    const source = loadImmutableAuditSource();
+    expect(source.includes('export function verifyImmutableAuditChain(events: ImmutableAuditChainEvent[])')).toBe(true);
+    expect(source.includes('CHAIN_POSITION_MISMATCH')).toBe(true);
+    expect(source.includes('PREV_HASH_MISMATCH')).toBe(true);
+  });
+});

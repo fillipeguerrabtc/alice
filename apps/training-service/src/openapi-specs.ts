@@ -65,6 +65,21 @@ export const trainingServicePaths = {
       },
     },
   },
+  '/api/training/audit/integrity': {
+    get: {
+      summary: 'Immutable audit integrity status for training governance stream',
+      tags: ['Training Jobs'],
+      'x-required-permission': 'training:fine_tuning_jobs:read',
+      parameters: [
+        { name: 'force', in: 'query', schema: { type: 'string', enum: ['true', 'false'] } },
+      ],
+      responses: {
+        200: { description: 'Integrity status' },
+        401: { $ref: '#/components/responses/Unauthorized' },
+        403: { $ref: '#/components/responses/Forbidden' },
+      },
+    },
+  },
   '/api/training/system-config': {
     get: {
       summary: 'List effective training runtime config',
@@ -420,6 +435,22 @@ export const trainingServicePaths = {
                   events: {
                     type: 'array',
                     items: { $ref: '#/components/schemas/TrainingGovernanceAuditEvent' },
+                  },
+                  immutableAudit: {
+                    type: 'object',
+                    properties: {
+                      stream: { type: 'string' },
+                      streamKey: { type: 'string' },
+                      integrity: {
+                        type: 'object',
+                        properties: {
+                          ok: { type: 'boolean' },
+                          checkedEvents: { type: 'integer' },
+                          brokenAtChainPosition: { type: 'integer', nullable: true },
+                          reason: { type: 'string', nullable: true },
+                        },
+                      },
+                    },
                   },
                 },
               },

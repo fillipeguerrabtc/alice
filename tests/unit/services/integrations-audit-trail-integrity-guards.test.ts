@@ -18,10 +18,8 @@ describe('integrations audit-trail integrity guards', () => {
 
   it('validates immutable chain consistency before returning response', () => {
     const source = loadIntegrationsSource();
-    expect(source.includes('function verifyImmutableChain(events: Array<{')).toBe(true);
-    expect(source.includes('CHAIN_POSITION_MISMATCH')).toBe(true);
-    expect(source.includes('PREV_HASH_MISMATCH')).toBe(true);
-    expect(source.includes('const immutableIntegrity = verifyImmutableChain(')).toBe(true);
+    expect(source.includes('verifyImmutableAuditChain')).toBe(true);
+    expect(source.includes('const immutableIntegrity = verifyImmutableAuditChain(')).toBe(true);
+    expect(source.includes("stream: 'trading_operations',")).toBe(true);
   });
 });
-

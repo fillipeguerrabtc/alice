@@ -31,6 +31,19 @@ export interface ImmutableAuditWriteResult {
   prevEventHash: string | null;
 }
 
+export interface ImmutableAuditChainEvent {
+  chainPosition: number;
+  prevEventHash: string | null;
+  eventHash: string;
+}
+
+export interface ImmutableAuditChainIntegrityResult {
+  ok: boolean;
+  checkedEvents: number;
+  brokenAtChainPosition: number | null;
+  reason: string | null;
+}
+
 function canonicalizeForHash(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map((item) => canonicalizeForHash(item)).join(',')}]`;
@@ -160,4 +173,46 @@ export async function appendImmutableAuditEvent(params: {
     executor: tx as unknown as ImmutableAuditExecutor,
     input: params.input,
   }));
+}
+
+export function verifyImmutableAuditChain(events: ImmutableAuditChainEvent[]): ImmutableAuditChainIntegrityResult {
+  if (events.length === 0) {
+    return {
+      ok: true,
+      checkedEvents: 0,
+      brokenAtChainPosition: null,
+      reason: null,
+    };
+  }
+
+  let previousHash: string | null = null;
+  let previousPosition = 0;
+  for (const event of events) {
+    const expectedPosition = previousPosition + 1;
+    if (event.chainPosition !== expectedPosition) {
+      return {
+        ok: false,
+        checkedEvents: events.length,
+        brokenAtChainPosition: event.chainPosition,
+        reason: `CHAIN_POSITION_MISMATCH expected=${expectedPosition} actual=${event.chainPosition}`,
+      };
+    }
+    if (event.prevEventHash !== previousHash) {
+      return {
+        ok: false,
+        checkedEvents: events.length,
+        brokenAtChainPosition: event.chainPosition,
+        reason: 'PREV_HASH_MISMATCH',
+      };
+    }
+    previousHash = event.eventHash;
+    previousPosition = event.chainPosition;
+  }
+
+  return {
+    ok: true,
+    checkedEvents: events.length,
+    brokenAtChainPosition: null,
+    reason: null,
+  };
 }
