@@ -12,6 +12,13 @@ const CRITICAL_OPENAPI_ROUTES: Array<{ method: HttpMethod; path: string }> = [
   { method: 'post', path: '/api/integrations/trading/ws/subscribe' },
   { method: 'post', path: '/api/integrations/trading/ws/unsubscribe' },
   { method: 'get', path: '/api/integrations/trading/intervals' },
+  { method: 'get', path: '/api/integrations/postmortem/{positionId}' },
+  { method: 'get', path: '/api/integrations/postmortem' },
+  { method: 'get', path: '/api/integrations/postmortem/queue/stats' },
+  { method: 'post', path: '/api/integrations/postmortem/queue/retry/{jobId}' },
+  { method: 'get', path: '/api/integrations/postmortem/snapshots/{positionId}' },
+  { method: 'post', path: '/api/integrations/postmortem/send-to-training' },
+  { method: 'post', path: '/api/integrations/postmortem/send-to-training/batch' },
 ];
 
 function openApiPathToExpressPath(pathname: string): string {

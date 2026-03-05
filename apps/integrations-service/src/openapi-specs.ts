@@ -496,6 +496,125 @@ export const integrationsServicePaths = {
       },
     },
   },
+  '/api/integrations/postmortem/{positionId}': {
+    get: {
+      summary: 'Buscar post-mortem por posicao',
+      tags: ['Trading'],
+      parameters: [{ name: 'positionId', in: 'path', required: true, schema: { type: 'string' } }],
+      responses: {
+        200: { description: 'Post-mortem encontrado' },
+        401: { description: 'Nao autenticado' },
+        403: { description: 'Sem permissao para leitura de trading' },
+        404: { description: 'Post-mortem nao encontrado' },
+      },
+    },
+  },
+  '/api/integrations/postmortem': {
+    get: {
+      summary: 'Listar post-mortems do tenant',
+      tags: ['Trading'],
+      parameters: [
+        { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 500, default: 50 } },
+        { name: 'isDemo', in: 'query', schema: { type: 'boolean' } },
+      ],
+      responses: {
+        200: { description: 'Lista de post-mortems' },
+        401: { description: 'Nao autenticado' },
+        403: { description: 'Sem permissao para leitura de trading' },
+      },
+    },
+  },
+  '/api/integrations/postmortem/queue/stats': {
+    get: {
+      summary: 'Estatisticas da fila de post-mortem',
+      tags: ['Trading'],
+      responses: {
+        200: { description: 'Estatisticas da fila e DLQ' },
+        401: { description: 'Nao autenticado' },
+        403: { description: 'Sem permissao para gerenciamento de trading' },
+      },
+    },
+  },
+  '/api/integrations/postmortem/queue/retry/{jobId}': {
+    post: {
+      summary: 'Reenfileirar job da DLQ de post-mortem',
+      tags: ['Trading'],
+      parameters: [{ name: 'jobId', in: 'path', required: true, schema: { type: 'string' } }],
+      responses: {
+        200: { description: 'Job reenfileirado com sucesso' },
+        401: { description: 'Nao autenticado' },
+        403: { description: 'Sem permissao para gerenciamento de trading' },
+        404: { description: 'Job nao encontrado na DLQ' },
+      },
+    },
+  },
+  '/api/integrations/postmortem/snapshots/{positionId}': {
+    get: {
+      summary: 'Buscar snapshots associados a uma posicao',
+      tags: ['Trading'],
+      parameters: [{ name: 'positionId', in: 'path', required: true, schema: { type: 'string' } }],
+      responses: {
+        200: { description: 'Snapshots da posicao' },
+        401: { description: 'Nao autenticado' },
+        403: { description: 'Sem permissao para leitura de trading' },
+      },
+    },
+  },
+  '/api/integrations/postmortem/send-to-training': {
+    post: {
+      summary: 'Criar dataset de training a partir de um post-mortem',
+      tags: ['Trading'],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['postmortemId', 'namespaceId'],
+              properties: {
+                postmortemId: { type: 'string', format: 'uuid' },
+                namespaceId: { type: 'string', format: 'uuid' },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        200: { description: 'Dataset criado com sucesso' },
+        400: { description: 'Payload invalido' },
+        401: { description: 'Nao autenticado' },
+        403: { description: 'Sem permissao para escrita de trading ou namespace invalido' },
+        422: { description: 'Post-mortem sem condicoes para gerar dataset' },
+      },
+    },
+  },
+  '/api/integrations/postmortem/send-to-training/batch': {
+    post: {
+      summary: 'Criar datasets em batch a partir de post-mortems',
+      tags: ['Trading'],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['postmortemIds'],
+              properties: {
+                postmortemIds: { type: 'array', items: { type: 'string', format: 'uuid' }, minItems: 1, maxItems: 100 },
+                namespaceId: { type: 'string', format: 'uuid' },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        200: { description: 'Batch processado com resumo de sucesso/falha' },
+        400: { description: 'Payload invalido' },
+        401: { description: 'Nao autenticado' },
+        403: { description: 'Sem permissao para escrita de trading ou namespace invalido' },
+      },
+    },
+  },
   '/api/integrations/stats': {
     get: {
       summary: 'Estatísticas das integrações',

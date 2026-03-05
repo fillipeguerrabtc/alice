@@ -86,6 +86,15 @@ describe('Integrations Service - OpenAPI (contratos críticos)', () => {
   it('deve expor o endpoint GET /api/integrations/trading/intervals', () => {
     expect(Object.keys(integrationsServicePaths)).toContain('/api/integrations/trading/intervals');
   });
+
+  it('deve documentar GET /api/integrations/postmortem/queue/stats com resposta 403 (manage)', () => {
+    expect(Object.keys(integrationsServicePaths)).toContain('/api/integrations/postmortem/queue/stats');
+    const queueStatsGet = integrationsServicePaths['/api/integrations/postmortem/queue/stats']?.get as
+      | { responses?: Record<string, unknown> }
+      | undefined;
+    expect(queueStatsGet).toBeDefined();
+    expect(queueStatsGet?.responses).toHaveProperty('403');
+  });
 });
 
 // ============================================================================
