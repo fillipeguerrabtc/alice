@@ -21,6 +21,7 @@ import {
 } from './types.js';
 import { hasPermission, hasMinimumRole, getRolePermissions } from './permissions.js';
 import { permissionCache } from './cache.js';
+import { getContextHeaders } from '../async-context.js';
 
 const logger = createLogger('rbac');
 
@@ -753,6 +754,9 @@ export interface InternalAuthHeaders {
   'x-internal-tenant-id'?: string;
   'x-internal-role': string;
   'x-internal-custom-role-id'?: string;
+  'x-correlation-id'?: string;
+  'x-request-id'?: string;
+  traceparent?: string;
 }
 
 /**
@@ -808,6 +812,17 @@ export function generateInternalAuthHeaders(auth: AuthContext): InternalAuthHead
   }
   if (auth.customRoleId) {
     headers['x-internal-custom-role-id'] = auth.customRoleId;
+  }
+
+  const contextHeaders = getContextHeaders();
+  if (contextHeaders['x-correlation-id']) {
+    headers['x-correlation-id'] = contextHeaders['x-correlation-id'];
+  }
+  if (contextHeaders['x-request-id']) {
+    headers['x-request-id'] = contextHeaders['x-request-id'];
+  }
+  if (contextHeaders.traceparent) {
+    headers.traceparent = contextHeaders.traceparent;
   }
 
   return headers;

@@ -46,6 +46,10 @@
       "types": "./dist/async-context.d.ts",
       "import": "./dist/async-context.js"
     },
+    "./tracing": {
+      "types": "./dist/tracing.d.ts",
+      "import": "./dist/tracing.js"
+    },
     "./prometheus": {
       "types": "./dist/prometheus.d.ts",
       "import": "./dist/prometheus.js"

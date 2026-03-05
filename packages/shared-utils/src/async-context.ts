@@ -11,6 +11,11 @@
 import { AsyncLocalStorage } from 'async_hooks';
 import { randomUUID } from 'crypto';
 import type { Request, Response, NextFunction } from 'express';
+import {
+  TRACEPARENT_HEADER,
+  createChildTraceparent,
+  parseTraceparent,
+} from './tracing.js';
 
 // ============================================================================
 // TIPOS DE CONTEXTO
@@ -19,6 +24,8 @@ import type { Request, Response, NextFunction } from 'express';
 export interface RequestContext {
   correlationId: string;
   requestId: string;
+  traceparent?: string;
+  traceId?: string;
   tenantId?: string;
   userId?: string;
   userRole?: string;
@@ -123,11 +130,16 @@ export function createCorrelationMiddleware(options: CorrelationMiddlewareOption
 
     // Gerar request ID único para esta requisição específica
     const requestId = randomUUID();
+    const incomingTraceparent = req.headers[TRACEPARENT_HEADER] as string | undefined;
+    const traceparent = createChildTraceparent(incomingTraceparent);
+    const parsedTraceparent = parseTraceparent(traceparent);
 
     // Criar contexto da requisição
     const context: RequestContext = {
       correlationId,
       requestId,
+      traceparent,
+      traceId: parsedTraceparent?.traceId,
       tenantId: req.tenantId,
       userId: req.user?.userId,
       userRole: req.user?.role,
@@ -140,6 +152,7 @@ export function createCorrelationMiddleware(options: CorrelationMiddlewareOption
     // Adicionar headers de resposta para rastreamento
     res.setHeader(CORRELATION_ID_HEADER, correlationId);
     res.setHeader(REQUEST_ID_HEADER, requestId);
+    res.setHeader(TRACEPARENT_HEADER, traceparent);
 
     // Executar próximo middleware dentro do contexto
     asyncLocalStorage.run(context, () => {
@@ -164,6 +177,10 @@ export function getContextHeaders(): Record<string, string> {
     [REQUEST_ID_HEADER]: context.requestId,
   };
 
+  if (context.traceparent) {
+    headers[TRACEPARENT_HEADER] = context.traceparent;
+  }
+
   if (context.tenantId) {
     headers['x-tenant-id'] = context.tenantId;
   }
@@ -181,11 +198,17 @@ export function getContextHeaders(): Record<string, string> {
  */
 export function createBackgroundContext(
   serviceName: string,
-  parentCorrelationId?: string
+  parentCorrelationId?: string,
+  parentTraceparent?: string
 ): RequestContext {
+  const traceparent = createChildTraceparent(parentTraceparent);
+  const parsedTraceparent = parseTraceparent(traceparent);
+
   return {
     correlationId: parentCorrelationId || randomUUID(),
     requestId: randomUUID(),
+    traceparent,
+    traceId: parsedTraceparent?.traceId,
     startTime: Date.now(),
     serviceName,
     method: 'BACKGROUND',

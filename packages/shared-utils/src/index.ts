@@ -18,6 +18,7 @@ export * from './audit.js';
 export * from './metrics.js';
 export * from './health.js';
 export * from './async-context.js';
+export * from './tracing.js';
 export * from './express-hardening.js';
 export * from './feature-flags.js';
 export * from './feature-flags-storage.js';
