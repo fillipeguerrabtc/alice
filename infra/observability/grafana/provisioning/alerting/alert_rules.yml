@@ -1042,6 +1042,166 @@ groups:
           severity: warning
           service: integrations-service
 
+      - uid: training-fine-tuning-queue-backlog
+        title: Training Fila de Fine-tuning Acumulada
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 1800
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: sum(alice_training_fine_tuning_queue_pending) or on() vector(0)
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [100]
+              refId: C
+        noDataState: OK
+        execErrState: Error
+        for: 15m
+        annotations:
+          summary: "Fila de fine-tuning acumulada"
+          description: "Pendencias de fine-tuning acima de 100 itens por mais de 15 minutos."
+        labels:
+          severity: warning
+          service: training-service
+          journey: training-queue
+
+      - uid: training-fine-tuning-dlq-growth
+        title: Training DLQ de Fine-tuning com Itens
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 1200
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: sum(alice_training_fine_tuning_queue_dlq_total) or on() vector(0)
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+              refId: C
+        noDataState: OK
+        execErrState: Error
+        for: 10m
+        annotations:
+          summary: "DLQ de fine-tuning possui itens"
+          description: "Existem eventos presos em DLQ na fila de fine-tuning por mais de 10 minutos."
+        labels:
+          severity: critical
+          service: training-service
+          journey: training-queue
+
+      - uid: trading-worker-queue-backlog
+        title: Trading Workers com Fila Acumulada
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 1800
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: sum(trading_queue_pending) or on() vector(0)
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [50]
+              refId: C
+        noDataState: OK
+        execErrState: Error
+        for: 15m
+        annotations:
+          summary: "Fila dos workers de trading acumulada"
+          description: "Pendencias de trading acima de 50 itens por mais de 15 minutos."
+        labels:
+          severity: warning
+          service: training-service
+          journey: trading-queue
+
+      - uid: trading-worker-dlq-growth
+        title: Trading Workers com DLQ Ativa
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 1200
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: sum(trading_dlq_total) or on() vector(0)
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+              refId: C
+        noDataState: OK
+        execErrState: Error
+        for: 10m
+        annotations:
+          summary: "DLQ ativa nos workers de trading"
+          description: "Existem eventos presos em DLQ nas filas de trading por mais de 10 minutos."
+        labels:
+          severity: critical
+          service: training-service
+          journey: trading-queue
+
   - orgId: 1
     name: Immutable Audit Integrity Alerts
     folder: Alice Enterprise

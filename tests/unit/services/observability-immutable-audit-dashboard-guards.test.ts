@@ -79,4 +79,13 @@ describe('observability immutable audit dashboard guards', () => {
     expect(loadTrainingDashboard()).toBe(loadInfraTrainingDashboard());
     expect(loadIntegrationsDashboard()).toBe(loadInfraIntegrationsDashboard());
   });
+
+  it('keeps queue health panels for training and trading workers', () => {
+    const source = loadTrainingDashboard();
+    expect(source.includes('Training & Trading Queue Health')).toBe(true);
+    expect(source.includes('alice_training_fine_tuning_queue_pending')).toBe(true);
+    expect(source.includes('alice_training_fine_tuning_queue_dlq_total')).toBe(true);
+    expect(source.includes('trading_queue_pending')).toBe(true);
+    expect(source.includes('trading_dlq_total')).toBe(true);
+  });
 });
