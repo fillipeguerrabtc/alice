@@ -50,6 +50,16 @@ export interface DocumentProcessingJob extends DocumentProcessingJobPayload {
   updatedAt: string;
 }
 
+export type DocumentProcessingQueueMetricEvent = 'enqueued' | 'deduped';
+
+let queueMetricObserver: ((event: DocumentProcessingQueueMetricEvent) => void) | null = null;
+
+export function setDocumentProcessingQueueMetricObserver(
+  observer: ((event: DocumentProcessingQueueMetricEvent) => void) | null
+): void {
+  queueMetricObserver = observer;
+}
+
 function normalizePriority(priority: number): number {
   const safe = Number.isFinite(priority) ? Math.trunc(priority) : MAX_PRIORITY;
   return Math.max(MIN_PRIORITY, Math.min(MAX_PRIORITY, safe));
@@ -107,6 +117,7 @@ export async function enqueueDocumentProcessingJob(
       if (existingJobRaw) {
         const existingJob = parseJob(existingJobRaw);
         if (existingJob && (existingJob.status === 'queued' || existingJob.status === 'processing')) {
+          queueMetricObserver?.('deduped');
           logger.info({
             existingJobId,
             documentId: payload.documentId,
@@ -135,6 +146,7 @@ export async function enqueueDocumentProcessingJob(
     score: buildQueueScore(now + delayMs, job.priority),
     value: jobId,
   });
+  queueMetricObserver?.('enqueued');
 
   logger.info({
     jobId,

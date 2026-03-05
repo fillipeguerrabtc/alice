@@ -49,6 +49,12 @@ interface DocumentProcessingWorkerConfig {
   idleMinMs?: number;
   idleMaxMs?: number;
   invalidateRagCacheForTenant: (tenantId: string) => Promise<void>;
+  onJobFinished?: (params: {
+    status: 'completed' | 'failed';
+    durationSeconds: number;
+    attempts: number;
+    tenantId: string;
+  }) => void;
 }
 
 interface WorkerConfigResolved extends DocumentProcessingWorkerConfig {
@@ -197,6 +203,7 @@ async function generateEmbeddingsInBatches(chunks: string[]): Promise<{ embeddin
 }
 
 async function processJob(job: DocumentProcessingJob, config: WorkerConfigResolved): Promise<void> {
+  const startedAtMs = Date.now();
   let shouldRetry = false;
   let retryBackoffMs = 0;
   let loadedDocumentMetadata: unknown = {};
@@ -349,6 +356,12 @@ async function processJob(job: DocumentProcessingJob, config: WorkerConfigResolv
       .where(eq(schema.documents.id, document.id));
 
     await completeDocumentProcessingJob(job.jobId);
+    config.onJobFinished?.({
+      status: 'completed',
+      durationSeconds: (Date.now() - startedAtMs) / 1000,
+      attempts: job.attempts,
+      tenantId: job.tenantId,
+    });
     processedCount += 1;
 
     logger.info({
@@ -398,6 +411,12 @@ async function processJob(job: DocumentProcessingJob, config: WorkerConfigResolv
     }
 
     await failDocumentProcessingJob(job.jobId, errorMessage);
+    config.onJobFinished?.({
+      status: 'failed',
+      durationSeconds: (Date.now() - startedAtMs) / 1000,
+      attempts: job.attempts,
+      tenantId: job.tenantId,
+    });
 
     if (job.attempts < config.maxAttempts) {
       shouldRetry = true;

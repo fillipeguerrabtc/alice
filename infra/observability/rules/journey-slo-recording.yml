@@ -1,0 +1,28 @@
+groups:
+  - name: journey_slo_recording
+    interval: 30s
+    rules:
+      - record: alice_slo_burn_rate
+        expr: ((sum(rate(alice_llm_requests_total{status="error"}[5m])) or on() vector(0)) / ((sum(rate(alice_llm_requests_total[5m])) or on() vector(0)) + 0.001)) / 0.01
+        labels:
+          journey: chat-stream
+
+      - record: alice_slo_burn_rate
+        expr: ((sum(rate(trading_signal_auto_llm_failures_total[5m])) or on() vector(0)) / ((sum(rate(trading_signal_auto_run_seconds_count[5m])) or on() vector(0)) + 0.001)) / 0.02
+        labels:
+          journey: trading-signal
+
+      - record: alice_slo_burn_rate
+        expr: ((sum(rate(alice_training_fine_tuning_queue_jobs_total{result="error"}[5m])) or on() vector(0)) / ((sum(rate(alice_training_fine_tuning_queue_jobs_total[5m])) or on() vector(0)) + 0.001)) / 0.05
+        labels:
+          journey: training-queue
+
+      - record: alice_slo_burn_rate
+        expr: ((sum(rate(alice_rag_ingestion_job_total{status="failed"}[5m])) or on() vector(0)) / ((sum(rate(alice_rag_ingestion_job_total{status=~"completed|failed"}[5m])) or on() vector(0)) + 0.001)) / 0.05
+        labels:
+          journey: rag-ingest
+
+      - record: alice_queue_lag_seconds
+        expr: (sum(trading_queue_lag_ms) or on() vector(0)) / 1000
+        labels:
+          service: training-service

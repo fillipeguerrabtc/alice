@@ -1366,3 +1366,168 @@ groups:
           severity: warning
           service: integrations-service
           journey: model-governance
+
+  - orgId: 1
+    name: Journey SLO Burn Rate Alerts
+    folder: Alice Enterprise
+    interval: 30s
+    rules:
+      - uid: slo-chat-stream-burn-rate
+        title: SLO Burn Rate Alto - Chat Stream
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: max(alice_slo_burn_rate{journey="chat-stream"}) or on() vector(0)
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [2]
+              refId: C
+        noDataState: OK
+        execErrState: Error
+        for: 10m
+        annotations:
+          summary: "Burn rate alto no SLO de chat stream"
+          description: "A jornada de chat está consumindo orçamento de erro acima de 2x (budget base 1%)."
+        labels:
+          severity: warning
+          service: chat-service
+          journey: chat-stream
+
+      - uid: slo-trading-signal-burn-rate
+        title: SLO Burn Rate Alto - Trading Signal
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: max(alice_slo_burn_rate{journey="trading-signal"}) or on() vector(0)
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [2]
+              refId: C
+        noDataState: OK
+        execErrState: Error
+        for: 10m
+        annotations:
+          summary: "Burn rate alto no SLO de trading signal"
+          description: "Falhas de signal auto estão consumindo orçamento de erro acima de 2x (budget base 2%)."
+        labels:
+          severity: warning
+          service: training-service
+          journey: trading-signal
+
+      - uid: slo-training-queue-burn-rate
+        title: SLO Burn Rate Alto - Training Queue
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: max(alice_slo_burn_rate{journey="training-queue"}) or on() vector(0)
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [2]
+              refId: C
+        noDataState: OK
+        execErrState: Error
+        for: 10m
+        annotations:
+          summary: "Burn rate alto no SLO de training queue"
+          description: "Fila de fine-tuning está acima de 2x do orçamento de erro (budget base 5%)."
+        labels:
+          severity: warning
+          service: training-service
+          journey: training-queue
+
+      - uid: slo-rag-ingest-burn-rate
+        title: SLO Burn Rate Alto - RAG Ingest
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: max(alice_slo_burn_rate{journey="rag-ingest"}) or on() vector(0)
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [2]
+              refId: C
+        noDataState: OK
+        execErrState: Error
+        for: 10m
+        annotations:
+          summary: "Burn rate alto no SLO de ingestão RAG"
+          description: "Jobs de ingestão RAG estão acima de 2x do orçamento de erro (budget base 5%)."
+        labels:
+          severity: warning
+          service: rag-service
+          journey: rag-ingest

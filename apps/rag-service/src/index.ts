@@ -28,6 +28,7 @@ import { getDatabase, getPool, schema, closeDatabasePool, isPoolHealthy, createD
 import { getSystemConfig } from '@alice/database/system-config';
 import { eq, sql, desc, and, asc } from '@alice/database';
 import { z } from 'zod';
+import { Counter as PromCounter, Histogram as PromHistogram } from 'prom-client';
 import {
   requirePermission,
   requireAuth,
@@ -88,6 +89,7 @@ import {
 import {
   enqueueDocumentProcessingJob,
   getDocumentProcessingJobIdForDocument,
+  setDocumentProcessingQueueMetricObserver,
 } from './document-processing-queue.js';
 import { initEmbeddingWebSocket, closeEmbeddingWebSocket, getWebSocketStats } from './embedding-websocket.js';
 import { getAudioProcessor } from './audio-processor.js';
@@ -1121,9 +1123,40 @@ const { metrics, metricsRouter, httpMetricsMiddleware } = createAlicePrometheus(
   collectDefaultMetrics: true,
 });
 
+const ragIngestionJobTotal = new PromCounter({
+  name: 'alice_rag_ingestion_job_total',
+  help: 'Total de jobs de ingestao de documentos RAG processados',
+  labelNames: ['status'] as const,
+  registers: [metrics.registry],
+});
+
+const ragIngestionLatency = new PromHistogram({
+  name: 'alice_rag_ingestion_latency_seconds',
+  help: 'Latencia de processamento de jobs de ingestao RAG',
+  labelNames: ['status'] as const,
+  buckets: [0.5, 1, 2, 5, 10, 30, 60, 120, 300, 600],
+  registers: [metrics.registry],
+});
+
+const ragIngestionDedupedTotal = new PromCounter({
+  name: 'alice_rag_ingestion_deduped_total',
+  help: 'Total de deduplicacoes de jobs de ingestao RAG por documentId',
+  registers: [metrics.registry],
+});
+
 // Inicializar métricas RBAC (Regra 16 - Observability Enterprise)
 initRbacPrometheusMetrics(metrics.rbac);
 logger.info('Métricas RBAC Prometheus inicializadas no rag-service');
+
+setDocumentProcessingQueueMetricObserver((event) => {
+  if (event === 'deduped') {
+    ragIngestionDedupedTotal.inc();
+    return;
+  }
+  if (event === 'enqueued') {
+    ragIngestionJobTotal.inc({ status: 'queued' });
+  }
+});
 
 // Endpoint /metrics para Prometheus scraper (antes de outros middlewares)
 app.use(metricsRouter);
@@ -1650,6 +1683,10 @@ function startDocumentProcessingWorkerWhenRedisReady(redisConnected: boolean): v
     overlapChars: DOC_CHUNK_OVERLAP_CHARS,
     maxChunks: DOC_CHUNK_MAX_CHUNKS,
     invalidateRagCacheForTenant: invalidateRagCachesForTenant,
+    onJobFinished: ({ status, durationSeconds }) => {
+      ragIngestionJobTotal.inc({ status });
+      ragIngestionLatency.observe({ status }, durationSeconds);
+    },
   });
 
   void getDocumentProcessingWorkerStatus()
