@@ -271,6 +271,7 @@ export const chatServicePaths = {
     post: {
       summary: 'Assumir controle da conversa (takeover humano)',
       tags: ['Takeover'],
+      'x-required-permission': 'chat:takeover:write',
       parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
       requestBody: {
         content: {
@@ -292,6 +293,7 @@ export const chatServicePaths = {
     post: {
       summary: 'Devolver controle para IA (handback)',
       tags: ['Takeover'],
+      'x-required-permission': 'chat:handoff:write',
       parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
       requestBody: {
         content: {
