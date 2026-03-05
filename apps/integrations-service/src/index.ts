@@ -20670,15 +20670,17 @@ app.get('/api/integrations/postmortem/:positionId', requirePermission('integrati
     if (!tenantId) { res.status(403).json({ error: 'Tenant não identificado' }); return; }
     const positionId = req.params.positionId;
     if (!positionId) { res.status(400).json({ error: 'ID da posição é obrigatório' }); return; }
-    const db = getDatabase();
-    const [postmortem] = await db
-      .select()
-      .from(schema.tradingPostmortems)
-      .where(and(
-        eq(schema.tradingPostmortems.positionId, positionId),
-        eq(schema.tradingPostmortems.tenantId, tenantId),
-      ))
-      .limit(1);
+    const postmortem = await withTenantContext(tenantId, false, async (tx) => {
+      const [row] = await tx
+        .select()
+        .from(schema.tradingPostmortems)
+        .where(and(
+          eq(schema.tradingPostmortems.positionId, positionId),
+          eq(schema.tradingPostmortems.tenantId, tenantId),
+        ))
+        .limit(1);
+      return row ?? null;
+    });
 
     if (!postmortem) {
       res.status(404).json({ error: 'Post-mortem não encontrado para esta posição' });
@@ -20697,7 +20699,6 @@ app.get('/api/integrations/postmortem', requirePermission('integrations:trading:
   try {
     const tenantId = req.tenantId;
     if (!tenantId) { res.status(403).json({ error: 'Tenant não identificado' }); return; }
-    const db = getDatabase();
     const limit = parseInt(req.query.limit as string) || 50;
     const isDemo = req.query.isDemo === 'true' ? true : req.query.isDemo === 'false' ? false : undefined;
 
@@ -20706,12 +20707,14 @@ app.get('/api/integrations/postmortem', requirePermission('integrations:trading:
       ? and(eq(schema.tradingPostmortems.tenantId, tenantId), eq(schema.tradingPostmortems.isDemo, isDemo))
       : eq(schema.tradingPostmortems.tenantId, tenantId);
 
-    const postmortems = await db
-      .select()
-      .from(schema.tradingPostmortems)
-      .where(whereCondition)
-      .orderBy(desc(schema.tradingPostmortems.createdAt))
-      .limit(limit);
+    const postmortems = await withTenantContext(tenantId, false, async (tx) =>
+      tx
+        .select()
+        .from(schema.tradingPostmortems)
+        .where(whereCondition)
+        .orderBy(desc(schema.tradingPostmortems.createdAt))
+        .limit(limit)
+    );
 
     res.json({ success: true, data: postmortems });
   } catch (error) {
@@ -20789,15 +20792,16 @@ app.post('/api/integrations/postmortem/send-to-training', requirePermission('int
     const tenantId = req.tenantId;
     if (!tenantId) { res.status(403).json({ error: 'Tenant não identificado' }); return; }
 
-    const db = getDatabase();
-    const targetNamespace = await db.query.namespaces.findFirst({
-      where: and(
-        eq(schema.namespaces.id, parsed.data.namespaceId),
-        eq(schema.namespaces.tenantId, tenantId),
-        eq(schema.namespaces.ativo, true)
-      ),
-      columns: { id: true },
-    });
+    const targetNamespace = await withTenantContext(tenantId, false, async (tx) =>
+      tx.query.namespaces.findFirst({
+        where: and(
+          eq(schema.namespaces.id, parsed.data.namespaceId),
+          eq(schema.namespaces.tenantId, tenantId),
+          eq(schema.namespaces.ativo, true)
+        ),
+        columns: { id: true },
+      })
+    );
     if (!targetNamespace) {
       res.status(403).json({ error: 'Namespace de destino não pertence ao tenant ou está inativo' });
       return;
@@ -20844,16 +20848,18 @@ app.post('/api/integrations/postmortem/send-to-training/batch', requirePermissio
     const tenantId = req.tenantId;
     if (!tenantId) { res.status(403).json({ error: 'Tenant não identificado' }); return; }
     let targetNamespaceId: string | undefined;
-    if (parsed.data.namespaceId) {
-      const db = getDatabase();
-      const namespace = await db.query.namespaces.findFirst({
-        where: and(
-          eq(schema.namespaces.id, parsed.data.namespaceId),
-          eq(schema.namespaces.tenantId, tenantId),
-          eq(schema.namespaces.ativo, true)
-        ),
-        columns: { id: true },
-      });
+    const requestedNamespaceId = parsed.data.namespaceId;
+    if (requestedNamespaceId) {
+      const namespace = await withTenantContext(tenantId, false, async (tx) =>
+        tx.query.namespaces.findFirst({
+          where: and(
+            eq(schema.namespaces.id, requestedNamespaceId),
+            eq(schema.namespaces.tenantId, tenantId),
+            eq(schema.namespaces.ativo, true)
+          ),
+          columns: { id: true },
+        })
+      );
       if (!namespace) {
         res.status(403).json({ error: 'Namespace de destino não pertence ao tenant ou está inativo' });
         return;

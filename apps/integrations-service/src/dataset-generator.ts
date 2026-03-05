@@ -16,7 +16,7 @@
  */
 
 import { eq, and } from 'drizzle-orm';
-import { getDatabase, schema } from '@alice/database';
+import { schema, withTenantContext } from '@alice/database';
 import type { InferSelectModel } from 'drizzle-orm';
 import { createLogger } from '@alice/logger';
 
@@ -316,7 +316,7 @@ export async function createDatasetFromPostMortem(
   tenantId: string,
   namespaceIdOverride?: string,
 ): Promise<string | null> {
-  const db = getDatabase();
+  return withTenantContext(tenantId, false, async (db) => {
 
   // Buscar post-mortem completo
   const postmortem = await db
@@ -378,7 +378,10 @@ export async function createDatasetFromPostMortem(
     entrySnapshot = await db
       .select()
       .from(schema.tradingSnapshots)
-      .where(eq(schema.tradingSnapshots.id, posData.entrySnapshotId))
+      .where(and(
+        eq(schema.tradingSnapshots.id, posData.entrySnapshotId),
+        eq(schema.tradingSnapshots.tenantId, tenantId),
+      ))
       .then((rows) => rows[0] ?? null);
   }
 
@@ -386,7 +389,10 @@ export async function createDatasetFromPostMortem(
     exitSnapshot = await db
       .select()
       .from(schema.tradingSnapshots)
-      .where(eq(schema.tradingSnapshots.id, posData.exitSnapshotId))
+      .where(and(
+        eq(schema.tradingSnapshots.id, posData.exitSnapshotId),
+        eq(schema.tradingSnapshots.tenantId, tenantId),
+      ))
       .then((rows) => rows[0] ?? null);
   }
 
@@ -543,7 +549,10 @@ export async function createDatasetFromPostMortem(
   await db
     .update(schema.tradingPostmortems)
     .set({ sentToTrainingAt: new Date() })
-    .where(eq(schema.tradingPostmortems.id, postmortemId));
+    .where(and(
+      eq(schema.tradingPostmortems.id, postmortemId),
+      eq(schema.tradingPostmortems.tenantId, tenantId),
+    ));
 
   logger.info(
     {
@@ -558,6 +567,7 @@ export async function createDatasetFromPostMortem(
   );
 
   return trainingDataRow.id;
+  });
 }
 
 /**
