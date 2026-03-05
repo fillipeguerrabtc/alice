@@ -3490,6 +3490,57 @@ async function persistTrainingGovernanceAudit(params: {
   });
 }
 
+function verifyImmutableChain(events: Array<{
+  chainPosition: number;
+  prevEventHash: string | null;
+  eventHash: string;
+}>): {
+  ok: boolean;
+  checkedEvents: number;
+  brokenAtChainPosition: number | null;
+  reason: string | null;
+} {
+  if (events.length === 0) {
+    return {
+      ok: true,
+      checkedEvents: 0,
+      brokenAtChainPosition: null,
+      reason: null,
+    };
+  }
+
+  let previousHash: string | null = null;
+  let previousPosition = 0;
+  for (const event of events) {
+    const expectedPosition = previousPosition + 1;
+    if (event.chainPosition !== expectedPosition) {
+      return {
+        ok: false,
+        checkedEvents: events.length,
+        brokenAtChainPosition: event.chainPosition,
+        reason: `CHAIN_POSITION_MISMATCH expected=${expectedPosition} actual=${event.chainPosition}`,
+      };
+    }
+    if (event.prevEventHash !== previousHash) {
+      return {
+        ok: false,
+        checkedEvents: events.length,
+        brokenAtChainPosition: event.chainPosition,
+        reason: 'PREV_HASH_MISMATCH',
+      };
+    }
+    previousHash = event.eventHash;
+    previousPosition = event.chainPosition;
+  }
+
+  return {
+    ok: true,
+    checkedEvents: events.length,
+    brokenAtChainPosition: null,
+    reason: null,
+  };
+}
+
 app.patch('/api/training/data/:id/status', requirePermission('training:training_data:manage'), async (req: Request, res: Response) => {
   // OWASP API3: ValidaÃ§Ã£o Zod obrigatÃ³ria de parÃ¢metros de rota
   const paramsResult = uuidParamSchema.safeParse(req.params);
@@ -4437,6 +4488,23 @@ app.get('/api/training/jobs/:id/audit-trail', requirePermission('training:fine_t
       })
       : [];
     const usersById = new Map(users.map((user) => [user.id, user]));
+    const immutableStreamKey = `fine_tuning_job:${fineTuningJob.id}`;
+    const immutableEvents = await db.query.immutableAuditEvents.findMany({
+      where: and(
+        eq(schema.immutableAuditEvents.tenantId, tenantResolution.tenantId),
+        eq(schema.immutableAuditEvents.stream, 'training_governance'),
+        eq(schema.immutableAuditEvents.streamKey, immutableStreamKey),
+      ),
+      orderBy: [asc(schema.immutableAuditEvents.chainPosition)],
+      limit: 500,
+    });
+    const immutableIntegrity = verifyImmutableChain(
+      immutableEvents.map((event) => ({
+        chainPosition: event.chainPosition,
+        prevEventHash: event.prevEventHash,
+        eventHash: event.eventHash,
+      }))
+    );
 
     return res.json({
       events: events.map((event) => {
@@ -4456,6 +4524,23 @@ app.get('/api/training/jobs/:id/audit-trail', requirePermission('training:fine_t
           } : null,
         };
       }),
+      immutableAudit: {
+        stream: 'training_governance',
+        streamKey: immutableStreamKey,
+        integrity: immutableIntegrity,
+        events: immutableEvents.map((event) => ({
+          id: event.id,
+          chainPosition: event.chainPosition,
+          eventType: event.eventType,
+          resourceType: event.resourceType,
+          resourceId: event.resourceId,
+          payload: event.payload,
+          prevEventHash: event.prevEventHash,
+          eventHash: event.eventHash,
+          occurredAt: event.occurredAt,
+          createdAt: event.createdAt,
+        })),
+      },
     });
   } catch (error) {
     logger.error({ error, jobId: req.params.id }, 'Falha ao consultar trilha de auditoria de training');
