@@ -3484,31 +3484,28 @@ app.patch('/api/training/data/:id/status', requirePermission('training:training_
       );
 
     if (overrideScope) {
+      if (!existing.tenantId) {
+        return res.status(400).json({ error: 'Item sem tenant valido nao pode receber override de escopo' });
+      }
       if (!overrideScope.reason?.trim()) {
         return res.status(400).json({ error: 'Motivo Ã© obrigatÃ³rio para override de escopo' });
       }
 
       if (overrideScope.namespaceId) {
-        const namespace = await db.query.namespaces.findFirst({
-          where: eq(schema.namespaces.id, overrideScope.namespaceId),
-          columns: { id: true, tenantId: true },
-        });
-        if (!namespace || namespace.tenantId !== existing.tenantId) {
-          return res.status(403).json({ error: 'Namespace de override invÃ¡lido para o tenant do item' });
+        const namespace = await findNamespaceByIdInTenant(existing.tenantId, overrideScope.namespaceId);
+        if (!namespace) {
+          return res.status(403).json({ error: 'Namespace de override invalido para o tenant do item' });
         }
         nextNamespaceId = namespace.id;
       }
 
       if (overrideScope.agentId) {
-        const agent = await db.query.agents.findFirst({
-          where: eq(schema.agents.id, overrideScope.agentId),
-          columns: { id: true, tenantId: true, namespaceId: true },
-        });
-        if (!agent || agent.tenantId !== existing.tenantId) {
-          return res.status(403).json({ error: 'Agente de override invÃ¡lido para o tenant do item' });
+        const agent = await findAgentByIdInTenant(existing.tenantId, overrideScope.agentId);
+        if (!agent) {
+          return res.status(403).json({ error: 'Agente de override invalido para o tenant do item' });
         }
         if (nextNamespaceId && agent.namespaceId && agent.namespaceId !== nextNamespaceId) {
-          return res.status(403).json({ error: 'Agente selecionado nÃ£o pertence ao namespace alvo' });
+          return res.status(403).json({ error: 'Agente selecionado nao pertence ao namespace alvo' });
         }
         nextAgentId = agent.id;
         if (!nextNamespaceId && agent.namespaceId) {
@@ -3649,21 +3646,15 @@ app.patch('/api/training/data/:id/resolve-scope', requirePermission('training:tr
       return res.status(400).json({ error: 'Item sem tenant vÃ¡lido nÃ£o pode ser resolvido' });
     }
 
-    const namespace = await db.query.namespaces.findFirst({
-      where: eq(schema.namespaces.id, bodyResult.data.namespaceId),
-      columns: { id: true, tenantId: true },
-    });
-    if (!namespace || namespace.tenantId !== existing.tenantId) {
+    const namespace = await findNamespaceByIdInTenant(existing.tenantId, bodyResult.data.namespaceId);
+    if (!namespace) {
       return res.status(403).json({ error: 'Namespace nÃ£o pertence ao tenant do item' });
     }
 
     const nextAgentId: string | null = bodyResult.data.agentId ?? null;
     if (nextAgentId) {
-      const agent = await db.query.agents.findFirst({
-        where: eq(schema.agents.id, nextAgentId),
-        columns: { id: true, tenantId: true, namespaceId: true },
-      });
-      if (!agent || agent.tenantId !== existing.tenantId) {
+      const agent = await findAgentByIdInTenant(existing.tenantId, nextAgentId);
+      if (!agent) {
         return res.status(403).json({ error: 'Agente invÃ¡lido para o tenant do item' });
       }
       if (agent.namespaceId && agent.namespaceId !== namespace.id) {
@@ -3812,10 +3803,7 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
     }
     const authorizedTenantId = tenantResolution.tenantId;
 
-    const namespace = await db.query.namespaces.findFirst({
-      where: eq(schema.namespaces.id, body.namespaceId),
-      columns: { id: true, tenantId: true },
-    });
+    const namespace = await findNamespaceByIdInTenant(authorizedTenantId, body.namespaceId);
     if (!namespace) {
       return res.status(404).json({ error: 'Namespace nao encontrado' });
     }
@@ -3928,11 +3916,8 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
       }
 
       if (body.agentId) {
-        const agent = await db.query.agents.findFirst({
-          where: eq(schema.agents.id, body.agentId),
-          columns: { id: true, tenantId: true, namespaceId: true },
-        });
-        if (!agent || agent.tenantId !== tenantId) {
+        const agent = await findAgentByIdInTenant(tenantId, body.agentId);
+        if (!agent) {
           return res.status(403).json({ error: 'Agente invalido para o tenant autenticado' });
         }
         if (agent.namespaceId && agent.namespaceId !== namespace.id) {
@@ -6161,11 +6146,8 @@ app.post('/api/training/schedule/configure', requirePermission('training:trainin
     const scheduleNamespaceId = namespaceId ?? null;
 
     if (scheduleNamespaceId) {
-      const namespace = await db.query.namespaces.findFirst({
-        where: eq(schema.namespaces.id, scheduleNamespaceId),
-        columns: { id: true, tenantId: true },
-      });
-      if (!namespace || namespace.tenantId !== scopedTenantId) {
+      const namespace = await findNamespaceByIdInTenant(scopedTenantId, scheduleNamespaceId);
+      if (!namespace) {
         return res.status(403).json({ error: 'Namespace nao pertence ao tenant autenticado' });
       }
     }
@@ -6470,11 +6452,8 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
       }
 
     if (namespaceId) {
-      const namespace = await db.query.namespaces.findFirst({
-        where: eq(schema.namespaces.id, namespaceId),
-        columns: { id: true, tenantId: true },
-      });
-      if (!namespace || namespace.tenantId !== scopedTenantId) {
+      const namespace = await findNamespaceByIdInTenant(scopedTenantId, namespaceId);
+      if (!namespace) {
         return res.status(403).json({ error: 'Namespace nao pertence ao tenant autenticado' });
       }
     }
@@ -7390,5 +7369,7 @@ let autoLearningLoopActive = false;
     process.exit(1);
   }
 })();
+
+
 
 
