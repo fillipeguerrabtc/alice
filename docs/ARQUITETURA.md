@@ -765,7 +765,7 @@ flowchart TB
 ```sql
 -- Exemplo de RLS policy para isolamento multi-tenant
 CREATE POLICY "tenant_isolation" ON conversations
-    USING (tenant_id = current_setting('app.tenant_id')::uuid);
+    USING (tenant_id = current_tenant_id());
 
 -- Tabelas com RLS ativo (17/12/2025):
 -- conversations, messages, agents, documents, embeddings,
