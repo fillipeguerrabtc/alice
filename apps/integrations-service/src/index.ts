@@ -20725,7 +20725,7 @@ app.get('/api/integrations/postmortem', requirePermission('integrations:trading:
 });
 
 // GET /api/integrations/postmortem/queue/stats - Estatísticas da fila de post-mortem
-app.get('/api/integrations/postmortem/queue/stats', requirePermission('integrations:trading:read'), async (_req: Request, res: Response) => {
+app.get('/api/integrations/postmortem/queue/stats', requirePermission('integrations:trading:manage'), async (_req: Request, res: Response) => {
   try {
     const stats = await getPostMortemQueueStats();
     res.json({ success: true, data: stats });

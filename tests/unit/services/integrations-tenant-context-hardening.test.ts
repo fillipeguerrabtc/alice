@@ -40,6 +40,13 @@ describe('integrations tenant-context hardening', () => {
     expect(retryRoutePattern.test(source)).toBe(true);
   });
 
+  it('restricts postmortem queue stats endpoint to manage permission', () => {
+    const source = loadIntegrationsSource();
+    const queueStatsPattern =
+      /app\.get\('\/api\/integrations\/postmortem\/queue\/stats',\s*requirePermission\('integrations:trading:manage'\),/;
+    expect(queueStatsPattern.test(source)).toBe(true);
+  });
+
   it('keeps dataset generator wrapped by withTenantContext fail-closed scope', () => {
     const source = loadDatasetGeneratorSource();
     expect(source.includes('return withTenantContext(tenantId, false, async (db) => {')).toBe(true);
