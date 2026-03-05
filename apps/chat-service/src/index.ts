@@ -361,13 +361,6 @@ const wsAgentAuthFailTotal = new PromCounter({
   registers: [metrics.registry],
 });
 
-const wsAgentLegacySessionFallbackTotal = new PromCounter({
-  name: 'alice_ws_agent_legacy_session_fallback_total',
-  help: 'Total de tentativas de fallback legado de sessao no /ws/agent',
-  labelNames: ['result'] as const,
-  registers: [metrics.registry],
-});
-
 const wsAgentConnectionTotal = new PromCounter({
   name: 'alice_ws_agent_connection_total',
   help: 'Total de tentativas de conexao no WebSocket de agente por status',
@@ -16132,37 +16125,15 @@ agentWss.on('connection', async (ws, req) => {
   const wsToken = urlParams.get('token');
   const normalizedWsToken = wsToken?.trim() ?? '';
   const hasWsToken = normalizedWsToken.length > 0;
-  let tokenPayload = hasWsToken ? verifyWsToken(normalizedWsToken, 'ws-agent') : null;
-  let authRejectedReason: 'missing_token' | 'invalid_token' | 'legacy_session_invalid' | 'missing_token_fallback_disabled' | null = null;
+  const tokenPayload = hasWsToken ? verifyWsToken(normalizedWsToken, 'ws-agent') : null;
+  let authRejectedReason: 'missing_token' | 'invalid_token' | null = null;
   const authDecision = resolveWsAgentAuthDecision({
     hasWsToken,
     tokenPayloadValid: Boolean(tokenPayload),
     policy: WS_AGENT_AUTH_GOVERNANCE,
   });
 
-  if (authDecision.shouldAttemptLegacySessionFallback) {
-    // Compatibilidade controlada por governanca (opt-in):
-    // usa sessao apenas para clientes legados sem suporte a ws-agent token.
-    const sessionAuth = await authenticateWebSocketConnection(req.headers.cookie, req.headers.origin);
-    if (sessionAuth.authenticated && sessionAuth.userId && sessionAuth.tenantId) {
-      tokenPayload = {
-        userId: sessionAuth.userId,
-        tenantId: sessionAuth.tenantId,
-        role: sessionAuth.role ?? 'viewer',
-      };
-      wsAgentLegacySessionFallbackTotal.inc({ result: 'success' });
-      logger.warn(
-        {
-          userId: sessionAuth.userId,
-          tenantId: sessionAuth.tenantId,
-        },
-        'Conexao /ws/agent autenticada via fallback legado de sessao'
-      );
-    } else {
-      authRejectedReason = 'legacy_session_invalid';
-      wsAgentLegacySessionFallbackTotal.inc({ result: 'failure' });
-    }
-  } else if (authDecision.rejectReason) {
+  if (authDecision.rejectReason) {
     authRejectedReason = authDecision.rejectReason;
   }
 

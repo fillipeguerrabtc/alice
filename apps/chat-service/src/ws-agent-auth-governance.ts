@@ -9,7 +9,6 @@ export type WsAgentAuthDecision = {
   rejectReason:
     | 'missing_token'
     | 'invalid_token'
-    | 'missing_token_fallback_disabled'
     | null;
 };
 
@@ -29,14 +28,16 @@ function parseEnvBoolean(rawValue: string | undefined, defaultValue: boolean): b
 export function loadWsAgentAuthGovernancePolicyFromEnv(
   env: NodeJS.ProcessEnv = process.env
 ): WsAgentAuthGovernancePolicy {
-  const requireWsAgentToken = parseEnvBoolean(env.WS_AGENT_REQUIRE_TOKEN, true);
-  const allowLegacySessionFallback =
-    !requireWsAgentToken &&
-    parseEnvBoolean(env.WS_AGENT_ALLOW_LEGACY_SESSION_FALLBACK, true);
+  const requestedRequireToken = parseEnvBoolean(env.WS_AGENT_REQUIRE_TOKEN, true);
+  const requestedLegacyFallback = parseEnvBoolean(env.WS_AGENT_ALLOW_LEGACY_SESSION_FALLBACK, false);
+
+  void requestedRequireToken;
+  void requestedLegacyFallback;
 
   return {
-    requireWsAgentToken,
-    allowLegacySessionFallback,
+    // Enterprise fail-closed: /ws/agent always requires explicit ws-agent token.
+    requireWsAgentToken: true,
+    allowLegacySessionFallback: false,
   };
 }
 
@@ -60,31 +61,15 @@ export function resolveWsAgentAuthDecision(params: {
     };
   }
 
-  if (params.policy.allowLegacySessionFallback) {
-    return {
-      shouldAcceptTokenPayload: false,
-      shouldAttemptLegacySessionFallback: true,
-      rejectReason: null,
-    };
-  }
-
-  if (params.policy.requireWsAgentToken) {
-    return {
-      shouldAcceptTokenPayload: false,
-      shouldAttemptLegacySessionFallback: false,
-      rejectReason: 'missing_token',
-    };
-  }
-
   return {
     shouldAcceptTokenPayload: false,
     shouldAttemptLegacySessionFallback: false,
-    rejectReason: 'missing_token_fallback_disabled',
+    rejectReason: params.policy.requireWsAgentToken ? 'missing_token' : 'invalid_token',
   };
 }
 
 export function resolveWsAgentCloseFrame(
-  rejectReason: WsAgentAuthDecision['rejectReason'] | 'legacy_session_invalid' | 'unknown'
+  rejectReason: WsAgentAuthDecision['rejectReason'] | 'unknown'
 ): WsAgentCloseFrame {
   if (rejectReason === 'missing_token') {
     return { code: 4001, reason: 'Token ws-agent obrigatorio' };

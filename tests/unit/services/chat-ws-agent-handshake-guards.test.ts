@@ -23,6 +23,12 @@ describe('chat-service ws-agent handshake guards', () => {
     expect(resolverPattern.test(source)).toBe(true);
   });
 
+  it('does not allow legacy session fallback for /ws/agent handshake', () => {
+    const source = loadChatServiceSource();
+    expect(source.includes('alice_ws_agent_legacy_session_fallback_total')).toBe(false);
+    expect(source.includes('autenticada via fallback legado de sessao')).toBe(false);
+  });
+
   it('keeps explicit close reason mapping for missing vs invalid ws-agent token', () => {
     const source = loadChatServiceSource();
     expect(source.includes("resolveWsAgentCloseFrame(authRejectedReason ?? 'unknown')")).toBe(true);
