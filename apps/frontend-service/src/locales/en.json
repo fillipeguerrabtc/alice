@@ -1948,7 +1948,10 @@
       "taskQueued": "Queued for execution",
       "elapsed": "Elapsed time",
       "elapsedValue": "{{seconds}}s",
-      "eta": "Estimated time remaining"
+      "eta": "Estimated time remaining",
+      "liveConnecting": "Connecting to real-time stream...",
+      "liveConnected": "Real-time updates are active.",
+      "liveFallback": "Stream unavailable right now. Falling back to polling."
     },
     "jobsInProgress": "In progress",
     "jobHistory": "History",

@@ -98,6 +98,8 @@ import {
   type TrainingHyperparams,
 } from '../../../../packages/shared-utils/src/training-config';
 
+const TRAINING_API_BASE = import.meta.env.VITE_API_URL || '';
+
 interface TrainingData {
   id: string;
   source: string;
@@ -503,6 +505,30 @@ function getRunPriorityLabel(job: FineTuningJob, t: (key: string, options?: Reco
   if (priority === 'high') return t('training.job.priority.high');
   if (priority === 'normal') return t('training.job.priority.normal');
   return t('training.job.priority.low');
+}
+
+function isFineTuningJobActive(status: FineTuningJob['status']): boolean {
+  return status === 'pending'
+    || status === 'preparing'
+    || status === 'training'
+    || status === 'validating';
+}
+
+type TrainingJobRealtimeStreamState = 'idle' | 'connecting' | 'live' | 'fallback';
+
+type TrainingJobRealtimeStreamPayload = {
+  job: FineTuningJob;
+  sentAt?: string;
+};
+
+function isTrainingJobRealtimeStreamPayload(value: unknown): value is TrainingJobRealtimeStreamPayload {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const payload = value as Record<string, unknown>;
+  if (!payload.job || typeof payload.job !== 'object' || Array.isArray(payload.job)) return false;
+  const job = payload.job as Record<string, unknown>;
+  return typeof job.id === 'string'
+    && typeof job.name === 'string'
+    && typeof job.status === 'string';
 }
 
 const containerVariants = {
@@ -989,6 +1015,9 @@ function JobDetailModal({
   locale: string;
   timeZone: string;
 }) {
+  const queryClient = useQueryClient();
+  const [jobStreamState, setJobStreamState] = useState<TrainingJobRealtimeStreamState>('idle');
+
   const { data, isLoading } = useQuery<{ job: FineTuningJob }>({
     queryKey: ['/api/training/jobs', jobId],
     queryFn: async () => {
@@ -999,7 +1028,8 @@ function JobDetailModal({
     refetchInterval: (query) => {
       const job = query.state.data?.job;
       if (!job) return false;
-      const active = ['pending', 'preparing', 'training', 'validating'].includes(job.status);
+      if (jobStreamState === 'live') return false;
+      const active = isFineTuningJobActive(job.status);
       return active ? 2000 : false;
     },
   });
@@ -1015,12 +1045,94 @@ function JobDetailModal({
 
   const job = data?.job;
   const auditEvents = auditData?.events ?? [];
+
+  useEffect(() => {
+    if (!open || !jobId || !job || !isFineTuningJobActive(job.status)) {
+      setJobStreamState('idle');
+      return;
+    }
+
+    setJobStreamState('connecting');
+    const streamUrl = `${TRAINING_API_BASE}/api/training/jobs/${jobId}/stream`;
+    const eventSource = new EventSource(streamUrl, { withCredentials: true });
+    let closed = false;
+
+    const applyStreamedJob = (nextJob: FineTuningJob): void => {
+      queryClient.setQueryData<{ job: FineTuningJob }>(['/api/training/jobs', jobId], { job: nextJob });
+      queryClient.setQueryData<JobsResponse>(['/api/training/jobs'], (previous) => {
+        if (!previous) return previous;
+        let replaced = false;
+        const jobs = previous.jobs.map((existingJob) => {
+          if (existingJob.id !== nextJob.id) return existingJob;
+          replaced = true;
+          return { ...existingJob, ...nextJob };
+        });
+        return replaced ? { ...previous, jobs } : previous;
+      });
+    };
+
+    eventSource.onopen = () => {
+      if (closed) return;
+      setJobStreamState('live');
+    };
+
+    eventSource.addEventListener('job', (rawEvent) => {
+      if (closed) return;
+      const event = rawEvent as MessageEvent<string>;
+      try {
+        const payload = JSON.parse(event.data) as unknown;
+        if (!isTrainingJobRealtimeStreamPayload(payload)) {
+          return;
+        }
+        applyStreamedJob(payload.job);
+        setJobStreamState('live');
+        if (!isFineTuningJobActive(payload.job.status)) {
+          setJobStreamState('idle');
+          eventSource.close();
+          queryClient.invalidateQueries({ queryKey: ['/api/training/jobs'] });
+        }
+      } catch (error) {
+        frontendLogger.warn('Falha ao processar stream de job de treinamento', {
+          jobId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    });
+
+    eventSource.addEventListener('end', () => {
+      if (closed) return;
+      setJobStreamState('idle');
+      eventSource.close();
+      queryClient.invalidateQueries({ queryKey: ['/api/training/jobs', jobId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/training/jobs'] });
+    });
+
+    eventSource.onerror = () => {
+      if (closed) return;
+      setJobStreamState('fallback');
+      eventSource.close();
+    };
+
+    return () => {
+      closed = true;
+      eventSource.close();
+    };
+  }, [open, jobId, job?.status, queryClient]);
+
   if (!open || !jobId) return null;
 
   const startTime = job?.iniciadoEm ? new Date(job.iniciadoEm).getTime() : null;
   const elapsedSec = startTime ? Math.floor((Date.now() - startTime) / 1000) : 0;
   const progress = job?.progress ?? 0;
   const etaSec = progress > 0 && progress < 100 ? Math.round((elapsedSec / progress) * (100 - progress)) : null;
+  const hasActiveStreamableJob = !!job && isFineTuningJobActive(job.status);
+  const streamStatusLabel = !hasActiveStreamableJob
+    ? null
+    : jobStreamState === 'live'
+      ? t('training.jobDetail.liveConnected')
+      : jobStreamState === 'fallback'
+        ? t('training.jobDetail.liveFallback')
+        : t('training.jobDetail.liveConnecting');
   const currentTask = job?.status === 'preparing' ? t('training.jobDetail.taskPreparing')
     : job?.status === 'training' ? t('training.jobDetail.taskTraining')
     : job?.status === 'validating' ? t('training.jobDetail.taskValidating')
@@ -1049,6 +1161,9 @@ function JobDetailModal({
             </div>
             {currentTask && (
               <p className="text-sm text-muted-foreground">{currentTask}</p>
+            )}
+            {streamStatusLabel && (
+              <p className="text-xs text-muted-foreground">{streamStatusLabel}</p>
             )}
             {['preparing', 'training', 'validating'].includes(job.status) && (
               <div className="space-y-1">

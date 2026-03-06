@@ -1995,7 +1995,10 @@
       "taskQueued": "Na fila de execução",
       "elapsed": "Tempo decorrido",
       "elapsedValue": "{{seconds}}s",
-      "eta": "Tempo estimado restante"
+      "eta": "Tempo estimado restante",
+      "liveConnecting": "Conectando ao stream em tempo real...",
+      "liveConnected": "Atualizações em tempo real ativas.",
+      "liveFallback": "Stream indisponível no momento. Usando atualização por polling."
     },
     "jobsInProgress": "Em andamento",
     "jobHistory": "Histórico",

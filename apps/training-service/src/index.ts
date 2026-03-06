@@ -304,6 +304,65 @@ const trainingRunStartIdempotencyRecordSchema = z.object({
 
 type TrainingRunStartIdempotencyRecord = z.infer<typeof trainingRunStartIdempotencyRecordSchema>;
 type FineTuningJobRow = typeof schema.fineTuningJobs.$inferSelect;
+const TRAINING_JOB_STREAM_POLL_INTERVAL_MS = parseEnvInt(
+  process.env.TRAINING_JOB_STREAM_POLL_INTERVAL_MS,
+  1000,
+  'TRAINING_JOB_STREAM_POLL_INTERVAL_MS'
+);
+const TRAINING_JOB_STREAM_HEARTBEAT_MS = parseEnvInt(
+  process.env.TRAINING_JOB_STREAM_HEARTBEAT_MS,
+  15000,
+  'TRAINING_JOB_STREAM_HEARTBEAT_MS'
+);
+
+function toIsoTimestamp(value: Date | string | null | undefined): string | null {
+  if (!value) return null;
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'string') return value;
+  return null;
+}
+
+function asObjectRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function isActiveFineTuningJobStatus(status: FineTuningJobRow['status']): boolean {
+  return status === 'pending'
+    || status === 'preparing'
+    || status === 'training'
+    || status === 'validating';
+}
+
+function buildFineTuningJobStreamFingerprint(job: FineTuningJobRow): string {
+  const metrics = asObjectRecord(job.metrics);
+  const progress = asObjectRecord(metrics?.progress);
+  const failure = asObjectRecord(metrics?.failure);
+
+  return stableStringifyForFingerprint({
+    id: job.id,
+    status: job.status,
+    progress: job.progress ?? null,
+    evaluationStatus: job.evaluationStatus ?? null,
+    promotionStatus: job.promotionStatus ?? null,
+    resultModel: job.resultModel ?? null,
+    errorMessage: job.errorMessage ?? null,
+    iniciadoEm: toIsoTimestamp(job.iniciadoEm),
+    completadoEm: toIsoTimestamp(job.completadoEm),
+    progressMetrics: {
+      status: typeof progress?.status === 'string' ? progress.status : null,
+      progress: typeof progress?.progress === 'number' ? progress.progress : null,
+      currentStep: typeof progress?.currentStep === 'number' ? progress.currentStep : null,
+      totalSteps: typeof progress?.totalSteps === 'number' ? progress.totalSteps : null,
+      updatedAt: typeof progress?.updatedAt === 'string' ? progress.updatedAt : null,
+      adapterPath: typeof metrics?.adapterPath === 'string' ? metrics.adapterPath : null,
+    },
+    failureMetrics: {
+      message: typeof failure?.message === 'string' ? failure.message : null,
+      at: typeof failure?.at === 'string' ? failure.at : null,
+    },
+  });
+}
 
 function readOptionalTrainingIdempotencyKey(req: Request): { key: string | null; error: string | null } {
   const raw = req.headers['x-idempotency-key'];
@@ -4548,6 +4607,169 @@ app.get('/api/training/jobs/:id', requirePermission('training:fine_tuning_jobs:r
   } catch (error) {
     logger.error({ error }, 'Falha ao buscar job');
     res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+app.get('/api/training/jobs/:id/stream', requirePermission('training:fine_tuning_jobs:read'), async (req: Request, res: Response) => {
+  const paramsResult = uuidParamSchema.safeParse(req.params);
+  if (!paramsResult.success) {
+    return res.status(400).json({ error: 'ID invalido', details: paramsResult.error.format() });
+  }
+
+  try {
+    const tenantResolution = resolveAuthorizedTenantId(req);
+    if (!tenantResolution.ok) {
+      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
+    }
+
+    const loadJob = async (): Promise<FineTuningJobRow | null> => {
+      const job = await db.query.fineTuningJobs.findFirst({
+        where: and(
+          eq(schema.fineTuningJobs.id, paramsResult.data.id),
+          eq(schema.fineTuningJobs.tenantId, tenantResolution.tenantId)
+        ),
+      });
+      return job ?? null;
+    };
+
+    const initialJob = await loadJob();
+    if (!initialJob) {
+      return res.status(404).json({ error: 'Job de fine-tuning nao encontrado' });
+    }
+
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
+
+    const flushSseChunk = () => {
+      const flusher = (res as unknown as { flush?: () => void }).flush;
+      if (typeof flusher === 'function') flusher();
+    };
+
+    const writeSseEvent = (event: string, payload: unknown): boolean => {
+      if (res.writableEnded) return false;
+      try {
+        res.write(`event: ${event}\n`);
+        res.write(`data: ${JSON.stringify(payload)}\n\n`);
+        flushSseChunk();
+        return true;
+      } catch (writeError) {
+        logger.warn(
+          {
+            jobId: paramsResult.data.id,
+            error: writeError instanceof Error ? writeError.message : String(writeError),
+          },
+          'Falha ao escrever evento SSE de fine-tuning'
+        );
+        return false;
+      }
+    };
+
+    let pollingInFlight = false;
+    let closed = false;
+    let lastFingerprint = buildFineTuningJobStreamFingerprint(initialJob);
+    let pollInterval: ReturnType<typeof setInterval> | null = null;
+    let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+
+    const closeStream = (reason: string): void => {
+      if (closed) return;
+      closed = true;
+      if (pollInterval) {
+        clearInterval(pollInterval);
+        pollInterval = null;
+      }
+      if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+        heartbeatInterval = null;
+      }
+      if (!res.writableEnded) {
+        res.end();
+      }
+      logger.debug({ jobId: paramsResult.data.id, reason }, 'Stream SSE de fine-tuning encerrado');
+    };
+
+    if (!writeSseEvent('job', { job: initialJob, sentAt: new Date().toISOString() })) {
+      closeStream('initial_write_failed');
+      return;
+    }
+
+    heartbeatInterval = setInterval(() => {
+      if (closed || res.writableEnded) {
+        closeStream('heartbeat_stream_not_writable');
+        return;
+      }
+      try {
+        res.write(':\n\n');
+        flushSseChunk();
+      } catch {
+        closeStream('heartbeat_write_failed');
+      }
+    }, TRAINING_JOB_STREAM_HEARTBEAT_MS);
+
+    req.on('close', () => closeStream('request_closed'));
+    res.on('close', () => closeStream('response_closed'));
+    res.on('finish', () => closeStream('response_finished'));
+
+    if (!isActiveFineTuningJobStatus(initialJob.status)) {
+      writeSseEvent('end', { reason: 'terminal_snapshot', status: initialJob.status });
+      closeStream('initial_terminal_status');
+      return;
+    }
+
+    pollInterval = setInterval(() => {
+      void (async () => {
+        if (closed || pollingInFlight) return;
+        pollingInFlight = true;
+        try {
+          const nextJob = await loadJob();
+          if (!nextJob) {
+            writeSseEvent('error', { error: 'Job de fine-tuning nao encontrado durante streaming' });
+            closeStream('job_missing_during_poll');
+            return;
+          }
+
+          const nextFingerprint = buildFineTuningJobStreamFingerprint(nextJob);
+          if (nextFingerprint !== lastFingerprint) {
+            lastFingerprint = nextFingerprint;
+            if (!writeSseEvent('job', { job: nextJob, sentAt: new Date().toISOString() })) {
+              closeStream('delta_write_failed');
+              return;
+            }
+          }
+
+          if (!isActiveFineTuningJobStatus(nextJob.status)) {
+            writeSseEvent('end', { reason: 'terminal_status', status: nextJob.status });
+            closeStream('terminal_status_reached');
+          }
+        } catch (error) {
+          logger.error(
+            {
+              jobId: paramsResult.data.id,
+              error: error instanceof Error ? error.message : String(error),
+            },
+            'Falha ao consultar job no stream SSE de fine-tuning'
+          );
+          writeSseEvent('error', { error: 'Falha interna no stream de fine-tuning' });
+          closeStream('poll_failed');
+        } finally {
+          pollingInFlight = false;
+        }
+      })();
+    }, TRAINING_JOB_STREAM_POLL_INTERVAL_MS);
+  } catch (error) {
+    logger.error(
+      {
+        jobId: paramsResult.data.id,
+        error: error instanceof Error ? error.message : String(error),
+      },
+      'Falha ao inicializar stream SSE do job de fine-tuning'
+    );
+    if (!res.headersSent) {
+      return res.status(500).json({ error: 'Erro interno do servidor' });
+    }
+    return res.end();
   }
 });
 

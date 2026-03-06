@@ -417,6 +417,25 @@ export const trainingServicePaths = {
       },
     },
   },
+  '/api/training/jobs/{id}/stream': {
+    get: {
+      summary: 'Real-time SSE stream for fine-tuning job progress',
+      tags: ['Training Jobs'],
+      'x-required-permission': 'training:fine_tuning_jobs:read',
+      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+      responses: {
+        200: {
+          description: 'SSE stream established',
+          content: {
+            'text/event-stream': {
+              schema: { type: 'string' },
+            },
+          },
+        },
+        404: { $ref: '#/components/responses/NotFound' },
+      },
+    },
+  },
   '/api/training/jobs/{id}/promotion-approvals': {
     get: {
       summary: 'Get promotion approval summary',
