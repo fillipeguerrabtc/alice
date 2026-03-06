@@ -1,8 +1,8 @@
 # Sistema de Treinamento - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra  
-**Data:** 3 de Marco de 2026  
-**Versão:** 4.4.0 - Gate 2 + Configurações editáveis via UI
+**Data:** 06 de Marco de 2026  
+**Versão:** 4.4.1 - Curadoria de namespace antes/depois da aprovacao
 
 ---
 
@@ -177,10 +177,11 @@ O frontend (modal "Resolver escopo") exibe a opção **"Criar namespace: {{name}
 
 ### Curadoria manual de namespace (UI)
 
-- A aba **Training > Data** possui acao explicita para **Alterar namespace** em datasets pendentes.
+- A aba **Training > Data** possui acao explicita para **Alterar namespace** em datasets pendentes e aprovados.
 - O ajuste manual reutiliza o endpoint oficial `PATCH /api/training/data/:id/resolve-scope` (sem endpoint novo e sem workaround).
 - Em itens de quarentena (`needsHumanReview=true`), a mesma acao permanece como **Resolver escopo**.
 - O motivo continua obrigatorio para preservar trilha de auditoria (`training_scope_overrides`).
+- Antes da aprovação, o dialog de review permite override de escopo com **select de namespace** (sem entrada manual de UUID), mantendo agente/domínio opcionais e motivo obrigatório.
 
 **Métrica de observabilidade:** `alice_training_scope_suggested_new_namespace_total{source_type}` — incrementada sempre que `suggestedNewNamespace` é retornado.
 

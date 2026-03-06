@@ -624,6 +624,7 @@ function TrainingDataCard({
 }) {
   const [expanded, setExpanded] = useState(false);
   const privacySummary = data.sourceMetadata?.['privacySummary'];
+  const canRelinkScope = data.status === 'pending' || data.status === 'approved';
 
   return (
     <motion.div variants={itemVariants}>
@@ -745,12 +746,12 @@ function TrainingDataCard({
           </div>
         </CardContent>
 
-        {data.status === 'pending' && (
+        {canRelinkScope && (
           <CardFooter className="pt-2 gap-2">
             <Button
               variant="outline"
               size="sm"
-              className="flex-1"
+              className={data.status === 'approved' ? 'w-full' : 'flex-1'}
               onClick={onResolveScope}
               disabled={isPending}
             >
@@ -759,28 +760,32 @@ function TrainingDataCard({
                 ? t('training.resolveScope.resolveAction')
                 : t('training.resolveScope.changeNamespaceAction')}
             </Button>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              className="flex-1 text-green-600"
-              onClick={onApprove}
-              disabled={isPending || !!data.needsHumanReview}
-              data-testid={`button-approve-${data.id}`}
-            >
-              <ThumbsUp className="h-3 w-3 mr-1" />
-              {t('training.data.approve')}
-            </Button>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              className="flex-1 text-red-600"
-              onClick={onReject}
-              disabled={isPending}
-              data-testid={`button-reject-${data.id}`}
-            >
-              <ThumbsDown className="h-3 w-3 mr-1" />
-              {t('training.data.reject')}
-            </Button>
+            {data.status === 'pending' && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 text-green-600"
+                  onClick={onApprove}
+                  disabled={isPending || !!data.needsHumanReview}
+                  data-testid={`button-approve-${data.id}`}
+                >
+                  <ThumbsUp className="h-3 w-3 mr-1" />
+                  {t('training.data.approve')}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 text-red-600"
+                  onClick={onReject}
+                  disabled={isPending}
+                  data-testid={`button-reject-${data.id}`}
+                >
+                  <ThumbsDown className="h-3 w-3 mr-1" />
+                  {t('training.data.reject')}
+                </Button>
+              </>
+            )}
           </CardFooter>
         )}
       </Card>
@@ -5106,13 +5111,23 @@ export default function Training() {
               </div>
               {overrideScopeEnabled && (
                 <div className="grid gap-2">
-                  <Label htmlFor="override-namespace">Namespace ID (obrigatório)</Label>
-                  <Input
-                    id="override-namespace"
-                    value={overrideNamespaceId}
-                    onChange={(event) => setOverrideNamespaceId(event.target.value)}
-                    placeholder="UUID do namespace"
-                  />
+                  <Label>Namespace (obrigatório)</Label>
+                  <Select
+                    value={overrideNamespaceId || '_none'}
+                    onValueChange={(value) => setOverrideNamespaceId(value === '_none' ? '' : value)}
+                  >
+                    <SelectTrigger data-testid="review-override-namespace-select">
+                      <SelectValue placeholder={t('training.createJob.namespacePlaceholder')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_none">{t('training.createJob.namespacePlaceholder')}</SelectItem>
+                      {(namespaces || []).map((ns) => (
+                        <SelectItem key={ns.id} value={ns.id}>
+                          {ns.nome}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <Label htmlFor="override-agent">Agent ID (opcional)</Label>
                   <Input
                     id="override-agent"

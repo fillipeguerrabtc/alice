@@ -37,6 +37,8 @@ export type OrchestratorState =
 /** Configuração do orquestrador (env vars) */
 const COMPOSE_DIR = process.env.GPU_ORCHESTRATOR_COMPOSE_DIR || '/opt/alice/compose/stacks';
 const COMPOSE_ENV_FILE = process.env.GPU_ORCHESTRATOR_ENV_FILE || '/opt/alice/compose/.env.prod';
+const TRAINING_ONLY_COMPOSE_FILE =
+  process.env.GPU_ORCHESTRATOR_TRAINING_COMPOSE_FILE || `${COMPOSE_DIR}/docker-compose.gpu-training.yml`;
 const COMPOSE_PROJECT = process.env.GPU_ORCHESTRATOR_PROJECT || 'alice-alice';
 const DOCKER_COMPOSE_CMD = process.env.DOCKER_COMPOSE_CMD || 'docker compose';
 const IDLE_RETURN_MS = parseInt(process.env.GPU_ORCHESTRATOR_IDLE_MS || '600000', 10); // 10 min
@@ -57,7 +59,7 @@ let idleReturnTimer: ReturnType<typeof setTimeout> | null = null;
  * Executa comando docker compose (timeout configurável)
  */
 async function runCompose(args: string[], timeoutMs = 60000): Promise<{ stdout: string; stderr: string }> {
-  const cmdWithEnvFile = buildComposeCommand(args, true);
+  const cmdWithEnvFile = buildComposeCommand(args, { includeEnvFile: true });
   try {
     const { stdout, stderr } = await execAsync(cmdWithEnvFile, {
       timeout: timeoutMs,
@@ -76,7 +78,7 @@ async function runCompose(args: string[], timeoutMs = 60000): Promise<{ stdout: 
       'Permissao negada no env-file do compose; tentando fallback com env do processo'
     );
 
-    const cmdWithoutEnvFile = buildComposeCommand(args, false);
+    const cmdWithoutEnvFile = buildComposeCommand(args, { includeEnvFile: false });
     try {
       const { stdout, stderr } = await execAsync(cmdWithoutEnvFile, {
         timeout: timeoutMs,
@@ -86,24 +88,58 @@ async function runCompose(args: string[], timeoutMs = 60000): Promise<{ stdout: 
       return { stdout: stdout.trim(), stderr: stderr.trim() };
     } catch (fallbackError) {
       const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
-      logger.error(
-        { cmd: cmdWithoutEnvFile, error: fallbackMessage, initialError: primaryError },
-        'Falha ao executar docker compose no fallback sem env-file'
+      if (!isEnvFilePermissionError(fallbackMessage)) {
+        logger.error(
+          { cmd: cmdWithoutEnvFile, error: fallbackMessage, initialError: primaryError },
+          'Falha ao executar docker compose no fallback sem env-file'
+        );
+        throw new Error(`docker compose failed: ${fallbackMessage}`);
+      }
+
+      const cmdTrainingOnly = buildComposeCommand(args, { includeEnvFile: false, mode: 'training_only' });
+      logger.warn(
+        { cmd: cmdTrainingOnly, error: fallbackMessage },
+        'Fallback sem env-file ainda bloqueado; tentando compose dedicado do gpu-trainer'
       );
-      throw new Error(`docker compose failed: ${fallbackMessage}`);
+
+      try {
+        const { stdout, stderr } = await execAsync(cmdTrainingOnly, {
+          timeout: timeoutMs,
+          env: { ...process.env, DOCKER_HOST: process.env.DOCKER_HOST || 'unix:///var/run/docker.sock' },
+        });
+        logger.info({ cmd: cmdTrainingOnly }, 'Fallback com compose dedicado do gpu-trainer executado com sucesso');
+        return { stdout: stdout.trim(), stderr: stderr.trim() };
+      } catch (trainingOnlyError) {
+        const trainingOnlyMessage = trainingOnlyError instanceof Error ? trainingOnlyError.message : String(trainingOnlyError);
+        logger.error(
+          {
+            cmd: cmdTrainingOnly,
+            error: trainingOnlyMessage,
+            previousError: fallbackMessage,
+            initialError: primaryError,
+          },
+          'Falha ao executar docker compose no fallback dedicado do gpu-trainer'
+        );
+        throw new Error(`docker compose failed: ${trainingOnlyMessage}`);
+      }
     }
   }
 }
 
-function buildComposeCommand(args: string[], includeEnvFile: boolean): string {
+function buildComposeCommand(
+  args: string[],
+  options: { includeEnvFile: boolean; mode?: 'full' | 'training_only' },
+): string {
+  const mode = options.mode ?? 'full';
   const base = `${COMPOSE_DIR}/docker-compose.base.yml`;
-  const alice = `${COMPOSE_DIR}/docker-compose.alice.yml`;
+  const composeFiles = mode === 'training_only'
+    ? [base, TRAINING_ONLY_COMPOSE_FILE]
+    : [base, `${COMPOSE_DIR}/docker-compose.alice.yml`];
   const parts = [
     DOCKER_COMPOSE_CMD,
     `-p ${COMPOSE_PROJECT}`,
-    `-f ${base}`,
-    `-f ${alice}`,
-    ...(includeEnvFile ? [`--env-file ${COMPOSE_ENV_FILE}`] : []),
+    ...composeFiles.flatMap((file) => [`-f ${file}`]),
+    ...(options.includeEnvFile ? [`--env-file ${COMPOSE_ENV_FILE}`] : []),
     ...args,
   ];
   return `cd "${COMPOSE_DIR}" && ${parts.join(' ')}`;

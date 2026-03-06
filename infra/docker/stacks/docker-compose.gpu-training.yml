@@ -1,0 +1,60 @@
+# =============================================================================
+# ALICE PLATFORM - GPU TRAINING COMPOSE (uso interno do orquestrador)
+# =============================================================================
+# Autor: Fillipe Guerra
+# Data: 06 de Marco de 2026
+#
+# Objetivo:
+# - Permitir start/stop do gpu-trainer via gpu-orchestrator sem depender do
+#   parse completo de docker-compose.alice.yml.
+# - Evitar bloqueio por leitura de env_file protegido em producao.
+#
+# Este arquivo deve ser usado somente como fallback tecnico do orquestrador.
+# =============================================================================
+
+services:
+  gpu-trainer:
+    image: ${IMAGE_PREFIX}-qwen-trainer:${IMAGE_TAG:-latest}
+    platform: linux/amd64
+    container_name: gpu-trainer
+    profiles: ["gpu-training"]
+    restart: "no"
+    runtime: nvidia
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=0
+      - CUDA_VISIBLE_DEVICES=0
+      - DEVICE=cuda
+      - PORT=8000
+      - HF_TOKEN=${HF_TOKEN}
+      - STORAGE_DIR=/opt/alice/uploads/training
+      - BASE_MODEL=${LLM_MODEL_NAME:-Qwen/Qwen2.5-7B-Instruct-AWQ}
+      - TRAINING_METHOD=qlora
+    volumes:
+      - /opt/alice/uploads:/opt/alice/uploads:rw
+    ports:
+      - "127.0.0.1:8003:8000"
+    networks:
+      - alice-network
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+        limits:
+          memory: 16G
+          cpus: '4.0'
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      interval: 20s
+      timeout: 10s
+      start_period: 60s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

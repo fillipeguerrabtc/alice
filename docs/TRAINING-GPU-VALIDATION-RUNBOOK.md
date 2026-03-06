@@ -48,7 +48,9 @@ bash infra/scripts/validate-gpu-fine-tuning.sh \
 ## Incidente conhecido (06/03/2026)
 - **Sintoma observado:** run permanece "na fila" e não evolui para `preparing/training`.
 - **Causa raiz real:** `gpu-manager` falha no `docker compose` ao usar `--env-file /opt/alice/compose/.env.prod` com erro de permissão (`permission denied`) no ambiente de produção.
-- **Correção aplicada no código:** fallback controlado no orquestrador:
-  - primeira tentativa mantém `--env-file` (comportamento padrão);
-  - se o erro for especificamente de permissão no env-file, reexecuta sem `--env-file` usando variáveis já disponíveis no processo do container;
-  - para outros erros, falha imediata (sem fallback indevido).
+- **Causa raiz complementar identificada em produção (16:21 UTC):** mesmo sem `--env-file`, o `docker compose` ainda parseava `docker-compose.alice.yml` e tentava ler `../.env.prod` por causa de entradas `env_file` de outros serviços do stack.
+- **Correção aplicada no código (versão atual):**
+  - tentativa 1: compose padrão com `docker-compose.alice.yml` + `--env-file`;
+  - tentativa 2: compose padrão sem `--env-file`;
+  - tentativa 3 (somente se persistir erro de permissão no `.env.prod`): compose dedicado `docker-compose.gpu-training.yml` (apenas `gpu-trainer`, sem `env_file`), reutilizando variáveis já carregadas no processo.
+  - para erros não relacionados à permissão, falha imediata (sem fallback indevido).

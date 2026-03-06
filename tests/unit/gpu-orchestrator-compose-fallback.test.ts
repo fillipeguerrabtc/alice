@@ -67,6 +67,7 @@ const ORIGINAL_ENV = {
   GPU_CONCURRENCY_MODE: process.env.GPU_CONCURRENCY_MODE,
   GPU_ORCHESTRATOR_COMPOSE_DIR: process.env.GPU_ORCHESTRATOR_COMPOSE_DIR,
   GPU_ORCHESTRATOR_ENV_FILE: process.env.GPU_ORCHESTRATOR_ENV_FILE,
+  GPU_ORCHESTRATOR_TRAINING_COMPOSE_FILE: process.env.GPU_ORCHESTRATOR_TRAINING_COMPOSE_FILE,
 };
 
 afterEach(() => {
@@ -90,6 +91,12 @@ afterEach(() => {
     delete process.env.GPU_ORCHESTRATOR_ENV_FILE;
   } else {
     process.env.GPU_ORCHESTRATOR_ENV_FILE = ORIGINAL_ENV.GPU_ORCHESTRATOR_ENV_FILE;
+  }
+
+  if (ORIGINAL_ENV.GPU_ORCHESTRATOR_TRAINING_COMPOSE_FILE === undefined) {
+    delete process.env.GPU_ORCHESTRATOR_TRAINING_COMPOSE_FILE;
+  } else {
+    process.env.GPU_ORCHESTRATOR_TRAINING_COMPOSE_FILE = ORIGINAL_ENV.GPU_ORCHESTRATOR_TRAINING_COMPOSE_FILE;
   }
 });
 
@@ -133,5 +140,37 @@ describe('gpu-orchestrator docker compose fallback', () => {
     await expect(mod.switchToTraining()).rejects.toThrow('docker compose failed');
     expect(execMock).toHaveBeenCalledTimes(1);
     expect(loggerMock.warn).not.toHaveBeenCalled();
+  });
+
+  it('usa compose dedicado do gpu-trainer quando fallback sem --env-file continua falhando por permissao', async () => {
+    process.env.GPU_CONCURRENCY_MODE = 'simultaneous';
+    process.env.GPU_ORCHESTRATOR_COMPOSE_DIR = '/opt/alice/compose/stacks';
+    process.env.GPU_ORCHESTRATOR_ENV_FILE = '/opt/alice/compose/.env.prod';
+
+    execQueue.push({
+      error:
+        'Command failed: docker compose --env-file /opt/alice/compose/.env.prod\nopen /opt/alice/compose/.env.prod: permission denied',
+    });
+    execQueue.push({
+      error:
+        'Command failed: docker compose ...\nfailed to load /opt/alice/compose/.env.prod: open /opt/alice/compose/.env.prod: permission denied',
+    });
+    execQueue.push({ stdout: 'gpu-trainer started with dedicated compose' });
+
+    const mod = await import('../../apps/gpu-manager-service/src/gpu-orchestrator');
+    await mod.switchToTraining();
+
+    expect(execMock).toHaveBeenCalledTimes(3);
+    const firstCmd = execMock.mock.calls[0]?.[0] as string;
+    const secondCmd = execMock.mock.calls[1]?.[0] as string;
+    const thirdCmd = execMock.mock.calls[2]?.[0] as string;
+
+    expect(firstCmd).toContain('--env-file /opt/alice/compose/.env.prod');
+    expect(secondCmd).toContain('/opt/alice/compose/stacks/docker-compose.alice.yml');
+    expect(secondCmd).not.toContain('--env-file');
+    expect(thirdCmd).toContain('/opt/alice/compose/stacks/docker-compose.gpu-training.yml');
+    expect(thirdCmd).not.toContain('/opt/alice/compose/stacks/docker-compose.alice.yml');
+    expect(thirdCmd).toContain('--profile gpu-training up -d gpu-trainer');
+    expect(mod.getOrchestratorState()).toBe('training');
   });
 });
