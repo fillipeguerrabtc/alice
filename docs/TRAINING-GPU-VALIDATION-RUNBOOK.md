@@ -1,11 +1,12 @@
-# Training GPU Validation Runbook
+# Runbook de Validação Training GPU
 
-Data: 2026-03-05  
-Escopo: validação enterprise de fine-tuning real em GPU
+**Autor:** Fillipe Guerra  
+**Data:** 06 de Março de 2026  
+**Escopo:** validação enterprise de fine-tuning real em GPU
 
 ## Objetivo
-- Comprovar que o pipeline de treino executa com GPU real (não mock).
-- Validar fila, orchestrator e execução on-demand por tenant/namespace.
+- Comprovar que o pipeline de treino executa com GPU real (sem mocks).
+- Validar fila, orquestrador e execução on-demand por tenant/namespace.
 
 ## Pré-requisitos
 - `training-service` e `gpu-manager` operacionais.
@@ -43,3 +44,11 @@ bash infra/scripts/validate-gpu-fine-tuning.sh \
 - Health do training OK.
 - Fila e orchestrator retornam status válido.
 - Run on-demand é aceito e enfileirado com idempotência.
+
+## Incidente conhecido (06/03/2026)
+- **Sintoma observado:** run permanece "na fila" e não evolui para `preparing/training`.
+- **Causa raiz real:** `gpu-manager` falha no `docker compose` ao usar `--env-file /opt/alice/compose/.env.prod` com erro de permissão (`permission denied`) no ambiente de produção.
+- **Correção aplicada no código:** fallback controlado no orquestrador:
+  - primeira tentativa mantém `--env-file` (comportamento padrão);
+  - se o erro for especificamente de permissão no env-file, reexecuta sem `--env-file` usando variáveis já disponíveis no processo do container;
+  - para outros erros, falha imediata (sem fallback indevido).

@@ -57,6 +57,45 @@ let idleReturnTimer: ReturnType<typeof setTimeout> | null = null;
  * Executa comando docker compose (timeout configurável)
  */
 async function runCompose(args: string[], timeoutMs = 60000): Promise<{ stdout: string; stderr: string }> {
+  const cmdWithEnvFile = buildComposeCommand(args, true);
+  try {
+    const { stdout, stderr } = await execAsync(cmdWithEnvFile, {
+      timeout: timeoutMs,
+      env: { ...process.env, DOCKER_HOST: process.env.DOCKER_HOST || 'unix:///var/run/docker.sock' },
+    });
+    return { stdout: stdout.trim(), stderr: stderr.trim() };
+  } catch (error) {
+    const primaryError = error instanceof Error ? error.message : String(error);
+    if (!isEnvFilePermissionError(primaryError)) {
+      logger.error({ cmd: cmdWithEnvFile, error: primaryError }, 'Falha ao executar docker compose');
+      throw new Error(`docker compose failed: ${primaryError}`);
+    }
+
+    logger.warn(
+      { cmd: cmdWithEnvFile, composeEnvFile: COMPOSE_ENV_FILE, error: primaryError },
+      'Permissao negada no env-file do compose; tentando fallback com env do processo'
+    );
+
+    const cmdWithoutEnvFile = buildComposeCommand(args, false);
+    try {
+      const { stdout, stderr } = await execAsync(cmdWithoutEnvFile, {
+        timeout: timeoutMs,
+        env: { ...process.env, DOCKER_HOST: process.env.DOCKER_HOST || 'unix:///var/run/docker.sock' },
+      });
+      logger.info({ cmd: cmdWithoutEnvFile }, 'Fallback sem env-file executado com sucesso');
+      return { stdout: stdout.trim(), stderr: stderr.trim() };
+    } catch (fallbackError) {
+      const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+      logger.error(
+        { cmd: cmdWithoutEnvFile, error: fallbackMessage, initialError: primaryError },
+        'Falha ao executar docker compose no fallback sem env-file'
+      );
+      throw new Error(`docker compose failed: ${fallbackMessage}`);
+    }
+  }
+}
+
+function buildComposeCommand(args: string[], includeEnvFile: boolean): string {
   const base = `${COMPOSE_DIR}/docker-compose.base.yml`;
   const alice = `${COMPOSE_DIR}/docker-compose.alice.yml`;
   const parts = [
@@ -64,22 +103,15 @@ async function runCompose(args: string[], timeoutMs = 60000): Promise<{ stdout: 
     `-p ${COMPOSE_PROJECT}`,
     `-f ${base}`,
     `-f ${alice}`,
-    `--env-file ${COMPOSE_ENV_FILE}`,
+    ...(includeEnvFile ? [`--env-file ${COMPOSE_ENV_FILE}`] : []),
     ...args,
   ];
-  const cmd = `cd "${COMPOSE_DIR}" && ${parts.join(' ')}`;
+  return `cd "${COMPOSE_DIR}" && ${parts.join(' ')}`;
+}
 
-  try {
-    const { stdout, stderr } = await execAsync(cmd, {
-      timeout: timeoutMs,
-      env: { ...process.env, DOCKER_HOST: process.env.DOCKER_HOST || 'unix:///var/run/docker.sock' },
-    });
-    return { stdout: stdout.trim(), stderr: stderr.trim() };
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
-    logger.error({ cmd, error: msg }, 'Falha ao executar docker compose');
-    throw new Error(`docker compose failed: ${msg}`);
-  }
+function isEnvFilePermissionError(errorMessage: string): boolean {
+  const normalized = errorMessage.toLowerCase();
+  return normalized.includes('permission denied') && normalized.includes(COMPOSE_ENV_FILE.toLowerCase());
 }
 
 /**
