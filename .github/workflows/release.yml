@@ -183,12 +183,74 @@ jobs:
       #   Sem auth: 100 pulls/6h. Com auth Pro: 5000 pulls/dia.
       # REF: https://docs.docker.com/docker-hub/download-rate-limit/
       # =================================================================
-      - name: Login no Docker Hub (Pro - rate limits altos)
-        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-        continue-on-error: true
+      - name: Login no Docker Hub (Pro - rate limits altos, retry/backoff)
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${DOCKERHUB_USERNAME:-}" ] || [ -z "${DOCKERHUB_TOKEN:-}" ]; then
+            echo "⚠️  Secrets DOCKERHUB_USERNAME/DOCKERHUB_TOKEN ausentes — seguindo sem auth Docker Hub"
+            echo "   Rate limits anônimos podem afetar builds pesados."
+            exit 0
+          fi
+
+          echo "🌐 Preflight Docker Hub (runner self-hosted)..."
+          HTTP_DOCKERIO_DEFAULT=$(curl --silent --connect-timeout 8 --max-time 12 \
+            -o /dev/null -w "%{http_code}" https://registry-1.docker.io/v2/ 2>/dev/null || echo "000")
+          HTTP_DOCKERIO_V4=$(curl -4 --silent --connect-timeout 8 --max-time 12 \
+            -o /dev/null -w "%{http_code}" https://registry-1.docker.io/v2/ 2>/dev/null || echo "000")
+          echo "   docker.io default: HTTP ${HTTP_DOCKERIO_DEFAULT}"
+          echo "   docker.io IPv4:    HTTP ${HTTP_DOCKERIO_V4}"
+          if ! echo "${HTTP_DOCKERIO_DEFAULT}" | grep -qE "^(200|401|403)$" && \
+             echo "${HTTP_DOCKERIO_V4}" | grep -qE "^(200|401|403)$"; then
+            echo "   ⚠️  Indício de instabilidade em rota default (possível IPv6 intermitente)."
+            echo "   Aplicando retry/backoff no docker login."
+          fi
+
+          MAX_ATTEMPTS=6
+          LOGIN_OK=0
+
+          for attempt in $(seq 1 "${MAX_ATTEMPTS}"); do
+            echo "🔐 Docker Hub login tentativa ${attempt}/${MAX_ATTEMPTS}..."
+            LOGIN_OUTPUT=$(echo "${DOCKERHUB_TOKEN}" | docker login docker.io \
+              -u "${DOCKERHUB_USERNAME}" --password-stdin 2>&1) && {
+              echo "${LOGIN_OUTPUT}"
+              LOGIN_OK=1
+              break
+            }
+
+            echo "${LOGIN_OUTPUT}"
+
+            # Falha determinística de credencial → abortar para evitar release inconsistente.
+            if echo "${LOGIN_OUTPUT}" | grep -Eqi \
+              "unauthorized|incorrect username or password|denied|forbidden|authentication failed"; then
+              echo "❌ Credenciais Docker Hub inválidas (falha determinística)."
+              exit 1
+            fi
+
+            # Falhas transitórias de rede/TLS → retry com backoff progressivo.
+            if echo "${LOGIN_OUTPUT}" | grep -Eqi \
+              "TLS handshake timeout|Client\\.Timeout exceeded|context deadline exceeded|i/o timeout|connection reset by peer|temporary failure|no such host|EOF"; then
+              BACKOFF=$(( attempt * 10 ))
+              echo "⚠️  Falha transitória de rede/TLS. Retry em ${BACKOFF}s..."
+              sleep "${BACKOFF}"
+              continue
+            fi
+
+            BACKOFF=$(( attempt * 10 ))
+            echo "⚠️  Falha não classificada. Retry em ${BACKOFF}s..."
+            sleep "${BACKOFF}"
+          done
+
+          if [ "${LOGIN_OK}" -ne 1 ]; then
+            echo "⚠️  Docker Hub instável após ${MAX_ATTEMPTS} tentativas."
+            echo "   Continuando sem auth Docker Hub (rate limits anônimos podem afetar build)."
+            exit 0
+          fi
+
+          echo "✅ Login Docker Hub concluído com sucesso"
 
       # NOTA 28/12/2025: Removido login NGC - Personal API Key não funciona para containers públicos
       # Todos os containers GPU agora usam imagens 100% públicas (Docker Hub + PyPI)

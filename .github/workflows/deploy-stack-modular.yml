@@ -1299,6 +1299,18 @@ jobs:
               IMAGES_TO_CHECK=()
               ;;
           esac
+
+          if [ ${#IMAGES_TO_CHECK[@]} -eq 0 ]; then
+            echo "ℹ️ Nenhuma imagem pública para validar no stack '$STACK'"
+            echo "✅ Todas as imagens públicas validadas com sucesso"
+            exit 0
+          fi
+
+          echo "📦 Imagens públicas alvo (${#IMAGES_TO_CHECK[@]}):"
+          for img in "${IMAGES_TO_CHECK[@]}"; do
+            echo "   - $img"
+          done
+          echo ""
           
           # Validar cada imagem pública - LOCAL FIRST (sem chamadas ao registry se existir localmente)
           # Retry/backoff + classificação explícita para evitar falso "not found" em erro de rede/TLS.
@@ -1350,15 +1362,22 @@ jobs:
 
           MISSING=()
           TRANSIENT_IMGS=()
+          SKIPPED_LOCAL=()
+          OK_REMOTE=()
+          TOTAL_IMAGES=${#IMAGES_TO_CHECK[@]}
+          CURRENT_IDX=0
           for img in "${IMAGES_TO_CHECK[@]}"; do
-            echo -n "   Verificando: $img ... "
+            CURRENT_IDX=$((CURRENT_IDX + 1))
+            echo -n "   [${CURRENT_IDX}/${TOTAL_IMAGES}] Verificando: $img ... "
             # LOCAL FIRST: se imagem existe localmente, não chamar registry
             if docker image inspect "$img" > /dev/null 2>&1; then
               echo "⏩ SKIP (existe localmente)"
+              SKIPPED_LOCAL+=("$img")
               continue
             fi
             if inspect_public_manifest "$img"; then
               echo "✅ OK (remoto)"
+              OK_REMOTE+=("$img")
             else
               case "$?" in
                 10)
@@ -1375,7 +1394,15 @@ jobs:
               fi
             fi
           done
-          
+
+          echo ""
+          echo "📊 Resumo validação imagens públicas:"
+          echo "   Total alvo: ${#IMAGES_TO_CHECK[@]}"
+          echo "   ✅ OK (remoto): ${#OK_REMOTE[@]}"
+          echo "   ⏩ SKIP local: ${#SKIPPED_LOCAL[@]}"
+          echo "   ⏱️ Transitória: ${#TRANSIENT_IMGS[@]}"
+          echo "   ❌ Missing: ${#MISSING[@]}"
+
           if [ ${#TRANSIENT_IMGS[@]} -gt 0 ]; then
             echo ""
             echo "⚠️  Imagens com falha transitória na validação (serão baixadas diretamente no pull):"
