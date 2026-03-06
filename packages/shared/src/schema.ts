@@ -2248,6 +2248,11 @@ export const trainingData = pgTable(
     idxTrainingInferenceConfidence: index("idx_training_inference_confidence").on(table.inferenceConfidence),
     idxTrainingSemhash: index("idx_training_semhash").on(table.semhash),
     trainingDataTenantSemhashIdx: index("training_data_tenant_semhash_idx").on(table.tenantId, table.semhash),
+    trainingDataActiveFingerprintUniqueUidx: uniqueIndex("training_data_active_fingerprint_uidx")
+      .on(table.tenantId, table.sourceType, table.semhash, sql`COALESCE(${table.sourceId}, '')`)
+      .where(
+        sql`${table.tenantId} IS NOT NULL AND ${table.semhash} IS NOT NULL AND ${table.status} IN ('pending', 'approved', 'used')`
+      ),
     trainingDataProcessedAtIdx: index("training_data_processed_at_idx").on(table.processedAt),
     idxTrainingSource: index("idx_training_source").on(table.source),
     idxTrainingSourceType: index("idx_training_source_type").on(table.sourceType),

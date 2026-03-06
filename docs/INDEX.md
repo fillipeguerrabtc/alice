@@ -1,7 +1,7 @@
 # Índice de Documentação (SSOT) - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra  
-**Data:** 12 de Fevereiro de 2026  
+**Data:** 06 de Marco de 2026  
 **Objetivo:** Centralizar a fonte de verdade (SSOT) e reduzir redundância entre documentos.
 
 ---
@@ -31,6 +31,7 @@
 
 - **Auditoria de Observabilidade (13/01/2026)**: conteúdo consolidado no `docs/OBSERVABILITY.md` para evitar duplicidade de informações.
 - **Alinhamento documentação com código (02/2026)**: README (estrutura `apps/` com biometrics, llm-gateway, gpu-manager; contagem 17 imagens release), ARQUITETURA (biometrics como Python FastAPI), OBSERVABILITY (targets/dashboards Biometrics e LLM Gateway, smoke test dashboards). Índice e SECRETS já refletiam LLM_GATEWAY_URL e BIOMETRICS; STATUS-REAL-ATUAL já listava todos os serviços Alice.
+- **Remediação Training/Datasets (06/03/2026)**: execução do Bloco 1 (48h), plano em 3 ondas e evidências de validação registrados em `docs/RELATORIO-IMPLEMENTACAO-REMEDIACAO-TRAINING-DATASET-2026-03-06-BLOCO-1.md`.
 
 ---
 

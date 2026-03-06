@@ -17,14 +17,17 @@ describe('training tenant-context hardening', () => {
     expect(source.includes('tenantDb.query.agents.findFirst({')).toBe(true);
   });
 
-  it('uses tenant-scoped helpers in /api/training/data scope ownership checks', () => {
+  it('uses tenant-scoped helpers in collectTrainingDataForTenant and delegates from /api/training/data', () => {
     const source = loadTrainingSource();
-    const dataRouteNamespacePattern =
-      /app\.post\('\/api\/training\/data',[\s\S]*?validateNamespaceTenantConsistency\([\s\S]*?async \(id\) => findNamespaceByIdInTenant\(resolvedTenantId, id\)/;
-    const dataRouteAgentPattern =
-      /app\.post\('\/api\/training\/data',[\s\S]*?const agent = await findAgentByIdInTenant\(resolvedTenantId, body\.agentId\);/;
-    expect(dataRouteNamespacePattern.test(source)).toBe(true);
-    expect(dataRouteAgentPattern.test(source)).toBe(true);
+    const collectHelperNamespacePattern =
+      /async function collectTrainingDataForTenant\([\s\S]*?validateNamespaceTenantConsistency\([\s\S]*?async \(id\) => findNamespaceByIdInTenant\(resolvedTenantId, id\)/;
+    const collectHelperAgentPattern =
+      /async function collectTrainingDataForTenant\([\s\S]*?const agent = await findAgentByIdInTenant\(resolvedTenantId, body\.agentId\);/;
+    const dataRouteDelegationPattern =
+      /app\.post\('\/api\/training\/data',[\s\S]*?const result = await collectTrainingDataForTenant\(/;
+    expect(collectHelperNamespacePattern.test(source)).toBe(true);
+    expect(collectHelperAgentPattern.test(source)).toBe(true);
+    expect(dataRouteDelegationPattern.test(source)).toBe(true);
   });
 
   it('uses tenant-scoped helpers in /api/training/bulk-import scope ownership checks', () => {

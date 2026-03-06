@@ -53,6 +53,7 @@ export function validateWebhookSignature(params: {
 export function validateWebhookBodyDigest(params: {
   payload: unknown;
   expectedDigest?: string | null;
+  rawBody?: Buffer | string | null;
 }): WebhookBodyDigestValidationResult {
   const expected = params.expectedDigest?.trim().toLowerCase() ?? '';
   if (!expected) {
@@ -62,9 +63,13 @@ export function validateWebhookBodyDigest(params: {
     return { ok: false, result: 'rejected' };
   }
 
+  const rawBodyBuffer = typeof params.rawBody === 'string'
+    ? Buffer.from(params.rawBody, 'utf8')
+    : (params.rawBody ?? null);
+  const bodyBytes = rawBodyBuffer ?? Buffer.from(JSON.stringify(params.payload), 'utf8');
   const computed = crypto
     .createHash('sha256')
-    .update(JSON.stringify(params.payload))
+    .update(bodyBytes)
     .digest('hex');
 
   const matches = expected.length === computed.length

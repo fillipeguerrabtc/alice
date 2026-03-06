@@ -83,7 +83,6 @@ import {
   Histogram as PromHistogram,
   computeSemHash,
   applyPrivacyPolicy,
-  cosineSimilarity,
   generateInternalAuthHeaders,
   appendImmutableAuditEventWithExecutor,
   verifyImmutableAuditChain,
@@ -119,7 +118,12 @@ function parseStructuredJsonFromContent(content: string): unknown {
   }
 }
 
-import { activateLoraAdapter, getActiveAdapter, deactivateLoraAdapter } from './lora-job-manager.js';
+import {
+  activateLoraAdapter,
+  getActiveAdapter,
+  deactivateLoraAdapter,
+  cancelJob as cancelLoraJob,
+} from './lora-job-manager.js';
 import { resolveScope } from './scope-resolver.js';
 import { selectExamplesByProfile } from './dataset-selection-engine.js';
 import { runUniverseScanWorker } from './trading/jobs/universe-scan-worker.js';
@@ -304,6 +308,7 @@ const trainingRunStartIdempotencyRecordSchema = z.object({
 
 type TrainingRunStartIdempotencyRecord = z.infer<typeof trainingRunStartIdempotencyRecordSchema>;
 type FineTuningJobRow = typeof schema.fineTuningJobs.$inferSelect;
+type RequestWithRawBody = Request & { rawBody?: Buffer };
 const TRAINING_JOB_STREAM_POLL_INTERVAL_MS = parseEnvInt(
   process.env.TRAINING_JOB_STREAM_POLL_INTERVAL_MS,
   1000,
@@ -1650,7 +1655,13 @@ app.use(createRateLimiter({
 }));
 
 // SEGURANÃ‡A: Limites de payload para prevenir DoS (OWASP API4)
-app.use(express.json({ limit: '10mb' }));
+// Captura do raw body para validaÃ§Ã£o criptogrÃ¡fica de webhooks.
+app.use(express.json({
+  limit: '10mb',
+  verify: (req, _res, buf) => {
+    (req as RequestWithRawBody).rawBody = Buffer.from(buf);
+  },
+}));
 
 // =============================================================================
 // MIDDLEWARE: Auth hÃ­brida (WS4) â€” SessÃ£o (cookie) + Bearer JWT OIDC (JWKS)
@@ -3177,262 +3188,290 @@ const collectTrainingDataSchema = z.object({
   rating: z.number().min(1).max(5).optional(),
 });
 
-app.post('/api/training/data', requirePermission('training:training_data:write'), async (req: Request, res: Response) => {
-  try {
-    const body = collectTrainingDataSchema.parse(req.body);
-    const tenantResolution = resolveAuthorizedTenantId(req, body.tenantId);
-    if (!tenantResolution.ok) {
-      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
-    }
-    const resolvedTenantId = tenantResolution.tenantId;
-    const createdBy = tenantResolution.authContext.userId ?? undefined;
+const collectTrainingDataPayloadSchema = collectTrainingDataSchema.omit({ tenantId: true });
+const TRAINING_DATA_ACTIVE_FINGERPRINT_UNIQUE_INDEX = 'training_data_active_fingerprint_uidx';
+const TRAINING_DATA_ACTIVE_STATUSES_FOR_FINGERPRINT = ['pending', 'approved', 'used'] as const;
 
-    // SEGURANÃ‡A: ValidaÃ§Ã£o cross-tenant - namespaceId/agentId do body devem pertencer ao tenant
-    if (body.namespaceId) {
-      await validateNamespaceTenantConsistency(
-        body.namespaceId,
-        resolvedTenantId,
-        async (id) => findNamespaceByIdInTenant(resolvedTenantId, id)
-      );
-    }
-    if (body.agentId) {
-      const agent = await findAgentByIdInTenant(resolvedTenantId, body.agentId);
-      validateTenantConsistency('agent', agent, resolvedTenantId, 'training_data');
-    }
+class TrainingHttpError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly responsePayload: Record<string, unknown>
+  ) {
+    super(`Training HTTP error ${status}`);
+    this.name = 'TrainingHttpError';
+  }
+}
 
-    const sourceType = body.sourceType ?? 'manual';
-    const namespaceProfile = await resolveTrainingNamespaceProfile({
-      tenantId: resolvedTenantId,
-      namespaceId: body.namespaceId ?? null,
+function isPgUniqueConstraintViolation(error: unknown, constraintName: string): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const candidate = error as { code?: unknown; constraint?: unknown };
+  return candidate.code === '23505' && candidate.constraint === constraintName;
+}
+
+async function collectTrainingDataForTenant(params: {
+  tenantId: string;
+  createdBy?: string;
+  payload: z.infer<typeof collectTrainingDataPayloadSchema>;
+}): Promise<{
+  trainingData: typeof schema.trainingData.$inferSelect;
+  queued: boolean;
+  idempotencyKey: string;
+  idempotencyHit?: boolean;
+  isDuplicate: boolean;
+  duplicateOfId: string | null;
+  similarityScore: number | null;
+}> {
+  const body = params.payload;
+  const resolvedTenantId = params.tenantId;
+  const createdBy = params.createdBy;
+
+  if (body.namespaceId) {
+    await validateNamespaceTenantConsistency(
+      body.namespaceId,
+      resolvedTenantId,
+      async (id) => findNamespaceByIdInTenant(resolvedTenantId, id)
+    );
+  }
+  if (body.agentId) {
+    const agent = await findAgentByIdInTenant(resolvedTenantId, body.agentId);
+    validateTenantConsistency('agent', agent, resolvedTenantId, 'training_data');
+  }
+
+  const sourceType = body.sourceType ?? 'manual';
+  const namespaceProfile = await resolveTrainingNamespaceProfile({
+    tenantId: resolvedTenantId,
+    namespaceId: body.namespaceId ?? null,
+  });
+
+  if (!namespaceProfile.exists && body.namespaceId) {
+    const runId = crypto.randomUUID();
+    const reconcilePayload = trainingNamespaceProfileReconcileQueuePayloadSchema.parse({
+      runId,
+      idempotencyKey: buildNamespaceProfileReconcileIdempotencyKey({ runId }),
+      createdAt: new Date().toISOString(),
     });
-
-    if (!namespaceProfile.exists && body.namespaceId) {
-      const runId = crypto.randomUUID();
-      const reconcilePayload = trainingNamespaceProfileReconcileQueuePayloadSchema.parse({
+    const enqueued = await enqueueNamespaceProfileReconcileJob(reconcilePayload);
+    logger.warn(
+      {
+        tenantId: resolvedTenantId,
+        namespaceId: body.namespaceId,
         runId,
-        idempotencyKey: buildNamespaceProfileReconcileIdempotencyKey({ runId }),
-        createdAt: new Date().toISOString(),
-      });
-      const enqueued = await enqueueNamespaceProfileReconcileJob(reconcilePayload);
-      logger.warn(
-        {
-          tenantId: resolvedTenantId,
-          namespaceId: body.namespaceId,
-          runId,
-          enqueued,
-        },
-        'Namespace profile ausente; reconcile enfileirado'
-      );
-    }
+        enqueued,
+      },
+      'Namespace profile ausente; reconcile enfileirado'
+    );
+  }
 
-    const privacyResult = applyPrivacyPolicy({
-      messages: body.messages,
-      privacyConfig: namespaceProfile.config.privacy,
+  const privacyResult = applyPrivacyPolicy({
+    messages: body.messages,
+    privacyConfig: namespaceProfile.config.privacy,
+  });
+  const messagesForStorage = privacyResult.messagesRedacted;
+  if (privacyResult.summary.totalMatches > 0) {
+    trainingPipelineMetrics.privacyRedactionsTotal.inc(privacyResult.summary.totalMatches);
+  }
+  if (privacyResult.action === 'quarantine') {
+    trainingPipelineMetrics.privacyQuarantineTotal.inc();
+  }
+
+  if (sourceType === 'chat' && body.source === 'chat-auto') {
+    if (!namespaceProfile.isActive || !namespaceProfile.autoCollectEnabled || !namespaceProfile.config.autoCollect.enabled) {
+      trainingPipelineMetrics.dataRejectedTotal.labels('policy', sourceType).inc();
+      throw new TrainingHttpError(403, { error: 'namespace_profile_auto_collect_disabled' });
+    }
+  }
+
+  if (sourceType === 'chat' && body.source === 'chat-auto' && namespaceProfile.config.autoCollect.requiresUserConsent) {
+    const sourceMetadataUserId = typeof body.sourceMetadata?.['userId'] === 'string' ? body.sourceMetadata.userId : null;
+    const userIdForConsent = sourceMetadataUserId ?? createdBy ?? null;
+    if (!userIdForConsent) {
+      trainingPipelineMetrics.consentRejectedTotal.inc();
+      throw new TrainingHttpError(403, { error: 'user_opt_out' });
+    }
+    const userRecord = await db.query.users.findFirst({
+      where: and(
+        eq(schema.users.id, userIdForConsent),
+        eq(schema.users.tenantId, resolvedTenantId)
+      ),
+      columns: { preferencias: true },
     });
-    const messagesForStorage = privacyResult.messagesRedacted;
-    if (privacyResult.summary.totalMatches > 0) {
-      trainingPipelineMetrics.privacyRedactionsTotal.inc(privacyResult.summary.totalMatches);
+    const prefs = (userRecord?.preferencias ?? {}) as {
+      training?: { allowTrainingUsage?: boolean; allowAutoCollect?: boolean };
+    };
+    if (prefs.training?.allowTrainingUsage === false || prefs.training?.allowAutoCollect === false) {
+      trainingPipelineMetrics.consentRejectedTotal.inc();
+      throw new TrainingHttpError(403, { error: 'user_opt_out' });
     }
-    if (privacyResult.action === 'quarantine') {
-      trainingPipelineMetrics.privacyQuarantineTotal.inc();
-    }
+  }
 
-    if (sourceType === 'chat' && body.source === 'chat-auto') {
-      if (!namespaceProfile.isActive || !namespaceProfile.autoCollectEnabled || !namespaceProfile.config.autoCollect.enabled) {
-        trainingPipelineMetrics.dataRejectedTotal.labels('policy', sourceType).inc();
-        return res.status(403).json({ error: 'namespace_profile_auto_collect_disabled' });
-      }
-    }
+  const messagesText = messagesForStorage.map((m) => m.content).join('\n');
+  const scope = await resolveScope({
+    tenantId: resolvedTenantId,
+    namespaceId: body.namespaceId ?? null,
+    agentId: body.agentId ?? null,
+    domain: body.domain ?? null,
+    sourceType: body.sourceType ?? null,
+    sourceId: body.sourceId ?? null,
+    sourceMetadata: body.sourceMetadata ?? {},
+    conversationId: body.conversationId ?? null,
+    messagesText,
+  });
+  trainingPipelineMetrics.scopeConfidenceHistogram.observe(scope.confidence);
 
-    if (sourceType === 'chat' && body.source === 'chat-auto' && namespaceProfile.config.autoCollect.requiresUserConsent) {
-      const sourceMetadataUserId = typeof body.sourceMetadata?.['userId'] === 'string' ? body.sourceMetadata['userId'] : null;
-      const userIdForConsent = sourceMetadataUserId ?? createdBy ?? null;
-      if (!userIdForConsent) {
-        trainingPipelineMetrics.consentRejectedTotal.inc();
-        return res.status(403).json({ error: 'user_opt_out' });
-      }
-      const userRecord = await db.query.users.findFirst({
-        where: and(
-          eq(schema.users.id, userIdForConsent),
-          eq(schema.users.tenantId, resolvedTenantId)
-        ),
-        columns: { preferencias: true },
-      });
-      const prefs = (userRecord?.preferencias ?? {}) as {
-        training?: { allowTrainingUsage?: boolean; allowAutoCollect?: boolean };
-      };
-      if (prefs.training?.allowTrainingUsage === false || prefs.training?.allowAutoCollect === false) {
-        trainingPipelineMetrics.consentRejectedTotal.inc();
-        return res.status(403).json({ error: 'user_opt_out' });
-      }
-    }
-
-    const messagesText = messagesForStorage.map((m) => m.content).join('\n');
-    const scope = await resolveScope({
-      tenantId: resolvedTenantId,
-      namespaceId: body.namespaceId ?? null,
-      agentId: body.agentId ?? null,
-      domain: body.domain ?? null,
-      sourceType: body.sourceType ?? null,
-      sourceId: body.sourceId ?? null,
-      sourceMetadata: body.sourceMetadata ?? {},
-      conversationId: body.conversationId ?? null,
-      messagesText,
+  const effectiveNamespaceId = body.namespaceId ?? scope.namespaceId ?? null;
+  const effectiveAgentId = body.agentId ?? scope.agentId ?? null;
+  const inferredStatusNotes: string[] = [];
+  if (scope.needsHumanReview) {
+    inferredStatusNotes.push(
+      `Escopo em quarentena automÃ¡tica: confidence=${scope.confidence.toFixed(2)}`
+    );
+    trainingPipelineMetrics.scopeQuarantineTotal.inc({
+      source_type: body.sourceType ?? 'unknown',
+      reason: 'low_confidence_or_missing_namespace',
     });
-    trainingPipelineMetrics.scopeConfidenceHistogram.observe(scope.confidence);
+  }
+  if (scope.suggestedNewNamespace) {
+    trainingPipelineMetrics.scopeSuggestedNewNamespaceTotal.inc({
+      source_type: body.sourceType ?? 'unknown',
+    });
+  }
+  const semhash = computeSemHash(messagesText);
+  const qualityScore = computeQualityScore(messagesForStorage);
+  const idempotencyKey = buildTrainingIdempotencyKey({
+    tenantId: resolvedTenantId,
+    sourceType,
+    sourceId: body.sourceId ?? null,
+    semhash,
+  });
 
-    const effectiveNamespaceId = body.namespaceId ?? scope.namespaceId ?? null;
-    const effectiveAgentId = body.agentId ?? scope.agentId ?? null;
-    const inferredStatusNotes: string[] = [];
-    if (scope.needsHumanReview) {
-      inferredStatusNotes.push(
-        `Escopo em quarentena automÃ¡tica: confidence=${scope.confidence.toFixed(2)}`
-      );
-      trainingPipelineMetrics.scopeQuarantineTotal.inc({
-        source_type: body.sourceType ?? 'unknown',
-        reason: 'low_confidence_or_missing_namespace',
-      });
-    }
-    if (scope.suggestedNewNamespace) {
-      trainingPipelineMetrics.scopeSuggestedNewNamespaceTotal.inc({
-        source_type: body.sourceType ?? 'unknown',
-      });
-    }
-    const semhash = computeSemHash(messagesText);
-    const qualityScore = computeQualityScore(messagesForStorage);
-    const idempotencyKey = buildTrainingIdempotencyKey({
+  const qualityMinScore = namespaceProfile.config.quality.minScore;
+  const qualityAutoReject = namespaceProfile.config.quality.autoRejectBelowMin;
+  const autoRejectedByQuality = qualityAutoReject && qualityScore < qualityMinScore;
+  if (autoRejectedByQuality || privacyResult.action === 'reject') {
+    const reviewNotes = autoRejectedByQuality
+      ? `Auto-rejeitado: qualidade ${qualityScore.toFixed(2)} abaixo do mÃ­nimo (${qualityMinScore}).`
+      : 'Rejeitado por polÃ­tica de privacidade';
+    const processedAt = new Date();
+    const [trainingData] = await db.insert(schema.trainingData).values({
       tenantId: resolvedTenantId,
+      namespaceId: effectiveNamespaceId,
+      agentId: effectiveAgentId,
+      conversationId: body.conversationId,
+      source: body.source,
       sourceType,
       sourceId: body.sourceId ?? null,
+      sourceMetadata: body.sourceMetadata ?? {},
+      inferredNamespaceId: scope.namespaceId,
+      inferredAgentId: scope.agentId,
+      inferredDomain: scope.domain,
+      inferenceConfidence: scope.confidence,
+      inferenceTrace: scope.trace,
+      scopeResolverVersion: 'v1',
+      profileVersion: namespaceProfile.profileVersion,
+      needsHumanReview: scope.needsHumanReview || !namespaceProfile.exists,
+      quarantineReason: !namespaceProfile.exists
+        ? 'missing_namespace_profile'
+        : scope.needsHumanReview
+          ? 'low_confidence_or_missing_namespace'
+          : null,
+      scopeResolvedAt: new Date(),
+      quarantinedAt: scope.needsHumanReview || !namespaceProfile.exists ? new Date() : null,
+      messages: messagesForStorage,
+      rating: body.rating,
+      qualityScore,
+      createdBy,
       semhash,
-    });
+      embedding: null,
+      isDuplicate: false,
+      duplicateOfId: null,
+      similarityScore: null,
+      status: 'rejected',
+      reviewNotes: [
+        reviewNotes,
+        !namespaceProfile.exists ? 'Namespace profile ausente; item em modo restritivo.' : null,
+        privacyResult.action === 'reject' ? 'privacy_policy_match' : null,
+        ...inferredStatusNotes,
+      ].filter(Boolean).join(' | ') || null,
+      processedAt,
+      processadoEm: processedAt,
+    }).returning();
 
-    const qualityMinScore = namespaceProfile.config.quality.minScore;
-    const qualityAutoReject = namespaceProfile.config.quality.autoRejectBelowMin;
-    const autoRejectedByQuality = qualityAutoReject && qualityScore < qualityMinScore;
-    if (autoRejectedByQuality || privacyResult.action === 'reject') {
-      const reviewNotes = autoRejectedByQuality
-        ? `Auto-rejeitado: qualidade ${qualityScore.toFixed(2)} abaixo do mÃ­nimo (${qualityMinScore}).`
-        : 'Rejeitado por polÃ­tica de privacidade';
-      const processedAt = new Date();
-      const [trainingData] = await db.insert(schema.trainingData).values({
-        tenantId: resolvedTenantId,
-        namespaceId: effectiveNamespaceId,
-        agentId: effectiveAgentId,
-        conversationId: body.conversationId,
-        source: body.source,
+    trainingPipelineMetrics.dataCollectedTotal.labels(sourceType, 'rejected').inc();
+    trainingPipelineMetrics.qualityScore.observe(qualityScore);
+    trainingPipelineMetrics.dataRejectedTotal.labels(
+      privacyResult.action === 'reject' ? 'privacy' : 'quality',
+      sourceType
+    ).inc();
+    await db.insert(schema.trainingLineageEvents).values({
+      tenantId: resolvedTenantId,
+      namespaceId: effectiveNamespaceId,
+      eventType: 'training_data.rejected_policy',
+      sourceTable: 'training_data',
+      sourceId: trainingData.id,
+      producedTable: 'training_data',
+      producedId: trainingData.id,
+      metadata: {
         sourceType,
-        sourceId: body.sourceId ?? null,
-        sourceMetadata: body.sourceMetadata ?? {},
-        inferredNamespaceId: scope.namespaceId,
-        inferredAgentId: scope.agentId,
-        inferredDomain: scope.domain,
-        inferenceConfidence: scope.confidence,
-        inferenceTrace: scope.trace,
-        scopeResolverVersion: 'v1',
-        profileVersion: namespaceProfile.profileVersion,
-        needsHumanReview: scope.needsHumanReview || !namespaceProfile.exists,
-        quarantineReason: !namespaceProfile.exists
-          ? 'missing_namespace_profile'
-          : scope.needsHumanReview
-            ? 'low_confidence_or_missing_namespace'
-            : null,
-        scopeResolvedAt: new Date(),
-        quarantinedAt: scope.needsHumanReview || !namespaceProfile.exists ? new Date() : null,
-        messages: messagesForStorage,
-        rating: body.rating,
         qualityScore,
-        createdBy,
-        semhash,
-        embedding: null,
-        isDuplicate: false,
-        duplicateOfId: null,
-        similarityScore: null,
-        status: 'rejected',
-        reviewNotes: [
-          reviewNotes,
-          !namespaceProfile.exists ? 'Namespace profile ausente; item em modo restritivo.' : null,
-          privacyResult.action === 'reject' ? 'privacy_policy_match' : null,
-          ...inferredStatusNotes,
-        ].filter(Boolean).join(' | ') || null,
-        processedAt,
-        processadoEm: processedAt,
-      }).returning();
-
-      trainingPipelineMetrics.dataCollectedTotal.labels(sourceType, 'rejected').inc();
-      trainingPipelineMetrics.qualityScore.observe(qualityScore);
-      trainingPipelineMetrics.dataRejectedTotal.labels(
-        privacyResult.action === 'reject' ? 'privacy' : 'quality',
-        sourceType
-      ).inc();
-      await db.insert(schema.trainingLineageEvents).values({
-        tenantId: resolvedTenantId,
-        namespaceId: effectiveNamespaceId,
-        eventType: 'training_data.rejected_policy',
-        sourceTable: 'training_data',
-        sourceId: trainingData.id,
-        producedTable: 'training_data',
-        producedId: trainingData.id,
-        metadata: {
-          sourceType,
-          qualityScore,
-          minScore: qualityMinScore,
-          privacyAction: privacyResult.action,
-        },
-      });
-
-      logger.info({
-        trainingDataId: trainingData.id,
-        qualityScore,
-        queued: false,
-        idempotencyKey,
-      }, 'Dados de treinamento rejeitados por qualidade mÃ­nima');
-
-      return res.json({
-        trainingData,
-        queued: false,
-        idempotencyKey,
-        isDuplicate: false,
-        duplicateOfId: null,
-        similarityScore: null,
-      });
-    }
-
-    const sameFingerprintConditions = [
-      eq(schema.trainingData.tenantId, resolvedTenantId),
-      eq(schema.trainingData.sourceType, sourceType),
-      eq(schema.trainingData.semhash, semhash),
-    ];
-    if (body.sourceId) {
-      sameFingerprintConditions.push(eq(schema.trainingData.sourceId, body.sourceId));
-    } else {
-      sameFingerprintConditions.push(isNull(schema.trainingData.sourceId));
-    }
-
-    const existingByFingerprint = await db.query.trainingData.findFirst({
-      where: and(...sameFingerprintConditions),
-      orderBy: [desc(schema.trainingData.criadoEm)],
+        minScore: qualityMinScore,
+        privacyAction: privacyResult.action,
+      },
     });
-    if (existingByFingerprint) {
-      const alreadyProcessed = Boolean(existingByFingerprint.embedding && existingByFingerprint.processedAt);
-      logger.info({
-        trainingDataId: existingByFingerprint.id,
-        queued: !alreadyProcessed && existingByFingerprint.status === 'pending',
-        idempotencyKey,
-      }, 'RequisiÃ§Ã£o idempotente detectada em training_data');
 
-      return res.json({
-        trainingData: existingByFingerprint,
-        queued: !alreadyProcessed && existingByFingerprint.status === 'pending',
-        idempotencyKey,
-        idempotencyHit: true,
-        isDuplicate: Boolean(existingByFingerprint.isDuplicate),
-        duplicateOfId: existingByFingerprint.duplicateOfId,
-        similarityScore: existingByFingerprint.similarityScore ?? null,
-      });
-    }
+    logger.info({
+      trainingDataId: trainingData.id,
+      qualityScore,
+      queued: false,
+      idempotencyKey,
+    }, 'Dados de treinamento rejeitados por qualidade mÃ­nima');
 
-    const [trainingData] = await db.insert(schema.trainingData).values({
+    return {
+      trainingData,
+      queued: false,
+      idempotencyKey,
+      isDuplicate: false,
+      duplicateOfId: null,
+      similarityScore: null,
+    };
+  }
+
+  const sameFingerprintConditions = [
+    eq(schema.trainingData.tenantId, resolvedTenantId),
+    eq(schema.trainingData.sourceType, sourceType),
+    eq(schema.trainingData.semhash, semhash),
+  ];
+  if (body.sourceId) {
+    sameFingerprintConditions.push(eq(schema.trainingData.sourceId, body.sourceId));
+  } else {
+    sameFingerprintConditions.push(isNull(schema.trainingData.sourceId));
+  }
+
+  const existingByFingerprint = await db.query.trainingData.findFirst({
+    where: and(...sameFingerprintConditions),
+    orderBy: [desc(schema.trainingData.criadoEm)],
+  });
+  if (existingByFingerprint) {
+    const alreadyProcessed = Boolean(existingByFingerprint.embedding && existingByFingerprint.processedAt);
+    logger.info({
+      trainingDataId: existingByFingerprint.id,
+      queued: !alreadyProcessed && existingByFingerprint.status === 'pending',
+      idempotencyKey,
+    }, 'RequisiÃ§Ã£o idempotente detectada em training_data');
+
+    return {
+      trainingData: existingByFingerprint,
+      queued: !alreadyProcessed && existingByFingerprint.status === 'pending',
+      idempotencyKey,
+      idempotencyHit: true,
+      isDuplicate: Boolean(existingByFingerprint.isDuplicate),
+      duplicateOfId: existingByFingerprint.duplicateOfId,
+      similarityScore: existingByFingerprint.similarityScore ?? null,
+    };
+  }
+
+  let trainingData: typeof schema.trainingData.$inferSelect | null = null;
+  try {
+    [trainingData] = await db.insert(schema.trainingData).values({
       tenantId: resolvedTenantId,
       namespaceId: effectiveNamespaceId,
       agentId: effectiveAgentId,
@@ -3477,117 +3516,174 @@ app.post('/api/training/data', requirePermission('training:training_data:write')
         privacyResult.action === 'quarantine' ? 'privacy_policy_match' : null,
       ].filter(Boolean).join(' | ') || null,
     }).returning();
-
-    await db.insert(schema.trainingLineageEvents).values({
-      tenantId: resolvedTenantId,
-      namespaceId: effectiveNamespaceId,
-      eventType: privacyResult.action === 'quarantine' || !namespaceProfile.exists || scope.needsHumanReview
-        ? 'training_data.quarantined_policy'
-        : 'training_data.collected',
-      sourceTable: 'training_data',
-      sourceId: trainingData.id,
-      producedTable: 'training_data',
-      producedId: trainingData.id,
-      metadata: {
-        sourceType,
-        qualityScore,
-        profileVersion: namespaceProfile.profileVersion,
-        privacyAction: privacyResult.action,
-      },
-    });
-
-    const queuePayload = trainingEmbeddingDedupeQueuePayloadSchema.parse({
-      trainingDataId: trainingData.id,
-      tenantId: resolvedTenantId,
-      namespaceId: effectiveNamespaceId ?? undefined,
-      agentId: effectiveAgentId ?? undefined,
-      semhash,
-      sourceType,
-      sourceId: body.sourceId ?? undefined,
-      idempotencyKey,
-      createdAt: new Date().toISOString(),
-    });
-    const queued = await enqueueTrainingEmbeddingDedupeJob(queuePayload);
-
-    if (!queued) {
-      const processedAt = new Date();
-      const canonical = await db.query.trainingData.findFirst({
-        where: and(
-          ...sameFingerprintConditions,
-          ne(schema.trainingData.id, trainingData.id)
-        ),
-        orderBy: [desc(schema.trainingData.criadoEm)],
-      });
-      const [updatedDuplicate] = await db.update(schema.trainingData)
-        .set({
-          isDuplicate: true,
-          duplicateOfId: canonical?.id ?? null,
-          similarityScore: 1,
-          status: 'rejected',
-          reviewNotes: [
-            'RequisiÃ§Ã£o idempotente duplicada: job jÃ¡ enfileirado para fingerprint idÃªntico.',
-            trainingData.reviewNotes,
-          ].filter(Boolean).join(' | '),
-          processedAt,
-          processadoEm: processedAt,
-        })
-        .where(eq(schema.trainingData.id, trainingData.id))
-        .returning();
-
-      trainingPipelineMetrics.dataCollectedTotal.labels(sourceType, 'rejected').inc();
-      trainingPipelineMetrics.dataRejectedTotal.labels('duplicate', sourceType).inc();
-      trainingPipelineMetrics.qualityScore.observe(qualityScore);
-      trainingPipelineMetrics.dataDuplicatesTotal.labels(sourceType).inc();
-
-      logger.info({
-        trainingDataId: updatedDuplicate.id,
-        queued: false,
-        idempotencyKey,
-      }, 'RequisiÃ§Ã£o idempotente duplicada sem novo enqueue');
-
-      return res.json({
-        trainingData: updatedDuplicate,
-        queued: false,
-        idempotencyKey,
-        idempotencyHit: true,
-        isDuplicate: true,
-        duplicateOfId: updatedDuplicate.duplicateOfId,
-        similarityScore: updatedDuplicate.similarityScore,
-      });
+  } catch (error) {
+    if (!isPgUniqueConstraintViolation(error, TRAINING_DATA_ACTIVE_FINGERPRINT_UNIQUE_INDEX)) {
+      throw error;
     }
 
-    trainingPipelineMetrics.dataCollectedTotal.labels(sourceType, 'pending').inc();
+    const existingAfterConflict = await db.query.trainingData.findFirst({
+      where: and(
+        ...sameFingerprintConditions,
+        inArray(schema.trainingData.status, [...TRAINING_DATA_ACTIVE_STATUSES_FOR_FINGERPRINT])
+      ),
+      orderBy: [desc(schema.trainingData.criadoEm)],
+    });
+    if (!existingAfterConflict) {
+      throw error;
+    }
+
+    const alreadyProcessed = Boolean(existingAfterConflict.embedding && existingAfterConflict.processedAt);
+    logger.warn({
+      trainingDataId: existingAfterConflict.id,
+      queued: !alreadyProcessed && existingAfterConflict.status === 'pending',
+      idempotencyKey,
+    }, 'Conflito de fingerprint resolvido por unique index (idempotÃªncia concorrente)');
+
+    return {
+      trainingData: existingAfterConflict,
+      queued: !alreadyProcessed && existingAfterConflict.status === 'pending',
+      idempotencyKey,
+      idempotencyHit: true,
+      isDuplicate: Boolean(existingAfterConflict.isDuplicate),
+      duplicateOfId: existingAfterConflict.duplicateOfId,
+      similarityScore: existingAfterConflict.similarityScore ?? null,
+    };
+  }
+
+  if (!trainingData) {
+    throw new Error('Falha ao inserir training_data');
+  }
+
+  await db.insert(schema.trainingLineageEvents).values({
+    tenantId: resolvedTenantId,
+    namespaceId: effectiveNamespaceId,
+    eventType: privacyResult.action === 'quarantine' || !namespaceProfile.exists || scope.needsHumanReview
+      ? 'training_data.quarantined_policy'
+      : 'training_data.collected',
+    sourceTable: 'training_data',
+    sourceId: trainingData.id,
+    producedTable: 'training_data',
+    producedId: trainingData.id,
+    metadata: {
+      sourceType,
+      qualityScore,
+      profileVersion: namespaceProfile.profileVersion,
+      privacyAction: privacyResult.action,
+    },
+  });
+
+  const queuePayload = trainingEmbeddingDedupeQueuePayloadSchema.parse({
+    trainingDataId: trainingData.id,
+    tenantId: resolvedTenantId,
+    namespaceId: effectiveNamespaceId ?? undefined,
+    agentId: effectiveAgentId ?? undefined,
+    semhash,
+    sourceType,
+    sourceId: body.sourceId ?? undefined,
+    idempotencyKey,
+    createdAt: new Date().toISOString(),
+  });
+  const queued = await enqueueTrainingEmbeddingDedupeJob(queuePayload);
+
+  if (!queued) {
+    const processedAt = new Date();
+    const canonical = await db.query.trainingData.findFirst({
+      where: and(
+        ...sameFingerprintConditions,
+        ne(schema.trainingData.id, trainingData.id)
+      ),
+      orderBy: [desc(schema.trainingData.criadoEm)],
+    });
+    const [updatedDuplicate] = await db.update(schema.trainingData)
+      .set({
+        isDuplicate: true,
+        duplicateOfId: canonical?.id ?? null,
+        similarityScore: 1,
+        status: 'rejected',
+        reviewNotes: [
+          'RequisiÃ§Ã£o idempotente duplicada: job jÃ¡ enfileirado para fingerprint idÃªntico.',
+          trainingData.reviewNotes,
+        ].filter(Boolean).join(' | '),
+        processedAt,
+        processadoEm: processedAt,
+      })
+      .where(eq(schema.trainingData.id, trainingData.id))
+      .returning();
+
+    const duplicateRow = updatedDuplicate ?? trainingData;
+    trainingPipelineMetrics.dataCollectedTotal.labels(sourceType, 'rejected').inc();
+    trainingPipelineMetrics.dataRejectedTotal.labels('duplicate', sourceType).inc();
     trainingPipelineMetrics.qualityScore.observe(qualityScore);
+    trainingPipelineMetrics.dataDuplicatesTotal.labels(sourceType).inc();
 
     logger.info({
-      trainingDataId: trainingData.id, 
-      queued,
+      trainingDataId: duplicateRow.id,
+      queued: false,
       idempotencyKey,
-      scope: {
-        namespaceId: effectiveNamespaceId,
-        agentId: effectiveAgentId,
-        inferredNamespaceId: scope.namespaceId,
-        inferredAgentId: scope.agentId,
-        inferredDomain: scope.domain,
-        confidence: scope.confidence,
-        needsHumanReview: scope.needsHumanReview,
-      },
-    }, 'Dados de treinamento coletados');
+    }, 'RequisiÃ§Ã£o idempotente duplicada sem novo enqueue');
 
-    res.json({ 
-      trainingData, 
-      queued,
+    return {
+      trainingData: duplicateRow,
+      queued: false,
       idempotencyKey,
-      isDuplicate: false,
-      duplicateOfId: null,
-      similarityScore: null,
+      idempotencyHit: true,
+      isDuplicate: true,
+      duplicateOfId: duplicateRow.duplicateOfId,
+      similarityScore: duplicateRow.similarityScore ?? null,
+    };
+  }
+
+  trainingPipelineMetrics.dataCollectedTotal.labels(sourceType, 'pending').inc();
+  trainingPipelineMetrics.qualityScore.observe(qualityScore);
+
+  logger.info({
+    trainingDataId: trainingData.id,
+    queued,
+    idempotencyKey,
+    scope: {
+      namespaceId: effectiveNamespaceId,
+      agentId: effectiveAgentId,
+      inferredNamespaceId: scope.namespaceId,
+      inferredAgentId: scope.agentId,
+      inferredDomain: scope.domain,
+      confidence: scope.confidence,
+      needsHumanReview: scope.needsHumanReview,
+    },
+  }, 'Dados de treinamento coletados');
+
+  return {
+    trainingData,
+    queued,
+    idempotencyKey,
+    isDuplicate: false,
+    duplicateOfId: null,
+    similarityScore: null,
+  };
+}
+
+app.post('/api/training/data', requirePermission('training:training_data:write'), async (req: Request, res: Response) => {
+  try {
+    const body = collectTrainingDataSchema.parse(req.body);
+    const tenantResolution = resolveAuthorizedTenantId(req, body.tenantId);
+    if (!tenantResolution.ok) {
+      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
+    }
+    const { tenantId: _tenantId, ...payload } = body;
+    const result = await collectTrainingDataForTenant({
+      tenantId: tenantResolution.tenantId,
+      createdBy: tenantResolution.authContext.userId ?? undefined,
+      payload: collectTrainingDataPayloadSchema.parse(payload),
     });
+    return res.json(result);
   } catch (error) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: 'Payload invalido', details: error.flatten() });
     }
+    if (error instanceof TrainingHttpError) {
+      return res.status(error.status).json(error.responsePayload);
+    }
     logger.error({ error }, 'Falha ao coletar dados de treinamento');
-    res.status(500).json({ error: 'Erro interno do servidor' });
+    return res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
 
@@ -4773,6 +4869,55 @@ app.get('/api/training/jobs/:id/stream', requirePermission('training:fine_tuning
   }
 });
 
+async function cancelFineTuningJobAndLora(params: {
+  fineTuningJob: FineTuningJobRow;
+  tenantId: string;
+  reason: string;
+}): Promise<FineTuningJobRow> {
+  if (!params.fineTuningJob.loraJobId) {
+    throw new TrainingHttpError(409, { error: 'Job sem loraJobId vinculado' });
+  }
+
+  const linkedLoraJob = await db.query.loraJobs.findFirst({
+    where: and(
+      eq(schema.loraJobs.id, params.fineTuningJob.loraJobId),
+      eq(schema.loraJobs.tenantId, params.tenantId)
+    ),
+    columns: { id: true, status: true },
+  });
+  if (!linkedLoraJob) {
+    throw new TrainingHttpError(404, { error: 'Job LoRA vinculado nao encontrado' });
+  }
+
+  if (linkedLoraJob.status === 'completed' || linkedLoraJob.status === 'failed') {
+    throw new TrainingHttpError(409, {
+      error: `Nao e possivel cancelar: job LoRA vinculado ja esta em estado terminal (${linkedLoraJob.status})`,
+    });
+  }
+
+  if (linkedLoraJob.status !== 'cancelled') {
+    await cancelLoraJob(linkedLoraJob.id);
+  }
+
+  const [updated] = await db.update(schema.fineTuningJobs)
+    .set({
+      status: 'cancelled',
+      completadoEm: new Date(),
+      errorMessage: params.reason,
+    })
+    .where(and(
+      eq(schema.fineTuningJobs.id, params.fineTuningJob.id),
+      eq(schema.fineTuningJobs.tenantId, params.tenantId)
+    ))
+    .returning();
+
+  if (!updated) {
+    throw new Error(`Falha ao atualizar status cancelado para fine_tuning_job ${params.fineTuningJob.id}`);
+  }
+
+  return updated;
+}
+
 app.delete('/api/training/jobs/:id', requirePermission('training:fine_tuning_jobs:cancel'), async (req: Request, res: Response) => {
   // OWASP API3: ValidaÃ§Ã£o Zod obrigatÃ³ria de parÃ¢metros de rota
   const paramsResult = uuidParamSchema.safeParse(req.params);
@@ -4798,36 +4943,24 @@ app.delete('/api/training/jobs/:id', requirePermission('training:fine_tuning_job
       return res.status(404).json({ error: 'Job nÃ£o encontrado' });
     }
 
-    if (job.status === 'completed' || job.status === 'cancelled') {
+    if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') {
       return res.status(400).json({ error: 'Job jÃ¡ finalizado ou cancelado' });
     }
 
-    // Cancelamento REAL no trainer (persistido em disco via flag CANCEL)
-    await requestGpu({
-      serviceType: GpuServiceType.TRAINING,
-      endpoint: '/train/lora/cancel',
-      method: 'POST',
-      priority: GpuRequestPriority.LOW,
-      timeout: 15000,
-      body: { jobId: id },
+    const updated = await cancelFineTuningJobAndLora({
+      fineTuningJob: job,
+      tenantId: tenantResolution.tenantId,
+      reason: 'Cancelado via endpoint /api/training/jobs/:id',
     });
 
-    const [updated] = await db.update(schema.fineTuningJobs)
-      .set({ 
-        status: 'cancelled',
-        completadoEm: new Date(),
-      })
-      .where(and(
-        eq(schema.fineTuningJobs.id, id),
-        eq(schema.fineTuningJobs.tenantId, tenantResolution.tenantId)
-      ))
-      .returning();
-
     logger.info({ jobId: id }, 'Job de fine-tuning cancelado');
-    res.json({ job: updated });
+    return res.json({ job: updated });
   } catch (error) {
+    if (error instanceof TrainingHttpError) {
+      return res.status(error.status).json(error.responsePayload);
+    }
     logger.error({ error }, 'Falha ao cancelar job');
-    res.status(500).json({ error: 'Erro interno do servidor' });
+    return res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
 
@@ -6174,14 +6307,32 @@ app.post('/api/training/webhook', async (req: Request, res: Response) => {
     return res.status(401).json({ error: 'Timestamp interno invalido ou expirado' });
   }
 
-  const signaturePayload = `${internalUserId}:${internalTenantId}:${internalRole}:${internalNonce}:${internalTimestamp}`;
-  const signatureValidation = validateWebhookSignature({
+  const rawBody = (req as RequestWithRawBody).rawBody ?? null;
+  const computedBodyDigest = crypto
+    .createHash('sha256')
+    .update(rawBody ?? Buffer.from(JSON.stringify(req.body), 'utf8'))
+    .digest('hex');
+  const signaturePayloadV1 = `${internalUserId}:${internalTenantId}:${internalRole}:${internalNonce}:${internalTimestamp}`;
+  const signaturePayloadV2 = `${signaturePayloadV1}:${computedBodyDigest}`;
+  const allowLegacySignature = process.env.TRAINING_WEBHOOK_ALLOW_LEGACY_SIGNATURE === 'true';
+  let signatureVersion: 'v1' | 'v2' = 'v2';
+  let signatureValidation = validateWebhookSignature({
     signature: internalSignature,
-    payload: signaturePayload,
+    payload: signaturePayloadV2,
     webhookSecret: expectedSecret,
     internalApiSecret: process.env.INTERNAL_API_SECRET,
-    allowLegacySignature: process.env.TRAINING_WEBHOOK_ALLOW_LEGACY_SIGNATURE === 'true',
+    allowLegacySignature,
   });
+  if (!signatureValidation.ok) {
+    signatureVersion = 'v1';
+    signatureValidation = validateWebhookSignature({
+      signature: internalSignature,
+      payload: signaturePayloadV1,
+      webhookSecret: expectedSecret,
+      internalApiSecret: process.env.INTERNAL_API_SECRET,
+      allowLegacySignature,
+    });
+  }
   trainingPipelineMetrics.webhookAuthValidationTotal.inc({
     mode: signatureValidation.mode,
     result: signatureValidation.ok ? 'accepted' : 'rejected',
@@ -6195,10 +6346,17 @@ app.post('/api/training/webhook', async (req: Request, res: Response) => {
       'Webhook autenticado via assinatura legada; migre para assinatura com INTERNAL_API_SECRET'
     );
   }
+  if (signatureValidation.ok && signatureVersion === 'v1') {
+    logger.warn(
+      { tenantId: internalTenantId },
+      'Webhook autenticado sem bind criptografico do corpo (payload v1); migre para payload v2'
+    );
+  }
 
   const bodyDigestValidation = validateWebhookBodyDigest({
     payload: req.body,
     expectedDigest: internalBodySha256,
+    rawBody,
   });
   trainingPipelineMetrics.webhookBodyDigestValidationTotal.inc({
     result: bodyDigestValidation.result,
@@ -6259,115 +6417,49 @@ app.post('/api/training/webhook', async (req: Request, res: Response) => {
     const { event, payload } = validation.data;
 
     if (event === 'training_data' && payload.messages) {
-      const text = payload.messages.map(m => m.content).join(' ');
-      let embedding: number[] | null = null;
-      const semhash = computeSemHash(text);
-      const scope = await resolveScope({
+      const payloadMetadata = (payload.metadata ?? {}) as Record<string, unknown>;
+      const sourceIdRaw = payloadMetadata.sourceId;
+      const sourceId = typeof sourceIdRaw === 'string' && sourceIdRaw.trim().length > 0
+        ? sourceIdRaw.trim().slice(0, 255)
+        : undefined;
+      const collectResult = await collectTrainingDataForTenant({
         tenantId,
-        namespaceId: readUuidFromUnknown(payload.metadata?.namespaceId),
-        agentId: readUuidFromUnknown(payload.metadata?.agentId),
-        domain: typeof payload.metadata?.domain === 'string' ? payload.metadata.domain : null,
-        sourceType: 'external',
-        sourceMetadata: payload.metadata as Record<string, unknown> ?? {},
-        conversationId: payload.conversationId ?? null,
-        messagesText: text,
+        createdBy: internalUserId,
+        payload: collectTrainingDataPayloadSchema.parse({
+          namespaceId: readUuidFromUnknown(payloadMetadata.namespaceId) ?? undefined,
+          agentId: readUuidFromUnknown(payloadMetadata.agentId) ?? undefined,
+          domain: typeof payloadMetadata.domain === 'string' ? payloadMetadata.domain : undefined,
+          conversationId: readUuidFromUnknown(payload.conversationId) ?? undefined,
+          source: 'webhook',
+          sourceType: 'external',
+          sourceId,
+          sourceMetadata: {
+            ...payloadMetadata,
+            event,
+            webhookTimestamp: validation.data.timestamp ?? null,
+            internalRole,
+          },
+          messages: payload.messages.map((message) => ({
+            role: message.role,
+            content: message.content,
+          })),
+          rating: payload.rating,
+        }),
       });
-      trainingPipelineMetrics.scopeConfidenceHistogram.observe(scope.confidence);
 
-      try {
-        embedding = await gpuManagerEmbeddingsBreaker.fire(text) as number[];
-      } catch (embError) {
-        logger.warn({ error: embError }, 'Erro ao gerar embedding no webhook');
-      }
-
-      const existingData = await db.query.trainingData.findMany({
-        where: and(
-          eq(schema.trainingData.tenantId, tenantId),
-          inArray(schema.trainingData.status, ['pending', 'approved', 'used'])
-        ),
+      const statusCode = collectResult.idempotencyHit ? 200 : 201;
+      logger.info({
+        id: collectResult.trainingData.id,
+        event,
+        queued: collectResult.queued,
+        idempotencyHit: Boolean(collectResult.idempotencyHit),
+      }, 'Dados recebidos via webhook');
+      return res.status(statusCode).json({
+        success: true,
+        id: collectResult.trainingData.id,
+        queued: collectResult.queued,
+        idempotencyHit: Boolean(collectResult.idempotencyHit),
       });
-
-      let isDuplicate = false;
-      let duplicateOfId: string | undefined;
-      let highestSimilarity = 0;
-
-      for (const existing of existingData) {
-        if (existing.semhash === semhash) {
-          isDuplicate = true;
-          duplicateOfId = existing.id;
-          highestSimilarity = 1.0;
-          break;
-        }
-
-        if (embedding && existing.embedding) {
-          const similarity = cosineSimilarity(embedding, existing.embedding);
-          if (similarity > SIMILARITY_THRESHOLD && similarity > highestSimilarity) {
-            isDuplicate = true;
-            duplicateOfId = existing.id;
-            highestSimilarity = similarity;
-          }
-        }
-      }
-
-      const qualityScore = computeQualityScore(payload.messages);
-      if (scope.needsHumanReview) {
-        trainingPipelineMetrics.scopeQuarantineTotal.inc({
-          source_type: 'external',
-          reason: 'low_confidence_or_missing_namespace',
-        });
-      }
-      if (scope.suggestedNewNamespace) {
-        trainingPipelineMetrics.scopeSuggestedNewNamespaceTotal.inc({
-          source_type: 'external',
-        });
-      }
-      const autoRejectedByQuality = !isDuplicate && qualityScore < TRAINING_DATA_MIN_QUALITY;
-      const status = isDuplicate || autoRejectedByQuality ? 'rejected' : 'pending';
-      const reviewNotes = autoRejectedByQuality
-        ? `Auto-rejeitado: qualidade ${qualityScore.toFixed(2)} abaixo do mÃ­nimo (${TRAINING_DATA_MIN_QUALITY}).`
-        : null;
-      const [inserted] = await db.insert(schema.trainingData).values({
-        tenantId,
-        namespaceId: scope.namespaceId,
-        agentId: scope.agentId,
-        source: 'webhook',
-        sourceType: 'external',
-        sourceMetadata: { event },
-        inferredNamespaceId: scope.namespaceId,
-        inferredAgentId: scope.agentId,
-        inferredDomain: scope.domain,
-        inferenceConfidence: scope.confidence,
-        inferenceTrace: scope.trace,
-        scopeResolverVersion: 'v1',
-        profileVersion: 1,
-        needsHumanReview: scope.needsHumanReview,
-        quarantineReason: scope.needsHumanReview ? 'low_confidence_or_missing_namespace' : null,
-        scopeResolvedAt: new Date(),
-        quarantinedAt: scope.needsHumanReview ? new Date() : null,
-        messages: payload.messages,
-        rating: payload.rating,
-        qualityScore,
-        status,
-        reviewNotes,
-        semhash,
-        embedding,
-        isDuplicate,
-        duplicateOfId,
-        similarityScore: highestSimilarity > 0 ? highestSimilarity : null,
-      }).returning();
-
-      trainingPipelineMetrics.dataCollectedTotal.labels('external', status).inc();
-      trainingPipelineMetrics.qualityScore.observe(qualityScore);
-      if (isDuplicate) {
-        trainingPipelineMetrics.dataDuplicatesTotal.labels('external').inc();
-        trainingPipelineMetrics.dataRejectedTotal.labels('duplicate', 'external').inc();
-      }
-      if (autoRejectedByQuality) {
-        trainingPipelineMetrics.dataRejectedTotal.labels('quality', 'external').inc();
-      }
-
-      logger.info({ id: inserted.id, event }, 'Dados recebidos via webhook');
-      res.status(201).json({ success: true, id: inserted.id });
     } else if (event === 'feedback' && payload.conversationId) {
       await db.update(schema.trainingData)
         .set({ rating: payload.rating })
@@ -6379,11 +6471,14 @@ app.post('/api/training/webhook', async (req: Request, res: Response) => {
       logger.info({ conversationId: payload.conversationId, rating: payload.rating }, 'Feedback atualizado via webhook');
       res.json({ success: true });
     } else {
-      res.status(400).json({ error: 'Evento nÃ£o suportado ou payload incompleto' });
+      return res.status(400).json({ error: 'Evento nÃ£o suportado ou payload incompleto' });
     }
   } catch (error) {
+    if (error instanceof TrainingHttpError) {
+      return res.status(error.status).json(error.responsePayload);
+    }
     logger.error({ error }, 'Falha ao processar webhook');
-    res.status(500).json({ error: 'Erro interno do servidor' });
+    return res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
 
@@ -7429,28 +7524,26 @@ app.delete('/api/training/run/cancel', requirePermission('training:training_data
       });
     }
 
-    await db.update(schema.fineTuningJobs)
-      .set({
-        status: 'cancelled',
-        completadoEm: new Date(),
-        errorMessage: reason || 'Cancelado pelo usuÃ¡rio',
-      })
-      .where(and(
-        eq(schema.fineTuningJobs.id, trainingRunId),
-        eq(schema.fineTuningJobs.tenantId, tenantResolution.tenantId)
-      ));
+    await cancelFineTuningJobAndLora({
+      fineTuningJob: job,
+      tenantId: tenantResolution.tenantId,
+      reason: reason || 'Cancelado pelo usuÃ¡rio',
+    });
 
     logger.info({ trainingRunId, reason }, 'Treinamento cancelado');
 
-    res.json({
+    return res.json({
       success: true,
       trainingRunId,
       previousStatus: job.status,
       newStatus: 'cancelled',
     });
   } catch (error) {
+    if (error instanceof TrainingHttpError) {
+      return res.status(error.status).json(error.responsePayload);
+    }
     logger.error({ error }, 'Falha ao cancelar treinamento');
-    res.status(500).json({ error: 'Erro interno do servidor' });
+    return res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
 
