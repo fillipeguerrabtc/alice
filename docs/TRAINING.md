@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 06 de Marco de 2026  
-**Versão:** 4.4.1 - Curadoria de namespace antes/depois da aprovacao
+**Versão:** 4.5.0 - Pipeline canônico de dataset + lifecycle reservation/used + split enterprise
 
 ---
 
@@ -140,17 +140,32 @@ O sistema de treinamento da Alice permite fine-tuning incremental do **LLM (text
 
 ## Fontes de Dados do Treino
 
-Todas as fontes abaixo entram na **coleta e contagem** usada para avaliar qualidade e para o treino on-demand (Progressive LoRA), quando aplicável:
+O pipeline atual usa **`training_data` como fonte canônica** para seleção/versionamento de dataset de LoRA, com segregação por `purpose`:
 
 | Fonte | Tabela | Descrição | Inclusão |
 |-------|--------|-----------|----------|
-| **Chat aprovado** | `training_data` | Conversas e mensagens aprovadas (rating >= 4, status approved). Podem ter `namespace_id` e `inferred_namespace_id`. | Sempre na coleta. Filtradas por namespace quando `namespaceId` é informado. |
-| **Trading aprovado** | `trading_dataset` | Pares prompt/response de sinais e ordens aprovados para treino. `source_metadata` pode conter `namespaceId`. | Incluídos na **contagem** (e no treino quando `includeTradingDataset=true`). Filtrados por `source_metadata->>'namespaceId'` quando `namespaceId` é informado. |
-| **Imagens geradas** | `generated_images` | Imagens aprovadas para treino (`approvedForTraining=true`, `usedInFineTuning=false`). | Incluídas quando `includeImages=true` no run. |
+| **Chat aprovado** | `training_data` | Conversas aprovadas com `purpose=behavior_sft`. | Elegível para SFT (split determinístico por hash). |
+| **Trading aprovado (temporal)** | `training_data` (`source_type` `trading_*`) | Exemplos aprovados de trading com metadados temporais. | Elegível para SFT com split temporal/purged/walk-forward/híbrido. |
+| **Documentos/Mídia RAG** | `training_data` (`source_type` `rag_document`/`rag_media`) | Conteúdo de conhecimento recuperável. | Default `purpose=knowledge_rag` (quarentena), fora do SFT por padrão. |
+| **Imagens geradas** | `generated_images` | Imagens aprovadas para treino (`approvedForTraining=true`, `usedInFineTuning=false`). | Contabilizadas quando `includeImages=true` no run. |
 
-- **Coleta** (`collectTrainingData`): retorna `approvedDataCount` (training_data), `tradingDatasetApprovedCount` (trading_dataset) e `approvedImagesCount`.
-- **Avaliação** (`evaluateDataQuality`): usa `approvedDataCount + tradingDatasetApprovedCount` para o mínimo de dados; considera `namespaceId` opcional para filtrar por namespace.
-- **Treino on-demand** (`startProgressiveLoRA`): filtra `training_data` por namespace (ou tenant-wide); opcionalmente inclui `trading_dataset` na contagem e no treino.
+### Pipeline canônico de dataset (06/03/2026)
+
+- `planCanonicalDatasetSelection(...)` é a única entrada para seleção de dataset em readiness, criação de job e treino.
+- `persistCanonicalDatasetSnapshot(...)` cria snapshot imutável em `training_dataset_versions` com:
+  - `split_policy`
+  - `manifest` (train/validation/holdout IDs + hashes + source counts)
+  - `hash` de dataset
+- `lora_jobs.dataset_version_id` é obrigatório no fluxo canônico.
+- `processLoraJob(...)` consome somente o manifest persistido (sem reconstrução ad hoc de dataset).
+
+### Lifecycle de dados do treino
+
+- Estados de `training_data.status` usados no fluxo:
+  - `approved` -> `reserved` (na criação do job)
+  - `reserved` -> `used` (somente após sucesso real do treino)
+  - `reserved` -> `approved` (cancelamento/falha)
+- A reserva/liberação é idempotente e acoplada ao `jobId` (`used_in_job_id`).
 
 ---
 
@@ -211,9 +226,10 @@ A partir de 11/02/2026, o sistema suporta **adapters LoRA por namespace** além 
 
 - **Tabela única:** `lora_jobs` (fonte de verdade para adapter ativo por escopo). Coluna `source`: `explicit_job` (criado via API/UI, ex.: Pipeline Trading) ou `scheduled_run` (agendado/on-demand).
 - **Escopo:** `scope_type` (namespace | agent), `scope_namespace_id`, `scope_agent_id`; `is_active_by_scope = true` indica o adapter ativo para aquele escopo.
-- **Treino on-demand:** O body de `POST /api/training/run/start` aceita `namespaceId` opcional. Quando informado, apenas dados do namespace (e, se `includeTradingDataset`, trading_dataset do namespace) entram no treino; o resultado é registrado em `lora_jobs` com `source = 'scheduled_run'` quando aplicável.
+- **Treino on-demand/custom:** `POST /api/training/run/start` cria snapshot imutável (`dataset_version_id`) no nascimento do job, reserva linhas (`reserved`) e só marca `used` após sucesso.
 - **Resolução do adapter ativo:** `GET /api/training/lora/active` aceita `tenantId`, `namespaceId` e `agentId`. O backend consulta **somente** a tabela `lora_jobs` (registro com `is_active_by_scope = true` para o escopo). Não há fallback para outras tabelas.
-- **Runs agendados e on-demand:** Usam **somente** `lora_jobs` com `source = 'scheduled_run'`. O scheduler chama `startProgressiveLoRA` → cria registro em `lora_jobs` → executa `processLoraJob(loraJobId)`; ao concluir, marca `training_data`/`trading_dataset` como usados e ativa o adapter automaticamente. A tabela `auto_learning_schedule` armazena `lora_job_id` (e opcionalmente `model_version_id` legado). `model_versions` não é mais usado para determinar qual adapter está ativo.
+- **Runs agendados e on-demand:** usam `lora_jobs` com `source = 'scheduled_run'`, snapshot imutável na criação e `datasetVersionId` persistido também em `fine_tuning_jobs`/`auto_learning_schedule`.
+- **Ativação/promoção:** `promotion_status` inclui `activating`, `failed_activation` e `archived`; o caminho canônico ativo do adapter é persistido em `lora_jobs.active_adapter_path`.
 - **Chat, Trading e Integrations:** Em todas as chamadas ao LLM, o contexto (tenantId, namespaceId, agentId) é repassado ao resolver de adapter, garantindo uso do adapter treinado mais recente para aquele escopo.
 
 ---

@@ -44,7 +44,7 @@ interface CreateTrainingEmbeddingDedupeWorkerParams {
   generateEmbedding: (text: string) => Promise<number[]>;
 }
 
-const TRAINING_DATA_ACTIVE_STATUSES = ['pending', 'approved', 'used'] as const;
+const TRAINING_DATA_ACTIVE_STATUSES = ['pending', 'approved', 'reserved', 'used'] as const;
 const PROCESSING_LOCK_TTL_SECONDS = 600;
 const QUEUE_STREAM_MAX_LEN = 20_000;
 type EmbeddingColumnType = 'halfvec' | 'vector';

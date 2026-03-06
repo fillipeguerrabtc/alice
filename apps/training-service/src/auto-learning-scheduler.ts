@@ -28,6 +28,7 @@ import type { Database } from '@alice/database';
 import { getRedisClient, GPU_MANAGER_CONFIG } from '@alice/shared-utils';
 import { enqueueTrainingFineTuningRun } from './training-fine-tuning-queue.js';
 import { loadTrainingEnterpriseConfig } from './training-config.js';
+import { planCanonicalDatasetSelection } from './datasets/dataset-selection.js';
 import {
   getTenantInflightFineTuningJobsCount,
   loadTrainingGovernanceRuntimeConfig,
@@ -248,6 +249,7 @@ export async function collectTrainingData(tenantId?: string, namespaceId?: strin
   const TRADING_SOURCE_TYPES = ['trading_signal', 'trading_order', 'trading_postmortem', 'trading_demo'] as const;
   const trainingDataWhere = and(
     eq(schema.trainingData.status, 'approved'),
+    eq(schema.trainingData.purpose, 'behavior_sft'),
     isNull(schema.trainingData.usedInJobId),
     not(inArray(schema.trainingData.sourceType, [...TRADING_SOURCE_TYPES])),
     tenantId ? eq(schema.trainingData.tenantId, tenantId) : undefined,
@@ -276,6 +278,7 @@ export async function collectTrainingData(tenantId?: string, namespaceId?: strin
   // sem namespace, contar trading faria avaliação "proceed" mas o job usaria só chat → "Dataset insuficiente".
   const tradingWhere = and(
     eq(schema.trainingData.status, 'approved'),
+    eq(schema.trainingData.purpose, 'behavior_sft'),
     eq(schema.trainingData.isDuplicate, false),
     inArray(schema.trainingData.sourceType, [...TRADING_SOURCE_TYPES]),
     tenantId ? eq(schema.trainingData.tenantId, tenantId) : undefined,
@@ -353,48 +356,100 @@ export async function evaluateDataQuality(
   namespaceId?: string,
   useOnlyTrainingDataForMinCount?: boolean
 ): Promise<QualityEvaluation> {
-  const data = await collectTrainingData(tenantId, namespaceId);
-
-  // Total de exemplos considerados: training_data aprovados + trading (training_data sourceType) aprovados
-  const totalDataCount = data.approvedDataCount + data.tradingDataApprovedCount;
-  // Para jobs agendados: threshold apenas em training_data (universal; trading não obrigatório)
-  const countForMin = useOnlyTrainingDataForMinCount ? data.approvedDataCount : totalDataCount;
-
   const scheduledQualityConfig = await resolveScheduledQualityConfig(scheduleType);
   const minData = customMinDataRequired ?? scheduledQualityConfig.minDataRequired;
   const qualityMinRatio = scheduledQualityConfig.qualityMinRatio;
+  const enterpriseConfig = await loadTrainingEnterpriseConfig();
 
-  if (countForMin < minData) {
+  if (!tenantId) {
     return {
       isReady: false,
-      dataCount: totalDataCount,
-      imageCount: data.approvedImagesCount,
-      qualityScore: data.qualityScore,
-      recommendation: 'wait',
-      reason: useOnlyTrainingDataForMinCount
-        ? `Dados de chat insuficientes: ${data.approvedDataCount}/${minData} necessários (trading não conta para jobs agendados)`
-        : `Dados insuficientes: ${totalDataCount}/${minData} necessários (training_data: ${data.approvedDataCount}, trading: ${data.tradingDataApprovedCount})`,
+      dataCount: 0,
+      imageCount: 0,
+      qualityScore: 0,
+      recommendation: 'skip',
+      reason: 'Tenant nao informado para avaliacao de readiness',
     };
   }
 
-  if (data.qualityScore < qualityMinRatio) {
+  const includeTradingDataset = Boolean(namespaceId) && !useOnlyTrainingDataForMinCount;
+  let plannedTotal = 0;
+  let plannedTrain = 0;
+  let plannedValidation = 0;
+  let plannedHoldout = 0;
+  try {
+    const plan = await planCanonicalDatasetSelection({
+      scope: {
+        tenantId,
+        namespaceId: namespaceId ?? null,
+        agentId: null,
+        domain: null,
+      },
+      options: {
+        includeTradingDataset,
+        datasetMaxRows: enterpriseConfig.datasetMaxRows,
+        trainEvalSplitRatio: enterpriseConfig.trainEvalSplitRatio,
+        minDatasetSize: minData,
+        seed: `readiness:${tenantId}:${namespaceId ?? 'tenant-wide'}:${scheduleType}`,
+        splitPolicy: includeTradingDataset ? 'mixed_hybrid' : 'chat_deterministic_hash',
+      },
+    });
+    plannedTotal = plan.manifest.totals.eligible;
+    plannedTrain = plan.manifest.totals.train;
+    plannedValidation = plan.manifest.totals.validation;
+    plannedHoldout = plan.manifest.totals.holdout;
+  } catch (selectionError) {
     return {
       isReady: false,
-      dataCount: totalDataCount,
-      imageCount: data.approvedImagesCount,
-      qualityScore: data.qualityScore,
+      dataCount: 0,
+      imageCount: 0,
+      qualityScore: 0,
+      recommendation: 'wait',
+      reason: selectionError instanceof Error
+        ? selectionError.message
+        : 'Falha ao planejar dataset canonico de readiness',
+    };
+  }
+
+  const approvedImages = await db.query.generatedImages.findMany({
+    where: and(
+      eq(schema.generatedImages.approvedForTraining, true),
+      eq(schema.generatedImages.usedInFineTuning, false),
+      eq(schema.generatedImages.tenantId, tenantId)
+    ),
+    columns: { id: true },
+  });
+  const qualityScore = plannedTotal > 0 ? 1 : 0;
+
+  if (plannedTotal < minData) {
+    return {
+      isReady: false,
+      dataCount: plannedTotal,
+      imageCount: approvedImages.length,
+      qualityScore,
+      recommendation: 'wait',
+      reason: `Dataset canonico insuficiente: ${plannedTotal}/${minData} (train=${plannedTrain}, validation=${plannedValidation}, holdout=${plannedHoldout})`,
+    };
+  }
+
+  if (qualityScore < qualityMinRatio) {
+    return {
+      isReady: false,
+      dataCount: plannedTotal,
+      imageCount: approvedImages.length,
+      qualityScore,
       recommendation: 'skip',
-      reason: `Qualidade baixa: ${(data.qualityScore * 100).toFixed(1)}% dos dados com rating >= 4 (minimo ${(qualityMinRatio * 100).toFixed(1)}%)`,
+      reason: `Qualidade abaixo do limite configurado (${qualityMinRatio.toFixed(2)})`,
     };
   }
 
   return {
     isReady: true,
-    dataCount: totalDataCount,
-    imageCount: data.approvedImagesCount,
-    qualityScore: data.qualityScore,
+    dataCount: plannedTotal,
+    imageCount: approvedImages.length,
+    qualityScore,
     recommendation: 'proceed',
-    reason: `Dados suficientes e qualidade adequada`,
+    reason: `Dataset canonico pronto (train=${plannedTrain}, validation=${plannedValidation}, holdout=${plannedHoldout})`,
   };
 }
 
@@ -405,6 +460,7 @@ export async function evaluateDataQuality(
 interface ProgressiveLoRAResult {
   /** Job LoRA criado (source=scheduled_run). Fonte de verdade para runs agendados/on-demand. */
   loraJobId: string;
+  datasetVersionId: string | null;
   /** Compatibilidade legada; preferir loraJobId. */
   modelVersionId: string | null;
   version: number;
@@ -437,6 +493,7 @@ export async function startProgressiveLoRA(
   const trainingDataUsed = job.datasetCount ?? 0;
   const validationCount = job.validationCount ?? 0;
   const imagesUsed = (job.metrics as { imagesUsed?: number } | null)?.imagesUsed ?? 0;
+  const holdoutCount = (job.metrics as { holdoutCount?: number } | null)?.holdoutCount ?? 0;
 
   logger.info({
     loraJobId: job.id,
@@ -447,9 +504,10 @@ export async function startProgressiveLoRA(
 
   return {
     loraJobId: job.id,
+    datasetVersionId: job.datasetVersionId ?? null,
     modelVersionId: null,
     version: 0,
-    trainingDataUsed: trainingDataUsed + validationCount,
+    trainingDataUsed: trainingDataUsed + validationCount + holdoutCount,
     imagesUsed,
     status: 'started',
   };
@@ -715,7 +773,7 @@ export async function processScheduledJobs(): Promise<number> {
         job.tenantId || undefined,
         customMinDataRequired,
         scheduleNamespaceId,
-        true
+        false
       );
 
       if (evaluation.recommendation === 'proceed' && job.tenantId) {
@@ -735,7 +793,8 @@ export async function processScheduledJobs(): Promise<number> {
           baseModel: GPU_MANAGER_CONFIG.models.llm,
           status: 'pending',
           runSource: 'scheduled',
-          trainingDataCount: evaluation.dataCount,
+          trainingDataCount: result.trainingDataUsed,
+          datasetVersionId: result.datasetVersionId,
           loraJobId: result.loraJobId,
           scopeNamespaceId: scheduleNamespaceId ?? null,
           configSnapshot: {

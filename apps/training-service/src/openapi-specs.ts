@@ -132,7 +132,7 @@ export const trainingServicePaths = {
       summary: 'List training data',
       tags: ['Training Data'],
       parameters: [
-        { name: 'status', in: 'query', schema: { type: 'string', enum: ['pending', 'approved', 'rejected', 'used'] } },
+        { name: 'status', in: 'query', schema: { type: 'string', enum: ['pending', 'approved', 'rejected', 'reserved', 'used'] } },
         { name: 'namespaceId', in: 'query', schema: { type: 'string', format: 'uuid' } },
         { name: 'agentId', in: 'query', schema: { type: 'string', format: 'uuid' } },
         { name: 'sourceType', in: 'query', schema: { type: 'string' } },

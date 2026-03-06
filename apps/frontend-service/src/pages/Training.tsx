@@ -118,7 +118,7 @@ interface TrainingData {
   messages: Array<{ role: string; content: string }>;
   rating: number | null;
   qualityScore?: number | null;
-  status: 'pending' | 'approved' | 'rejected' | 'used';
+  status: 'pending' | 'approved' | 'rejected' | 'reserved' | 'used';
   isDuplicate: boolean;
   duplicateOfId?: string | null;
   similarityScore: number | null;
@@ -139,7 +139,7 @@ interface FineTuningJob {
   trainingDataCount: number | null;
   validationDataCount?: number | null;
   evaluationStatus?: 'pending' | 'running' | 'passed' | 'failed' | 'skipped';
-  promotionStatus?: 'candidate' | 'staged' | 'active' | 'rejected' | 'rolled_back';
+  promotionStatus?: 'candidate' | 'staged' | 'activating' | 'active' | 'rollback_pending' | 'failed_activation' | 'archived' | 'rejected' | 'rolled_back';
   modelVersionId?: string | null;
   scopeNamespaceId?: string | null;
   scopeAgentId?: string | null;
@@ -833,7 +833,7 @@ function JobCard({
   const runPriorityLabel = getRunPriorityLabel(job, t);
   const timelineFinalKey = job.promotionStatus === 'active'
     ? 'training.timeline.active'
-    : (job.promotionStatus === 'rejected' || job.evaluationStatus === 'failed'
+    : (job.promotionStatus === 'rejected' || job.promotionStatus === 'failed_activation' || job.evaluationStatus === 'failed'
       ? 'training.timeline.rejected'
       : 'training.timeline.active');
 
@@ -842,8 +842,8 @@ function JobCard({
     preparing: job.status !== 'pending',
     training: ['training', 'validating', 'completed', 'failed', 'cancelled'].includes(job.status),
     evaluating: ['running', 'passed', 'failed', 'skipped'].includes(job.evaluationStatus ?? 'pending'),
-    candidate: ['candidate', 'staged', 'active', 'rejected', 'rolled_back'].includes(job.promotionStatus ?? 'candidate'),
-    final: ['active', 'rejected', 'rolled_back'].includes(job.promotionStatus ?? ''),
+    candidate: ['candidate', 'staged', 'activating', 'active', 'rollback_pending', 'failed_activation', 'archived', 'rejected', 'rolled_back'].includes(job.promotionStatus ?? 'candidate'),
+    final: ['active', 'failed_activation', 'archived', 'rejected', 'rolled_back'].includes(job.promotionStatus ?? ''),
   };
 
   const timelineItems = [

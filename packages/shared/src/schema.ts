@@ -468,6 +468,64 @@ export const TrainingMessagesSchema = z.array(TrainingMessageSchema);
 export type TrainingMessage = z.infer<typeof TrainingMessageSchema>;
 export type TrainingMessages = z.infer<typeof TrainingMessagesSchema>;
 
+export const DatasetSplitPolicySchema = z.enum([
+  "chat_deterministic_hash",
+  "trading_temporal",
+  "trading_purged",
+  "walk_forward",
+  "mixed_hybrid",
+]);
+export type DatasetSplitPolicy = z.infer<typeof DatasetSplitPolicySchema>;
+
+export const TrainingDatasetManifestSchema = z.object({
+  version: z.literal(1),
+  createdAt: z.string().datetime(),
+  seed: z.string().min(1),
+  splitPolicy: DatasetSplitPolicySchema,
+  scope: z.object({
+    tenantId: z.string().uuid(),
+    namespaceId: z.string().uuid().nullable(),
+    agentId: z.string().uuid().nullable(),
+  }),
+  totals: z.object({
+    eligible: z.number().int().nonnegative(),
+    train: z.number().int().nonnegative(),
+    validation: z.number().int().nonnegative(),
+    holdout: z.number().int().nonnegative(),
+  }),
+  hashes: z.object({
+    manifest: z.string().min(1),
+    train: z.string().min(1),
+    validation: z.string().min(1),
+    holdout: z.string().min(1),
+  }),
+  sourceCounts: z.record(z.string(), z.number().int().nonnegative()),
+  rows: z.object({
+    train: z.array(z.object({
+      id: z.string().uuid(),
+      sourceType: z.string().nullable(),
+      semhash: z.string().nullable(),
+      text: z.string(),
+      createdAt: z.string().datetime().nullable(),
+    })),
+    validation: z.array(z.object({
+      id: z.string().uuid(),
+      sourceType: z.string().nullable(),
+      semhash: z.string().nullable(),
+      text: z.string(),
+      createdAt: z.string().datetime().nullable(),
+    })),
+    holdout: z.array(z.object({
+      id: z.string().uuid(),
+      sourceType: z.string().nullable(),
+      semhash: z.string().nullable(),
+      text: z.string(),
+      createdAt: z.string().datetime().nullable(),
+    })),
+  }),
+}).passthrough();
+export type TrainingDatasetManifest = z.infer<typeof TrainingDatasetManifestSchema>;
+
 // --- Hyperparameters de Fine-tuning ---
 export const FineTuningHyperparametersSchema = z.object({
   epochs: z.number().int().positive().optional(),
@@ -2173,7 +2231,15 @@ export const trainingDataStatusEnum = pgEnum("training_data_status", [
   "pending",
   "approved",
   "rejected",
+  "reserved",
   "used",
+]);
+
+export const trainingDataPurposeEnum = pgEnum("training_data_purpose", [
+  "behavior_sft",
+  "knowledge_rag",
+  "eval_only",
+  "rejected",
 ]);
 
 export const trainingSourceTypeEnum = pgEnum("training_source_type", [
@@ -2206,6 +2272,7 @@ export const trainingData = pgTable(
     conversationId: uuid("conversation_id").references(() => conversations.id),
     source: varchar("source", { length: 50 }).notNull(),
     sourceType: trainingSourceTypeEnum("source_type").notNull().default("manual"),
+    purpose: trainingDataPurposeEnum("purpose").notNull().default("behavior_sft"),
     sourceId: varchar("source_id", { length: 255 }),
     sourceMetadata: jsonb("source_metadata").$type<GenericMetadata>().default({}),
     inferredNamespaceId: uuid("inferred_namespace_id").references(() => namespaces.id),
@@ -2251,8 +2318,9 @@ export const trainingData = pgTable(
     trainingDataActiveFingerprintUniqueUidx: uniqueIndex("training_data_active_fingerprint_uidx")
       .on(table.tenantId, table.sourceType, table.semhash, sql`COALESCE(${table.sourceId}, '')`)
       .where(
-        sql`${table.tenantId} IS NOT NULL AND ${table.semhash} IS NOT NULL AND ${table.status} IN ('pending', 'approved', 'used')`
+        sql`${table.tenantId} IS NOT NULL AND ${table.semhash} IS NOT NULL AND ${table.status} IN ('pending', 'approved', 'reserved', 'used')`
       ),
+    idxTrainingStatusUsedInJob: index("idx_training_status_used_in_job").on(table.status, table.usedInJobId),
     trainingDataProcessedAtIdx: index("training_data_processed_at_idx").on(table.processedAt),
     idxTrainingSource: index("idx_training_source").on(table.source),
     idxTrainingSourceType: index("idx_training_source_type").on(table.sourceType),
@@ -2324,12 +2392,15 @@ export const trainingDatasetVersions = pgTable(
     dataWindow: jsonb("data_window").$type<Record<string, unknown>>().notNull().default({}),
     profileId: uuid("profile_id").references(() => trainingDatasetProfiles.id),
     profileVersion: integer("profile_version").notNull().default(1),
+    splitPolicy: varchar("split_policy", { length: 64 }).notNull().default("mixed_hybrid"),
+    manifest: jsonb("manifest").$type<TrainingDatasetManifest>().notNull().default({} as TrainingDatasetManifest),
     hash: varchar("hash", { length: 64 }).notNull(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (table) => ({
     idxTrainingDatasetVersionsTenant: index("idx_training_dataset_versions_tenant").on(table.tenantId),
     idxTrainingDatasetVersionsNamespace: index("idx_training_dataset_versions_namespace").on(table.namespaceId),
+    idxTrainingDatasetVersionsTenantHash: index("idx_training_dataset_versions_tenant_hash").on(table.tenantId, table.hash),
   })
 );
 
@@ -2408,7 +2479,11 @@ export const fineTuningEvaluationStatusEnum = pgEnum("fine_tuning_evaluation_sta
 export const fineTuningPromotionStatusEnum = pgEnum("fine_tuning_promotion_status", [
   "candidate",
   "staged",
+  "activating",
   "active",
+  "rollback_pending",
+  "failed_activation",
+  "archived",
   "rejected",
   "rolled_back",
 ]);
@@ -4236,6 +4311,12 @@ export const TradingLoraMetricsSchema = z.object({
   winRate: z.number().optional(),            // Específico de trading
   /** Número de imagens aprovadas incluídas no job (scheduled_run, quando includeImages=true). */
   imagesUsed: z.number().optional(),
+  /** Tamanho do holdout congelado no dataset manifest. */
+  holdoutCount: z.number().int().nonnegative().optional(),
+  /** Hash do manifest imutável utilizado no treino/eval. */
+  datasetManifestHash: z.string().min(1).optional(),
+  /** Política de split efetivamente aplicada no snapshot de dataset. */
+  splitPolicy: DatasetSplitPolicySchema.optional(),
 });
 export type TradingLoraMetrics = z.infer<typeof TradingLoraMetricsSchema>;
 
@@ -4395,6 +4476,7 @@ export const loraJobs = pgTable(
     
     // Resultado
     resultAdapterPath: varchar("result_adapter_path", { length: 500 }),  // Path do adapter LoRA
+    activeAdapterPath: varchar("active_adapter_path", { length: 500 }),  // Path canônico ativo no filesystem
     resultAdapterSize: integer("result_adapter_size"),                    // Tamanho em bytes
     
     // Adapter ativo: indica se este adapter é o atualmente carregado no vLLM para inferência

@@ -15,27 +15,30 @@
  */
 
 import { createLogger } from '@alice/logger';
-import { getDatabase, schema, eq, and, desc, sql, inArray, isNull, or, not } from '@alice/database';
+import { getDatabase, schema, eq, and, desc, sql, isNull } from '@alice/database';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { createHash } from 'node:crypto';
 import { requestGpu, GpuServiceType, GpuRequestPriority, GPU_MANAGER_CONFIG } from '@alice/shared-utils';
 import type {
+  DatasetSplitPolicy,
   LoraJob,
+  TrainingDatasetManifest,
   InsertLoraJob,
   TradingLoraHyperparams,
   TradingLoraMetrics,
 } from '@alice/shared';
-import { TradingLoraHyperparamsSchema } from '@alice/shared';
+import { TradingLoraHyperparamsSchema, TrainingDatasetManifestSchema } from '@alice/shared';
 import { loadTrainingEnterpriseConfig } from './training-config.js';
 import {
-  buildTradingDataEligibilityConditions,
-  loadTradingDataGovernancePolicyFromEnv,
-  TRADING_DATA_SOURCE_TYPES,
-} from './trading-data-governance.js';
+  markDatasetRowsUsedForJob,
+  persistCanonicalDatasetSnapshot,
+  planCanonicalDatasetSelection,
+  releaseDatasetRowsForJob,
+  reserveDatasetRowsForJob,
+  type DatasetSelectionScope,
+} from './datasets/dataset-selection.js';
 
 const logger = createLogger('lora-job-manager');
-const tradingDataGovernancePolicy = loadTradingDataGovernancePolicyFromEnv();
 
 const TRAINING_STORAGE_DIR = process.env.TRAINING_STORAGE_DIR || '/opt/alice/uploads/training';
 
@@ -48,8 +51,6 @@ const DEFAULT_BASE_MODEL = GPU_MANAGER_CONFIG.models.llm;
 
 // Configuração padrão de hiperparâmetros
 const TRADING_HYPERPARAMS_BASE_DEFAULTS: TradingLoraHyperparams = TradingLoraHyperparamsSchema.parse({});
-/** Mínimo de exemplos para jobs LoRA (training_data com sourceType trading). Reservado para validação futura. */
-const _MIN_DATASET_SIZE = 100;
 
 function toTradingHyperparamsFromEnterprise(
   enterpriseHyperparams: Partial<TradingLoraHyperparams>
@@ -58,29 +59,6 @@ function toTradingHyperparamsFromEnterprise(
     ...TRADING_HYPERPARAMS_BASE_DEFAULTS,
     ...enterpriseHyperparams,
   });
-}
-
-function hashSeed(seedText: string): number {
-  const digest = createHash('sha256').update(seedText).digest();
-  return digest.readUInt32LE(0);
-}
-
-function createSeededRandom(seedText: string): () => number {
-  let state = hashSeed(seedText) >>> 0;
-  return () => {
-    state = (state + 0x6d2b79f5) >>> 0;
-    let t = Math.imul(state ^ (state >>> 15), 1 | state);
-    t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-function fisherYatesShuffle<T>(array: T[], randomFn: () => number): T[] {
-  for (let i = array.length - 1; i > 0; i--) {
-    const j = Math.floor(randomFn() * (i + 1));
-    [array[i], array[j]] = [array[j], array[i]];
-  }
-  return array;
 }
 
 // ============================================================================
@@ -116,15 +94,17 @@ interface JobProgress {
 interface PreparedDataset {
   trainingData: string[];    // Linhas JSONL ({text: string})
   validationData: string[];  // Linhas JSONL ({text: string})
+  holdoutData: string[];
   trainingRowIds: string[];  // IDs usados no split de treino
-  validationRowIds: string[]; // IDs usados no split de validação/holdout
-  datasetIds: string[];      // IDs de training_data filtrados (trading) - para marcar como usados
-  /** IDs de training_data usados (apenas quando source=scheduled_run). Marcar usedInJobId após sucesso. */
-  trainingDataIds?: string[];
+  validationRowIds: string[]; // IDs usados no split de validação
+  holdoutRowIds: string[]; // IDs usados no split de holdout
+  datasetIds: string[];      // IDs de training_data congelados no manifest
+  splitPolicy: DatasetSplitPolicy;
   stats: {
     total: number;
     training: number;
     validation: number;
+    holdout: number;
     byActionType: Record<string, number>;
     /** Número de imagens aprovadas incluídas (quando includeImages=true). */
     imagesUsed?: number;
@@ -193,32 +173,6 @@ async function resolveDatasetProfile(
   };
 }
 
-function renderDatasetSystemPrompt(
-  template: string,
-  context: {
-    assetClass: string;
-    marketType: string;
-    venue: string;
-    riskPolicy: string;
-    timeframes: string;
-  },
-): string {
-  const rendered = template
-    .replaceAll('{{assetClass}}', context.assetClass)
-    .replaceAll('{{marketType}}', context.marketType)
-    .replaceAll('{{venue}}', context.venue)
-    .replaceAll('{{riskPolicy}}', context.riskPolicy)
-    .replaceAll('{{timeframes}}', context.timeframes);
-  if (context.assetClass !== 'crypto') {
-    return rendered
-      .replaceAll('funding', '')
-      .replaceAll('open interest', '')
-      .replace(/\s{2,}/g, ' ')
-      .trim();
-  }
-  return rendered;
-}
-
 // ============================================================================
 // PREPARAÇÃO DE DATASET
 // ============================================================================
@@ -231,7 +185,7 @@ export async function prepareDataset(
   tenantId: string,
   namespaceId: string,
   agentId?: string,
-  filter?: {
+  _filter?: {
     minQualityScore?: number;
     actionTypes?: string[];
     fromDate?: Date;
@@ -241,149 +195,56 @@ export async function prepareDataset(
     datasetMaxRows?: number;
     trainEvalSplitRatio?: number;
     seed?: string;
+    splitPolicy?: DatasetSplitPolicy;
+    minDatasetSize?: number;
   }
 ): Promise<PreparedDataset> {
-  const db = getDatabase();
   const trainingConfig = await loadTrainingEnterpriseConfig();
   const datasetMaxRows = runtime?.datasetMaxRows ?? trainingConfig.datasetMaxRows;
   const trainEvalSplitRatio = runtime?.trainEvalSplitRatio ?? trainingConfig.trainEvalSplitRatio;
-  const random = createSeededRandom(runtime?.seed ?? `${tenantId}:${namespaceId}:${agentId ?? 'all'}`);
-
-  logger.info({ tenantId, filter, datasetMaxRows, trainEvalSplitRatio }, 'Preparando dataset para treinamento');
-
-  const datasets = await db
-    .select()
-    .from(schema.trainingData)
-    .where(
-      and(
-        ...buildTradingDataEligibilityConditions({
-          tenantId,
-          namespaceId,
-          policy: tradingDataGovernancePolicy,
-        }),
-        agentId != null
-          ? eq(schema.trainingData.agentId, agentId)
-          : sql`1=1`
-      )
-    )
-    .orderBy(desc(schema.trainingData.criadoEm))
-    .limit(datasetMaxRows);
-
-  type RowWithAction = { id: string; messages: unknown; sourceMetadata: unknown; qualityScore: number | null; criadoEm: Date | null };
-  const withAction = datasets.map((d): RowWithAction & { actionType: string; prompt: string; response: string } => {
-    const msgs = (d.messages ?? []) as Array<{ role: string; content: string }>;
-    const userMsg = msgs.find((m) => m.role === 'user');
-    const assistantMsg = msgs.find((m) => m.role === 'assistant');
-    const meta = (d.sourceMetadata ?? {}) as Record<string, unknown>;
-    const actionType = (meta.actionType as string) ?? 'signal';
-    return {
-      ...d,
-      actionType,
-      prompt: userMsg?.content ?? '',
-      response: assistantMsg?.content ?? '',
-    } as RowWithAction & { actionType: string; prompt: string; response: string };
-  });
-
-  let filtered = withAction;
-
-  if (filter?.minQualityScore) {
-    filtered = filtered.filter(
-      (d) => d.qualityScore !== null && d.qualityScore >= filter.minQualityScore!
-    );
-  }
-
-  if (filter?.actionTypes && filter.actionTypes.length > 0) {
-    filtered = filtered.filter((d) => filter.actionTypes!.includes(d.actionType));
-  }
-
-  if (filter?.fromDate) {
-    filtered = filtered.filter(
-      (d) => d.criadoEm && d.criadoEm >= filter.fromDate!
-    );
-  }
-
-  if (filter?.toDate) {
-    filtered = filtered.filter(
-      (d) => d.criadoEm && d.criadoEm <= filter.toDate!
-    );
-  }
-
-  const byActionType: Record<string, number> = {};
-  for (const d of filtered) {
-    byActionType[d.actionType] = (byActionType[d.actionType] || 0) + 1;
-  }
-  const sortedByDate = [...filtered].sort((a, b) => {
-    const aTime = a.criadoEm?.getTime() ?? 0;
-    const bTime = b.criadoEm?.getTime() ?? 0;
-    return aTime - bTime;
-  });
-  const dataWindow = {
-    from: sortedByDate[0]?.criadoEm ?? null,
-    to: sortedByDate[sortedByDate.length - 1]?.criadoEm ?? null,
+  const scope: DatasetSelectionScope = {
+    tenantId,
+    namespaceId,
+    agentId: agentId ?? null,
+    domain: null,
   };
-
-  const shuffled = fisherYatesShuffle([...filtered], random);
-  const splitIndex = Math.floor(shuffled.length * trainEvalSplitRatio);
-  const training = shuffled.slice(0, splitIndex);
-  const validation = shuffled.slice(splitIndex);
-
-  const datasetProfile = await resolveDatasetProfile(tenantId, namespaceId, agentId);
-  const firstMetadata = (filtered[0]?.sourceMetadata ?? {}) as Record<string, unknown>;
-  const systemPrompt = renderDatasetSystemPrompt(datasetProfile.systemPromptTemplate, {
-    assetClass: String(firstMetadata.assetClass ?? 'crypto'),
-    marketType: String(firstMetadata.marketType ?? 'futures'),
-    venue: String(firstMetadata.venue ?? 'unknown'),
-    riskPolicy: String(firstMetadata.riskPolicy ?? 'strict'),
-    timeframes: String(firstMetadata.timeframe ?? '1m,3m,5m'),
-  });
-
-  const formatToJsonl = (d: { prompt: string; response: string }): string => {
-    const text = [
-      `system: ${systemPrompt}`,
-      `user: ${d.prompt}`,
-      `assistant: ${d.response}`,
-    ].join('\n');
-    return JSON.stringify({ text });
-  };
-
-  const trainingData = training.map(formatToJsonl);
-  const validationData = validation.map(formatToJsonl);
-  const trainingRowIds = training.map((item) => item.id);
-  const validationRowIds = validation.map((item) => item.id);
-  const datasetIds = filtered.map((d) => d.id);
-
-  logger.info(
-    {
-      total: filtered.length,
-      training: trainingData.length,
-      validation: validationData.length,
-      byActionType,
-      datasetIdsCount: datasetIds.length,
+  const plan = await planCanonicalDatasetSelection({
+    scope,
+    options: {
+      includeTradingDataset: true,
       datasetMaxRows,
       trainEvalSplitRatio,
+      minDatasetSize: runtime?.minDatasetSize ?? 1,
+      seed: runtime?.seed ?? `${tenantId}:${namespaceId}:${agentId ?? 'all'}`,
+      splitPolicy: runtime?.splitPolicy ?? 'trading_temporal',
+      profileVersion: 1,
+      profileId: null,
     },
-    'Dataset preparado com sucesso'
-  );
+  });
 
   return {
-    trainingData,
-    validationData,
-    trainingRowIds,
-    validationRowIds,
-    datasetIds,
+    trainingData: plan.trainRows.map((row) => row.text),
+    validationData: plan.validationRows.map((row) => row.text),
+    holdoutData: plan.holdoutRows.map((row) => row.text),
+    trainingRowIds: plan.trainRows.map((row) => row.id),
+    validationRowIds: plan.validationRows.map((row) => row.id),
+    holdoutRowIds: plan.holdoutRows.map((row) => row.id),
+    datasetIds: [
+      ...plan.trainRows.map((row) => row.id),
+      ...plan.validationRows.map((row) => row.id),
+      ...plan.holdoutRows.map((row) => row.id),
+    ],
+    splitPolicy: plan.splitPolicy,
     stats: {
-      total: filtered.length,
-      training: trainingData.length,
-      validation: validationData.length,
-      byActionType,
-      dataWindow,
+      total: plan.manifest.totals.eligible,
+      training: plan.manifest.totals.train,
+      validation: plan.manifest.totals.validation,
+      holdout: plan.manifest.totals.holdout,
+      byActionType: plan.sourceCounts,
+      dataWindow: plan.dataWindow,
     },
   };
 }
-function buildChatMlText(messages: Array<{ role: string; content: string }>): string {
-  return messages.map((m) => `${m.role}: ${m.content}`).join('\n');
-}
-
 /**
  * Prepara dataset para runs agendados/on-demand: training_data (chat aprovado) + dados de trading do namespace.
  * Retorna mesmo formato PreparedDataset para uso no mesmo pipeline de processLoraJob.
@@ -394,7 +255,6 @@ export async function prepareDatasetFromChatAndTrading(
   namespaceId?: string | null,
   options?: {
     includeImages?: boolean;
-    countOnly?: boolean;
     includeTradingDataset?: boolean;
     agentId?: string | null;
     domain?: string | null;
@@ -402,6 +262,7 @@ export async function prepareDatasetFromChatAndTrading(
     trainEvalSplitRatio?: number;
     minDatasetSize?: number;
     seed?: string;
+    splitPolicy?: DatasetSplitPolicy;
   }
 ): Promise<PreparedDataset> {
   const db = getDatabase();
@@ -410,41 +271,8 @@ export async function prepareDatasetFromChatAndTrading(
   const trainEvalSplitRatio = options?.trainEvalSplitRatio ?? trainingConfig.trainEvalSplitRatio;
   const minDatasetSize = options?.minDatasetSize ?? trainingConfig.minScheduledIncremental;
   const includeTradingDataset = options?.includeTradingDataset ?? Boolean(namespaceId);
-  const random = createSeededRandom(options?.seed ?? `${tenantId}:${namespaceId ?? 'tenant-wide'}`);
-
-  const chatWhere = and(
-    eq(schema.trainingData.status, 'approved'),
-    eq(schema.trainingData.tenantId, tenantId),
-    isNull(schema.trainingData.usedInJobId),
-    not(inArray(schema.trainingData.sourceType, [...TRADING_DATA_SOURCE_TYPES])),
-    options?.agentId
-      ? or(
-          eq(schema.trainingData.agentId, options.agentId),
-          eq(schema.trainingData.inferredAgentId, options.agentId)
-        )
-      : undefined,
-    options?.domain
-      ? eq(schema.trainingData.inferredDomain, options.domain)
-      : undefined,
-    namespaceId != null
-      ? or(
-          eq(schema.trainingData.namespaceId, namespaceId),
-          eq(schema.trainingData.inferredNamespaceId, namespaceId)
-        )
-      : undefined
-  );
-
-  const chatRows = await db.query.trainingData.findMany({
-    where: chatWhere,
-    columns: { id: true, messages: true, sourceType: true },
-    limit: datasetMaxRows,
-  });
-
-  const byActionType: Record<string, number> = {};
-  for (const r of chatRows) {
-    const k = r.sourceType ?? 'chat';
-    byActionType[k] = (byActionType[k] ?? 0) + 1;
-  }
+  const splitPolicy = options?.splitPolicy
+    ?? (includeTradingDataset ? 'mixed_hybrid' : 'chat_deterministic_hash');
 
   let imagesUsed = 0;
   if (options?.includeImages) {
@@ -461,79 +289,31 @@ export async function prepareDatasetFromChatAndTrading(
     imagesUsed = row?.count ?? 0;
   }
 
-  let trainingData: string[] = [];
-  let validationData: string[] = [];
-  let trainingRowIds: string[] = [];
-  let validationRowIds: string[] = [];
-  let datasetIds: string[] = [];
-  const trainingDataIds = chatRows.map((r) => r.id);
-
-  const formatChatToJsonl = (row: { messages: unknown }): string => {
-    const messages = (row.messages ?? []) as Array<{ role: string; content: string }>;
-    const text = buildChatMlText(messages);
-    return JSON.stringify({ text });
-  };
-
-  const combined: Array<{ id: string; type: 'chat' | 'trading'; line: string }> = chatRows.map((r) => ({
-    id: r.id,
-    type: 'chat',
-    line: formatChatToJsonl(r),
-  }));
-
-  if (namespaceId && includeTradingDataset) {
-    const tradingPrepared = await prepareDataset(
+  const plan = await planCanonicalDatasetSelection({
+    scope: {
       tenantId,
-      namespaceId,
-      options?.agentId ?? undefined,
-      undefined,
-      {
-        datasetMaxRows,
-        trainEvalSplitRatio,
-        seed: `${options?.seed ?? tenantId}:trading`,
-      }
-    );
-    datasetIds = tradingPrepared.datasetIds;
-
-    let tradingIndex = 0;
-    for (const line of tradingPrepared.trainingData) {
-      const lineId = datasetIds[tradingIndex] ?? `trading-${tradingIndex}`;
-      combined.push({ id: lineId, type: 'trading', line });
-      tradingIndex += 1;
-    }
-    for (const line of tradingPrepared.validationData) {
-      const lineId = datasetIds[tradingIndex] ?? `trading-${tradingIndex}`;
-      combined.push({ id: lineId, type: 'trading', line });
-      tradingIndex += 1;
-    }
-
-    Object.entries(tradingPrepared.stats.byActionType).forEach(([k, v]) => {
-      byActionType[`trading_${k}`] = (byActionType[`trading_${k}`] ?? 0) + v;
-    });
-  }
-
-  if (combined.length < minDatasetSize) {
-    throw new Error(
-      `Dataset insuficiente para run agendado: ${combined.length} exemplos. Minimo: ${minDatasetSize}`
-    );
-  }
-
-  const shuffled = fisherYatesShuffle([...combined], random);
-  const splitIndex = Math.floor(shuffled.length * trainEvalSplitRatio);
-  const trainPart = shuffled.slice(0, splitIndex);
-  const validationPart = shuffled.slice(splitIndex);
-
-  if (!options?.countOnly) {
-    trainingData = trainPart.map((p) => p.line);
-    validationData = validationPart.map((p) => p.line);
-  }
-  trainingRowIds = trainPart.map((part) => part.id);
-  validationRowIds = validationPart.map((part) => part.id);
+      namespaceId: namespaceId ?? null,
+      agentId: options?.agentId ?? null,
+      domain: options?.domain ?? null,
+    },
+    options: {
+      includeTradingDataset,
+      datasetMaxRows,
+      trainEvalSplitRatio,
+      minDatasetSize,
+      seed: options?.seed ?? `${tenantId}:${namespaceId ?? 'tenant-wide'}`,
+      splitPolicy,
+      profileId: null,
+      profileVersion: 1,
+    },
+  });
 
   const stats = {
-    total: combined.length,
-    training: trainPart.length,
-    validation: validationPart.length,
-    byActionType,
+    total: plan.manifest.totals.eligible,
+    training: plan.manifest.totals.train,
+    validation: plan.manifest.totals.validation,
+    holdout: plan.manifest.totals.holdout,
+    byActionType: plan.sourceCounts,
     imagesUsed,
   };
 
@@ -544,23 +324,30 @@ export async function prepareDatasetFromChatAndTrading(
       total: stats.total,
       training: stats.training,
       validation: stats.validation,
-      trainingDataIdsCount: trainingDataIds.length,
-      datasetIdsCount: datasetIds.length,
+      holdout: stats.holdout,
+      datasetIdsCount: plan.manifest.totals.eligible,
       datasetMaxRows,
       trainEvalSplitRatio,
       minDatasetSize,
       includeTradingDataset,
+      splitPolicy: plan.splitPolicy,
     },
     'Dataset chat+trading preparado para run agendado'
   );
 
   return {
-    trainingData,
-    validationData,
-    trainingRowIds,
-    validationRowIds,
-    datasetIds,
-    trainingDataIds,
+    trainingData: plan.trainRows.map((row) => row.text),
+    validationData: plan.validationRows.map((row) => row.text),
+    holdoutData: plan.holdoutRows.map((row) => row.text),
+    trainingRowIds: plan.trainRows.map((row) => row.id),
+    validationRowIds: plan.validationRows.map((row) => row.id),
+    holdoutRowIds: plan.holdoutRows.map((row) => row.id),
+    datasetIds: [
+      ...plan.trainRows.map((row) => row.id),
+      ...plan.validationRows.map((row) => row.id),
+      ...plan.holdoutRows.map((row) => row.id),
+    ],
+    splitPolicy: plan.splitPolicy,
     stats,
   };
 }
@@ -569,39 +356,33 @@ export async function createLoraJob(params: CreateJobParams): Promise<LoraJob> {
 
   const trainingConfig = await loadTrainingEnterpriseConfig();
   const defaultHyperparameters = toTradingHyperparamsFromEnterprise(trainingConfig.defaultHyperparams);
-
-  // Preparar dataset para obter contagens
-  const dataset = await prepareDataset(params.tenantId, params.namespaceId, params.agentId, params.datasetFilter);
   const profile = await resolveDatasetProfile(params.tenantId, params.namespaceId, params.agentId);
-
   const minRequired = params.forceMinSize ? 1 : trainingConfig.minOndemandDatasetSize;
-  if (dataset.stats.total < minRequired) {
-    throw new Error(
-      `Dataset insuficiente: ${dataset.stats.total} exemplos. Mínimo necessário: ${minRequired}${params.forceMinSize ? ' (forçar com poucos exemplos pode prejudicar o modelo)' : ''}`
-    );
-  }
+
+  const datasetSnapshot = await persistCanonicalDatasetSnapshot({
+    scope: {
+      tenantId: params.tenantId,
+      namespaceId: params.namespaceId,
+      agentId: params.agentId ?? null,
+      domain: null,
+    },
+    options: {
+      includeTradingDataset: true,
+      datasetMaxRows: trainingConfig.datasetMaxRows,
+      trainEvalSplitRatio: trainingConfig.trainEvalSplitRatio,
+      minDatasetSize: minRequired,
+      seed: `${params.tenantId}:${params.namespaceId}:${params.agentId ?? 'all'}:${Date.now().toString(36)}`,
+      splitPolicy: 'trading_temporal',
+      profileId: profile.id,
+      profileVersion: profile.version,
+    },
+  });
 
   // Mesclar hiperparâmetros com defaults
   const hyperparameters: TradingLoraHyperparams = {
     ...defaultHyperparameters,
     ...params.hyperparameters,
   };
-
-  const sortedIds = [...dataset.datasetIds].sort((a, b) => a.localeCompare(b));
-  const datasetHash = createHash('sha256').update(sortedIds.join(',')).digest('hex');
-  const [datasetVersion] = await db
-    .insert(schema.trainingDatasetVersions)
-    .values({
-      tenantId: params.tenantId,
-      namespaceId: params.namespaceId,
-      agentId: params.agentId ?? null,
-      sourceCounts: dataset.stats.byActionType,
-      dataWindow: dataset.stats.dataWindow ?? {},
-      profileId: profile.id,
-      profileVersion: profile.version,
-      hash: datasetHash,
-    })
-    .returning();
 
   // Criar job (source: explicit_job = criado via API/UI)
   const jobData: InsertLoraJob = {
@@ -610,7 +391,7 @@ export async function createLoraJob(params: CreateJobParams): Promise<LoraJob> {
     scopeNamespaceId: params.namespaceId,
     scopeAgentId: params.agentId ?? null,
     profileVersion: params.profileVersion ?? profile.version,
-    datasetVersionId: datasetVersion?.id ?? null,
+    datasetVersionId: datasetSnapshot.datasetVersionId,
     source: 'explicit_job',
     name: params.name,
     description: params.description,
@@ -619,10 +400,14 @@ export async function createLoraJob(params: CreateJobParams): Promise<LoraJob> {
     status: 'queued',
     progress: 0,
     currentStep: 0,
-    datasetCount: dataset.stats.training,
-    validationCount: dataset.stats.validation,
+    datasetCount: datasetSnapshot.manifest.totals.train,
+    validationCount: datasetSnapshot.manifest.totals.validation,
     includeTradingDataset: true,
-    metrics: {},
+    metrics: {
+      holdoutCount: datasetSnapshot.manifest.totals.holdout,
+      datasetManifestHash: datasetSnapshot.manifest.hashes.manifest,
+      splitPolicy: datasetSnapshot.splitPolicy,
+    },
   };
 
   const [job] = await db
@@ -630,58 +415,65 @@ export async function createLoraJob(params: CreateJobParams): Promise<LoraJob> {
     .values(jobData)
     .returning();
 
-  if (datasetVersion) {
-    await db.insert(schema.trainingLineageEvents).values([
-      {
-        tenantId: params.tenantId,
-        namespaceId: params.namespaceId,
-        eventType: 'dataset_version_created',
-        sourceTable: 'training_data',
-        sourceId: datasetHash,
-        producedTable: 'training_dataset_versions',
-        producedId: datasetVersion.id,
-        metadata: {
-          datasetCount: dataset.datasetIds.length,
-          profileVersion: profile.version,
-        },
-      },
-      {
-        tenantId: params.tenantId,
-        namespaceId: params.namespaceId,
-        eventType: 'lora_job_created',
-        sourceTable: 'training_dataset_versions',
-        sourceId: datasetVersion.id,
-        producedTable: 'lora_jobs',
-        producedId: job.id,
-        metadata: {
-          datasetVersionId: datasetVersion.id,
-        },
-      },
-    ]);
-  }
-
-  // Usar os IDs dos datasets FILTRADOS (retornados por prepareDataset) - training_data com sourceType trading
-  if (dataset.datasetIds.length > 0) {
-    await db
-      .update(schema.trainingData)
+  const allDatasetIds = [
+    ...datasetSnapshot.trainRows.map((row) => row.id),
+    ...datasetSnapshot.validationRows.map((row) => row.id),
+    ...datasetSnapshot.holdoutRows.map((row) => row.id),
+  ];
+  try {
+    await reserveDatasetRowsForJob({
+      jobId: job.id,
+      rowIds: allDatasetIds,
+    });
+  } catch (reservationError) {
+    await db.update(schema.loraJobs)
       .set({
-        status: 'used',
-        usedInJobId: job.id,
+        status: 'failed',
+        errorMessage: reservationError instanceof Error ? reservationError.message : String(reservationError),
+        completedAt: new Date(),
       })
-      .where(inArray(schema.trainingData.id, dataset.datasetIds));
-
-    logger.info(
-      { jobId: job.id, markedAsUsed: dataset.datasetIds.length },
-      'training_data (trading) marcados como usados'
-    );
+      .where(eq(schema.loraJobs.id, job.id));
+    throw reservationError;
   }
+
+  await db.insert(schema.trainingLineageEvents).values([
+    {
+      tenantId: params.tenantId,
+      namespaceId: params.namespaceId,
+      eventType: 'dataset_version_created',
+      sourceTable: 'training_data',
+      sourceId: datasetSnapshot.datasetHash,
+      producedTable: 'training_dataset_versions',
+      producedId: datasetSnapshot.datasetVersionId,
+      metadata: {
+        datasetCount: datasetSnapshot.manifest.totals.eligible,
+        profileVersion: profile.version,
+        splitPolicy: datasetSnapshot.splitPolicy,
+      },
+    },
+    {
+      tenantId: params.tenantId,
+      namespaceId: params.namespaceId,
+      eventType: 'lora_job_created',
+      sourceTable: 'training_dataset_versions',
+      sourceId: datasetSnapshot.datasetVersionId,
+      producedTable: 'lora_jobs',
+      producedId: job.id,
+      metadata: {
+        datasetVersionId: datasetSnapshot.datasetVersionId,
+        datasetManifestHash: datasetSnapshot.manifest.hashes.manifest,
+      },
+    },
+  ]);
 
   logger.info(
     {
       jobId: job.id,
       name: params.name,
-      datasetCount: dataset.stats.training,
-      validationCount: dataset.stats.validation,
+      datasetCount: datasetSnapshot.manifest.totals.train,
+      validationCount: datasetSnapshot.manifest.totals.validation,
+      holdoutCount: datasetSnapshot.manifest.totals.holdout,
+      splitPolicy: datasetSnapshot.splitPolicy,
     },
     'Job de treinamento LoRA criado'
   );
@@ -706,26 +498,52 @@ export async function createScheduledRunLoraJob(
   const defaultHyperparameters = toTradingHyperparamsFromEnterprise(trainingConfig.defaultHyperparams);
 
   const includeImages = options?.includeImages ?? false;
-  const prepared = await prepareDatasetFromChatAndTrading(
-    tenantId,
-    options?.namespaceId ?? undefined,
-    {
-      includeImages,
-      countOnly: true,
-    }
-  );
+  const includeTrading = !!options?.namespaceId;
+  const snapshot = await persistCanonicalDatasetSnapshot({
+    scope: {
+      tenantId,
+      namespaceId: options?.namespaceId ?? null,
+      agentId: null,
+      domain: null,
+    },
+    options: {
+      includeTradingDataset: includeTrading,
+      datasetMaxRows: trainingConfig.datasetMaxRows,
+      trainEvalSplitRatio: trainingConfig.trainEvalSplitRatio,
+      minDatasetSize: trainingConfig.minScheduledIncremental,
+      seed: `${tenantId}:${options?.namespaceId ?? 'tenant-wide'}:${Date.now().toString(36)}`,
+      splitPolicy: includeTrading ? 'mixed_hybrid' : 'chat_deterministic_hash',
+      profileId: null,
+      profileVersion: 1,
+    },
+  });
+
+  let imagesUsed = 0;
+  if (includeImages) {
+    const [row] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(schema.generatedImages)
+      .where(
+        and(
+          eq(schema.generatedImages.tenantId, tenantId),
+          eq(schema.generatedImages.approvedForTraining, true),
+          eq(schema.generatedImages.usedInFineTuning, false)
+        )
+      );
+    imagesUsed = row?.count ?? 0;
+  }
 
   const name = options?.namespaceId
     ? `alice-qlora-ns-${options.namespaceId.slice(0, 8)}-v${Date.now().toString(36)}`
     : `alice-qlora-v${Date.now().toString(36)}`;
 
-  const includeTrading = !!options?.namespaceId;
   const jobData: InsertLoraJob = {
     tenantId,
     scopeType: 'namespace',
     scopeNamespaceId: options?.namespaceId ?? null,
     scopeAgentId: null,
     profileVersion: 1,
+    datasetVersionId: snapshot.datasetVersionId,
     source: 'scheduled_run',
     name,
     baseModel: DEFAULT_BASE_MODEL,
@@ -733,18 +551,81 @@ export async function createScheduledRunLoraJob(
     status: 'queued',
     progress: 0,
     currentStep: 0,
-    datasetCount: prepared.stats.training,
-    validationCount: prepared.stats.validation,
+    datasetCount: snapshot.manifest.totals.train,
+    validationCount: snapshot.manifest.totals.validation,
     includeTradingDataset: includeTrading,
     includeImages,
-    metrics: { imagesUsed: prepared.stats.imagesUsed ?? 0 },
+    metrics: {
+      imagesUsed,
+      holdoutCount: snapshot.manifest.totals.holdout,
+      splitPolicy: snapshot.splitPolicy,
+      datasetManifestHash: snapshot.manifest.hashes.manifest,
+    },
   };
 
   const [job] = await db.insert(schema.loraJobs).values(jobData).returning();
   if (!job) throw new Error('Falha ao criar job LoRA para run agendado');
 
+  const allDatasetIds = [
+    ...snapshot.trainRows.map((row) => row.id),
+    ...snapshot.validationRows.map((row) => row.id),
+    ...snapshot.holdoutRows.map((row) => row.id),
+  ];
+  try {
+    await reserveDatasetRowsForJob({
+      jobId: job.id,
+      rowIds: allDatasetIds,
+    });
+  } catch (reservationError) {
+    await db.update(schema.loraJobs)
+      .set({
+        status: 'failed',
+        errorMessage: reservationError instanceof Error ? reservationError.message : String(reservationError),
+        completedAt: new Date(),
+      })
+      .where(eq(schema.loraJobs.id, job.id));
+    throw reservationError;
+  }
+
+  await db.insert(schema.trainingLineageEvents).values([
+    {
+      tenantId,
+      namespaceId: options?.namespaceId ?? null,
+      eventType: 'dataset_version_created',
+      sourceTable: 'training_data',
+      sourceId: snapshot.datasetHash,
+      producedTable: 'training_dataset_versions',
+      producedId: snapshot.datasetVersionId,
+      metadata: {
+        datasetCount: snapshot.manifest.totals.eligible,
+        splitPolicy: snapshot.splitPolicy,
+      },
+    },
+    {
+      tenantId,
+      namespaceId: options?.namespaceId ?? null,
+      eventType: 'lora_job_created',
+      sourceTable: 'training_dataset_versions',
+      sourceId: snapshot.datasetVersionId,
+      producedTable: 'lora_jobs',
+      producedId: job.id,
+      metadata: {
+        datasetVersionId: snapshot.datasetVersionId,
+        datasetManifestHash: snapshot.manifest.hashes.manifest,
+      },
+    },
+  ]);
+
   logger.info(
-    { jobId: job.id, tenantId, namespaceId: options?.namespaceId, datasetCount: prepared.stats.training },
+    {
+      jobId: job.id,
+      tenantId,
+      namespaceId: options?.namespaceId,
+      datasetCount: snapshot.manifest.totals.train,
+      validationCount: snapshot.manifest.totals.validation,
+      holdoutCount: snapshot.manifest.totals.holdout,
+      splitPolicy: snapshot.splitPolicy,
+    },
     'Job LoRA scheduled_run criado'
   );
 
@@ -877,6 +758,7 @@ export async function cancelJob(jobId: string): Promise<LoraJob | null> {
     .where(eq(schema.loraJobs.id, jobId))
     .returning();
 
+  await releaseDatasetRowsForJob({ jobId });
   logger.info({ jobId }, 'Job cancelado');
 
   return updated ?? null;
@@ -944,10 +826,13 @@ export interface PreparedDatasetManifest {
   total: number;
   training: number;
   validation: number;
+  holdout: number;
   trainingRowIds: string[];
   validationRowIds: string[];
-  trainingDataIds: string[];
+  holdoutRowIds: string[];
   datasetIds: string[];
+  splitPolicy: DatasetSplitPolicy;
+  manifestHash: string;
   imagesUsed: number;
 }
 
@@ -963,6 +848,33 @@ function mergeLoraHyperparameters(
   };
 }
 
+async function loadDatasetManifestForJob(job: LoraJob): Promise<TrainingDatasetManifest> {
+  if (!job.datasetVersionId) {
+    throw new Error(`Job ${job.id} sem datasetVersionId imutavel`);
+  }
+  const db = getDatabase();
+  const datasetVersion = await db.query.trainingDatasetVersions.findFirst({
+    where: eq(schema.trainingDatasetVersions.id, job.datasetVersionId),
+    columns: {
+      id: true,
+      manifest: true,
+      hash: true,
+    },
+  });
+  if (!datasetVersion) {
+    throw new Error(`Dataset version nao encontrado para job ${job.id}: ${job.datasetVersionId}`);
+  }
+  const parseResult = TrainingDatasetManifestSchema.safeParse(datasetVersion.manifest);
+  if (!parseResult.success) {
+    throw new Error(`Manifest de dataset invalido para job ${job.id}: ${parseResult.error.message}`);
+  }
+  const manifest = parseResult.data;
+  if (manifest.hashes.manifest !== datasetVersion.hash) {
+    throw new Error(`Manifest hash diverge do hash persistido para datasetVersion ${datasetVersion.id}`);
+  }
+  return manifest;
+}
+
 export async function processLoraJob(jobId: string, options?: ProcessLoraJobOptions): Promise<void> {
   const db = getDatabase();
   const job = await getJob(jobId);
@@ -973,10 +885,6 @@ export async function processLoraJob(jobId: string, options?: ProcessLoraJobOpti
 
   const sliceSteps = options?.sliceSteps ?? trainingConfig.sliceSteps;
   const gpuTimeoutMs = options?.gpuTimeoutMs ?? trainingConfig.gpuTimeoutMs;
-  const datasetMaxRows = options?.datasetMaxRows ?? trainingConfig.datasetMaxRows;
-  const trainEvalSplitRatio = options?.trainEvalSplitRatio ?? trainingConfig.trainEvalSplitRatio;
-  const minDatasetSize = options?.minDatasetSize ?? trainingConfig.minScheduledIncremental;
-  const seed = options?.seed ?? jobId;
   const gpuPriority = resolveGpuPriority(options?.gpuPriority);
 
   const resolvedHyperparameters = mergeLoraHyperparameters(
@@ -1005,26 +913,32 @@ export async function processLoraJob(jobId: string, options?: ProcessLoraJobOpti
   if (!tenantId) {
     throw new Error('Job LoRA sem tenantId');
   }
-  const namespaceId = job.scopeNamespaceId;
-  const includeImages = options?.includeImages ?? job.includeImages ?? false;
-  const includeTradingDataset = options?.includeTradingDataset
-    ?? job.includeTradingDataset
-    ?? (job.source === 'scheduled_run' ? Boolean(namespaceId) : false);
-
-  const prepared = await prepareDatasetFromChatAndTrading(
-    tenantId,
-    namespaceId ?? undefined,
-    {
-      includeImages,
-      includeTradingDataset,
-      agentId: options?.agentId ?? job.scopeAgentId ?? undefined,
-      domain: options?.domain ?? undefined,
-      datasetMaxRows,
-      trainEvalSplitRatio,
-      minDatasetSize,
-      seed,
-    }
-  );
+  const manifest = await loadDatasetManifestForJob(job);
+  const imagesUsed = typeof (job.metrics as TradingLoraMetrics | null)?.imagesUsed === 'number'
+    ? (job.metrics as TradingLoraMetrics).imagesUsed
+    : 0;
+  const prepared: PreparedDataset = {
+    trainingData: manifest.rows.train.map((row) => row.text),
+    validationData: manifest.rows.validation.map((row) => row.text),
+    holdoutData: manifest.rows.holdout.map((row) => row.text),
+    trainingRowIds: manifest.rows.train.map((row) => row.id),
+    validationRowIds: manifest.rows.validation.map((row) => row.id),
+    holdoutRowIds: manifest.rows.holdout.map((row) => row.id),
+    datasetIds: [
+      ...manifest.rows.train.map((row) => row.id),
+      ...manifest.rows.validation.map((row) => row.id),
+      ...manifest.rows.holdout.map((row) => row.id),
+    ],
+    splitPolicy: manifest.splitPolicy,
+    stats: {
+      total: manifest.totals.eligible,
+      training: manifest.totals.train,
+      validation: manifest.totals.validation,
+      holdout: manifest.totals.holdout,
+      byActionType: manifest.sourceCounts,
+      imagesUsed,
+    },
+  };
 
   const jobDir = path.join(TRAINING_STORAGE_DIR, 'trading-lora', tenantId, jobId);
   await ensureDir(jobDir);
@@ -1034,16 +948,20 @@ export async function processLoraJob(jobId: string, options?: ProcessLoraJobOpti
   const outputDir = path.join(jobDir, 'output');
   await ensureDir(outputDir);
 
+  const evalData = prepared.holdoutData.length > 0 ? prepared.holdoutData : prepared.validationData;
   await writeJsonlFile(trainPath, prepared.trainingData);
-  await writeJsonlFile(evalPath, prepared.validationData);
+  await writeJsonlFile(evalPath, evalData);
   await options?.onDatasetPrepared?.({
     total: prepared.stats.total,
     training: prepared.stats.training,
     validation: prepared.stats.validation,
+    holdout: prepared.stats.holdout,
     trainingRowIds: prepared.trainingRowIds,
     validationRowIds: prepared.validationRowIds,
-    trainingDataIds: prepared.trainingDataIds ?? [],
+    holdoutRowIds: prepared.holdoutRowIds,
     datasetIds: prepared.datasetIds,
+    splitPolicy: prepared.splitPolicy,
+    manifestHash: manifest.hashes.manifest,
     imagesUsed: prepared.stats.imagesUsed ?? 0,
   });
 
@@ -1051,6 +969,9 @@ export async function processLoraJob(jobId: string, options?: ProcessLoraJobOpti
   const mergedMetrics: TradingLoraMetrics = {
     ...(job.metrics as TradingLoraMetrics),
     imagesUsed: prepared.stats.imagesUsed ?? (job.metrics as TradingLoraMetrics)?.imagesUsed,
+    holdoutCount: prepared.stats.holdout,
+    splitPolicy: prepared.splitPolicy,
+    datasetManifestHash: manifest.hashes.manifest,
   };
   await updateJobProgress(jobId, {
     status: 'training',
@@ -1150,20 +1071,8 @@ export async function processLoraJob(jobId: string, options?: ProcessLoraJobOpti
 
   await setJobResult(jobId, { adapterPath, adapterSize, metrics: (final?.metrics as TradingLoraMetrics) || {} });
 
-  if (prepared.trainingDataIds?.length) {
-    await db
-      .update(schema.trainingData)
-      .set({ usedInJobId: jobId, processadoEm: new Date() })
-      .where(inArray(schema.trainingData.id, prepared.trainingDataIds));
-    logger.info({ jobId, count: prepared.trainingDataIds.length }, 'training_data marcados como usados');
-  }
-  if (prepared.datasetIds?.length) {
-    await db
-      .update(schema.trainingData)
-      .set({ status: 'used', usedInJobId: jobId })
-      .where(inArray(schema.trainingData.id, prepared.datasetIds));
-    logger.info({ jobId, count: prepared.datasetIds.length }, 'training_data (trading) marcados como usados');
-  }
+  await markDatasetRowsUsedForJob({ jobId, rowIds: prepared.datasetIds });
+  logger.info({ jobId, count: prepared.datasetIds.length }, 'training_data reservados marcados como usados');
 
   if (job.source === 'scheduled_run') {
     try {
@@ -1236,6 +1145,7 @@ export async function setJobError(
     .where(eq(schema.loraJobs.id, jobId))
     .returning();
 
+  await releaseDatasetRowsForJob({ jobId });
   if (updated) {
     logger.error({ jobId, error: error.message }, 'Job falhou');
   }
@@ -1438,13 +1348,14 @@ export async function activateLoraAdapter(
   try {
     await db.transaction(async (tx) => {
       await tx.update(schema.loraJobs)
-        .set({ isActiveAdapter: false, isActiveByScope: false })
+        .set({ isActiveAdapter: false, isActiveByScope: false, activeAdapterPath: null })
         .where(and(...sameScopeConditions));
 
       await tx.update(schema.loraJobs)
         .set({
           isActiveAdapter: true,
           isActiveByScope: true,
+          activeAdapterPath: targetDir,
           approvedAt: new Date(),
           approvedBy: approvedBy ?? null,
         })
@@ -1512,11 +1423,12 @@ export async function getActiveAdapter(scope?: {
     .orderBy(desc(schema.loraJobs.criadoEm))
     .limit(1);
 
-  if (active?.resultAdapterPath) {
+  const canonicalAdapterPath = active?.activeAdapterPath ?? active?.resultAdapterPath ?? null;
+  if (active && canonicalAdapterPath) {
     return {
       jobId: active.id,
       adapterName: getScopedAdapterName(active),
-      adapterPath: active.resultAdapterPath,
+      adapterPath: canonicalAdapterPath,
       activatedAt: active.approvedAt,
       jobName: active.name,
       metrics: (active.metrics as TradingLoraMetrics) ?? {},
@@ -1565,7 +1477,7 @@ export async function deactivateLoraAdapter(scope?: {
   }
 
   await db.update(schema.loraJobs)
-    .set({ isActiveAdapter: false, isActiveByScope: false })
+    .set({ isActiveAdapter: false, isActiveByScope: false, activeAdapterPath: null })
     .where(eq(schema.loraJobs.id, active.id));
 
   // Remover adapter do diretório ativo (vLLM para de usar)

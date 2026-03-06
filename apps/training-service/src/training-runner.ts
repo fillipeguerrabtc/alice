@@ -368,7 +368,6 @@ function buildFrozenRunnerConfig(params: {
 async function promoteFineTuningJobAsActive(params: {
   db: Database;
   fineTuningJob: typeof schema.fineTuningJobs.$inferSelect;
-  resultAdapterPath: string;
   metrics: Record<string, unknown>;
 }): Promise<void> {
   const loraJobId = params.fineTuningJob.loraJobId;
@@ -404,107 +403,134 @@ async function promoteFineTuningJobAsActive(params: {
   }
 
   try {
-    const activationResult = await activateLoraAdapter(loraJobId, null);
-    const modelVersionScopeCondition = buildModelVersionScopeCondition(scopedModelRegistry);
-    const fineTuningScopeCondition = buildFineTuningScopeCondition(scopedModelRegistry);
+    await params.db.update(schema.fineTuningJobs)
+      .set({ promotionStatus: 'activating' })
+      .where(eq(schema.fineTuningJobs.id, params.fineTuningJob.id));
 
-    const [modelVersion] = await params.db.transaction(async (tx) => {
-      const latestScopedVersion = await tx.query.modelVersions.findFirst({
-        where: and(
-          eq(schema.modelVersions.tenantId, params.fineTuningJob.tenantId as string),
-          modelVersionScopeCondition
-        ),
-        orderBy: [desc(schema.modelVersions.version)],
-        columns: { version: true },
-      });
+    try {
+      const activationResult = await activateLoraAdapter(loraJobId, null);
+      const modelVersionScopeCondition = buildModelVersionScopeCondition(scopedModelRegistry);
+      const fineTuningScopeCondition = buildFineTuningScopeCondition(scopedModelRegistry);
 
-      await tx.update(schema.modelVersions)
-        .set({
-          isActive: false,
-          status: 'deprecated',
-          deprecadoEm: new Date(),
-        })
-        .where(and(
-          eq(schema.modelVersions.tenantId, params.fineTuningJob.tenantId as string),
-          modelVersionScopeCondition,
-          eq(schema.modelVersions.isActive, true)
-        ));
+      const [modelVersion] = await params.db.transaction(async (tx) => {
+        const latestScopedVersion = await tx.query.modelVersions.findFirst({
+          where: and(
+            eq(schema.modelVersions.tenantId, params.fineTuningJob.tenantId as string),
+            modelVersionScopeCondition
+          ),
+          orderBy: [desc(schema.modelVersions.version)],
+          columns: { version: true },
+        });
+        const activeScopedVersion = await tx.query.modelVersions.findFirst({
+          where: and(
+            eq(schema.modelVersions.tenantId, params.fineTuningJob.tenantId as string),
+            modelVersionScopeCondition,
+            eq(schema.modelVersions.isActive, true)
+          ),
+          orderBy: [desc(schema.modelVersions.version)],
+          columns: { id: true, metrics: true },
+        });
 
-      await tx.update(schema.fineTuningJobs)
-        .set({ promotionStatus: 'staged' })
-        .where(and(
-          eq(schema.fineTuningJobs.tenantId, params.fineTuningJob.tenantId as string),
-          fineTuningScopeCondition,
-          eq(schema.fineTuningJobs.promotionStatus, 'active')
-        ));
+        await tx.update(schema.modelVersions)
+          .set({
+            isActive: false,
+            status: 'deprecated',
+            deprecadoEm: new Date(),
+          })
+          .where(and(
+            eq(schema.modelVersions.tenantId, params.fineTuningJob.tenantId as string),
+            modelVersionScopeCondition,
+            eq(schema.modelVersions.isActive, true)
+          ));
 
-      const nextVersion = (latestScopedVersion?.version ?? 0) + 1;
-      const datasetMetrics = typeof params.metrics.dataset === 'object' && params.metrics.dataset !== null
-        ? (params.metrics.dataset as Record<string, unknown>)
-        : {};
-      const imagesUsedRaw = datasetMetrics.imagesUsed;
-      const imageDataCount = typeof imagesUsedRaw === 'number' && Number.isFinite(imagesUsedRaw)
-        ? imagesUsedRaw
-        : 0;
+        await tx.update(schema.fineTuningJobs)
+          .set({ promotionStatus: 'archived' })
+          .where(and(
+            eq(schema.fineTuningJobs.tenantId, params.fineTuningJob.tenantId as string),
+            fineTuningScopeCondition,
+            eq(schema.fineTuningJobs.promotionStatus, 'active')
+          ));
 
-      const [createdVersion] = await tx.insert(schema.modelVersions).values({
-        tenantId: params.fineTuningJob.tenantId,
-        namespaceId: scopedModelRegistry.namespaceId,
-        agentId: scopedModelRegistry.agentId,
-        name: `${params.fineTuningJob.name}-v${nextVersion}`,
-        version: nextVersion,
-        baseModel: params.fineTuningJob.baseModel,
-        loraPath: activationResult.adapterPath ?? params.resultAdapterPath,
-        status: 'active',
-        fineTuningJobId: params.fineTuningJob.id,
-        trainingDataCount: params.fineTuningJob.trainingDataCount ?? 0,
-        imageDataCount,
-        metrics: params.metrics,
-        baselineMetrics: {},
-        isActive: true,
-        ativadoEm: new Date(),
-      }).returning();
+        const nextVersion = (latestScopedVersion?.version ?? 0) + 1;
+        const datasetMetrics = typeof params.metrics.dataset === 'object' && params.metrics.dataset !== null
+          ? (params.metrics.dataset as Record<string, unknown>)
+          : {};
+        const imagesUsedRaw = datasetMetrics.imagesUsed;
+        const imageDataCount = typeof imagesUsedRaw === 'number' && Number.isFinite(imagesUsedRaw)
+          ? imagesUsedRaw
+          : 0;
+        const baselineMetrics = isRecord(activeScopedVersion?.metrics)
+          ? activeScopedVersion.metrics
+          : {};
 
-      await tx.update(schema.fineTuningJobs)
-        .set({
-          modelVersionId: createdVersion.id,
-          promotionStatus: 'active',
-        })
-        .where(eq(schema.fineTuningJobs.id, params.fineTuningJob.id));
+        const [createdVersion] = await tx.insert(schema.modelVersions).values({
+          tenantId: params.fineTuningJob.tenantId,
+          namespaceId: scopedModelRegistry.namespaceId,
+          agentId: scopedModelRegistry.agentId,
+          name: `${params.fineTuningJob.name}-v${nextVersion}`,
+          version: nextVersion,
+          baseModel: params.fineTuningJob.baseModel,
+          loraPath: activationResult.adapterPath,
+          status: 'active',
+          fineTuningJobId: params.fineTuningJob.id,
+          trainingDataCount: params.fineTuningJob.trainingDataCount ?? 0,
+          imageDataCount,
+          metrics: params.metrics,
+          baselineMetrics,
+          isActive: true,
+          ativadoEm: new Date(),
+        }).returning();
 
-      await tx.insert(schema.auditLogs).values({
-        tenantId: params.fineTuningJob.tenantId,
-        userId: null,
-        acao: 'training_model_promoted',
-        recurso: 'fine_tuning_job',
-        recursoId: params.fineTuningJob.id,
-        detalhes: {
-          after: {
+        await tx.update(schema.fineTuningJobs)
+          .set({
             modelVersionId: createdVersion.id,
             promotionStatus: 'active',
+          })
+          .where(eq(schema.fineTuningJobs.id, params.fineTuningJob.id));
+
+        await tx.insert(schema.auditLogs).values({
+          tenantId: params.fineTuningJob.tenantId,
+          userId: null,
+          acao: 'training_model_promoted',
+          recurso: 'fine_tuning_job',
+          recursoId: params.fineTuningJob.id,
+          detalhes: {
+            after: {
+              modelVersionId: createdVersion.id,
+              promotionStatus: 'active',
+            },
+            metadata: {
+              operation: 'promote',
+              trigger: 'auto_scheduled',
+              scope: scopedModelRegistry,
+              loraJobId,
+              previousActiveModelVersionId: activeScopedVersion?.id ?? null,
+            },
           },
-          metadata: {
-            operation: 'promote',
-            trigger: 'auto_scheduled',
-            scope: scopedModelRegistry,
-            loraJobId,
-          },
-        },
-        ip: null,
-        userAgent: null,
+          ip: null,
+          userAgent: null,
+        });
+
+        return [createdVersion];
       });
 
-      return [createdVersion];
-    });
-
-    runnerLogger.info(
-      {
-        fineTuningJobId: params.fineTuningJob.id,
-        loraJobId,
-        modelVersionId: modelVersion.id,
-      },
-      'Promocao automatica de modelo concluida'
-    );
+      runnerLogger.info(
+        {
+          fineTuningJobId: params.fineTuningJob.id,
+          loraJobId,
+          modelVersionId: modelVersion.id,
+        },
+        'Promocao automatica de modelo concluida'
+      );
+    } catch (promotionError) {
+      await params.db.update(schema.fineTuningJobs)
+        .set({
+          promotionStatus: 'failed_activation',
+          errorMessage: promotionError instanceof Error ? promotionError.message : String(promotionError),
+        })
+        .where(eq(schema.fineTuningJobs.id, params.fineTuningJob.id));
+      throw promotionError;
+    }
   } finally {
     await releaseTrainingOperationLock({
       redis,
@@ -621,13 +647,16 @@ export async function runTrainingFineTuningJob(params: {
           datasetManifest: {
             generatedAt: nowIso,
             seed: runnerConfig.seed,
+            splitPolicy: manifest.splitPolicy,
+            manifestHash: manifest.manifestHash,
             trainingRowIds: manifest.trainingRowIds,
             validationRowIds: manifest.validationRowIds,
-            trainingDataIds: manifest.trainingDataIds,
-            tradingDatasetIds: manifest.datasetIds,
+            holdoutRowIds: manifest.holdoutRowIds,
+            datasetRowIds: manifest.datasetIds,
             total: manifest.total,
             training: manifest.training,
             validation: manifest.validation,
+            holdout: manifest.holdout,
           },
         };
         fineTuningMetrics = {
@@ -636,6 +665,9 @@ export async function runTrainingFineTuningJob(params: {
             total: manifest.total,
             training: manifest.training,
             validation: manifest.validation,
+            holdout: manifest.holdout,
+            splitPolicy: manifest.splitPolicy,
+            datasetManifestHash: manifest.manifestHash,
             imagesUsed: manifest.imagesUsed,
           },
         };
@@ -696,10 +728,34 @@ export async function runTrainingFineTuningJob(params: {
       completedAt: new Date().toISOString(),
     };
     const loraMetrics = isRecord(finalLoraJob.metrics) ? finalLoraJob.metrics : {};
-    const evaluationStatus = resolveEvaluationStatus(
-      loraMetrics,
-      runnerConfig.evalMaxLoss
-    );
+    const datasetMetrics = isRecord(fineTuningMetrics.dataset)
+      ? fineTuningMetrics.dataset
+      : {};
+    const holdoutCount = typeof datasetMetrics.holdout === 'number'
+      ? datasetMetrics.holdout
+      : 0;
+    const datasetManifestHash = typeof datasetMetrics.datasetManifestHash === 'string'
+      ? datasetMetrics.datasetManifestHash
+      : null;
+    const hasStableEvalArtifact = holdoutCount > 0 && Boolean(datasetManifestHash);
+    const evaluationStatus = hasStableEvalArtifact
+      ? resolveEvaluationStatus(
+          loraMetrics,
+          runnerConfig.evalMaxLoss
+        )
+      : 'failed';
+    if (!hasStableEvalArtifact) {
+      fineTuningMetrics = {
+        ...fineTuningMetrics,
+        evaluation: {
+          status: 'failed',
+          reason: 'missing_holdout_or_dataset_manifest',
+          holdoutCount,
+          datasetManifestHash,
+          at: new Date().toISOString(),
+        },
+      };
+    }
     const autoPromotionEnabled = fineTuningJob.runSource === 'scheduled'
       && runnerConfig.autoPromoteScheduled;
     const promotionStatus = resolveFineTuningPromotionStatus({
@@ -726,7 +782,6 @@ export async function runTrainingFineTuningJob(params: {
         await promoteFineTuningJobAsActive({
           db: params.db,
           fineTuningJob,
-          resultAdapterPath: finalLoraJob.resultAdapterPath,
           metrics: fineTuningMetrics,
         });
       } catch (promotionError) {
@@ -745,7 +800,7 @@ export async function runTrainingFineTuningJob(params: {
         await params.db.update(schema.fineTuningJobs)
           .set({
             metrics: fineTuningMetrics,
-            promotionStatus: 'rejected',
+            promotionStatus: 'failed_activation',
           })
           .where(eq(schema.fineTuningJobs.id, fineTuningJob.id));
 
