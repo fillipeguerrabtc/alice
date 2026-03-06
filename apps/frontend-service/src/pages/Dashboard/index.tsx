@@ -49,7 +49,7 @@ import {
   Cell,
 } from 'recharts';
 import { useAuth } from '@/hooks/use-auth';
-import { formatCurrency, formatNumber } from '@/lib/utils';
+import { formatCurrency, formatDateTime, formatNumber } from '@/lib/utils';
 
 import {
   DashboardStats,
@@ -90,6 +90,71 @@ type ImageStatsApi = {
   inTraining?: number;
   avgRating?: number;
 };
+
+type RecentActivityApi = {
+  id?: string | number;
+  action?: unknown;
+  time?: unknown;
+  timestamp?: unknown;
+  user?: unknown;
+  type?: unknown;
+};
+
+const RECENT_ACTIVITY_TYPES: ReadonlySet<NonNullable<RecentActivity['type']>> = new Set([
+  'chat',
+  'document',
+  'training',
+  'payment',
+  'system',
+]);
+
+function toDisplayString(value: unknown): string | null {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
+  }
+
+  return null;
+}
+
+function normalizeRecentActivity(activity: RecentActivityApi, locale: string, index: number): RecentActivity {
+  const id = toDisplayString(activity.id) ?? `activity-${index}`;
+  const action = toDisplayString(activity.action) ?? 'Ação registrada';
+
+  let time = toDisplayString(activity.time);
+  if (!time && (typeof activity.timestamp === 'string' || typeof activity.timestamp === 'number' || activity.timestamp instanceof Date)) {
+    const parsedDate = new Date(activity.timestamp);
+    if (!Number.isNaN(parsedDate.getTime())) {
+      time = formatDateTime(parsedDate, { locale });
+    }
+  }
+
+  let user = toDisplayString(activity.user);
+  if (!user && activity.user && typeof activity.user === 'object') {
+    const structuredUser = activity.user as { id?: unknown; name?: unknown; email?: unknown };
+    user =
+      toDisplayString(structuredUser.name) ??
+      toDisplayString(structuredUser.email) ??
+      toDisplayString(structuredUser.id);
+  }
+
+  const type =
+    typeof activity.type === 'string' && RECENT_ACTIVITY_TYPES.has(activity.type as NonNullable<RecentActivity['type']>)
+      ? (activity.type as NonNullable<RecentActivity['type']>)
+      : 'system';
+
+  return {
+    id,
+    action,
+    time: time ?? '-',
+    user: user ?? 'Sistema',
+    type,
+  };
+}
 
 function normalizeImageStats(stats?: ImageStatsApi | null): ImageGenerationStats {
   if (!stats) {
@@ -132,7 +197,7 @@ export default function Dashboard() {
     staleTime: 1000 * 60 * 5,
   });
 
-  const { data: recentActivity, isLoading: activityLoading } = useQuery<RecentActivity[]>({
+  const { data: recentActivity, isLoading: activityLoading } = useQuery<RecentActivityApi[]>({
     queryKey: ['/api/audit/recent'],
     staleTime: 1000 * 60,
   });
@@ -238,7 +303,9 @@ export default function Dashboard() {
   };
 
   const displayUsage: UsageData[] = usageData || [];
-  const displayActivity: RecentActivity[] = recentActivity || [];
+  const displayActivity: RecentActivity[] = (recentActivity ?? []).map((activity, index) =>
+    normalizeRecentActivity(activity, locale, index)
+  );
   const displayServices = (healthData?.services ?? []).map((service) => ({
     service: service.name,
     status: service.status === 'healthy' ? 'ok' : service.status === 'unknown' ? 'degraded' : 'down',
