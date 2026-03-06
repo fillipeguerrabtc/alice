@@ -122,6 +122,17 @@ interface FallbackEvent {
   createdAt: string;
 }
 
+interface HybridReviewQueueItem {
+  id: string;
+  route: string;
+  context: string;
+  reason: string;
+  preview: string;
+  namespaceId: string | null;
+  agentId: string | null;
+  createdAt: string;
+}
+
 interface FallbackCluster {
   clusterId: string;
   eventIds: string[];
@@ -229,6 +240,7 @@ export default function Namespaces() {
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
   const [profileJsonDraft, setProfileJsonDraft] = useState<string>("");
   const [clusterNamespaceSelections, setClusterNamespaceSelections] = useState<Record<string, string>>({});
+  const [reviewQueueNamespaceSelections, setReviewQueueNamespaceSelections] = useState<Record<string, string>>({});
   const [hybridPolicyDraft, setHybridPolicyDraft] = useState<string>("");
 
   const form = useForm<NamespaceFormData>({
@@ -275,6 +287,20 @@ export default function Namespaces() {
       });
       if (!response.ok) {
         throw new Error('Falha ao carregar fallback events');
+      }
+      return response.json();
+    },
+  });
+
+  const { data: hybridReviewQueueData } = useQuery<{ items: HybridReviewQueueItem[] }>({
+    queryKey: ["/api/llm/hybrid-review-queue", { page: 1, limit: 20, lookbackDays: 14 }],
+    enabled: !!user,
+    queryFn: async () => {
+      const response = await fetch('/api/llm/hybrid-review-queue?page=1&limit=20&lookbackDays=14', {
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        throw new Error('Falha ao carregar fila de revisão híbrida');
       }
       return response.json();
     },
@@ -377,6 +403,7 @@ export default function Namespaces() {
       toast({ title: t('namespaces.alerts.tagSuccess', { count: data?.updated ?? 0 }) });
       queryClient.invalidateQueries({ queryKey: ['/api/llm/fallback-stats'] });
       queryClient.invalidateQueries({ queryKey: ['/api/llm/fallback-events'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/llm/hybrid-review-queue'] });
       queryClient.invalidateQueries({ queryKey: ['/api/llm/fallback-clusters'] });
       queryClient.invalidateQueries({ queryKey: ['/api/namespaces/unmapped-contexts'] });
     },
@@ -395,6 +422,7 @@ export default function Namespaces() {
       queryClient.invalidateQueries({ queryKey: ['/api/namespaces'] });
       queryClient.invalidateQueries({ queryKey: ['/api/llm/fallback-stats'] });
       queryClient.invalidateQueries({ queryKey: ['/api/llm/fallback-events'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/llm/hybrid-review-queue'] });
       queryClient.invalidateQueries({ queryKey: ['/api/llm/fallback-clusters'] });
       queryClient.invalidateQueries({ queryKey: ['/api/namespaces/unmapped-contexts'] });
     },
@@ -766,6 +794,7 @@ export default function Namespaces() {
       {/* Seção de avisos e sugestões (fallbacks e contextos não mapeados) */}
       {(fallbackStats?.last7d ? fallbackStats.last7d > 0 : false) ||
       (unmappedData?.items?.length ? unmappedData.items.length > 0 : false) ||
+      (hybridReviewQueueData?.items?.length ? hybridReviewQueueData.items.length > 0 : false) ||
       Boolean(hybridPolicyData?.policy) ? (
         <div className="space-y-4">
           <Alert>
@@ -861,6 +890,58 @@ export default function Namespaces() {
                       ) : null}
                     </li>
                   ))}
+                </ul>
+              </AlertDescription>
+            </Alert>
+          )}
+          {hybridReviewQueueData?.items && hybridReviewQueueData.items.length > 0 && (
+            <Alert>
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>{t("namespaces.alerts.reviewQueueTitle")}</AlertTitle>
+              <AlertDescription>
+                {t("namespaces.alerts.reviewQueueDesc")}
+                <ul className="mt-2 space-y-2 text-sm">
+                  {hybridReviewQueueData.items.slice(0, 12).map((item) => {
+                    const selectedNamespaceId = reviewQueueNamespaceSelections[item.id] ?? namespaces?.[0]?.id ?? '';
+                    return (
+                      <li key={item.id} className="rounded border p-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <code className="rounded bg-muted px-1">{item.route}</code>
+                          <Badge variant="outline">{item.context}</Badge>
+                          <Badge variant="destructive">{mapFallbackReasonLabel(item.reason)}</Badge>
+                        </div>
+                        {item.preview ? (
+                          <p className="mt-1 text-muted-foreground line-clamp-2">{item.preview}</p>
+                        ) : null}
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <select
+                            value={selectedNamespaceId}
+                            onChange={(event) => {
+                              setReviewQueueNamespaceSelections((prev) => ({
+                                ...prev,
+                                [item.id]: event.target.value,
+                              }));
+                            }}
+                            className="h-9 rounded-md border bg-background px-2 text-sm"
+                          >
+                            {(namespaces ?? []).map((namespace) => (
+                              <option key={namespace.id} value={namespace.id}>{namespace.nome}</option>
+                            ))}
+                          </select>
+                          <Button
+                            size="sm"
+                            disabled={!selectedNamespaceId || tagClusterMutation.isPending}
+                            onClick={() => tagClusterMutation.mutate({
+                              eventIds: [item.id],
+                              namespaceId: selectedNamespaceId,
+                            })}
+                          >
+                            {t("namespaces.alerts.reviewQueueTagAction")}
+                          </Button>
+                        </div>
+                      </li>
+                    );
+                  })}
                 </ul>
               </AlertDescription>
             </Alert>
