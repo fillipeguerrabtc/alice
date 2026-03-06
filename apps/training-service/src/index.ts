@@ -6711,7 +6711,10 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
       return res.status(tenantResolution.status).json({ error: tenantResolution.error });
     }
     const scopedTenantId = tenantResolution.tenantId;
-    const governanceConfig = await loadTrainingGovernanceRuntimeConfig();
+    const [governanceConfig, trainingEnterpriseConfig] = await Promise.all([
+      loadTrainingGovernanceRuntimeConfig(),
+      loadTrainingEnterpriseConfig(),
+    ]);
     const redis = getRedisClient();
     let lockHandle: Awaited<ReturnType<typeof acquireTrainingOperationLock>> = null;
     if (!redis) {
@@ -6845,7 +6848,7 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
     const evaluation = await evaluateDataQuality(
       scheduleType,
       scopedTenantId,
-      undefined,
+      trainingEnterpriseConfig.minOndemandDatasetSize,
       namespaceId,
       false
     );

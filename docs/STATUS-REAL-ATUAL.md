@@ -1,13 +1,14 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 **Autor:** Fillipe Guerra  
-**Data:** 03 de Março de 2026  
+**Data:** 06 de Março de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
 **Versão:** 11.4 - Trading único enterprise (consolidação total)
 
 ---
 
 - **Configurações do Sistema editáveis via UI:** Página Configurações do Sistema (menu lateral) permite alterar limites de treinamento em tempo real. Valores gravados no PostgreSQL (tabela `system_config`) têm precedência sobre variáveis de ambiente. Chaves: DOCUMENT_MAX_CHUNKS, TRAINING_DOC_MAX_SAMPLES, TRAINING_CONVERSATION_MAX_MESSAGES, CONVERSATION_SLICE_SIZE, MIN_ONDEMAND_DATASET_SIZE, maxSeqLen. Cache 60s invalidado no save; alterações aplicadas imediatamente nos serviços (RAG, Chat, Training). API GET/PATCH `/api/training/system-config` com RBAC (`config:system:read` / `config:system:write`). (11/02/2026)
+- **Training on-demand Threshold Fix (06/03/2026):** correção cirúrgica da causa raiz de `400` no endpoint `POST /api/training/run/start`. O fluxo on-demand estava avaliando dataset com limiar de schedule (`MIN_SCHEDULED_DATASET_SIZE_*`, ex.: full=200) em vez do limiar on-demand (`MIN_ONDEMAND_DATASET_SIZE`, ex.: 10/20). Resultado: requests válidos com dataset suficiente para on-demand eram rejeitados como “Dados insuficientes”. Ajuste aplicado no `training-service` para usar `minOndemandDatasetSize` na avaliação do on-demand, mantendo as regras de schedule inalteradas.
 - **Hardening Chat/Trading (23/02/2026):** Autenticação interna HMAC unificada entre serviços, GPU trainer sob demanda via profile `gpu-training`, chat sem login não abre WebSocket e exibe aviso, métricas de erro SSE + auto-runs e latência do LLM Gateway observadas em Prometheus.
 - **Training Embedding/Dedupe (02/03/2026):** correção da causa raiz de falha no import JSONL com worker assíncrono: escrita de embedding em `training_data` agora usa literal vetorial SQL (`toSql`) com cast correto (`halfvec`/`vector`) e resolução dinâmica do tipo da coluna. Migração `0091_training_data_embedding_1024_halfvec.sql` alinha `training_data.embedding` para `halfvec(1024)` e força reprocessamento assíncrono de embeddings antigos/incompatíveis.
 - **Trading Auto Signal Enterprise (03/03/2026):** Auto Engine agora suporta seleção universal de ativos por venue/mercado (multi-seleção + todos os ativos), catálogo dinâmico via `GET /api/trading/auto/assets`, payload normalizado de `autoMix` para análise completa (`scope=all`, todas as modalidades, todos os ativos), e filtro de candidatos por mercado/ativo/intent com métricas de decisão detalhadas. Fluxos `no-trade` deixam de ser classificados como falha operacional.
