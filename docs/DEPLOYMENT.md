@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 06 de Março de 2026  
-**Versão:** 11.18 - Web Crawl allowlist fail-fast no generate-env-prod
+**Versão:** 11.19 - Validação robusta de manifests no prepare (anti falso-erro de rede)
 
 ## Visão geral
 
@@ -353,6 +353,22 @@ docker logs alice-minio-init --tail 50
 ### Docker Hub rate limit
 
 Configure `DOCKERHUB_USERNAME` e `DOCKERHUB_TOKEN` nos secrets do GitHub.
+
+### Validação robusta de manifests no `prepare` (06/03/2026)
+
+Para evitar falso-positivo de "imagem não encontrada" causado por falhas transitórias de rede/TLS no runner self-hosted:
+
+- A validação de imagens públicas (Docker Hub/Quay) agora usa `retry` com `backoff` exponencial.
+- A validação de imagens GHCR também usa `retry` com classificação explícita de erro.
+- Somente erros definitivos de inexistência (`manifest unknown`/`name unknown`) abortam o job.
+- Erros transitórios (ex.: `TLS handshake timeout`, `connection reset`, `Too Many Requests`) viram warning e o deploy segue para o pull real (que já possui `pull_with_retry()` no servidor).
+- Falha de autenticação GHCR continua `fail-fast` (erro real de credencial/permissão).
+- O preflight de conectividade do runner agora valida também `quay.io`, além de `ghcr.io` e `registry-1.docker.io`.
+
+Referências oficiais:
+- Docker Distribution API V2 (códigos `MANIFEST_UNKNOWN` / `NAME_UNKNOWN`): https://distribution.github.io/distribution/spec/api/
+- Docker Hub usage and limits (`429 Too Many Requests`): https://docs.docker.com/docker-hub/usage/storage/
+- Docker CLI `docker manifest inspect`: https://docs.docker.com/reference/cli/docker/manifest/inspect/
 
 ### Smart Pull de Imagens Docker (14/02/2026 — Atualizado)
 

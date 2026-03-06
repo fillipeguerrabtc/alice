@@ -704,6 +704,17 @@ jobs:
             CONN_FAILED=1
           fi
 
+          # quay.io — imagens públicas oficiais MinIO (mc/minio)
+          HTTP_QUAY=$(curl --silent --connect-timeout 10 --max-time 15 \
+            -o /dev/null -w "%{http_code}" https://quay.io/v2/ 2>/dev/null || echo "000")
+          if echo "$HTTP_QUAY" | grep -qE "^(200|401|403)$"; then
+            echo "   ✅ quay.io acessível do runner (HTTP $HTTP_QUAY)"
+          else
+            echo "   ❌ quay.io NÃO acessível do runner (HTTP $HTTP_QUAY)"
+            echo "   Hipóteses: firewall bloqueando outbound 443, DNS falhou, proxy ausente."
+            CONN_FAILED=1
+          fi
+
           if [ "$CONN_FAILED" = "1" ]; then
             echo "════════════════════════════════════════════════════════"
             echo "❌ DEPLOY ABORTADO: runner não consegue alcançar registries Docker."
@@ -1100,22 +1111,88 @@ jobs:
           fi
           echo ""
           
-          # Verificar CADA imagem buildada com output ANTES do comando
+          # Verificar CADA imagem buildada com retry/backoff e classificação explícita de erro
+          # (evita falso-positivo de "imagem não encontrada" em falhas transitórias de rede/TLS)
+          INSPECT_LAST_ERROR=""
+          inspect_ghcr_manifest() {
+            local image="$1"
+            local max_attempts=3
+            local timeout_seconds=30
+            local attempt=1
+            local delay=5
+            local inspect_output=""
+            local inspect_rc=0
+
+            INSPECT_LAST_ERROR=""
+
+            while [ "$attempt" -le "$max_attempts" ]; do
+              inspect_output=$(timeout "$timeout_seconds" docker manifest inspect "$image" 2>&1) && inspect_rc=0 || inspect_rc=$?
+              if [ "$inspect_rc" -eq 0 ]; then
+                return 0
+              fi
+
+              if echo "$inspect_output" | grep -Eiq "unauthorized|authentication required|insufficient_scope|denied|forbidden|401|403|no basic auth credentials|requested access to the resource is denied"; then
+                INSPECT_LAST_ERROR="$inspect_output"
+                return 11
+              fi
+
+              if echo "$inspect_output" | grep -Eiq "manifest unknown|name unknown|repository does not exist|no such manifest|not found"; then
+                INSPECT_LAST_ERROR="$inspect_output"
+                return 10
+              fi
+
+              INSPECT_LAST_ERROR="$inspect_output"
+              if [ "$attempt" -lt "$max_attempts" ]; then
+                echo "   ⚠️ Falha transitória de rede/registry (tentativa ${attempt}/${max_attempts}), retry em ${delay}s..."
+                sleep "$delay"
+                delay=$((delay * 2))
+              fi
+              attempt=$((attempt + 1))
+            done
+
+            return 12
+          }
+
           MISSING=()
+          AUTH_ERRORS=()
+          UNVERIFIED=()
           for img in "${IMAGES[@]}"; do
             FULL_IMAGE="${{ env.IMAGE_PREFIX }}-${img}:${VERSION}"
             echo "🔍 Verificando: $FULL_IMAGE"
             
-            if docker manifest inspect "$FULL_IMAGE" > /dev/null 2>&1; then
+            if inspect_ghcr_manifest "$FULL_IMAGE"; then
               echo "   ✅ OK"
             else
-              echo "   ❌ NÃO ENCONTRADA"
-              MISSING+=("$img")
+              case "$?" in
+                10)
+                  echo "   ❌ NÃO ENCONTRADA (manifest/repository inexistente)"
+                  MISSING+=("$img")
+                  ;;
+                11)
+                  echo "   ❌ ERRO DE AUTENTICAÇÃO GHCR"
+                  AUTH_ERRORS+=("$img")
+                  ;;
+                *)
+                  echo "   ⚠️ Não foi possível confirmar por erro transitório de rede/registry"
+                  UNVERIFIED+=("$img")
+                  ;;
+              esac
+              if [ -n "${INSPECT_LAST_ERROR:-}" ]; then
+                echo "   Detalhe: ${INSPECT_LAST_ERROR:0:220}"
+              fi
             fi
             echo ""
           done
           
           # Relatório final
+          if [ ${#AUTH_ERRORS[@]} -gt 0 ]; then
+            echo "❌ ERRO: ${#AUTH_ERRORS[@]} imagem(ns) GHCR com falha de autenticação:"
+            printf '   - %s\n' "${AUTH_ERRORS[@]}"
+            echo ""
+            echo "Valide GH_PAT e permissões packages:read/write no runner self-hosted."
+            exit 1
+          fi
+
           if [ ${#MISSING[@]} -gt 0 ]; then
             echo "❌ ERRO: ${#MISSING[@]} imagem(ns) faltando no GHCR:"
             printf '   - %s\n' "${MISSING[@]}"
@@ -1123,6 +1200,13 @@ jobs:
             echo "Execute o workflow 'Release & Tag' primeiro para criar as imagens."
             echo "Ou verifique manualmente: https://github.com/${{ github.repository }}/pkgs/container/alice-${MISSING[0]}"
             exit 1
+          fi
+
+          if [ ${#UNVERIFIED[@]} -gt 0 ]; then
+            echo "⚠️  Aviso: ${#UNVERIFIED[@]} imagem(ns) GHCR não puderam ser verificadas por falha transitória de rede/registry:"
+            printf '   - %s\n' "${UNVERIFIED[@]}"
+            echo "   O deploy continuará: o pull no servidor possui retry/backoff enterprise e decidirá sucesso/falha real."
+            echo ""
           fi
           
           echo "✅ ${#IMAGES[@]} imagem(ns) buildada(s) validada(s) com sucesso"
@@ -1217,9 +1301,55 @@ jobs:
           esac
           
           # Validar cada imagem pública - LOCAL FIRST (sem chamadas ao registry se existir localmente)
-          # Timeout de 15s apenas para imagens realmente ausentes localmente.
-          MISSING=""
-          TIMEOUT_IMGS=""
+          # Retry/backoff + classificação explícita para evitar falso "not found" em erro de rede/TLS.
+          INSPECT_LAST_ERROR=""
+          inspect_public_manifest() {
+            local image="$1"
+            local max_attempts=3
+            local timeout_seconds=25
+            local attempt=1
+            local delay=5
+            local inspect_output=""
+            local inspect_rc=0
+
+            INSPECT_LAST_ERROR=""
+
+            while [ "$attempt" -le "$max_attempts" ]; do
+              inspect_output=$(timeout "$timeout_seconds" docker manifest inspect "$image" 2>&1) && inspect_rc=0 || inspect_rc=$?
+              if [ "$inspect_rc" -eq 0 ]; then
+                return 0
+              fi
+
+              if echo "$inspect_output" | grep -Eiq "manifest unknown|name unknown|repository does not exist|no such manifest|not found"; then
+                INSPECT_LAST_ERROR="$inspect_output"
+                return 10
+              fi
+
+              # Falhas transitórias comuns em registries: timeout, reset, 429, indisponibilidade temporária.
+              if [ "$inspect_rc" -eq 124 ] || echo "$inspect_output" | grep -Eiq "TLS handshake timeout|context deadline exceeded|i/o timeout|connection reset by peer|temporary failure in name resolution|EOF|Service Unavailable|Too Many Requests|toomanyrequests|request canceled|timeout"; then
+                INSPECT_LAST_ERROR="$inspect_output"
+                if [ "$attempt" -lt "$max_attempts" ]; then
+                  sleep "$delay"
+                  delay=$((delay * 2))
+                fi
+                attempt=$((attempt + 1))
+                continue
+              fi
+
+              # Qualquer erro não-mapeado é tratado como transitório para evitar falso "imagem inexistente".
+              INSPECT_LAST_ERROR="$inspect_output"
+              if [ "$attempt" -lt "$max_attempts" ]; then
+                sleep "$delay"
+                delay=$((delay * 2))
+              fi
+              attempt=$((attempt + 1))
+            done
+
+            return 20
+          }
+
+          MISSING=()
+          TRANSIENT_IMGS=()
           for img in "${IMAGES_TO_CHECK[@]}"; do
             echo -n "   Verificando: $img ... "
             # LOCAL FIRST: se imagem existe localmente, não chamar registry
@@ -1227,31 +1357,35 @@ jobs:
               echo "⏩ SKIP (existe localmente)"
               continue
             fi
-            if timeout 15 docker manifest inspect "$img" > /dev/null 2>&1; then
+            if inspect_public_manifest "$img"; then
               echo "✅ OK (remoto)"
             else
-              # Verificar se é timeout ou imagem realmente não existe
-              EXIT_CODE=$?
-              if [ "$EXIT_CODE" -eq 124 ]; then
-                echo "⏱️ TIMEOUT (registry lento, pull resolverá)"
-                TIMEOUT_IMGS="$TIMEOUT_IMGS $img"
-              else
-                echo "❌ FALHOU"
-                MISSING="$MISSING $img"
+              case "$?" in
+                10)
+                  echo "❌ NÃO ENCONTRADA"
+                  MISSING+=("$img")
+                  ;;
+                *)
+                  echo "⏱️ FALHA TRANSITÓRIA (rede/registry), pull resolverá"
+                  TRANSIENT_IMGS+=("$img")
+                  ;;
+              esac
+              if [ -n "${INSPECT_LAST_ERROR:-}" ]; then
+                echo "      Detalhe: ${INSPECT_LAST_ERROR:0:220}"
               fi
             fi
           done
           
-          if [ -n "$TIMEOUT_IMGS" ]; then
+          if [ ${#TRANSIENT_IMGS[@]} -gt 0 ]; then
             echo ""
-            echo "⚠️  Imagens com timeout na validação (serão baixadas diretamente no pull):"
-            echo "  $TIMEOUT_IMGS"
+            echo "⚠️  Imagens com falha transitória na validação (serão baixadas diretamente no pull):"
+            printf '   - %s\n' "${TRANSIENT_IMGS[@]}"
           fi
           
-          if [ -n "$MISSING" ]; then
+          if [ ${#MISSING[@]} -gt 0 ]; then
             echo ""
             echo "::error::❌ ERRO CRÍTICO: Imagens públicas não encontradas:"
-            echo "$MISSING"
+            printf '   - %s\n' "${MISSING[@]}"
             echo ""
             echo "Possíveis causas:"
             echo "  1. Versão especificada não existe no registry"
