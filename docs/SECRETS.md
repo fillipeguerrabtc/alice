@@ -1,8 +1,8 @@
 # Guia Completo de Secrets - Alice Enterprise Platform
 
 **Author:** Fillipe Guerra  
-**Data:** 03 de Fevereiro de 2026  
-**Versão:** 7.16 - KuCoin depth validado (20/100) com normalização
+**Data:** 06 de Março de 2026  
+**Versão:** 7.17 - Variáveis WEB_CRAWL_* documentadas para deploy fail-fast
 
 ## Visão geral
 
@@ -135,6 +135,8 @@ Este documento lista os secrets obrigatórios e opcionais usados no deploy enter
 | `DOCKERHUB_TOKEN` | Token Docker Hub |
 | `HUGGINGFACE_TOKEN` | Token HF → passado como `HF_TOKEN` (nome padrão huggingface_hub) |
 | `CORS_ORIGINS` | Lista de origens CORS permitidas (CSV) |
+| `WEB_CRAWL_REQUIRE_ALLOWLIST` | Exige allowlist no worker de web crawl do RAG (`true`/`false`, default `true`) |
+| `WEB_CRAWL_ALLOWED_DOMAINS` | Lista CSV de domínios permitidos para crawl (sem protocolo) |
 | `SEARXNG_SECRET_KEY` | Secret do SearXNG |
 | `OPENAI_PROXY` | Proxy dedicado para chamadas OpenAI (ex: `http://proxy:3128`) |
 | `HTTP_PROXY` | Proxy global (fallback para OpenAI se `OPENAI_PROXY` não existir) |
@@ -158,6 +160,10 @@ Este documento lista os secrets obrigatórios e opcionais usados no deploy enter
 | `MIN_ONDEMAND_DATASET_SIZE` | Mínimo de exemplos para treino on-demand (default 10). |
 
 > **Treino:** Valores editáveis via UI (Configurações do Sistema). PostgreSQL tem precedência sobre env. Ver `docs/TRAINING.md`.
+> **Web Crawl (06/03/2026):** Se `WEB_CRAWL_ALLOWED_DOMAINS` não estiver definido, o `generate-env-prod.sh` gera fallback com `BASE_URL`, `CORS_ORIGIN` e `CORS_ORIGINS`. Se `WEB_CRAWL_REQUIRE_ALLOWLIST=true` e a lista final ficar vazia, o deploy falha em modo fail-fast.
+
+**Author:** Fillipe Guerra  
+**Data:** 06 de Março de 2026
 
 ## Geração recomendada
 

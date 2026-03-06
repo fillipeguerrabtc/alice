@@ -637,6 +637,73 @@ if [ -z "${CORS_ORIGINS_VALUE}" ] && [ -n "${CORS_ORIGIN_VALUE}" ]; then
 fi
 
 # =============================================================================
+# FASE 6.1: Validação Web Crawl (RAG) - allowlist obrigatória em produção
+# =============================================================================
+BASE_URL_VALUE="${BASE_URL:-https://yesyoudeserve.duckdns.org}"
+
+WEB_CRAWL_REQUIRE_ALLOWLIST="$(printf '%s' "${WEB_CRAWL_REQUIRE_ALLOWLIST_SECRET:-true}" | tr '[:upper:]' '[:lower:]' | xargs)"
+if [ "${WEB_CRAWL_REQUIRE_ALLOWLIST}" != "true" ] && [ "${WEB_CRAWL_REQUIRE_ALLOWLIST}" != "false" ]; then
+  echo "::error::WEB_CRAWL_REQUIRE_ALLOWLIST inválido: '${WEB_CRAWL_REQUIRE_ALLOWLIST}'. Use apenas true ou false." >&2
+  exit 1
+fi
+
+WEB_CRAWL_ALLOWED_DOMAINS_INPUT="$(printf '%s' "${WEB_CRAWL_ALLOWED_DOMAINS_SECRET:-}" | xargs)"
+declare -A WEB_CRAWL_DOMAIN_SET=()
+WEB_CRAWL_DOMAIN_LIST=()
+
+add_web_crawl_domain() {
+  local raw="$1"
+  local normalized
+  normalized="$(printf '%s' "${raw}" | xargs)"
+  [ -z "${normalized}" ] && return 0
+  normalized="${normalized#http://}"
+  normalized="${normalized#https://}"
+  normalized="${normalized%%/*}"
+  normalized="${normalized%%\?*}"
+  normalized="${normalized%%\#*}"
+  normalized="${normalized##*@}"
+  # remove porta para hostnames (mantém IPv6 entre colchetes)
+  if [[ "${normalized}" != \[*\] ]]; then
+    normalized="${normalized%%:*}"
+  fi
+  normalized="$(printf '%s' "${normalized}" | tr '[:upper:]' '[:lower:]' | xargs)"
+  [ -z "${normalized}" ] && return 0
+  if [ -z "${WEB_CRAWL_DOMAIN_SET[${normalized}]+x}" ]; then
+    WEB_CRAWL_DOMAIN_SET["${normalized}"]=1
+    WEB_CRAWL_DOMAIN_LIST+=("${normalized}")
+  fi
+}
+
+if [ -n "${WEB_CRAWL_ALLOWED_DOMAINS_INPUT}" ]; then
+  while IFS= read -r candidate; do
+    add_web_crawl_domain "${candidate}"
+  done < <(printf '%s' "${WEB_CRAWL_ALLOWED_DOMAINS_INPUT}" | tr ',' '\n')
+else
+  # fallback seguro: domínios da própria superfície pública configurada
+  add_web_crawl_domain "${BASE_URL_VALUE}"
+  add_web_crawl_domain "${CORS_ORIGIN_VALUE}"
+  while IFS= read -r origin; do
+    add_web_crawl_domain "${origin}"
+  done < <(printf '%s' "${CORS_ORIGINS_VALUE}" | tr ',' '\n')
+fi
+
+WEB_CRAWL_ALLOWED_DOMAINS=""
+if [ ${#WEB_CRAWL_DOMAIN_LIST[@]} -gt 0 ]; then
+  WEB_CRAWL_ALLOWED_DOMAINS="$(IFS=,; echo "${WEB_CRAWL_DOMAIN_LIST[*]}")"
+fi
+
+if [ "${WEB_CRAWL_REQUIRE_ALLOWLIST}" = "true" ] && [ -z "${WEB_CRAWL_ALLOWED_DOMAINS}" ]; then
+  echo "::error::WEB_CRAWL_ALLOWED_DOMAINS vazio com WEB_CRAWL_REQUIRE_ALLOWLIST=true. Configure o secret WEB_CRAWL_ALLOWED_DOMAINS ou CORS/BASE_URL válidos." >&2
+  exit 1
+fi
+
+if [ -n "${WEB_CRAWL_ALLOWED_DOMAINS}" ]; then
+  echo "✅ Web crawl allowlist configurada: ${WEB_CRAWL_ALLOWED_DOMAINS}"
+else
+  echo "⚠️  WEB_CRAWL_ALLOWED_DOMAINS vazio e allowlist desativada (WEB_CRAWL_REQUIRE_ALLOWLIST=false)"
+fi
+
+# =============================================================================
 # FASE 7: Validar ACME_EMAIL (usado APENAS para Let's Encrypt)
 # =============================================================================
 # ACME_EMAIL é usado APENAS para:
@@ -740,7 +807,6 @@ echo "📄 Gerando arquivo .env.prod..."
   printf 'INTERNAL_API_SECRET=%s\n' "${INTERNAL_API_SECRET}"
   printf 'BIOMETRICS_ENCRYPTION_KEY=%s\n' "${BIOMETRICS_ENCRYPTION_KEY}"
   printf '\n'
-  BASE_URL_VALUE="${BASE_URL:-https://yesyoudeserve.duckdns.org}"
   printf '# OAuth Google\n'
   printf 'GOOGLE_CLIENT_ID=%s\n' "${GOOGLE_CLIENT_ID:-}"
   printf 'GOOGLE_CLIENT_SECRET=%s\n' "${GOOGLE_CLIENT_SECRET:-}"
@@ -772,6 +838,8 @@ echo "📄 Gerando arquivo .env.prod..."
   printf '\n'
   printf '# RAG Service\n'
   printf 'RAG_PUBLIC_BASE_URL=https://yesyoudeserve.duckdns.org\n'
+  printf 'WEB_CRAWL_REQUIRE_ALLOWLIST=%s\n' "${WEB_CRAWL_REQUIRE_ALLOWLIST}"
+  printf 'WEB_CRAWL_ALLOWED_DOMAINS=%s\n' "${WEB_CRAWL_ALLOWED_DOMAINS}"
   printf '\n'
   printf '# CORS e WebSocket\n'
   printf 'CORS_ORIGIN=%s\n' "${CORS_ORIGIN_VALUE}"

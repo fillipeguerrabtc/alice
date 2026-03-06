@@ -1,8 +1,8 @@
 # Alice Enterprise Platform - Guia de Deploy
 
 **Autor:** Fillipe Guerra  
-**Data:** 11 de Fevereiro de 2026  
-**Versão:** 11.17 - Docker daemon overlay (GHCR/Docker docs) + wait pós-restart
+**Data:** 06 de Março de 2026  
+**Versão:** 11.18 - Web Crawl allowlist fail-fast no generate-env-prod
 
 ## Visão geral
 
@@ -157,6 +157,24 @@ As seguintes variáveis de ambiente são opcionais e possuem defaults (documenta
 | `MIN_ONDEMAND_DATASET_SIZE` | alice-training | 10 | Mínimo de exemplos para treino on-demand |
 
 Configure em `docker-compose.alice.yml` ou via `.env.prod` quando necessário (ex.: livros grandes, ajuste de fatiamento).
+
+### Web Crawl (RAG) - allowlist de domínios
+
+Para evitar crashloop do `alice-rag` em produção, o deploy agora gera e valida automaticamente:
+
+| Variável | Default | Escopo | Descrição |
+| --- | --- | --- | --- |
+| `WEB_CRAWL_REQUIRE_ALLOWLIST` | `true` | RAG | Exige allowlist de domínios no web crawl |
+| `WEB_CRAWL_ALLOWED_DOMAINS` | auto | RAG | CSV de domínios permitidos (sem protocolo) |
+
+Comportamento no `generate-env-prod.sh`:
+
+- Se `WEB_CRAWL_ALLOWED_DOMAINS` vier como secret, ela é normalizada e usada.
+- Se não vier, o script monta fallback seguro com domínios de `BASE_URL`, `CORS_ORIGIN` e `CORS_ORIGINS`.
+- Se `WEB_CRAWL_REQUIRE_ALLOWLIST=true` e a lista final ficar vazia, o deploy falha em modo fail-fast antes do `compose up`.
+
+**Author:** Fillipe Guerra  
+**Data:** 06 de Março de 2026
 
 ### LoRA Adapters — Volume e Permissões
 
