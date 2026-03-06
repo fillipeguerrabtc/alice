@@ -126,12 +126,43 @@ interface FallbackCluster {
   clusterId: string;
   eventIds: string[];
   size: number;
+  confidence: number;
   topRoutes: string[];
   topContexts: string[];
   reasonBreakdown: Record<string, number>;
   previews: string[];
   suggestedNamespaceName: string;
   suggestedNamespaceSlug: string;
+  recommendedAction?: 'auto_tag_candidate' | 'human_review';
+  recommendationReasons?: string[];
+  policyThresholds?: {
+    clusterAutoTagConfidence: number;
+    clusterAutoTagMinSize: number;
+  };
+}
+
+interface HybridRoutingPolicy {
+  version: number;
+  enabled: boolean;
+  thresholds: {
+    autoAccept: number;
+    humanReview: number;
+    clusterAutoTagConfidence: number;
+    clusterAutoTagMinSize: number;
+  };
+  transversalDefault: {
+    enabled: boolean;
+    defaultNamespaceSlug: string;
+    greetingsToDefault: boolean;
+    reuseGateToDefault: boolean;
+    domainExceptionTerms: string[];
+  };
+  humanReview: {
+    enabled: boolean;
+    queueLowConfidenceRouting: boolean;
+    highRiskRoutes: string[];
+  };
+  exceptions: Array<Record<string, unknown>>;
 }
 
 /**
@@ -198,6 +229,7 @@ export default function Namespaces() {
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
   const [profileJsonDraft, setProfileJsonDraft] = useState<string>("");
   const [clusterNamespaceSelections, setClusterNamespaceSelections] = useState<Record<string, string>>({});
+  const [hybridPolicyDraft, setHybridPolicyDraft] = useState<string>("");
 
   const form = useForm<NamespaceFormData>({
     resolver: asResolver<NamespaceFormData>(zodResolver(namespaceSchema)),
@@ -271,6 +303,20 @@ export default function Namespaces() {
       });
       if (!response.ok) {
         throw new Error("Falha ao carregar profile do namespace");
+      }
+      return response.json();
+    },
+  });
+
+  const { data: hybridPolicyData, isLoading: isLoadingHybridPolicy } = useQuery<{ policy: HybridRoutingPolicy }>({
+    queryKey: ["/api/llm/hybrid-routing-policy"],
+    enabled: !!user,
+    queryFn: async () => {
+      const response = await fetch('/api/llm/hybrid-routing-policy', {
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        throw new Error('Falha ao carregar política híbrida');
       }
       return response.json();
     },
@@ -371,10 +417,38 @@ export default function Namespaces() {
     },
   });
 
+  const updateHybridPolicyMutation = useMutation({
+    mutationFn: async (policy: HybridRoutingPolicy) => {
+      const response = await apiRequest('PATCH', '/api/llm/hybrid-routing-policy', { policy });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/llm/hybrid-routing-policy'] });
+      toast({ title: t('namespaces.alerts.hybridPolicySaved') });
+    },
+    onError: () => {
+      toast({ title: t('namespaces.alerts.hybridPolicySaveError'), variant: 'destructive' });
+    },
+  });
+
   useEffect(() => {
     if (!namespaceProfile) return;
     setProfileJsonDraft(JSON.stringify(namespaceProfile.config, null, 2));
   }, [namespaceProfile]);
+
+  useEffect(() => {
+    if (!hybridPolicyData?.policy) return;
+    setHybridPolicyDraft(JSON.stringify(hybridPolicyData.policy, null, 2));
+  }, [hybridPolicyData]);
+
+  const mapFallbackReasonLabel = (reason: string) => {
+    if (reason === 'namespace_unmapped') return t('namespaces.alerts.reasonNamespaceUnmapped');
+    if (reason === 'adapter_missing') return t('namespaces.alerts.reasonAdapterMissing');
+    if (reason === 'low_confidence_semantic_routing') return t('namespaces.alerts.reasonLowConfidenceRouting');
+    if (reason === 'high_risk_route') return t('namespaces.alerts.reasonHighRiskRoute');
+    if (reason === 'exception_require_human_review') return t('namespaces.alerts.reasonExceptionHumanReview');
+    return reason;
+  };
 
   const handleSubmit = (data: NamespaceFormData) => {
     if (editingNamespace) {
@@ -691,8 +765,53 @@ export default function Namespaces() {
 
       {/* Seção de avisos e sugestões (fallbacks e contextos não mapeados) */}
       {(fallbackStats?.last7d ? fallbackStats.last7d > 0 : false) ||
-      (unmappedData?.items?.length ? unmappedData.items.length > 0 : false) ? (
+      (unmappedData?.items?.length ? unmappedData.items.length > 0 : false) ||
+      Boolean(hybridPolicyData?.policy) ? (
         <div className="space-y-4">
+          <Alert>
+            <Settings className="h-4 w-4" />
+            <AlertTitle>{t("namespaces.alerts.hybridPolicyTitle")}</AlertTitle>
+            <AlertDescription>
+              <p className="mb-2">
+                {t("namespaces.alerts.hybridPolicyDesc")}
+              </p>
+              <div className="mb-2 flex flex-wrap gap-2 text-xs">
+                <Badge variant="outline">
+                  autoAccept: {Math.round(((hybridPolicyData?.policy.thresholds.autoAccept ?? 0) * 100))}%
+                </Badge>
+                <Badge variant="outline">
+                  humanReview: {Math.round(((hybridPolicyData?.policy.thresholds.humanReview ?? 0) * 100))}%
+                </Badge>
+                <Badge variant="outline">
+                  default: {hybridPolicyData?.policy.transversalDefault.defaultNamespaceSlug ?? '-'}
+                </Badge>
+                {isLoadingHybridPolicy ? <Badge variant="secondary">{t('common.loading')}</Badge> : null}
+              </div>
+              <Textarea
+                value={hybridPolicyDraft}
+                onChange={(event) => setHybridPolicyDraft(event.target.value)}
+                className="min-h-[200px] font-mono text-xs"
+                data-testid="textarea-hybrid-routing-policy"
+              />
+              <div className="mt-2">
+                <Button
+                  size="sm"
+                  disabled={updateHybridPolicyMutation.isPending || !hybridPolicyDraft.trim().length}
+                  onClick={() => {
+                    try {
+                      const parsed = JSON.parse(hybridPolicyDraft) as HybridRoutingPolicy;
+                      updateHybridPolicyMutation.mutate(parsed);
+                    } catch {
+                      toast({ title: t('namespaces.alerts.hybridPolicyInvalidJson'), variant: 'destructive' });
+                    }
+                  }}
+                  data-testid="button-save-hybrid-policy"
+                >
+                  {t("namespaces.alerts.hybridPolicySave")}
+                </Button>
+              </div>
+            </AlertDescription>
+          </Alert>
           {fallbackStats && fallbackStats.last7d > 0 && (
             <Alert variant={fallbackStats.last24h > 0 ? "destructive" : "default"}>
               <AlertTriangle className="h-4 w-4" />
@@ -726,10 +845,15 @@ export default function Namespaces() {
                       <div className="flex flex-wrap items-center gap-2">
                         <code className="rounded bg-muted px-1">{item.route}</code>
                         <Badge variant="outline">{item.context}</Badge>
-                        <Badge variant={item.reason === 'namespace_unmapped' ? 'destructive' : 'secondary'}>
-                          {item.reason === 'namespace_unmapped'
-                            ? t('namespaces.alerts.reasonNamespaceUnmapped')
-                            : t('namespaces.alerts.reasonAdapterMissing')}
+                        <Badge
+                          variant={
+                            ['namespace_unmapped', 'low_confidence_semantic_routing', 'high_risk_route', 'exception_require_human_review']
+                              .includes(item.reason)
+                              ? 'destructive'
+                              : 'secondary'
+                          }
+                        >
+                          {mapFallbackReasonLabel(item.reason)}
                         </Badge>
                       </div>
                       {item.preview ? (
@@ -754,6 +878,14 @@ export default function Namespaces() {
                       <li key={cluster.clusterId} className="rounded border p-3 space-y-2">
                         <div className="flex flex-wrap items-center gap-2">
                           <Badge variant="outline">{cluster.size} {t("namespaces.alerts.fallbacks")}</Badge>
+                          <Badge variant="outline">
+                            {t("namespaces.alerts.clusterConfidence")}: {Math.round((cluster.confidence ?? 0) * 100)}%
+                          </Badge>
+                          <Badge variant={cluster.recommendedAction === 'auto_tag_candidate' ? 'secondary' : 'destructive'}>
+                            {cluster.recommendedAction === 'auto_tag_candidate'
+                              ? t("namespaces.alerts.clusterAutoTagCandidate")
+                              : t("namespaces.alerts.clusterNeedsHumanReview")}
+                          </Badge>
                           {cluster.topRoutes.slice(0, 2).map((route) => (
                             <code key={route} className="rounded bg-muted px-1">{route}</code>
                           ))}
@@ -763,6 +895,14 @@ export default function Namespaces() {
                         </div>
                         {cluster.previews.length > 0 ? (
                           <p className="text-muted-foreground line-clamp-2">{cluster.previews[0]}</p>
+                        ) : null}
+                        {cluster.policyThresholds ? (
+                          <p className="text-[11px] text-muted-foreground">
+                            {t("namespaces.alerts.clusterPolicyThresholds", {
+                              confidence: Math.round(cluster.policyThresholds.clusterAutoTagConfidence * 100),
+                              size: cluster.policyThresholds.clusterAutoTagMinSize,
+                            })}
+                          </p>
                         ) : null}
                         <div className="flex flex-wrap items-center gap-2">
                           <Button

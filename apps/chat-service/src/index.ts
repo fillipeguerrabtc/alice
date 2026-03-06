@@ -86,7 +86,12 @@ import { z } from 'zod';
 import { ProxyAgent } from 'undici';
 import { createClient } from 'redis';
 import type { AgenticDetectors } from '@alice/shared';
-import { NamespaceProfileConfigSchema, type NamespaceProfileConfig } from '@alice/shared';
+import {
+  NamespaceProfileConfigSchema,
+  HybridRoutingPolicySchema,
+  type NamespaceProfileConfig,
+  type HybridRoutingPolicy,
+} from '@alice/shared';
 import { isTradingCommand } from './trading-command-parser.js';
 import { resolveModelWithAdapter } from './lora-adapter-resolver.js';
 import { resolvePreferredNameSources } from './user-name-utils.js';
@@ -4598,22 +4603,101 @@ async function matchNamespaceByDetectors(params: {
   return bestMatch;
 }
 
+type SemanticRouteResolution = {
+  agentId?: string;
+  namespaceId?: string;
+  score: number;
+  source: 'agent' | 'namespace' | 'none';
+  profile: LlmContextProfile;
+  needsHumanReview: boolean;
+  reviewReasons: string[];
+  autoAcceptThreshold: number;
+  humanReviewThreshold: number;
+  matchedExceptionIds: string[];
+};
+
 async function resolveSemanticRoute(params: {
   tenantId: string;
   userMessage: string;
   agenticDetectors: AgenticDetectors;
   namespaceId?: string | null;
-}): Promise<{ agentId?: string; namespaceId?: string; score: number; source: 'agent' | 'namespace' | 'none'; profile: LlmContextProfile }> {
+  route?: string | null;
+}): Promise<SemanticRouteResolution> {
+  const route = params.route?.trim().length ? params.route.trim() : '/chat';
   const profile = resolveContextProfile(params.userMessage);
+  const hybridPolicy = await resolveHybridRoutingPolicy(params.tenantId);
+  const exceptionDecision = resolveHybridExceptionDecision({
+    policy: hybridPolicy,
+    message: params.userMessage,
+    route,
+    context: profile,
+  });
+  const isHighRiskRoute = hybridPolicy.humanReview.highRiskRoutes.some((riskRoute) => {
+    const normalizedRiskRoute = riskRoute.startsWith('/') ? riskRoute : `/${riskRoute}`;
+    return route.startsWith(normalizedRiskRoute);
+  });
   const hasMention = /@[a-z0-9][a-z0-9_-]{1,48}/iu.test(params.userMessage);
+  const defaultNamespaceId = (
+    hybridPolicy.enabled && hybridPolicy.transversalDefault.enabled
+      ? await resolvePolicyDefaultNamespaceId(params.tenantId, hybridPolicy)
+      : null
+  );
+
+  if (exceptionDecision.forcedNamespaceSlug) {
+    const forcedNamespace = await db.query.namespaces.findFirst({
+      where: and(
+        eq(schema.namespaces.tenantId, params.tenantId),
+        eq(schema.namespaces.slug, exceptionDecision.forcedNamespaceSlug),
+        eq(schema.namespaces.ativo, true),
+      ),
+      columns: { id: true },
+    });
+    if (forcedNamespace) {
+      return {
+        namespaceId: forcedNamespace.id,
+        score: 1,
+        source: 'namespace',
+        profile,
+        needsHumanReview: exceptionDecision.requireHumanReview || isHighRiskRoute,
+        reviewReasons: [
+          ...(exceptionDecision.requireHumanReview ? ['exception_require_human_review'] : []),
+          ...(isHighRiskRoute ? ['high_risk_route'] : []),
+        ],
+        autoAcceptThreshold: 1,
+        humanReviewThreshold: 1,
+        matchedExceptionIds: exceptionDecision.matchedExceptionIds,
+      };
+    }
+  }
+
   if (!hasMention && isGreetingMessage(params.userMessage)) {
-    return { score: 0, source: 'none', profile };
+    const bypassTransversal = shouldBypassTransversalDefault({
+      message: params.userMessage,
+      route,
+      context: profile,
+      policy: hybridPolicy,
+      exceptionDecision,
+    });
+    return {
+      score: 0,
+      source: 'none',
+      profile,
+      namespaceId: !bypassTransversal && hybridPolicy.transversalDefault.greetingsToDefault
+        ? defaultNamespaceId ?? undefined
+        : undefined,
+      needsHumanReview: exceptionDecision.requireHumanReview,
+      reviewReasons: exceptionDecision.requireHumanReview ? ['exception_require_human_review'] : [],
+      autoAcceptThreshold: 0,
+      humanReviewThreshold: 0,
+      matchedExceptionIds: exceptionDecision.matchedExceptionIds,
+    };
   }
   const runtimeProfile = await resolveNamespaceProfileRuntime(db, {
     tenantId: params.tenantId,
     namespaceId: params.namespaceId ?? null,
   });
-  const threshold = getRoutingThreshold(runtimeProfile.config);
+  const thresholds = resolveRoutingThresholds(runtimeProfile.config, hybridPolicy);
+  const threshold = thresholds.autoAccept;
 
   const agents = await db.query.agents.findMany({
     where: and(
@@ -4652,6 +4736,23 @@ async function resolveSemanticRoute(params: {
       score: namespaceDetectorMatch.score,
       source: 'namespace',
       profile,
+      needsHumanReview: (
+        hybridPolicy.enabled
+        && hybridPolicy.humanReview.enabled
+        && (
+          exceptionDecision.requireHumanReview
+          || isHighRiskRoute
+          || namespaceDetectorMatch.score < thresholds.humanReview
+        )
+      ),
+      reviewReasons: [
+        ...(exceptionDecision.requireHumanReview ? ['exception_require_human_review'] : []),
+        ...(isHighRiskRoute ? ['high_risk_route'] : []),
+        ...(namespaceDetectorMatch.score < thresholds.humanReview ? ['low_confidence_semantic_routing'] : []),
+      ],
+      autoAcceptThreshold: thresholds.autoAccept,
+      humanReviewThreshold: thresholds.humanReview,
+      matchedExceptionIds: exceptionDecision.matchedExceptionIds,
     };
   }
 
@@ -4706,6 +4807,23 @@ async function resolveSemanticRoute(params: {
       score: bestAgent.score,
       source: 'agent',
       profile,
+      needsHumanReview: (
+        hybridPolicy.enabled
+        && hybridPolicy.humanReview.enabled
+        && (
+          exceptionDecision.requireHumanReview
+          || isHighRiskRoute
+          || bestAgent.score < thresholds.humanReview
+        )
+      ),
+      reviewReasons: [
+        ...(exceptionDecision.requireHumanReview ? ['exception_require_human_review'] : []),
+        ...(isHighRiskRoute ? ['high_risk_route'] : []),
+        ...(bestAgent.score < thresholds.humanReview ? ['low_confidence_semantic_routing'] : []),
+      ],
+      autoAcceptThreshold: thresholds.autoAccept,
+      humanReviewThreshold: thresholds.humanReview,
+      matchedExceptionIds: exceptionDecision.matchedExceptionIds,
     };
   }
 
@@ -4756,10 +4874,50 @@ async function resolveSemanticRoute(params: {
       score: bestNamespace.score,
       source: 'namespace',
       profile,
+      needsHumanReview: (
+        hybridPolicy.enabled
+        && hybridPolicy.humanReview.enabled
+        && (
+          exceptionDecision.requireHumanReview
+          || isHighRiskRoute
+          || bestNamespace.score < thresholds.humanReview
+        )
+      ),
+      reviewReasons: [
+        ...(exceptionDecision.requireHumanReview ? ['exception_require_human_review'] : []),
+        ...(isHighRiskRoute ? ['high_risk_route'] : []),
+        ...(bestNamespace.score < thresholds.humanReview ? ['low_confidence_semantic_routing'] : []),
+      ],
+      autoAcceptThreshold: thresholds.autoAccept,
+      humanReviewThreshold: thresholds.humanReview,
+      matchedExceptionIds: exceptionDecision.matchedExceptionIds,
     };
   }
 
-  return { score: 0, source: 'none', profile };
+  const needsHumanReview = (
+    hybridPolicy.enabled
+    && hybridPolicy.humanReview.enabled
+    && (
+      exceptionDecision.requireHumanReview
+      || isHighRiskRoute
+      || hybridPolicy.humanReview.queueLowConfidenceRouting
+    )
+  );
+  return {
+    score: 0,
+    source: 'none',
+    profile,
+    namespaceId: defaultNamespaceId ?? undefined,
+    needsHumanReview,
+    reviewReasons: [
+      ...(exceptionDecision.requireHumanReview ? ['exception_require_human_review'] : []),
+      ...(isHighRiskRoute ? ['high_risk_route'] : []),
+      ...(hybridPolicy.humanReview.queueLowConfidenceRouting ? ['low_confidence_semantic_routing'] : []),
+    ],
+    autoAcceptThreshold: thresholds.autoAccept,
+    humanReviewThreshold: thresholds.humanReview,
+    matchedExceptionIds: exceptionDecision.matchedExceptionIds,
+  };
 }
 
 type AgentRoutingMode = 'auto' | 'manual';
@@ -5109,6 +5267,362 @@ async function updateAgentRoutingMetadata(params: {
     .where(eq(schema.conversationStates.conversationId, params.conversationId));
 }
 
+const HYBRID_ROUTING_DEFAULT_POLICY_KEY = 'HYBRID_ROUTING_DEFAULT_POLICY_JSON';
+const HYBRID_ROUTING_POLICY_CACHE_TTL_MS = 60_000;
+
+const HARDENED_HYBRID_ROUTING_POLICY_FALLBACK: HybridRoutingPolicy = HybridRoutingPolicySchema.parse({
+  version: 1,
+  enabled: true,
+  thresholds: {
+    autoAccept: 0.12,
+    humanReview: 0.06,
+    clusterAutoTagConfidence: 0.9,
+    clusterAutoTagMinSize: 8,
+  },
+  transversalDefault: {
+    enabled: true,
+    defaultNamespaceSlug: 'default',
+    greetingsToDefault: true,
+    reuseGateToDefault: true,
+    domainExceptionTerms: [
+      'trade',
+      'trading',
+      'btc',
+      'bitcoin',
+      'eth',
+      'ethereum',
+      'futuros',
+      'alavancagem',
+      'leverage',
+      'ordem',
+      'sinal',
+      'position',
+      'kucoin',
+      'binance',
+      'compliance',
+      'fiscal',
+      'juridico',
+      'contabilidade',
+    ],
+  },
+  humanReview: {
+    enabled: true,
+    queueLowConfidenceRouting: true,
+    highRiskRoutes: ['/trading', '/wise'],
+  },
+  exceptions: [],
+});
+
+type HybridRoutingPolicyCacheEntry = {
+  value: HybridRoutingPolicy;
+  expiresAt: number;
+};
+
+let hybridRoutingDefaultsCache: HybridRoutingPolicyCacheEntry | null = null;
+const hybridRoutingTenantCache = new Map<string, HybridRoutingPolicyCacheEntry>();
+
+function clamp01(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  if (value < 0) return 0;
+  if (value > 1) return 1;
+  return value;
+}
+
+function normalizeHybridText(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function readCachedHybridPolicy(entry: HybridRoutingPolicyCacheEntry | undefined | null): HybridRoutingPolicy | null {
+  if (!entry) return null;
+  if (entry.expiresAt <= Date.now()) return null;
+  return entry.value;
+}
+
+function mergeHybridPolicy(
+  defaults: HybridRoutingPolicy,
+  override: HybridRoutingPolicy
+): HybridRoutingPolicy {
+  return HybridRoutingPolicySchema.parse({
+    ...defaults,
+    ...override,
+    thresholds: {
+      ...defaults.thresholds,
+      ...override.thresholds,
+    },
+    transversalDefault: {
+      ...defaults.transversalDefault,
+      ...override.transversalDefault,
+      domainExceptionTerms: override.transversalDefault.domainExceptionTerms ?? defaults.transversalDefault.domainExceptionTerms,
+    },
+    humanReview: {
+      ...defaults.humanReview,
+      ...override.humanReview,
+      highRiskRoutes: override.humanReview.highRiskRoutes ?? defaults.humanReview.highRiskRoutes,
+    },
+    exceptions: override.exceptions ?? defaults.exceptions,
+  });
+}
+
+function invalidateHybridRoutingPolicyCache(tenantId?: string): void {
+  if (!tenantId) {
+    hybridRoutingDefaultsCache = null;
+    hybridRoutingTenantCache.clear();
+    return;
+  }
+  hybridRoutingTenantCache.delete(tenantId);
+}
+
+async function getDefaultHybridRoutingPolicy(): Promise<HybridRoutingPolicy> {
+  const cached = readCachedHybridPolicy(hybridRoutingDefaultsCache);
+  if (cached) return cached;
+
+  const raw = await getSystemConfig(HYBRID_ROUTING_DEFAULT_POLICY_KEY);
+  if (!raw) {
+    logger.error(
+      { key: HYBRID_ROUTING_DEFAULT_POLICY_KEY },
+      'Configuração de política híbrida ausente no system_config; usando baseline hardened'
+    );
+    const fallback = HARDENED_HYBRID_ROUTING_POLICY_FALLBACK;
+    hybridRoutingDefaultsCache = {
+      value: fallback,
+      expiresAt: Date.now() + HYBRID_ROUTING_POLICY_CACHE_TTL_MS,
+    };
+    return fallback;
+  }
+
+  try {
+    const parsed = HybridRoutingPolicySchema.parse(JSON.parse(raw));
+    hybridRoutingDefaultsCache = {
+      value: parsed,
+      expiresAt: Date.now() + HYBRID_ROUTING_POLICY_CACHE_TTL_MS,
+    };
+    return parsed;
+  } catch (error) {
+    logger.error(
+      { key: HYBRID_ROUTING_DEFAULT_POLICY_KEY, error: error instanceof Error ? error.message : String(error) },
+      'JSON inválido na configuração de política híbrida; usando baseline hardened'
+    );
+    const fallback = HARDENED_HYBRID_ROUTING_POLICY_FALLBACK;
+    hybridRoutingDefaultsCache = {
+      value: fallback,
+      expiresAt: Date.now() + HYBRID_ROUTING_POLICY_CACHE_TTL_MS,
+    };
+    return fallback;
+  }
+}
+
+function readTenantHybridRoutingPolicy(configuracoes: unknown): HybridRoutingPolicy | null {
+  if (!configuracoes || typeof configuracoes !== 'object' || Array.isArray(configuracoes)) {
+    return null;
+  }
+  const raw = (configuracoes as Record<string, unknown>).hybridRouting;
+  if (!raw) return null;
+  try {
+    return HybridRoutingPolicySchema.parse(raw);
+  } catch (error) {
+    logger.warn(
+      { error: error instanceof Error ? error.message : String(error) },
+      'Tenant com hybridRouting inválido; aplicando política padrão'
+    );
+    return null;
+  }
+}
+
+async function resolveHybridRoutingPolicy(tenantId: string): Promise<HybridRoutingPolicy> {
+  const cached = readCachedHybridPolicy(hybridRoutingTenantCache.get(tenantId));
+  if (cached) return cached;
+
+  const defaults = await getDefaultHybridRoutingPolicy();
+  const tenant = await db.query.tenants.findFirst({
+    where: eq(schema.tenants.id, tenantId),
+    columns: { configuracoes: true },
+  });
+
+  const override = readTenantHybridRoutingPolicy(tenant?.configuracoes ?? null);
+  const resolved = override ? mergeHybridPolicy(defaults, override) : defaults;
+  hybridRoutingTenantCache.set(tenantId, {
+    value: resolved,
+    expiresAt: Date.now() + HYBRID_ROUTING_POLICY_CACHE_TTL_MS,
+  });
+  return resolved;
+}
+
+async function persistHybridRoutingPolicy(
+  tenantId: string,
+  policy: HybridRoutingPolicy
+): Promise<HybridRoutingPolicy> {
+  const tenant = await db.query.tenants.findFirst({
+    where: eq(schema.tenants.id, tenantId),
+    columns: { configuracoes: true },
+  });
+  if (!tenant) {
+    throw new Error('Tenant não encontrado para persistir política híbrida');
+  }
+  const currentConfig = (
+    tenant.configuracoes && typeof tenant.configuracoes === 'object' && !Array.isArray(tenant.configuracoes)
+      ? tenant.configuracoes as Record<string, unknown>
+      : {}
+  );
+  const nextConfig = {
+    ...currentConfig,
+    hybridRouting: policy,
+  };
+  await db.update(schema.tenants)
+    .set({
+      configuracoes: nextConfig,
+      atualizadoEm: new Date(),
+    })
+    .where(eq(schema.tenants.id, tenantId));
+  invalidateHybridRoutingPolicyCache(tenantId);
+  return policy;
+}
+
+async function resolvePolicyDefaultNamespaceId(
+  tenantId: string,
+  policy: HybridRoutingPolicy
+): Promise<string | null> {
+  const slug = policy.transversalDefault.defaultNamespaceSlug.trim().toLowerCase();
+  if (slug.length >= 2) {
+    const configured = await db.query.namespaces.findFirst({
+      where: and(
+        eq(schema.namespaces.tenantId, tenantId),
+        eq(schema.namespaces.slug, slug),
+        eq(schema.namespaces.ativo, true),
+      ),
+      columns: { id: true },
+    });
+    if (configured?.id) return configured.id;
+  }
+  return resolveTenantDefaultNamespaceId(tenantId);
+}
+
+type HybridExceptionDecision = {
+  matchedExceptionIds: string[];
+  requireHumanReview: boolean;
+  bypassTransversalDefault: boolean;
+  forcedNamespaceSlug: string | null;
+};
+
+function resolveHybridExceptionDecision(params: {
+  policy: HybridRoutingPolicy;
+  message: string;
+  route: string;
+  context: string;
+}): HybridExceptionDecision {
+  const normalizedMessage = normalizeHybridText(params.message);
+  const normalizedRoute = params.route.startsWith('/') ? params.route : `/${params.route}`;
+  const normalizedContext = normalizeHybridText(params.context);
+  const matchedExceptionIds: string[] = [];
+  let requireHumanReview = false;
+  let bypassTransversalDefault = false;
+  let forcedNamespaceSlug: string | null = null;
+
+  for (const exception of params.policy.exceptions) {
+    if (!exception.enabled) continue;
+    const routeOk = !exception.routePrefix || normalizedRoute.startsWith(exception.routePrefix);
+    const contextOk = !exception.context || normalizeHybridText(exception.context) === normalizedContext;
+    const containsTerms = exception.containsTerms ?? [];
+    const termsOk = containsTerms.length === 0
+      ? true
+      : containsTerms.some((term) => normalizedMessage.includes(normalizeHybridText(term)));
+
+    if (!routeOk || !contextOk || !termsOk) continue;
+    matchedExceptionIds.push(exception.id);
+
+    if (exception.action === 'require_human_review') {
+      requireHumanReview = true;
+      continue;
+    }
+    if (exception.action === 'bypass_transversal_default') {
+      bypassTransversalDefault = true;
+      continue;
+    }
+    if (exception.action === 'force_namespace' && exception.targetNamespaceSlug) {
+      forcedNamespaceSlug = exception.targetNamespaceSlug.toLowerCase().trim();
+    }
+  }
+
+  return {
+    matchedExceptionIds,
+    requireHumanReview,
+    bypassTransversalDefault,
+    forcedNamespaceSlug,
+  };
+}
+
+function resolveRoutingThresholds(
+  knobs: RuntimeChatKnobs | undefined,
+  policy: HybridRoutingPolicy
+): { autoAccept: number; humanReview: number } {
+  const namespaceThreshold = getRoutingThreshold(knobs);
+  const autoAccept = clamp01(policy.enabled ? policy.thresholds.autoAccept : namespaceThreshold);
+  const fallbackHumanReview = clamp01(autoAccept * 0.5);
+  const humanReview = clamp01(policy.enabled ? policy.thresholds.humanReview : fallbackHumanReview);
+  return {
+    autoAccept: Math.max(autoAccept, humanReview),
+    humanReview: Math.min(autoAccept, humanReview),
+  };
+}
+
+function shouldBypassTransversalDefault(params: {
+  message: string;
+  route: string;
+  context: string;
+  policy: HybridRoutingPolicy;
+  exceptionDecision: HybridExceptionDecision;
+}): boolean {
+  if (!params.policy.enabled || !params.policy.transversalDefault.enabled) {
+    return false;
+  }
+  if (params.exceptionDecision.bypassTransversalDefault) {
+    return true;
+  }
+  const normalizedMessage = normalizeHybridText(params.message);
+  const hasDomainException = params.policy.transversalDefault.domainExceptionTerms
+    .some((term) => normalizedMessage.includes(normalizeHybridText(term)));
+  if (hasDomainException) {
+    return true;
+  }
+  return false;
+}
+
+async function persistHybridReviewEvent(params: {
+  tenantId: string;
+  userId?: string | null;
+  route: string;
+  context: string;
+  reason: string;
+  namespaceId?: string | null;
+  agentId?: string | null;
+  preview?: string;
+}): Promise<void> {
+  try {
+    await db.insert(schema.llmFallbackLogs).values({
+      tenantId: params.tenantId,
+      userId: params.userId ?? null,
+      rota: params.route,
+      contextoInferido: params.context,
+      serviceOrigem: 'chat-service',
+      chamada: '/api/chat/routing',
+      motivoFallback: params.reason,
+      namespaceId: params.namespaceId ?? null,
+      agentId: params.agentId ?? null,
+      modeloBase: null,
+      modeloResolvido: null,
+      adapterEncontrado: false,
+      mensagemPreview: params.preview?.slice(0, 400) ?? null,
+    });
+  } catch (error) {
+    logger.warn({ error }, 'Falha ao registrar evento de revisão humana do roteamento híbrido');
+  }
+}
+
 async function resolveTenantDefaultNamespaceId(tenantId: string): Promise<string | null> {
   const fallback = await db.query.namespaces.findFirst({
     where: and(
@@ -5167,6 +5681,8 @@ async function resolveAgentRoutingForMessage(params: {
   conversationState: Awaited<ReturnType<typeof getOrCreateConversationState>>;
   agenticDetectors: AgenticDetectors;
   requestedNamespaceId?: string | null;
+  route?: string | null;
+  userId?: string | null;
 }): Promise<{
   agent: AgentRoutingRecord | null;
   namespaceId?: string | null;
@@ -5179,6 +5695,11 @@ async function resolveAgentRoutingForMessage(params: {
   commandResponse?: string;
   isCommandOnly: boolean;
   error?: string;
+  humanReviewRequired?: boolean;
+  humanReviewThreshold?: number;
+  reviewReasons?: string[];
+  matchedExceptionIds?: string[];
+  hybridPolicyVersion?: number;
 }> {
   const agents = await db.query.agents.findMany({
     where: and(
@@ -5202,11 +5723,36 @@ async function resolveAgentRoutingForMessage(params: {
 
   let command = parseAgentRoutingCommand(params.userMessage, params.agenticDetectors.agentRouting);
   const profile = resolveContextProfile(params.userMessage);
+  const effectiveRoute = params.route?.trim().length ? params.route.trim() : '/chat';
+  const hybridPolicy = await resolveHybridRoutingPolicy(params.tenantId);
+  const exceptionDecision = resolveHybridExceptionDecision({
+    policy: hybridPolicy,
+    message: params.userMessage,
+    route: effectiveRoute,
+    context: profile,
+  });
+  const bypassTransversalDefault = shouldBypassTransversalDefault({
+    message: params.userMessage,
+    route: effectiveRoute,
+    context: profile,
+    policy: hybridPolicy,
+    exceptionDecision,
+  });
+  const isHighRiskRoute = hybridPolicy.humanReview.highRiskRoutes.some((riskRoute) => {
+    const normalizedRiskRoute = riskRoute.startsWith('/') ? riskRoute : `/${riskRoute}`;
+    return effectiveRoute.startsWith(normalizedRiskRoute);
+  });
+  const policyDefaultNamespaceId = (
+    hybridPolicy.enabled && hybridPolicy.transversalDefault.enabled
+      ? await resolvePolicyDefaultNamespaceId(params.tenantId, hybridPolicy)
+      : null
+  );
   const routingProfile = await resolveNamespaceProfileRuntime(db, {
     tenantId: params.tenantId,
     namespaceId: params.requestedNamespaceId ?? params.conversation.namespaceId ?? params.conversation.agent?.namespaceId ?? null,
   });
-  const routingThreshold = getRoutingThreshold(routingProfile.config);
+  const routingThresholds = resolveRoutingThresholds(routingProfile.config, hybridPolicy);
+  const routingThreshold = routingThresholds.autoAccept;
   const normalizedMessage = normalizeAgentToken(params.userMessage);
   const hasExplicitAgentIntent = ['agente', 'falar com', 'conversar com']
     .some((keyword) => normalizedMessage.includes(keyword));
@@ -5239,13 +5785,22 @@ async function resolveAgentRoutingForMessage(params: {
   ) {
     return {
       agent: null,
-      namespaceId: params.requestedNamespaceId ?? params.conversation.namespaceId ?? null,
+      namespaceId: (
+        !bypassTransversalDefault && hybridPolicy.transversalDefault.greetingsToDefault
+          ? policyDefaultNamespaceId ?? params.requestedNamespaceId ?? params.conversation.namespaceId ?? null
+          : params.requestedNamespaceId ?? params.conversation.namespaceId ?? null
+      ),
       mode,
       source: 'none',
       score: 0,
       threshold: routingThreshold,
       profile,
       isCommandOnly: false,
+      humanReviewRequired: false,
+      humanReviewThreshold: routingThresholds.humanReview,
+      reviewReasons: [],
+      matchedExceptionIds: exceptionDecision.matchedExceptionIds,
+      hybridPolicyVersion: hybridPolicy.version,
     };
   }
 
@@ -5373,14 +5928,64 @@ async function resolveAgentRoutingForMessage(params: {
     ?? params.requestedNamespaceId
     ?? params.conversation.namespaceId
     ?? null;
+  if (exceptionDecision.forcedNamespaceSlug) {
+    const forcedNamespace = await db.query.namespaces.findFirst({
+      where: and(
+        eq(schema.namespaces.tenantId, params.tenantId),
+        eq(schema.namespaces.slug, exceptionDecision.forcedNamespaceSlug),
+        eq(schema.namespaces.ativo, true),
+      ),
+      columns: { id: true },
+    });
+    if (forcedNamespace) {
+      namespaceId = forcedNamespace.id;
+      namespaceFallbackReason = 'policy_forced_namespace';
+      if (selectedAgent?.namespaceId !== forcedNamespace.id) {
+        selectedAgent = null;
+      }
+    }
+  }
   if (!namespaceId) {
-    const tenantDefaultNamespaceId = await resolveTenantDefaultNamespaceId(params.tenantId);
+    const tenantDefaultNamespaceId = policyDefaultNamespaceId ?? await resolveTenantDefaultNamespaceId(params.tenantId);
     if (tenantDefaultNamespaceId) {
       namespaceId = tenantDefaultNamespaceId;
-      namespaceFallbackReason = 'tenant_default_namespace';
+      namespaceFallbackReason = policyDefaultNamespaceId
+        ? 'policy_default_namespace'
+        : 'tenant_default_namespace';
     } else {
       namespaceFallbackReason = 'namespace_unresolved';
     }
+  }
+
+  const lowConfidenceForReview = score < routingThresholds.humanReview;
+  const humanReviewRequired = (
+    hybridPolicy.enabled
+    && hybridPolicy.humanReview.enabled
+    && (
+      exceptionDecision.requireHumanReview
+      || isHighRiskRoute
+      || (hybridPolicy.humanReview.queueLowConfidenceRouting && lowConfidenceForReview)
+    )
+  );
+  const reviewReasons = [
+    ...(exceptionDecision.requireHumanReview ? ['exception_require_human_review'] : []),
+    ...(isHighRiskRoute ? ['high_risk_route'] : []),
+    ...(hybridPolicy.humanReview.queueLowConfidenceRouting && lowConfidenceForReview
+      ? ['low_confidence_semantic_routing']
+      : []),
+  ];
+  if (humanReviewRequired && !greetingMessage && command.action === 'none') {
+    const reason = reviewReasons[0] ?? 'low_confidence_semantic_routing';
+    await persistHybridReviewEvent({
+      tenantId: params.tenantId,
+      userId: params.userId ?? null,
+      route: effectiveRoute,
+      context: profile,
+      reason,
+      namespaceId,
+      agentId: selectedAgent?.id ?? null,
+      preview: params.userMessage,
+    });
   }
 
   logger.info({
@@ -5395,6 +6000,11 @@ async function resolveAgentRoutingForMessage(params: {
     selectedNamespaceId: namespaceId ?? null,
     requestedNamespaceId: params.requestedNamespaceId ?? null,
     commandOnly: command.isCommandOnly,
+    humanReviewRequired,
+    humanReviewThreshold: routingThresholds.humanReview,
+    reviewReasons,
+    exceptionIds: exceptionDecision.matchedExceptionIds,
+    hybridPolicyVersion: hybridPolicy.version,
   }, 'Agent routing decision');
 
   return {
@@ -5408,6 +6018,11 @@ async function resolveAgentRoutingForMessage(params: {
     profile,
     commandResponse,
     isCommandOnly: command.isCommandOnly,
+    humanReviewRequired,
+    humanReviewThreshold: routingThresholds.humanReview,
+    reviewReasons,
+    matchedExceptionIds: exceptionDecision.matchedExceptionIds,
+    hybridPolicyVersion: hybridPolicy.version,
   };
 }
 
@@ -9329,6 +9944,8 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
       conversation,
       conversationState,
       agenticDetectors,
+      route: '/chat',
+      userId,
     });
 
     if (routingDecision.error) {
@@ -9351,6 +9968,12 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
           source: routingDecision.source,
           score: routingDecision.score,
           profile: routingDecision.profile,
+          autoAcceptThreshold: routingDecision.threshold,
+          humanReviewThreshold: routingDecision.humanReviewThreshold ?? null,
+          needsHumanReview: routingDecision.humanReviewRequired ?? false,
+          reviewReasons: routingDecision.reviewReasons ?? [],
+          matchedExceptionIds: routingDecision.matchedExceptionIds ?? [],
+          hybridPolicyVersion: routingDecision.hybridPolicyVersion ?? null,
           selectedAgentId: activeAgentId ?? null,
           namespaceFallbackReason: routingDecision.namespaceFallbackReason ?? null,
           updatedAt: new Date().toISOString(),
@@ -9755,6 +10378,34 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       return res.status(400).json({ error: 'Mensagem do usuário obrigatória' });
     }
     const userMessageContent = normalizedUserMessageContent;
+    const hybridPolicy = await resolveHybridRoutingPolicy(tenantId);
+    const messageContextProfile = resolveContextProfile(userMessageContent);
+    const streamRoute = clientRoute ?? '/chat';
+    const streamExceptionDecision = resolveHybridExceptionDecision({
+      policy: hybridPolicy,
+      message: userMessageContent,
+      route: streamRoute,
+      context: messageContextProfile,
+    });
+    const bypassTransversalDefault = shouldBypassTransversalDefault({
+      message: userMessageContent,
+      route: streamRoute,
+      context: messageContextProfile,
+      policy: hybridPolicy,
+      exceptionDecision: streamExceptionDecision,
+    });
+    const allowGreetingGate = (
+      hybridPolicy.enabled
+      && hybridPolicy.transversalDefault.enabled
+      && hybridPolicy.transversalDefault.greetingsToDefault
+      && !bypassTransversalDefault
+    );
+    const allowReuseGate = (
+      hybridPolicy.enabled
+      && hybridPolicy.transversalDefault.enabled
+      && hybridPolicy.transversalDefault.reuseGateToDefault
+      && !bypassTransversalDefault
+    );
     const streamDiagnosticsEnabled = streamDiagnostics === true;
     logger.info(
       { conversationId: _conversationId ?? null, userId, streamDiagnosticsEnabled },
@@ -9790,23 +10441,29 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       }
       conversation = existingConversation;
     } else {
-      const route = await resolveSemanticRoute({
+      const semanticRoute = await resolveSemanticRoute({
         tenantId,
         userMessage: userMessageContent,
         agenticDetectors,
         namespaceId: namespaceId ?? null,
+        route: clientRoute ?? '/chat',
       });
       const [created] = await db.insert(schema.conversations).values({
         tenantId,
         userId,
-        agentId: route.agentId,
-        namespaceId: route.namespaceId ?? namespaceId,
+        agentId: semanticRoute.agentId,
+        namespaceId: semanticRoute.namespaceId ?? namespaceId,
         titulo: 'Nova Conversa',
         metadata: {
           routing: {
-            source: route.source,
-            score: route.score,
-            profile: route.profile,
+            source: semanticRoute.source,
+            score: semanticRoute.score,
+            profile: semanticRoute.profile,
+            autoAcceptThreshold: semanticRoute.autoAcceptThreshold,
+            humanReviewThreshold: semanticRoute.humanReviewThreshold,
+            needsHumanReview: semanticRoute.needsHumanReview,
+            reviewReasons: semanticRoute.reviewReasons,
+            matchedExceptionIds: semanticRoute.matchedExceptionIds,
           },
         },
       }).returning();
@@ -9823,6 +10480,18 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       conversation = createdWithAgent ?? created;
       conversationId = created.id;
       conversationCreated = true;
+      if (semanticRoute.needsHumanReview) {
+        await persistHybridReviewEvent({
+          tenantId,
+          userId,
+          route: clientRoute ?? '/chat',
+          context: semanticRoute.profile,
+          reason: semanticRoute.reviewReasons[0] ?? 'low_confidence_semantic_routing',
+          namespaceId: semanticRoute.namespaceId ?? null,
+          agentId: semanticRoute.agentId ?? null,
+          preview: userMessageContent,
+        });
+      }
     }
 
     const conversationState = await getOrCreateConversationState(conversationId);
@@ -9877,6 +10546,8 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       conversationState,
       agenticDetectors,
       requestedNamespaceId: namespaceId ?? null,
+      route: clientRoute ?? '/chat',
+      userId,
     });
 
     if (routingDecision.error) {
@@ -9902,6 +10573,12 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           source: routingDecision.source,
           score: routingDecision.score,
           profile: routingDecision.profile,
+          autoAcceptThreshold: routingDecision.threshold,
+          humanReviewThreshold: routingDecision.humanReviewThreshold ?? null,
+          needsHumanReview: routingDecision.humanReviewRequired ?? false,
+          reviewReasons: routingDecision.reviewReasons ?? [],
+          matchedExceptionIds: routingDecision.matchedExceptionIds ?? [],
+          hybridPolicyVersion: routingDecision.hybridPolicyVersion ?? null,
           selectedAgentId: activeAgentId ?? null,
           namespaceFallbackReason: routingDecision.namespaceFallbackReason ?? null,
           updatedAt: new Date().toISOString(),
@@ -10842,12 +11519,21 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         message: 'Avaliando saudacao (cache)',
         correlationId: conversationId ?? undefined,
       });
-      const cacheResult = await checkResponseCache(tenantId, userMessageContent);
+      const cacheResult = allowGreetingGate
+        ? await checkResponseCache(tenantId, userMessageContent, { enableHybridTransversalDefault: true })
+        : {
+          cacheHit: false,
+          hasResponse: false,
+          isGreeting: false,
+          latencyMs: 0,
+        };
       emitAgentEvent({
         phase: 'planning',
         action: 'greeting_cache',
         status: cacheResult.hasResponse ? 'success' : 'skipped',
-        message: cacheResult.hasResponse ? 'Saudacao encontrada no cache' : 'Sem saudacao em cache',
+        message: allowGreetingGate
+          ? (cacheResult.hasResponse ? 'Saudacao encontrada no cache' : 'Sem saudacao em cache')
+          : 'Greetings gate bypass por política híbrida',
         durationMs: Date.now() - cacheStart,
         correlationId: conversationId ?? undefined,
         payload: {
@@ -10855,6 +11541,9 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           cacheHit: cacheResult.cacheHit,
           latencyMs: cacheResult.latencyMs,
           isGreeting: cacheResult.isGreeting,
+          allowGreetingGate,
+          bypassTransversalDefault,
+          matchedExceptionIds: streamExceptionDecision.matchedExceptionIds,
         },
       });
       if (cacheResult.hasResponse && cacheResult.response) {
@@ -10966,110 +11655,125 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       // ============================================================================
       // REUSE GATE (deduplicação na própria conversa)
       // ============================================================================
-      writeStatus('reuse');
-      emitAgentEvent({
-        phase: 'planning',
-        action: 'reuse_gate',
-        status: 'start',
-        message: 'Verificando deduplicacao de conversa',
-        correlationId: conversationId ?? undefined,
-      });
-      const lastUserIndex = previousMessages.findIndex((msg) => msg.isFromUser);
-      const lastUserInHistory = lastUserIndex >= 0 ? previousMessages[lastUserIndex] : undefined;
-      if (lastUserInHistory?.conteudo &&
-          isSemanticallyEquivalentUserMessage(lastUserInHistory.conteudo, userMessageContent)) {
-        const assistantAfterLastUser = previousMessages.find((msg, idx) => idx < lastUserIndex && !msg.isFromUser);
-        if (assistantAfterLastUser?.conteudo) {
-          const reuseSeed = `${tenantId}:${userMessageContent}:${assistantAfterLastUser.id}`;
-          let reuseResponse = buildReuseResponse(assistantAfterLastUser.conteudo, reuseSeed);
-          reuseResponse = fixPreferredNameInDirectAddress(
-            sanitizeAssistantResponse(reuseResponse),
-            nameContext.preferredName
-          );
-          if (isCorruptedAssistantResponse(reuseResponse, resolveContextProfile(userMessageContent))) {
-            logger.warn(
-              { conversationId, reusedMessageId: assistantAfterLastUser.id },
-              'Resposta de reuse gate descartada por conteúdo degenerado'
+      if (allowReuseGate) {
+        writeStatus('reuse');
+        emitAgentEvent({
+          phase: 'planning',
+          action: 'reuse_gate',
+          status: 'start',
+          message: 'Verificando deduplicacao de conversa',
+          correlationId: conversationId ?? undefined,
+        });
+        const lastUserIndex = previousMessages.findIndex((msg) => msg.isFromUser);
+        const lastUserInHistory = lastUserIndex >= 0 ? previousMessages[lastUserIndex] : undefined;
+        if (lastUserInHistory?.conteudo &&
+            isSemanticallyEquivalentUserMessage(lastUserInHistory.conteudo, userMessageContent)) {
+          const assistantAfterLastUser = previousMessages.find((msg, idx) => idx < lastUserIndex && !msg.isFromUser);
+          if (assistantAfterLastUser?.conteudo) {
+            const reuseSeed = `${tenantId}:${userMessageContent}:${assistantAfterLastUser.id}`;
+            let reuseResponse = buildReuseResponse(assistantAfterLastUser.conteudo, reuseSeed);
+            reuseResponse = fixPreferredNameInDirectAddress(
+              sanitizeAssistantResponse(reuseResponse),
+              nameContext.preferredName
             );
-            emitAgentEvent({
-              phase: 'planning',
-              action: 'reuse_gate',
-              status: 'error',
-              message: 'Resposta reutilizada descartada por inconsistência',
-              correlationId: conversationId ?? undefined,
-            });
-          } else {
-            const persistStartedAt = Date.now();
-            emitAgentEvent({
-              phase: 'finalizing',
-              action: 'persist_message',
-              status: 'start',
-              message: 'Persistindo resposta reutilizada',
-              correlationId: conversationId ?? undefined,
-            });
-            const [assistantMessage] = await db.insert(schema.messages).values({
-              conversationId,
-              agentId: conversation?.agentId ?? undefined,
-              conteudo: reuseResponse,
-              tipo: 'text',
-              isFromUser: false,
-              metadata: {
-                source: 'reuse-gate',
-                reusedMessageId: assistantAfterLastUser.id,
-              },
-            }).returning();
-
-            await db.update(schema.conversations)
-              .set({
-                totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
-                ultimaMensagemEm: new Date(),
-                atualizadoEm: new Date(),
-              })
-              .where(eq(schema.conversations.id, conversationId));
-
-            try {
-              await ensureConversationTitle({
-                conversationId,
-                userMessage: userMessageContent,
-                assistantResponse: reuseResponse,
+            if (isCorruptedAssistantResponse(reuseResponse, resolveContextProfile(userMessageContent))) {
+              logger.warn(
+                { conversationId, reusedMessageId: assistantAfterLastUser.id },
+                'Resposta de reuse gate descartada por conteúdo degenerado'
+              );
+              emitAgentEvent({
+                phase: 'planning',
+                action: 'reuse_gate',
+                status: 'error',
+                message: 'Resposta reutilizada descartada por inconsistência',
+                correlationId: conversationId ?? undefined,
               });
-            } catch (titleError) {
-              logger.warn({ error: titleError, conversationId }, 'Falha ao aplicar título automático (reuse gate)');
-            }
+            } else {
+              const persistStartedAt = Date.now();
+              emitAgentEvent({
+                phase: 'finalizing',
+                action: 'persist_message',
+                status: 'start',
+                message: 'Persistindo resposta reutilizada',
+                correlationId: conversationId ?? undefined,
+              });
+              const [assistantMessage] = await db.insert(schema.messages).values({
+                conversationId,
+                agentId: conversation?.agentId ?? undefined,
+                conteudo: reuseResponse,
+                tipo: 'text',
+                isFromUser: false,
+                metadata: {
+                  source: 'reuse-gate',
+                  reusedMessageId: assistantAfterLastUser.id,
+                },
+              }).returning();
 
-            writeContentChunk(reuseResponse);
-            res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
-            emitAgentEvent({
-              phase: 'finalizing',
-              action: 'persist_message',
-              status: 'success',
-              message: 'Resposta reutilizada persistida',
-              durationMs: Date.now() - persistStartedAt,
-              correlationId: conversationId ?? undefined,
-              payload: {
-                messageId: assistantMessage?.id,
-              },
-            });
-            emitAgentEvent({
-              phase: 'finalizing',
-              action: 'finalizing',
-              status: 'success',
-              message: 'Resposta finalizada',
-              correlationId: conversationId ?? undefined,
-            });
-            res.write('data: [DONE]\n\n');
-            res.end();
-            return;
+              await db.update(schema.conversations)
+                .set({
+                  totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+                  ultimaMensagemEm: new Date(),
+                  atualizadoEm: new Date(),
+                })
+                .where(eq(schema.conversations.id, conversationId));
+
+              try {
+                await ensureConversationTitle({
+                  conversationId,
+                  userMessage: userMessageContent,
+                  assistantResponse: reuseResponse,
+                });
+              } catch (titleError) {
+                logger.warn({ error: titleError, conversationId }, 'Falha ao aplicar título automático (reuse gate)');
+              }
+
+              writeContentChunk(reuseResponse);
+              res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+              emitAgentEvent({
+                phase: 'finalizing',
+                action: 'persist_message',
+                status: 'success',
+                message: 'Resposta reutilizada persistida',
+                durationMs: Date.now() - persistStartedAt,
+                correlationId: conversationId ?? undefined,
+                payload: {
+                  messageId: assistantMessage?.id,
+                },
+              });
+              emitAgentEvent({
+                phase: 'finalizing',
+                action: 'finalizing',
+                status: 'success',
+                message: 'Resposta finalizada',
+                correlationId: conversationId ?? undefined,
+              });
+              res.write('data: [DONE]\n\n');
+              res.end();
+              return;
+            }
           }
         }
+        emitAgentEvent({
+          phase: 'planning',
+          action: 'reuse_gate',
+          status: 'skipped',
+          message: 'Nenhuma resposta reutilizavel encontrada',
+          correlationId: conversationId ?? undefined,
+        });
+      } else {
+        emitAgentEvent({
+          phase: 'planning',
+          action: 'reuse_gate',
+          status: 'skipped',
+          message: 'Reuse gate bypass por política híbrida',
+          correlationId: conversationId ?? undefined,
+          payload: {
+            allowReuseGate,
+            bypassTransversalDefault,
+            matchedExceptionIds: streamExceptionDecision.matchedExceptionIds,
+          },
+        });
       }
-      emitAgentEvent({
-        phase: 'planning',
-        action: 'reuse_gate',
-        status: 'skipped',
-        message: 'Nenhuma resposta reutilizavel encontrada',
-        correlationId: conversationId ?? undefined,
-      });
     }
 
     const imageSearchDetection = detectImageSearchRequest(userMessageContent, agenticDetectors);
@@ -14685,6 +15389,27 @@ wss.on('connection', (ws, req) => {
         
         // Usar tenantId derivado da conversa (SEMPRE da fonte confiável)
         const safeTenantId = conversationTenantId;
+        const hybridPolicy = await resolveHybridRoutingPolicy(safeTenantId);
+        const wsMessageContextProfile = resolveContextProfile(messageContent);
+        const wsExceptionDecision = resolveHybridExceptionDecision({
+          policy: hybridPolicy,
+          message: messageContent,
+          route: '/chat',
+          context: wsMessageContextProfile,
+        });
+        const wsBypassTransversalDefault = shouldBypassTransversalDefault({
+          message: messageContent,
+          route: '/chat',
+          context: wsMessageContextProfile,
+          policy: hybridPolicy,
+          exceptionDecision: wsExceptionDecision,
+        });
+        const wsAllowGreetingGate = (
+          hybridPolicy.enabled
+          && hybridPolicy.transversalDefault.enabled
+          && hybridPolicy.transversalDefault.greetingsToDefault
+          && !wsBypassTransversalDefault
+        );
 
         const agenticSettings = await getOrCreateAgenticSettings(safeTenantId);
         const agenticDetectors = normalizeAgenticDetectors(agenticSettings.detectors);
@@ -14820,6 +15545,8 @@ wss.on('connection', (ws, req) => {
           conversationState,
           agenticDetectors,
           requestedNamespaceId: message.namespaceId ?? null,
+          route: '/chat',
+          userId,
         });
 
         if (routingDecision.error) {
@@ -14843,6 +15570,12 @@ wss.on('connection', (ws, req) => {
               source: routingDecision.source,
               score: routingDecision.score,
               profile: routingDecision.profile,
+              autoAcceptThreshold: routingDecision.threshold,
+              humanReviewThreshold: routingDecision.humanReviewThreshold ?? null,
+              needsHumanReview: routingDecision.humanReviewRequired ?? false,
+              reviewReasons: routingDecision.reviewReasons ?? [],
+              matchedExceptionIds: routingDecision.matchedExceptionIds ?? [],
+              hybridPolicyVersion: routingDecision.hybridPolicyVersion ?? null,
               selectedAgentId: activeAgentId ?? null,
               namespaceFallbackReason: routingDecision.namespaceFallbackReason ?? null,
               updatedAt: new Date().toISOString(),
@@ -15287,7 +16020,14 @@ wss.on('connection', (ws, req) => {
         // Schema define content como opcional (z.string().optional())
         // CORREÇÃO 18/12/2025: messageContent já definido no início do bloco
         // ========================================================================
-        const cacheResult = await checkResponseCache(safeTenantId, messageContent);
+        const cacheResult = wsAllowGreetingGate
+          ? await checkResponseCache(safeTenantId, messageContent, { enableHybridTransversalDefault: true })
+          : {
+            cacheHit: false,
+            hasResponse: false,
+            isGreeting: false,
+            latencyMs: 0,
+          };
         
         // Incrementar métricas Prometheus
         if (cacheResult.isGreeting) {
@@ -17713,6 +18453,7 @@ function clusterFallbackEvents(events: FallbackEventClusterSource[], vectors: nu
   clusterId: string;
   eventIds: string[];
   size: number;
+  confidence: number;
   topRoutes: string[];
   topContexts: string[];
   reasonBreakdown: Record<string, number>;
@@ -17726,6 +18467,7 @@ function clusterFallbackEvents(events: FallbackEventClusterSource[], vectors: nu
     clusterId: string;
     eventIds: string[];
     size: number;
+    confidence: number;
     topRoutes: string[];
     topContexts: string[];
     reasonBreakdown: Record<string, number>;
@@ -17756,6 +18498,18 @@ function clusterFallbackEvents(events: FallbackEventClusterSource[], vectors: nu
     const reasonBreakdown: Record<string, number> = {};
     const previews: string[] = [];
     const eventIds: string[] = [];
+    const centroid = new Array(vectors[i]?.length ?? 0).fill(0) as number[];
+    for (const idx of members) {
+      const vector = vectors[idx] ?? [];
+      for (let c = 0; c < centroid.length; c++) {
+        centroid[c] += vector[c] ?? 0;
+      }
+    }
+    if (centroid.length > 0) {
+      for (let c = 0; c < centroid.length; c++) {
+        centroid[c] = centroid[c] / members.length;
+      }
+    }
 
     for (const idx of members) {
       const ev = events[idx];
@@ -17765,6 +18519,11 @@ function clusterFallbackEvents(events: FallbackEventClusterSource[], vectors: nu
       reasonBreakdown[ev.reason] = (reasonBreakdown[ev.reason] ?? 0) + 1;
       if (ev.preview && previews.length < 3) previews.push(ev.preview);
     }
+    const confidence = members.length > 0
+      ? members
+        .map((idx) => cosineSimilarity(vectors[idx] ?? [], centroid))
+        .reduce((sum, score) => sum + score, 0) / members.length
+      : 0;
 
     const topRoute = [...routeCount.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'geral';
     const topContext = [...contextCount.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'geral';
@@ -17776,6 +18535,7 @@ function clusterFallbackEvents(events: FallbackEventClusterSource[], vectors: nu
       clusterId: crypto.createHash('sha1').update(eventIds.join('|')).digest('hex').slice(0, 12),
       eventIds,
       size: members.length,
+      confidence,
       topRoutes: [...routeCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([route]) => route),
       topContexts: [...contextCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([context]) => context),
       reasonBreakdown,
@@ -17787,6 +18547,42 @@ function clusterFallbackEvents(events: FallbackEventClusterSource[], vectors: nu
 
   return clusters.sort((a, b) => b.size - a.size);
 }
+
+const hybridRoutingPolicyUpdateSchema = z.object({
+  policy: HybridRoutingPolicySchema,
+}).strict();
+
+app.get('/api/llm/hybrid-routing-policy', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:namespaces:read'), async (req: Request, res: Response) => {
+  const tenantId = req.tenantId;
+  if (!tenantId) {
+    return res.status(403).json({ error: 'Acesso negado: usuário não associado a um tenant' });
+  }
+  try {
+    const policy = await resolveHybridRoutingPolicy(tenantId);
+    return res.json({ policy });
+  } catch (error) {
+    logger.error({ error, tenantId }, 'Erro ao consultar política híbrida de roteamento');
+    return res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+app.patch('/api/llm/hybrid-routing-policy', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:namespaces:write'), async (req: Request, res: Response) => {
+  const tenantId = req.tenantId;
+  if (!tenantId) {
+    return res.status(403).json({ error: 'Acesso negado: usuário não associado a um tenant' });
+  }
+  const payload = hybridRoutingPolicyUpdateSchema.safeParse(req.body);
+  if (!payload.success) {
+    return res.status(400).json({ error: 'Payload inválido', details: payload.error.format() });
+  }
+  try {
+    const persisted = await persistHybridRoutingPolicy(tenantId, payload.data.policy);
+    return res.json({ policy: persisted });
+  } catch (error) {
+    logger.error({ error, tenantId }, 'Erro ao atualizar política híbrida de roteamento');
+    return res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
 
 app.get('/api/llm/fallback-stats', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:namespaces:read'), async (req: Request, res: Response) => {
   const tenantId = req.tenantId;
@@ -17905,7 +18701,13 @@ app.get('/api/llm/fallback-events', requireAuth(), requireSameTenant(getTenantId
   const query = z.object({
     page: z.coerce.number().int().min(1).default(1),
     limit: z.coerce.number().int().min(1).max(100).default(20),
-    motivo: z.enum(['namespace_unmapped', 'adapter_missing']).optional(),
+    motivo: z.enum([
+      'namespace_unmapped',
+      'adapter_missing',
+      'low_confidence_semantic_routing',
+      'high_risk_route',
+      'exception_require_human_review',
+    ]).optional(),
   }).safeParse(req.query);
   if (!query.success) {
     return res.status(400).json({ error: 'Parâmetros inválidos' });
@@ -17955,6 +18757,61 @@ app.get('/api/llm/fallback-events', requireAuth(), requireSameTenant(getTenantId
   }
 });
 
+app.get('/api/llm/hybrid-review-queue', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:namespaces:read'), async (req: Request, res: Response) => {
+  const tenantId = req.tenantId;
+  if (!tenantId) {
+    return res.status(403).json({ error: 'Acesso negado: usuário não associado a um tenant' });
+  }
+  const query = z.object({
+    page: z.coerce.number().int().min(1).default(1),
+    limit: z.coerce.number().int().min(1).max(100).default(20),
+    lookbackDays: z.coerce.number().int().min(1).max(60).default(14),
+  }).safeParse(req.query);
+  if (!query.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos' });
+  }
+
+  const reviewReasons = ['low_confidence_semantic_routing', 'high_risk_route', 'exception_require_human_review'] as const;
+  try {
+    const { page, limit, lookbackDays } = query.data;
+    const offset = (page - 1) * limit;
+    const cutoff = new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000);
+    const where = and(
+      eq(schema.llmFallbackLogs.tenantId, tenantId),
+      inArray(schema.llmFallbackLogs.motivoFallback, reviewReasons),
+      gte(schema.llmFallbackLogs.criadoEm, cutoff),
+    );
+    const [rows, totalRows] = await Promise.all([
+      db.query.llmFallbackLogs.findMany({
+        where,
+        orderBy: [desc(schema.llmFallbackLogs.criadoEm)],
+        limit,
+        offset,
+      }),
+      db.select({ total: sql<number>`count(*)` }).from(schema.llmFallbackLogs).where(where),
+    ]);
+
+    return res.json({
+      page,
+      limit,
+      total: Number(totalRows[0]?.total ?? 0),
+      items: rows.map((row) => ({
+        id: row.id,
+        route: row.rota,
+        context: row.contextoInferido ?? 'default',
+        reason: row.motivoFallback ?? 'unknown',
+        preview: row.mensagemPreview ?? '',
+        namespaceId: row.namespaceId ?? null,
+        agentId: row.agentId ?? null,
+        createdAt: row.criadoEm,
+      })),
+    });
+  } catch (error) {
+    logger.error({ error, tenantId }, 'Erro ao buscar fila de revisão humana híbrida');
+    return res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
 app.get('/api/llm/fallback-clusters', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:namespaces:read'), async (req: Request, res: Response) => {
   const tenantId = req.tenantId;
   if (!tenantId) {
@@ -17999,7 +18856,25 @@ app.get('/api/llm/fallback-clusters', requireAuth(), requireSameTenant(getTenant
     }
 
     const clusters = clusterFallbackEvents(events, vectors);
-    res.json({ clusters });
+    const hybridPolicy = await resolveHybridRoutingPolicy(tenantId);
+    const clustersWithPolicy = clusters.map((cluster) => {
+      const autoTagCandidate = (
+        cluster.confidence >= hybridPolicy.thresholds.clusterAutoTagConfidence
+        && cluster.size >= hybridPolicy.thresholds.clusterAutoTagMinSize
+      );
+      return {
+        ...cluster,
+        recommendedAction: autoTagCandidate ? 'auto_tag_candidate' : 'human_review',
+        recommendationReasons: autoTagCandidate
+          ? ['cluster_confident_and_large_enough']
+          : ['below_policy_cluster_threshold'],
+        policyThresholds: {
+          clusterAutoTagConfidence: hybridPolicy.thresholds.clusterAutoTagConfidence,
+          clusterAutoTagMinSize: hybridPolicy.thresholds.clusterAutoTagMinSize,
+        },
+      };
+    });
+    res.json({ clusters: clustersWithPolicy });
   } catch (error) {
     logger.error({ error, tenantId }, 'Erro ao calcular clusters de fallback');
     res.status(500).json({ error: 'Erro interno do servidor' });

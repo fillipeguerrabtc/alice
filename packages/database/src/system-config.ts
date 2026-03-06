@@ -16,7 +16,7 @@
  *   TRAINING_MAX_INFLIGHT_RUNS_PER_TENANT, TRAINING_PROMOTION_REQUIRE_EVAL_PASSED,
  *   TRAINING_PROMOTION_REQUIRE_DUAL_APPROVAL, TRAINING_PROMOTION_MIN_APPROVALS,
  *   AUTO_LEARNING_CRON_INCREMENTAL, AUTO_LEARNING_CRON_FULL, AUTO_LEARNING_INCLUDE_IMAGES,
- *   maxSeqLen
+ *   maxSeqLen, HYBRID_ROUTING_DEFAULT_POLICY_JSON
  */
 
 import { eq } from 'drizzle-orm';
@@ -61,6 +61,7 @@ export const SYSTEM_CONFIG_KNOWN_KEYS = [
   'AUTO_LEARNING_CRON_INCREMENTAL',
   'AUTO_LEARNING_CRON_FULL',
   'AUTO_LEARNING_INCLUDE_IMAGES',
+  'HYBRID_ROUTING_DEFAULT_POLICY_JSON',
   'maxSeqLen',
 ] as const;
 
@@ -212,6 +213,48 @@ function getEnvDefault(key: string): string {
     AUTO_LEARNING_CRON_INCREMENTAL: '0 3 * * 0',
     AUTO_LEARNING_CRON_FULL: '0 1 1,15 * *',
     AUTO_LEARNING_INCLUDE_IMAGES: 'true',
+    HYBRID_ROUTING_DEFAULT_POLICY_JSON: JSON.stringify({
+      version: 1,
+      enabled: true,
+      thresholds: {
+        autoAccept: 0.12,
+        humanReview: 0.06,
+        clusterAutoTagConfidence: 0.9,
+        clusterAutoTagMinSize: 8,
+      },
+      transversalDefault: {
+        enabled: true,
+        defaultNamespaceSlug: 'default',
+        greetingsToDefault: true,
+        reuseGateToDefault: true,
+        domainExceptionTerms: [
+          'trade',
+          'trading',
+          'btc',
+          'bitcoin',
+          'eth',
+          'ethereum',
+          'futuros',
+          'alavancagem',
+          'leverage',
+          'ordem',
+          'sinal',
+          'position',
+          'kucoin',
+          'binance',
+          'compliance',
+          'fiscal',
+          'juridico',
+          'contabilidade',
+        ],
+      },
+      humanReview: {
+        enabled: true,
+        queueLowConfidenceRouting: true,
+        highRiskRoutes: ['/trading', '/wise'],
+      },
+      exceptions: [],
+    }),
     maxSeqLen: '1536',
   };
   return defaults[key] ?? '';

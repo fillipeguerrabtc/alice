@@ -243,7 +243,10 @@ async function saveToCache(
 
 export async function checkResponseCache(
   tenantId: string,
-  message: string
+  message: string,
+  options?: {
+    enableHybridTransversalDefault?: boolean;
+  }
 ): Promise<CacheCheckResult> {
   const startTime = Date.now();
 
@@ -255,6 +258,10 @@ export async function checkResponseCache(
   };
 
   if (!CACHE_ENABLED) {
+    result.latencyMs = Date.now() - startTime;
+    return result;
+  }
+  if (options?.enableHybridTransversalDefault === false) {
     result.latencyMs = Date.now() - startTime;
     return result;
   }

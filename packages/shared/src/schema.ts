@@ -106,6 +106,58 @@ import { z } from "zod";
 // ============================================================================
 
 // --- Configurações de Tenant ---
+export const HybridRoutingExceptionSchema = z.object({
+  id: z.string().min(2).max(120),
+  enabled: z.boolean().default(true),
+  routePrefix: z.string().min(1).max(255).optional(),
+  context: z.string().min(1).max(120).optional(),
+  containsTerms: z.array(z.string().min(2).max(80)).max(80).default([]),
+  action: z.enum(['force_namespace', 'require_human_review', 'bypass_transversal_default']),
+  targetNamespaceSlug: z.string().min(2).max(100).optional(),
+  note: z.string().max(500).optional(),
+}).passthrough().superRefine((exception, ctx) => {
+  if (exception.action === 'force_namespace' && !exception.targetNamespaceSlug) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'targetNamespaceSlug é obrigatório quando action=force_namespace',
+      path: ['targetNamespaceSlug'],
+    });
+  }
+});
+
+export const HybridRoutingPolicySchema = z.object({
+  version: z.number().int().positive().default(1),
+  enabled: z.boolean().default(true),
+  thresholds: z.object({
+    autoAccept: z.number().min(0).max(1),
+    humanReview: z.number().min(0).max(1),
+    clusterAutoTagConfidence: z.number().min(0).max(1),
+    clusterAutoTagMinSize: z.number().int().min(2).max(500),
+  }).passthrough(),
+  transversalDefault: z.object({
+    enabled: z.boolean(),
+    defaultNamespaceSlug: z.string().min(2).max(100),
+    greetingsToDefault: z.boolean(),
+    reuseGateToDefault: z.boolean(),
+    domainExceptionTerms: z.array(z.string().min(2).max(80)).max(300),
+  }).passthrough(),
+  humanReview: z.object({
+    enabled: z.boolean(),
+    queueLowConfidenceRouting: z.boolean(),
+    highRiskRoutes: z.array(z.string().min(1).max(255)).max(300),
+  }).passthrough(),
+  exceptions: z.array(HybridRoutingExceptionSchema).max(200).default([]),
+}).superRefine((policy, ctx) => {
+  if (policy.thresholds.humanReview > policy.thresholds.autoAccept) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'thresholds.humanReview deve ser <= thresholds.autoAccept',
+      path: ['thresholds', 'humanReview'],
+    });
+  }
+});
+export type HybridRoutingPolicy = z.infer<typeof HybridRoutingPolicySchema>;
+
 export const TenantConfiguracoesSchema = z.object({
   theme: z.enum(["light", "dark", "system"]).optional(),
   logoPosition: z.enum(["left", "center"]).optional(),
@@ -119,6 +171,7 @@ export const TenantConfiguracoesSchema = z.object({
     primaryColor: z.string().optional(),
     accentColor: z.string().optional(),
   }).optional(),
+  hybridRouting: HybridRoutingPolicySchema.optional(),
 }).passthrough();
 export type TenantConfiguracoes = z.infer<typeof TenantConfiguracoesSchema>;
 
