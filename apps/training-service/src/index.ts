@@ -23,8 +23,10 @@ import compression from 'compression';
 import crypto from 'crypto';
 import {
   getNodeEnv,
+  getOptionalServiceUrl,
   getServiceUrl,
   loadConfig,
+  readOptionalStringEnv,
   resolveCorsOrigins,
   trainingServiceConfigSchema,
 } from '@alice/config';
@@ -296,12 +298,12 @@ function resolveAuthorizedTenantId(
 
 type RequestWithRawBody = Request & { rawBody?: Buffer };
 const TRAINING_JOB_STREAM_POLL_INTERVAL_MS = parseEnvInt(
-  process.env.TRAINING_JOB_STREAM_POLL_INTERVAL_MS,
+  readOptionalStringEnv('TRAINING_JOB_STREAM_POLL_INTERVAL_MS') ?? undefined,
   1000,
   'TRAINING_JOB_STREAM_POLL_INTERVAL_MS'
 );
 const TRAINING_JOB_STREAM_HEARTBEAT_MS = parseEnvInt(
-  process.env.TRAINING_JOB_STREAM_HEARTBEAT_MS,
+  readOptionalStringEnv('TRAINING_JOB_STREAM_HEARTBEAT_MS') ?? undefined,
   15000,
   'TRAINING_JOB_STREAM_HEARTBEAT_MS'
 );
@@ -309,38 +311,44 @@ const trainingRuntimeConfig = loadConfig(trainingServiceConfigSchema);
 
 const PORT = trainingRuntimeConfig.PORT ?? 3004;
 const TRAINING_HTTP_SERVER_TIMEOUT_MS = parseEnvInt(
-  process.env.TRAINING_HTTP_SERVER_TIMEOUT_MS,
+  readOptionalStringEnv('TRAINING_HTTP_SERVER_TIMEOUT_MS') ?? undefined,
   600000,
   'TRAINING_HTTP_SERVER_TIMEOUT_MS'
 );
 const TRAINING_OPERATION_LOCK_TTL_SECONDS = parseEnvInt(
-  process.env.TRAINING_OPERATION_LOCK_TTL_SECONDS,
+  readOptionalStringEnv('TRAINING_OPERATION_LOCK_TTL_SECONDS') ?? undefined,
   45,
   'TRAINING_OPERATION_LOCK_TTL_SECONDS'
 );
 const TRAINING_RUN_START_IDEMPOTENCY_TTL_SECONDS = parseEnvInt(
-  process.env.TRAINING_RUN_START_IDEMPOTENCY_TTL_SECONDS,
+  readOptionalStringEnv('TRAINING_RUN_START_IDEMPOTENCY_TTL_SECONDS') ?? undefined,
   86400,
   'TRAINING_RUN_START_IDEMPOTENCY_TTL_SECONDS'
 );
 const TRAINING_RUN_START_CONTENTION_RETRY_AFTER_SECONDS = parseEnvInt(
-  process.env.TRAINING_RUN_START_CONTENTION_RETRY_AFTER_SECONDS,
+  readOptionalStringEnv('TRAINING_RUN_START_CONTENTION_RETRY_AFTER_SECONDS') ?? undefined,
   15,
   'TRAINING_RUN_START_CONTENTION_RETRY_AFTER_SECONDS'
 );
 const TRAINING_RUN_START_CAPACITY_RETRY_AFTER_SECONDS = parseEnvInt(
-  process.env.TRAINING_RUN_START_CAPACITY_RETRY_AFTER_SECONDS,
+  readOptionalStringEnv('TRAINING_RUN_START_CAPACITY_RETRY_AFTER_SECONDS') ?? undefined,
   60,
   'TRAINING_RUN_START_CAPACITY_RETRY_AFTER_SECONDS'
 );
 const TRAINING_RUN_START_REQUIRE_IDEMPOTENCY_KEY = parseEnvBoolean(
-  process.env.TRAINING_RUN_START_REQUIRE_IDEMPOTENCY_KEY,
+  readOptionalStringEnv('TRAINING_RUN_START_REQUIRE_IDEMPOTENCY_KEY') ?? undefined,
   true
 );
 const tradingDataGovernancePolicy = loadTradingDataGovernancePolicyFromEnv();
 const _DATABASE_URL = trainingRuntimeConfig.DATABASE_URL;
 const RAG_SERVICE_URL = getServiceUrl('rag');
 const INTEGRATIONS_SERVICE_URL_FINAL = getServiceUrl('integrations');
+const GPU_MANAGER_URL_FROM_CONFIG = getOptionalServiceUrl('gpuManager');
+if (IS_PRODUCTION && !GPU_MANAGER_URL_FROM_CONFIG) {
+  throw new Error('GPU_MANAGER_URL é obrigatório em produção para training-service');
+}
+const GPU_MANAGER_URL_FINAL = GPU_MANAGER_URL_FROM_CONFIG ?? 'http://alice-gpu-manager:3010';
+const INTERNAL_API_SECRET = readOptionalStringEnv('INTERNAL_API_SECRET') ?? undefined;
 const CORS_ORIGINS = resolveCorsOrigins({
   requiredInProduction: true,
   developmentFallback: [],
@@ -770,48 +778,48 @@ const fineTuningQueueNames = [
 ] as const;
 
 const TRAINING_METRICS_INTERVAL_MS = parseEnvInt(
-  process.env.TRAINING_METRICS_INTERVAL_MS,
+  readOptionalStringEnv('TRAINING_METRICS_INTERVAL_MS') ?? undefined,
   60000,
   'TRAINING_METRICS_INTERVAL_MS'
 );
 const NAMESPACE_PROFILE_RECONCILE_INTERVAL_MS = parseEnvInt(
-  process.env.NAMESPACE_PROFILE_RECONCILE_INTERVAL_MS,
+  readOptionalStringEnv('NAMESPACE_PROFILE_RECONCILE_INTERVAL_MS') ?? undefined,
   600_000,
   'NAMESPACE_PROFILE_RECONCILE_INTERVAL_MS'
 );
 const TRAINING_POLICY_GATE_WORKER_POLL_INTERVAL_MS = parseEnvInt(
-  process.env.TRAINING_POLICY_GATE_WORKER_POLL_INTERVAL_MS,
+  readOptionalStringEnv('TRAINING_POLICY_GATE_WORKER_POLL_INTERVAL_MS') ?? undefined,
   5_000,
   'TRAINING_POLICY_GATE_WORKER_POLL_INTERVAL_MS'
 );
 const TRAINING_FINE_TUNING_WORKER_POLL_INTERVAL_MS = parseEnvInt(
-  process.env.TRAINING_FINE_TUNING_WORKER_POLL_INTERVAL_MS,
+  readOptionalStringEnv('TRAINING_FINE_TUNING_WORKER_POLL_INTERVAL_MS') ?? undefined,
   5_000,
   'TRAINING_FINE_TUNING_WORKER_POLL_INTERVAL_MS'
 );
 const TRADING_WORKER_POLL_INTERVAL_MS = 250;
 const TRADING_SIGNAL_AUTO_CANDIDATE_FETCH_LIMIT = parseEnvInt(
-  process.env.TRADING_SIGNAL_AUTO_CANDIDATE_FETCH_LIMIT,
+  readOptionalStringEnv('TRADING_SIGNAL_AUTO_CANDIDATE_FETCH_LIMIT') ?? undefined,
   300,
   'TRADING_SIGNAL_AUTO_CANDIDATE_FETCH_LIMIT',
 );
 const TRADING_SIGNAL_AUTO_AUTOMIX_CANDIDATE_FETCH_LIMIT = parseEnvInt(
-  process.env.TRADING_SIGNAL_AUTO_AUTOMIX_CANDIDATE_FETCH_LIMIT,
+  readOptionalStringEnv('TRADING_SIGNAL_AUTO_AUTOMIX_CANDIDATE_FETCH_LIMIT') ?? undefined,
   2_000,
   'TRADING_SIGNAL_AUTO_AUTOMIX_CANDIDATE_FETCH_LIMIT',
 );
 const TRAINING_IMMUTABLE_AUDIT_CHECK_INTERVAL_MS = parseEnvInt(
-  process.env.TRAINING_IMMUTABLE_AUDIT_CHECK_INTERVAL_MS,
+  readOptionalStringEnv('TRAINING_IMMUTABLE_AUDIT_CHECK_INTERVAL_MS') ?? undefined,
   300_000,
   'TRAINING_IMMUTABLE_AUDIT_CHECK_INTERVAL_MS',
 );
 const TRAINING_IMMUTABLE_AUDIT_STREAMS_PER_CHECK = parseEnvInt(
-  process.env.TRAINING_IMMUTABLE_AUDIT_STREAMS_PER_CHECK,
+  readOptionalStringEnv('TRAINING_IMMUTABLE_AUDIT_STREAMS_PER_CHECK') ?? undefined,
   20,
   'TRAINING_IMMUTABLE_AUDIT_STREAMS_PER_CHECK',
 );
 const TRAINING_IMMUTABLE_AUDIT_EVENTS_PER_STREAM_LIMIT = parseEnvInt(
-  process.env.TRAINING_IMMUTABLE_AUDIT_EVENTS_PER_STREAM_LIMIT,
+  readOptionalStringEnv('TRAINING_IMMUTABLE_AUDIT_EVENTS_PER_STREAM_LIMIT') ?? undefined,
   5_000,
   'TRAINING_IMMUTABLE_AUDIT_EVENTS_PER_STREAM_LIMIT',
 );
@@ -1156,7 +1164,11 @@ function createTradingWorker<T extends { idempotencyKey: string }>(
     consumer: `training-${process.pid}`,
     maxRetries: 3,
     autoClaimCount: 10,
-    streamMaxLen: parseEnvInt(process.env.TRADING_QUEUE_MAXLEN, 20_000, 'TRADING_QUEUE_MAXLEN'),
+    streamMaxLen: parseEnvInt(
+      readOptionalStringEnv('TRADING_QUEUE_MAXLEN') ?? undefined,
+      20_000,
+      'TRADING_QUEUE_MAXLEN'
+    ),
   });
   let stopped = false;
   const stopToken = { isStopped: () => stopped };
@@ -2410,7 +2422,7 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
       { role: 'user' as const, content: llmPrompt },
     ];
 
-    const configuredModel = process.env.TRADING_LLM_MODEL?.trim() || 'Qwen2.5-7B-Instruct-AWQ';
+    const configuredModel = readOptionalStringEnv('TRADING_LLM_MODEL') ?? 'Qwen2.5-7B-Instruct-AWQ';
     const loraModel = activeAdapter.adapterPath ? `${configuredModel}::${activeAdapter.adapterPath}` : configuredModel;
     let llmRawContent = '';
     if (isGatewayConfigured()) {
@@ -2644,8 +2656,8 @@ registerTrainingLoraOrchestratorRoutes(app, {
   activateLoraAdapter,
   getActiveAdapter,
   deactivateLoraAdapter,
-  gpuManagerUrlOrchestrator: process.env.GPU_MANAGER_URL || 'http://alice-gpu-manager:3010',
-  internalApiSecretOrchestrator: process.env.INTERNAL_API_SECRET,
+  gpuManagerUrlOrchestrator: GPU_MANAGER_URL_FINAL,
+  internalApiSecretOrchestrator: INTERNAL_API_SECRET,
 });
 
 registerTrainingRuntimeRoutes(app, {
@@ -2827,13 +2839,13 @@ function parseEnvFloat(envValue: string | undefined, defaultValue: number, varNa
 }
 
 const TRAINING_DATA_MIN_QUALITY = parseEnvFloat(
-  process.env.TRAINING_DATA_MIN_QUALITY,
+  readOptionalStringEnv('TRAINING_DATA_MIN_QUALITY') ?? undefined,
   0.35,
   'TRAINING_DATA_MIN_QUALITY'
 );
 
 const TRAINING_SCHEDULER_POLL_MS = parseEnvInt(
-  process.env.TRAINING_SCHEDULER_POLL_MS,
+  readOptionalStringEnv('TRAINING_SCHEDULER_POLL_MS') ?? undefined,
   60000,
   'TRAINING_SCHEDULER_POLL_MS'
 );
@@ -3690,20 +3702,17 @@ app.use(createErrorHandler({
 import { connectWithRetry } from '@alice/database';
 
 // SSOT validation (Plano 11/02/2026): TEXT_EMBEDDING_DIM (embeddings-gpu) = EMBEDDING_DIMENSIONS.TEXT
-const GPU_MANAGER_URL = process.env.GPU_MANAGER_URL || 'http://alice-gpu-manager:3010';
-const INTERNAL_API_SECRET_FOR_VALIDATION = process.env.INTERNAL_API_SECRET;
-
 async function validateEmbeddingDimensionsSSOT(): Promise<void> {
-  if (!INTERNAL_API_SECRET_FOR_VALIDATION) return;
+  if (!INTERNAL_API_SECRET) return;
   const maxAttempts = 3;
   const delayMs = 2000;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       const controller = new AbortController();
       const t = setTimeout(() => controller.abort(), 5000);
-      const res = await fetch(`${GPU_MANAGER_URL}/api/gpu/embeddings/health`, {
+      const res = await fetch(`${GPU_MANAGER_URL_FINAL}/api/gpu/embeddings/health`, {
         signal: controller.signal,
-        headers: { 'X-Internal-Api-Secret': INTERNAL_API_SECRET_FOR_VALIDATION, Accept: 'application/json' },
+        headers: { 'X-Internal-Api-Secret': INTERNAL_API_SECRET, Accept: 'application/json' },
       });
       clearTimeout(t);
       if (!res.ok) {

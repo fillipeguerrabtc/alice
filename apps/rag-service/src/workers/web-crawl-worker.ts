@@ -15,11 +15,12 @@ interface WebCrawlWorkerConfig {
   maxAttempts: number;
   searxngUrl: string;
   searxngKey?: string;
+  userAgent?: string;
   allowedDomains: string[];
   requireAllowlist: boolean;
 }
 
-const DEFAULT_USER_AGENT = 'AliceCrawler/1.0 (+https://yesyoudeserve.duckdns.org)';
+const DEFAULT_USER_AGENT = 'AliceCrawler/1.0';
 const MAX_REDIRECTS = 5;
 
 // Tipo WebCrawlRequest inferido do schema Drizzle (Regra 2 CLAUDE.md - NÃO DUPLICAR)
@@ -150,7 +151,10 @@ export function startWebCrawlWorker(db: Database, config: WebCrawlWorkerConfig) 
     try {
       const res = await fetch(currentUrl.toString(), {
         method: 'GET',
-        headers: { 'User-Agent': DEFAULT_USER_AGENT, Accept: 'text/html,application/xhtml+xml' },
+        headers: {
+          'User-Agent': config.userAgent ?? DEFAULT_USER_AGENT,
+          Accept: 'text/html,application/xhtml+xml',
+        },
         redirect: 'manual',
         signal: controller.signal,
       });

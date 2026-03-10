@@ -4,9 +4,11 @@
 
 import { createHash } from 'node:crypto';
 import { createLogger } from '@alice/logger';
+import { getNodeEnv, readOptionalStringEnv } from '@alice/config';
 import { getRedisClient, isRedisAvailable } from '@alice/shared-utils';
 
 const logger = createLogger('response-cache');
+const IS_PRODUCTION = getNodeEnv() === 'production';
 
 function parseEnvInt(envValue: string | undefined, defaultValue: number, varName: string): number {
   const raw = envValue ?? String(defaultValue);
@@ -14,7 +16,7 @@ function parseEnvInt(envValue: string | undefined, defaultValue: number, varName
 
   if (!/^\d+$/.test(trimmed)) {
     const message = `${varName} invalido: "${raw}". Deve ser inteiro positivo.`;
-    if (process.env.NODE_ENV === 'production') {
+    if (IS_PRODUCTION) {
       logger.error({ varName, rawValue: raw }, message);
       throw new Error(message);
     }
@@ -25,7 +27,7 @@ function parseEnvInt(envValue: string | undefined, defaultValue: number, varName
   const parsed = Number.parseInt(trimmed, 10);
   if (!Number.isFinite(parsed) || parsed <= 0) {
     const message = `${varName} invalido: "${raw}". Deve ser inteiro positivo.`;
-    if (process.env.NODE_ENV === 'production') {
+    if (IS_PRODUCTION) {
       logger.error({ varName, rawValue: raw, parsed }, message);
       throw new Error(message);
     }
@@ -36,9 +38,32 @@ function parseEnvInt(envValue: string | undefined, defaultValue: number, varName
   return parsed;
 }
 
-const CACHE_TTL_MS = parseEnvInt(process.env.RESPONSE_CACHE_TTL_MS, 86400000, 'RESPONSE_CACHE_TTL_MS');
+function parseEnvBool(envValue: string | undefined, defaultValue: boolean, varName: string): boolean {
+  if (typeof envValue === 'undefined') return defaultValue;
+  const normalized = envValue.trim().toLowerCase();
+  if (normalized === 'true') return true;
+  if (normalized === 'false') return false;
+
+  const message = `${varName} invalido: "${envValue}". Deve ser "true" ou "false".`;
+  if (IS_PRODUCTION) {
+    logger.error({ varName, rawValue: envValue }, message);
+    throw new Error(message);
+  }
+  logger.warn({ varName, rawValue: envValue, defaultValue }, `${message} Usando padrao.`);
+  return defaultValue;
+}
+
+const CACHE_TTL_MS = parseEnvInt(
+  readOptionalStringEnv('RESPONSE_CACHE_TTL_MS') ?? undefined,
+  86400000,
+  'RESPONSE_CACHE_TTL_MS'
+);
 const CACHE_PREFIX = 'alice:response-cache:v2';
-const CACHE_ENABLED = process.env.RESPONSE_CACHE_ENABLED !== 'false';
+const CACHE_ENABLED = parseEnvBool(
+  readOptionalStringEnv('RESPONSE_CACHE_ENABLED') ?? undefined,
+  true,
+  'RESPONSE_CACHE_ENABLED'
+);
 
 const GREETING_PATTERNS: RegExp[] = [
   /^(?:ol[áa]|oi|e ai|fala|salve)(?:,\s*[\p{L}\p{M}'-]{2,40})?(?:\s*[!.,?]+)?$/iu,

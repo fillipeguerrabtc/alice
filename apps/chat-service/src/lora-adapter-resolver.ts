@@ -5,7 +5,7 @@
  */
 
 import { createLogger } from '@alice/logger';
-import { getServiceUrl } from '@alice/config';
+import { getServiceUrl, readOptionalStringEnv } from '@alice/config';
 import { buildLlmAdapterCacheKey, resolveLlmModelByScope } from '@alice/shared-utils';
 import { Counter, Histogram } from 'prom-client';
 
@@ -25,7 +25,13 @@ const loraResolveLatency = new Histogram({
 
 const CACHE_TTL_SECONDS = 60;
 const TRAINING_SERVICE_URL = getServiceUrl('training');
-const STRICT_BINDING_POLICY = process.env.LORA_STRICT_BINDING === 'true';
+const STRICT_BINDING_POLICY = (() => {
+  const raw = readOptionalStringEnv('LORA_STRICT_BINDING');
+  if (!raw) return false;
+  if (raw === 'true') return true;
+  if (raw === 'false') return false;
+  throw new Error('LORA_STRICT_BINDING inválido: use "true" ou "false"');
+})();
 const CACHE_PREFIX = 'alice:chat:lora:active-adapter';
 
 export interface AdapterResolveContext {

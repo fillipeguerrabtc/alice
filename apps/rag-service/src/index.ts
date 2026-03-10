@@ -1024,27 +1024,56 @@ function parseEnvFloat(envValue: string | undefined, defaultValue: number, varNa
 }
 
 // Workers (defaults seguros e configuráveis) - CORREÇÃO AUDITORIA 17/12/2025
-const WORKER_POLL_MS = parseEnvInt(process.env.WORKER_POLL_MS, 3000, 'WORKER_POLL_MS');
-const WORKER_CONCURRENCY = parseEnvInt(process.env.WORKER_CONCURRENCY, 2, 'WORKER_CONCURRENCY');
-const WORKER_MAX_ATTEMPTS = parseEnvInt(process.env.WORKER_MAX_ATTEMPTS, 3, 'WORKER_MAX_ATTEMPTS');
+const WORKER_POLL_MS = parseEnvInt(
+  readOptionalStringEnv('WORKER_POLL_MS') ?? undefined,
+  3000,
+  'WORKER_POLL_MS'
+);
+const WORKER_CONCURRENCY = parseEnvInt(
+  readOptionalStringEnv('WORKER_CONCURRENCY') ?? undefined,
+  2,
+  'WORKER_CONCURRENCY'
+);
+const WORKER_MAX_ATTEMPTS = parseEnvInt(
+  readOptionalStringEnv('WORKER_MAX_ATTEMPTS') ?? undefined,
+  3,
+  'WORKER_MAX_ATTEMPTS'
+);
 const WEB_CRAWL_REQUIRE_ALLOWLIST = parseEnvBool(
-  process.env.WEB_CRAWL_REQUIRE_ALLOWLIST,
+  readOptionalStringEnv('WEB_CRAWL_REQUIRE_ALLOWLIST') ?? undefined,
   isProduction,
   'WEB_CRAWL_REQUIRE_ALLOWLIST'
 );
-const WEB_CRAWL_ALLOWED_DOMAINS = (process.env.WEB_CRAWL_ALLOWED_DOMAINS ?? '')
+const WEB_CRAWL_ALLOWED_DOMAINS = (readOptionalStringEnv('WEB_CRAWL_ALLOWED_DOMAINS') ?? '')
   .split(',')
   .map((domain) => domain.trim().toLowerCase())
   .filter(Boolean);
+const WEB_CRAWL_USER_AGENT = readOptionalStringEnv('WEB_CRAWL_USER_AGENT') ?? undefined;
 if (WEB_CRAWL_REQUIRE_ALLOWLIST && WEB_CRAWL_ALLOWED_DOMAINS.length === 0) {
   const errorMsg = 'WEB_CRAWL_ALLOWED_DOMAINS e obrigatorio quando WEB_CRAWL_REQUIRE_ALLOWLIST=true.';
   logger.error({ requireAllowlist: WEB_CRAWL_REQUIRE_ALLOWLIST }, errorMsg);
   throw new Error(errorMsg);
 }
-const DOC_PROCESS_MAX_ATTEMPTS = parseEnvInt(process.env.DOC_PROCESS_MAX_ATTEMPTS, 3, 'DOC_PROCESS_MAX_ATTEMPTS');
-const DOC_CHUNK_SIZE_CHARS = parseEnvInt(process.env.DOC_CHUNK_SIZE_CHARS, 1000, 'DOC_CHUNK_SIZE_CHARS');
-const DOC_CHUNK_OVERLAP_CHARS_RAW = parseEnvInt(process.env.DOC_CHUNK_OVERLAP_CHARS, 200, 'DOC_CHUNK_OVERLAP_CHARS');
-const DOC_CHUNK_MAX_CHUNKS = parseEnvInt(process.env.DOC_CHUNK_MAX_CHUNKS, 200, 'DOC_CHUNK_MAX_CHUNKS');
+const DOC_PROCESS_MAX_ATTEMPTS = parseEnvInt(
+  readOptionalStringEnv('DOC_PROCESS_MAX_ATTEMPTS') ?? undefined,
+  3,
+  'DOC_PROCESS_MAX_ATTEMPTS'
+);
+const DOC_CHUNK_SIZE_CHARS = parseEnvInt(
+  readOptionalStringEnv('DOC_CHUNK_SIZE_CHARS') ?? undefined,
+  1000,
+  'DOC_CHUNK_SIZE_CHARS'
+);
+const DOC_CHUNK_OVERLAP_CHARS_RAW = parseEnvInt(
+  readOptionalStringEnv('DOC_CHUNK_OVERLAP_CHARS') ?? undefined,
+  200,
+  'DOC_CHUNK_OVERLAP_CHARS'
+);
+const DOC_CHUNK_MAX_CHUNKS = parseEnvInt(
+  readOptionalStringEnv('DOC_CHUNK_MAX_CHUNKS') ?? undefined,
+  200,
+  'DOC_CHUNK_MAX_CHUNKS'
+);
 const DOCUMENT_PROCESSING_RECONCILER_INTERVAL_MS = 30_000;
 const DOCUMENT_PROCESSING_RECONCILER_STALE_MS = 2 * 60_000;
 const DOCUMENT_PROCESSING_RECONCILER_BATCH_SIZE = 50;
@@ -1065,48 +1094,48 @@ if (DOC_CHUNK_OVERLAP_CHARS_RAW >= DOC_CHUNK_SIZE_CHARS) {
 
 const TRAINING_SERVICE_URL = getOptionalServiceUrl('training');
 const TRAINING_DOC_AUTO_COLLECT = parseEnvBool(
-  process.env.TRAINING_DOC_AUTO_COLLECT,
+  readOptionalStringEnv('TRAINING_DOC_AUTO_COLLECT') ?? undefined,
   false,
   'TRAINING_DOC_AUTO_COLLECT'
 );
 const TRAINING_DOC_MAX_SAMPLES = parseEnvInt(
-  process.env.TRAINING_DOC_MAX_SAMPLES,
+  readOptionalStringEnv('TRAINING_DOC_MAX_SAMPLES') ?? undefined,
   50,
   'TRAINING_DOC_MAX_SAMPLES'
 );
 const TRAINING_DOC_MIN_CHARS = parseEnvInt(
-  process.env.TRAINING_DOC_MIN_CHARS,
+  readOptionalStringEnv('TRAINING_DOC_MIN_CHARS') ?? undefined,
   180,
   'TRAINING_DOC_MIN_CHARS'
 );
 
 const RAG_ADAPTIVE_K_ENABLED = parseEnvBool(
-  process.env.RAG_ADAPTIVE_K_ENABLED,
+  readOptionalStringEnv('RAG_ADAPTIVE_K_ENABLED') ?? undefined,
   false,
   'RAG_ADAPTIVE_K_ENABLED'
 );
 const RAG_ADAPTIVE_K_MIN_RESULTS = parseEnvInt(
-  process.env.RAG_ADAPTIVE_K_MIN_RESULTS,
+  readOptionalStringEnv('RAG_ADAPTIVE_K_MIN_RESULTS') ?? undefined,
   2,
   'RAG_ADAPTIVE_K_MIN_RESULTS'
 );
 const RAG_ADAPTIVE_K_MIN_THRESHOLD = parseEnvFloat(
-  process.env.RAG_ADAPTIVE_K_MIN_THRESHOLD,
+  readOptionalStringEnv('RAG_ADAPTIVE_K_MIN_THRESHOLD') ?? undefined,
   0.55,
   'RAG_ADAPTIVE_K_MIN_THRESHOLD'
 );
 const RAG_ADAPTIVE_K_FALLBACK_DELTA = parseEnvFloat(
-  process.env.RAG_ADAPTIVE_K_FALLBACK_DELTA,
+  readOptionalStringEnv('RAG_ADAPTIVE_K_FALLBACK_DELTA') ?? undefined,
   0.1,
   'RAG_ADAPTIVE_K_FALLBACK_DELTA'
 );
 const RAG_ADAPTIVE_K_SHORT_QUERY = parseEnvInt(
-  process.env.RAG_ADAPTIVE_K_SHORT_QUERY,
+  readOptionalStringEnv('RAG_ADAPTIVE_K_SHORT_QUERY') ?? undefined,
   200,
   'RAG_ADAPTIVE_K_SHORT_QUERY'
 );
 const RAG_ADAPTIVE_K_MEDIUM_QUERY = parseEnvInt(
-  process.env.RAG_ADAPTIVE_K_MEDIUM_QUERY,
+  readOptionalStringEnv('RAG_ADAPTIVE_K_MEDIUM_QUERY') ?? undefined,
   600,
   'RAG_ADAPTIVE_K_MEDIUM_QUERY'
 );
@@ -1226,7 +1255,7 @@ const GPU_MANAGER_URL = getServiceUrl('gpuManager');
 
 /** SSOT validation (Plano 11/02/2026): TEXT_EMBEDDING_DIM (embeddings-gpu) = EMBEDDING_DIMENSIONS.TEXT */
 async function validateEmbeddingDimensionsSSOT(): Promise<void> {
-  const secret = process.env.INTERNAL_API_SECRET;
+  const secret = readOptionalStringEnv('INTERNAL_API_SECRET');
   if (!secret) return;
   const maxAttempts = 3;
   const delayMs = 2000;
@@ -1623,7 +1652,7 @@ const webSearch = (query: string, count?: number, options?: WebSearchOptions) =>
 // - Learning/Web Crawl workers: opcionais e tenant-scoped via WORKER_TENANT_ID
 // ============================================================================
 
-const WORKER_TENANT_ID = process.env.WORKER_TENANT_ID;
+const WORKER_TENANT_ID = readOptionalStringEnv('WORKER_TENANT_ID') ?? undefined;
 let documentProcessingReconcilerTimer: NodeJS.Timeout | null = null;
 
 function startTenantScopedWorkers(workerTenantId: string): void {
@@ -1641,6 +1670,7 @@ function startTenantScopedWorkers(workerTenantId: string): void {
     maxAttempts: WORKER_MAX_ATTEMPTS,
     searxngUrl: SEARXNG_URL,
     searxngKey: SEARXNG_SECRET_KEY,
+    userAgent: WEB_CRAWL_USER_AGENT,
     allowedDomains: WEB_CRAWL_ALLOWED_DOMAINS,
     requireAllowlist: WEB_CRAWL_REQUIRE_ALLOWLIST,
   });
@@ -1942,8 +1972,8 @@ function classifyQuery(query: string): ClassificationResult {
 
 // SEGURANÇA: Helmet com CSP/HSTS enterprise (Express.js 2025 + OWASP 2023)
 app.use(createSecurityMiddleware({
-  contentSecurityPolicy: process.env.NODE_ENV === 'production',
-  isDevelopment: process.env.NODE_ENV !== 'production',
+  contentSecurityPolicy: isProduction,
+  isDevelopment: !isProduction,
 }));
 
 // OBSERVABILITY: Correlation ID middleware para rastreamento distribuído (Node.js 20 LTS 2025)
@@ -3247,6 +3277,10 @@ const webImageSearchSchema = z.object({
   limit: z.coerce.number().min(1).max(12).default(5),
 });
 
+const ragClassifySchema = z.object({
+  query: z.string().trim().min(1, 'Query é obrigatória'),
+});
+
 app.post('/api/rag/web-search', requireAuth(), async (req: Request, res: Response) => {
   try {
     const { query, limit, mode, engines, categories, language, safesearch, timeRange } = webSearchSchema.parse(req.body);
@@ -3300,11 +3334,11 @@ app.post('/api/rag/web-search/images', requireAuth(), async (req: Request, res: 
 
 app.post('/api/rag/classify', requireAuth(), async (req: Request, res: Response) => {
   try {
-    const { query } = req.body;
-    
-    if (!query || typeof query !== 'string') {
-      return res.status(400).json({ error: 'Query é obrigatória' });
+    const parseResult = ragClassifySchema.safeParse(req.body);
+    if (!parseResult.success) {
+      return res.status(400).json({ error: 'Payload inválido', details: parseResult.error.format() });
     }
+    const { query } = parseResult.data;
 
     const classification = classifyQuery(query);
     
@@ -5350,7 +5384,7 @@ registerShutdownCallback(
         port: PORT, 
         gpuManagerUrl: GPU_MANAGER_URL,
         qdrantConfigured: isQdrantConfigured(),
-        qdrantUrl: process.env.QDRANT_URL || 'not_configured',
+        qdrantUrl: readOptionalStringEnv('QDRANT_URL') ?? 'not_configured',
         architecture: {
           text: 'Qwen3-Embedding-0.6B (1024 dim) → Qdrant',
           image: 'OpenAI Vision (descrição) - sem embeddings de imagem',
