@@ -2,7 +2,7 @@
 
 > **Autor:** Fillipe Guerra  
 > **Data:** 10 de Março de 2026  
-> **Versão:** 3.9.315 - Correção de deploy (permissions race no ClickHouse) + hardening pós-plano  
+> **Versão:** 3.9.316 - Correção de deploy (ordem do find com -ignore_readdir_race) + hardening pós-plano  
 > **Framework:** arc42 + C4 Model + ADRs  
 > **Idioma:** Português Brasileiro (termos técnicos em inglês)
 > 
@@ -10,7 +10,7 @@
 
 ### Atualizações incrementais recentes (10/03/2026)
 
-- Deploy/permissions: `infra/scripts/fix-production-permissions.sh` passou a tratar explicitamente erro transitório de corrida de arquivos efêmeros do ClickHouse em `find -exec chown`, com helper dedicado (`is_transient_find_chown_error`), scanner fail-safe (`find_wrong_files_excluding_exceptions` com fallback) e uso condicional de `find -ignore_readdir_race`.
+- Deploy/permissions: `infra/scripts/fix-production-permissions.sh` corrigiu a montagem do comando de correção recursiva para `find "$path" -ignore_readdir_race ...`, eliminando erro de sintaxe `find: paths must precede expression` no ambiente de produção; o módulo mantém classificação de erro transitório, scanner fail-safe (`find_wrong_files_excluding_exceptions` com fallback) e uso condicional de `-ignore_readdir_race`.
 - Security deps: hardening de cadeia produtiva centralizado em `package.json` (`pnpm.overrides` para `minimatch`, `underscore`, `lodash`, `qs` e `undici`) com lockfile atualizado e `pnpm audit --prod --audit-level high` em status limpo.
 - Training governance: `TRAINING_RUN_START_REQUIRE_IDEMPOTENCY_KEY` passou a default `true` em `apps/training-service/src/index.ts`, formalizando fail-closed para idempotência de run-start.
 - Chat runtime bootstrap: extração da configuração de runtime para `apps/chat-service/src/runtime-config.ts` (env parsing, OpenAI proxy/dispatcher, URLs internas, fail-fast), reduzindo densidade do `index.ts`.

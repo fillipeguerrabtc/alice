@@ -30,6 +30,7 @@
 ## Consolidações realizadas
 
 - **Correção de deploy em permissões (10/03/2026):** `infra/scripts/fix-production-permissions.sh` foi atualizado para lidar com corrida de arquivos efêmeros do ClickHouse durante correção recursiva de ownership (`find -exec chown`), sem promover erro transitório (`No such file or directory`) para falha fatal.
+- **Correção de sintaxe de `find` no deploy (10/03/2026):** `infra/scripts/fix-production-permissions.sh` foi ajustado para montar `find` com path antes de `-ignore_readdir_race`, eliminando a falha `find: paths must precede expression` no step de preparação de deploy.
 - **Hardening pós-plano concluído (10/03/2026):** cadeia de dependências produtivas foi endurecida no SSOT de config (`package.json` + `pnpm-lock.yaml`) com `pnpm.overrides` para `minimatch`, `underscore`, `lodash`, `qs` e `undici`; auditoria produtiva (`pnpm audit --prod --audit-level high`) em status limpo.
 - **Idempotência mandatory por default no Training (10/03/2026):** `TRAINING_RUN_START_REQUIRE_IDEMPOTENCY_KEY` foi atualizado para `true` por default em `apps/training-service/src/index.ts`, reforçando fail-closed no start de runs.
 - **Redução incremental de monólitos críticos (10/03/2026):** extrações para `apps/chat-service/src/runtime-config.ts` e `apps/training-service/src/training-job-stream.ts` reduziram densidade dos respectivos `index.ts` sem alterar contratos de API/RBAC.

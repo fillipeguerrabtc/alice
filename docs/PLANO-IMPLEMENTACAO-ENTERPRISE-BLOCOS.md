@@ -8,6 +8,19 @@
 - Cada bloco concluído gera commit consolidado em inglês.
 - Sem push automático.
 
+## Rodada de Correção de Deploy - `find -ignore_readdir_race` (Concluído em 10/03/2026)
+### Escopo fechado nesta rodada
+- Correção cirúrgica em `infra/scripts/fix-production-permissions.sh` para montar `find` com path antes de `-ignore_readdir_race`.
+- Causa raiz corrigida: erro de sintaxe no ambiente de produção (`find: paths must precede expression`) durante `--create` no diretório do ClickHouse.
+- Mantido o hardening anterior de erros transitórios de arquivos efêmeros (`tmp_merge_*`/`delete_tmp_*`) sem relaxar fail-closed para erro real.
+
+### Evidência objetiva pós-rodada
+- `bash -n infra/scripts/fix-production-permissions.sh` -> OK
+- `npx pnpm typecheck` -> OK
+- `npx pnpm test` -> OK (**120/120 arquivos**, **1352/1352 testes**)
+- `npx pnpm lint` -> OK
+- `npx pnpm build` -> OK
+
 ## Rodada de Fechamento de Pendências de Validação (Concluído em 10/03/2026)
 ### Escopo fechado nesta rodada
 - Correção dos 7 testes falhos identificados no `validate:enterprise` após modularizações recentes.

@@ -634,7 +634,8 @@ create_mode() {
                 find_ignore_race="-ignore_readdir_race"
             fi
 
-            local chown_cmd="find ${find_ignore_race} \"$path\" \\( ! -user \"$uid\" -o ! -group \"$gid\" \\) $exclusions -exec chown \"${uid}:${gid}\" {} \\;"
+            # GNU find pode exigir que o path venha antes de -ignore_readdir_race.
+            local chown_cmd="find \"$path\" ${find_ignore_race} \\( ! -user \"$uid\" -o ! -group \"$gid\" \\) $exclusions -exec chown \"${uid}:${gid}\" {} \\;"
             
             local chown_error=""
             if ! chown_error=$(eval "$chown_cmd" 2>&1); then

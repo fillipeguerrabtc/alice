@@ -2,12 +2,12 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 10 de Março de 2026  
-**Versão:** 10.63 - Hardening pós-plano (security deps + idempotência mandatory + redução de monólitos)
+**Versão:** 10.64 - Correção de deploy (ordem do find com -ignore_readdir_race)
 
 <div align="center">
 
 ![Alice Logo](https://img.shields.io/badge/Alice-IA%20Enterprise-blue?style=for-the-badge&logo=robot&logoColor=white)
-![Version](https://img.shields.io/badge/versão-10.63-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/versão-10.64-green?style=for-the-badge)
 ![License](https://img.shields.io/badge/licença-Proprietária-red?style=for-the-badge)
 ![LLM](https://img.shields.io/badge/LLM-Qwen2.5%207B-purple?style=for-the-badge)
 
@@ -68,6 +68,7 @@
 
 ## Atualização incremental mais recente (10/03/2026)
 
+- Correção de deploy em permissões ClickHouse: `infra/scripts/fix-production-permissions.sh` foi ajustado para montar `find` com path antes da opção `-ignore_readdir_race`, eliminando o erro fatal `find: paths must precede expression` durante `--create` no servidor.
 - Hardening de dependências produtivas aplicado no SSOT (`package.json` + `pnpm-lock.yaml`) com `pnpm.overrides` para `minimatch`, `underscore`, `lodash`, `qs` e `undici`; validação de segurança concluída com `pnpm audit --prod --audit-level high` em status **No known vulnerabilities found**.
 - Training com idempotência mandatory por default: `TRAINING_RUN_START_REQUIRE_IDEMPOTENCY_KEY` atualizado para `true` em `apps/training-service/src/index.ts`, reforçando fail-closed em criação/start de run sem `x-idempotency-key`.
 - Redução incremental dos monólitos críticos sem alteração funcional:

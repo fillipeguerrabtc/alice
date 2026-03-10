@@ -3,10 +3,11 @@
 **Autor:** Fillipe Guerra  
 **Data:** 10 de Março de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 15.17 - Correção de deploy (permissions race no ClickHouse) + hardening pós-plano
+**Versão:** 15.18 - Correção de deploy (ordem do find com -ignore_readdir_race) + hardening pós-plano
 
 ---
 
+- **Correção de sintaxe de `find` no deploy (10/03/2026):** `infra/scripts/fix-production-permissions.sh` foi ajustado para montar o comando `find` com o path antes de `-ignore_readdir_race`, eliminando o erro fatal `find: paths must precede expression` observado no step `Prepare Deployment`.
 - **Correção de falha de deploy em permissões (10/03/2026):** `infra/scripts/fix-production-permissions.sh` foi ajustado para tratar corretamente corrida de arquivos efêmeros do ClickHouse durante `find -exec chown` (ex.: `tmp_merge_*`/`delete_tmp_*`), com classificação explícita de erro transitório, uso condicional de `-ignore_readdir_race` e proteção fail-safe no scanner de arquivos incorretos. Resultado: erro transitório deixa de derrubar o step de preparação.
 - **Hardening pós-plano executado (10/03/2026):** cadeia de dependências produtivas foi endurecida via `pnpm.overrides` (`minimatch`, `underscore`, `lodash`, `qs`, `undici`) com lockfile atualizado e auditoria produtiva em status limpo (`pnpm audit --prod --audit-level high`: **No known vulnerabilities found**).
 - **Idempotência obrigatória por default no Training (10/03/2026):** `TRAINING_RUN_START_REQUIRE_IDEMPOTENCY_KEY` passou para default `true` em `apps/training-service/src/index.ts`, reforçando fail-closed para criação/start de run sem `x-idempotency-key`.
