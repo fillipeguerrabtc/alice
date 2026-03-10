@@ -1754,6 +1754,10 @@ mountOIDCRoutes(app)
         }
       : { raw: String(error) };
     logger.error({ error: errorDetails }, 'Falha ao montar rotas OIDC Provider');
+    if (config.NODE_ENV === 'production') {
+      logger.fatal('OIDC Provider é obrigatório em produção - encerrando auth-service');
+      process.exit(1);
+    }
   });
 
 // ============================================================================

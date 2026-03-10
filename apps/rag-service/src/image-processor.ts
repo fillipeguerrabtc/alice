@@ -56,10 +56,6 @@ interface VisionDescribeImageParams {
 }
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-if (!OPENAI_API_KEY && process.env.NODE_ENV === 'production') {
-  logger.error('OPENAI_API_KEY é obrigatório em produção (Vision via OpenAI)');
-  process.exit(1);
-}
 
 /**
  * Chama OpenAI (Responses API) para extrair descrição/análise de imagem.
@@ -171,6 +167,9 @@ class ImageProcessorService {
   private readonly isConfigured: boolean = Boolean(OPENAI_API_KEY);
 
   constructor() {
+    if (!this.isConfigured && process.env.NODE_ENV === 'production') {
+      logger.error('OPENAI_API_KEY ausente em produção - processamento de imagem falhará até corrigir configuração');
+    }
     logger.info(
       { openaiConfigured: this.isConfigured },
       'Image Processor configurado - OpenAI Vision (sem CPU/GPU local)'

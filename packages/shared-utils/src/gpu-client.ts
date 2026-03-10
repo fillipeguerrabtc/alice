@@ -26,13 +26,15 @@ const GPU_MANAGER_URL = process.env.GPU_MANAGER_URL || 'http://alice-gpu-manager
 // Validação apenas em produção permite que código continue silenciosamente em desenvolvimento
 // com fallback || '' enviando string vazia no header, permitindo requisições não autenticadas
 // Solução: Validar fail-fast em todos os ambientes para garantir segurança
-const INTERNAL_API_SECRET_RAW = process.env.INTERNAL_API_SECRET;
-if (!INTERNAL_API_SECRET_RAW) {
-  logger.error('INTERNAL_API_SECRET é obrigatório (Regra 6 - fail-fast) - configure a variável de ambiente');
-  process.exit(1);
+function getInternalApiSecretOrThrow(): string {
+  const internalApiSecret = process.env.INTERNAL_API_SECRET?.trim();
+  if (!internalApiSecret) {
+    const message = 'INTERNAL_API_SECRET é obrigatório (Regra 6 - fail-fast) - configure a variável de ambiente';
+    logger.error(message);
+    throw new Error(message);
+  }
+  return internalApiSecret;
 }
-// TypeScript agora sabe que é string (após validação fail-fast)
-const INTERNAL_API_SECRET: string = INTERNAL_API_SECRET_RAW;
 
 function parseEnvInt(value: string | undefined, defaultValue: number, name: string): number {
   const raw = (value ?? String(defaultValue)).trim();
@@ -117,6 +119,7 @@ export interface GpuResponse {
 export async function requestGpu(options: GpuRequestOptions): Promise<GpuResponse> {
   const startTime = Date.now();
   const maxWaitTime = options.timeout || GPU_REQUEST_DEFAULT_TIMEOUT_MS;
+  const internalApiSecret = getInternalApiSecretOrThrow();
   // BUG FIX 26/12/2025: Timeout individual para cada fetch (30s ou metade do maxWaitTime)
   // Impede que uma única requisição bloqueie indefinidamente além do timeout total
   const fetchTimeout = Math.min(GPU_REQUEST_FETCH_TIMEOUT_MS, Math.floor(maxWaitTime / 2));
@@ -128,7 +131,7 @@ export async function requestGpu(options: GpuRequestOptions): Promise<GpuRespons
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Internal-Api-Secret': INTERNAL_API_SECRET, // BUG FIX 25/12/2025: Removido fallback || '' - validação fail-fast garante que está definido
+        'X-Internal-Api-Secret': internalApiSecret,
         ...options.headers,
       },
       body: JSON.stringify({
@@ -163,7 +166,7 @@ export async function requestGpu(options: GpuRequestOptions): Promise<GpuRespons
       // Sem isso, um único fetch pode bloquear indefinidamente, excedendo maxWaitTime
       const resultResponse = await fetch(`${GPU_MANAGER_URL}/api/gpu/queue/${requestId}`, {
         headers: {
-          'X-Internal-Api-Secret': INTERNAL_API_SECRET, // BUG FIX 25/12/2025: Removido fallback || '' - validação fail-fast garante que está definido
+          'X-Internal-Api-Secret': internalApiSecret,
           ...options.headers,
         },
         signal: AbortSignal.timeout(pollFetchTimeout),
@@ -210,11 +213,12 @@ export async function requestGpu(options: GpuRequestOptions): Promise<GpuRespons
  * Requisição assíncrona (não aguarda resultado)
  */
 export async function requestGpuAsync(options: GpuRequestOptions): Promise<string> {
+  const internalApiSecret = getInternalApiSecretOrThrow();
   const queueResponse = await fetch(`${GPU_MANAGER_URL}/api/gpu/queue`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-Internal-Api-Secret': INTERNAL_API_SECRET, // BUG FIX 25/12/2025: Removido fallback || '' - validação fail-fast (linhas 18-26) garante que está definido
+      'X-Internal-Api-Secret': internalApiSecret,
       ...options.headers,
     },
     body: JSON.stringify({
@@ -242,9 +246,10 @@ export async function requestGpuAsync(options: GpuRequestOptions): Promise<strin
  * Obtém resultado de requisição assíncrona
  */
 export async function getGpuResult(requestId: string): Promise<GpuResponse | null> {
+  const internalApiSecret = getInternalApiSecretOrThrow();
   const response = await fetch(`${GPU_MANAGER_URL}/api/gpu/queue/${requestId}`, {
     headers: {
-      'X-Internal-Api-Secret': INTERNAL_API_SECRET, // BUG FIX 25/12/2025: Removido fallback || '' - validação fail-fast (linhas 18-26) garante que está definido
+      'X-Internal-Api-Secret': internalApiSecret,
     },
   });
   
@@ -268,6 +273,7 @@ export async function getGpuResult(requestId: string): Promise<GpuResponse | nul
  * depois retorna o Response diretamente para que o chat-service possa fazer o proxy.
  */
 export async function requestGpuStream(options: GpuRequestOptions): Promise<globalThis.Response> {
+  const internalApiSecret = getInternalApiSecretOrThrow();
   // BUG FIX 25/12/2025: O GPU Manager Service não deve fazer proxy - ele deve apenas verificar
   // circuit breaker e VRAM, depois retornar o Response diretamente para que o chat-service possa fazer o proxy.
   // Isso permite que o chat-service leia o stream sem que o body seja consumido.
@@ -276,7 +282,7 @@ export async function requestGpuStream(options: GpuRequestOptions): Promise<glob
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-Internal-Api-Secret': INTERNAL_API_SECRET, // BUG FIX 25/12/2025: Removido fallback || '' - validação fail-fast (linhas 18-26) garante que está definido
+      'X-Internal-Api-Secret': internalApiSecret,
       ...options.headers,
     },
     body: JSON.stringify({
@@ -302,4 +308,3 @@ export async function requestGpuStream(options: GpuRequestOptions): Promise<glob
   
   return response;
 }
-

@@ -1044,6 +1044,10 @@ const emailTransporter = initializeGmailTransporter({
   gmailAppPassword: GMAIL_APP_PASSWORD,
   isProduction,
   logger,
+  onCriticalFailure: (error) => {
+    logger.error({ error: error.message }, 'Falha crítica de bootstrap do Gmail SMTP');
+    process.exit(1);
+  },
 });
 
 const stripe = initializeStripeClient({

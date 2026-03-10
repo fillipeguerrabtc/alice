@@ -34,8 +34,7 @@ export const TEXT_EMBEDDING_DIM = EMBEDDING_DIMENSIONS.TEXT;
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 if (!OPENAI_API_KEY && process.env.NODE_ENV === 'production') {
-  logger.error('OPENAI_API_KEY é obrigatório em produção (ASR via OpenAI)');
-  process.exit(1);
+  logger.error('OPENAI_API_KEY ausente em produção - transcrição ASR falhará até corrigir configuração');
 }
 
 // Timeouts

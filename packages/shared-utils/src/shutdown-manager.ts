@@ -85,6 +85,25 @@ class ShutdownManagerImpl {
     this.logger = config.logger ?? createLogger('shutdown-manager');
   }
 
+  private setProcessExitCode(code: number, reason: string): void {
+    if (process.exitCode === undefined) {
+      process.exitCode = code;
+      this.logger.info({ code, reason }, 'Código de saída do processo definido');
+      return;
+    }
+
+    if (process.exitCode !== code) {
+      // Prioriza código de falha quando já existir código de sucesso.
+      if (code !== 0) {
+        process.exitCode = code;
+        this.logger.warn({ code, reason }, 'Código de saída do processo sobrescrito para falha');
+      }
+      return;
+    }
+
+    this.logger.debug({ code, reason }, 'Código de saída do processo mantido');
+  }
+
   /**
    * Registrar callback de shutdown
    * 
@@ -181,7 +200,7 @@ class ShutdownManagerImpl {
             this.logger.error({ error: shutdownError }, 'Erro durante shutdown por uncaughtException');
           })
           .finally(() => {
-            process.exit(1);
+            this.setProcessExitCode(1, 'uncaughtException');
           });
       }
     });
@@ -204,7 +223,7 @@ class ShutdownManagerImpl {
             this.logger.error({ error: shutdownError }, 'Erro durante shutdown por unhandledRejection');
           })
           .finally(() => {
-            process.exit(1);
+            this.setProcessExitCode(1, 'unhandledRejection');
           });
       }
     });
@@ -237,9 +256,9 @@ class ShutdownManagerImpl {
     this.logger.info({ signal, callbackCount: this.callbacks.length }, `Iniciando graceful shutdown (${signal})`);
 
     const forceExitTimer = setTimeout(() => {
-      this.logger.error('Timeout de shutdown forçado - encerrando processo');
+      this.logger.error('Timeout de shutdown forçado - sinalizando falha de processo');
       if (!skipProcessExit) {
-        process.exit(1);
+        this.setProcessExitCode(1, 'shutdown-timeout');
       }
     }, this.forceExitTimeoutMs);
 
@@ -269,7 +288,7 @@ class ShutdownManagerImpl {
     this.logger.info({ signal }, 'Graceful shutdown concluído');
 
     if (!skipProcessExit && (signal === 'SIGTERM' || signal === 'SIGINT')) {
-      process.exit(0);
+      this.setProcessExitCode(0, signal);
     }
     
     return { executedCallbacks, errors };

@@ -12,10 +12,11 @@ type InitializeGmailTransporterParams = {
   gmailAppPassword?: string;
   isProduction: boolean;
   logger: BootstrapLogger;
+  onCriticalFailure?: (error: Error) => void;
 };
 
 export function initializeGmailTransporter(params: InitializeGmailTransporterParams): nodemailer.Transporter | null {
-  const { gmailUser, gmailAppPassword, isProduction, logger } = params;
+  const { gmailUser, gmailAppPassword, isProduction, logger, onCriticalFailure } = params;
 
   if (gmailUser && gmailAppPassword) {
     const transporter = nodemailer.createTransport({
@@ -40,8 +41,15 @@ export function initializeGmailTransporter(params: InitializeGmailTransporterPar
       .catch((error: unknown) => {
         logger.error({ error, user: gmailUser }, 'Falha ao conectar Gmail SMTP');
         if (isProduction) {
+          const criticalError = error instanceof Error
+            ? error
+            : new Error('Gmail SMTP é obrigatório em produção (Regra 6 - fail-fast)');
           logger.error('Gmail SMTP é obrigatório em produção (Regra 6 - fail-fast)');
-          process.exit(1);
+          if (onCriticalFailure) {
+            onCriticalFailure(criticalError);
+            return;
+          }
+          throw criticalError;
         }
       });
 
@@ -49,8 +57,13 @@ export function initializeGmailTransporter(params: InitializeGmailTransporterPar
   }
 
   if (isProduction) {
-    logger.error('GMAIL_USER e GMAIL_APP_PASSWORD são obrigatórios em produção (Regra 6 - fail-fast)');
-    process.exit(1);
+    const error = new Error('GMAIL_USER e GMAIL_APP_PASSWORD são obrigatórios em produção (Regra 6 - fail-fast)');
+    logger.error(error.message);
+    if (onCriticalFailure) {
+      onCriticalFailure(error);
+      return null;
+    }
+    throw error;
   }
 
   logger.warn('Gmail SMTP não configurado - emails desabilitados em desenvolvimento');

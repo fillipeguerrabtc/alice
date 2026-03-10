@@ -38,7 +38,6 @@ type ChatRuntimeConfig = {
 };
 
 function failFast(message: string): never {
-  process.exit(1);
   throw new Error(message);
 }
 

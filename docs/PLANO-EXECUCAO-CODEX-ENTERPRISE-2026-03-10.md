@@ -18,7 +18,7 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 ## Status global do backlog
 - `P0-ROOT-01`: Concluído
 - `P0-CONFIG-02`: Concluído
-- `P0-BOOT-03`: Não iniciado
+- `P0-BOOT-03`: Concluído
 - `P0-GATEWAY-AUTH-04`: Não iniciado
 - `P0-CORE-SERVICES-05`: Não iniciado
 - `P0-EXT-GPU-06`: Não iniciado
@@ -43,7 +43,7 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - `P2-DOCS-06`: Não iniciado
 
 ## Bloco atual
-`P0-CONFIG-02` (Concluído)
+`P0-BOOT-03` (Concluído)
 
 ## Histórico de rodadas
 
@@ -133,6 +133,48 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
   - Sem bloqueio ativo para continuação; risco residual controlado por manter compatibilidade explícita em `packages/shared-utils/src/config.ts` onde exigido por testes/governança já existentes.
 - Próximo bloco recomendado: `P0-BOOT-03`.
 
+### Rodada 3
+- Data: 2026-03-10
+- Bloco executado: `P0-BOOT-03`
+- Objetivo: Isolar encerramento forçado de processo para entrypoints dos serviços, removendo `process.exit()` de bibliotecas/utilitários compartilhados e preservando fail-fast com logs e rastreabilidade.
+- Diagnóstico: Foram identificados `process.exit()` em utilitários compartilhados (`session-auth`, `gpu-client`, `rbac/middleware`, `shutdown-manager`) e em módulos de suporte de serviços fora de entrypoint (`runtime-config`, `oidc/configuration`, `integrations-bootstrap-service`, `rag` processors, `gpu-client` local). Também havia pontos de shutdown por signal/exception que encerravam processo diretamente dentro de utilitário compartilhado.
+- Arquivos lidos: `CLAUDE.md` (1-120), `package.json`, `packages/shared-utils/src/session-auth.ts`, `packages/shared-utils/src/gpu-client.ts`, `packages/shared-utils/src/rbac/middleware.ts`, `packages/shared-utils/src/shutdown-manager.ts`, `apps/api-gateway/src/index.ts`, `apps/auth-service/src/index.ts`, `apps/chat-service/src/index.ts`, `apps/gpu-manager-service/src/index.ts`, `apps/integrations-service/src/index.ts`, `apps/llm-gateway-service/src/index.ts`, `apps/observability-service/src/index.ts`, `apps/rag-service/src/index.ts`, `apps/training-service/src/index.ts`, `apps/auth-service/src/oidc/configuration.ts`, `apps/integrations-service/src/integrations-bootstrap-service.ts`, `apps/rag-service/src/image-processor.ts`, `apps/rag-service/src/audio-processor.ts`, `apps/gpu-manager-service/src/gpu-client.ts`, `apps/chat-service/src/runtime-config.ts`, `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Arquivos alterados: `packages/shared-utils/src/session-auth.ts`, `packages/shared-utils/src/gpu-client.ts`, `packages/shared-utils/src/rbac/middleware.ts`, `packages/shared-utils/src/shutdown-manager.ts`, `apps/chat-service/src/runtime-config.ts`, `apps/chat-service/src/index.ts`, `apps/auth-service/src/oidc/configuration.ts`, `apps/auth-service/src/index.ts`, `apps/rag-service/src/image-processor.ts`, `apps/rag-service/src/audio-processor.ts`, `apps/rag-service/src/index.ts`, `apps/gpu-manager-service/src/gpu-client.ts`, `apps/integrations-service/src/integrations-bootstrap-service.ts`, `apps/integrations-service/src/index.ts`, `docs/STATUS-REAL-ATUAL.md`, `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Validações executadas:
+  - `pnpm --filter @alice/shared-utils typecheck` (executado via `npx -y pnpm@10.26.2 --filter @alice/shared-utils typecheck`)
+  - `pnpm --filter @alice/shared-utils lint` (executado via `npx -y pnpm@10.26.2 --filter @alice/shared-utils lint`)
+  - `pnpm --filter @alice/shared-utils build` (executado via `npx -y pnpm@10.26.2 --filter @alice/shared-utils build`)
+  - `pnpm --filter @alice/auth-service typecheck` (executado via `npx -y pnpm@10.26.2 --filter @alice/auth-service typecheck`)
+  - `pnpm --filter @alice/auth-service lint` (executado via `npx -y pnpm@10.26.2 --filter @alice/auth-service lint`)
+  - `pnpm --filter @alice/auth-service build` (executado via `npx -y pnpm@10.26.2 --filter @alice/auth-service build`)
+  - `pnpm --filter @alice/chat-service typecheck` (executado via `npx -y pnpm@10.26.2 --filter @alice/chat-service typecheck`)
+  - `pnpm --filter @alice/chat-service lint` (executado via `npx -y pnpm@10.26.2 --filter @alice/chat-service lint`)
+  - `pnpm --filter @alice/chat-service build` (executado via `npx -y pnpm@10.26.2 --filter @alice/chat-service build`)
+  - `pnpm --filter @alice/rag-service typecheck` (executado via `npx -y pnpm@10.26.2 --filter @alice/rag-service typecheck`)
+  - `pnpm --filter @alice/rag-service lint` (executado via `npx -y pnpm@10.26.2 --filter @alice/rag-service lint`)
+  - `pnpm --filter @alice/rag-service build` (executado via `npx -y pnpm@10.26.2 --filter @alice/rag-service build`)
+  - `pnpm --filter @alice/integrations-service typecheck` (executado via `npx -y pnpm@10.26.2 --filter @alice/integrations-service typecheck`)
+  - `pnpm --filter @alice/integrations-service lint` (executado via `npx -y pnpm@10.26.2 --filter @alice/integrations-service lint`)
+  - `pnpm --filter @alice/integrations-service build` (executado via `npx -y pnpm@10.26.2 --filter @alice/integrations-service build`)
+  - `pnpm --filter @alice/gpu-manager-service typecheck` (executado via `npx -y pnpm@10.26.2 --filter @alice/gpu-manager-service typecheck`)
+  - `pnpm --filter @alice/gpu-manager-service lint` (executado via `npx -y pnpm@10.26.2 --filter @alice/gpu-manager-service lint`)
+  - `pnpm --filter @alice/gpu-manager-service build` (executado via `npx -y pnpm@10.26.2 --filter @alice/gpu-manager-service build`)
+  - `pnpm test` (executado via `npx -y pnpm@10.26.2 test`)
+  - `pnpm lint` (executado via `npx -y pnpm@10.26.2 lint`)
+  - `pnpm build` (executado via `npx -y pnpm@10.26.2 build`)
+- Resultado das validações:
+  - Todas as validações obrigatórias do bloco foram aprovadas.
+  - Verificação pós-implementação confirmou ausência de `process.exit()` fora de entrypoints em `apps/` e `packages/` (desconsiderando Dockerfiles de healthcheck).
+  - Observação de ambiente: binário global `pnpm` permanece quebrado; os comandos foram executados com `npx -y pnpm@10.26.2`, preservando os comandos lógicos exigidos.
+- Documentação atualizada: `docs/STATUS-REAL-ATUAL.md` e tracking canônico atualizados com mudança de convenção de fail-fast/shutdown e evidências factuais da rodada.
+- Commit realizado: `refactor: isolate process termination to service entrypoints`.
+- Pendências:
+  - Validar posteriormente no ambiente do usuário a correção do binário global `pnpm`.
+- Riscos ou bloqueios:
+  - Sem bloqueio ativo para continuação.
+  - Risco residual controlado: módulos de processamento multimodal do RAG (`image-processor`/`audio-processor`) permanecem sem `process.exit()` e dependem de validação/falha no boot/execução via entrypoint para impedir operação sem `OPENAI_API_KEY` em produção.
+- Próximo bloco recomendado: `P0-GATEWAY-AUTH-04`.
+
 ## Pendências abertas
 - Correção do binário global `pnpm` no ambiente local (fora do escopo deste bloco).
 - Reduzir leituras diretas de `process.env` remanescentes fora do escopo autorizado desta rodada, seguindo próximos blocos.
@@ -141,9 +183,9 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - Sem bloqueio ativo para continuação do backlog.
 - Risco residual controlado: existência de bridge compatível em `shared/schema.ts` para proteger integrações legadas não mapeadas em tempo de descoberta.
 - Risco residual controlado: parte das leituras de `process.env` permanece em áreas não tratadas neste bloco para evitar refatoração ampla fora do escopo autorizado.
+- Risco residual controlado: módulos de suporte multimodal do RAG dependem de fail-fast no entrypoint/execução para bloquear operação sem `OPENAI_API_KEY` em produção.
 
 ## Próximos blocos permitidos
-- `P0-BOOT-03`
 - `P0-GATEWAY-AUTH-04`
 - `P0-CORE-SERVICES-05`
 - `P0-EXT-GPU-06`

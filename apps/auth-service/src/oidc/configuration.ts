@@ -143,8 +143,9 @@ export async function createOIDCConfiguration(): Promise<Configuration> {
 
   // FAIL-FAST em produção (Regra 6): sem defaults inseguros para chaves de cookie
   if (process.env.NODE_ENV === 'production' && !process.env.OIDC_COOKIE_KEYS) {
-    logger.error('CRITICAL: OIDC_COOKIE_KEYS é OBRIGATÓRIO em produção (valores múltiplos separados por vírgula).');
-    process.exit(1);
+    const message = 'CRITICAL: OIDC_COOKIE_KEYS é OBRIGATÓRIO em produção (valores múltiplos separados por vírgula).';
+    logger.error(message);
+    throw new Error(message);
   }
 
   const configuration: Configuration = {

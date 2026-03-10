@@ -46,20 +46,24 @@ const SESSION_CACHE_TTL = 5 * 60 * 1000; // 5 minutos
 const DEV_SESSION_SECRET = 'dev-secret-min-32-characters-long!';
 let warnedDevSessionSecret = false;
 
+function assertSessionAuthRuntimeConfig(): void {
+  if (IS_PRODUCTION && (!SESSION_SECRET || SESSION_SECRET.length < 64)) {
+    const message = 'CRITICAL: SESSION_SECRET é OBRIGATÓRIO em produção e deve ter >= 64 caracteres.';
+    logger.error(message);
+    throw new Error(message);
+  }
+}
+
 function getSessionSecretForCookieValidation(): string {
   if (SESSION_SECRET && SESSION_SECRET.length > 0) return SESSION_SECRET;
-  if (IS_PRODUCTION) return ''; // fail-fast já ocorre acima
+  if (IS_PRODUCTION) {
+    throw new Error('SESSION_SECRET ausente em produção para validação de cookie');
+  }
   if (!warnedDevSessionSecret) {
     warnedDevSessionSecret = true;
     logger.warn('SESSION_SECRET não configurado - usando secret de desenvolvimento (APENAS PARA DEV)');
   }
   return DEV_SESSION_SECRET;
-}
-
-// FAIL-FAST em produção (Regra 6 - SEM defaults inseguros)
-if (IS_PRODUCTION && (!SESSION_SECRET || SESSION_SECRET.length < 64)) {
-  logger.error('CRITICAL: SESSION_SECRET é OBRIGATÓRIO em produção e deve ter >= 64 caracteres.');
-  process.exit(1);
 }
 
 // OIDC JWT (híbrido): validação local via JWKS (sem introspection/in-memory)
@@ -148,13 +152,16 @@ let sessionCacheAdapter: CacheAdapter<CachedSession> | null = null;
  * Inicializa o cache de sessões (chamar após initializeRedisCache)
  */
 export async function initializeSessionAuthCache(): Promise<void> {
+  assertSessionAuthRuntimeConfig();
+
   try {
     const adapter = createCacheAdapter<CachedSession>('session-auth', SESSION_CACHE_TTL);
     if (!adapter.isDistributed()) {
       // Regra do projeto: evitar in-memory. Em dev/test, apenas desabilitamos cache.
       if (IS_PRODUCTION) {
-        logger.error('CRITICAL: Cache distribuído (Redis) é obrigatório em produção para session-auth.');
-        process.exit(1);
+        const message = 'CRITICAL: Cache distribuído (Redis) é obrigatório em produção para session-auth.';
+        logger.error(message);
+        throw new Error(message);
       }
       sessionCacheAdapter = null;
       logger.info('Cache de sessões HTTP desabilitado (Redis indisponível em dev/test)');
@@ -165,7 +172,7 @@ export async function initializeSessionAuthCache(): Promise<void> {
   } catch (error) {
     logger.error({ error: (error as Error).message }, 'Falha ao inicializar cache de sessões HTTP');
     if (IS_PRODUCTION) {
-      process.exit(1);
+      throw error;
     }
     sessionCacheAdapter = null;
   }

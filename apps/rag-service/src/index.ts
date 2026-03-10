@@ -922,6 +922,11 @@ const CORS_ORIGINS = resolveCorsOrigins({
   requiredInProduction: true,
   developmentFallback: [],
 });
+const OPENAI_API_KEY = readOptionalStringEnv('OPENAI_API_KEY') ?? undefined;
+if (isProduction && !OPENAI_API_KEY) {
+  logger.error('OPENAI_API_KEY é obrigatório em produção para processamento multimodal (imagem/áudio)');
+  process.exit(1);
+}
 
 // ==============================================================================
 // ARQUITETURA MULTIMODAL ENTERPRISE - Gate 2 (LLM separado + Vision OpenAI)

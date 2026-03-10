@@ -49,12 +49,6 @@ export function setPermissionResolver(resolver: PermissionResolver): void {
 const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET;
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
-// FAIL-FAST em produção (Regra 6 - SEM SOLUÇÕES TEMPORÁRIAS)
-if (IS_PRODUCTION && !INTERNAL_API_SECRET) {
-  logger.error('CRITICAL: INTERNAL_API_SECRET é OBRIGATÓRIO em produção. Configure a variável de ambiente.');
-  process.exit(1);
-}
-
 /**
  * Valida token HMAC para comunicação interna entre serviços.
  * 
@@ -77,7 +71,11 @@ function validateInternalToken(
   timestamp: string
 ): boolean {
   if (!INTERNAL_API_SECRET) {
-    logger.error('INTERNAL_API_SECRET não configurado - comunicação interna desabilitada');
+    if (IS_PRODUCTION) {
+      logger.error('INTERNAL_API_SECRET não configurado em produção - comunicação interna HMAC desabilitada');
+    } else {
+      logger.warn('INTERNAL_API_SECRET não configurado - comunicação interna HMAC desabilitada');
+    }
     return false;
   }
 

@@ -25,10 +25,14 @@ const DEFAULT_TIMEOUT = parseInt(process.env.GPU_SERVICE_TIMEOUT || '60000', 10)
 // BUG FIX 25/12/2025: INTERNAL_API_SECRET é obrigatório para autenticação service-to-service
 // Este arquivo é usado pelo GPU Manager Service para fazer requisições internas a si mesmo
 // (polling de resultados de requisições assíncronas)
-const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET;
-if (!INTERNAL_API_SECRET && process.env.NODE_ENV === 'production') {
-  logger.error('INTERNAL_API_SECRET é obrigatório em produção (Regra 6 - fail-fast)');
-  process.exit(1);
+function getInternalApiSecretOrThrow(): string {
+  const internalApiSecret = process.env.INTERNAL_API_SECRET?.trim();
+  if (!internalApiSecret) {
+    const message = 'INTERNAL_API_SECRET é obrigatório para autenticação service-to-service';
+    logger.error(message);
+    throw new Error(message);
+  }
+  return internalApiSecret;
 }
 
 export interface GpuRequestOptions {
@@ -56,6 +60,7 @@ export interface GpuResponse {
  */
 export async function requestGpu(options: GpuRequestOptions): Promise<GpuResponse> {
   const startTime = Date.now();
+  const internalApiSecret = getInternalApiSecretOrThrow();
   
   try {
     // Enfileirar requisição
@@ -65,7 +70,7 @@ export async function requestGpu(options: GpuRequestOptions): Promise<GpuRespons
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Internal-Api-Secret': INTERNAL_API_SECRET || '',
+        'X-Internal-Api-Secret': internalApiSecret,
         ...options.headers,
       },
       body: JSON.stringify({
@@ -99,7 +104,7 @@ export async function requestGpu(options: GpuRequestOptions): Promise<GpuRespons
       // O requireInternalAuth middleware espera este header em todos os endpoints não-health
       const resultResponse = await fetch(`${GPU_MANAGER_URL}/api/gpu/queue/${requestId}`, {
         headers: {
-          'X-Internal-Api-Secret': INTERNAL_API_SECRET || '',
+          'X-Internal-Api-Secret': internalApiSecret,
           ...options.headers,
         },
       });
@@ -147,13 +152,14 @@ export async function requestGpu(options: GpuRequestOptions): Promise<GpuRespons
  * Requisição assíncrona (não aguarda resultado)
  */
 export async function requestGpuAsync(options: GpuRequestOptions): Promise<string> {
+  const internalApiSecret = getInternalApiSecretOrThrow();
   // BUG FIX 25/12/2025: Adicionar header X-Internal-Api-Secret para autenticação service-to-service
   // O requireInternalAuth middleware espera este header em todos os endpoints não-health
   const queueResponse = await fetch(`${GPU_MANAGER_URL}/api/gpu/queue`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-Internal-Api-Secret': INTERNAL_API_SECRET || '',
+      'X-Internal-Api-Secret': internalApiSecret,
       ...options.headers,
     },
     body: JSON.stringify({
@@ -183,11 +189,12 @@ export async function requestGpuAsync(options: GpuRequestOptions): Promise<strin
  * Obtém resultado de requisição assíncrona
  */
 export async function getGpuResult(requestId: string): Promise<GpuResponse | null> {
+  const internalApiSecret = getInternalApiSecretOrThrow();
   // BUG FIX 25/12/2025: Adicionar header X-Internal-Api-Secret para autenticação service-to-service
   // O requireInternalAuth middleware espera este header em todos os endpoints não-health
   const response = await fetch(`${GPU_MANAGER_URL}/api/gpu/queue/${requestId}`, {
     headers: {
-      'X-Internal-Api-Secret': INTERNAL_API_SECRET || '',
+      'X-Internal-Api-Secret': internalApiSecret,
     },
   });
   

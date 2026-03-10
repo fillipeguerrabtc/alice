@@ -144,6 +144,17 @@ import { createChatEnvParsers, loadChatRuntimeConfig } from './runtime-config.js
 // Logger centralizado: JSON em produção, pino-pretty em desenvolvimento
 const logger = createLogger('chat-service');
 const { parseEnvInt, parseEnvNonNegativeInt } = createChatEnvParsers(logger);
+const runtimeConfig = (() => {
+  try {
+    return loadChatRuntimeConfig({
+      logger,
+      parseEnvInt,
+    });
+  } catch (error) {
+    logger.fatal({ error: error instanceof Error ? error.message : String(error) }, 'Falha ao carregar runtime config do chat-service');
+    process.exit(1);
+  }
+})();
 const {
   PORT,
   CORS_ORIGINS,
@@ -157,10 +168,7 @@ const {
   INTEGRATIONS_SERVICE_URL_FINAL,
   TRAINING_SERVICE_URL_FINAL,
   withOpenAiDispatcher,
-} = loadChatRuntimeConfig({
-  logger,
-  parseEnvInt,
-});
+} = runtimeConfig;
 
 // SEGURANÇA: Usar req.tenantId populado pelo middleware requireAuth
 // Alinhado com Express.js 2025 + OWASP 2025 best practices
