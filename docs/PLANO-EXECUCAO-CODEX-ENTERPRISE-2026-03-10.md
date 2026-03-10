@@ -17,7 +17,7 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 
 ## Status global do backlog
 - `P0-ROOT-01`: Concluído
-- `P0-CONFIG-02`: Não iniciado
+- `P0-CONFIG-02`: Concluído
 - `P0-BOOT-03`: Não iniciado
 - `P0-GATEWAY-AUTH-04`: Não iniciado
 - `P0-CORE-SERVICES-05`: Não iniciado
@@ -43,7 +43,7 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - `P2-DOCS-06`: Não iniciado
 
 ## Bloco atual
-`P0-ROOT-01` (Concluído)
+`P0-CONFIG-02` (Concluído)
 
 ## Histórico de rodadas
 
@@ -91,15 +91,58 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
   - `shared/schema.ts` foi mantido como bridge explícita de compatibilidade para evitar quebra imediata de import legado eventual fora do mapeamento detectado.
 - Próximo bloco recomendado: `P0-CONFIG-02`.
 
+### Rodada 2
+- Data: 2026-03-10
+- Bloco executado: `P0-CONFIG-02`
+- Objetivo: Transformar `@alice/config` na fonte principal de configuração de runtime para serviços core do escopo, reduzir leitura direta de `process.env` e remover defaults/fallbacks inseguros no boot principal.
+- Diagnóstico: A base tinha parsing/configuração distribuídos entre serviços e utilitários, com múltiplas leituras diretas de `process.env` e validações de URL/CORS não centralizadas no pacote de configuração.
+- Arquivos lidos: `CLAUDE.md` (1-120), `package.json`, `packages/config/src/index.ts`, `packages/shared-utils/src/config.ts`, `packages/shared-utils/src/session-auth.ts`, `apps/api-gateway/src/index.ts`, `apps/auth-service/src/index.ts`, `apps/auth-service/src/routes/auth-registration-routes.ts`, `apps/chat-service/src/index.ts`, `apps/chat-service/src/runtime-config.ts`, `apps/rag-service/src/index.ts`, `apps/training-service/src/index.ts`, `apps/integrations-service/src/index.ts`, `apps/gpu-manager-service/src/index.ts`, `apps/llm-gateway-service/src/index.ts`, `apps/observability-service/src/index.ts`, `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`, além de arquivos adicionais detectados por busca de `process.env` no escopo de `apps/` e `packages/`.
+- Arquivos alterados: `packages/config/src/index.ts`, `packages/shared-utils/src/config.ts`, `packages/shared-utils/src/session-auth.ts`, `packages/shared-utils/package.json`, `packages/shared-utils/tsconfig.json`, `apps/chat-service/src/runtime-config.ts`, `apps/rag-service/src/index.ts`, `apps/training-service/src/index.ts`, `apps/integrations-service/src/index.ts`, `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Validações executadas:
+  - `pnpm --filter @alice/config typecheck` (executado via `npx -y pnpm@10.26.2 --filter @alice/config typecheck`)
+  - `pnpm --filter @alice/config lint` (executado via `npx -y pnpm@10.26.2 --filter @alice/config lint`)
+  - `pnpm --filter @alice/config build` (executado via `npx -y pnpm@10.26.2 --filter @alice/config build`)
+  - `pnpm --filter @alice/shared-utils typecheck` (executado via `npx -y pnpm@10.26.2 --filter @alice/shared-utils typecheck`)
+  - `pnpm --filter @alice/shared-utils lint` (executado via `npx -y pnpm@10.26.2 --filter @alice/shared-utils lint`)
+  - `pnpm --filter @alice/shared-utils build` (executado via `npx -y pnpm@10.26.2 --filter @alice/shared-utils build`)
+  - `pnpm --filter @alice/chat-service typecheck` (executado via `npx -y pnpm@10.26.2 --filter @alice/chat-service typecheck`)
+  - `pnpm --filter @alice/chat-service lint` (executado via `npx -y pnpm@10.26.2 --filter @alice/chat-service lint`)
+  - `pnpm --filter @alice/chat-service build` (executado via `npx -y pnpm@10.26.2 --filter @alice/chat-service build`)
+  - `pnpm --filter @alice/rag-service typecheck` (executado via `npx -y pnpm@10.26.2 --filter @alice/rag-service typecheck`)
+  - `pnpm --filter @alice/rag-service lint` (executado via `npx -y pnpm@10.26.2 --filter @alice/rag-service lint`)
+  - `pnpm --filter @alice/rag-service build` (executado via `npx -y pnpm@10.26.2 --filter @alice/rag-service build`)
+  - `pnpm --filter @alice/training-service typecheck` (executado via `npx -y pnpm@10.26.2 --filter @alice/training-service typecheck`)
+  - `pnpm --filter @alice/training-service lint` (executado via `npx -y pnpm@10.26.2 --filter @alice/training-service lint`)
+  - `pnpm --filter @alice/training-service build` (executado via `npx -y pnpm@10.26.2 --filter @alice/training-service build`)
+  - `pnpm --filter @alice/integrations-service typecheck` (executado via `npx -y pnpm@10.26.2 --filter @alice/integrations-service typecheck`)
+  - `pnpm --filter @alice/integrations-service lint` (executado via `npx -y pnpm@10.26.2 --filter @alice/integrations-service lint`)
+  - `pnpm --filter @alice/integrations-service build` (executado via `npx -y pnpm@10.26.2 --filter @alice/integrations-service build`)
+  - `pnpm test` (executado via `npx -y pnpm@10.26.2 test`)
+  - `pnpm lint` (executado via `npx -y pnpm@10.26.2 lint`)
+  - `pnpm build` (executado via `npx -y pnpm@10.26.2 build`)
+- Resultado das validações:
+  - Todas as validações obrigatórias do bloco foram aprovadas ao final.
+  - Durante a rodada houve falha inicial em `pnpm test` por regressão de compatibilidade de defaults em `packages/shared-utils/src/config.ts`; o comportamento compatível foi restaurado no escopo, seguido de revalidação e aprovação.
+  - Observação de ambiente: binário global `pnpm` permanece quebrado; os comandos foram executados com `npx -y pnpm@10.26.2`, preservando os comandos lógicos exigidos.
+- Documentação atualizada: Tracking canônico atualizado com histórico factual da Rodada 2.
+- Commit realizado: `refactor: centralize runtime configuration across core services`.
+- Pendências:
+  - Existem leituras diretas de `process.env` remanescentes em áreas fora do núcleo de boot/config alterado nesta rodada e em blocos futuros; não houve expansão de escopo para modularização ampla.
+  - Validar posteriormente no ambiente do usuário a correção do binário global `pnpm`.
+- Riscos ou bloqueios:
+  - Sem bloqueio ativo para continuação; risco residual controlado por manter compatibilidade explícita em `packages/shared-utils/src/config.ts` onde exigido por testes/governança já existentes.
+- Próximo bloco recomendado: `P0-BOOT-03`.
+
 ## Pendências abertas
 - Correção do binário global `pnpm` no ambiente local (fora do escopo deste bloco).
+- Reduzir leituras diretas de `process.env` remanescentes fora do escopo autorizado desta rodada, seguindo próximos blocos.
 
 ## Riscos e bloqueios
 - Sem bloqueio ativo para continuação do backlog.
 - Risco residual controlado: existência de bridge compatível em `shared/schema.ts` para proteger integrações legadas não mapeadas em tempo de descoberta.
+- Risco residual controlado: parte das leituras de `process.env` permanece em áreas não tratadas neste bloco para evitar refatoração ampla fora do escopo autorizado.
 
 ## Próximos blocos permitidos
-- `P0-CONFIG-02`
 - `P0-BOOT-03`
 - `P0-GATEWAY-AUTH-04`
 - `P0-CORE-SERVICES-05`

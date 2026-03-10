@@ -6,12 +6,14 @@
     "resolveJsonModule": true,
     "baseUrl": ".",
     "paths": {
+      "@alice/config": ["../config/src/index.ts"],
       "@alice/logger": ["../logger/src/index.ts"],
       "@alice/database": ["../database/src/index.ts"]
     }
   },
   "include": ["src/**/*"],
   "references": [
+    { "path": "../config" },
     { "path": "../logger" },
     { "path": "../database" }
   ],

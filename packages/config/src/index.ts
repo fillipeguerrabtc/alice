@@ -3,8 +3,17 @@ import { createLogger } from '@alice/logger';
 
 const configLogger = createLogger('config');
 
+const nodeEnvSchema = z.enum(['development', 'production', 'test']).default('development');
+const httpUrlSchema = z.string().url().refine(
+  (value) => value.startsWith('http://') || value.startsWith('https://'),
+  'URL deve usar protocolo http:// ou https://'
+);
+
+export type RuntimeNodeEnv = z.infer<typeof nodeEnvSchema>;
+export type EnvSource = Record<string, string | undefined>;
+
 const baseConfigSchema = z.object({
-  NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+  NODE_ENV: nodeEnvSchema,
   PORT: z.coerce.number().default(3000),
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
 });
@@ -117,8 +126,13 @@ export type GitHubActionsConfig = z.infer<typeof githubActionsConfigSchema>;
 export type ObservabilityConfig = z.infer<typeof observabilityConfigSchema>;
 export type FullConfig = z.infer<typeof fullConfigSchema>;
 
-export function loadConfig<T>(schema: z.ZodSchema<T>): T {
-  const result = schema.safeParse(process.env);
+function getEnvSource(env?: EnvSource): EnvSource {
+  return env ?? (process.env as EnvSource);
+}
+
+export function loadConfig<T>(schema: z.ZodSchema<T>, env?: EnvSource): T {
+  const envSource = getEnvSource(env);
+  const result = schema.safeParse(envSource);
 
   if (!result.success) {
     const formattedErrors = result.error.format();
@@ -129,56 +143,208 @@ export function loadConfig<T>(schema: z.ZodSchema<T>): T {
   return result.data;
 }
 
-/**
- * Obter URL de serviço interno (Regra 6 - Fail-fast, sem hardcoded/fallback)
- *
- * REGRA 6: Variáveis de ambiente DEVEM estar definidas em QUALQUER ambiente.
- * PROIBIDO: fallback para localhost, mocks ou "modo preview".
- */
-function getServiceRegistry(): Record<string, { envKey: string; value: string | undefined }> {
-  return {
-    auth: { envKey: 'AUTH_SERVICE_URL', value: process.env.AUTH_SERVICE_URL },
-    chat: { envKey: 'CHAT_SERVICE_URL', value: process.env.CHAT_SERVICE_URL },
-    rag: { envKey: 'RAG_SERVICE_URL', value: process.env.RAG_SERVICE_URL },
-    training: { envKey: 'TRAINING_SERVICE_URL', value: process.env.TRAINING_SERVICE_URL },
-    integrations: { envKey: 'INTEGRATIONS_SERVICE_URL', value: process.env.INTEGRATIONS_SERVICE_URL },
-    observability: { envKey: 'OBSERVABILITY_SERVICE_URL', value: process.env.OBSERVABILITY_SERVICE_URL },
-    llmGateway: { envKey: 'LLM_GATEWAY_URL', value: process.env.LLM_GATEWAY_URL },
-    gpuManager: { envKey: 'GPU_MANAGER_URL', value: process.env.GPU_MANAGER_URL },
-    biometrics: { envKey: 'BIOMETRICS_SERVICE_URL', value: process.env.BIOMETRICS_SERVICE_URL },
-    apiGateway: { envKey: 'API_GATEWAY_URL', value: process.env.API_GATEWAY_URL },
-    frontend: { envKey: 'FRONTEND_SERVICE_URL', value: process.env.FRONTEND_SERVICE_URL },
-  };
+export function getNodeEnv(env?: EnvSource): RuntimeNodeEnv {
+  const envSource = getEnvSource(env);
+  return nodeEnvSchema.parse(envSource.NODE_ENV);
 }
 
-function resolveServiceRef(serviceName: string): { envKey: string; value: string | undefined } {
-  const serviceUrls = getServiceRegistry();
-  const serviceRef = serviceUrls[serviceName];
+export function isProductionEnv(env?: EnvSource): boolean {
+  return getNodeEnv(env) === 'production';
+}
 
-  if (!serviceRef) {
+export function readOptionalStringEnv(key: string, env?: EnvSource): string | null {
+  const envSource = getEnvSource(env);
+  const rawValue = envSource[key];
+  if (typeof rawValue !== 'string') {
+    return null;
+  }
+  const trimmedValue = rawValue.trim();
+  return trimmedValue.length > 0 ? trimmedValue : null;
+}
+
+export function readRequiredStringEnv(key: string, env?: EnvSource): string {
+  const value = readOptionalStringEnv(key, env);
+  if (!value) {
+    throw new Error(`Variável de ambiente ${key} é obrigatória (Regra 6 - fail-fast)`);
+  }
+  return value;
+}
+
+export function readNumberEnv(
+  key: string,
+  options?: {
+    defaultValue?: number;
+    min?: number;
+    max?: number;
+    integer?: boolean;
+    env?: EnvSource;
+  }
+): number {
+  const envSource = getEnvSource(options?.env);
+  const rawValue = envSource[key];
+  const defaultValue = options?.defaultValue;
+
+  if (typeof rawValue !== 'string' || rawValue.trim().length === 0) {
+    if (typeof defaultValue === 'number') {
+      return defaultValue;
+    }
+    throw new Error(`Variável de ambiente ${key} é obrigatória (Regra 6 - fail-fast)`);
+  }
+
+  const parsedValue = Number(rawValue.trim());
+  if (!Number.isFinite(parsedValue)) {
+    throw new Error(`Variável de ambiente ${key} inválida: deve ser número`);
+  }
+
+  if (options?.integer && !Number.isInteger(parsedValue)) {
+    throw new Error(`Variável de ambiente ${key} inválida: deve ser número inteiro`);
+  }
+
+  if (typeof options?.min === 'number' && parsedValue < options.min) {
+    throw new Error(`Variável de ambiente ${key} inválida: deve ser >= ${options.min}`);
+  }
+
+  if (typeof options?.max === 'number' && parsedValue > options.max) {
+    throw new Error(`Variável de ambiente ${key} inválida: deve ser <= ${options.max}`);
+  }
+
+  return parsedValue;
+}
+
+export function readBooleanEnv(
+  key: string,
+  options?: {
+    defaultValue?: boolean;
+    env?: EnvSource;
+  }
+): boolean {
+  const envSource = getEnvSource(options?.env);
+  const rawValue = envSource[key];
+
+  if (typeof rawValue !== 'string' || rawValue.trim().length === 0) {
+    if (typeof options?.defaultValue === 'boolean') {
+      return options.defaultValue;
+    }
+    throw new Error(`Variável de ambiente ${key} é obrigatória (Regra 6 - fail-fast)`);
+  }
+
+  const normalizedValue = rawValue.trim().toLowerCase();
+  if (normalizedValue === 'true') return true;
+  if (normalizedValue === 'false') return false;
+
+  throw new Error(`Variável de ambiente ${key} inválida: use apenas "true" ou "false"`);
+}
+
+function isValidHttpOrigin(value: string): boolean {
+  try {
+    const parsedUrl = new URL(value);
+    return parsedUrl.protocol === 'http:' || parsedUrl.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function parseCsvValues(raw: string): string[] {
+  return raw.split(',').map((item) => item.trim()).filter(Boolean);
+}
+
+export function resolveCorsOrigins(options?: {
+  env?: EnvSource;
+  requiredInProduction?: boolean;
+  developmentFallback?: string[];
+}): string[] {
+  const envSource = getEnvSource(options?.env);
+  const requiredInProduction = options?.requiredInProduction ?? true;
+
+  const corsOrigin = readOptionalStringEnv('CORS_ORIGIN', envSource);
+  const corsOriginsRaw = readOptionalStringEnv('CORS_ORIGINS', envSource);
+
+  const combinedOrigins = [
+    ...(corsOrigin ? [corsOrigin] : []),
+    ...(corsOriginsRaw ? parseCsvValues(corsOriginsRaw) : []),
+  ];
+
+  const deduplicatedOrigins = [...new Set(combinedOrigins)];
+  const invalidOrigin = deduplicatedOrigins.find((origin) => !isValidHttpOrigin(origin));
+  if (invalidOrigin) {
+    throw new Error(`CORS origin inválida: ${invalidOrigin}`);
+  }
+
+  if (deduplicatedOrigins.length > 0) {
+    return deduplicatedOrigins;
+  }
+
+  if (requiredInProduction && isProductionEnv(envSource)) {
+    throw new Error('CORS_ORIGIN ou CORS_ORIGINS são obrigatórios em produção (Regra 6 - fail-fast)');
+  }
+
+  if (options?.developmentFallback && options.developmentFallback.length > 0) {
+    return [...options.developmentFallback];
+  }
+
+  return [];
+}
+
+const SERVICE_URL_ENV_KEYS = {
+  auth: 'AUTH_SERVICE_URL',
+  chat: 'CHAT_SERVICE_URL',
+  rag: 'RAG_SERVICE_URL',
+  training: 'TRAINING_SERVICE_URL',
+  integrations: 'INTEGRATIONS_SERVICE_URL',
+  observability: 'OBSERVABILITY_SERVICE_URL',
+  llmGateway: 'LLM_GATEWAY_URL',
+  gpuManager: 'GPU_MANAGER_URL',
+  biometrics: 'BIOMETRICS_SERVICE_URL',
+  apiGateway: 'API_GATEWAY_URL',
+  frontend: 'FRONTEND_SERVICE_URL',
+} as const;
+
+export type InternalServiceName = keyof typeof SERVICE_URL_ENV_KEYS;
+
+type ServiceRef = {
+  envKey: string;
+  value: string | null;
+};
+
+function resolveServiceRef(serviceName: string, env?: EnvSource): ServiceRef {
+  const envKey = SERVICE_URL_ENV_KEYS[serviceName as InternalServiceName];
+
+  if (!envKey) {
     throw new Error(`Serviço interno desconhecido: ${serviceName}`);
   }
 
-  return serviceRef;
+  return {
+    envKey,
+    value: readOptionalStringEnv(envKey, env),
+  };
 }
 
-export function getServiceUrl(serviceName: string): string {
-  const serviceRef = resolveServiceRef(serviceName);
-
+export function getServiceUrl(serviceName: InternalServiceName, env?: EnvSource): string {
+  const serviceRef = resolveServiceRef(serviceName, env);
   if (!serviceRef.value) {
     throw new Error(`Variável de ambiente ${serviceRef.envKey} é obrigatória (Regra 6 - fail-fast)`);
   }
 
-  return serviceRef.value;
+  const validationResult = httpUrlSchema.safeParse(serviceRef.value);
+  if (!validationResult.success) {
+    throw new Error(`Variável de ambiente ${serviceRef.envKey} inválida: URL HTTP/HTTPS obrigatória`);
+  }
+
+  return validationResult.data;
 }
 
-export function getOptionalServiceUrl(serviceName: string): string | null {
-  const serviceRef = resolveServiceRef(serviceName);
-
+export function getOptionalServiceUrl(serviceName: InternalServiceName, env?: EnvSource): string | null {
+  const serviceRef = resolveServiceRef(serviceName, env);
   if (!serviceRef.value) {
     return null;
   }
-  return serviceRef.value;
+
+  const validationResult = httpUrlSchema.safeParse(serviceRef.value);
+  if (!validationResult.success) {
+    throw new Error(`Variável de ambiente ${serviceRef.envKey} inválida: URL HTTP/HTTPS obrigatória`);
+  }
+
+  return validationResult.data;
 }
 
 // ============================================================================

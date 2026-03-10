@@ -69,6 +69,7 @@
     "lint": "eslint src/"
   },
   "dependencies": {
+    "@alice/config": "workspace:*",
     "@alice/database": "workspace:*",
     "@alice/logger": "workspace:*",
     "@neondatabase/serverless": "^0.10.4",

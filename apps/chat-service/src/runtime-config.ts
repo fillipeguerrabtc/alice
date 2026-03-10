@@ -1,4 +1,12 @@
-import { getServiceUrl } from '@alice/config';
+import {
+  chatServiceConfigSchema,
+  getNodeEnv,
+  getOptionalServiceUrl,
+  getServiceUrl,
+  loadConfig,
+  readOptionalStringEnv,
+  resolveCorsOrigins,
+} from '@alice/config';
 import { ProxyAgent } from 'undici';
 
 type LoggerLike = {
@@ -47,11 +55,13 @@ function shouldBypassProxy(hostname: string, entries: string[]): boolean {
 }
 
 export function createChatEnvParsers(logger: LoggerLike) {
+  const isProduction = getNodeEnv() === 'production';
+
   function parseEnvInt(value: string | undefined, defaultValue: number, name: string): number {
     const raw = (value ?? String(defaultValue)).trim();
     if (!/^\d+$/.test(raw)) {
       const message = `${name} inválido: "${raw}". Deve ser inteiro positivo.`;
-      if (process.env.NODE_ENV === 'production') {
+      if (isProduction) {
         logger.error({ name, raw }, message);
         throw new Error(message);
       }
@@ -61,7 +71,7 @@ export function createChatEnvParsers(logger: LoggerLike) {
     const parsed = parseInt(raw, 10);
     if (!Number.isFinite(parsed) || parsed <= 0) {
       const message = `${name} inválido: "${raw}". Deve ser inteiro positivo.`;
-      if (process.env.NODE_ENV === 'production') {
+      if (isProduction) {
         logger.error({ name, raw, parsed }, message);
         throw new Error(message);
       }
@@ -75,7 +85,7 @@ export function createChatEnvParsers(logger: LoggerLike) {
     const raw = (value ?? String(defaultValue)).trim();
     if (!/^\d+$/.test(raw)) {
       const message = `${name} inválido: "${raw}". Deve ser inteiro >= 0.`;
-      if (process.env.NODE_ENV === 'production') {
+      if (isProduction) {
         logger.error({ name, raw }, message);
         throw new Error(message);
       }
@@ -85,7 +95,7 @@ export function createChatEnvParsers(logger: LoggerLike) {
     const parsed = parseInt(raw, 10);
     if (!Number.isFinite(parsed) || parsed < 0) {
       const message = `${name} inválido: "${raw}". Deve ser inteiro >= 0.`;
-      if (process.env.NODE_ENV === 'production') {
+      if (isProduction) {
         logger.error({ name, raw, parsed }, message);
         throw new Error(message);
       }
@@ -100,31 +110,28 @@ export function createChatEnvParsers(logger: LoggerLike) {
 
 export function loadChatRuntimeConfig(params: ChatRuntimeConfigParams): ChatRuntimeConfig {
   const { logger, parseEnvInt } = params;
+  const validatedConfig = loadConfig(chatServiceConfigSchema);
+  const isProduction = validatedConfig.NODE_ENV === 'production';
 
-  const PORT = process.env.PORT || 3002;
-  const databaseUrl = process.env.DATABASE_URL;
-  if (!databaseUrl) {
-    logger.error('DATABASE_URL não configurada');
-    failFast('DATABASE_URL não configurada');
-  }
+  const PORT = validatedConfig.PORT ?? 3002;
+  const CORS_ORIGINS = resolveCorsOrigins({
+    requiredInProduction: true,
+    developmentFallback: [],
+  });
 
-  const corsOriginsEnv = process.env.CORS_ORIGINS;
-  if (!corsOriginsEnv && process.env.NODE_ENV === 'production') {
-    logger.error('CORS_ORIGINS é obrigatório em produção (Regra 6 - fail-fast)');
-    failFast('CORS_ORIGINS é obrigatório em produção');
-  }
-  const CORS_ORIGINS = corsOriginsEnv
-    ? corsOriginsEnv.split(',').map((origin) => origin.trim()).filter(Boolean)
-    : [];
-
-  const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-  if (!OPENAI_API_KEY && process.env.NODE_ENV === 'production') {
+  const OPENAI_API_KEY = readOptionalStringEnv('OPENAI_API_KEY') ?? undefined;
+  if (!OPENAI_API_KEY && isProduction) {
     logger.error('OPENAI_API_KEY é obrigatório em produção (Vision + geração de imagens via OpenAI)');
     failFast('OPENAI_API_KEY é obrigatório em produção');
   }
 
-  const OPENAI_PROXY = process.env.OPENAI_PROXY ?? process.env.HTTPS_PROXY ?? process.env.HTTP_PROXY ?? null;
-  const OPENAI_NO_PROXY = process.env.NO_PROXY ?? process.env.no_proxy ?? null;
+  const OPENAI_PROXY = readOptionalStringEnv('OPENAI_PROXY')
+    ?? readOptionalStringEnv('HTTPS_PROXY')
+    ?? readOptionalStringEnv('HTTP_PROXY')
+    ?? null;
+  const OPENAI_NO_PROXY = readOptionalStringEnv('NO_PROXY')
+    ?? readOptionalStringEnv('no_proxy')
+    ?? null;
   const OPENAI_NO_PROXY_ENTRIES = OPENAI_NO_PROXY
     ? OPENAI_NO_PROXY.split(',').map((entry) => entry.trim()).filter(Boolean)
     : [];
@@ -156,7 +163,7 @@ export function loadChatRuntimeConfig(params: ChatRuntimeConfigParams): ChatRunt
   };
 
   const OPENAI_VISION_MAX_BYTES = (() => {
-    const raw = process.env.OPENAI_VISION_MAX_BYTES;
+    const raw = readOptionalStringEnv('OPENAI_VISION_MAX_BYTES');
     if (!raw) return null;
     const parsed = Number(raw);
     if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -166,16 +173,16 @@ export function loadChatRuntimeConfig(params: ChatRuntimeConfigParams): ChatRunt
     return parsed;
   })();
 
-  const APP_VERSION = process.env.APP_VERSION?.trim() || null;
-  const LLM_GATEWAY_URL = process.env.LLM_GATEWAY_URL?.trim() || null;
-  const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET || '';
+  const APP_VERSION = readOptionalStringEnv('APP_VERSION');
+  const LLM_GATEWAY_URL = getOptionalServiceUrl('llmGateway');
+  const INTERNAL_API_SECRET = readOptionalStringEnv('INTERNAL_API_SECRET') ?? '';
   const WEB_IMAGE_SEARCH_MAX_RESULTS = parseEnvInt(
-    process.env.WEB_IMAGE_SEARCH_MAX_RESULTS,
+    readOptionalStringEnv('WEB_IMAGE_SEARCH_MAX_RESULTS') ?? undefined,
     3,
     'WEB_IMAGE_SEARCH_MAX_RESULTS'
   );
   const WEB_IMAGE_MAX_BYTES = parseEnvInt(
-    process.env.WEB_IMAGE_MAX_BYTES,
+    readOptionalStringEnv('WEB_IMAGE_MAX_BYTES') ?? undefined,
     8 * 1024 * 1024,
     'WEB_IMAGE_MAX_BYTES'
   );

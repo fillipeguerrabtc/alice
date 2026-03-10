@@ -11,6 +11,12 @@
  */
 
 import { z } from 'zod';
+import {
+  getNodeEnv,
+  getOptionalServiceUrl,
+  readOptionalStringEnv,
+  resolveCorsOrigins,
+} from '@alice/config';
 
 /**
  * Regex para validação de URL de serviço
@@ -107,9 +113,7 @@ export interface ServiceUrlsConfig {
   integrations: string;
 }
 
-/**
- * URLs padrão dos serviços (Regra 16 - Portas de microsserviços)
- */
+const SERVICE_URL_KEYS: Array<keyof ServiceUrlsConfig> = ['auth', 'chat', 'rag', 'training', 'integrations'];
 const DEFAULT_SERVICE_URLS: ServiceUrlsConfig = {
   auth: 'http://auth-service:3001',
   chat: 'http://chat-service:3002',
@@ -141,11 +145,11 @@ let serviceUrlsCache: ServiceUrlsConfig | null = null;
  */
 export function resolveServiceUrls(env: Record<string, string | undefined> = process.env): ServiceUrlsConfig {
   return {
-    auth: env.AUTH_SERVICE_URL || DEFAULT_SERVICE_URLS.auth,
-    chat: env.CHAT_SERVICE_URL || DEFAULT_SERVICE_URLS.chat,
-    rag: env.RAG_SERVICE_URL || DEFAULT_SERVICE_URLS.rag,
-    training: env.TRAINING_SERVICE_URL || DEFAULT_SERVICE_URLS.training,
-    integrations: env.INTEGRATIONS_SERVICE_URL || DEFAULT_SERVICE_URLS.integrations,
+    auth: getOptionalServiceUrl('auth', env) ?? DEFAULT_SERVICE_URLS.auth,
+    chat: getOptionalServiceUrl('chat', env) ?? DEFAULT_SERVICE_URLS.chat,
+    rag: getOptionalServiceUrl('rag', env) ?? DEFAULT_SERVICE_URLS.rag,
+    training: getOptionalServiceUrl('training', env) ?? DEFAULT_SERVICE_URLS.training,
+    integrations: getOptionalServiceUrl('integrations', env) ?? DEFAULT_SERVICE_URLS.integrations,
   };
 }
 
@@ -214,7 +218,7 @@ export const SERVICE_URLS: ServiceUrlsConfig = new Proxy({} as ServiceUrlsConfig
   },
   
   has(_target, prop: keyof ServiceUrlsConfig): boolean {
-    return prop in DEFAULT_SERVICE_URLS;
+    return SERVICE_URL_KEYS.includes(prop);
   },
 });
 
@@ -251,18 +255,19 @@ export const DEVELOPMENT_CORS_ORIGINS = [
  * ```
  */
 export function getCorsOrigins(): string[] {
-  const envOrigins = process.env.CORS_ORIGINS;
-  
-  if (envOrigins) {
-    return envOrigins.split(',').map(origin => origin.trim());
+  const envOrigins = resolveCorsOrigins({
+    requiredInProduction: false,
+    developmentFallback: [],
+  });
+  if (envOrigins.length > 0) {
+    return envOrigins;
   }
-  
-  const isProd = process.env.NODE_ENV === 'production';
-  
-  if (isProd) {
+
+  const isProduction = getNodeEnv() === 'production';
+  if (isProduction) {
     return PRODUCTION_CORS_ORIGINS;
   }
-  
+
   return [...DEVELOPMENT_CORS_ORIGINS, ...PRODUCTION_CORS_ORIGINS];
 }
 
@@ -378,10 +383,10 @@ export const RAG_CHUNK_CONFIG = {
  */
 export const GPU_MANAGER_CONFIG = {
   // GPU Manager Service URL (container name em produção: alice-gpu-manager:3010)
-  url: process.env.GPU_MANAGER_URL || 'http://alice-gpu-manager:3010',
+  url: getOptionalServiceUrl('gpuManager') ?? 'http://alice-gpu-manager:3010',
   models: {
     // LLM (texto) - SSOT do stack (`LLM_MODEL_NAME` em produção)
-    llm: process.env.LLM_MODEL_NAME || 'Qwen/Qwen2.5-7B-Instruct-AWQ',
+    llm: readOptionalStringEnv('LLM_MODEL_NAME') ?? 'Qwen/Qwen2.5-7B-Instruct-AWQ',
     embeddings: 'Qwen/Qwen3-Embedding-0.6B',
   },
   defaults: {

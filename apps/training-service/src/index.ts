@@ -21,6 +21,13 @@ import type { Request } from 'express';
 import cors from 'cors';
 import compression from 'compression';
 import crypto from 'crypto';
+import {
+  getNodeEnv,
+  getServiceUrl,
+  loadConfig,
+  resolveCorsOrigins,
+  trainingServiceConfigSchema,
+} from '@alice/config';
 import { createLogger } from '@alice/logger';
 import { getDatabase, getPool, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, validateEmbeddingDimension, EMBEDDING_DIMENSIONS, withTenantContext } from '@alice/database';
 import { 
@@ -170,6 +177,7 @@ import { buildFineTuningJobStreamFingerprint, isActiveFineTuningJobStatus } from
 
 // Logger centralizado: JSON em produÃ§Ã£o, pino-pretty em desenvolvimento
 const logger = createLogger('training-service');
+const IS_PRODUCTION = getNodeEnv() === 'production';
 
 // ============================================================================
 // VALIDAÃ‡ÃƒO DE VARIÃVEIS DE AMBIENTE - CORREÃ‡ÃƒO AUDITORIA 17/12/2025
@@ -183,7 +191,7 @@ function parseEnvInt(envValue: string | undefined, defaultValue: number, varName
   // Regra 6: Rejeitar valores parciais - sÃ³ dÃ­gitos sÃ£o aceitos
   if (!/^\d+$/.test(trimmed)) {
     const errorMsg = `${varName} invÃ¡lido: "${raw}". Deve ser nÃºmero inteiro positivo.`;
-    if (process.env.NODE_ENV === 'production') {
+    if (IS_PRODUCTION) {
       logger.error({ varName, rawValue: raw }, errorMsg);
       throw new Error(errorMsg);
     }
@@ -195,7 +203,7 @@ function parseEnvInt(envValue: string | undefined, defaultValue: number, varName
   
   if (!Number.isFinite(parsed) || parsed <= 0) {
     const errorMsg = `${varName} invÃ¡lido: "${raw}". Deve ser nÃºmero inteiro positivo.`;
-    if (process.env.NODE_ENV === 'production') {
+    if (IS_PRODUCTION) {
       logger.error({ varName, rawValue: raw, parsed }, errorMsg);
       throw new Error(errorMsg);
     }
@@ -297,8 +305,9 @@ const TRAINING_JOB_STREAM_HEARTBEAT_MS = parseEnvInt(
   15000,
   'TRAINING_JOB_STREAM_HEARTBEAT_MS'
 );
+const trainingRuntimeConfig = loadConfig(trainingServiceConfigSchema);
 
-const PORT = parseEnvInt(process.env.PORT, 3004, 'PORT');
+const PORT = trainingRuntimeConfig.PORT ?? 3004;
 const TRAINING_HTTP_SERVER_TIMEOUT_MS = parseEnvInt(
   process.env.TRAINING_HTTP_SERVER_TIMEOUT_MS,
   600000,
@@ -329,26 +338,13 @@ const TRAINING_RUN_START_REQUIRE_IDEMPOTENCY_KEY = parseEnvBoolean(
   true
 );
 const tradingDataGovernancePolicy = loadTradingDataGovernancePolicyFromEnv();
-const DATABASE_URL = process.env.DATABASE_URL;
-const RAG_SERVICE_URL = process.env.RAG_SERVICE_URL ?? 'http://alice-rag:3003';
-const INTEGRATIONS_SERVICE_URL = process.env.INTEGRATIONS_SERVICE_URL;
-if (!INTEGRATIONS_SERVICE_URL) {
-  throw new Error('INTEGRATIONS_SERVICE_URL Ã© obrigatÃ³rio (Regra 6 - fail-fast)');
-}
-const INTEGRATIONS_SERVICE_URL_FINAL = INTEGRATIONS_SERVICE_URL;
-const corsOriginsEnv = process.env.CORS_ORIGINS;
-if (!corsOriginsEnv && process.env.NODE_ENV === 'production') {
-  logger.error('CORS_ORIGINS Ã© obrigatÃ³rio em produÃ§Ã£o (Regra 6 - fail-fast)');
-  process.exit(1);
-}
-const CORS_ORIGINS = corsOriginsEnv
-  ? corsOriginsEnv.split(',').map((origin) => origin.trim()).filter(Boolean)
-  : [];
-
-if (!DATABASE_URL) {
-  logger.error('DATABASE_URL nÃ£o configurada');
-  process.exit(1);
-}
+const _DATABASE_URL = trainingRuntimeConfig.DATABASE_URL;
+const RAG_SERVICE_URL = getServiceUrl('rag');
+const INTEGRATIONS_SERVICE_URL_FINAL = getServiceUrl('integrations');
+const CORS_ORIGINS = resolveCorsOrigins({
+  requiredInProduction: true,
+  developmentFallback: [],
+});
 
 logger.info('Training service inicializado - fine-tuning LoRA ativo via GPU Manager Service (GPU Ãºnica 20GB)');
 
@@ -1326,8 +1322,8 @@ async function generateEmbedding(text: string): Promise<number[]> {
 
 // SEGURANÃ‡A: Helmet com CSP/HSTS enterprise (Express.js 2025 + OWASP 2023)
 app.use(createSecurityMiddleware({
-  contentSecurityPolicy: process.env.NODE_ENV === 'production',
-  isDevelopment: process.env.NODE_ENV !== 'production',
+  contentSecurityPolicy: IS_PRODUCTION,
+  isDevelopment: !IS_PRODUCTION,
 }));
 
 // OBSERVABILITY: Correlation ID middleware para rastreamento distribuÃ­do (Node.js 20 LTS 2025)
@@ -2810,7 +2806,7 @@ function parseEnvFloat(envValue: string | undefined, defaultValue: number, varNa
   const trimmed = raw.trim();
   if (!/^\d+(\.\d+)?$/.test(trimmed)) {
     const errorMsg = `${varName} invÃ¡lido: "${raw}". Deve ser nÃºmero positivo.`;
-    if (process.env.NODE_ENV === 'production') {
+    if (IS_PRODUCTION) {
       logger.error({ varName, rawValue: raw }, errorMsg);
       throw new Error(errorMsg);
     }
@@ -2820,7 +2816,7 @@ function parseEnvFloat(envValue: string | undefined, defaultValue: number, varNa
   const parsed = Number(trimmed);
   if (!Number.isFinite(parsed) || parsed <= 0) {
     const errorMsg = `${varName} invÃ¡lido: "${raw}". Deve ser nÃºmero positivo.`;
-    if (process.env.NODE_ENV === 'production') {
+    if (IS_PRODUCTION) {
       logger.error({ varName, rawValue: raw, parsed }, errorMsg);
       throw new Error(errorMsg);
     }

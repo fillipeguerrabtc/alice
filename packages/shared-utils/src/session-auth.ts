@@ -27,6 +27,7 @@ import type { Request, Response, NextFunction } from 'express';
 // REF: Best Practices Node.js ESM 2025 - evita conflitos com pacotes npm de mesmo nome
 import crypto from 'node:crypto';
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
+import { getNodeEnv, readOptionalStringEnv } from '@alice/config';
 import { createLogger } from './logger.js';
 import { createCacheAdapter, type CacheAdapter } from './redis-cache-adapter.js';
 import type { Role } from './rbac/types.js';
@@ -34,9 +35,10 @@ import type { Role } from './rbac/types.js';
 const logger = createLogger('session-auth');
 
 // Configuração via variáveis de ambiente
-const IS_PRODUCTION = process.env.NODE_ENV === 'production';
-const SESSION_SECRET = process.env.SESSION_SECRET;
-const SESSION_COOKIE_NAME = process.env.SESSION_COOKIE_NAME || 'alice.sid';
+const NODE_ENV = getNodeEnv();
+const IS_PRODUCTION = NODE_ENV === 'production';
+const SESSION_SECRET = readOptionalStringEnv('SESSION_SECRET');
+const SESSION_COOKIE_NAME = readOptionalStringEnv('SESSION_COOKIE_NAME') ?? 'alice.sid';
 const SESSION_CACHE_TTL = 5 * 60 * 1000; // 5 minutos
 
 // IMPORTANTE (DEV): o auth-service usa esse mesmo default quando SESSION_SECRET não está definido.
@@ -61,8 +63,8 @@ if (IS_PRODUCTION && (!SESSION_SECRET || SESSION_SECRET.length < 64)) {
 }
 
 // OIDC JWT (híbrido): validação local via JWKS (sem introspection/in-memory)
-const OIDC_ISSUER = process.env.OIDC_ISSUER;
-const OIDC_API_AUDIENCE = process.env.OIDC_API_AUDIENCE;
+const OIDC_ISSUER = readOptionalStringEnv('OIDC_ISSUER') ?? undefined;
+const OIDC_API_AUDIENCE = readOptionalStringEnv('OIDC_API_AUDIENCE') ?? undefined;
 let remoteJwks: ReturnType<typeof createRemoteJWKSet> | null = null;
 
 function getRemoteJwks(): ReturnType<typeof createRemoteJWKSet> | null {

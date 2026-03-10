@@ -38,7 +38,14 @@ import {
 } from '@alice/shared-utils';
 import type { AuthContext } from '@alice/shared-utils';
 import { integrationsServicePaths, integrationsServiceSchemas } from './openapi-specs.js';
-import { getServiceUrl, loadConfig, integrationsServiceConfigSchema } from '@alice/config';
+import {
+  getServiceUrl,
+  integrationsServiceConfigSchema,
+  loadConfig,
+  readNumberEnv,
+  readOptionalStringEnv,
+  resolveCorsOrigins,
+} from '@alice/config';
 import { getDatabase, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, getPool } from '@alice/database';
 import { eq, sql, and, inArray } from '@alice/database';
 import type {
@@ -331,11 +338,15 @@ const {
 
 // CORREÇÃO A2: Timeouts LLM configuráveis via env vars (sem hardcoded)
 // Ref: Regra 6 - PROIBIDO valores hardcoded
-const LLM_SIGNAL_TIMEOUT_MS = parseInt(process.env.LLM_SIGNAL_TIMEOUT_MS || '240000', 10);
-const LLM_SIGNAL_TIMEOUT_ARBITRAGE_MS = parseInt(process.env.LLM_SIGNAL_TIMEOUT_ARBITRAGE_MS || '360000', 10);
+const LLM_SIGNAL_TIMEOUT_MS = readNumberEnv('LLM_SIGNAL_TIMEOUT_MS', { defaultValue: 240000, integer: true, min: 1 });
+const LLM_SIGNAL_TIMEOUT_ARBITRAGE_MS = readNumberEnv('LLM_SIGNAL_TIMEOUT_ARBITRAGE_MS', { defaultValue: 360000, integer: true, min: 1 });
 
 // CORREÇÃO M4: maxAllowedDeviation configurável via env var
-const LLM_VALIDATION_MAX_DEVIATION = parseFloat(process.env.LLM_VALIDATION_MAX_DEVIATION || '0.01');
+const LLM_VALIDATION_MAX_DEVIATION = readNumberEnv('LLM_VALIDATION_MAX_DEVIATION', {
+  defaultValue: 0.01,
+  min: 0,
+  max: 1,
+});
 const { requestTradingSignalCompletion } = createTradingLlmExecutionService({
   logger,
   llmSignalTimeoutMs: LLM_SIGNAL_TIMEOUT_MS,
@@ -1018,10 +1029,15 @@ const STRIPE_API_VERSION = '2024-12-18.acacia' as Stripe.LatestApiVersion;
 // Ref: https://support.google.com/accounts/answer/185833
 // Documentação PT-BR (Regra 10 CLAUDE.md)
 // =============================================================================
-const GMAIL_USER = process.env.GMAIL_USER;
-const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD;
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY?.trim();
+const GMAIL_USER = readOptionalStringEnv('GMAIL_USER') ?? undefined;
+const GMAIL_APP_PASSWORD = readOptionalStringEnv('GMAIL_APP_PASSWORD') ?? undefined;
+const OPENAI_API_KEY = readOptionalStringEnv('OPENAI_API_KEY') ?? undefined;
 const isProduction = config.NODE_ENV === 'production';
+const TWILIO_ACCOUNT_SID = readOptionalStringEnv('TWILIO_ACCOUNT_SID') ?? undefined;
+const TWILIO_AUTH_TOKEN = readOptionalStringEnv('TWILIO_AUTH_TOKEN') ?? undefined;
+const TWILIO_WHATSAPP_NUMBER = readOptionalStringEnv('TWILIO_WHATSAPP_NUMBER') ?? undefined;
+const TRADING_LEGACY_INSTITUTIONAL_FLOW_ENABLED = readOptionalStringEnv('TRADING_LEGACY_INSTITUTIONAL_FLOW') === 'true';
+const STRIPE_WEBHOOK_SECRET = readOptionalStringEnv('STRIPE_WEBHOOK_SECRET') ?? undefined;
 
 const emailTransporter = initializeGmailTransporter({
   gmailUser: GMAIL_USER,
@@ -1048,19 +1064,15 @@ const featureFlagStorage = createDrizzleFeatureFlagStorage();
 initFeatureFlags(featureFlagStorage);
 logger.info('Sistema de feature flags inicializado');
 
-const corsOriginsEnv = process.env.CORS_ORIGINS;
-if (!corsOriginsEnv && process.env.NODE_ENV === 'production') {
-  logger.error('CORS_ORIGINS é obrigatório em produção (Regra 6 - fail-fast)');
-  process.exit(1);
-}
-const CORS_ORIGINS = corsOriginsEnv
-  ? corsOriginsEnv.split(',').map((origin) => origin.trim()).filter(Boolean)
-  : [];
+const CORS_ORIGINS = resolveCorsOrigins({
+  requiredInProduction: true,
+  developmentFallback: [],
+});
 
 // SEGURANÇA: Helmet com CSP/HSTS enterprise (Express.js 2025 + OWASP 2023)
 app.use(createSecurityMiddleware({
-  contentSecurityPolicy: process.env.NODE_ENV === 'production',
-  isDevelopment: process.env.NODE_ENV !== 'production',
+  contentSecurityPolicy: isProduction,
+  isDevelopment: !isProduction,
 }));
 
 // OBSERVABILITY: Correlation ID middleware para rastreamento distribuído (Node.js 20 LTS 2025)
@@ -1151,9 +1163,9 @@ const { refreshIntegrationHealthMetrics } = createIntegrationHealthRefresher({
   isWiseConfigured,
   getSandboxStatus,
   getProfileIdSafe,
-  twilioAccountSid: process.env.TWILIO_ACCOUNT_SID,
-  twilioAuthToken: process.env.TWILIO_AUTH_TOKEN,
-  twilioWhatsappNumber: process.env.TWILIO_WHATSAPP_NUMBER,
+  twilioAccountSid: TWILIO_ACCOUNT_SID,
+  twilioAuthToken: TWILIO_AUTH_TOKEN,
+  twilioWhatsappNumber: TWILIO_WHATSAPP_NUMBER,
   emailTransporter,
   openAiApiKey: OPENAI_API_KEY,
   externalApiTimeoutMs: EXTERNAL_API_TIMEOUT_MS,
@@ -1390,11 +1402,8 @@ const wiseSimulationActionSchema = z.object({
 });
 
 // Validar secrets obrigatórios em produção (Regra 16 - Segurança Enterprise)
-const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
-const IS_PRODUCTION = process.env.NODE_ENV === 'production';
-
 // STRIPE: Fail-fast se produção sem webhook secret
-if (!STRIPE_WEBHOOK_SECRET && IS_PRODUCTION && stripe) {
+if (!STRIPE_WEBHOOK_SECRET && isProduction && stripe) {
   logger.error('CRITICAL: STRIPE_WEBHOOK_SECRET é OBRIGATÓRIO em produção com Stripe ativo. Abortando.');
   process.exit(1);
 }
@@ -1759,9 +1768,6 @@ registerWiseOAuthRoutes(app, {
 // Integração com Conversation Orchestrator para Handover/Takeover
 // ============================================================
 
-const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
-const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
-const TWILIO_WHATSAPP_NUMBER = process.env.TWILIO_WHATSAPP_NUMBER;
 // REGRA 6: Fail-fast em TODOS os ambientes - variável DEVE estar definida
 const CHAT_SERVICE_URL_FINAL = getServiceUrl('chat');
 
@@ -1864,7 +1870,7 @@ if (kucoinClient.isKucoinConfigured()) {
       { error: error instanceof Error ? error.message : String(error) },
       'Configuração inválida do KuCoin (orderbook depth REST/WS)'
     );
-    if (process.env.NODE_ENV === 'production') {
+    if (isProduction) {
       process.exit(1);
     }
     throw error;
@@ -2003,7 +2009,7 @@ if (kucoinClient.isKucoinConfigured()) {
         })
         .catch((error) => {
           logger.error({ error }, 'Falha ao inicializar broadcast de trading');
-          if (process.env.NODE_ENV === 'production') {
+          if (isProduction) {
             process.exit(1);
           }
         });
@@ -2099,7 +2105,7 @@ const {
 } = createTradingLlmSignalGenerationService({
   logger,
   TradingConfigErrorCtor: TradingConfigError,
-  isLegacyInstitutionalFlowEnabled: () => TRADING_MODE !== 'lab' && process.env.TRADING_LEGACY_INSTITUTIONAL_FLOW === 'true',
+  isLegacyInstitutionalFlowEnabled: () => TRADING_MODE !== 'lab' && TRADING_LEGACY_INSTITUTIONAL_FLOW_ENABLED,
   maxValidationDeviation: LLM_VALIDATION_MAX_DEVIATION,
   getAgenticSettingsOrDefault,
   generateLegacyInstitutionalSignal,

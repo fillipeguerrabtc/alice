@@ -19,7 +19,15 @@ import http from 'http';
 import cors from 'cors';
 // helmet aplicado via createSecurityMiddleware de @alice/shared-utils
 import compression from 'compression';
-import { getOptionalServiceUrl, getServiceUrl } from '@alice/config';
+import {
+  getNodeEnv,
+  getOptionalServiceUrl,
+  getServiceUrl,
+  loadConfig,
+  ragServiceConfigSchema,
+  readOptionalStringEnv,
+  resolveCorsOrigins,
+} from '@alice/config';
 // rateLimit via createRateLimiter de @alice/shared-utils
 import multer from 'multer';
 import path from 'path';
@@ -72,7 +80,7 @@ import { createLogger } from '@alice/logger';
 // então é seguro definir isProduction após imports. Esta constante é usada apenas neste módulo.
 // IMPORTANTE: Se algum módulo importado precisar de isProduction durante import, isso causaria undefined.
 // Verificado: todos os módulos importados usam process.env.NODE_ENV diretamente, não isProduction local.
-const isProduction = process.env.NODE_ENV === 'production';
+const isProduction = getNodeEnv() === 'production';
 import { getStorageService } from './storage.js';
 import { getImageProcessor, getVisionCircuitBreakerStatus } from './image-processor.js';
 import { startEmbeddingWorker, getEmbeddingWorkerStatus } from './workers/embedding-worker.js';
@@ -906,22 +914,14 @@ function validateUpload(file: Express.Multer.File): { valid: boolean; error?: st
 
 // Logger centralizado: JSON em produção, pino-pretty em desenvolvimento
 const logger = createLogger('rag-service');
+const ragRuntimeConfig = loadConfig(ragServiceConfigSchema);
 
-const PORT = process.env.PORT || 3003;
-const DATABASE_URL = process.env.DATABASE_URL;
-const corsOriginsEnv = process.env.CORS_ORIGINS;
-if (!corsOriginsEnv && process.env.NODE_ENV === 'production') {
-  logger.error('CORS_ORIGINS é obrigatório em produção (Regra 6 - fail-fast)');
-  process.exit(1);
-}
-const CORS_ORIGINS = corsOriginsEnv
-  ? corsOriginsEnv.split(',').map((origin) => origin.trim()).filter(Boolean)
-  : [];
-
-if (!DATABASE_URL) {
-  logger.error('DATABASE_URL não configurada');
-  process.exit(1);
-}
+const PORT = ragRuntimeConfig.PORT;
+const _DATABASE_URL = ragRuntimeConfig.DATABASE_URL;
+const CORS_ORIGINS = resolveCorsOrigins({
+  requiredInProduction: true,
+  developmentFallback: [],
+});
 
 // ==============================================================================
 // ARQUITETURA MULTIMODAL ENTERPRISE - Gate 2 (LLM separado + Vision OpenAI)
@@ -950,8 +950,8 @@ function normalizeBaseUrl(raw?: string): string {
   return `${trimmed}/`;
 }
 
-const SEARXNG_URL = normalizeBaseUrl(process.env.SEARXNG_URL);
-const SEARXNG_SECRET_KEY = process.env.SEARXNG_SECRET_KEY;
+const SEARXNG_URL = normalizeBaseUrl(readOptionalStringEnv('SEARXNG_URL') ?? undefined);
+const SEARXNG_SECRET_KEY = readOptionalStringEnv('SEARXNG_SECRET_KEY') ?? undefined;
 
 // ============================================================================
 // VALIDAÇÃO DE VARIÁVEIS DE AMBIENTE - CORREÇÃO AUDITORIA 17/12/2025
@@ -966,7 +966,7 @@ function parseEnvInt(envValue: string | undefined, defaultValue: number, varName
   // Regra 6: Rejeitar valores parciais - só dígitos são aceitos
   if (!/^\d+$/.test(trimmed)) {
     const errorMsg = `${varName} inválido: "${raw}". Deve ser número inteiro positivo.`;
-    if (process.env.NODE_ENV === 'production') {
+    if (isProduction) {
       logger.error({ varName, rawValue: raw }, errorMsg);
       throw new Error(errorMsg);
     }
@@ -978,7 +978,7 @@ function parseEnvInt(envValue: string | undefined, defaultValue: number, varName
   
   if (!Number.isFinite(parsed) || parsed <= 0) {
     const errorMsg = `${varName} inválido: "${raw}". Deve ser número inteiro positivo.`;
-    if (process.env.NODE_ENV === 'production') {
+    if (isProduction) {
       logger.error({ varName, rawValue: raw, parsed }, errorMsg);
       throw new Error(errorMsg);
     }
@@ -995,7 +995,7 @@ function parseEnvBool(envValue: string | undefined, defaultValue: boolean, varNa
   if (normalized === 'true') return true;
   if (normalized === 'false') return false;
   const errorMsg = `${varName} inválido: "${envValue}". Deve ser 'true' ou 'false'.`;
-  if (process.env.NODE_ENV === 'production') {
+  if (isProduction) {
     logger.error({ varName, rawValue: envValue }, errorMsg);
     throw new Error(errorMsg);
   }
@@ -1008,7 +1008,7 @@ function parseEnvFloat(envValue: string | undefined, defaultValue: number, varNa
   const parsed = Number(raw);
   if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
     const errorMsg = `${varName} inválido: "${raw}". Deve ser número entre 0 e 1.`;
-    if (process.env.NODE_ENV === 'production') {
+    if (isProduction) {
       logger.error({ varName, rawValue: raw, parsed }, errorMsg);
       throw new Error(errorMsg);
     }
@@ -1024,7 +1024,7 @@ const WORKER_CONCURRENCY = parseEnvInt(process.env.WORKER_CONCURRENCY, 2, 'WORKE
 const WORKER_MAX_ATTEMPTS = parseEnvInt(process.env.WORKER_MAX_ATTEMPTS, 3, 'WORKER_MAX_ATTEMPTS');
 const WEB_CRAWL_REQUIRE_ALLOWLIST = parseEnvBool(
   process.env.WEB_CRAWL_REQUIRE_ALLOWLIST,
-  process.env.NODE_ENV === 'production',
+  isProduction,
   'WEB_CRAWL_REQUIRE_ALLOWLIST'
 );
 const WEB_CRAWL_ALLOWED_DOMAINS = (process.env.WEB_CRAWL_ALLOWED_DOMAINS ?? '')
