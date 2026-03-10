@@ -760,23 +760,6 @@ export function TradingContent() {
     wsConnected: wsState.connected,
   });
 
-  const statusGuardNode = resolveTradingStatusGate({
-    isLoadingStatus,
-    refetchStatus,
-    statusData,
-    statusError,
-    t,
-  });
-  if (statusGuardNode) {
-    return statusGuardNode;
-  }
-
-  const status = statusData?.data;
-  if (!status) {
-    return null;
-  }
-  const defaultSymbol = symbolsData?.data?.defaultSymbol || status.defaultSymbol || '';
-
   const {
     canSubmitOrder,
     orderEffectivePrice,
@@ -948,6 +931,23 @@ export function TradingContent() {
     wsEnabled,
     wsError: wsState.error,
   });
+
+  const statusGuardNode = resolveTradingStatusGate({
+    isLoadingStatus,
+    refetchStatus,
+    statusData,
+    statusError,
+    t,
+  });
+  if (statusGuardNode) {
+    return statusGuardNode;
+  }
+
+  const status = statusData?.data;
+  if (!status) {
+    return null;
+  }
+  const defaultSymbol = symbolsData?.data?.defaultSymbol || status.defaultSymbol || '';
 
   // Variação de preço: usar dados de contrato (Futures) ou ticker (Spot/Margin)
   const { priceChange, priceChangePercent } = resolveTradingPriceChange({
