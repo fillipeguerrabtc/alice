@@ -3,10 +3,13 @@
 **Autor:** Fillipe Guerra  
 **Data:** 10 de Março de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 15.15 - Plano enterprise 100% concluído com fechamento residual de frontend
+**Versão:** 15.16 - Hardening pós-plano (security deps + idempotência mandatory + redução de monólitos)
 
 ---
 
+- **Hardening pós-plano executado (10/03/2026):** cadeia de dependências produtivas foi endurecida via `pnpm.overrides` (`minimatch`, `underscore`, `lodash`, `qs`, `undici`) com lockfile atualizado e auditoria produtiva em status limpo (`pnpm audit --prod --audit-level high`: **No known vulnerabilities found**).
+- **Idempotência obrigatória por default no Training (10/03/2026):** `TRAINING_RUN_START_REQUIRE_IDEMPOTENCY_KEY` passou para default `true` em `apps/training-service/src/index.ts`, reforçando fail-closed para criação/start de run sem `x-idempotency-key`.
+- **Redução adicional de densidade em monólitos críticos (10/03/2026):** `apps/chat-service/src/index.ts` foi reduzido de 21169 para 21027 linhas com extração de runtime para `apps/chat-service/src/runtime-config.ts`; `apps/training-service/src/index.ts` foi reduzido de 4161 para 4098 linhas com extração de utilitários de stream para `apps/training-service/src/training-job-stream.ts`.
 - **Fechamento de pendências de validação (10/03/2026):** correção dos 7 testes falhos pós-refactor (guards de Chat/Trading/Auth/Training/Integrations) com atualização de asserts para os novos boundaries modulares; suíte voltou para **120/120 arquivos e 1352/1352 testes** em status OK.
 - **Consolidação histórica concluída (10/03/2026):** rebase/squash não-interativo finalizado sobre `origin/main`, com backup preservado em `backup/pre-squash-20260310-1` e normalização objetiva dos indicadores de governança de commits.
 - **Guardrails operacionais em enforcement real (10/03/2026):** scripts `verify:enterprise-focus`, `verify:enterprise-focus:full` e `validate:enterprise` ativados no `package.json` com `ENFORCE_FAILURE=true`.

@@ -9156,3 +9156,39 @@
 ### Próximo foco atualizado (continuação 297)
 - Plano enterprise concluído em 100%.
 - Próximas evoluções passam a seguir backlog incremental pós-plano (fora do escopo deste fechamento), mantendo regra de não fragmentar excessivamente.
+
+### Escopo entregue nesta rodada (continuação 298 - 10/03/2026)
+- Execução de bloco objetivo pós-plano com foco em `security deps + idempotency mandatory + redução de monólitos críticos`:
+  - `package.json` e `pnpm-lock.yaml` atualizados com `pnpm.overrides` para hardening de cadeia de dependências produtivas:
+    - `glob@7.2.3>minimatch` -> `3.1.4`
+    - `readdir-glob@1.1.3>minimatch` -> `5.1.8`
+    - `underscore` -> `1.13.8`
+    - `lodash` -> `4.17.23`
+    - `qs` -> `6.14.2`
+    - `undici` -> `>=6.23.0`
+  - `apps/training-service/src/index.ts` atualizado para tornar `TRAINING_RUN_START_REQUIRE_IDEMPOTENCY_KEY` obrigatório por default (`true`), reforçando fail-closed no start de runs sem header idempotente.
+  - Redução de densidade dos monólitos críticos sem alterar contratos:
+    - `apps/chat-service/src/runtime-config.ts` criado para centralizar parsing/validação de env, configuração OpenAI proxy/dispatcher, URLs internas e fail-fast de runtime;
+    - `apps/chat-service/src/index.ts` reduzido de `21169` para `21027` linhas ao delegar o bootstrap de runtime para módulo dedicado;
+    - `apps/training-service/src/training-job-stream.ts` criado para centralizar fingerprint/estado ativo do stream de jobs;
+    - `apps/training-service/src/index.ts` reduzido de `4161` para `4098` linhas ao delegar utilitários de stream.
+  - Sem alteração de payloads, contratos de API, RBAC, semântica assíncrona de filas ou fluxo funcional de negócio.
+- Atualização de SSOT documental desta rodada:
+  - `README.md`
+  - `docs/ARQUITETURA.md`
+  - `docs/INDEX.md`
+  - `docs/STATUS-REAL-ATUAL.md`
+  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+
+### Validação executada nesta rodada (sequencial - continuação 298)
+1. `npx --yes pnpm@10.26.2 install --no-frozen-lockfile`
+2. `npx --yes pnpm@10.26.2 audit --prod --audit-level high` (**No known vulnerabilities found**)
+3. `npx --yes pnpm@10.26.2 typecheck`
+4. `npx --yes pnpm@10.26.2 test`
+5. `npx --yes pnpm@10.26.2 lint`
+6. `npx --yes pnpm@10.26.2 build`
+7. `npx --yes pnpm@10.26.2 verify:enterprise-focus`
+
+### Próximo foco atualizado (continuação 298)
+- Sem pendências abertas deste bloco.
+- Próximas rodadas devem priorizar apenas backlog incremental de evolução, mantendo guardrails de anti-fragmentação e enforcement contínuo já ativo.

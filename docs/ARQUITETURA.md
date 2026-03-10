@@ -2,7 +2,7 @@
 
 > **Autor:** Fillipe Guerra  
 > **Data:** 10 de Março de 2026  
-> **Versão:** 3.9.313 - Plano enterprise 100% concluído com fechamento residual de frontend  
+> **Versão:** 3.9.314 - Hardening pós-plano (security deps + idempotência mandatory + redução de monólitos)  
 > **Framework:** arc42 + C4 Model + ADRs  
 > **Idioma:** Português Brasileiro (termos técnicos em inglês)
 > 
@@ -10,6 +10,10 @@
 
 ### Atualizações incrementais recentes (10/03/2026)
 
+- Security deps: hardening de cadeia produtiva centralizado em `package.json` (`pnpm.overrides` para `minimatch`, `underscore`, `lodash`, `qs` e `undici`) com lockfile atualizado e `pnpm audit --prod --audit-level high` em status limpo.
+- Training governance: `TRAINING_RUN_START_REQUIRE_IDEMPOTENCY_KEY` passou a default `true` em `apps/training-service/src/index.ts`, formalizando fail-closed para idempotência de run-start.
+- Chat runtime bootstrap: extração da configuração de runtime para `apps/chat-service/src/runtime-config.ts` (env parsing, OpenAI proxy/dispatcher, URLs internas, fail-fast), reduzindo densidade do `index.ts`.
+- Training stream helpers: extração de fingerprint/lifecycle de stream para `apps/training-service/src/training-job-stream.ts`, reduzindo densidade do `index.ts`.
 - Rebase/squash não-interativo concluído sobre `origin/main`, com consolidação histórica e backup da linha pré-consolidação em `backup/pre-squash-20260310-1`.
 - Guardrails de governança ativados em enforcement contínuo via `package.json` (`verify:enterprise-focus`, `verify:enterprise-focus:full`, `validate:enterprise`) com `ENFORCE_FAILURE=true`.
 - Frontend Wise: nova rodada de consolidação reduziu o domínio `apps/frontend-service/src/pages/wise-payments` para 176 arquivos TS/TSX e 13.976 linhas, removendo microcomponentes/constantes redundantes e reduzindo arquivos `<40` linhas para 16.

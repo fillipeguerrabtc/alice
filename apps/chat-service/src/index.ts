@@ -14,7 +14,6 @@ import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import cors from 'cors';
 import compression from 'compression';
-import { getServiceUrl } from '@alice/config';
 // CORREÇÃO PR#107 (10/01/2026): Usar prefixo 'node:' para módulos Node.js built-in
 // REF: https://nodejs.org/api/esm.html#node-imports
 // REF: Best Practices Node.js ESM 2025 - evita conflitos com pacotes npm de mesmo nome
@@ -84,7 +83,6 @@ import type { AuthContext } from '@alice/shared-utils';
 import type { Role } from '@alice/shared-utils';
 import { eq, desc, inArray, and, or, lt, gte, lte, sql, not, asc, isNull } from '@alice/database';
 import { z } from 'zod';
-import { ProxyAgent } from 'undici';
 import { createClient } from 'redis';
 import type { AgenticDetectors } from '@alice/shared';
 import {
@@ -141,126 +139,34 @@ import {
   resolveWsAgentAuthDecision,
   resolveWsAgentCloseFrame,
 } from './ws-agent-auth-governance.js';
+import { createChatEnvParsers, loadChatRuntimeConfig } from './runtime-config.js';
 
 // Logger centralizado: JSON em produção, pino-pretty em desenvolvimento
 const logger = createLogger('chat-service');
-
-const PORT = process.env.PORT || 3002;
-const DATABASE_URL = process.env.DATABASE_URL;
-// GPU Manager Service (25/12/2025): URL gerenciada por requestGpuStream em @alice/shared-utils
-// BUG FIX 26/12/2025: Removida declaração duplicada de GPU_MANAGER_URL - requestGpuStream centraliza o acesso
-const corsOriginsEnv = process.env.CORS_ORIGINS;
-if (!corsOriginsEnv && process.env.NODE_ENV === 'production') {
-  logger.error('CORS_ORIGINS é obrigatório em produção (Regra 6 - fail-fast)');
-  process.exit(1);
-}
-const CORS_ORIGINS = corsOriginsEnv
-  ? corsOriginsEnv.split(',').map((origin) => origin.trim()).filter(Boolean)
-  : [];
-
-// OpenAI API Key (Vision + geração de imagens)
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-if (!OPENAI_API_KEY && process.env.NODE_ENV === 'production') {
-  logger.error('OPENAI_API_KEY é obrigatório em produção (Vision + geração de imagens via OpenAI)');
-  process.exit(1);
-}
-const OPENAI_PROXY = process.env.OPENAI_PROXY ?? process.env.HTTPS_PROXY ?? process.env.HTTP_PROXY ?? null;
-const OPENAI_NO_PROXY = process.env.NO_PROXY ?? process.env.no_proxy ?? null;
-const OPENAI_VISION_MAX_BYTES = (() => {
-  const raw = process.env.OPENAI_VISION_MAX_BYTES;
-  if (!raw) return null;
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    logger.error({ value: raw }, 'OPENAI_VISION_MAX_BYTES inválido - precisa ser número > 0');
-    process.exit(1);
-  }
-  return parsed;
-})();
-const APP_VERSION = process.env.APP_VERSION?.trim() || null;
-/** Plano Enterprise: LLM Gateway para resolução de contexto namespace/agente */
-const LLM_GATEWAY_URL = process.env.LLM_GATEWAY_URL?.trim() || null;
-const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET || '';
-const WEB_IMAGE_SEARCH_MAX_RESULTS = parseEnvInt(
-  process.env.WEB_IMAGE_SEARCH_MAX_RESULTS,
-  3,
-  'WEB_IMAGE_SEARCH_MAX_RESULTS'
-);
-const WEB_IMAGE_MAX_BYTES = parseEnvInt(
-  process.env.WEB_IMAGE_MAX_BYTES,
-  8 * 1024 * 1024,
-  'WEB_IMAGE_MAX_BYTES'
-);
-
-const OPENAI_HOSTNAME = 'api.openai.com';
-const OPENAI_NO_PROXY_ENTRIES = OPENAI_NO_PROXY
-  ? OPENAI_NO_PROXY.split(',').map((entry) => entry.trim()).filter(Boolean)
-  : [];
-
-// RequestInit do TS (DOM) não inclui dispatcher. Tipamos como unknown para
-// compatibilidade entre undici e undici-types no CI.
-type OpenAiDispatcher = unknown;
-
-function isNoProxyMatch(hostname: string, entry: string): boolean {
-  if (entry === '*') return true;
-  if (entry.startsWith('.')) {
-    return hostname.endsWith(entry);
-  }
-  if (hostname === entry) return true;
-  return hostname.endsWith(`.${entry}`);
-}
-
-function shouldBypassProxy(hostname: string, entries: string[]): boolean {
-  if (!entries.length) return false;
-  return entries.some((entry) => isNoProxyMatch(hostname, entry));
-}
-
-const OPENAI_PROXY_URL = (() => {
-  if (!OPENAI_PROXY) return null;
-  try {
-    return new URL(OPENAI_PROXY).toString();
-  } catch (error) {
-    logger.error({ error, value: OPENAI_PROXY }, 'OPENAI_PROXY inválido - URL malformada');
-    process.exit(1);
-  }
-})();
-
-const OPENAI_DISPATCHER: OpenAiDispatcher | undefined = (() => {
-  if (!OPENAI_PROXY_URL) return undefined;
-  if (shouldBypassProxy(OPENAI_HOSTNAME, OPENAI_NO_PROXY_ENTRIES)) {
-    logger.info({ hostname: OPENAI_HOSTNAME }, 'OpenAI sem proxy (NO_PROXY aplicado)');
-    return undefined;
-  }
-  logger.info({ proxy: OPENAI_PROXY_URL }, 'OpenAI configurado com proxy');
-  // ProxyAgent vem de undici (runtime) e RequestInit usa undici-types (tipo).
-  // Casting via unknown mantém compatibilidade sem perder segurança de tipos.
-  return new ProxyAgent(OPENAI_PROXY_URL) as unknown as OpenAiDispatcher;
-})();
-
-function withOpenAiDispatcher(init: RequestInit): RequestInit {
-  if (!OPENAI_DISPATCHER) return init;
-  // O dispatcher é uma extensão do fetch do undici (não existe no RequestInit do TS),
-  // então fazemos cast controlado para manter compatibilidade sem perder funcionalidade.
-  return { ...init, dispatcher: OPENAI_DISPATCHER } as unknown as RequestInit;
-}
-
-// URL do Integrations Service para comunicação cross-service (Regra 15 - Microsserviços)
-// REGRA 6: Fail-fast em TODOS os ambientes - variável DEVE estar definida
-const INTEGRATIONS_SERVICE_URL_FINAL = getServiceUrl('integrations');
-
-// URL do Training Service para coleta de dados de treinamento (Regra 15 - Microsserviços)
-// REGRA 6: Fail-fast em TODOS os ambientes - variável DEVE estar definida
-const TRAINING_SERVICE_URL_FINAL = getServiceUrl('training');
+const { parseEnvInt, parseEnvNonNegativeInt } = createChatEnvParsers(logger);
+const {
+  PORT,
+  CORS_ORIGINS,
+  OPENAI_API_KEY,
+  OPENAI_VISION_MAX_BYTES,
+  APP_VERSION,
+  LLM_GATEWAY_URL,
+  INTERNAL_API_SECRET,
+  WEB_IMAGE_SEARCH_MAX_RESULTS,
+  WEB_IMAGE_MAX_BYTES,
+  INTEGRATIONS_SERVICE_URL_FINAL,
+  TRAINING_SERVICE_URL_FINAL,
+  withOpenAiDispatcher,
+} = loadChatRuntimeConfig({
+  logger,
+  parseEnvInt,
+});
 
 // SEGURANÇA: Usar req.tenantId populado pelo middleware requireAuth
 // Alinhado com Express.js 2025 + OWASP 2025 best practices
 const getTenantIdFromRequest = (req: Request): string | undefined => {
   return req.tenantId;
 };
-
-if (!DATABASE_URL) {
-  logger.error('DATABASE_URL não configurada');
-  process.exit(1);
-}
 
 // Usar package @alice/database centralizado (node-postgres para produção Hetzner)
 const db = getDatabase();
@@ -3694,54 +3600,6 @@ const DEFAULT_LLM_CONFIG: Required<LLMConfig> = {
   maxTokens: 2048,
   model: 'Qwen/Qwen2.5-7B-Instruct-AWQ',
 };
-
-function parseEnvInt(value: string | undefined, defaultValue: number, name: string): number {
-  const raw = (value ?? String(defaultValue)).trim();
-  if (!/^\d+$/.test(raw)) {
-    const message = `${name} inválido: "${raw}". Deve ser inteiro positivo.`;
-    if (process.env.NODE_ENV === 'production') {
-      logger.error({ name, raw }, message);
-      throw new Error(message);
-    }
-    logger.warn({ name, raw, defaultValue }, `${message} Usando valor padrão.`);
-    return defaultValue;
-  }
-  const parsed = parseInt(raw, 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    const message = `${name} inválido: "${raw}". Deve ser inteiro positivo.`;
-    if (process.env.NODE_ENV === 'production') {
-      logger.error({ name, raw, parsed }, message);
-      throw new Error(message);
-    }
-    logger.warn({ name, raw, parsed, defaultValue }, `${message} Usando valor padrão.`);
-    return defaultValue;
-  }
-  return parsed;
-}
-
-function parseEnvNonNegativeInt(value: string | undefined, defaultValue: number, name: string): number {
-  const raw = (value ?? String(defaultValue)).trim();
-  if (!/^\d+$/.test(raw)) {
-    const message = `${name} inválido: "${raw}". Deve ser inteiro >= 0.`;
-    if (process.env.NODE_ENV === 'production') {
-      logger.error({ name, raw }, message);
-      throw new Error(message);
-    }
-    logger.warn({ name, raw, defaultValue }, `${message} Usando valor padrão.`);
-    return defaultValue;
-  }
-  const parsed = parseInt(raw, 10);
-  if (!Number.isFinite(parsed) || parsed < 0) {
-    const message = `${name} inválido: "${raw}". Deve ser inteiro >= 0.`;
-    if (process.env.NODE_ENV === 'production') {
-      logger.error({ name, raw, parsed }, message);
-      throw new Error(message);
-    }
-    logger.warn({ name, raw, parsed, defaultValue }, `${message} Usando valor padrão.`);
-    return defaultValue;
-  }
-  return parsed;
-}
 
 function parseEnvFloat(value: string | undefined, defaultValue: number, name: string): number {
   const raw = (value ?? String(defaultValue)).trim().replace(',', '.');

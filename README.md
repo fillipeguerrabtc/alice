@@ -2,12 +2,12 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 10 de Março de 2026  
-**Versão:** 10.62 - Plano enterprise 100% concluído com fechamento residual de frontend
+**Versão:** 10.63 - Hardening pós-plano (security deps + idempotência mandatory + redução de monólitos)
 
 <div align="center">
 
 ![Alice Logo](https://img.shields.io/badge/Alice-IA%20Enterprise-blue?style=for-the-badge&logo=robot&logoColor=white)
-![Version](https://img.shields.io/badge/versão-10.62-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/versão-10.63-green?style=for-the-badge)
 ![License](https://img.shields.io/badge/licença-Proprietária-red?style=for-the-badge)
 ![LLM](https://img.shields.io/badge/LLM-Qwen2.5%207B-purple?style=for-the-badge)
 
@@ -68,6 +68,11 @@
 
 ## Atualização incremental mais recente (10/03/2026)
 
+- Hardening de dependências produtivas aplicado no SSOT (`package.json` + `pnpm-lock.yaml`) com `pnpm.overrides` para `minimatch`, `underscore`, `lodash`, `qs` e `undici`; validação de segurança concluída com `pnpm audit --prod --audit-level high` em status **No known vulnerabilities found**.
+- Training com idempotência mandatory por default: `TRAINING_RUN_START_REQUIRE_IDEMPOTENCY_KEY` atualizado para `true` em `apps/training-service/src/index.ts`, reforçando fail-closed em criação/start de run sem `x-idempotency-key`.
+- Redução incremental dos monólitos críticos sem alteração funcional:
+  - `apps/chat-service/src/runtime-config.ts` criado para centralizar bootstrap/runtime config (env parsing, OpenAI proxy/dispatcher e service URLs), reduzindo `apps/chat-service/src/index.ts` de 21169 para 21027 linhas;
+  - `apps/training-service/src/training-job-stream.ts` criado para centralizar fingerprint/lifecycle de stream, reduzindo `apps/training-service/src/index.ts` de 4161 para 4098 linhas.
 - Fechamento das pendências de validação pós-refactor: 7 testes de guardas estáticas (Chat/Trading/Auth/Training/Integrations) foram atualizados para os novos boundaries modulares, preservando os controles enterprise e restaurando a suíte para **120/120 arquivos e 1352/1352 testes** em status OK.
 - Rebase/squash não-interativo concluído sobre `origin/main` com backup da linha pré-consolidação em `backup/pre-squash-20260310-1`.
 - Governança contínua ativada no fluxo padrão com scripts `verify:enterprise-focus`, `verify:enterprise-focus:full` e `validate:enterprise` (enforcement real com `ENFORCE_FAILURE=true`).
