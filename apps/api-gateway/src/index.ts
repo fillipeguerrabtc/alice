@@ -22,7 +22,12 @@ import rateLimit from 'express-rate-limit';
 import { createProxyMiddleware, Options } from 'http-proxy-middleware';
 import CircuitBreaker from 'opossum';
 import { createLogger } from '@alice/logger';
-import { getServiceUrl } from '@alice/config';
+import {
+  getNodeEnv,
+  getOptionalServiceUrl,
+  resolveBaseUrl,
+  resolveCorsOrigins,
+} from '@alice/config';
 import {
   createSecurityMiddleware,
   createRateLimiter,
@@ -38,156 +43,95 @@ import { z } from 'zod';
 const logger = createLogger('api-gateway');
 
 // Schema de configuração do gateway
-const gatewayConfigSchema = z.object({
+const gatewayRuntimeConfigSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().default(3000),
-  // URLs dos microserviços
-  AUTH_SERVICE_URL: z.string().min(1, 'AUTH_SERVICE_URL é obrigatório'),
-  CHAT_SERVICE_URL: z.string().min(1, 'CHAT_SERVICE_URL é obrigatório'),
-  RAG_SERVICE_URL: z.string().min(1, 'RAG_SERVICE_URL é obrigatório'),
-  TRAINING_SERVICE_URL: z.string().min(1, 'TRAINING_SERVICE_URL é obrigatório'),
-  INTEGRATIONS_SERVICE_URL: z.string().min(1, 'INTEGRATIONS_SERVICE_URL é obrigatório'),
-  OBSERVABILITY_SERVICE_URL: z.string().min(1, 'OBSERVABILITY_SERVICE_URL é obrigatório'),
   // Rate limiting
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60000),
   RATE_LIMIT_MAX_REQUESTS: z.coerce.number().default(100),
-  // CORS: Opcional no schema - validação de negócio permite CORS_ORIGIN ou CORS_ORIGINS
-  // A validação fail-fast em produção (linhas 90-96) garante que pelo menos um está definido
-  CORS_ORIGIN: z.string().optional(),
 });
 
-type GatewayConfig = z.infer<typeof gatewayConfigSchema>;
+type GatewayRuntimeConfig = z.infer<typeof gatewayRuntimeConfigSchema>;
+type GatewayConfig = GatewayRuntimeConfig & {
+  AUTH_SERVICE_URL: string;
+  CHAT_SERVICE_URL: string;
+  RAG_SERVICE_URL: string;
+  TRAINING_SERVICE_URL: string;
+  INTEGRATIONS_SERVICE_URL: string;
+  OBSERVABILITY_SERVICE_URL: string;
+};
 
 let config: GatewayConfig;
-// REGRA 6: Armazenar origens CORS validadas (combina CORS_ORIGIN e CORS_ORIGINS)
+// REGRA 6: Origens CORS resolvidas de forma tipada e centralizada
 let validatedCorsOrigins: string[] = [];
-const nodeEnv = process.env.NODE_ENV || 'development';
+const nodeEnv = getNodeEnv();
+
+const developmentServiceFallbacks = {
+  auth: 'http://localhost:3001',
+  chat: 'http://localhost:3002',
+  rag: 'http://localhost:3003',
+  training: 'http://localhost:3004',
+  integrations: 'http://localhost:3005',
+  observability: 'http://localhost:3006',
+} as const;
+
+function resolveGatewayServiceUrl(
+  serviceName: keyof typeof developmentServiceFallbacks,
+): string {
+  const configuredUrl = getOptionalServiceUrl(serviceName);
+  if (configuredUrl) {
+    return configuredUrl;
+  }
+
+  if (nodeEnv === 'production') {
+    throw new Error(`URL de serviço obrigatória ausente para ${serviceName} em produção`);
+  }
+
+  return developmentServiceFallbacks[serviceName];
+}
 
 try {
-  const result = gatewayConfigSchema.safeParse(process.env);
+  const result = gatewayRuntimeConfigSchema.safeParse(process.env);
+  let runtimeConfig: GatewayRuntimeConfig;
+
   if (!result.success) {
     if (nodeEnv === 'production') {
       logger.error({ errors: result.error.format() }, 'Configuração inválida em produção. Abortando (Regra 6 - fail-fast).');
       process.exit(1);
     }
     logger.warn({ errors: result.error.format() }, 'Configuração parcial, usando defaults (apenas desenvolvimento)');
-    config = {
+    runtimeConfig = {
       NODE_ENV: 'development',
       PORT: 3000,
-      AUTH_SERVICE_URL: getServiceUrl('auth'),
-      CHAT_SERVICE_URL: getServiceUrl('chat'),
-      RAG_SERVICE_URL: getServiceUrl('rag'),
-      TRAINING_SERVICE_URL: getServiceUrl('training'),
-      INTEGRATIONS_SERVICE_URL: getServiceUrl('integrations'),
-      OBSERVABILITY_SERVICE_URL: getServiceUrl('observability'),
       RATE_LIMIT_WINDOW_MS: 60000,
       RATE_LIMIT_MAX_REQUESTS: 100,
-      CORS_ORIGIN: 'http://localhost:5000',
     };
-    // Desenvolvimento: usar localhost como origem CORS
-    validatedCorsOrigins = ['http://localhost:5000'];
   } else {
-    config = result.data;
-    if (nodeEnv === 'production') {
-      const corsOriginEnv = process.env.CORS_ORIGIN?.trim();
-      const corsOriginsEnv = process.env.CORS_ORIGINS?.split(',').map((o) => o.trim()).filter(Boolean) ?? [];
-      if (!corsOriginEnv && corsOriginsEnv.length === 0) {
-        logger.error('CORS_ORIGIN ou CORS_ORIGINS são obrigatórios em produção (Regra 6 - fail-fast).');
-        process.exit(1);
-      }
-      const requiredUrls = [
-        'AUTH_SERVICE_URL',
-        'CHAT_SERVICE_URL',
-        'RAG_SERVICE_URL',
-        'TRAINING_SERVICE_URL',
-        'INTEGRATIONS_SERVICE_URL',
-        'OBSERVABILITY_SERVICE_URL',
-      ] as const;
-      const missing = requiredUrls.filter((key) => !process.env[key] || process.env[key]?.trim() === '');
-      if (missing.length > 0) {
-        logger.error({ missing }, 'Variáveis obrigatórias ausentes em produção (Regra 6 - fail-fast).');
-        process.exit(1);
-      }
-      // Produção: materializar valores vindos de env (já validados) e evitar fallbacks vazios
-      // REGRA 6: Combinar CORS_ORIGIN e CORS_ORIGINS (validados), removendo duplicatas
-      const allCorsOrigins = [
-        ...(corsOriginEnv ? [corsOriginEnv] : []),
-        ...corsOriginsEnv,
-      ].filter((o): o is string => Boolean(o));
-      const uniqueCorsOrigins = [...new Set(allCorsOrigins)];
-      const envConfig = {
-        AUTH_SERVICE_URL: process.env.AUTH_SERVICE_URL?.trim(),
-        CHAT_SERVICE_URL: process.env.CHAT_SERVICE_URL?.trim(),
-        RAG_SERVICE_URL: process.env.RAG_SERVICE_URL?.trim(),
-        TRAINING_SERVICE_URL: process.env.TRAINING_SERVICE_URL?.trim(),
-        INTEGRATIONS_SERVICE_URL: process.env.INTEGRATIONS_SERVICE_URL?.trim(),
-        OBSERVABILITY_SERVICE_URL: process.env.OBSERVABILITY_SERVICE_URL?.trim(),
-        CORS_ORIGIN: uniqueCorsOrigins[0],
-      };
-      // Armazenar origens validadas para uso no middleware CORS
-      validatedCorsOrigins = uniqueCorsOrigins;
-      config = {
-        NODE_ENV: config.NODE_ENV,
-        PORT: config.PORT,
-        AUTH_SERVICE_URL: envConfig.AUTH_SERVICE_URL ?? config.AUTH_SERVICE_URL!,
-        CHAT_SERVICE_URL: envConfig.CHAT_SERVICE_URL ?? config.CHAT_SERVICE_URL!,
-        RAG_SERVICE_URL: envConfig.RAG_SERVICE_URL ?? config.RAG_SERVICE_URL!,
-        TRAINING_SERVICE_URL: envConfig.TRAINING_SERVICE_URL ?? config.TRAINING_SERVICE_URL!,
-        INTEGRATIONS_SERVICE_URL: envConfig.INTEGRATIONS_SERVICE_URL ?? config.INTEGRATIONS_SERVICE_URL!,
-        OBSERVABILITY_SERVICE_URL: envConfig.OBSERVABILITY_SERVICE_URL ?? config.OBSERVABILITY_SERVICE_URL!,
-        RATE_LIMIT_WINDOW_MS: config.RATE_LIMIT_WINDOW_MS ?? 60000,
-        RATE_LIMIT_MAX_REQUESTS: config.RATE_LIMIT_MAX_REQUESTS ?? 100,
-        // REGRA 6: Fail-fast - validação acima (linhas 94-96) garante que pelo menos CORS_ORIGIN ou CORS_ORIGINS existe
-        // envConfig.CORS_ORIGIN é derivado de CORS_ORIGIN ou primeiro valor de CORS_ORIGINS (linha 119)
-        // Se ainda assim for undefined, falhar explicitamente ao invés de fallback vazio (segurança)
-        CORS_ORIGIN: (() => {
-          if (!envConfig.CORS_ORIGIN) {
-            logger.error('CORS_ORIGIN não pôde ser derivado após validação - abortando (Regra 6 - fail-fast)');
-            process.exit(1);
-          }
-          return envConfig.CORS_ORIGIN;
-        })(),
-      };
-    } else {
-      // Em desenvolvimento, manter governança de URLs via config central
-      config = {
-        NODE_ENV: config.NODE_ENV,
-        PORT: config.PORT,
-        AUTH_SERVICE_URL: getServiceUrl('auth'),
-        CHAT_SERVICE_URL: getServiceUrl('chat'),
-        RAG_SERVICE_URL: getServiceUrl('rag'),
-        TRAINING_SERVICE_URL: getServiceUrl('training'),
-        INTEGRATIONS_SERVICE_URL: getServiceUrl('integrations'),
-        OBSERVABILITY_SERVICE_URL: getServiceUrl('observability'),
-        RATE_LIMIT_WINDOW_MS: config.RATE_LIMIT_WINDOW_MS ?? 60000,
-        RATE_LIMIT_MAX_REQUESTS: config.RATE_LIMIT_MAX_REQUESTS ?? 100,
-        CORS_ORIGIN: config.CORS_ORIGIN || 'http://localhost:5000',
-      };
-      // Desenvolvimento: usar localhost como origem CORS
-      validatedCorsOrigins = [config.CORS_ORIGIN || 'http://localhost:5000'];
-    }
+    runtimeConfig = result.data;
   }
-} catch (error) {
-  if (nodeEnv === 'production') {
-    logger.error({ error }, 'Falha crítica ao carregar configuração em produção. Abortando.');
-    process.exit(1);
-  }
-  logger.warn({ error }, 'Configuração parcial, usando defaults (apenas desenvolvimento)');
+
+  const developmentBaseUrl = resolveBaseUrl({
+    requiredInProduction: false,
+    developmentFallback: 'http://localhost:5000',
+  });
+
+  validatedCorsOrigins = resolveCorsOrigins({
+    requiredInProduction: true,
+    developmentFallback: [developmentBaseUrl],
+  });
+
   config = {
-    NODE_ENV: 'development',
-    PORT: 3000,
-    AUTH_SERVICE_URL: getServiceUrl('auth'),
-    CHAT_SERVICE_URL: getServiceUrl('chat'),
-    RAG_SERVICE_URL: getServiceUrl('rag'),
-    TRAINING_SERVICE_URL: getServiceUrl('training'),
-    INTEGRATIONS_SERVICE_URL: getServiceUrl('integrations'),
-    OBSERVABILITY_SERVICE_URL: getServiceUrl('observability'),
-    RATE_LIMIT_WINDOW_MS: 60000,
-    RATE_LIMIT_MAX_REQUESTS: 100,
-    CORS_ORIGIN: 'http://localhost:5000',
+    ...runtimeConfig,
+    AUTH_SERVICE_URL: resolveGatewayServiceUrl('auth'),
+    CHAT_SERVICE_URL: resolveGatewayServiceUrl('chat'),
+    RAG_SERVICE_URL: resolveGatewayServiceUrl('rag'),
+    TRAINING_SERVICE_URL: resolveGatewayServiceUrl('training'),
+    INTEGRATIONS_SERVICE_URL: resolveGatewayServiceUrl('integrations'),
+    OBSERVABILITY_SERVICE_URL: resolveGatewayServiceUrl('observability'),
   };
-  // Desenvolvimento: usar localhost como origem CORS
-  validatedCorsOrigins = ['http://localhost:5000'];
+} catch (error) {
+  logger.error({ error }, 'Falha crítica ao carregar configuração do API Gateway. Abortando.');
+  process.exit(1);
 }
 
 const app: express.Application = express();
@@ -233,8 +177,8 @@ app.use(createSecurityMiddleware({
 
 // CORS configurado
 // REGRA 6: Usar validatedCorsOrigins (já validado e sem duplicatas)
-// Em produção, validação em linhas 91-152 já combinou CORS_ORIGIN e CORS_ORIGINS
-// Em desenvolvimento, fallback para localhost é aplicado
+// Em produção, o helper central valida CORS_ORIGIN/CORS_ORIGINS e falha quando necessário
+// Em desenvolvimento, fallback local controlado é aplicado
 // NOTA: Não lemos process.env.CORS_ORIGINS novamente para evitar duplicação e bypass de validação
 app.use(cors({
   origin: validatedCorsOrigins,

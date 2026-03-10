@@ -25,18 +25,42 @@ import { getDatabase } from '@alice/database';
 import { users, oauthClients } from '@alice/shared/schema';
 import { eq } from '@alice/database';
 import { createLogger } from '@alice/logger';
+import { getNodeEnv, readOptionalStringEnv } from '@alice/config';
 
 const logger = createLogger('oidc-config');
-const OIDC_API_AUDIENCE = process.env.OIDC_API_AUDIENCE;
+const nodeEnv = getNodeEnv();
+const OIDC_API_AUDIENCE = readOptionalStringEnv('OIDC_API_AUDIENCE');
+
+function normalizeUrl(value: string): string {
+  return value.trim().replace(/\/+$/, '');
+}
+
+function resolveOidcIssuerUrl(): string {
+  const configuredIssuer = readOptionalStringEnv('OIDC_ISSUER') ?? readOptionalStringEnv('APP_BASE_URL');
+
+  if (configuredIssuer) {
+    try {
+      const parsed = new URL(configuredIssuer);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        throw new Error('protocolo inválido');
+      }
+      return normalizeUrl(parsed.toString());
+    } catch (error) {
+      throw new Error(`OIDC_ISSUER/APP_BASE_URL inválido: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  if (nodeEnv === 'production') {
+    throw new Error('OIDC_ISSUER ou APP_BASE_URL são obrigatórios em produção (Regra 6 - fail-fast)');
+  }
+
+  return 'http://localhost:3001';
+}
 
 // URL base do OIDC Provider
-// Produção: OIDC_ISSUER definido via variável de ambiente
-// Desenvolvimento: usa APP_BASE_URL ou default localhost
-const ISSUER_URL = process.env.OIDC_ISSUER 
-  || process.env.APP_BASE_URL 
-  || (process.env.NODE_ENV === 'production' 
-    ? 'https://auth.alice.yesyoudeserve.duckdns.org' 
-    : 'http://localhost:3001');
+// Produção: OIDC_ISSUER/APP_BASE_URL obrigatórios
+// Desenvolvimento: fallback local explícito
+const ISSUER_URL = resolveOidcIssuerUrl();
 
 /**
  * Buscar conta de usuário para OIDC
@@ -137,12 +161,13 @@ export async function createOIDCConfiguration(): Promise<Configuration> {
   const registeredClients = await getRegisteredClients();
 
   // Cookie keys para segurança (produção deve usar variáveis de ambiente)
-  const cookieKeys = process.env.OIDC_COOKIE_KEYS
-    ? process.env.OIDC_COOKIE_KEYS.split(',')
+  const rawCookieKeys = readOptionalStringEnv('OIDC_COOKIE_KEYS');
+  const cookieKeys = rawCookieKeys
+    ? rawCookieKeys.split(',').map((value) => value.trim()).filter(Boolean)
     : ['alice-oidc-secret-key-1', 'alice-oidc-secret-key-2'];
 
   // FAIL-FAST em produção (Regra 6): sem defaults inseguros para chaves de cookie
-  if (process.env.NODE_ENV === 'production' && !process.env.OIDC_COOKIE_KEYS) {
+  if (nodeEnv === 'production' && !rawCookieKeys) {
     const message = 'CRITICAL: OIDC_COOKIE_KEYS é OBRIGATÓRIO em produção (valores múltiplos separados por vírgula).';
     logger.error(message);
     throw new Error(message);
@@ -172,12 +197,12 @@ export async function createOIDCConfiguration(): Promise<Configuration> {
       keys: cookieKeys,
       long: {
         signed: true,
-        secure: process.env.NODE_ENV === 'production',
+        secure: nodeEnv === 'production',
         sameSite: 'lax' as const,
       },
       short: {
         signed: true,
-        secure: process.env.NODE_ENV === 'production',
+        secure: nodeEnv === 'production',
         sameSite: 'lax' as const,
       },
     },

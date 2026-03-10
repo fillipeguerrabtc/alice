@@ -19,7 +19,7 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - `P0-ROOT-01`: Concluído
 - `P0-CONFIG-02`: Concluído
 - `P0-BOOT-03`: Concluído
-- `P0-GATEWAY-AUTH-04`: Não iniciado
+- `P0-GATEWAY-AUTH-04`: Concluído
 - `P0-CORE-SERVICES-05`: Não iniciado
 - `P0-EXT-GPU-06`: Não iniciado
 - `P0-DOCS-07`: Não iniciado
@@ -43,7 +43,7 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - `P2-DOCS-06`: Não iniciado
 
 ## Bloco atual
-`P0-BOOT-03` (Concluído)
+`P0-GATEWAY-AUTH-04` (Concluído)
 
 ## Histórico de rodadas
 
@@ -172,8 +172,42 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
   - Validar posteriormente no ambiente do usuário a correção do binário global `pnpm`.
 - Riscos ou bloqueios:
   - Sem bloqueio ativo para continuação.
-  - Risco residual controlado: módulos de processamento multimodal do RAG (`image-processor`/`audio-processor`) permanecem sem `process.exit()` e dependem de validação/falha no boot/execução via entrypoint para impedir operação sem `OPENAI_API_KEY` em produção.
+- Risco residual controlado: módulos de processamento multimodal do RAG (`image-processor`/`audio-processor`) permanecem sem `process.exit()` e dependem de validação/falha no boot/execução via entrypoint para impedir operação sem `OPENAI_API_KEY` em produção.
 - Próximo bloco recomendado: `P0-GATEWAY-AUTH-04`.
+
+### Rodada 4
+- Data: 2026-03-10
+- Bloco executado: `P0-GATEWAY-AUTH-04`
+- Objetivo: Harden cirúrgico de `api-gateway` e `auth-service` para consolidar descoberta de serviços, `base URL`, callbacks, `origins/CORS` e configurações correlatas em configuração tipada central, removendo hardcodes operacionais e defaults frágeis.
+- Diagnóstico: Foram encontrados hardcodes e leitura direta de `process.env` em pontos críticos de gateway/auth (`CORS`, callbacks OAuth, domínio default de tenant, fallback de `GRAFANA_URL`, issuer OIDC), com acoplamento operacional a domínio legado e validações distribuídas fora do padrão central.
+- Arquivos lidos: `CLAUDE.md` (1-120), `package.json`, `packages/config/src/index.ts`, `packages/shared-utils/src/config.ts`, `apps/api-gateway/src/index.ts`, `apps/auth-service/src/index.ts`, `apps/auth-service/src/routes/auth-registration-routes.ts`, `apps/auth-service/src/routes/auth-provider-routes.ts`, `apps/auth-service/src/routes/auth-system-routes.ts`, `apps/auth-service/src/oidc/index.ts`, `apps/auth-service/src/oidc/configuration.ts`, `ARCHITECTURE-AUTH-FLOW.md`, `docs/PERMISSIONS.md`, `docs/ARQUITETURA.md`, `docs/STATUS-REAL-ATUAL.md`, `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Arquivos alterados: `packages/config/src/index.ts`, `apps/api-gateway/src/index.ts`, `apps/auth-service/src/index.ts`, `apps/auth-service/src/routes/auth-registration-routes.ts`, `apps/auth-service/src/oidc/configuration.ts`, `apps/auth-service/src/oidc/index.ts`, `docs/STATUS-REAL-ATUAL.md`, `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Validações executadas:
+  - `pnpm exec tsc -p apps/api-gateway/tsconfig.json --noEmit` (executado via `npx -y pnpm@10.26.2 exec tsc -p apps/api-gateway/tsconfig.json --noEmit`)
+  - `pnpm exec eslint apps/api-gateway/src/` (executado via `npx -y pnpm@10.26.2 exec eslint apps/api-gateway/src/`)
+  - `pnpm --filter @alice/api-gateway build` (executado via `npx -y pnpm@10.26.2 --filter @alice/api-gateway build`)
+  - `pnpm --filter @alice/auth-service typecheck` (executado via `npx -y pnpm@10.26.2 --filter @alice/auth-service typecheck`)
+  - `pnpm --filter @alice/auth-service lint` (executado via `npx -y pnpm@10.26.2 --filter @alice/auth-service lint`)
+  - `pnpm --filter @alice/auth-service build` (executado via `npx -y pnpm@10.26.2 --filter @alice/auth-service build`)
+  - `pnpm --filter @alice/config typecheck` (executado via `npx -y pnpm@10.26.2 --filter @alice/config typecheck`)
+  - `pnpm --filter @alice/config lint` (executado via `npx -y pnpm@10.26.2 --filter @alice/config lint`)
+  - `pnpm --filter @alice/config build` (executado via `npx -y pnpm@10.26.2 --filter @alice/config build`)
+  - `pnpm test` (executado via `npx -y pnpm@10.26.2 test`)
+  - `pnpm lint` (executado via `npx -y pnpm@10.26.2 lint`)
+  - `pnpm build` (executado via `npx -y pnpm@10.26.2 build`)
+  - Reexecução final após ajuste textual em `apps/api-gateway/src/index.ts`: `pnpm exec tsc -p apps/api-gateway/tsconfig.json --noEmit`, `pnpm exec eslint apps/api-gateway/src/`, `pnpm --filter @alice/api-gateway build` (todos executados via `npx -y pnpm@10.26.2 ...`).
+- Resultado das validações:
+  - Todas as validações obrigatórias do bloco foram aprovadas ao final.
+  - Houve 1 falha inicial em `pnpm exec tsc -p apps/api-gateway/tsconfig.json --noEmit` por tipagem de export recém-adicionado em `@alice/config` ainda não materializada em `dist`; após `@alice/config build`, a validação foi reexecutada e aprovada.
+  - Observação de ambiente: binário global `pnpm` permanece quebrado; os comandos foram executados com `npx -y pnpm@10.26.2`, preservando os comandos lógicos exigidos.
+- Documentação atualizada: `docs/STATUS-REAL-ATUAL.md` e tracking canônico atualizados com o hardening de runtime config/callbacks/origins no bloco gateway/auth.
+- Commit realizado: `refactor: harden gateway and auth runtime configuration`.
+- Pendências:
+  - Validar posteriormente no ambiente do usuário a correção do binário global `pnpm`.
+- Riscos ou bloqueios:
+  - Sem bloqueio ativo para continuação.
+  - Hardening introduziu fail-fast explícito em produção para variáveis críticas (`BASE_URL`/`PRODUCTION_DOMAIN` para domínio de tenant, `OIDC_ISSUER` ou `APP_BASE_URL` para issuer OIDC, `GRAFANA_URL` para seed de cliente OAuth), exigindo configuração consistente no ambiente produtivo.
+- Próximo bloco recomendado: `P0-CORE-SERVICES-05`.
 
 ## Pendências abertas
 - Correção do binário global `pnpm` no ambiente local (fora do escopo deste bloco).
@@ -186,7 +220,6 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - Risco residual controlado: módulos de suporte multimodal do RAG dependem de fail-fast no entrypoint/execução para bloquear operação sem `OPENAI_API_KEY` em produção.
 
 ## Próximos blocos permitidos
-- `P0-GATEWAY-AUTH-04`
 - `P0-CORE-SERVICES-05`
 - `P0-EXT-GPU-06`
 - `P0-DOCS-07`

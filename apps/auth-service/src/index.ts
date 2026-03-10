@@ -28,6 +28,13 @@ import { Strategy as LocalStrategy } from 'passport-local';
 import { Strategy as SamlStrategy, Profile as SamlProfile, VerifiedCallback } from '@node-saml/passport-saml';
 import bcrypt from 'bcrypt';
 import { createLogger } from '@alice/logger';
+import {
+  getNodeEnv,
+  readOptionalStringEnv,
+  resolveBaseUrl,
+  resolveCorsOrigins,
+  resolveTenantDomain,
+} from '@alice/config';
 import { 
   createCorrelationMiddleware, 
   createSecurityMiddleware,
@@ -84,8 +91,17 @@ import { registerUserManagementRoutes } from './routes/user-management-routes.js
 // Logger centralizado: JSON em produção, pino-pretty em desenvolvimento
 const logger = createLogger('auth-service');
 
-const BIOMETRICS_SERVICE_URL = process.env.BIOMETRICS_SERVICE_URL?.trim();
-const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET?.trim();
+const nodeEnv = getNodeEnv();
+const SERVICE_BASE_URL = resolveBaseUrl({
+  requiredInProduction: true,
+  developmentFallback: 'http://localhost:5000',
+});
+const DEFAULT_TENANT_DOMAIN = resolveTenantDomain({
+  requiredInProduction: true,
+  developmentFallback: 'localhost',
+});
+const BIOMETRICS_SERVICE_URL = readOptionalStringEnv('BIOMETRICS_SERVICE_URL');
+const INTERNAL_API_SECRET = readOptionalStringEnv('INTERNAL_API_SECRET');
 
 // Inicializar sistema de feature flags com storage PostgreSQL (Regra 16 - Enterprise)
 const featureFlagStorage = createDrizzleFeatureFlagStorage();
@@ -216,6 +232,8 @@ const baseAuthConfigSchema = z.object({
   // OAuth GitHub
   GITHUB_CLIENT_ID: z.string().optional(),
   GITHUB_CLIENT_SECRET: z.string().optional(),
+  OAUTH_GITHUB_CLIENT_ID: z.string().optional(),
+  OAUTH_GITHUB_CLIENT_SECRET: z.string().optional(),
   // SAML 2.0 (Azure AD, Okta)
   SAML_ENTRY_POINT: z.string().optional(),
   SAML_ISSUER: z.string().optional(),
@@ -256,8 +274,7 @@ type AuthConfig = z.infer<typeof authConfigSchema>;
 let config: AuthConfig;
 
 // Validar SESSION_SECRET obrigatório em produção (Regra 16 - Best Practices 2025)
-const nodeEnv = process.env.NODE_ENV || 'development';
-const sessionSecret = process.env.SESSION_SECRET;
+const sessionSecret = readOptionalStringEnv('SESSION_SECRET');
 
 if (nodeEnv === 'production' && (!sessionSecret || sessionSecret.length < 64 || sessionSecret === DEV_SESSION_SECRET)) {
   logger.error('CRITICAL: SESSION_SECRET é OBRIGATÓRIO em produção, deve ter >= 64 caracteres e não pode ser o default de desenvolvimento. Abortando inicialização.');
@@ -287,8 +304,8 @@ try {
       logger.error({ 
         errors: formattedErrors,
         env: {
-          ADMIN_USER: process.env.ADMIN_USER ? '[SET]' : '[NOT SET]',
-          ADMIN_PWD: process.env.ADMIN_PWD ? '[SET]' : '[NOT SET]',
+          ADMIN_USER: readOptionalStringEnv('ADMIN_USER') ? '[SET]' : '[NOT SET]',
+          ADMIN_PWD: readOptionalStringEnv('ADMIN_PWD') ? '[SET]' : '[NOT SET]',
         }
       }, 'Configuração inválida em produção. Abortando.');
       
@@ -318,7 +335,7 @@ try {
   config = {
     NODE_ENV: 'development',
     PORT: 3001,
-    SESSION_SECRET: 'dev-secret-min-32-characters-long!',
+    SESSION_SECRET: DEV_SESSION_SECRET,
   };
 }
 
@@ -389,7 +406,7 @@ async function ensureGlobalAdmin(): Promise<void> {
     const inserted = await db.insert(schema.tenants).values({
       nome: 'Alice Platform',
       slug: 'alice-platform',
-      dominio: 'yesyoudeserve.duckdns.org',
+      dominio: DEFAULT_TENANT_DOMAIN,
       plano: 'enterprise',
       limiteUsuarios: 999999,
       limiteConversas: 999999,
@@ -504,8 +521,8 @@ interface OAuthClientSeedConfig {
 
 async function ensureOAuthClients(): Promise<void> {
   // Variáveis obrigatórias apenas em produção
-  const grafanaSecret = process.env.GRAFANA_OAUTH_CLIENT_SECRET;
-  const grafanaUrl = process.env.GRAFANA_URL || 'https://observability.yesyoudeserve.duckdns.org';
+  const grafanaSecret = readOptionalStringEnv('GRAFANA_OAUTH_CLIENT_SECRET');
+  const grafanaUrl = readOptionalStringEnv('GRAFANA_URL');
 
   if (!grafanaSecret) {
     if (config.NODE_ENV === 'production') {
@@ -515,6 +532,17 @@ async function ensureOAuthClients(): Promise<void> {
       // Não é crítico - apenas loga erro, não aborta o serviço
     } else {
       logger.warn('OAuth client secret não configurado - seed de cliente OAuth ignorado');
+    }
+    return;
+  }
+
+  if (!grafanaUrl) {
+    if (config.NODE_ENV === 'production') {
+      logger.error({
+        GRAFANA_URL: '[NOT SET]',
+      }, 'GRAFANA_URL é obrigatório em produção para seed de cliente OAuth');
+    } else {
+      logger.warn('GRAFANA_URL não configurado - seed de cliente OAuth ignorado');
     }
     return;
   }
@@ -649,24 +677,10 @@ app.use(createRateLimiter({
 
 // NOTA: Helmet já aplicado via createSecurityMiddleware() acima
 
-// CORS configurado para desenvolvimento e produção
-// REGRA 6: Consistência com api-gateway - aceitar CORS_ORIGIN ou CORS_ORIGINS
-// CORS_ORIGIN = valor ÚNICO (origem principal); CORS_ORIGINS = lista separada por vírgula
-const corsOriginEnv = process.env.CORS_ORIGIN?.trim();
-const corsOriginsEnv = process.env.CORS_ORIGINS?.split(',').map((o) => o.trim()).filter(Boolean) ?? [];
-if (!corsOriginEnv && corsOriginsEnv.length === 0 && process.env.NODE_ENV === 'production') {
-  logger.error('CORS_ORIGIN ou CORS_ORIGINS são obrigatórios em produção (Regra 6 - fail-fast)');
-  process.exit(1);
-}
-// Combinar ambas as fontes de configuração e deduplicar
-// PADRÃO CONSISTENTE COM api-gateway: CORS_ORIGIN é valor único, CORS_ORIGINS é lista
-const allOrigins = [
-  ...(corsOriginEnv ? [corsOriginEnv] : []),
-  ...corsOriginsEnv,
-].filter((o): o is string => Boolean(o));
-const corsOrigins = allOrigins.length > 0
-  ? [...new Set(allOrigins)] // Deduplicar usando Set
-  : ['http://localhost:5000'];
+const corsOrigins = resolveCorsOrigins({
+  requiredInProduction: true,
+  developmentFallback: [SERVICE_BASE_URL],
+});
 app.use(cors({
   origin: corsOrigins,
   credentials: true,
@@ -732,25 +746,6 @@ passport.deserializeUser(async (id: string, done) => {
   }
 });
 
-// URL base para callbacks OAuth
-// Produção: Hetzner Cloud (yesyoudeserve.duckdns.org)
-const normalizeBaseUrl = (value: string): string => {
-  return value.trim().replace(/\/+$/, '');
-};
-
-const getBaseUrl = (): string => {
-  // Prioridade: BASE_URL definida explicitamente
-  if (process.env.BASE_URL) {
-    return normalizeBaseUrl(process.env.BASE_URL);
-  }
-  // Produção Hetzner
-  if (process.env.NODE_ENV === 'production') {
-    return 'https://yesyoudeserve.duckdns.org';
-  }
-  // Desenvolvimento local
-  return 'http://localhost:5000';
-};
-
 const getCallbackPath = (callbackUrl: string, fallbackPath: string): string => {
   if (!callbackUrl) {
     return fallbackPath;
@@ -765,56 +760,63 @@ const getCallbackPath = (callbackUrl: string, fallbackPath: string): string => {
   }
 };
 
-const getGoogleCallbackUrl = (): string => {
-  const oauthCallback = process.env.OAUTH_CALLBACK_URL?.trim();
-  if (oauthCallback) {
-    const isPathOnly = oauthCallback.startsWith('/');
-    if (isPathOnly) {
-      const baseUrl = getBaseUrl();
-      const resolved = `${baseUrl}${oauthCallback}`;
-      if (!oauthCallback.startsWith('/api/auth/google/callback')) {
-        logger.warn({ oauthCallback }, 'OAUTH_CALLBACK_URL fora do padrão /api/auth/google/callback');
-      }
-      return resolved;
-    }
-    try {
-      const parsed = new URL(oauthCallback);
-      if (!parsed.pathname.startsWith('/api/auth/google/callback')) {
-        logger.warn({ oauthCallback }, 'OAUTH_CALLBACK_URL fora do padrão /api/auth/google/callback');
-      }
-      return parsed.toString();
-    } catch (error) {
-      logger.warn({ oauthCallback, error }, 'OAUTH_CALLBACK_URL inválido; usando callback padrão');
-      return `${getBaseUrl()}/api/auth/google/callback`;
-    }
+const resolveOAuthCallbackUrl = (options: {
+  envKey: string;
+  defaultPath: string;
+  expectedPathPrefix: string;
+}): string => {
+  const callbackValue = readOptionalStringEnv(options.envKey);
+  const defaultCallback = `${SERVICE_BASE_URL}${options.defaultPath}`;
+
+  if (!callbackValue) {
+    return defaultCallback;
   }
-  return `${getBaseUrl()}/api/auth/google/callback`;
+
+  if (callbackValue.startsWith('/')) {
+    if (!callbackValue.startsWith(options.expectedPathPrefix)) {
+      logger.warn(
+        { envKey: options.envKey, callbackValue, expectedPathPrefix: options.expectedPathPrefix },
+        'Callback relativo fora do padrão esperado',
+      );
+    }
+    return `${SERVICE_BASE_URL}${callbackValue}`;
+  }
+
+  try {
+    const parsed = new URL(callbackValue);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new Error('protocolo inválido');
+    }
+    if (!parsed.pathname.startsWith(options.expectedPathPrefix)) {
+      logger.warn(
+        { envKey: options.envKey, callbackValue, expectedPathPrefix: options.expectedPathPrefix },
+        'Callback absoluto fora do padrão esperado',
+      );
+    }
+    return parsed.toString();
+  } catch (error) {
+    logger.warn(
+      { envKey: options.envKey, callbackValue, error },
+      'Callback inválido; usando callback padrão',
+    );
+    return defaultCallback;
+  }
+};
+
+const getGoogleCallbackUrl = (): string => {
+  return resolveOAuthCallbackUrl({
+    envKey: 'OAUTH_CALLBACK_URL',
+    defaultPath: '/api/auth/google/callback',
+    expectedPathPrefix: '/api/auth/google/callback',
+  });
 };
 
 const getGithubCallbackUrl = (): string => {
-  const oauthCallback = process.env.OAUTH_GITHUB_CALLBACK_URL?.trim();
-  if (oauthCallback) {
-    const isPathOnly = oauthCallback.startsWith('/');
-    if (isPathOnly) {
-      const baseUrl = getBaseUrl();
-      const resolved = `${baseUrl}${oauthCallback}`;
-      if (!oauthCallback.startsWith('/api/auth/github/callback')) {
-        logger.warn({ oauthCallback }, 'OAUTH_GITHUB_CALLBACK_URL fora do padrao /api/auth/github/callback');
-      }
-      return resolved;
-    }
-    try {
-      const parsed = new URL(oauthCallback);
-      if (!parsed.pathname.startsWith('/api/auth/github/callback')) {
-        logger.warn({ oauthCallback }, 'OAUTH_GITHUB_CALLBACK_URL fora do padrao /api/auth/github/callback');
-      }
-      return parsed.toString();
-    } catch (error) {
-      logger.warn({ oauthCallback, error }, 'OAUTH_GITHUB_CALLBACK_URL invalido; usando callback padrao');
-      return `${getBaseUrl()}/api/auth/github/callback`;
-    }
-  }
-  return `${getBaseUrl()}/api/auth/github/callback`;
+  return resolveOAuthCallbackUrl({
+    envKey: 'OAUTH_GITHUB_CALLBACK_URL',
+    defaultPath: '/api/auth/github/callback',
+    expectedPathPrefix: '/api/auth/github/callback',
+  });
 };
 
 // ============================================================================
@@ -1011,8 +1013,8 @@ passport.use(new LocalStrategy(
 // ESTRATÉGIA: OAuth Google
 // ============================================================================
 
-const googleClientId = process.env.GOOGLE_CLIENT_ID;
-const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET;
+const googleClientId = config.GOOGLE_CLIENT_ID;
+const googleClientSecret = config.GOOGLE_CLIENT_SECRET;
 const googleCallbackUrl = getGoogleCallbackUrl();
 const googleCallbackPath = getCallbackPath(googleCallbackUrl, '/api/auth/google/callback');
 
@@ -1051,7 +1053,7 @@ if (googleClientId && googleClientSecret) {
             const inserted = await db.insert(schema.tenants).values({
               nome: 'Alice Platform',
               slug: 'alice-platform',
-              dominio: 'yesyoudeserve.duckdns.org',
+              dominio: DEFAULT_TENANT_DOMAIN,
               plano: 'enterprise',
               limiteUsuarios: 999999,
               limiteConversas: 999999,
@@ -1158,8 +1160,8 @@ if (googleClientId && googleClientSecret) {
 // ESTRATÉGIA: OAuth GitHub
 // ============================================================================
 
-const githubClientId = process.env.OAUTH_GITHUB_CLIENT_ID ?? process.env.GITHUB_CLIENT_ID;
-const githubClientSecret = process.env.OAUTH_GITHUB_CLIENT_SECRET ?? process.env.GITHUB_CLIENT_SECRET;
+const githubClientId = config.OAUTH_GITHUB_CLIENT_ID ?? config.GITHUB_CLIENT_ID;
+const githubClientSecret = config.OAUTH_GITHUB_CLIENT_SECRET ?? config.GITHUB_CLIENT_SECRET;
 const githubCallbackUrl = getGithubCallbackUrl();
 const githubCallbackPath = getCallbackPath(githubCallbackUrl, '/api/auth/github/callback');
 
@@ -1198,7 +1200,7 @@ if (githubClientId && githubClientSecret) {
             const inserted = await db.insert(schema.tenants).values({
               nome: 'Alice Platform',
               slug: 'alice-platform',
-              dominio: 'yesyoudeserve.duckdns.org',
+              dominio: DEFAULT_TENANT_DOMAIN,
               plano: 'enterprise',
               limiteUsuarios: 999999,
               limiteConversas: 999999,
@@ -1306,16 +1308,16 @@ if (githubClientId && githubClientSecret) {
 // ESTRATÉGIA: SAML 2.0 (Azure AD, Okta)
 // ============================================================================
 
-const samlEntryPoint = process.env.SAML_ENTRY_POINT;
-const samlIssuer = process.env.SAML_ISSUER;
-const samlCert = process.env.SAML_CERT;
+const samlEntryPoint = config.SAML_ENTRY_POINT;
+const samlIssuer = config.SAML_ISSUER;
+const samlCert = config.SAML_CERT;
 
 if (samlEntryPoint && samlIssuer && samlCert) {
   passport.use('saml', new SamlStrategy(
     {
       entryPoint: samlEntryPoint,
       issuer: samlIssuer,
-      callbackUrl: `${getBaseUrl()}/api/auth/saml/callback`,
+      callbackUrl: `${SERVICE_BASE_URL}/api/auth/saml/callback`,
       idpCert: samlCert,
       wantAssertionsSigned: true,
       signatureAlgorithm: 'sha256',
@@ -1355,7 +1357,7 @@ if (samlEntryPoint && samlIssuer && samlCert) {
             const inserted = await db.insert(schema.tenants).values({
               nome: 'Alice Platform',
               slug: 'alice-platform',
-              dominio: 'yesyoudeserve.duckdns.org',
+              dominio: DEFAULT_TENANT_DOMAIN,
               plano: 'enterprise',
               limiteUsuarios: 999999,
               limiteConversas: 999999,
@@ -1713,6 +1715,7 @@ registerAuthProviderRoutes(app, {
 registerAuthRegistrationRoutes(app, {
   logger,
   publishProvisioningEvent,
+  defaultTenantDomain: DEFAULT_TENANT_DOMAIN,
 });
 
 // ============================================================================

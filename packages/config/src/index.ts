@@ -248,6 +248,66 @@ function parseCsvValues(raw: string): string[] {
   return raw.split(',').map((item) => item.trim()).filter(Boolean);
 }
 
+function normalizeBaseUrl(value: string): string {
+  return value.trim().replace(/\/+$/, '');
+}
+
+export function resolveBaseUrl(options?: {
+  env?: EnvSource;
+  requiredInProduction?: boolean;
+  developmentFallback?: string;
+}): string {
+  const envSource = getEnvSource(options?.env);
+  const baseUrl = readOptionalStringEnv('BASE_URL', envSource);
+
+  if (baseUrl) {
+    const validationResult = httpUrlSchema.safeParse(baseUrl);
+    if (!validationResult.success) {
+      throw new Error('Variável de ambiente BASE_URL inválida: URL HTTP/HTTPS obrigatória');
+    }
+    return normalizeBaseUrl(validationResult.data);
+  }
+
+  if ((options?.requiredInProduction ?? true) && isProductionEnv(envSource)) {
+    throw new Error('BASE_URL é obrigatório em produção (Regra 6 - fail-fast)');
+  }
+
+  const fallback = options?.developmentFallback ?? 'http://localhost:5000';
+  const fallbackValidation = httpUrlSchema.safeParse(fallback);
+  if (!fallbackValidation.success) {
+    throw new Error(`Fallback de BASE_URL inválido: ${fallback}`);
+  }
+
+  return normalizeBaseUrl(fallbackValidation.data);
+}
+
+export function resolveTenantDomain(options?: {
+  env?: EnvSource;
+  requiredInProduction?: boolean;
+  developmentFallback?: string;
+}): string {
+  const envSource = getEnvSource(options?.env);
+  const explicitDomain = readOptionalStringEnv('PRODUCTION_DOMAIN', envSource);
+  if (explicitDomain) {
+    return explicitDomain;
+  }
+
+  const baseUrl = readOptionalStringEnv('BASE_URL', envSource);
+  if (baseUrl) {
+    try {
+      return new URL(baseUrl).hostname;
+    } catch {
+      throw new Error('Variável de ambiente BASE_URL inválida para resolver domínio de tenant');
+    }
+  }
+
+  if ((options?.requiredInProduction ?? false) && isProductionEnv(envSource)) {
+    throw new Error('PRODUCTION_DOMAIN ou BASE_URL são obrigatórios em produção para domínio do tenant');
+  }
+
+  return options?.developmentFallback ?? 'localhost';
+}
+
 export function resolveCorsOrigins(options?: {
   env?: EnvSource;
   requiredInProduction?: boolean;

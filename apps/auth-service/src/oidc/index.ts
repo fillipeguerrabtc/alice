@@ -154,7 +154,7 @@ export async function mountOIDCRoutes(app: Express): Promise<void> {
         frontchannel_logout_session_supported: true,
         
         // Service documentation
-        service_documentation: 'https://docs.alice.yesyoudeserve.duckdns.org/oidc',
+        service_documentation: `${issuer}/api/docs`,
         
         // UI locales
         ui_locales_supported: ['pt-BR', 'en'],

@@ -10,6 +10,7 @@ import type { publishProvisioningEvent } from '../identity-provisioning/index.js
 interface RegisterAuthRegistrationRoutesDeps {
   logger?: ReturnType<typeof createLogger>;
   publishProvisioningEvent: typeof publishProvisioningEvent;
+  defaultTenantDomain: string;
 }
 
 const registerSchema = z.object({
@@ -49,7 +50,7 @@ export function registerAuthRegistrationRoutes(
   deps: RegisterAuthRegistrationRoutesDeps,
 ): void {
   const logger = deps.logger ?? createLogger('auth-service');
-  const { publishProvisioningEvent } = deps;
+  const { publishProvisioningEvent, defaultTenantDomain } = deps;
 
   app.post('/api/auth/register', requireAuth(), requireRole('admin'), asyncHandler(async (req: Request, res: Response) => {
     const parseResult = registerSchema.safeParse(req.body);
@@ -84,7 +85,7 @@ export function registerAuthRegistrationRoutes(
       const inserted = await db.insert(schema.tenants).values({
         nome: 'Alice Platform',
         slug: 'alice-platform',
-        dominio: 'yesyoudeserve.duckdns.org',
+        dominio: defaultTenantDomain,
         plano: 'enterprise',
         limiteUsuarios: 999999,
         limiteConversas: 999999,
