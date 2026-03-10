@@ -1045,6 +1045,7 @@ export const trainingServiceSchemas = {
         properties: {
           maxInflightRunsPerTenant: { type: 'integer' },
           requireEvalPassedForPromotion: { type: 'boolean' },
+          requireApprovalGatesForPromotion: { type: 'boolean' },
           requireDualApprovalForPromotion: { type: 'boolean' },
           promotionMinApprovals: { type: 'integer' },
           requireIdempotencyKeyForRunStart: { type: 'boolean' },
@@ -1111,6 +1112,7 @@ export const trainingServiceSchemas = {
         properties: {
           maxInflightRunsPerTenant: { type: 'integer' },
           requireEvalPassedForPromotion: { type: 'boolean' },
+          requireApprovalGatesForPromotion: { type: 'boolean' },
           requireDualApprovalForPromotion: { type: 'boolean' },
           promotionMinApprovals: { type: 'integer' },
           requireIdempotencyKeyForRunStart: { type: 'boolean' },

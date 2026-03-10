@@ -27,17 +27,20 @@
 
 import { Router } from 'express';
 import type { Request, Response } from 'express';
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
-import { writeFile, readFile, mkdir, readdir, stat } from 'fs/promises';
+import { writeFile, readFile, mkdir, readdir, stat, statfs, copyFile } from 'fs/promises';
 import { existsSync } from 'fs';
+import type { Dirent } from 'fs';
 import path from 'node:path';
+import crypto from 'crypto';
 import { z } from 'zod';
 import { getDatabase, schema, eq, desc } from '@alice/database';
 import { createLogger } from '@alice/logger';
 import type { BackupComponentDetail, BackupManifestData, BackupJob } from '@alice/shared';
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 // CORREÇÃO AUDITORIA 17/12/2025: Usar createLogger padronizado (Regra 2 - Não Duplicar)
 const logger = createLogger('backup-orchestrator');
@@ -79,11 +82,13 @@ interface BackupManifest {
       status: 'completed' | 'failed' | 'skipped';
       rdbChecksum?: string;
       size?: string;
+      backupFile?: string;
     };
     qdrant?: {
       status: 'completed' | 'failed' | 'skipped';
       snapshotName?: string;
       collections?: string[];
+      snapshotFiles?: string[];
       size?: string;
     };
   };
@@ -96,8 +101,40 @@ interface BackupManifest {
     enabled: boolean;
     algorithm?: string;
   };
+  offsite?: {
+    enabled: boolean;
+    required: boolean;
+    status: 'pending' | 'completed' | 'failed' | 'skipped';
+    path?: string;
+    syncedAt?: string;
+    filesSynced?: number;
+    verificationFile?: string;
+    error?: string;
+    encryption: {
+      enabled: boolean;
+      algorithm?: string;
+    };
+  };
   createdBy?: string;
   notes?: string;
+}
+
+interface OffsiteSyncedFile {
+  relativePath: string;
+  offsitePath: string;
+  sourceSha256: string;
+  offsiteSha256: string;
+  sizeBytes: number;
+}
+
+interface OffsiteVerificationManifest {
+  backupId: string;
+  generatedAt: string;
+  encryption: {
+    enabled: boolean;
+    algorithm?: string;
+  };
+  files: OffsiteSyncedFile[];
 }
 
 /** Status do job de backup em andamento (exportado para uso em testes/monitoramento) */
@@ -125,7 +162,16 @@ interface BackupHistory {
 // =============================================================================
 
 const BACKUP_DIR = process.env.BACKUP_DIR || '/opt/alice/backups';
+const BACKUP_DIR_RESOLVED = path.resolve(BACKUP_DIR);
 const MANIFESTS_DIR = path.join(BACKUP_DIR, 'manifests');
+const MANIFESTS_DIR_RESOLVED = path.resolve(MANIFESTS_DIR);
+const BACKUP_ARTIFACTS_DIR = path.join(BACKUP_DIR, 'artifacts');
+const BACKUP_ARTIFACTS_DIR_RESOLVED = path.resolve(BACKUP_ARTIFACTS_DIR);
+const BACKUP_ID_REGEX = /^[a-zA-Z0-9](?:[a-zA-Z0-9._-]{0,127})$/;
+const BACKUP_OFFSITE_DIR = process.env.BACKUP_OFFSITE_DIR?.trim();
+const BACKUP_OFFSITE_DIR_RESOLVED = BACKUP_OFFSITE_DIR ? path.resolve(BACKUP_OFFSITE_DIR) : undefined;
+const BACKUP_OFFSITE_ENCRYPTION_ALGORITHM = 'aes-256-cbc';
+const OFFSITE_VERIFICATION_FILE = 'offsite-verification.json';
 
 // Containers Docker (nomes em produção)
 // NOTA: POSTGRES_CONTAINER usado indiretamente via alice-pgbackrest que se conecta ao PostgreSQL
@@ -140,8 +186,185 @@ export { _POSTGRES_CONTAINER as POSTGRES_CONTAINER };
 // Criptografia
 const BACKUP_CIPHER_PASS = process.env.BACKUP_CIPHER_PASS;
 
+function parseBooleanEnv(rawValue: string | undefined, fallback: boolean): boolean {
+  if (rawValue === undefined) return fallback;
+  const normalized = rawValue.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'y', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'n', 'off'].includes(normalized)) return false;
+  return fallback;
+}
+
+const BACKUP_OFFSITE_REQUIRED = parseBooleanEnv(process.env.BACKUP_OFFSITE_REQUIRED, true);
+const BACKUP_OFFSITE_ENCRYPTION_REQUIRED = parseBooleanEnv(process.env.BACKUP_OFFSITE_ENCRYPTION_REQUIRED, true);
+
 // Diretório de uploads (para informação de tamanho no dashboard)
 const UPLOADS_DIR = process.env.UPLOADS_DIR || '/opt/alice/uploads';
+
+function assertValidBackupId(backupId: string): void {
+  const normalized = backupId.trim();
+  if (!BACKUP_ID_REGEX.test(normalized)) {
+    throw new Error('backupId inválido');
+  }
+  if (normalized.includes('..') || normalized.includes('/') || normalized.includes('\\')) {
+    throw new Error('backupId inválido');
+  }
+}
+
+function resolveBackupArtifactsDir(backupId: string): string {
+  assertValidBackupId(backupId);
+  const artifactsPath = path.resolve(BACKUP_ARTIFACTS_DIR, backupId);
+  const artifactsPrefix = `${BACKUP_ARTIFACTS_DIR_RESOLVED}${path.sep}`;
+  if (artifactsPath !== BACKUP_ARTIFACTS_DIR_RESOLVED && !artifactsPath.startsWith(artifactsPrefix)) {
+    throw new Error('backupId inválido');
+  }
+  return artifactsPath;
+}
+
+function resolveManifestPath(backupId: string): string {
+  assertValidBackupId(backupId);
+  const manifestPath = path.resolve(MANIFESTS_DIR, `${backupId}.json`);
+  const manifestsPrefix = `${MANIFESTS_DIR_RESOLVED}${path.sep}`;
+  if (manifestPath !== MANIFESTS_DIR_RESOLVED && !manifestPath.startsWith(manifestsPrefix)) {
+    throw new Error('backupId inválido');
+  }
+  return manifestPath;
+}
+
+function resolveOffsiteBackupDir(backupId: string): string {
+  if (!BACKUP_OFFSITE_DIR_RESOLVED) {
+    throw new Error('BACKUP_OFFSITE_DIR não configurado');
+  }
+  assertValidBackupId(backupId);
+  const backupDir = path.resolve(BACKUP_OFFSITE_DIR_RESOLVED, backupId);
+  const offsitePrefix = `${BACKUP_OFFSITE_DIR_RESOLVED}${path.sep}`;
+  if (backupDir !== BACKUP_OFFSITE_DIR_RESOLVED && !backupDir.startsWith(offsitePrefix)) {
+    throw new Error('backupId inválido');
+  }
+  return backupDir;
+}
+
+function assertSafeContainerName(container: string): void {
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/.test(container)) {
+    throw new Error(`Container inválido: ${container}`);
+  }
+}
+
+function assertSafePgBackrestSet(backupSet: string): string {
+  const normalized = backupSet.trim();
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/.test(normalized)) {
+    throw new Error('backupSet inválido');
+  }
+  return normalized;
+}
+
+async function computeSha256FromFile(filePath: string): Promise<string> {
+  const fileBuffer = await readFile(filePath);
+  return crypto.createHash('sha256').update(fileBuffer).digest('hex');
+}
+
+async function listFilesRecursively(dirPath: string): Promise<string[]> {
+  if (!existsSync(dirPath)) {
+    return [];
+  }
+
+  const files: string[] = [];
+  const queue: string[] = [dirPath];
+
+  while (queue.length > 0) {
+    const currentDir = queue.shift();
+    if (!currentDir) continue;
+
+    const entries = await readdir(currentDir, { withFileTypes: true, encoding: 'utf8' });
+    for (const entry of entries) {
+      const fullPath = path.join(currentDir, entry.name);
+      if (entry.isDirectory()) {
+        queue.push(fullPath);
+      } else if (entry.isFile()) {
+        files.push(fullPath);
+      }
+    }
+  }
+
+  return files.sort();
+}
+
+function asPortablePath(value: string): string {
+  return value.split(path.sep).join('/');
+}
+
+function requireOffsiteEncryptionPassphrase(): string {
+  if (!BACKUP_CIPHER_PASS || BACKUP_CIPHER_PASS.trim().length === 0) {
+    throw new Error('BACKUP_CIPHER_PASS é obrigatório para backup offsite criptografado');
+  }
+  return BACKUP_CIPHER_PASS;
+}
+
+async function encryptFileToOffsite(sourcePath: string, destinationPath: string): Promise<void> {
+  const cipherPass = requireOffsiteEncryptionPassphrase();
+  await execFileAsync(
+    'openssl',
+    [
+      'enc',
+      `-${BACKUP_OFFSITE_ENCRYPTION_ALGORITHM}`,
+      '-pbkdf2',
+      '-salt',
+      '-in',
+      sourcePath,
+      '-out',
+      destinationPath,
+      '-pass',
+      'env:ALICE_BACKUP_CIPHER_PASS',
+    ],
+    {
+      env: {
+        ...process.env,
+        ALICE_BACKUP_CIPHER_PASS: cipherPass,
+      },
+      timeout: 900000,
+    },
+  );
+}
+
+async function getDirectoryStats(dir: string): Promise<{ bytes: number; files: number }> {
+  if (!existsSync(dir)) {
+    return { bytes: 0, files: 0 };
+  }
+  const queue: string[] = [dir];
+  let bytes = 0;
+  let files = 0;
+
+  while (queue.length > 0) {
+    const currentDir = queue.shift();
+    if (!currentDir) continue;
+
+    let entries: Dirent[];
+    try {
+      entries = await readdir(currentDir, { withFileTypes: true, encoding: 'utf8' });
+    } catch {
+      continue;
+    }
+
+    for (const entry of entries) {
+      const fullPath = path.join(currentDir, entry.name);
+      if (entry.isDirectory()) {
+        queue.push(fullPath);
+        continue;
+      }
+      if (!entry.isFile()) {
+        continue;
+      }
+      try {
+        const info = await stat(fullPath);
+        bytes += info.size;
+        files += 1;
+      } catch {
+        // Ignorar arquivos inacessíveis sem interromper cálculo agregado
+      }
+    }
+  }
+
+  return { bytes, files };
+}
 
 // =============================================================================
 // PERSISTÊNCIA POSTGRESQL (Regra 6 - Enterprise-Grade)
@@ -292,16 +515,16 @@ function formatBytes(bytes: number): string {
 }
 
 /** Executar comando Docker exec */
-async function dockerExec(container: string, command: string): Promise<{ stdout: string; stderr: string }> {
-  const fullCommand = `docker exec ${container} ${command}`;
-  logger.debug({ container, command }, 'Executando comando no container');
+async function dockerExec(container: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
+  assertSafeContainerName(container);
+  logger.debug({ container, args }, 'Executando comando no container');
   
   try {
-    const result = await execAsync(fullCommand, { timeout: 300000 }); // 5 min timeout
-    return result;
+    const result = await execFileAsync('docker', ['exec', container, ...args], { timeout: 300000 }); // 5 min timeout
+    return { stdout: result.stdout, stderr: result.stderr };
   } catch (error) {
     const err = error as { stdout?: string; stderr?: string; message: string };
-    logger.error({ container, command, error: err.message }, 'Erro ao executar comando no container');
+    logger.error({ container, args, error: err.message }, 'Erro ao executar comando no container');
     throw error;
   }
 }
@@ -316,7 +539,13 @@ async function saveManifest(manifest: BackupManifest): Promise<void> {
 
 /** Carregar manifesto do disco */
 async function loadManifest(backupId: string): Promise<BackupManifest | null> {
-  const filePath = path.join(MANIFESTS_DIR, `${backupId}.json`);
+  let filePath: string;
+  try {
+    filePath = resolveManifestPath(backupId);
+  } catch {
+    logger.warn({ backupId }, 'backupId inválido ao carregar manifesto');
+    return null;
+  }
   if (!existsSync(filePath)) return null;
   
   try {
@@ -387,15 +616,17 @@ async function backupPostgreSQL(type: 'full' | 'diff' | 'incr'): Promise<Compone
     
     // Executar backup via pgBackRest (container dedicado)
     // NOTA: backupOutput capturado para logging futuro se necessário
-    const { stdout: _backupOutput } = await execAsync(
-      `docker exec alice-pgbackrest pgbackrest --stanza=alice_prod --type=${pgbackrestType} backup`,
+    const { stdout: _backupOutput } = await execFileAsync(
+      'docker',
+      ['exec', 'alice-pgbackrest', 'pgbackrest', '--stanza=alice_prod', `--type=${pgbackrestType}`, 'backup'],
       { timeout: 1800000 } // 30 min timeout para backup full
     );
     logger.debug({ backupOutputLength: _backupOutput.length }, 'pgBackRest backup output recebido');
     
     // Obter informações do backup
-    const { stdout: infoOutput } = await execAsync(
-      `docker exec alice-pgbackrest pgbackrest info --stanza=alice_prod --output=json`
+    const { stdout: infoOutput } = await execFileAsync(
+      'docker',
+      ['exec', 'alice-pgbackrest', 'pgbackrest', 'info', '--stanza=alice_prod', '--output=json']
     );
     
     let info: Array<{ backup?: Array<{ lsn?: { start?: string }; label?: string }> }>;
@@ -442,7 +673,7 @@ async function backupPostgreSQL(type: 'full' | 'diff' | 'incr'): Promise<Compone
  * Backup Redis (RDB snapshot)
  * Retorna: checksum do RDB
  */
-async function backupRedis(): Promise<ComponentBackupStatus> {
+async function backupRedis(backupId: string): Promise<ComponentBackupStatus> {
   const startTime = Date.now();
   const component: ComponentBackupStatus = {
     component: 'redis',
@@ -454,31 +685,31 @@ async function backupRedis(): Promise<ComponentBackupStatus> {
   
   try {
     // Forçar BGSAVE
-    await dockerExec(REDIS_CONTAINER, 'redis-cli BGSAVE');
+    await dockerExec(REDIS_CONTAINER, ['redis-cli', 'BGSAVE']);
     
     // Aguardar BGSAVE completar
     let saving = true;
     while (saving) {
-      const { stdout } = await dockerExec(REDIS_CONTAINER, 'redis-cli LASTSAVE');
+      const { stdout } = await dockerExec(REDIS_CONTAINER, ['redis-cli', 'LASTSAVE']);
       await new Promise(resolve => setTimeout(resolve, 1000));
-      const { stdout: newStdout } = await dockerExec(REDIS_CONTAINER, 'redis-cli LASTSAVE');
+      const { stdout: newStdout } = await dockerExec(REDIS_CONTAINER, ['redis-cli', 'LASTSAVE']);
       saving = stdout === newStdout;
     }
     
     // Copiar RDB para diretório de backup
-    const backupPath = path.join(BACKUP_DIR, 'redis');
+    const backupPath = path.join(resolveBackupArtifactsDir(backupId), 'redis');
     const timestamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0];
     const backupFile = `redis_${timestamp}.rdb`;
     
     await mkdir(backupPath, { recursive: true });
-    await execAsync(`docker cp ${REDIS_CONTAINER}:/data/dump.rdb ${path.join(backupPath, backupFile)}`);
+    const backupFilePath = path.join(backupPath, backupFile);
+    await execFileAsync('docker', ['cp', `${REDIS_CONTAINER}:/data/dump.rdb`, backupFilePath]);
     
     // Calcular checksum
-    const { stdout: checksumOutput } = await execAsync(`sha256sum ${path.join(backupPath, backupFile)}`);
-    const checksum = checksumOutput.split(' ')[0];
+    const checksum = await computeSha256FromFile(backupFilePath);
     
     // Obter tamanho
-    const stats = await stat(path.join(backupPath, backupFile));
+    const stats = await stat(backupFilePath);
     
     component.status = 'completed';
     component.completedAt = new Date().toISOString();
@@ -487,6 +718,7 @@ async function backupRedis(): Promise<ComponentBackupStatus> {
     component.metadata = {
       rdbChecksum: checksum,
       backupFile,
+      artifactRelativePath: asPortablePath(path.join('artifacts', backupId, 'redis', backupFile)),
     };
     
     logger.info({ 
@@ -517,7 +749,7 @@ async function backupRedis(): Promise<ComponentBackupStatus> {
  * ADICIONADO AUDITORIA 17/12/2025: Qdrant era o único DB sem backup
  * Embeddings de texto são críticos e não podem ser regenerados sem reprocessar documentos
  */
-async function backupQdrant(): Promise<ComponentBackupStatus> {
+async function backupQdrant(backupId: string): Promise<ComponentBackupStatus> {
   const startTime = Date.now();
   const component: ComponentBackupStatus = {
     component: 'qdrant',
@@ -552,11 +784,12 @@ async function backupQdrant(): Promise<ComponentBackupStatus> {
     }
     
     // Criar diretório de backup
-    const backupPath = path.join(BACKUP_DIR, 'qdrant');
+    const backupPath = path.join(resolveBackupArtifactsDir(backupId), 'qdrant');
     const timestamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0];
     await mkdir(backupPath, { recursive: true });
     
     const snapshotNames: string[] = [];
+    const snapshotFiles: string[] = [];
     let totalSize = 0;
     
     // Criar snapshot de cada collection
@@ -597,9 +830,11 @@ async function backupQdrant(): Promise<ComponentBackupStatus> {
       }
       
       // Salvar snapshot em arquivo
-      const snapshotFile = path.join(backupPath, `${collectionName}_${timestamp}.snapshot`);
+      const snapshotFileName = `${collectionName}.snapshot`;
+      const snapshotFile = path.join(backupPath, snapshotFileName);
       const arrayBuffer = await downloadResponse.arrayBuffer();
       await writeFile(snapshotFile, Buffer.from(arrayBuffer));
+      snapshotFiles.push(snapshotFileName);
       
       // Obter tamanho
       const stats = await stat(snapshotFile);
@@ -632,6 +867,8 @@ async function backupQdrant(): Promise<ComponentBackupStatus> {
       snapshotCount: snapshotNames.length.toString(),
       collections: collections.join(','),
       timestamp,
+      snapshotFiles: JSON.stringify(snapshotFiles),
+      artifactRelativeDir: asPortablePath(path.join('artifacts', backupId, 'qdrant')),
     };
     
     logger.info({
@@ -664,20 +901,381 @@ async function getUploadsInfo(): Promise<{ filesCount: number; totalSize: string
     if (!existsSync(UPLOADS_DIR)) {
       return { filesCount: 0, totalSize: '0 B' };
     }
-    
-    // Contar arquivos
-    const { stdout: countOutput } = await execAsync(`find ${UPLOADS_DIR} -type f | wc -l`);
-    const filesCount = parseInt(countOutput.trim(), 10) || 0;
-    
-    // Calcular tamanho total
-    const { stdout: sizeOutput } = await execAsync(`du -sb ${UPLOADS_DIR} | cut -f1`);
-    const totalBytes = parseInt(sizeOutput.trim(), 10) || 0;
-    
+
+    const { bytes: totalBytes, files: filesCount } = await getDirectoryStats(UPLOADS_DIR);
     return { filesCount, totalSize: formatBytes(totalBytes) };
   } catch (error) {
     logger.warn({ error }, 'Erro ao obter informações de uploads');
     return { filesCount: 0, totalSize: '0 B' };
   }
+}
+
+interface OffsiteSyncResult {
+  status: 'completed' | 'failed' | 'skipped';
+  syncedAt?: string;
+  filesSynced?: number;
+  verificationFile?: string;
+  error?: string;
+}
+
+interface BackupReadinessReport {
+  local: {
+    manifestExists: boolean;
+    redis: { status: 'ready' | 'missing' | 'checksum_mismatch' | 'skipped'; file?: string };
+    qdrant: {
+      status: 'ready' | 'missing' | 'skipped';
+      expectedFiles: number;
+      foundFiles: number;
+      missingCollections: string[];
+    };
+  };
+  offsite?: {
+    configured: boolean;
+    status: 'ready' | 'missing' | 'checksum_mismatch' | 'failed' | 'skipped';
+    filesChecked: number;
+    missingFiles: string[];
+    verificationFile?: string;
+    error?: string;
+  };
+  restoreReady: boolean;
+}
+
+async function writePostgreSqlMetadataArtifact(
+  backupId: string,
+  postgresql?: BackupManifest['components']['postgresql'],
+): Promise<void> {
+  if (!postgresql || postgresql.status !== 'completed') {
+    return;
+  }
+  const artifactDir = resolveBackupArtifactsDir(backupId);
+  const postgresDir = path.join(artifactDir, 'postgresql');
+  await mkdir(postgresDir, { recursive: true });
+  await writeFile(
+    path.join(postgresDir, 'metadata.json'),
+    JSON.stringify(
+      {
+        backupId,
+        backupSet: postgresql.backupSet,
+        lsn: postgresql.lsn,
+        walArchived: postgresql.walArchived ?? false,
+        exportedAt: new Date().toISOString(),
+      },
+      null,
+      2,
+    ),
+    'utf-8',
+  );
+}
+
+function parseJsonStringArray(rawValue: string | undefined): string[] {
+  if (!rawValue) return [];
+  try {
+    const parsed = JSON.parse(rawValue) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is string => typeof item === 'string' && item.length > 0);
+  } catch {
+    return [];
+  }
+}
+
+function buildRedisFileCandidates(manifest: BackupManifest): string[] {
+  const backupId = manifest.id;
+  const candidates = new Set<string>();
+  const backupFile = manifest.components.redis?.backupFile;
+  const backupArtifactDir = resolveBackupArtifactsDir(backupId);
+  const legacyBackupDir = path.join(BACKUP_DIR, backupId, 'redis');
+  const globalLegacyDir = path.join(BACKUP_DIR, 'redis');
+
+  if (backupFile) {
+    candidates.add(path.join(backupArtifactDir, 'redis', backupFile));
+    candidates.add(path.join(legacyBackupDir, backupFile));
+    candidates.add(path.join(globalLegacyDir, backupFile));
+  }
+
+  return [...candidates];
+}
+
+async function findMostRecentRedisDumpFile(): Promise<string | null> {
+  const redisDir = path.join(BACKUP_DIR, 'redis');
+  if (!existsSync(redisDir)) return null;
+  const entries = await readdir(redisDir, { withFileTypes: true, encoding: 'utf8' });
+  const dumps: Array<{ fullPath: string; mtimeMs: number }> = [];
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith('.rdb')) continue;
+    const fullPath = path.join(redisDir, entry.name);
+    const fileStat = await stat(fullPath);
+    dumps.push({ fullPath, mtimeMs: fileStat.mtimeMs });
+  }
+  dumps.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  return dumps[0]?.fullPath ?? null;
+}
+
+async function resolveRedisBackupFilePath(manifest: BackupManifest): Promise<string | null> {
+  for (const candidate of buildRedisFileCandidates(manifest)) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return findMostRecentRedisDumpFile();
+}
+
+function buildQdrantSnapshotCandidates(
+  manifest: BackupManifest,
+  collectionName: string,
+  snapshotFileName?: string,
+): string[] {
+  const backupId = manifest.id;
+  const candidates = new Set<string>();
+  const artifactDir = resolveBackupArtifactsDir(backupId);
+
+  if (snapshotFileName) {
+    candidates.add(path.join(artifactDir, 'qdrant', snapshotFileName));
+    candidates.add(path.join(BACKUP_DIR, backupId, 'qdrant', snapshotFileName));
+  }
+
+  const normalizedCollectionFile = `${collectionName}.snapshot`;
+  candidates.add(path.join(artifactDir, 'qdrant', normalizedCollectionFile));
+  candidates.add(path.join(BACKUP_DIR, backupId, 'qdrant', normalizedCollectionFile));
+
+  const snapshotName = manifest.components.qdrant?.snapshotName;
+  if (snapshotName) {
+    candidates.add(path.join(BACKUP_DIR, 'qdrant', `${collectionName}_${snapshotName}.snapshot`));
+  }
+
+  return [...candidates];
+}
+
+function isOffsiteEnabled(): boolean {
+  return Boolean(BACKUP_OFFSITE_DIR_RESOLVED);
+}
+
+async function syncBackupToOffsite(backupId: string): Promise<OffsiteSyncResult> {
+  if (!isOffsiteEnabled()) {
+    return { status: 'skipped' };
+  }
+
+  if (BACKUP_OFFSITE_ENCRYPTION_REQUIRED) {
+    requireOffsiteEncryptionPassphrase();
+  }
+
+  if (BACKUP_OFFSITE_DIR_RESOLVED === BACKUP_DIR_RESOLVED) {
+    throw new Error('BACKUP_OFFSITE_DIR deve ser diferente de BACKUP_DIR');
+  }
+
+  const offsiteBackupDir = resolveOffsiteBackupDir(backupId);
+  const sourceFiles: Array<{ sourcePath: string; relativePath: string }> = [];
+  const manifestPath = resolveManifestPath(backupId);
+  const artifactDir = resolveBackupArtifactsDir(backupId);
+
+  if (existsSync(manifestPath)) {
+    sourceFiles.push({
+      sourcePath: manifestPath,
+      relativePath: asPortablePath(path.join('manifests', `${backupId}.json`)),
+    });
+  }
+
+  if (existsSync(artifactDir)) {
+    const artifactFiles = await listFilesRecursively(artifactDir);
+    for (const filePath of artifactFiles) {
+      sourceFiles.push({
+        sourcePath: filePath,
+        relativePath: asPortablePath(path.join('artifacts', backupId, path.relative(artifactDir, filePath))),
+      });
+    }
+  }
+
+  if (sourceFiles.length === 0) {
+    return {
+      status: 'failed',
+      error: 'Nenhum artefato local encontrado para sincronização offsite',
+    };
+  }
+
+  await mkdir(offsiteBackupDir, { recursive: true });
+
+  const verificationEntries: OffsiteSyncedFile[] = [];
+  for (const file of sourceFiles) {
+    const sourceSha256 = await computeSha256FromFile(file.sourcePath);
+    const offsiteRelativePath = BACKUP_OFFSITE_ENCRYPTION_REQUIRED
+      ? `${file.relativePath}.enc`
+      : file.relativePath;
+    const offsitePath = path.join(offsiteBackupDir, offsiteRelativePath);
+    await mkdir(path.dirname(offsitePath), { recursive: true });
+
+    if (BACKUP_OFFSITE_ENCRYPTION_REQUIRED) {
+      await encryptFileToOffsite(file.sourcePath, offsitePath);
+    } else {
+      await copyFile(file.sourcePath, offsitePath);
+    }
+
+    const offsiteSha256 = await computeSha256FromFile(offsitePath);
+    const fileStat = await stat(file.sourcePath);
+    verificationEntries.push({
+      relativePath: file.relativePath,
+      offsitePath: asPortablePath(path.relative(offsiteBackupDir, offsitePath)),
+      sourceSha256,
+      offsiteSha256,
+      sizeBytes: fileStat.size,
+    });
+  }
+
+  const verificationManifest: OffsiteVerificationManifest = {
+    backupId,
+    generatedAt: new Date().toISOString(),
+    encryption: {
+      enabled: BACKUP_OFFSITE_ENCRYPTION_REQUIRED,
+      algorithm: BACKUP_OFFSITE_ENCRYPTION_REQUIRED ? BACKUP_OFFSITE_ENCRYPTION_ALGORITHM : undefined,
+    },
+    files: verificationEntries,
+  };
+
+  const verificationPath = path.join(offsiteBackupDir, OFFSITE_VERIFICATION_FILE);
+  await writeFile(verificationPath, JSON.stringify(verificationManifest, null, 2), 'utf-8');
+
+  return {
+    status: 'completed',
+    syncedAt: verificationManifest.generatedAt,
+    filesSynced: verificationEntries.length,
+    verificationFile: asPortablePath(path.relative(offsiteBackupDir, verificationPath)),
+  };
+}
+
+async function verifyBackupReadiness(backupId: string, manifest: BackupManifest): Promise<BackupReadinessReport> {
+  const manifestPath = resolveManifestPath(backupId);
+  const localManifestExists = existsSync(manifestPath);
+
+  let redisStatus: BackupReadinessReport['local']['redis'] = { status: 'skipped' };
+  if (manifest.components.redis?.status === 'completed') {
+    const redisBackupFile = await resolveRedisBackupFilePath(manifest);
+    if (!redisBackupFile || !existsSync(redisBackupFile)) {
+      redisStatus = { status: 'missing' };
+    } else {
+      const currentChecksum = await computeSha256FromFile(redisBackupFile);
+      if (manifest.components.redis.rdbChecksum && currentChecksum !== manifest.components.redis.rdbChecksum) {
+        redisStatus = { status: 'checksum_mismatch', file: redisBackupFile };
+      } else {
+        redisStatus = { status: 'ready', file: redisBackupFile };
+      }
+    }
+  } else if (manifest.components.redis?.status === 'failed') {
+    redisStatus = { status: 'missing' };
+  }
+
+  let qdrantStatus: BackupReadinessReport['local']['qdrant'] = {
+    status: 'skipped',
+    expectedFiles: 0,
+    foundFiles: 0,
+    missingCollections: [],
+  };
+
+  if (manifest.components.qdrant?.status === 'completed') {
+    const collections = manifest.components.qdrant.collections ?? [];
+    const snapshotFiles = manifest.components.qdrant.snapshotFiles ?? [];
+    const missingCollections: string[] = [];
+    let foundFiles = 0;
+
+    for (let index = 0; index < collections.length; index += 1) {
+      const collectionName = collections[index];
+      const expectedSnapshotFile = snapshotFiles[index];
+      const candidates = buildQdrantSnapshotCandidates(manifest, collectionName, expectedSnapshotFile);
+      const existing = candidates.find(candidate => existsSync(candidate));
+      if (!existing) {
+        missingCollections.push(collectionName);
+      } else {
+        foundFiles += 1;
+      }
+    }
+
+    qdrantStatus = {
+      status: missingCollections.length > 0 ? 'missing' : 'ready',
+      expectedFiles: collections.length,
+      foundFiles,
+      missingCollections,
+    };
+  } else if (manifest.components.qdrant?.status === 'failed') {
+    qdrantStatus = {
+      status: 'missing',
+      expectedFiles: manifest.components.qdrant.collections?.length ?? 0,
+      foundFiles: 0,
+      missingCollections: manifest.components.qdrant.collections ?? [],
+    };
+  }
+
+  let offsiteReport: BackupReadinessReport['offsite'] | undefined;
+  if (!isOffsiteEnabled()) {
+    offsiteReport = {
+      configured: false,
+      status: 'skipped',
+      filesChecked: 0,
+      missingFiles: [],
+    };
+  } else {
+    const offsiteBackupDir = resolveOffsiteBackupDir(backupId);
+    const verificationPath = path.join(offsiteBackupDir, OFFSITE_VERIFICATION_FILE);
+    if (!existsSync(verificationPath)) {
+      offsiteReport = {
+        configured: true,
+        status: 'missing',
+        filesChecked: 0,
+        missingFiles: [OFFSITE_VERIFICATION_FILE],
+        verificationFile: OFFSITE_VERIFICATION_FILE,
+      };
+    } else {
+      try {
+        const rawVerification = await readFile(verificationPath, 'utf-8');
+        const parsed = JSON.parse(rawVerification) as OffsiteVerificationManifest;
+        const missingFiles: string[] = [];
+        let checksumMismatch = false;
+        for (const file of parsed.files) {
+          const offsiteFilePath = path.join(offsiteBackupDir, file.offsitePath);
+          if (!existsSync(offsiteFilePath)) {
+            missingFiles.push(file.offsitePath);
+            continue;
+          }
+          const offsiteChecksum = await computeSha256FromFile(offsiteFilePath);
+          if (offsiteChecksum !== file.offsiteSha256) {
+            checksumMismatch = true;
+            missingFiles.push(file.offsitePath);
+          }
+        }
+        offsiteReport = {
+          configured: true,
+          status: checksumMismatch ? 'checksum_mismatch' : missingFiles.length > 0 ? 'missing' : 'ready',
+          filesChecked: parsed.files.length,
+          missingFiles,
+          verificationFile: OFFSITE_VERIFICATION_FILE,
+        };
+      } catch (error) {
+        offsiteReport = {
+          configured: true,
+          status: 'failed',
+          filesChecked: 0,
+          missingFiles: [],
+          verificationFile: OFFSITE_VERIFICATION_FILE,
+          error: (error as Error).message,
+        };
+      }
+    }
+  }
+
+  const localReady = localManifestExists
+    && manifest.components.postgresql?.status !== 'failed'
+    && redisStatus.status !== 'missing'
+    && redisStatus.status !== 'checksum_mismatch'
+    && qdrantStatus.status !== 'missing';
+
+  const offsiteReady = !offsiteReport?.configured || offsiteReport.status === 'ready' || offsiteReport.status === 'skipped';
+  const restoreReady = localReady && offsiteReady;
+
+  return {
+    local: {
+      manifestExists: localManifestExists,
+      redis: redisStatus,
+      qdrant: qdrantStatus,
+    },
+    offsite: offsiteReport,
+    restoreReady,
+  };
 }
 
 // =============================================================================
@@ -728,6 +1326,8 @@ async function runUnifiedBackup(
   
   // Atualizar para running
   await updateBackupJob(backupId, { status: 'running' });
+
+  await mkdir(resolveBackupArtifactsDir(backupId), { recursive: true });
   
   const skipComponents = options?.skipComponents || [];
   let hasFailures = false;
@@ -759,7 +1359,7 @@ async function runUnifiedBackup(
     if (!skipComponents.includes('redis')) {
       await updateBackupJob(backupId, { currentComponent: 'redis', progress: 55 });
 
-      const redisResult = await backupRedis();
+      const redisResult = await backupRedis(backupId);
       componentResults.push(redisResult as BackupComponentDetail);
       await updateBackupJob(backupId, { components: componentResults });
 
@@ -767,6 +1367,7 @@ async function runUnifiedBackup(
         status: redisResult.status === 'completed' ? 'completed' : 'failed',
         rdbChecksum: redisResult.metadata?.rdbChecksum,
         size: redisResult.size,
+        backupFile: redisResult.metadata?.backupFile,
       };
 
       if (redisResult.status === 'failed') hasFailures = true;
@@ -779,15 +1380,17 @@ async function runUnifiedBackup(
     if (!skipComponents.includes('qdrant')) {
       await updateBackupJob(backupId, { currentComponent: 'qdrant', progress: 80 });
 
-      const qdrantResult = await backupQdrant();
+      const qdrantResult = await backupQdrant(backupId);
       componentResults.push(qdrantResult as BackupComponentDetail);
       await updateBackupJob(backupId, { components: componentResults });
 
+      const qdrantSnapshotFiles = parseJsonStringArray(qdrantResult.metadata?.snapshotFiles);
       manifest.components.qdrant = {
         status: qdrantResult.status === 'completed' ? 'completed' : 
                 qdrantResult.status === 'skipped' ? 'skipped' : 'failed',
         snapshotName: qdrantResult.metadata?.timestamp,
-        collections: qdrantResult.metadata?.collections?.split(','),
+        collections: qdrantResult.metadata?.collections?.split(',').filter(Boolean),
+        snapshotFiles: qdrantSnapshotFiles.length > 0 ? qdrantSnapshotFiles : undefined,
         size: qdrantResult.size,
       };
 
@@ -817,8 +1420,55 @@ async function runUnifiedBackup(
       }, 0);
     manifest.totalSize = formatBytes(totalBytes);
     
+    await writePostgreSqlMetadataArtifact(backupId, manifest.components.postgresql);
+
     // Salvar manifesto
     await saveManifest(manifest);
+
+    if (isOffsiteEnabled()) {
+      manifest.offsite = {
+        enabled: true,
+        required: BACKUP_OFFSITE_REQUIRED,
+        status: 'pending',
+        path: BACKUP_OFFSITE_DIR_RESOLVED,
+        encryption: {
+          enabled: BACKUP_OFFSITE_ENCRYPTION_REQUIRED,
+          algorithm: BACKUP_OFFSITE_ENCRYPTION_REQUIRED ? BACKUP_OFFSITE_ENCRYPTION_ALGORITHM : undefined,
+        },
+      };
+
+      let offsiteResult: OffsiteSyncResult;
+      try {
+        offsiteResult = await syncBackupToOffsite(backupId);
+      } catch (error) {
+        offsiteResult = {
+          status: 'failed',
+          error: (error as Error).message,
+        };
+      }
+      manifest.offsite.status = offsiteResult.status;
+      manifest.offsite.syncedAt = offsiteResult.syncedAt;
+      manifest.offsite.filesSynced = offsiteResult.filesSynced;
+      manifest.offsite.verificationFile = offsiteResult.verificationFile;
+      manifest.offsite.error = offsiteResult.error;
+
+      if (offsiteResult.status !== 'completed' && BACKUP_OFFSITE_REQUIRED) {
+        hasFailures = true;
+        manifest.status = 'partial';
+      }
+
+      await saveManifest(manifest);
+    } else {
+      manifest.offsite = {
+        enabled: false,
+        required: false,
+        status: 'skipped',
+        encryption: {
+          enabled: false,
+        },
+      };
+      await saveManifest(manifest);
+    }
     
     // Atualizar job no PostgreSQL com status final (Regra 6)
     const manifestData: BackupManifestData = {
@@ -876,6 +1526,7 @@ async function runUnifiedRestore(
   backupId: string,
   options?: { skipComponents?: string[]; dryRun?: boolean }
 ): Promise<{ success: boolean; message: string; details: Record<string, string> }> {
+  assertValidBackupId(backupId);
   logger.info({ backupId, dryRun: options?.dryRun }, 'Iniciando restore unificado da plataforma');
   
   // Carregar manifesto
@@ -914,11 +1565,13 @@ async function runUnifiedRestore(
   // 1. Restore PostgreSQL
   if (!skipComponents.includes('postgresql') && manifest.components.postgresql?.status === 'completed') {
     try {
-      logger.info({ backupSet: manifest.components.postgresql.backupSet }, 'Restaurando PostgreSQL');
+      const backupSet = assertSafePgBackrestSet(manifest.components.postgresql.backupSet ?? '');
+      logger.info({ backupSet }, 'Restaurando PostgreSQL');
       
-      await execAsync(
-        `docker exec alice-pgbackrest pgbackrest --stanza=alice_prod --set=${manifest.components.postgresql.backupSet} restore`,
-        { timeout: 3600000 }
+      await execFileAsync(
+        'docker',
+        ['exec', 'alice-pgbackrest', 'pgbackrest', '--stanza=alice_prod', `--set=${backupSet}`, 'restore'],
+        { timeout: 3600000 },
       );
       
       details.postgresql = 'restored';
@@ -932,9 +1585,15 @@ async function runUnifiedRestore(
   // 2. Restore Redis
   if (!skipComponents.includes('redis') && manifest.components.redis?.status === 'completed') {
     try {
-      logger.info({ checksum: manifest.components.redis.rdbChecksum }, 'Restaurando Redis');
-      // Implementar restore via docker cp + redis-cli SHUTDOWN NOSAVE
-      details.redis = 'restored';
+      const redisBackupFile = await resolveRedisBackupFilePath(manifest);
+      if (!redisBackupFile) {
+        throw new Error('Artefato Redis não encontrado para restore');
+      }
+      logger.info(
+        { checksum: manifest.components.redis.rdbChecksum, redisBackupFile },
+        'Restore Redis requer operação coordenada de container',
+      );
+      details.redis = `ready_for_restore (${redisBackupFile})`;
     } catch (error) {
       const err = error as Error;
       details.redis = `failed: ${err.message}`;
@@ -944,20 +1603,24 @@ async function runUnifiedRestore(
 
   // 3. Restore Qdrant (embeddings texto - crítico para RAG)
   // ADICIONADO 17/12/2025: Restore de snapshots via API REST Qdrant
-  // CORREÇÃO 18/12/2025: qdrant está em components, usar BACKUP_DIR, usar existsSync importado
+  // CORREÇÃO 07/03/2026: suporte a artefatos versionados por backupId + fallback legado
   if (!skipComponents.includes('qdrant') && manifest.components.qdrant?.status === 'completed') {
     try {
-      const qdrantBackupDir = path.join(BACKUP_DIR, backupId, 'qdrant');
       const collections = manifest.components.qdrant.collections || [];
+      const snapshotFiles = manifest.components.qdrant.snapshotFiles || [];
       
-      logger.info({ collections: collections.length, backupDir: qdrantBackupDir }, 'Restaurando Qdrant');
+      logger.info({ collections: collections.length, backupId }, 'Restaurando Qdrant');
       
-      for (const collectionName of collections) {
-        const snapshotFile = path.join(qdrantBackupDir, `${collectionName}.snapshot`);
+      let restoredCollections = 0;
+      for (let index = 0; index < collections.length; index += 1) {
+        const collectionName = collections[index];
+        const expectedSnapshotFile = snapshotFiles[index];
+        const candidates = buildQdrantSnapshotCandidates(manifest, collectionName, expectedSnapshotFile);
+        const snapshotFile = candidates.find(candidate => existsSync(candidate));
         
         // Verificar se arquivo existe
-        if (!existsSync(snapshotFile)) {
-          logger.warn({ collectionName, snapshotFile }, 'Arquivo de snapshot não encontrado, ignorando coleção');
+        if (!snapshotFile) {
+          logger.warn({ collectionName, backupId }, 'Arquivo de snapshot não encontrado, ignorando coleção');
           continue;
         }
         
@@ -981,9 +1644,10 @@ async function runUnifiedRestore(
         }
         
         logger.info({ collectionName }, 'Coleção Qdrant restaurada');
+        restoredCollections += 1;
       }
       
-      details.qdrant = `restored (${collections.length} collections)`;
+      details.qdrant = `restored (${restoredCollections}/${collections.length} collections)`;
     } catch (error) {
       const err = error as Error;
       details.qdrant = `failed: ${err.message}`;
@@ -1020,7 +1684,7 @@ const BackupRequestSchema = z.object({
 
 // Schema de validação para restore
 const RestoreRequestSchema = z.object({
-  backupId: z.string().min(1),
+  backupId: z.string().min(1).max(128).regex(BACKUP_ID_REGEX, 'backupId inválido'),
   skipComponents: z.array(z.enum(['postgresql', 'redis', 'qdrant'])).optional(),
   dryRun: z.boolean().default(false),
   confirm: z.literal(true, { message: 'Confirmação obrigatória para restore' }),
@@ -1184,30 +1848,50 @@ router.get('/manifest/:id', async (req: Request, res: Response) => {
  */
 router.post('/verify/:id', async (req: Request, res: Response) => {
   try {
-    const manifest = await loadManifest(req.params.id);
+    const backupId = req.params.id.trim();
+    assertValidBackupId(backupId);
+
+    const manifest = await loadManifest(backupId);
     
     if (!manifest) {
       res.status(404).json({ error: 'Manifesto não encontrado' });
       return;
     }
     
-    // Executar verificação pgBackRest
-    logger.info({ backupId: req.params.id }, 'Verificando integridade do backup');
-    
-    const { stdout } = await execAsync(
-      `docker exec alice-pgbackrest pgbackrest --stanza=alice_prod verify`,
-      { timeout: 600000 }
-    );
+    logger.info({ backupId }, 'Verificando integridade e prontidão de restore do backup');
+
+    const readiness = await verifyBackupReadiness(backupId, manifest);
+    let postgresqlVerify: { status: 'passed' | 'failed'; output?: string; error?: string } = { status: 'passed' };
+    try {
+      const { stdout } = await execFileAsync(
+        'docker',
+        ['exec', 'alice-pgbackrest', 'pgbackrest', '--stanza=alice_prod', 'verify'],
+        { timeout: 600000 },
+      );
+      postgresqlVerify = { status: 'passed', output: stdout };
+    } catch (error) {
+      postgresqlVerify = { status: 'failed', error: (error as Error).message };
+    }
+
+    const offsiteMustPass = isOffsiteEnabled() && BACKUP_OFFSITE_REQUIRED;
+    const overallSuccess = readiness.restoreReady
+      && postgresqlVerify.status === 'passed'
+      && (!offsiteMustPass || readiness.offsite?.status === 'ready');
     
     res.json({
-      success: true,
+      success: overallSuccess,
       message: 'Verificação concluída',
-      backupId: req.params.id,
-      output: stdout,
+      backupId,
+      postgresqlVerify,
+      readiness,
     });
     
   } catch (error) {
     const err = error as Error;
+    if (err.message === 'backupId inválido') {
+      res.status(400).json({ error: 'backupId inválido' });
+      return;
+    }
     logger.error({ error: err.message }, 'Erro ao verificar backup');
     res.status(500).json({ error: 'Erro ao verificar backup', details: err.message });
   }
@@ -1672,8 +2356,8 @@ router.get('/disk-usage', async (_req: Request, res: Response) => {
     const getDirSize = async (dir: string): Promise<number> => {
       if (!existsSync(dir)) return 0;
       try {
-        const { stdout } = await execAsync(`du -sb ${dir} | cut -f1`);
-        return parseInt(stdout.trim(), 10) || 0;
+        const { bytes } = await getDirectoryStats(dir);
+        return bytes;
       } catch {
         return 0;
       }
@@ -1694,10 +2378,9 @@ router.get('/disk-usage', async (_req: Request, res: Response) => {
     let volumeFree = 0;
     let volumeTotal = 0;
     try {
-      const { stdout: dfOutput } = await execAsync(`df -B1 ${BACKUP_DIR} | tail -1`);
-      const parts = dfOutput.trim().split(/\s+/);
-      volumeTotal = parseInt(parts[1], 10) || 0;
-      volumeFree = parseInt(parts[3], 10) || 0;
+      const fsStats = await statfs(BACKUP_DIR);
+      volumeTotal = Number(fsStats.blocks) * Number(fsStats.bsize);
+      volumeFree = Number(fsStats.bavail) * Number(fsStats.bsize);
     } catch {
       // Fallback se df falhar
     }
@@ -1739,7 +2422,8 @@ router.get('/disk-usage', async (_req: Request, res: Response) => {
  */
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
-    const backupId = req.params.id;
+    const backupId = req.params.id.trim();
+    assertValidBackupId(backupId);
     const { confirm } = req.query;
 
     if (confirm !== 'true') {
@@ -1764,7 +2448,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
     }
 
     // Excluir manifesto
-    const manifestPath = path.join(MANIFESTS_DIR, `${backupId}.json`);
+    const manifestPath = resolveManifestPath(backupId);
     if (existsSync(manifestPath)) {
       const { unlink } = await import('fs/promises');
       await unlink(manifestPath);
@@ -1782,6 +2466,10 @@ router.delete('/:id', async (req: Request, res: Response) => {
     });
   } catch (error) {
     const err = error as Error;
+    if (err.message === 'backupId inválido') {
+      res.status(400).json({ error: 'backupId inválido' });
+      return;
+    }
     logger.error({ error: err.message }, 'Erro ao excluir backup');
     res.status(500).json({ error: 'Erro ao excluir backup', details: err.message });
   }

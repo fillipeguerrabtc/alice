@@ -27,6 +27,7 @@ process.env.INTERNAL_API_SECRET = 'test-secret-for-unit-tests';
 process.env.LOG_LEVEL = 'error';
 process.env.PINO_LOG_LEVEL = 'silent';
 process.env.TRAINING_SERVICE_URL = 'http://alice-training:3004';
+process.env.GPU_MANAGER_URL = 'http://alice-gpu-manager:3010';
 
 beforeAll(() => {
   testLogger.info('Iniciando suite de testes Alice Enterprise Platform');

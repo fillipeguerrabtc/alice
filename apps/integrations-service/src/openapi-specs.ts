@@ -224,6 +224,518 @@ export const integrationsServicePaths = {
       },
     },
   },
+  '/api/integrations/trading/signal-scheduler': {
+    'x-required-permission': 'integrations:trading:read',
+    get: {
+      summary: 'Consultar configuração do scheduler de sinais',
+      tags: ['Trading'],
+      parameters: [
+        { name: 'marketType', in: 'query', schema: { type: 'string', enum: ['futures', 'spot', 'margin'] } },
+        { name: 'type', in: 'query', schema: { type: 'string', enum: ['futures', 'spot', 'margin'] } },
+      ],
+      responses: {
+        200: { description: 'Configuração retornada' },
+        400: { description: 'Query inválida' },
+        401: { description: 'Não autenticado' },
+      },
+    },
+    put: {
+      'x-required-permission': 'integrations:trading:write',
+      summary: 'Atualizar configuração do scheduler de sinais',
+      tags: ['Trading'],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['marketType', 'intervalMinutes', 'interval', 'enabled'],
+              properties: {
+                marketType: { type: 'string', enum: ['futures', 'spot', 'margin'] },
+                marginMode: { type: 'string', enum: ['cross', 'isolated'] },
+                intervalMinutes: { type: 'integer', minimum: 1, maximum: 1440 },
+                interval: { type: 'string' },
+                symbols: { type: 'array', items: { type: 'string' }, maxItems: 50 },
+                enabled: { type: 'boolean' },
+                maxSignalsPerRun: { type: 'integer', minimum: 1, maximum: 20 },
+                agentId: { type: 'string', format: 'uuid' },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        200: { description: 'Scheduler atualizado' },
+        400: { description: 'Dados inválidos' },
+        401: { description: 'Não autenticado' },
+      },
+    },
+  },
+  '/api/integrations/trading/analysis-scheduler': {
+    'x-required-permission': 'integrations:trading:read',
+    get: {
+      summary: 'Consultar configuração do scheduler de análise',
+      tags: ['Trading'],
+      parameters: [
+        { name: 'marketType', in: 'query', schema: { type: 'string', enum: ['futures', 'spot', 'margin'] } },
+        { name: 'type', in: 'query', schema: { type: 'string', enum: ['futures', 'spot', 'margin'] } },
+      ],
+      responses: {
+        200: { description: 'Configuração retornada' },
+        400: { description: 'Query inválida' },
+        401: { description: 'Não autenticado' },
+      },
+    },
+    put: {
+      'x-required-permission': 'integrations:trading:write',
+      summary: 'Atualizar configuração do scheduler de análise',
+      tags: ['Trading'],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['marketType', 'intervalMinutes', 'interval', 'enabled'],
+              properties: {
+                marketType: { type: 'string', enum: ['futures', 'spot', 'margin'] },
+                marginMode: { type: 'string', enum: ['cross', 'isolated'] },
+                intervalMinutes: { type: 'integer', minimum: 1, maximum: 1440 },
+                interval: { type: 'string' },
+                symbols: { type: 'array', items: { type: 'string' }, maxItems: 50 },
+                enabled: { type: 'boolean' },
+                maxSymbolsPerRun: { type: 'integer', minimum: 1, maximum: 50 },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        200: { description: 'Scheduler atualizado' },
+        400: { description: 'Dados inválidos' },
+        401: { description: 'Não autenticado' },
+      },
+    },
+  },
+  '/api/integrations/trading/datasets/stats': {
+    'x-required-permission': 'integrations:trading:read',
+    get: {
+      summary: 'Estatísticas de datasets de trading',
+      tags: ['Trading'],
+      responses: {
+        200: { description: 'Estatísticas retornadas' },
+        401: { description: 'Não autenticado' },
+      },
+    },
+  },
+  '/api/integrations/trading/datasets': {
+    'x-required-permission': 'integrations:trading:read',
+    get: {
+      summary: 'Listar datasets de trading',
+      tags: ['Trading'],
+      parameters: [
+        { name: 'status', in: 'query', schema: { type: 'string', enum: ['pending', 'approved', 'rejected', 'used'] } },
+        { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 200 } },
+        { name: 'offset', in: 'query', schema: { type: 'integer', minimum: 0 } },
+      ],
+      responses: {
+        200: { description: 'Datasets retornados' },
+        400: { description: 'Query inválida' },
+        401: { description: 'Não autenticado' },
+      },
+    },
+  },
+  '/api/integrations/trading/datasets/from-signal': {
+    'x-required-permission': 'integrations:trading:write',
+    post: {
+      summary: 'Criar dataset a partir de sinal de trading',
+      tags: ['Trading'],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['signalId', 'namespaceId'],
+              properties: {
+                signalId: { type: 'string', format: 'uuid' },
+                namespaceId: { type: 'string', format: 'uuid' },
+                reviewNotes: { type: 'string' },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        200: { description: 'Dataset criado/atualizado' },
+        400: { description: 'Dados inválidos' },
+        401: { description: 'Não autenticado' },
+        403: { description: 'Namespace inválido para o tenant' },
+        404: { description: 'Sinal não encontrado' },
+      },
+    },
+  },
+  '/api/integrations/trading/datasets/{id}/review': {
+    'x-required-permission': 'integrations:trading:write',
+    patch: {
+      summary: 'Revisar dataset de trading',
+      tags: ['Trading'],
+      parameters: [
+        { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+      ],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['status'],
+              properties: {
+                status: { type: 'string', enum: ['approved', 'rejected'] },
+                reviewNotes: { type: 'string' },
+                namespaceId: { type: 'string', format: 'uuid', nullable: true },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        200: { description: 'Dataset revisado' },
+        400: { description: 'Dados inválidos' },
+        401: { description: 'Não autenticado' },
+        404: { description: 'Dataset não encontrado' },
+      },
+    },
+  },
+  '/api/integrations/trading/analysis-profile': {
+    'x-required-permission': 'integrations:trading:read',
+    get: {
+      summary: 'Consultar perfil de análise/sinal',
+      tags: ['Trading'],
+      parameters: [
+        { name: 'kind', in: 'query', schema: { type: 'string', enum: ['analysis', 'signal'] } },
+      ],
+      responses: {
+        200: { description: 'Perfil retornado' },
+        400: { description: 'Query inválida' },
+        401: { description: 'Não autenticado' },
+      },
+    },
+    put: {
+      'x-required-permission': 'integrations:trading:write',
+      summary: 'Atualizar perfil de análise/sinal',
+      tags: ['Trading'],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              properties: {
+                kind: { type: 'string', enum: ['analysis', 'signal'] },
+                marketType: { type: 'string', enum: ['spot', 'margin', 'futures'] },
+                symbol: { type: 'string' },
+                name: { type: 'string' },
+                timeframes: { type: 'array', items: { type: 'string' } },
+                indicators: { type: 'array', items: { type: 'string' } },
+                techniques: { type: 'array', items: { type: 'string' } },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        200: { description: 'Perfil atualizado' },
+        400: { description: 'Dados inválidos' },
+        401: { description: 'Não autenticado' },
+      },
+    },
+  },
+  '/api/integrations/trading/arbitrage/catalog': {
+    'x-required-permission': 'integrations:trading:read',
+    get: {
+      summary: 'Consultar catálogo de arbitragem',
+      tags: ['Trading'],
+      parameters: [
+        { name: 'marketType', in: 'query', schema: { type: 'string', enum: ['spot', 'margin', 'futures'] } },
+        { name: 'symbol', in: 'query', schema: { type: 'string' } },
+        { name: 'exchanges', in: 'query', schema: { type: 'string' } },
+      ],
+      responses: {
+        200: { description: 'Catálogo retornado' },
+        400: { description: 'Query inválida' },
+        401: { description: 'Não autenticado' },
+      },
+    },
+  },
+  '/api/integrations/trading/stop-orders': {
+    'x-required-permission': 'integrations:trading:read',
+    get: {
+      summary: 'Listar ordens stop abertas',
+      tags: ['Trading'],
+      parameters: [
+        { name: 'symbol', in: 'query', schema: { type: 'string' } },
+        { name: 'marketType', in: 'query', schema: { type: 'string', enum: ['futures', 'spot', 'margin'] } },
+        { name: 'marginMode', in: 'query', schema: { type: 'string', enum: ['cross', 'isolated'] } },
+      ],
+      responses: {
+        200: { description: 'Ordens stop retornadas' },
+        400: { description: 'Query inválida' },
+        401: { description: 'Não autenticado' },
+      },
+    },
+  },
+  '/api/integrations/trading/stop-orders/{id}': {
+    'x-required-permission': 'integrations:trading:write',
+    delete: {
+      summary: 'Cancelar ordem stop',
+      tags: ['Trading'],
+      parameters: [
+        { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+        { name: 'marketType', in: 'query', schema: { type: 'string', enum: ['futures', 'spot', 'margin'] } },
+        { name: 'marginMode', in: 'query', schema: { type: 'string', enum: ['cross', 'isolated'] } },
+      ],
+      responses: {
+        200: { description: 'Ordem stop cancelada' },
+        400: { description: 'Dados inválidos' },
+        401: { description: 'Não autenticado' },
+      },
+    },
+  },
+  '/api/integrations/trading/klines/{symbol}': {
+    'x-required-permission': 'integrations:trading:read',
+    get: {
+      summary: 'Consultar klines por símbolo',
+      tags: ['Trading'],
+      parameters: [
+        { name: 'symbol', in: 'path', required: true, schema: { type: 'string' } },
+        { name: 'granularity', in: 'query', schema: { type: 'integer' } },
+        { name: 'from', in: 'query', schema: { type: 'integer' } },
+        { name: 'to', in: 'query', schema: { type: 'integer' } },
+        { name: 'marketType', in: 'query', schema: { type: 'string', enum: ['futures', 'spot', 'margin'] } },
+        { name: 'marginMode', in: 'query', schema: { type: 'string', enum: ['cross', 'isolated'] } },
+      ],
+      responses: {
+        200: { description: 'Klines retornados' },
+        400: { description: 'Query inválida' },
+        401: { description: 'Não autenticado' },
+      },
+    },
+  },
+  '/api/integrations/trading/klines': {
+    'x-required-permission': 'integrations:trading:read',
+    get: {
+      summary: 'Consultar klines (compatibilidade legado)',
+      tags: ['Trading'],
+      parameters: [
+        { name: 'symbol', in: 'query', schema: { type: 'string' } },
+        { name: 'granularity', in: 'query', schema: { type: 'integer' } },
+        { name: 'from', in: 'query', schema: { type: 'integer' } },
+        { name: 'to', in: 'query', schema: { type: 'integer' } },
+        { name: 'marketType', in: 'query', schema: { type: 'string', enum: ['futures', 'spot', 'margin'] } },
+        { name: 'marginMode', in: 'query', schema: { type: 'string', enum: ['cross', 'isolated'] } },
+      ],
+      responses: {
+        200: { description: 'Klines retornados' },
+        400: { description: 'Query inválida' },
+        401: { description: 'Não autenticado' },
+      },
+    },
+  },
+  '/api/integrations/trading/orderbook/{symbol}': {
+    'x-required-permission': 'integrations:trading:read',
+    get: {
+      summary: 'Consultar orderbook por símbolo',
+      tags: ['Trading'],
+      parameters: [
+        { name: 'symbol', in: 'path', required: true, schema: { type: 'string' } },
+        { name: 'depth', in: 'query', schema: { type: 'integer' } },
+        { name: 'marketType', in: 'query', schema: { type: 'string', enum: ['futures', 'spot', 'margin'] } },
+        { name: 'marginMode', in: 'query', schema: { type: 'string', enum: ['cross', 'isolated'] } },
+      ],
+      responses: {
+        200: { description: 'Orderbook retornado' },
+        400: { description: 'Query inválida' },
+        401: { description: 'Não autenticado' },
+      },
+    },
+  },
+  '/api/integrations/trading/orderbook': {
+    'x-required-permission': 'integrations:trading:read',
+    get: {
+      summary: 'Consultar orderbook (compatibilidade legado)',
+      tags: ['Trading'],
+      parameters: [
+        { name: 'symbol', in: 'query', schema: { type: 'string' } },
+        { name: 'depth', in: 'query', schema: { type: 'integer' } },
+        { name: 'marketType', in: 'query', schema: { type: 'string', enum: ['futures', 'spot', 'margin'] } },
+        { name: 'marginMode', in: 'query', schema: { type: 'string', enum: ['cross', 'isolated'] } },
+      ],
+      responses: {
+        200: { description: 'Orderbook retornado' },
+        400: { description: 'Query inválida' },
+        401: { description: 'Não autenticado' },
+      },
+    },
+  },
+  '/api/integrations/trading/funding-rate/{symbol}': {
+    'x-required-permission': 'integrations:trading:read',
+    get: {
+      summary: 'Consultar funding rate por símbolo',
+      tags: ['Trading'],
+      parameters: [{ name: 'symbol', in: 'path', required: true, schema: { type: 'string' } }],
+      responses: {
+        200: { description: 'Funding rate retornado' },
+        401: { description: 'Não autenticado' },
+      },
+    },
+  },
+  '/api/integrations/trading/mark-price/{symbol}': {
+    'x-required-permission': 'integrations:trading:read',
+    get: {
+      summary: 'Consultar mark price por símbolo',
+      tags: ['Trading'],
+      parameters: [{ name: 'symbol', in: 'path', required: true, schema: { type: 'string' } }],
+      responses: {
+        200: { description: 'Mark price retornado' },
+        401: { description: 'Não autenticado' },
+      },
+    },
+  },
+  '/api/integrations/trading/trades/{symbol}': {
+    'x-required-permission': 'integrations:trading:read',
+    get: {
+      summary: 'Consultar histórico de trades por símbolo',
+      tags: ['Trading'],
+      parameters: [
+        { name: 'symbol', in: 'path', required: true, schema: { type: 'string' } },
+        { name: 'marketType', in: 'query', schema: { type: 'string', enum: ['futures', 'spot', 'margin'] } },
+      ],
+      responses: {
+        200: { description: 'Trades retornados' },
+        401: { description: 'Não autenticado' },
+      },
+    },
+  },
+  '/api/integrations/trading/control-history': {
+    'x-required-permission': 'integrations:trading:read',
+    get: {
+      summary: 'Consultar histórico de takeover/handover de trading',
+      tags: ['Trading'],
+      parameters: [{ name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 200 } }],
+      responses: {
+        200: { description: 'Histórico retornado' },
+        401: { description: 'Não autenticado' },
+      },
+    },
+  },
+  '/api/integrations/trading/control': {
+    'x-required-permission': 'integrations:trading:manage',
+    post: {
+      summary: 'Solicitar takeover/handover de controle de trading',
+      tags: ['Trading'],
+      requestBody: {
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              properties: {
+                mode: { type: 'string', enum: ['alice', 'manual'] },
+                action: { type: 'string', enum: ['takeover', 'handback'] },
+                reason: { type: 'string' },
+                source: { type: 'string' },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        200: { description: 'Controle atualizado' },
+        400: { description: 'Dados inválidos' },
+        401: { description: 'Não autenticado' },
+      },
+    },
+  },
+  '/api/integrations/trading/analysis/{symbol}': {
+    'x-required-permission': 'integrations:trading:read',
+    get: {
+      summary: 'Executar análise técnica por símbolo',
+      tags: ['Trading'],
+      parameters: [
+        { name: 'symbol', in: 'path', required: true, schema: { type: 'string' } },
+        { name: 'interval', in: 'query', schema: { type: 'string' } },
+        { name: 'timeframes', in: 'query', schema: { type: 'string' } },
+        { name: 'indicators', in: 'query', schema: { type: 'string' } },
+        { name: 'techniques', in: 'query', schema: { type: 'string' } },
+        { name: 'marketType', in: 'query', schema: { type: 'string', enum: ['futures', 'spot', 'margin'] } },
+        { name: 'marginMode', in: 'query', schema: { type: 'string', enum: ['cross', 'isolated'] } },
+      ],
+      responses: {
+        200: { description: 'Análise retornada' },
+        400: { description: 'Query inválida' },
+        401: { description: 'Não autenticado' },
+      },
+    },
+  },
+  '/api/integrations/trading/analysis/history/purge': {
+    'x-required-permission': 'integrations:trading:write',
+    post: {
+      summary: 'Excluir definitivamente histórico de análises',
+      tags: ['Trading'],
+      requestBody: {
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              properties: {
+                ids: { type: 'array', items: { type: 'string', format: 'uuid' } },
+                all: { type: 'boolean' },
+                scope: { type: 'string', enum: ['self', 'tenant'] },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        200: { description: 'Purge executado' },
+        400: { description: 'Dados inválidos' },
+        401: { description: 'Não autenticado' },
+        403: { description: 'Apenas administradores podem purgar' },
+      },
+    },
+  },
+  '/api/integrations/trading/validations': {
+    'x-required-permission': 'integrations:trading:read',
+    get: {
+      summary: 'Consultar histórico de validações LLM',
+      tags: ['Trading'],
+      parameters: [
+        { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 100 } },
+        { name: 'passedOnly', in: 'query', schema: { type: 'boolean' } },
+      ],
+      responses: {
+        200: { description: 'Validações retornadas' },
+        401: { description: 'Não autenticado' },
+      },
+    },
+  },
+  '/api/integrations/trading/validations/diagnostics': {
+    'x-required-permission': 'integrations:trading:read',
+    get: {
+      summary: 'Consultar diagnóstico agregado de validações LLM',
+      tags: ['Trading'],
+      parameters: [
+        { name: 'dateFrom', in: 'query', schema: { type: 'string', format: 'date-time' } },
+        { name: 'dateTo', in: 'query', schema: { type: 'string', format: 'date-time' } },
+        { name: 'topLimit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 50 } },
+      ],
+      responses: {
+        200: { description: 'Diagnóstico retornado' },
+        400: { description: 'Query inválida' },
+        401: { description: 'Não autenticado' },
+      },
+    },
+  },
   '/api/integrations/trading/news-presets': {
     get: {
       summary: 'Listar presets de notícias (SearXNG)',
@@ -412,6 +924,7 @@ export const integrationsServicePaths = {
     },
   },
   '/api/integrations/trading/orders/history': {
+    'x-required-permission': 'integrations:trading:read',
     get: {
       summary: 'Histórico de ordens (banco)',
       tags: ['Trading'],
@@ -475,6 +988,7 @@ export const integrationsServicePaths = {
     },
   },
   '/api/integrations/trading/orders/history/delete': {
+    'x-required-permission': 'integrations:trading:write',
     post: {
       summary: 'Excluir ordens do histórico (exclusão lógica)',
       tags: ['Trading'],
@@ -500,6 +1014,7 @@ export const integrationsServicePaths = {
     },
   },
   '/api/integrations/trading/analysis/history': {
+    'x-required-permission': 'integrations:trading:read',
     get: {
       summary: 'Histórico de análises (paginado)',
       tags: ['Trading'],
@@ -517,6 +1032,7 @@ export const integrationsServicePaths = {
     },
   },
   '/api/integrations/trading/analysis/history/delete': {
+    'x-required-permission': 'integrations:trading:write',
     post: {
       summary: 'Excluir análises do histórico (exclusão lógica)',
       tags: ['Trading'],

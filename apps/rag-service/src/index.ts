@@ -19,6 +19,7 @@ import http from 'http';
 import cors from 'cors';
 // helmet aplicado via createSecurityMiddleware de @alice/shared-utils
 import compression from 'compression';
+import { getOptionalServiceUrl, getServiceUrl } from '@alice/config';
 // rateLimit via createRateLimiter de @alice/shared-utils
 import multer from 'multer';
 import path from 'path';
@@ -1057,7 +1058,7 @@ if (DOC_CHUNK_OVERLAP_CHARS_RAW >= DOC_CHUNK_SIZE_CHARS) {
   );
 }
 
-const TRAINING_SERVICE_URL = process.env.TRAINING_SERVICE_URL;
+const TRAINING_SERVICE_URL = getOptionalServiceUrl('training');
 const TRAINING_DOC_AUTO_COLLECT = parseEnvBool(
   process.env.TRAINING_DOC_AUTO_COLLECT,
   false,
@@ -1216,7 +1217,7 @@ const mediaUpload = multer({
 
 /** GPU Manager Service gerencia embeddings GPU (Hetzner GEX44) */
 // GPU Manager Service - Gerenciamento centralizado de requisições GPU (25/12/2025)
-const GPU_MANAGER_URL = process.env.GPU_MANAGER_URL || 'http://alice-gpu-manager:3010';
+const GPU_MANAGER_URL = getServiceUrl('gpuManager');
 
 /** SSOT validation (Plano 11/02/2026): TEXT_EMBEDDING_DIM (embeddings-gpu) = EMBEDDING_DIMENSIONS.TEXT */
 async function validateEmbeddingDimensionsSSOT(): Promise<void> {

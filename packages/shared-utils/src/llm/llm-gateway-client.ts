@@ -1,14 +1,22 @@
 import { createLogger } from '@alice/logger';
+import { generateInternalAuthHeaders } from '../rbac/middleware.js';
+import type { Role } from '../rbac/types.js';
+import { getContextHeaders } from '../async-context.js';
 
 const logger = createLogger('shared-utils');
 
 const LLM_GATEWAY_URL = process.env.LLM_GATEWAY_URL?.trim() || null;
-const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET || '';
+
+function readInternalApiSecret(): string {
+  return process.env.INTERNAL_API_SECRET || '';
+}
 
 export interface LlmGatewayContext {
   route: string;
   tenantId: string;
   userId?: string;
+  role?: Role;
+  customRoleId?: string;
   conversationId?: string;
   namespaceId?: string;
   agentId?: string;
@@ -29,6 +37,43 @@ export interface GatewayCompleteResult {
   latencyMs: number;
 }
 
+export function buildLlmGatewayAuthHeaders(context: LlmGatewayContext): Record<string, string> {
+  if (context.userId) {
+    try {
+      return {
+        ...generateInternalAuthHeaders({
+        userId: context.userId,
+        tenantId: context.tenantId,
+        role: context.role ?? 'operator',
+        customRoleId: context.customRoleId,
+        }),
+      };
+    } catch (err) {
+      logger.warn(
+        { err, route: context.route },
+        'Falha ao gerar headers HMAC para LLM Gateway; tentando fallback legado por secret'
+      );
+    }
+  }
+
+  const secret = readInternalApiSecret();
+  if (!secret) {
+    return {};
+  }
+
+  return {
+    'X-Internal-Api-Secret': secret,
+  };
+}
+
+export function buildLlmGatewayRequestHeaders(context: LlmGatewayContext): Record<string, string> {
+  return {
+    'Content-Type': 'application/json',
+    ...getContextHeaders(),
+    ...buildLlmGatewayAuthHeaders(context),
+  };
+}
+
 export async function callGatewayComplete(params: LlmGatewayCompleteParams): Promise<GatewayCompleteResult> {
   const start = Date.now();
   if (!LLM_GATEWAY_URL) {
@@ -37,12 +82,10 @@ export async function callGatewayComplete(params: LlmGatewayCompleteParams): Pro
 
   try {
     const url = `${LLM_GATEWAY_URL}/api/llm/complete`;
+    const requestHeaders = buildLlmGatewayRequestHeaders(params.context);
     const res = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Internal-Api-Secret': INTERNAL_API_SECRET,
-      },
+      headers: requestHeaders,
       body: JSON.stringify({
         messages: params.messages,
         config: params.config ?? {},

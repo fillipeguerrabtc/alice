@@ -21,6 +21,7 @@
  */
 
 import { createLogger } from '@alice/logger';
+import { getServiceUrl } from '@alice/config';
 import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS, requestGpu, GpuServiceType, GpuRequestPriority } from '@alice/shared-utils';
 import { validateEmbeddingDimension, EMBEDDING_DIMENSIONS } from '@alice/database';
 import { getSystemConfig } from '@alice/database/system-config';
@@ -29,7 +30,7 @@ import type { Worksheet, Row } from 'exceljs';
 const logger = createLogger('document-processor');
 
 // GPU Manager Service - Gerenciamento centralizado de requisições GPU (25/12/2025)
-const GPU_MANAGER_URL = process.env.GPU_MANAGER_URL || 'http://alice-gpu-manager:3010';
+const GPU_MANAGER_URL = getServiceUrl('gpuManager');
 
 // Dimensão dos embeddings de texto (SSOT: @alice/database)
 export const TEXT_EMBEDDING_DIM = EMBEDDING_DIMENSIONS.TEXT;
@@ -769,7 +770,7 @@ class DocumentProcessorService {
     try {
       // Verificar se GPU Manager Service está pronto
       // BUG FIX 25/12/2025: Container name correto é alice-gpu-manager (definido em docker-compose.prod.yml)
-      const response = await fetch(`${process.env.GPU_MANAGER_URL || 'http://alice-gpu-manager:3010'}/ready`, {
+      const response = await fetch(`${GPU_MANAGER_URL}/ready`, {
         method: 'GET',
         signal: controller.signal,
       });
@@ -850,4 +851,3 @@ export function getDocumentEmbeddingCircuitBreakerStatus(): {
     },
   };
 }
-

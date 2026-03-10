@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { authServicePaths } from '../../../apps/auth-service/src/openapi-specs';
 
@@ -34,17 +34,29 @@ function openApiPathToExpressPath(pathname: string): string {
   return pathname.replace(/\{([^}]+)\}/g, ':$1');
 }
 
-function loadExpressRouteSignatures(): Set<string> {
-  const indexPath = path.join(process.cwd(), 'apps', 'auth-service', 'src', 'index.ts');
-  const source = readFileSync(indexPath, 'utf-8');
-  const routeRegex = /app\.(get|post|patch|delete|put)\('([^']+)'/g;
+function getAuthRouteSources(): string[] {
+  const authSrcDir = path.join(process.cwd(), 'apps', 'auth-service', 'src');
+  const files = [
+    path.join(authSrcDir, 'index.ts'),
+    path.join(authSrcDir, 'routes', 'rbac-admin-routes.ts'),
+    path.join(authSrcDir, 'routes', 'user-management-routes.ts'),
+  ];
+  return files
+    .filter((filePath) => existsSync(filePath))
+    .map((filePath) => readFileSync(filePath, 'utf-8'));
+}
 
+function loadExpressRouteSignatures(): Set<string> {
+  const routeRegex = /app\.(get|post|patch|delete|put)\('([^']+)'/g;
   const signatures = new Set<string>();
-  let match = routeRegex.exec(source);
-  while (match) {
-    const [, method, pathname] = match;
-    signatures.add(`${method.toUpperCase()} ${pathname}`);
-    match = routeRegex.exec(source);
+  for (const source of getAuthRouteSources()) {
+    routeRegex.lastIndex = 0;
+    let match = routeRegex.exec(source);
+    while (match) {
+      const [, method, pathname] = match;
+      signatures.add(`${method.toUpperCase()} ${pathname}`);
+      match = routeRegex.exec(source);
+    }
   }
   return signatures;
 }

@@ -48,6 +48,7 @@ const trainingConfigShapeSchema = z.object({
   TRAINING_EVAL_MAX_LOSS: z.coerce.number().positive(),
   TRAINING_AUTO_PROMOTE_SCHEDULED: z.string().min(1),
   TRAINING_PROMOTION_REQUIRE_EVAL_PASSED: z.string().min(1),
+  TRAINING_PROMOTION_REQUIRE_APPROVAL_GATES: z.string().min(1),
   AUTO_LEARNING_CRON_INCREMENTAL: z.string().min(1),
   AUTO_LEARNING_CRON_FULL: z.string().min(1),
   AUTO_LEARNING_INCLUDE_IMAGES: z.string().min(1),
@@ -84,6 +85,7 @@ interface TrainingSystemRuntimeConfig {
   evalMaxLoss: number;
   autoPromoteScheduled: boolean;
   requireEvalPassedForPromotion: boolean;
+  requireApprovalGatesForPromotion: boolean;
   defaultHyperparams: TradingLoraHyperparams;
   presets: Record<HyperparamPresetName, TradingLoraHyperparams>;
   autoLearningCronIncremental: string;
@@ -104,6 +106,7 @@ const FrozenRunnerConfigSchema = z.object({
   evalMaxLoss: z.number().positive(),
   autoPromoteScheduled: z.boolean(),
   requireEvalPassedForPromotion: z.boolean(),
+  requireApprovalGatesForPromotion: z.boolean(),
   seed: z.string().min(1),
   includeImages: z.boolean(),
   includeTradingDataset: z.boolean(),
@@ -239,6 +242,7 @@ export async function loadTrainingSystemRuntimeConfig(): Promise<TrainingSystemR
     TRAINING_EVAL_MAX_LOSS: allConfig.TRAINING_EVAL_MAX_LOSS,
     TRAINING_AUTO_PROMOTE_SCHEDULED: allConfig.TRAINING_AUTO_PROMOTE_SCHEDULED,
     TRAINING_PROMOTION_REQUIRE_EVAL_PASSED: allConfig.TRAINING_PROMOTION_REQUIRE_EVAL_PASSED,
+    TRAINING_PROMOTION_REQUIRE_APPROVAL_GATES: allConfig.TRAINING_PROMOTION_REQUIRE_APPROVAL_GATES,
     AUTO_LEARNING_CRON_INCREMENTAL: allConfig.AUTO_LEARNING_CRON_INCREMENTAL,
     AUTO_LEARNING_CRON_FULL: allConfig.AUTO_LEARNING_CRON_FULL,
     AUTO_LEARNING_INCLUDE_IMAGES: allConfig.AUTO_LEARNING_INCLUDE_IMAGES,
@@ -275,6 +279,7 @@ export async function loadTrainingSystemRuntimeConfig(): Promise<TrainingSystemR
     evalMaxLoss: parsed.TRAINING_EVAL_MAX_LOSS,
     autoPromoteScheduled: booleanStringSchema.parse(parsed.TRAINING_AUTO_PROMOTE_SCHEDULED),
     requireEvalPassedForPromotion: booleanStringSchema.parse(parsed.TRAINING_PROMOTION_REQUIRE_EVAL_PASSED),
+    requireApprovalGatesForPromotion: booleanStringSchema.parse(parsed.TRAINING_PROMOTION_REQUIRE_APPROVAL_GATES),
     defaultHyperparams,
     presets: {
       safe: presetSafe,
@@ -347,6 +352,7 @@ function buildFrozenRunnerConfig(params: {
     evalMaxLoss: params.runtimeConfig.evalMaxLoss,
     autoPromoteScheduled: params.runtimeConfig.autoPromoteScheduled,
     requireEvalPassedForPromotion: params.runtimeConfig.requireEvalPassedForPromotion,
+    requireApprovalGatesForPromotion: params.runtimeConfig.requireApprovalGatesForPromotion,
     seed,
     includeImages,
     includeTradingDataset,
@@ -756,8 +762,26 @@ export async function runTrainingFineTuningJob(params: {
         },
       };
     }
+    const autoPromotionBlockedByApprovalGates = (
+      fineTuningJob.runSource === 'scheduled'
+      && runnerConfig.autoPromoteScheduled
+      && runnerConfig.requireApprovalGatesForPromotion
+      && evaluationStatus === 'passed'
+    );
+    if (autoPromotionBlockedByApprovalGates) {
+      fineTuningMetrics = {
+        ...fineTuningMetrics,
+        promotion: {
+          autoPromoteScheduled: true,
+          status: 'waiting_approvals',
+          reason: 'promotion_approval_gates_required',
+          at: new Date().toISOString(),
+        },
+      };
+    }
     const autoPromotionEnabled = fineTuningJob.runSource === 'scheduled'
-      && runnerConfig.autoPromoteScheduled;
+      && runnerConfig.autoPromoteScheduled
+      && !autoPromotionBlockedByApprovalGates;
     const promotionStatus = resolveFineTuningPromotionStatus({
       evaluationStatus,
       requireEvalPassedForPromotion: runnerConfig.requireEvalPassedForPromotion,

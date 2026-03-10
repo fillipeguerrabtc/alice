@@ -1,10 +1,7 @@
 import { z } from 'zod';
-import pino from 'pino';
+import { createLogger } from '@alice/logger';
 
-const configLogger = pino({
-  name: 'config',
-  level: process.env.LOG_LEVEL || 'info',
-});
+const configLogger = createLogger('config');
 
 const baseConfigSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
@@ -138,22 +135,50 @@ export function loadConfig<T>(schema: z.ZodSchema<T>): T {
  * REGRA 6: Variáveis de ambiente DEVEM estar definidas em QUALQUER ambiente.
  * PROIBIDO: fallback para localhost, mocks ou "modo preview".
  */
-export function getServiceUrl(serviceName: string): string {
-  const serviceUrls: Record<string, string | undefined> = {
-    auth: process.env.AUTH_SERVICE_URL,
-    chat: process.env.CHAT_SERVICE_URL,
-    rag: process.env.RAG_SERVICE_URL,
-    training: process.env.TRAINING_SERVICE_URL,
-    integrations: process.env.INTEGRATIONS_SERVICE_URL,
+function getServiceRegistry(): Record<string, { envKey: string; value: string | undefined }> {
+  return {
+    auth: { envKey: 'AUTH_SERVICE_URL', value: process.env.AUTH_SERVICE_URL },
+    chat: { envKey: 'CHAT_SERVICE_URL', value: process.env.CHAT_SERVICE_URL },
+    rag: { envKey: 'RAG_SERVICE_URL', value: process.env.RAG_SERVICE_URL },
+    training: { envKey: 'TRAINING_SERVICE_URL', value: process.env.TRAINING_SERVICE_URL },
+    integrations: { envKey: 'INTEGRATIONS_SERVICE_URL', value: process.env.INTEGRATIONS_SERVICE_URL },
+    observability: { envKey: 'OBSERVABILITY_SERVICE_URL', value: process.env.OBSERVABILITY_SERVICE_URL },
+    llmGateway: { envKey: 'LLM_GATEWAY_URL', value: process.env.LLM_GATEWAY_URL },
+    gpuManager: { envKey: 'GPU_MANAGER_URL', value: process.env.GPU_MANAGER_URL },
+    biometrics: { envKey: 'BIOMETRICS_SERVICE_URL', value: process.env.BIOMETRICS_SERVICE_URL },
+    apiGateway: { envKey: 'API_GATEWAY_URL', value: process.env.API_GATEWAY_URL },
+    frontend: { envKey: 'FRONTEND_SERVICE_URL', value: process.env.FRONTEND_SERVICE_URL },
   };
+}
 
-  const url = serviceUrls[serviceName];
+function resolveServiceRef(serviceName: string): { envKey: string; value: string | undefined } {
+  const serviceUrls = getServiceRegistry();
+  const serviceRef = serviceUrls[serviceName];
 
-  if (!url) {
-    throw new Error(`Variável de ambiente ${serviceName.toUpperCase()}_SERVICE_URL é obrigatória (Regra 6 - fail-fast)`);
+  if (!serviceRef) {
+    throw new Error(`Serviço interno desconhecido: ${serviceName}`);
   }
 
-  return url;
+  return serviceRef;
+}
+
+export function getServiceUrl(serviceName: string): string {
+  const serviceRef = resolveServiceRef(serviceName);
+
+  if (!serviceRef.value) {
+    throw new Error(`Variável de ambiente ${serviceRef.envKey} é obrigatória (Regra 6 - fail-fast)`);
+  }
+
+  return serviceRef.value;
+}
+
+export function getOptionalServiceUrl(serviceName: string): string | null {
+  const serviceRef = resolveServiceRef(serviceName);
+
+  if (!serviceRef.value) {
+    return null;
+  }
+  return serviceRef.value;
 }
 
 // ============================================================================

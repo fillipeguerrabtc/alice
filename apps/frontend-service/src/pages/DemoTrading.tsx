@@ -40,9 +40,11 @@ import {
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { WorkspaceFilterBar } from '@/components/ui/workspace-filter-bar';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -201,6 +203,14 @@ interface MarketData {
 }
 
 type MarketType = 'spot' | 'futures' | 'margin';
+type DemoTradingTabKey = 'overview' | 'positions' | 'orders' | 'postmortems' | 'history';
+type DemoTradingWorkspaceKey = 'all' | 'execution' | 'operations' | 'analytics';
+
+type DemoTradingTabDescriptor = {
+  value: DemoTradingTabKey;
+  icon: typeof BarChart3;
+  label: string;
+};
 
 // ============================================================================
 // Constantes
@@ -208,6 +218,27 @@ type MarketType = 'spot' | 'futures' | 'margin';
 
 /** Intervalo de refetch para símbolos (5 minutos - mesma cache Redis do backend) */
 const SYMBOLS_REFETCH_INTERVAL = 300_000;
+const DEMO_TRADING_TAB_DESCRIPTORS: DemoTradingTabDescriptor[] = [
+  { value: 'overview', icon: BarChart3, label: 'Visão Geral' },
+  { value: 'positions', icon: Target, label: 'Posições' },
+  { value: 'orders', icon: Activity, label: 'Ordens' },
+  { value: 'postmortems', icon: FileCheck, label: 'Post-Mortems' },
+  { value: 'history', icon: BookOpen, label: 'Histórico' },
+];
+
+const DEMO_TRADING_WORKSPACE_TABS: Record<DemoTradingWorkspaceKey, DemoTradingTabKey[]> = {
+  all: DEMO_TRADING_TAB_DESCRIPTORS.map((tab) => tab.value),
+  execution: ['overview', 'positions', 'orders'],
+  operations: ['positions', 'orders', 'history'],
+  analytics: ['overview', 'postmortems', 'history'],
+};
+
+const DEMO_TRADING_WORKSPACES: Array<{ value: DemoTradingWorkspaceKey; label: string }> = [
+  { value: 'all', label: 'Todos' },
+  { value: 'execution', label: 'Execução' },
+  { value: 'operations', label: 'Operações' },
+  { value: 'analytics', label: 'Análises' },
+];
 
 /**
  * ARQUITETURA REAL-TIME (10/02/2026):
@@ -244,7 +275,8 @@ function DemoTradingContent() {
   // ============================================================================
   const { user, csrfReady } = useAuth();
 
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState<DemoTradingTabKey>('overview');
+  const [activeWorkspace, setActiveWorkspace] = useState<DemoTradingWorkspaceKey>('all');
   const [orderDialogOpen, setOrderDialogOpen] = useState(false);
   const [addFundsDialogOpen, setAddFundsDialogOpen] = useState(false);
   const [positionDetailOpen, setPositionDetailOpen] = useState(false);
@@ -252,6 +284,29 @@ function DemoTradingContent() {
   const [selectedPostmortemForTraining, setSelectedPostmortemForTraining] = useState<string | null>(null);
   const [selectedTrainingNamespaceId, setSelectedTrainingNamespaceId] = useState<string>('');
   const [selectedClosedPosition, setSelectedClosedPosition] = useState<DemoPosition | null>(null);
+
+  const visibleTabs = useMemo(() => {
+    const allowed = DEMO_TRADING_WORKSPACE_TABS[activeWorkspace];
+    return DEMO_TRADING_TAB_DESCRIPTORS.filter((tab) => allowed.includes(tab.value));
+  }, [activeWorkspace]);
+
+  const handleWorkspaceChange = useCallback((workspace: DemoTradingWorkspaceKey) => {
+    setActiveWorkspace(workspace);
+    if (workspace === 'all') return;
+    const allowed = DEMO_TRADING_WORKSPACE_TABS[workspace];
+    if (!allowed.includes(activeTab)) {
+      setActiveTab(allowed[0] ?? 'overview');
+    }
+  }, [activeTab]);
+
+  const handleTabChange = useCallback((nextTab: string) => {
+    const normalized = DEMO_TRADING_TAB_DESCRIPTORS.find((tab) => tab.value === nextTab)?.value;
+    if (!normalized) return;
+    setActiveTab(normalized);
+    if (activeWorkspace !== 'all' && !DEMO_TRADING_WORKSPACE_TABS[activeWorkspace].includes(normalized)) {
+      setActiveWorkspace('all');
+    }
+  }, [activeWorkspace]);
 
   // Seleção de mercado e símbolo (mesmo padrão Trading Real)
   const [selectedMarketType, setSelectedMarketType] = useState<MarketType>('futures');
@@ -1430,14 +1485,33 @@ function DemoTradingContent() {
       </Dialog>
 
       {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-5">
-          <TabsTrigger value="overview">Visão Geral</TabsTrigger>
-          <TabsTrigger value="positions">Posições</TabsTrigger>
-          <TabsTrigger value="orders">Ordens</TabsTrigger>
-          <TabsTrigger value="postmortems">Post-Mortems</TabsTrigger>
-          <TabsTrigger value="history">Histórico</TabsTrigger>
-        </TabsList>
+      <Tabs value={activeTab} onValueChange={handleTabChange}>
+        <WorkspaceFilterBar
+          activeWorkspace={activeWorkspace}
+          options={DEMO_TRADING_WORKSPACES.map((workspace) => ({
+            value: workspace.value,
+            label: workspace.label,
+          }))}
+          onWorkspaceChange={handleWorkspaceChange}
+          getTestId={(workspace) => `demo-workspace-${workspace}`}
+        />
+        <div className="w-full min-w-0 overflow-x-auto pb-2 -mx-2 px-2 md:mx-0 md:px-0">
+          <TabsList className="inline-flex min-w-max flex-nowrap items-center gap-1 whitespace-nowrap">
+            {visibleTabs.map((tab) => {
+              const Icon = tab.icon;
+              return (
+                <TabsTrigger
+                  key={tab.value}
+                  value={tab.value}
+                  className="whitespace-nowrap shrink-0"
+                >
+                  <Icon className="h-4 w-4 md:mr-2" />
+                  <span className="hidden md:inline">{tab.label}</span>
+                </TabsTrigger>
+              );
+            })}
+          </TabsList>
+        </div>
 
         {/* Tab: Visão Geral */}
         <TabsContent value="overview" className="space-y-4">
@@ -1513,7 +1587,7 @@ function DemoTradingContent() {
               </CardHeader>
               <CardContent>
                 {openPositions.length === 0 ? (
-                  <p className="text-muted-foreground text-center py-8">Nenhuma posição aberta</p>
+                  <EmptyState title="Nenhuma posição aberta" />
                 ) : (
                   <div className="space-y-3">
                     {openPositions.map(pos => {
@@ -1570,7 +1644,7 @@ function DemoTradingContent() {
             </CardHeader>
             <CardContent>
               {balancesWithFunds.length === 0 ? (
-                <p className="text-muted-foreground text-center py-8">Nenhum saldo disponível.</p>
+                <EmptyState title="Nenhum saldo disponível." />
               ) : (
                 <div className="space-y-2">
                   {balancesWithFunds.map((entry) => (
@@ -1630,7 +1704,7 @@ function DemoTradingContent() {
             </CardHeader>
             <CardContent>
               {openPositions.length === 0 ? (
-                <p className="text-muted-foreground text-center py-8">Nenhuma posição aberta</p>
+                <EmptyState title="Nenhuma posição aberta" />
               ) : (
                 <div className="space-y-3">
                   {openPositions.map((pos) => {
@@ -1796,7 +1870,7 @@ function DemoTradingContent() {
             </CardHeader>
             <CardContent>
               {orders.length === 0 ? (
-                <p className="text-muted-foreground text-center py-8">Nenhuma ordem encontrada</p>
+                <EmptyState title="Nenhuma ordem encontrada" />
               ) : (
                 <div className="space-y-2">
                   {orders.map(order => (
@@ -1837,7 +1911,7 @@ function DemoTradingContent() {
             </CardHeader>
             <CardContent>
               {postmortems.length === 0 ? (
-                <p className="text-muted-foreground text-center py-8">Nenhum post-mortem ainda. Feche uma posição para gerar automaticamente.</p>
+                <EmptyState title="Nenhum post-mortem ainda." description="Feche uma posição para gerar automaticamente." />
               ) : (
                 <div className="space-y-3">
                   {postmortems.map(pm => (
@@ -1958,7 +2032,7 @@ function DemoTradingContent() {
               <CardContent>
                 <ScrollArea className="max-h-[400px]">
                   {closedPositions.length === 0 ? (
-                    <p className="text-muted-foreground text-center py-8">Nenhuma posição fechada</p>
+                    <EmptyState title="Nenhuma posição fechada" />
                   ) : (
                     <div className="space-y-2">
                       {closedPositions.map(pos => {
@@ -2008,7 +2082,7 @@ function DemoTradingContent() {
               <CardContent>
                 <ScrollArea className="max-h-[400px]">
                   {(fundHistoryQuery.data ?? []).length === 0 ? (
-                    <p className="text-muted-foreground text-center py-8">Nenhum registro</p>
+                    <EmptyState title="Nenhum registro" />
                   ) : (
                     <div className="space-y-2">
                       {(fundHistoryQuery.data ?? []).map(entry => {

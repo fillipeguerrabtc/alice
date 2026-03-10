@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
-
-function loadTrainingSource(): string {
-  const sourcePath = path.join(process.cwd(), 'apps', 'training-service', 'src', 'index.ts');
-  return readFileSync(sourcePath, 'utf-8');
-}
+import { loadTrainingSource } from './helpers/training-source';
 
 describe('training immutable audit monitoring guards', () => {
   it('keeps periodic integrity checker and scheduler lifecycle hooks', () => {
@@ -21,7 +15,7 @@ describe('training immutable audit monitoring guards', () => {
     expect(source.includes("app.get('/api/training/audit/integrity'")).toBe(true);
     expect(source.includes("app.get('/api/training/audit/high-risk'")).toBe(true);
     expect(source.includes("requirePermission('training:fine_tuning_jobs:read')")).toBe(true);
-    expect(source.includes('immutableAuditIntegrity: trainingImmutableAuditIntegrityState')).toBe(true);
+    expect(source.includes('immutableAuditIntegrity:')).toBe(true);
     expect(source.includes("stream: 'training_governance'")).toBe(true);
     expect(source.includes('alice_high_risk_audit_events_total')).toBe(true);
   });

@@ -1,6 +1,10 @@
 
 # RELATORIO CODE REVIEW ENTERPRISE - Alice
 
+Autor: Fillipe Guerra  
+Data de atualização documental: 06 de Março de 2026  
+Nota de contexto: este relatório é um snapshot histórico de 26/02/2026; após a decomposição de rotas no `integrations-service`, referências de line number podem divergir do estado atual.
+
 Data da revisao: 2026-02-26
 Escopo: monorepo completo (apps, packages, infra, migrations, docs, server, tests)
 Modo: somente leitura (nenhum arquivo de codigo alterado)

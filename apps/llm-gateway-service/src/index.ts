@@ -13,9 +13,10 @@
  */
 
 import express from 'express';
-import type { Request, Response } from 'express';
+import type { NextFunction, Request, Response } from 'express';
 import cors from 'cors';
 import compression from 'compression';
+import crypto from 'node:crypto';
 import { createLogger } from '@alice/logger';
 import {
   resolveNamespaceByRoute,
@@ -26,6 +27,8 @@ import {
   GpuRequestPriority,
   registerShutdownCallback,
   ShutdownPriority,
+  getCorsConfig,
+  requireInternalHmacAuth,
 } from '@alice/shared-utils';
 import {
   createCorrelationMiddleware,
@@ -45,14 +48,47 @@ import {
   desc,
 } from '@alice/database';
 
-const { llmFallbackLogs, namespaces, agents } = schema;
+const { llmFallbackLogs, llmExecutionAudit, namespaces, agents } = schema;
 import { z } from 'zod';
+import {
+  activatePromptTemplate,
+  activateToolPolicy,
+  createPromptTemplate,
+  createToolPolicy,
+  getPromptTemplateApprovalSchema,
+  getPromptTemplateActivateSchema,
+  getPromptTemplateCreateSchema,
+  getPromptTemplateEvaluateSchema,
+  getToolPolicyActivateSchema,
+  getToolPolicyApprovalSchema,
+  getToolPolicyCreateSchema,
+  listToolPolicyApprovals,
+  listPromptTemplateApprovals,
+  listPromptTemplates,
+  listToolPolicies,
+  mergeGovernanceHints,
+  parseGovernanceHints,
+  recordPromptTemplateApproval,
+  recordPromptTemplateEvaluation,
+  recordToolPolicyApproval,
+  resolveModelGovernance,
+  resolveNamespaceProfileGovernanceDefaults,
+  resolvePromptGovernance,
+  resolveToolPolicyGovernance,
+} from './governance.js';
+import { resolveGovernanceActor } from './governance-auth.js';
 
 const logger = createLogger('llm-gateway');
 
 const PORT = parseInt(process.env.PORT || '3011', 10);
 const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET || '';
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const DEFAULT_MODEL = process.env.DEFAULT_LLM_MODEL || 'Qwen2.5-7B-Instruct-AWQ';
+
+if (!INTERNAL_API_SECRET && IS_PRODUCTION) {
+  logger.error('INTERNAL_API_SECRET é obrigatório em produção para autenticação interna');
+  process.exit(1);
+}
 
 const contextSchema = z.object({
   route: z.string().min(1),
@@ -136,10 +172,86 @@ async function logFallback(params: {
   }
 }
 
+function buildAuditFingerprint(payload: unknown): string {
+  return crypto
+    .createHash('sha256')
+    .update(JSON.stringify(payload))
+    .digest('hex')
+    .slice(0, 64);
+}
+
+function isStructuredOutputRequest(extraBody: Record<string, unknown> | undefined): boolean {
+  if (!extraBody) return false;
+  return Boolean(
+    extraBody.response_format
+    || extraBody.json_schema
+    || extraBody.schema
+    || extraBody.structured_output
+  );
+}
+
+function sanitizeExtraBodyForGpu(extraBody: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  if (!extraBody) return undefined;
+  const filtered = Object.fromEntries(
+    Object.entries(extraBody).filter(([key]) => !key.startsWith('alice_'))
+  );
+  return Object.keys(filtered).length > 0 ? filtered : undefined;
+}
+
+async function logExecutionAudit(params: {
+  tenantId: string;
+  userId?: string;
+  namespaceId?: string | null;
+  agentId?: string | null;
+  conversationId?: string;
+  route: string;
+  operation: 'complete' | 'stream';
+  modelName: string;
+  adapterName?: string | null;
+  structuredOutput: boolean;
+  promptTemplateId?: string | null;
+  promptVersion?: number | null;
+  modelVersionId?: string | null;
+  toolPolicyKey?: string | null;
+  latencyMs: number;
+  success: boolean;
+  errorCode?: string | null;
+  requestFingerprint: string;
+  metadata?: Record<string, unknown>;
+}): Promise<void> {
+  try {
+    const db = getDatabase();
+    await db.insert(llmExecutionAudit).values({
+      tenantId: params.tenantId,
+      userId: params.userId ?? null,
+      namespaceId: params.namespaceId ?? null,
+      agentId: params.agentId ?? null,
+      conversationId: params.conversationId ?? null,
+      service: 'llm-gateway-service',
+      operation: params.operation,
+      route: params.route,
+      modelName: params.modelName,
+      modelVersionId: params.modelVersionId ?? null,
+      promptTemplateId: params.promptTemplateId ?? null,
+      promptVersion: params.promptVersion ?? null,
+      adapterName: params.adapterName ?? null,
+      structuredOutput: params.structuredOutput,
+      toolPolicyKey: params.toolPolicyKey ?? null,
+      requestFingerprint: params.requestFingerprint,
+      latencyMs: params.latencyMs,
+      success: params.success,
+      errorCode: params.errorCode ?? null,
+      metadata: params.metadata ?? {},
+    });
+  } catch (err) {
+    logger.warn({ err, params }, 'Falha ao registrar llm_execution_audit');
+  }
+}
+
 const app = express();
 app.use(createCorrelationMiddleware({ serviceName: 'llm-gateway' }));
 app.use(createSecurityMiddleware());
-app.use(cors({ origin: true }));
+app.use(cors(getCorsConfig()));
 
 const defaultCompressionFilter: (req: Request, res: Response) => boolean =
   typeof (compression as unknown as { filter?: (req: Request, res: Response) => boolean }).filter === 'function'
@@ -172,17 +284,431 @@ function requireInternalAuth(req: Request, res: Response, next: () => void): voi
   if (req.path === '/health' || req.path === '/live' || req.path === '/ready' || req.path === '/metrics') {
     return next();
   }
+
+  const hasHmacHeaders = Boolean(
+    req.headers['x-internal-signature']
+    && req.headers['x-internal-timestamp']
+    && req.headers['x-internal-user-id']
+    && req.headers['x-internal-role']
+  );
+  if (hasHmacHeaders) {
+    const hmacMiddleware = requireInternalHmacAuth();
+    hmacMiddleware(req, res, next as NextFunction);
+    return;
+  }
+
   const secret = req.headers['x-internal-api-secret'] as string;
-  if (!INTERNAL_API_SECRET && process.env.NODE_ENV !== 'production') {
+  if (!INTERNAL_API_SECRET && !IS_PRODUCTION) {
     return next();
   }
   if (!secret || secret !== INTERNAL_API_SECRET) {
     res.status(401).json({ error: 'Token de autenticação inválido ou ausente' });
     return;
   }
+  logger.warn({ path: req.path }, 'Autenticação interna legada por segredo estático utilizada; migre para HMAC');
   next();
 }
 app.use(requireInternalAuth);
+
+function resolveGovernanceActorFromRequest(req: Request, res: Response, providedActorUserId?: string | null): string | null {
+  const resolution = resolveGovernanceActor({
+    authenticatedUserId: req.user?.userId ?? null,
+    authenticatedRole: req.user?.role ?? null,
+    providedActorUserId: providedActorUserId ?? null,
+  });
+
+  if (!resolution.ok) {
+    logger.warn(
+      {
+        path: req.path,
+        method: req.method,
+        userId: req.user?.userId ?? null,
+        role: req.user?.role ?? null,
+        reason: resolution.code,
+      },
+      'Bloqueio de mutação de governança por trust policy'
+    );
+    res.status(resolution.status).json({ error: resolution.code, message: resolution.message });
+    return null;
+  }
+
+  return resolution.actorUserId;
+}
+
+function requireGovernanceMutationAuth(req: Request, res: Response, next: NextFunction): void {
+  const actorUserId = resolveGovernanceActorFromRequest(req, res);
+  if (!actorUserId) return;
+  next();
+}
+
+const promptTemplateListQuerySchema = z.object({
+  tenantId: z.string().uuid(),
+  namespaceId: z.string().uuid().optional(),
+  agentId: z.string().uuid().optional(),
+  promptKey: z.string().min(1).max(128).optional(),
+  status: z.enum(['draft', 'active', 'deprecated', 'archived']).optional(),
+  limit: z.coerce.number().int().positive().max(200).default(50),
+});
+
+const promptTemplateApprovalListQuerySchema = z.object({
+  tenantId: z.string().uuid(),
+});
+
+const toolPolicyListQuerySchema = z.object({
+  tenantId: z.string().uuid(),
+  namespaceId: z.string().uuid().optional(),
+  agentId: z.string().uuid().optional(),
+  policyKey: z.string().min(1).max(120).optional(),
+  status: z.enum(['draft', 'active', 'deprecated', 'archived']).optional(),
+  limit: z.coerce.number().int().positive().max(200).default(50),
+});
+
+const toolPolicyApprovalListQuerySchema = z.object({
+  tenantId: z.string().uuid(),
+});
+
+app.get(
+  '/api/llm/governance/prompt-templates',
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = promptTemplateListQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Query inválida', details: parsed.error.flatten() });
+      return;
+    }
+
+    const rows = await listPromptTemplates(parsed.data);
+    res.status(200).json({ templates: rows });
+  })
+);
+
+app.post(
+  '/api/llm/governance/prompt-templates',
+  requireGovernanceMutationAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = getPromptTemplateCreateSchema().safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Body inválido', details: parsed.error.flatten() });
+      return;
+    }
+
+    const actorUserId = resolveGovernanceActorFromRequest(req, res, parsed.data.createdBy ?? null);
+    if (!actorUserId) return;
+
+    const created = await createPromptTemplate({
+      ...parsed.data,
+      createdBy: actorUserId,
+    });
+    res.status(201).json(created);
+  })
+);
+
+app.post(
+  '/api/llm/governance/prompt-templates/:templateId/evaluate',
+  requireGovernanceMutationAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsedBody = getPromptTemplateEvaluateSchema().safeParse(req.body);
+    if (!parsedBody.success) {
+      res.status(400).json({ error: 'Body inválido', details: parsedBody.error.flatten() });
+      return;
+    }
+
+    const templateId = req.params.templateId;
+    if (!templateId) {
+      res.status(400).json({ error: 'templateId obrigatório' });
+      return;
+    }
+
+    const actorUserId = resolveGovernanceActorFromRequest(req, res, parsedBody.data.evaluatedBy ?? null);
+    if (!actorUserId) return;
+
+    try {
+      const evaluation = await recordPromptTemplateEvaluation({
+        templateId,
+        ...parsedBody.data,
+        evaluatedBy: actorUserId,
+      });
+      res.status(200).json(evaluation);
+      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'PROMPT_TEMPLATE_EVALUATION_UPDATE_FAILED';
+      if (message === 'PROMPT_TEMPLATE_NOT_FOUND') {
+        res.status(404).json({ error: message });
+        return;
+      }
+      throw error;
+    }
+  })
+);
+
+app.post(
+  '/api/llm/governance/prompt-templates/:templateId/approval',
+  requireGovernanceMutationAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsedBody = getPromptTemplateApprovalSchema().safeParse(req.body);
+    if (!parsedBody.success) {
+      res.status(400).json({ error: 'Body inválido', details: parsedBody.error.flatten() });
+      return;
+    }
+
+    const templateId = req.params.templateId;
+    if (!templateId) {
+      res.status(400).json({ error: 'templateId obrigatório' });
+      return;
+    }
+
+    const actorUserId = resolveGovernanceActorFromRequest(req, res, parsedBody.data.approverUserId ?? null);
+    if (!actorUserId) return;
+
+    try {
+      const summary = await recordPromptTemplateApproval({
+        templateId,
+        ...parsedBody.data,
+        approverUserId: actorUserId,
+      });
+      res.status(200).json(summary);
+      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'PROMPT_TEMPLATE_APPROVAL_UPDATE_FAILED';
+      if (message === 'PROMPT_TEMPLATE_NOT_FOUND') {
+        res.status(404).json({ error: message });
+        return;
+      }
+      throw error;
+    }
+  })
+);
+
+app.get(
+  '/api/llm/governance/prompt-templates/:templateId/approvals',
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = promptTemplateApprovalListQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Query inválida', details: parsed.error.flatten() });
+      return;
+    }
+
+    const templateId = req.params.templateId;
+    if (!templateId) {
+      res.status(400).json({ error: 'templateId obrigatório' });
+      return;
+    }
+
+    try {
+      const summary = await listPromptTemplateApprovals({
+        tenantId: parsed.data.tenantId,
+        templateId,
+      });
+      res.status(200).json(summary);
+      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'PROMPT_TEMPLATE_APPROVALS_LIST_FAILED';
+      if (message === 'PROMPT_TEMPLATE_NOT_FOUND') {
+        res.status(404).json({ error: message });
+        return;
+      }
+      throw error;
+    }
+  })
+);
+
+app.post(
+  '/api/llm/governance/prompt-templates/:templateId/activate',
+  requireGovernanceMutationAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsedBody = getPromptTemplateActivateSchema().safeParse(req.body);
+    if (!parsedBody.success) {
+      res.status(400).json({ error: 'Body inválido', details: parsedBody.error.flatten() });
+      return;
+    }
+
+    const templateId = req.params.templateId;
+    if (!templateId) {
+      res.status(400).json({ error: 'templateId obrigatório' });
+      return;
+    }
+
+    const actorUserId = resolveGovernanceActorFromRequest(req, res, parsedBody.data.approvedBy ?? null);
+    if (!actorUserId) return;
+
+    try {
+      const activated = await activatePromptTemplate({
+        templateId,
+        tenantId: parsedBody.data.tenantId,
+        approvedBy: actorUserId,
+      });
+      res.status(200).json(activated);
+      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'PROMPT_TEMPLATE_ACTIVATE_FAILED';
+      if (message === 'PROMPT_TEMPLATE_NOT_FOUND') {
+        res.status(404).json({ error: message });
+        return;
+      }
+      if (
+        message === 'PROMPT_TEMPLATE_EVAL_NOT_PASSED'
+        || message === 'PROMPT_TEMPLATE_APPROVER_REQUIRED'
+        || message === 'PROMPT_TEMPLATE_DUAL_CONTROL_REQUIRED'
+        || message === 'PROMPT_TEMPLATE_APPROVAL_THRESHOLD_NOT_MET'
+      ) {
+        res.status(409).json({ error: message });
+        return;
+      }
+      throw error;
+    }
+  })
+);
+
+app.get(
+  '/api/llm/governance/tool-policies',
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = toolPolicyListQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Query inválida', details: parsed.error.flatten() });
+      return;
+    }
+
+    const rows = await listToolPolicies(parsed.data);
+    res.status(200).json({ toolPolicies: rows });
+  })
+);
+
+app.post(
+  '/api/llm/governance/tool-policies',
+  requireGovernanceMutationAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = getToolPolicyCreateSchema().safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Body inválido', details: parsed.error.flatten() });
+      return;
+    }
+
+    const actorUserId = resolveGovernanceActorFromRequest(req, res, parsed.data.createdBy ?? null);
+    if (!actorUserId) return;
+
+    const created = await createToolPolicy({
+      ...parsed.data,
+      createdBy: actorUserId,
+    });
+    res.status(201).json(created);
+  })
+);
+
+app.post(
+  '/api/llm/governance/tool-policies/:policyId/approval',
+  requireGovernanceMutationAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsedBody = getToolPolicyApprovalSchema().safeParse(req.body);
+    if (!parsedBody.success) {
+      res.status(400).json({ error: 'Body inválido', details: parsedBody.error.flatten() });
+      return;
+    }
+
+    const policyId = req.params.policyId;
+    if (!policyId) {
+      res.status(400).json({ error: 'policyId obrigatório' });
+      return;
+    }
+
+    const actorUserId = resolveGovernanceActorFromRequest(req, res, parsedBody.data.approverUserId ?? null);
+    if (!actorUserId) return;
+
+    try {
+      const summary = await recordToolPolicyApproval({
+        policyId,
+        ...parsedBody.data,
+        approverUserId: actorUserId,
+      });
+      res.status(200).json(summary);
+      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'TOOL_POLICY_APPROVAL_UPDATE_FAILED';
+      if (message === 'TOOL_POLICY_NOT_FOUND') {
+        res.status(404).json({ error: message });
+        return;
+      }
+      throw error;
+    }
+  })
+);
+
+app.get(
+  '/api/llm/governance/tool-policies/:policyId/approvals',
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = toolPolicyApprovalListQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Query inválida', details: parsed.error.flatten() });
+      return;
+    }
+
+    const policyId = req.params.policyId;
+    if (!policyId) {
+      res.status(400).json({ error: 'policyId obrigatório' });
+      return;
+    }
+
+    try {
+      const summary = await listToolPolicyApprovals({
+        tenantId: parsed.data.tenantId,
+        policyId,
+      });
+      res.status(200).json(summary);
+      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'TOOL_POLICY_APPROVALS_LIST_FAILED';
+      if (message === 'TOOL_POLICY_NOT_FOUND') {
+        res.status(404).json({ error: message });
+        return;
+      }
+      throw error;
+    }
+  })
+);
+
+app.post(
+  '/api/llm/governance/tool-policies/:policyId/activate',
+  requireGovernanceMutationAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsedBody = getToolPolicyActivateSchema().safeParse(req.body);
+    if (!parsedBody.success) {
+      res.status(400).json({ error: 'Body inválido', details: parsedBody.error.flatten() });
+      return;
+    }
+
+    const policyId = req.params.policyId;
+    if (!policyId) {
+      res.status(400).json({ error: 'policyId obrigatório' });
+      return;
+    }
+
+    const actorUserId = resolveGovernanceActorFromRequest(req, res, parsedBody.data.approvedBy ?? null);
+    if (!actorUserId) return;
+
+    try {
+      const activated = await activateToolPolicy({
+        policyId,
+        tenantId: parsedBody.data.tenantId,
+        approvedBy: actorUserId,
+      });
+      res.status(200).json(activated);
+      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'TOOL_POLICY_ACTIVATE_FAILED';
+      if (message === 'TOOL_POLICY_NOT_FOUND') {
+        res.status(404).json({ error: message });
+        return;
+      }
+      if (
+        message === 'TOOL_POLICY_APPROVER_REQUIRED'
+        || message === 'TOOL_POLICY_DUAL_CONTROL_REQUIRED'
+        || message === 'TOOL_POLICY_APPROVAL_THRESHOLD_NOT_MET'
+      ) {
+        res.status(409).json({ error: message });
+        return;
+      }
+      throw error;
+    }
+  })
+);
 
 function getDb() {
   return getDatabase();
@@ -197,8 +723,22 @@ app.post(
       return;
     }
     const { messages, config, context, extraBody, requestOptions } = parsed.data;
+    const requestStartedAt = Date.now();
+    const structuredOutputRequested = isStructuredOutputRequest(extraBody);
+    const requestGovernanceHints = parseGovernanceHints(extraBody);
+    let promptTemplateId: string | null = requestGovernanceHints.promptTemplateId ?? null;
+    let promptVersion: number | null = requestGovernanceHints.promptVersion ?? null;
+    let toolPolicyKey: string | null = requestGovernanceHints.toolPolicyKey ?? null;
+    let toolPolicyVersion: number | null = requestGovernanceHints.toolPolicyVersion ?? null;
+    let modelVersionId: string | null = requestGovernanceHints.modelVersionId ?? null;
+    let resolvedModelName: string | null = null;
+    let allowedTools: string[] = [];
+    let deniedTools: string[] = [];
+    let requestFingerprint = '';
+    const gpuExtraBody = sanitizeExtraBodyForGpu(extraBody);
     const temperature = config?.temperature ?? 0.7;
     const maxTokens = config?.maxTokens ?? 2048;
+    let baseModel = config?.model ?? DEFAULT_MODEL;
     const isTradingRoute = context.route.startsWith('/trading');
     const scopeExplicitlyProvided = Boolean(context.namespaceId || context.agentId);
     let namespaceId = context.namespaceId ?? null;
@@ -246,7 +786,77 @@ app.post(
       logger.debug({ tenantId: context.tenantId, route: context.route }, 'Contexto default sem escopo explícito: usando modelo base sem adapter');
     }
 
-    const baseModel = config?.model ?? DEFAULT_MODEL;
+    const namespaceProfileHints = await resolveNamespaceProfileGovernanceDefaults({
+      tenantId: context.tenantId,
+      namespaceId,
+    });
+    const governanceHints = mergeGovernanceHints(namespaceProfileHints, requestGovernanceHints);
+
+    if (governanceHints.promptTemplateId) {
+      try {
+        const governance = await resolvePromptGovernance({
+          tenantId: context.tenantId,
+          namespaceId,
+          agentId,
+          hints: governanceHints,
+        });
+        promptTemplateId = governance.promptTemplateId;
+        promptVersion = governance.promptVersion;
+        toolPolicyKey = governance.toolPolicyKey;
+      } catch (error) {
+        const code = error instanceof Error ? error.message : 'PROMPT_TEMPLATE_INVALID';
+        res.status(400).json({ error: code });
+        return;
+      }
+    }
+
+    try {
+      const resolvedToolPolicy = await resolveToolPolicyGovernance({
+        tenantId: context.tenantId,
+        namespaceId,
+        agentId,
+        toolPolicyKey: toolPolicyKey ?? governanceHints.toolPolicyKey ?? null,
+        toolPolicyVersion: toolPolicyVersion ?? governanceHints.toolPolicyVersion ?? null,
+      });
+      toolPolicyKey = resolvedToolPolicy.toolPolicyKey;
+      toolPolicyVersion = resolvedToolPolicy.toolPolicyVersion;
+      allowedTools = resolvedToolPolicy.allowTools;
+      deniedTools = resolvedToolPolicy.denyTools;
+    } catch (error) {
+      const code = error instanceof Error ? error.message : 'TOOL_POLICY_INVALID';
+      res.status(400).json({ error: code });
+      return;
+    }
+
+    try {
+      const resolvedModelGovernance = await resolveModelGovernance({
+        tenantId: context.tenantId,
+        namespaceId,
+        agentId,
+        hints: governanceHints,
+        fallbackModel: baseModel,
+      });
+      modelVersionId = resolvedModelGovernance.modelVersionId;
+      resolvedModelName = resolvedModelGovernance.modelName;
+      baseModel = resolvedModelGovernance.baseModel;
+    } catch (error) {
+      const code = error instanceof Error ? error.message : 'MODEL_GOVERNANCE_INVALID';
+      res.status(400).json({ error: code });
+      return;
+    }
+
+    requestFingerprint = buildAuditFingerprint({
+      route: context.route,
+      tenantId: context.tenantId,
+      namespaceId,
+      agentId,
+      promptTemplateId,
+      promptVersion,
+      modelVersionId,
+      toolPolicyKey,
+      toolPolicyVersion,
+      lastUserMessage: messages[messages.length - 1]?.content ?? '',
+    });
     if (isTradingRoute && (!namespaceId || !agentId)) {
       metrics.llm.fallbacksTotal.inc();
       await logFallback({
@@ -323,7 +933,7 @@ app.post(
       temperature,
       stream: false,
     };
-    const body = extraBody ? { ...baseBody, ...extraBody } : baseBody;
+    const body = gpuExtraBody ? { ...baseBody, ...gpuExtraBody } : baseBody;
 
     const priorityMap: Record<string, GpuRequestPriority> = {
       low: GpuRequestPriority.LOW,
@@ -342,6 +952,32 @@ app.post(
     });
 
     if (!gpuResponse.success || !gpuResponse.data) {
+      await logExecutionAudit({
+        tenantId: context.tenantId,
+        userId: context.userId,
+        namespaceId,
+        agentId,
+        conversationId: context.conversationId,
+        route: context.route,
+        operation: 'complete',
+        modelName: model,
+        adapterName: model !== baseModel ? model : null,
+        structuredOutput: structuredOutputRequested,
+        promptTemplateId,
+        promptVersion,
+        modelVersionId,
+        toolPolicyKey,
+        latencyMs: Date.now() - requestStartedAt,
+        success: false,
+        errorCode: 'gpu_manager_error',
+        requestFingerprint,
+        metadata: {
+          modelName: resolvedModelName,
+          toolPolicyVersion,
+          allowedTools,
+          deniedTools,
+        },
+      });
       res.status(502).json({ error: gpuResponse.error || 'Erro no GPU Manager' });
       return;
     }
@@ -350,6 +986,31 @@ app.post(
       { model, type: 'complete' },
       Number(process.hrtime.bigint() - inferenceStart) / 1e9
     );
+    await logExecutionAudit({
+      tenantId: context.tenantId,
+      userId: context.userId,
+      namespaceId,
+      agentId,
+      conversationId: context.conversationId,
+      route: context.route,
+      operation: 'complete',
+      modelName: model,
+      adapterName: model !== baseModel ? model : null,
+      structuredOutput: structuredOutputRequested,
+      promptTemplateId,
+      promptVersion,
+      modelVersionId,
+      toolPolicyKey,
+      latencyMs: Date.now() - requestStartedAt,
+      success: true,
+      requestFingerprint,
+      metadata: {
+        modelName: resolvedModelName,
+        toolPolicyVersion,
+        allowedTools,
+        deniedTools,
+      },
+    });
     res.status(200).json(gpuResponse.data);
   })
 );
@@ -362,9 +1023,23 @@ app.post(
       res.status(400).json({ error: 'Body inválido', details: parsed.error.flatten() });
       return;
     }
-    const { messages, config, context } = parsed.data;
+    const { messages, config, context, extraBody } = parsed.data;
+    const requestStartedAt = Date.now();
+    const structuredOutputRequested = isStructuredOutputRequest(extraBody);
+    const requestGovernanceHints = parseGovernanceHints(extraBody);
+    let promptTemplateId: string | null = requestGovernanceHints.promptTemplateId ?? null;
+    let promptVersion: number | null = requestGovernanceHints.promptVersion ?? null;
+    let toolPolicyKey: string | null = requestGovernanceHints.toolPolicyKey ?? null;
+    let toolPolicyVersion: number | null = requestGovernanceHints.toolPolicyVersion ?? null;
+    let modelVersionId: string | null = requestGovernanceHints.modelVersionId ?? null;
+    let resolvedModelName: string | null = null;
+    let allowedTools: string[] = [];
+    let deniedTools: string[] = [];
+    let requestFingerprint = '';
+    const gpuExtraBody = sanitizeExtraBodyForGpu(extraBody);
     const temperature = config?.temperature ?? 0.7;
     const maxTokens = config?.maxTokens ?? 2048;
+    let baseModel = config?.model ?? DEFAULT_MODEL;
     const isTradingRoute = context.route.startsWith('/trading');
     const scopeExplicitlyProvided = Boolean(context.namespaceId || context.agentId);
     let namespaceId = context.namespaceId ?? null;
@@ -412,7 +1087,77 @@ app.post(
       logger.debug({ tenantId: context.tenantId, route: context.route }, 'Contexto default sem escopo explícito: usando modelo base sem adapter');
     }
 
-    const baseModel = config?.model ?? DEFAULT_MODEL;
+    const namespaceProfileHints = await resolveNamespaceProfileGovernanceDefaults({
+      tenantId: context.tenantId,
+      namespaceId,
+    });
+    const governanceHints = mergeGovernanceHints(namespaceProfileHints, requestGovernanceHints);
+
+    if (governanceHints.promptTemplateId) {
+      try {
+        const governance = await resolvePromptGovernance({
+          tenantId: context.tenantId,
+          namespaceId,
+          agentId,
+          hints: governanceHints,
+        });
+        promptTemplateId = governance.promptTemplateId;
+        promptVersion = governance.promptVersion;
+        toolPolicyKey = governance.toolPolicyKey;
+      } catch (error) {
+        const code = error instanceof Error ? error.message : 'PROMPT_TEMPLATE_INVALID';
+        res.status(400).json({ error: code });
+        return;
+      }
+    }
+
+    try {
+      const resolvedToolPolicy = await resolveToolPolicyGovernance({
+        tenantId: context.tenantId,
+        namespaceId,
+        agentId,
+        toolPolicyKey: toolPolicyKey ?? governanceHints.toolPolicyKey ?? null,
+        toolPolicyVersion: toolPolicyVersion ?? governanceHints.toolPolicyVersion ?? null,
+      });
+      toolPolicyKey = resolvedToolPolicy.toolPolicyKey;
+      toolPolicyVersion = resolvedToolPolicy.toolPolicyVersion;
+      allowedTools = resolvedToolPolicy.allowTools;
+      deniedTools = resolvedToolPolicy.denyTools;
+    } catch (error) {
+      const code = error instanceof Error ? error.message : 'TOOL_POLICY_INVALID';
+      res.status(400).json({ error: code });
+      return;
+    }
+
+    try {
+      const resolvedModelGovernance = await resolveModelGovernance({
+        tenantId: context.tenantId,
+        namespaceId,
+        agentId,
+        hints: governanceHints,
+        fallbackModel: baseModel,
+      });
+      modelVersionId = resolvedModelGovernance.modelVersionId;
+      resolvedModelName = resolvedModelGovernance.modelName;
+      baseModel = resolvedModelGovernance.baseModel;
+    } catch (error) {
+      const code = error instanceof Error ? error.message : 'MODEL_GOVERNANCE_INVALID';
+      res.status(400).json({ error: code });
+      return;
+    }
+
+    requestFingerprint = buildAuditFingerprint({
+      route: context.route,
+      tenantId: context.tenantId,
+      namespaceId,
+      agentId,
+      promptTemplateId,
+      promptVersion,
+      modelVersionId,
+      toolPolicyKey,
+      toolPolicyVersion,
+      lastUserMessage: messages[messages.length - 1]?.content ?? '',
+    });
     if (isTradingRoute && (!namespaceId || !agentId)) {
       metrics.llm.fallbacksTotal.inc();
       await logFallback({
@@ -511,12 +1256,39 @@ app.post(
         max_tokens: maxTokens,
         temperature,
         stream: true,
+        ...(gpuExtraBody ?? {}),
       },
     });
 
     if (!gpuResponse.ok || !gpuResponse.body) {
       const text = await gpuResponse.text().catch(() => '');
       recordStreamError();
+      await logExecutionAudit({
+        tenantId: context.tenantId,
+        userId: context.userId,
+        namespaceId,
+        agentId,
+        conversationId: context.conversationId,
+        route: context.route,
+        operation: 'stream',
+        modelName: model,
+        adapterName: model !== baseModel ? model : null,
+        structuredOutput: structuredOutputRequested,
+        promptTemplateId,
+        promptVersion,
+        modelVersionId,
+        toolPolicyKey,
+        latencyMs: Date.now() - requestStartedAt,
+        success: false,
+        errorCode: 'gpu_manager_stream_error',
+        requestFingerprint,
+        metadata: {
+          modelName: resolvedModelName,
+          toolPolicyVersion,
+          allowedTools,
+          deniedTools,
+        },
+      });
       res.status(502).json({ error: text || 'Erro no GPU Manager' });
       return;
     }
@@ -552,6 +1324,31 @@ app.post(
       }
       recordInference();
       logger.info({ correlationId, tenantId: context.tenantId, durationMs: Date.now() - streamStartAt }, 'Stream LLM finalizado com sucesso');
+      await logExecutionAudit({
+        tenantId: context.tenantId,
+        userId: context.userId,
+        namespaceId,
+        agentId,
+        conversationId: context.conversationId,
+        route: context.route,
+        operation: 'stream',
+        modelName: model,
+        adapterName: model !== baseModel ? model : null,
+        structuredOutput: structuredOutputRequested,
+        promptTemplateId,
+        promptVersion,
+        modelVersionId,
+        toolPolicyKey,
+        latencyMs: Date.now() - requestStartedAt,
+        success: true,
+        requestFingerprint,
+        metadata: {
+          modelName: resolvedModelName,
+          toolPolicyVersion,
+          allowedTools,
+          deniedTools,
+        },
+      });
       res.end();
     };
     req.on('close', () => {
@@ -560,6 +1357,32 @@ app.post(
     pump().catch((err) => {
       logger.error({ err, correlationId, tenantId: context.tenantId }, 'Erro ao encaminhar stream');
       recordStreamError();
+      void logExecutionAudit({
+        tenantId: context.tenantId,
+        userId: context.userId,
+        namespaceId,
+        agentId,
+        conversationId: context.conversationId,
+        route: context.route,
+        operation: 'stream',
+        modelName: model,
+        adapterName: model !== baseModel ? model : null,
+        structuredOutput: structuredOutputRequested,
+        promptTemplateId,
+        promptVersion,
+        modelVersionId,
+        toolPolicyKey,
+        latencyMs: Date.now() - requestStartedAt,
+        success: false,
+        errorCode: 'stream_proxy_error',
+        requestFingerprint,
+        metadata: {
+          modelName: resolvedModelName,
+          toolPolicyVersion,
+          allowedTools,
+          deniedTools,
+        },
+      });
       res.end();
     });
   })

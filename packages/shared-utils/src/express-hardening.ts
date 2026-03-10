@@ -8,7 +8,7 @@
  * - Express.js 4.21+ Security Best Practices
  * - OWASP API Security Top 10 2023
  * - Helmet 8.x Configuration Guide
- * - express-rate-limit 8.2.1 + rate-limit-redis 4.3.0 (2025)
+ * - express-rate-limit 8.3.0 + rate-limit-redis 4.3.0 (2025)
  * 
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  * 
@@ -188,7 +188,7 @@ export interface MultiTenantRateLimitOptions {
 }
 
 /**
- * Rate Limiter com suporte multi-tenant e Redis distribuído (express-rate-limit 8.2.1 + rate-limit-redis 4.3.0)
+ * Rate Limiter com suporte multi-tenant e Redis distribuído (express-rate-limit 8.3.0 + rate-limit-redis 4.3.0)
  * 
  * OWASP API4/8 2025:
  * - Produção: Redis Store para consistência entre pods

@@ -1,6 +1,6 @@
 import type { Database } from '@alice/database';
 import { and, eq, schema } from '@alice/database';
-import { getSystemConfig } from '@alice/database/system-config';
+import { getNamespaceProfileDefaultConfig, getSystemConfig } from '@alice/database/system-config';
 import { createLogger } from '@alice/logger';
 import { NamespaceProfileConfigSchema } from '@alice/shared';
 import {
@@ -37,11 +37,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 async function loadDefaultProfileConfig() {
-  const raw = await getSystemConfig('NAMESPACE_PROFILE_DEFAULT_CONFIG_JSON');
-  if (!raw) {
-    throw new Error('NAMESPACE_PROFILE_DEFAULT_CONFIG_JSON ausente no system_config');
-  }
-  return NamespaceProfileConfigSchema.parse(JSON.parse(raw));
+  return getNamespaceProfileDefaultConfig();
 }
 
 function parseGatewayContent(content: string): unknown {

@@ -297,6 +297,13 @@ export const NamespaceProfileRoutingSchema = z.object({
   promptTokenBudget: z.number().int().positive(),
 }).passthrough();
 
+export const NamespaceProfileLlmGovernanceSchema = z.object({
+  promptTemplateId: z.string().uuid().optional(),
+  promptVersion: z.number().int().positive().optional(),
+  toolPolicyKey: z.string().min(1).max(120).optional(),
+  toolPolicyVersion: z.number().int().positive().optional(),
+}).passthrough();
+
 export const NamespaceProfileConfigSchema = z.object({
   autoCollect: NamespaceProfileAutoCollectSchema,
   privacy: NamespaceProfilePrivacySchema,
@@ -305,6 +312,7 @@ export const NamespaceProfileConfigSchema = z.object({
   history: NamespaceProfileHistorySchema,
   sla: NamespaceProfileSlaSchema,
   routing: NamespaceProfileRoutingSchema,
+  llmGovernance: NamespaceProfileLlmGovernanceSchema.optional(),
 }).passthrough();
 
 export type NamespaceProfileConfig = z.infer<typeof NamespaceProfileConfigSchema>;
@@ -4914,6 +4922,197 @@ export const modelVersions = pgTable(
     idxModelVersionsStatus: index("idx_model_versions_status").on(table.status),
     idxModelVersionsActive: index("idx_model_versions_active").on(table.isActive),
     idxModelVersionsVersion: index("idx_model_versions_version").on(table.version),
+  })
+);
+
+// ============================================================================
+// AI GOVERNANCE - PROMPT REGISTRY E EXECUTION AUDIT
+// ============================================================================
+
+export const toolPolicyStatusEnum = pgEnum("tool_policy_status", [
+  "draft",
+  "active",
+  "deprecated",
+  "archived",
+]);
+
+export const governanceEvaluationStatusEnum = pgEnum("governance_evaluation_status", [
+  "pending",
+  "passed",
+  "failed",
+  "skipped",
+]);
+
+export const governanceApprovalDecisionEnum = pgEnum("governance_approval_decision", [
+  "approved",
+  "rejected",
+]);
+
+export const toolPolicies = pgTable(
+  "tool_policies",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id).notNull(),
+    namespaceId: uuid("namespace_id").references(() => namespaces.id),
+    agentId: uuid("agent_id").references(() => agents.id),
+    policyKey: varchar("policy_key", { length: 120 }).notNull(),
+    version: integer("version").notNull().default(1),
+    status: toolPolicyStatusEnum("status").notNull().default("draft"),
+    allowTools: jsonb("allow_tools").$type<string[]>().notNull().default([]),
+    denyTools: jsonb("deny_tools").$type<string[]>().notNull().default([]),
+    minApprovals: integer("min_approvals").notNull().default(1),
+    requireDualControl: boolean("require_dual_control").notNull().default(true),
+    metadata: jsonb("metadata").$type<GenericMetadata>().default({}),
+    createdBy: uuid("created_by").references(() => users.id),
+    approvedBy: uuid("approved_by").references(() => users.id),
+    approvedAt: timestamp("approved_at"),
+    criadoEm: timestamp("criado_em").defaultNow().notNull(),
+    atualizadoEm: timestamp("atualizado_em").defaultNow().notNull(),
+  },
+  (table) => ({
+    idxToolPoliciesTenant: index("idx_tool_policies_tenant").on(table.tenantId),
+    idxToolPoliciesScope: index("idx_tool_policies_scope").on(table.tenantId, table.namespaceId, table.agentId),
+    idxToolPoliciesKey: index("idx_tool_policies_key").on(table.policyKey),
+    idxToolPoliciesStatus: index("idx_tool_policies_status").on(table.status),
+    uniqueToolPolicyVersionByScope: uniqueIndex("uniq_tool_policies_scope_key_version").on(
+      table.tenantId,
+      table.namespaceId,
+      table.agentId,
+      table.policyKey,
+      table.version
+    ),
+  })
+);
+
+export const toolPolicyApprovals = pgTable(
+  "tool_policy_approvals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id).notNull(),
+    toolPolicyId: uuid("tool_policy_id").references(() => toolPolicies.id).notNull(),
+    approverUserId: uuid("approver_user_id").references(() => users.id).notNull(),
+    decision: governanceApprovalDecisionEnum("decision").notNull(),
+    reason: text("reason"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    idxToolPolicyApprovalsTenant: index("idx_tool_policy_approvals_tenant").on(table.tenantId),
+    idxToolPolicyApprovalsPolicy: index("idx_tool_policy_approvals_policy").on(table.toolPolicyId),
+    idxToolPolicyApprovalsDecision: index("idx_tool_policy_approvals_decision").on(table.decision),
+    uniqueToolPolicyApprovalByApprover: uniqueIndex("uniq_tool_policy_approvals_policy_user").on(
+      table.toolPolicyId,
+      table.approverUserId
+    ),
+  })
+);
+
+export const promptTemplateStatusEnum = pgEnum("prompt_template_status", [
+  "draft",
+  "active",
+  "deprecated",
+  "archived",
+]);
+
+export const promptTemplates = pgTable(
+  "prompt_templates",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id).notNull(),
+    namespaceId: uuid("namespace_id").references(() => namespaces.id),
+    agentId: uuid("agent_id").references(() => agents.id),
+    promptKey: varchar("prompt_key", { length: 128 }).notNull(),
+    version: integer("version").notNull().default(1),
+    status: promptTemplateStatusEnum("status").notNull().default("draft"),
+    evaluationStatus: governanceEvaluationStatusEnum("evaluation_status").notNull().default("pending"),
+    evaluationScore: real("evaluation_score"),
+    evaluationReport: jsonb("evaluation_report").$type<GenericMetadata>().default({}),
+    evaluatedBy: uuid("evaluated_by").references(() => users.id),
+    evaluatedAt: timestamp("evaluated_at"),
+    minApprovals: integer("min_approvals").notNull().default(1),
+    requireDualControl: boolean("require_dual_control").notNull().default(true),
+    template: text("template").notNull(),
+    inputSchema: jsonb("input_schema").$type<GenericMetadata>().default({}),
+    outputSchema: jsonb("output_schema").$type<GenericMetadata>().default({}),
+    metadata: jsonb("metadata").$type<GenericMetadata>().default({}),
+    createdBy: uuid("created_by").references(() => users.id),
+    approvedBy: uuid("approved_by").references(() => users.id),
+    approvedAt: timestamp("approved_at"),
+    criadoEm: timestamp("criado_em").defaultNow().notNull(),
+    atualizadoEm: timestamp("atualizado_em").defaultNow().notNull(),
+  },
+  (table) => ({
+    idxPromptTemplatesTenant: index("idx_prompt_templates_tenant").on(table.tenantId),
+    idxPromptTemplatesScope: index("idx_prompt_templates_scope").on(table.tenantId, table.namespaceId, table.agentId),
+    idxPromptTemplatesKey: index("idx_prompt_templates_key").on(table.promptKey),
+    idxPromptTemplatesStatus: index("idx_prompt_templates_status").on(table.status),
+    uniquePromptTemplateVersionByScope: uniqueIndex("uniq_prompt_templates_scope_key_version").on(
+      table.tenantId,
+      table.namespaceId,
+      table.agentId,
+      table.promptKey,
+      table.version
+    ),
+  })
+);
+
+export const promptTemplateApprovals = pgTable(
+  "prompt_template_approvals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id).notNull(),
+    promptTemplateId: uuid("prompt_template_id").references(() => promptTemplates.id).notNull(),
+    approverUserId: uuid("approver_user_id").references(() => users.id).notNull(),
+    decision: governanceApprovalDecisionEnum("decision").notNull(),
+    reason: text("reason"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    idxPromptTemplateApprovalsTenant: index("idx_prompt_template_approvals_tenant").on(table.tenantId),
+    idxPromptTemplateApprovalsTemplate: index("idx_prompt_template_approvals_template").on(table.promptTemplateId),
+    idxPromptTemplateApprovalsDecision: index("idx_prompt_template_approvals_decision").on(table.decision),
+    uniquePromptTemplateApprovalByApprover: uniqueIndex("uniq_prompt_template_approvals_template_user").on(
+      table.promptTemplateId,
+      table.approverUserId
+    ),
+  })
+);
+
+export const llmExecutionAudit = pgTable(
+  "llm_execution_audit",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id).notNull(),
+    userId: uuid("user_id").references(() => users.id),
+    namespaceId: uuid("namespace_id").references(() => namespaces.id),
+    agentId: uuid("agent_id").references(() => agents.id),
+    conversationId: uuid("conversation_id").references(() => conversations.id),
+    messageId: uuid("message_id").references(() => messages.id),
+    service: varchar("service", { length: 100 }).notNull(),
+    operation: varchar("operation", { length: 120 }).notNull(),
+    route: varchar("route", { length: 255 }),
+    modelName: varchar("model_name", { length: 255 }),
+    modelVersionId: uuid("model_version_id").references(() => modelVersions.id),
+    promptTemplateId: uuid("prompt_template_id").references(() => promptTemplates.id),
+    promptVersion: integer("prompt_version"),
+    adapterName: varchar("adapter_name", { length: 255 }),
+    structuredOutput: boolean("structured_output").notNull().default(false),
+    toolPolicyKey: varchar("tool_policy_key", { length: 120 }),
+    requestFingerprint: varchar("request_fingerprint", { length: 64 }),
+    latencyMs: integer("latency_ms"),
+    success: boolean("success").notNull().default(true),
+    errorCode: varchar("error_code", { length: 120 }),
+    metadata: jsonb("metadata").$type<GenericMetadata>().default({}),
+    criadoEm: timestamp("criado_em").defaultNow().notNull(),
+  },
+  (table) => ({
+    idxLlmExecutionAuditTenant: index("idx_llm_execution_audit_tenant").on(table.tenantId),
+    idxLlmExecutionAuditCreated: index("idx_llm_execution_audit_created").on(table.criadoEm),
+    idxLlmExecutionAuditService: index("idx_llm_execution_audit_service").on(table.service),
+    idxLlmExecutionAuditPrompt: index("idx_llm_execution_audit_prompt").on(table.promptTemplateId),
+    idxLlmExecutionAuditModel: index("idx_llm_execution_audit_model").on(table.modelVersionId),
+    idxLlmExecutionAuditOutcome: index("idx_llm_execution_audit_outcome").on(table.success, table.errorCode),
   })
 );
 

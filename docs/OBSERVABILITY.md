@@ -1,8 +1,8 @@
 # Guia de Observabilidade - Alice Enterprise Platform
 
-**Versão:** 2.8.0  
-**Data:** 09 de Fevereiro de 2026  
-**Author:** Fillipe Guerra
+**Versão:** 2.8.1  
+**Data:** 07 de Março de 2026  
+**Autor:** Fillipe Guerra
 
 ---
 
@@ -42,6 +42,7 @@
 | **Demo Trading** | Dashboard Demo Trading provisionado (pasta `demo-trading`). Home do Grafana inclui link "Demo Trading". Deploy sincroniza `alice-demo-trading.json` e `00-home.json` a partir do SSOT em `apps/observability-service/config/grafana/dashboards`. |
 | **Sync deploy** | Workflow `deploy-stack-modular.yml` (job deploy-observability) copia **Agentic**, **Biometria** e **Demo Trading** do SSOT para as pastas de provisionamento; pasta Demo Trading adicionada em `alice-dashboards.yml`. |
 | **Testes** | Limites de treinamento: `tests/unit/training-limits.test.ts`. Observability (health, backup, métricas): `tests/unit/services/observability-service.test.ts`. **Smoke dashboards**: `tests/unit/observability-dashboards-smoke.test.ts` (JSON válido, panels, uid, dashboards obrigatórios 00-home, alice-demo-trading, alice-llm-gateway, alice-biometrics). Checklist pós-deploy continua para targets/dashboards em produção. |
+| **DR Offsite criptografado** | `apps/observability-service/src/backup-orchestrator.ts` passou a persistir artefatos por `backupId`, sincronizar cópia offsite criptografada (`BACKUP_OFFSITE_DIR`) e validar prontidão de restore em `POST /api/backup/verify/:id` com checks locais/offsite + `pgbackrest verify`. |
 
 ---
 

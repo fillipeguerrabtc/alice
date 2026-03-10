@@ -5,7 +5,8 @@
  * - idempotency by documentId
  * - lease/lock on dequeue
  * - retry scheduling using sorted set score
- * - persisted job state with 24h TTL
+ * - persisted job state sem TTL em estados ativos (queued/processing)
+ * - retenção 24h apenas para estados terminais (completed/failed)
  *
  * Author: Fillipe Guerra
  * Data: 28 de Fevereiro de 2026
@@ -23,7 +24,7 @@ const JOBS_KEY = `${REDIS_PREFIX}:jobs`;
 const DOCUMENT_JOB_INDEX_KEY = `${REDIS_PREFIX}:document-index`;
 const LOCK_KEY_PREFIX = `${REDIS_PREFIX}:locks:`;
 
-const JOB_STATE_TTL_SECONDS = 60 * 60 * 24; // 24 hours
+const JOB_STATE_TTL_SECONDS = 60 * 60 * 24; // 24 hours (somente estado terminal)
 const JOB_LEASE_TTL_SECONDS = 60 * 5; // 5 minutes
 const MAX_PRIORITY = 10;
 const MIN_PRIORITY = 1;
@@ -91,6 +92,21 @@ function parseJob(raw: string): DocumentProcessingJob | null {
   }
 }
 
+async function persistJobState(
+  client: ReturnType<typeof getRedisClient>,
+  job: DocumentProcessingJob
+): Promise<void> {
+  if (!client) {
+    throw new Error('Redis nao disponivel');
+  }
+  const key = getJobStateKey(job.jobId);
+  if (job.status === 'completed' || job.status === 'failed') {
+    await client.setEx(key, JOB_STATE_TTL_SECONDS, JSON.stringify(job));
+    return;
+  }
+  await client.set(key, JSON.stringify(job));
+}
+
 export interface EnqueueDocumentProcessingOptions {
   force?: boolean;
   delayMs?: number;
@@ -140,8 +156,8 @@ export async function enqueueDocumentProcessingJob(
     updatedAt: nowIso,
   };
 
-  await client.setEx(getJobStateKey(jobId), JOB_STATE_TTL_SECONDS, JSON.stringify(job));
-  await client.setEx(getDocumentIndexKey(payload.documentId), JOB_STATE_TTL_SECONDS, jobId);
+  await persistJobState(client, job);
+  await client.set(getDocumentIndexKey(payload.documentId), jobId);
   await client.zAdd(QUEUE_KEY, {
     score: buildQueueScore(now + delayMs, job.priority),
     value: jobId,
@@ -216,7 +232,7 @@ export async function dequeueDocumentProcessingJob(): Promise<DocumentProcessing
       processingError: undefined,
     };
 
-    await client.setEx(getJobStateKey(jobId), JOB_STATE_TTL_SECONDS, JSON.stringify(updated));
+    await persistJobState(client, updated);
 
     return updated;
   }
@@ -245,7 +261,7 @@ async function updateJobState(
   }
 
   const next = mutator(current);
-  await client.setEx(getJobStateKey(jobId), JOB_STATE_TTL_SECONDS, JSON.stringify(next));
+  await persistJobState(client, next);
   return next;
 }
 

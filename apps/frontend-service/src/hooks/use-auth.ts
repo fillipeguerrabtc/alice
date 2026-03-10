@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { queryClient, apiRequest, getQueryFn, setCsrfToken } from '@/lib/queryClient';
 
@@ -36,9 +37,10 @@ export function useAuth() {
   });
 
   // Armazenar CSRF token quando recebido (Regra 16 - Segurança Enterprise)
-  if (data?.csrfToken) {
+  useEffect(() => {
+    if (!data?.csrfToken) return;
     setCsrfToken(data.csrfToken);
-  }
+  }, [data?.csrfToken]);
 
   const user = data?.user || null;
   const csrfReady = !isLoading && (!!data?.csrfToken || data === null);

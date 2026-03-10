@@ -28,8 +28,10 @@ import {
   setupSwaggerUI,
   OBSERVABILITY_SERVICE_TAGS,
   createSessionAuthMiddleware,
+  createCorrelationMiddleware,
   initializeSessionAuthCache,
   initializeRedisCache,
+  requireInternalHmacAuth,
 } from '@alice/shared-utils';
 import { createLogger } from '@alice/logger';
 import { observabilityServicePaths, observabilityServiceSchemas } from './openapi-specs.js';
@@ -72,12 +74,28 @@ function requireInternalAuth(req: Request, res: Response, next: NextFunction): v
     return next();
   }
 
+  const hasHmacHeaders = Boolean(
+    req.headers['x-internal-signature']
+    && req.headers['x-internal-timestamp']
+    && req.headers['x-internal-user-id']
+    && req.headers['x-internal-role']
+  );
+  if (hasHmacHeaders) {
+    const hmacMiddleware = requireInternalHmacAuth();
+    hmacMiddleware(req, res, () => {
+      res.locals.internalAuthValidated = true;
+      next();
+    });
+    return;
+  }
+
   if (!isInternalAuthValid(req)) {
     logger.warn({ path: req.path, ip: req.ip }, 'Tentativa de acesso não autorizado');
     res.status(401).json({ error: 'Token de autenticação inválido ou ausente' });
     return;
   }
 
+  res.locals.internalAuthValidated = true;
   next();
 }
 
@@ -98,7 +116,7 @@ const requireObservabilityAdminPermission = requirePermission('observability:cor
 const requireObservabilityLogsWritePermission = requirePermission('observability:logs:write');
 
 function requireObservabilityRead(req: Request, res: Response, next: NextFunction): void {
-  if (isInternalAuthValid(req)) {
+  if (res.locals.internalAuthValidated === true) {
     next();
     return;
   }
@@ -106,7 +124,7 @@ function requireObservabilityRead(req: Request, res: Response, next: NextFunctio
 }
 
 function requireObservabilityAdmin(req: Request, res: Response, next: NextFunction): void {
-  if (isInternalAuthValid(req)) {
+  if (res.locals.internalAuthValidated === true) {
     next();
     return;
   }
@@ -114,7 +132,7 @@ function requireObservabilityAdmin(req: Request, res: Response, next: NextFuncti
 }
 
 function requireObservabilityLogsWrite(req: Request, res: Response, next: NextFunction): void {
-  if (isInternalAuthValid(req)) {
+  if (res.locals.internalAuthValidated === true) {
     next();
     return;
   }
@@ -459,6 +477,9 @@ app.use(createSecurityMiddleware({
   contentSecurityPolicy: isProduction,
   isDevelopment: !isProduction,
 }));
+
+// OBSERVABILIDADE: Contexto distribuído para tracing e correlação entre serviços.
+app.use(createCorrelationMiddleware({ serviceName: 'observability-service' }));
 
 // CORS configurado
 const corsOriginsEnv = process.env.CORS_ORIGINS;
@@ -978,7 +999,7 @@ app.get('/api/observability/urls', requireObservabilityAdmin, (_req: Request, re
 // BACKUP ORCHESTRATOR (Sistema unificado de backup - Regra 6 Enterprise-grade)
 // ============================================================================
 
-app.use('/api/backup', requireInternalAuth, backupRouter);
+app.use('/api/backup', requireObservabilityAdmin, backupRouter);
 
 logger.info('Backup Orchestrator registrado em /api/backup');
 

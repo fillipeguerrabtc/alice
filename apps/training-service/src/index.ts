@@ -16,14 +16,13 @@
  * DocumentaÃ§Ã£o em PT-BR (Regra 10 CLAUDE.md)
  */
 
-/* eslint-disable no-irregular-whitespace -- legacy text encoding needs dedicated cleanup */
 import express from 'express';
-import type { Request, Response } from 'express';
+import type { Request } from 'express';
 import cors from 'cors';
 import compression from 'compression';
 import crypto from 'crypto';
 import { createLogger } from '@alice/logger';
-import { getDatabase, getPool, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, validateEmbeddingDimension, EMBEDDING_DIMENSIONS, withTenantContext, type Database } from '@alice/database';
+import { getDatabase, getPool, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, validateEmbeddingDimension, EMBEDDING_DIMENSIONS, withTenantContext } from '@alice/database';
 import { 
   createCorrelationMiddleware, 
   createSecurityMiddleware,
@@ -40,8 +39,6 @@ import {
   ShutdownPriority,
   setupSwaggerUI,
   TRAINING_SERVICE_TAGS,
-  requirePermission,
-  requireInternalHmacAuth,
   extractAuthContext,
   validateNamespaceTenantConsistency,
   validateTenantConsistency,
@@ -84,27 +81,20 @@ import {
   computeSemHash,
   applyPrivacyPolicy,
   generateInternalAuthHeaders,
-  appendImmutableAuditEventWithExecutor,
   verifyImmutableAuditChain,
 } from '@alice/shared-utils';
 import { trainingServicePaths, trainingServiceSchemas } from './openapi-specs.js';
-import { eq, and, or, desc, asc, sql, isNull, not, inArray, lte, ne } from '@alice/database';
+import { eq, and, desc, asc, sql, isNull, inArray, lte, ne } from '@alice/database';
 import { z } from 'zod';
 import {
-  getAllSystemConfig,
-  getSystemConfig,
-  normalizeSystemConfigValue,
-  setSystemConfig,
-  SYSTEM_CONFIG_KNOWN_KEYS,
+  getNamespaceProfileDefaultConfig,
 } from '@alice/database/system-config';
 import {
   NamespaceProfileConfigSchema,
   TradingTechniqueSchema,
-  TradingLoraHyperparamsSchema,
   type TradingSignalMetadata,
   type NamespaceProfileConfig,
   type TradingTechnique,
-  type TradingLoraHyperparams,
 } from '@alice/shared';
 
 function parseStructuredJsonFromContent(content: string): unknown {
@@ -123,14 +113,9 @@ import {
   activateLoraAdapter,
   getActiveAdapter,
   deactivateLoraAdapter,
-  cancelJob as cancelLoraJob,
+  cancelJob,
 } from './lora-job-manager.js';
 import { resolveScope } from './scope-resolver.js';
-import { selectExamplesByProfile } from './dataset-selection-engine.js';
-import {
-  persistCanonicalDatasetSnapshot,
-  reserveDatasetRowsForJob,
-} from './datasets/dataset-selection.js';
 import { runUniverseScanWorker } from './trading/jobs/universe-scan-worker.js';
 import { runBacktestWorker } from './trading/jobs/backtest-worker.js';
 import { runCalibrationWorker } from './trading/jobs/calibration-worker.js';
@@ -145,34 +130,41 @@ import { enqueueTrainingFineTuningRun } from './training-fine-tuning-queue.js';
 import {
   loadTrainingSystemRuntimeConfig,
   runTrainingFineTuningJob,
-  TrainingHyperparamsOverrideSchema,
 } from './training-runner.js';
 import { loadTrainingEnterpriseConfig } from './training-config.js';
 import {
-  canPromoteFineTuningJob,
   getTenantInflightFineTuningJobsCount,
   loadTrainingGovernanceRuntimeConfig,
 } from './training-governance.js';
 import {
-  assertValidModelRegistryScope,
-  buildFineTuningScopeCondition,
-  buildModelVersionScopeCondition,
-} from './model-registry-scope.js';
-import {
-  acquireTrainingOperationLock,
-  buildTrainingJobOperationLockKey,
-  buildTrainingRunStartIdempotencyRedisKey,
-  buildTrainingScopeOperationLockKey,
-  extractRequestIp,
-  extractRequestUserAgent,
-  releaseTrainingOperationLock,
-  type TrainingRunStartIdempotencyOperation,
-} from './training-enterprise-controls.js';
-import { validateWebhookBodyDigest, validateWebhookSignature } from './webhook-security.js';
+  createTrainingGovernanceAuditService,
+  isTrainingGovernanceAuditAction,
+  TRAINING_GOVERNANCE_AUDIT_ACTIONS,
+} from './training-governance-audit.js';
+import { getPromotionApprovalSummary } from './training-promotion-approvals.js';
+import { createTrainingJobLifecycleService } from './training-job-lifecycle.js';
+import { createTrainingRunStartIdempotencyService } from './training-run-start-idempotency.js';
 import {
   buildTradingDataEligibilityConditions,
   loadTradingDataGovernancePolicyFromEnv,
 } from './trading-data-governance.js';
+import { registerTrainingPlatformRoutes } from './routes/training-platform-routes.js';
+import { registerTrainingAuditRoutes } from './routes/training-audit-routes.js';
+import { registerTrainingLoraOrchestratorRoutes } from './routes/training-lora-orchestrator-routes.js';
+import { registerTrainingRuntimeRoutes } from './routes/training-runtime-routes.js';
+import { registerTrainingRunManagementRoutes } from './routes/training-run-management-routes.js';
+import { registerTrainingScheduleRoutes } from './routes/training-schedule-routes.js';
+import { registerTrainingDataRoutes } from './routes/training-data-routes.js';
+import { registerTrainingJobQueryRoutes } from './routes/training-job-query-routes.js';
+import { registerTrainingJobCancelRoutes } from './routes/training-job-cancel-routes.js';
+import { registerTrainingJobCreateRoutes } from './routes/training-job-create-routes.js';
+import { registerTrainingJobPromotionApprovalRoutes } from './routes/training-job-promotion-approval-routes.js';
+import { registerTrainingJobRollbackRoutes } from './routes/training-job-rollback-routes.js';
+import { registerTrainingJobPromoteRoutes } from './routes/training-job-promote-routes.js';
+import { registerTrainingRunStartRoutes } from './routes/training-run-start-routes.js';
+import { registerTrainingDataReviewRoutes } from './routes/training-data-review-routes.js';
+import { registerTrainingBulkImportRoutes } from './routes/training-bulk-import-routes.js';
+import { registerTrainingWebhookRoutes } from './routes/training-webhook-routes.js';
 // Fine-tuning Ã© executado localmente via GPU Manager Service (Regra 6 - sem stubs/migraÃ§Ã£o)
 
 // Logger centralizado: JSON em produÃ§Ã£o, pino-pretty em desenvolvimento
@@ -219,14 +211,6 @@ function parseEnvBoolean(envValue: string | undefined, defaultValue: boolean): b
   if (normalized === 'true') return true;
   if (normalized === 'false') return false;
   return defaultValue;
-}
-
-function readUuidFromUnknown(value: unknown): string | null {
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(trimmed)
-    ? trimmed
-    : null;
 }
 
 function resolveFineTuningQueuePriorityFromSnapshot(
@@ -301,17 +285,6 @@ function resolveAuthorizedTenantId(
   return { ok: true, tenantId: superAdminTenantId, authContext };
 }
 
-const trainingIdempotencyHeaderSchema = z.object({
-  'x-idempotency-key': z.string().trim().min(16).max(128).regex(/^[A-Za-z0-9:_-]+$/),
-});
-
-const trainingRunStartIdempotencyRecordSchema = z.object({
-  jobId: z.string().uuid(),
-  fingerprint: z.string().length(64),
-  createdAt: z.string().datetime(),
-});
-
-type TrainingRunStartIdempotencyRecord = z.infer<typeof trainingRunStartIdempotencyRecordSchema>;
 type FineTuningJobRow = typeof schema.fineTuningJobs.$inferSelect;
 type RequestWithRawBody = Request & { rawBody?: Buffer };
 const TRAINING_JOB_STREAM_POLL_INTERVAL_MS = parseEnvInt(
@@ -374,22 +347,6 @@ function buildFineTuningJobStreamFingerprint(job: FineTuningJobRow): string {
   });
 }
 
-function readOptionalTrainingIdempotencyKey(req: Request): { key: string | null; error: string | null } {
-  const raw = req.headers['x-idempotency-key'];
-  if (typeof raw === 'undefined') return { key: null, error: null };
-  if (Array.isArray(raw)) {
-    return { key: null, error: 'Header X-Idempotency-Key invalido' };
-  }
-  const parsed = trainingIdempotencyHeaderSchema.safeParse({ 'x-idempotency-key': raw });
-  if (!parsed.success) {
-    return {
-      key: null,
-      error: 'Header X-Idempotency-Key invalido. Use 16-128 caracteres alfanumericos, ":", "_" ou "-".',
-    };
-  }
-  return { key: parsed.data['x-idempotency-key'], error: null };
-}
-
 function stableStringifyForFingerprint(value: unknown): string {
   if (value === null) return 'null';
   if (typeof value !== 'object') return JSON.stringify(value);
@@ -402,209 +359,6 @@ function stableStringifyForFingerprint(value: unknown): string {
   return `{${entries
     .map(([entryKey, entryValue]) => `${JSON.stringify(entryKey)}:${stableStringifyForFingerprint(entryValue)}`)
     .join(',')}}`;
-}
-
-function buildRunStartRequestFingerprint(params: {
-  operation: TrainingRunStartIdempotencyOperation;
-  tenantId: string;
-  payload: Record<string, unknown>;
-}): string {
-  return crypto.createHash('sha256').update(stableStringifyForFingerprint({
-    operation: params.operation,
-    tenantId: params.tenantId,
-    payload: params.payload,
-  })).digest('hex');
-}
-
-function hashIdempotencyKeyForAudit(key: string): string {
-  return crypto.createHash('sha256').update(key).digest('hex').slice(0, 16);
-}
-
-function applyIdempotencyResponseHeaders(
-  res: Response,
-  idempotencyKey: string,
-  status: 'created' | 'replayed' | 'conflict'
-): void {
-  res.setHeader('X-Idempotency-Key', idempotencyKey);
-  res.setHeader('X-Idempotency-Status', status);
-}
-
-type TrainingRunStartErrorCode =
-  | 'IDEMPOTENCY_KEY_PAYLOAD_MISMATCH'
-  | 'RUN_START_LOCK_CONTENTION'
-  | 'RUN_START_ALREADY_ACTIVE'
-  | 'RUN_START_CAPACITY_EXHAUSTED';
-
-function sendTrainingRunStartError(params: {
-  res: Response;
-  status: 409 | 429;
-  error: string;
-  code: TrainingRunStartErrorCode;
-  retryAfterSeconds?: number;
-  idempotencyKey?: string | null;
-}): Response {
-  if (params.retryAfterSeconds && params.retryAfterSeconds > 0) {
-    params.res.setHeader('Retry-After', String(params.retryAfterSeconds));
-  }
-  if (params.idempotencyKey) {
-    applyIdempotencyResponseHeaders(params.res, params.idempotencyKey, 'conflict');
-  }
-  return params.res.status(params.status).json({
-    error: params.error,
-    code: params.code,
-    retryAfterSeconds: params.retryAfterSeconds ?? null,
-  });
-}
-
-type TrainingRunStartReplayLookup =
-  | { status: 'miss' }
-  | { status: 'payload_mismatch' }
-  | { status: 'hit'; job: FineTuningJobRow };
-
-async function lookupRunStartIdempotencyReplay(params: {
-  redis: NonNullable<ReturnType<typeof getRedisClient>>;
-  operation: TrainingRunStartIdempotencyOperation;
-  tenantId: string;
-  idempotencyKey: string;
-  fingerprint: string;
-}): Promise<TrainingRunStartReplayLookup> {
-  const redisKey = buildTrainingRunStartIdempotencyRedisKey({
-    tenantId: params.tenantId,
-    operation: params.operation,
-    idempotencyKey: params.idempotencyKey,
-  });
-
-  let rawRecord: string | null = null;
-  try {
-    rawRecord = await params.redis.get(redisKey);
-  } catch (error) {
-    trainingPipelineMetrics.runStartIdempotencyTotal.inc({
-      endpoint: params.operation,
-      result: 'lookup_error',
-    });
-    logger.warn(
-      {
-        endpoint: params.operation,
-        tenantId: params.tenantId,
-        error: error instanceof Error ? error.message : String(error),
-      },
-      'Falha ao consultar idempotencia de run start; seguindo fluxo normal'
-    );
-    return { status: 'miss' };
-  }
-
-  if (!rawRecord) {
-    trainingPipelineMetrics.runStartIdempotencyTotal.inc({
-      endpoint: params.operation,
-      result: 'miss',
-    });
-    return { status: 'miss' };
-  }
-
-  let record: TrainingRunStartIdempotencyRecord | null = null;
-  const parsedRecord = trainingRunStartIdempotencyRecordSchema.safeParse(
-    rawRecord.trim().startsWith('{')
-      ? (() => {
-          try {
-            return JSON.parse(rawRecord);
-          } catch {
-            return null;
-          }
-        })()
-      : null
-  );
-  if (parsedRecord.success) {
-    record = parsedRecord.data;
-  } else if (/^[0-9a-f-]{36}$/i.test(rawRecord.trim())) {
-    record = {
-      jobId: rawRecord.trim(),
-      fingerprint: params.fingerprint,
-      createdAt: new Date(0).toISOString(),
-    };
-  } else {
-    trainingPipelineMetrics.runStartIdempotencyTotal.inc({
-      endpoint: params.operation,
-      result: 'invalid_record',
-    });
-    return { status: 'miss' };
-  }
-
-  if (record.fingerprint !== params.fingerprint) {
-    trainingPipelineMetrics.runStartIdempotencyTotal.inc({
-      endpoint: params.operation,
-      result: 'payload_mismatch',
-    });
-    return { status: 'payload_mismatch' };
-  }
-
-  const existingJob = await db.query.fineTuningJobs.findFirst({
-    where: and(
-      eq(schema.fineTuningJobs.id, record.jobId),
-      eq(schema.fineTuningJobs.tenantId, params.tenantId)
-    ),
-  });
-  if (!existingJob) {
-    trainingPipelineMetrics.runStartIdempotencyTotal.inc({
-      endpoint: params.operation,
-      result: 'orphaned',
-    });
-    try {
-      await params.redis.del(redisKey);
-    } catch {
-      // best-effort cleanup
-    }
-    return { status: 'miss' };
-  }
-
-  trainingPipelineMetrics.runStartIdempotencyTotal.inc({
-    endpoint: params.operation,
-    result: 'hit',
-  });
-  return { status: 'hit', job: existingJob };
-}
-
-async function storeRunStartIdempotencyRecord(params: {
-  redis: NonNullable<ReturnType<typeof getRedisClient>>;
-  operation: TrainingRunStartIdempotencyOperation;
-  tenantId: string;
-  idempotencyKey: string;
-  fingerprint: string;
-  jobId: string;
-}): Promise<void> {
-  const redisKey = buildTrainingRunStartIdempotencyRedisKey({
-    tenantId: params.tenantId,
-    operation: params.operation,
-    idempotencyKey: params.idempotencyKey,
-  });
-  const serializedRecord = JSON.stringify({
-    jobId: params.jobId,
-    fingerprint: params.fingerprint,
-    createdAt: new Date().toISOString(),
-  } satisfies TrainingRunStartIdempotencyRecord);
-  try {
-    const result = await params.redis.set(redisKey, serializedRecord, {
-      EX: TRAINING_RUN_START_IDEMPOTENCY_TTL_SECONDS,
-      NX: true,
-    });
-    trainingPipelineMetrics.runStartIdempotencyTotal.inc({
-      endpoint: params.operation,
-      result: result === 'OK' ? 'stored' : 'store_conflict',
-    });
-  } catch (error) {
-    trainingPipelineMetrics.runStartIdempotencyTotal.inc({
-      endpoint: params.operation,
-      result: 'store_error',
-    });
-    logger.warn(
-      {
-        endpoint: params.operation,
-        tenantId: params.tenantId,
-        jobId: params.jobId,
-        error: error instanceof Error ? error.message : String(error),
-      },
-      'Falha ao persistir registro de idempotencia para run start'
-    );
-  }
 }
 
 const PORT = parseEnvInt(process.env.PORT, 3004, 'PORT');
@@ -1765,185 +1519,6 @@ function evaluateTrainingQuality(params: {
   };
 }
 
-app.get('/api/training/health', async (_req: Request, res: Response) => {
-  const embeddingsCircuitState = gpuManagerEmbeddingsBreaker.opened ? 'open' : (gpuManagerEmbeddingsBreaker.halfOpen ? 'half-open' : 'closed');
-  const immutableAuditDegraded = trainingImmutableAuditIntegrityState.status === 'error';
-  const overallStatus = (embeddingsCircuitState === 'open' || immutableAuditDegraded) ? 'degraded' : 'ok';
-  
-  res.json({ 
-    status: overallStatus, 
-    service: 'training-service', 
-    timestamp: new Date().toISOString(),
-    embeddingsProvider: 'gpu-manager-service',
-    model: 'Qwen/Qwen3-Embedding-0.6B (1024 dim â†’ Qdrant)',
-    fineTuningStatus: 'enabled',
-    circuitBreakers: {
-      embeddings: {
-        state: embeddingsCircuitState,
-        stats: {
-          failures: gpuManagerEmbeddingsBreaker.stats.failures,
-          successes: gpuManagerEmbeddingsBreaker.stats.successes,
-          timeouts: gpuManagerEmbeddingsBreaker.stats.timeouts,
-        },
-      },
-    },
-    immutableAuditIntegrity: trainingImmutableAuditIntegrityState,
-  });
-});
-
-app.get('/api/training/audit/integrity', requirePermission('training:fine_tuning_jobs:read'), async (req: Request, res: Response) => {
-  const force = String(req.query.force ?? '').toLowerCase() === 'true';
-  if (force) {
-    await runTrainingImmutableAuditIntegrityCheck();
-  }
-  return res.json({
-    stream: 'training_governance',
-    state: trainingImmutableAuditIntegrityState,
-  });
-});
-
-app.get('/api/training/audit/high-risk', requirePermission('training:fine_tuning_jobs:read'), async (req: Request, res: Response) => {
-  const tenantResolution = resolveAuthorizedTenantId(req);
-  if (!tenantResolution.ok) {
-    return res.status(tenantResolution.status).json({ error: tenantResolution.error });
-  }
-
-  const limitParsed = Number(req.query.limit ?? 100);
-  if (!Number.isFinite(limitParsed) || !Number.isInteger(limitParsed) || limitParsed < 1 || limitParsed > 200) {
-    return res.status(400).json({ error: 'Parâmetro limit inválido (1-200)' });
-  }
-  const actionParam = typeof req.query.action === 'string' ? req.query.action : undefined;
-  if (actionParam && !TRAINING_GOVERNANCE_AUDIT_ACTIONS.includes(actionParam as TrainingGovernanceAuditAction)) {
-    return res.status(400).json({ error: 'Parâmetro action inválido' });
-  }
-
-  const whereClauses = [
-    eq(schema.immutableAuditEvents.tenantId, tenantResolution.tenantId),
-    eq(schema.immutableAuditEvents.stream, 'training_governance'),
-  ];
-  if (actionParam) {
-    whereClauses.push(eq(schema.immutableAuditEvents.eventType, actionParam));
-  }
-
-  const events = await db.query.immutableAuditEvents.findMany({
-    where: and(...whereClauses),
-    orderBy: [desc(schema.immutableAuditEvents.chainPosition)],
-    limit: limitParsed,
-  });
-
-  return res.json({
-    stream: 'training_governance',
-    count: events.length,
-    filters: {
-      action: actionParam ?? null,
-      limit: limitParsed,
-    },
-    events: events.map((event) => ({
-      id: event.id,
-      chainPosition: event.chainPosition,
-      eventType: event.eventType,
-      resourceType: event.resourceType,
-      resourceId: event.resourceId,
-      actorUserId: event.actorUserId,
-      requestId: event.requestId,
-      payload: event.payload,
-      occurredAt: event.occurredAt,
-      createdAt: event.createdAt,
-    })),
-  });
-});
-
-// ============================================================================
-// KUBERNETES PROBES: /ready e /live (Regra 16 - Best Practices 2025)
-// /live: Processo estÃ¡ vivo? Se nÃ£o, Kubernetes reinicia o container
-// /ready: Pronto para trÃ¡fego? Verifica conexÃ£o com PostgreSQL e circuit breakers
-// ============================================================================
-
-// Liveness probe - verificaÃ§Ã£o simples que o processo responde
-app.get('/live', (_req: Request, res: Response) => {
-  res.status(200).json({ 
-    status: 'alive', 
-    service: 'training-service',
-    timestamp: new Date().toISOString(),
-  });
-});
-
-// Readiness probe - verifica se PostgreSQL e embeddings estÃ£o acessÃ­veis
-app.get('/ready', async (_req: Request, res: Response) => {
-  try {
-    const dbHealthy = await isPoolHealthy();
-    const embeddingsReady = !gpuManagerEmbeddingsBreaker.opened;
-    
-    const allReady = dbHealthy && embeddingsReady;
-    
-    if (allReady) {
-      res.status(200).json({
-        status: 'ready',
-        service: 'training-service',
-        timestamp: new Date().toISOString(),
-        dependencies: {
-          postgresql: 'ready',
-          embeddings: 'ready',
-        },
-      });
-    } else {
-      res.status(503).json({
-        status: 'not_ready',
-        service: 'training-service',
-        reason: !dbHealthy ? 'PostgreSQL nÃ£o estÃ¡ acessÃ­vel' : 'Embeddings circuit breaker aberto',
-        timestamp: new Date().toISOString(),
-        dependencies: {
-          postgresql: dbHealthy ? 'ready' : 'not_ready',
-          embeddings: embeddingsReady ? 'ready' : 'circuit_open',
-        },
-      });
-    }
-  } catch (error) {
-    logger.error({ error }, 'Erro ao verificar readiness');
-    res.status(503).json({
-      status: 'not_ready',
-      service: 'training-service',
-      reason: 'Erro ao verificar dependÃªncias',
-      timestamp: new Date().toISOString(),
-    });
-  }
-});
-
-app.post('/internal/trading/enqueue/universe-scan', requireInternalHmacAuth(), async (req: Request, res: Response) => {
-  const payload = tradingUniverseEnqueueSchema.parse(req.body);
-  await enqueueTradingJob(tradingQueueNames.universe, payload);
-  logger.info({ tenantId: payload.tenantId, instrumentId: payload.instrumentId, queue: tradingQueueNames.universe }, 'Trading universe scan enfileirado');
-  res.status(202).json({ queued: true, queue: tradingQueueNames.universe, idempotencyKey: payload.idempotencyKey });
-});
-
-app.post('/internal/trading/enqueue/backtest', requireInternalHmacAuth(), async (req: Request, res: Response) => {
-  const payload = tradingBacktestEnqueueSchema.parse(req.body);
-  await enqueueTradingJob(tradingQueueNames.backtest, payload);
-  logger.info({ tenantId: payload.tenantId, strategyKey: payload.strategyKey, queue: tradingQueueNames.backtest }, 'Trading backtest enfileirado');
-  res.status(202).json({ queued: true, queue: tradingQueueNames.backtest, idempotencyKey: payload.idempotencyKey });
-});
-
-app.post('/internal/trading/enqueue/calibration', requireInternalHmacAuth(), async (req: Request, res: Response) => {
-  const payload = tradingCalibrationEnqueueSchema.parse(req.body);
-  await enqueueTradingJob(tradingQueueNames.calibration, payload);
-  logger.info({ tenantId: payload.tenantId, strategyKey: payload.strategyKey, queue: tradingQueueNames.calibration }, 'Trading calibration enfileirado');
-  res.status(202).json({ queued: true, queue: tradingQueueNames.calibration, idempotencyKey: payload.idempotencyKey });
-});
-
-app.post('/internal/trading/enqueue/portfolio-rebalance', requireInternalHmacAuth(), async (req: Request, res: Response) => {
-  const payload = tradingRebalanceEnqueueSchema.parse(req.body);
-  await enqueueTradingJob(tradingQueueNames.rebalance, payload);
-  logger.info({ tenantId: payload.tenantId, portfolioId: payload.portfolioId, queue: tradingQueueNames.rebalance }, 'Trading rebalance enfileirado');
-  res.status(202).json({ queued: true, queue: tradingQueueNames.rebalance, idempotencyKey: payload.idempotencyKey });
-});
-
-app.post('/internal/trading/enqueue/model-risk', requireInternalHmacAuth(), async (req: Request, res: Response) => {
-  const payload = tradingModelRiskEnqueueSchema.parse(req.body);
-  await enqueueTradingJob(tradingQueueNames.modelRisk, payload);
-  logger.info({ tenantId: payload.tenantId, scope: payload.scope, scopeKey: payload.scopeKey, queue: tradingQueueNames.modelRisk }, 'Trading model risk enfileirado');
-  res.status(202).json({ queued: true, queue: tradingQueueNames.modelRisk, idempotencyKey: payload.idempotencyKey });
-});
-
 // ============================================================================
 // TRADING AUTO ENGINE - Jobs automÃ¡ticos de portfÃ³lio e sinais IA
 // ============================================================================
@@ -3055,85 +2630,222 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
   }
 }
 
-/** POST /internal/trading/auto/portfolio-run - Recebe job de pipeline de portfÃ³lio */
-app.post('/internal/trading/auto/portfolio-run', requireInternalHmacAuth(), async (req: Request, res: Response) => {
-  try {
-    const payload = tradingAutoPortfolioPayloadSchema.parse(req.body);
-    const idempotencyKey = buildTradingIdempotencyKey(tradingQueueNames.portfolioAutoRun, payload);
-    await enqueueTradingJob(tradingQueueNames.portfolioAutoRun, { ...payload, idempotencyKey });
-    logger.info({ runId: payload.runId, correlationId: payload.correlationId }, 'Portfolio auto run enfileirado');
-    res.status(202).json({ queued: true, queue: tradingQueueNames.portfolioAutoRun });
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
-    logger.error({ error: errorMessage }, 'Erro ao enfileirar portfolio auto run');
-    res.status(500).json({ error: errorMessage });
-  }
+const trainingGovernanceAuditService = createTrainingGovernanceAuditService({
+  incrementHighRiskAuditEventMetric: ({ action, result }) => {
+    trainingPipelineMetrics.highRiskAuditEventsTotal.inc({
+      service: 'training-service',
+      event_type: action,
+      result,
+    });
+  },
 });
 
-/** POST /internal/trading/auto/signal-run - Recebe job de geraÃ§Ã£o automÃ¡tica de sinais */
-app.post('/internal/trading/auto/signal-run', requireInternalHmacAuth(), async (req: Request, res: Response) => {
-  try {
-    const payload = tradingAutoSignalPayloadSchema.parse(req.body);
-    const idempotencyKey = buildTradingIdempotencyKey(tradingQueueNames.signalAutoRun, payload);
-    await enqueueTradingJob(tradingQueueNames.signalAutoRun, { ...payload, idempotencyKey });
-    logger.info({ runId: payload.runId, correlationId: payload.correlationId }, 'Signal auto run enfileirado');
-    res.status(202).json({ queued: true, queue: tradingQueueNames.signalAutoRun });
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
-    logger.error({ error: errorMessage }, 'Erro ao enfileirar signal auto run');
-    res.status(500).json({ error: errorMessage });
-  }
+const trainingRunStartIdempotencyService = createTrainingRunStartIdempotencyService({
+  logger,
+  runStartIdempotencyTtlSeconds: TRAINING_RUN_START_IDEMPOTENCY_TTL_SECONDS,
+  incrementRunStartIdempotencyMetric: ({ endpoint, result }) => {
+    trainingPipelineMetrics.runStartIdempotencyTotal.inc({ endpoint, result });
+  },
 });
 
-// ============================================================================
-// SYSTEM CONFIG - ConfiguraÃ§Ãµes editÃ¡veis via UI (RAG, Chat, Treino)
-// Ref: docs/TREINAMENTO-LIMITES-E-BOAS-PRATICAS.md
-// ============================================================================
-app.get('/api/training/system-config', requirePermission('config:system:read'), async (_req: Request, res: Response) => {
-  try {
-    const config = await getAllSystemConfig();
-    res.json(config);
-  } catch (error) {
-    logger.error({ error }, 'Erro ao obter system config');
-    res.status(500).json({ error: 'Erro ao obter configuraÃ§Ãµes' });
-  }
+const trainingJobLifecycleService = createTrainingJobLifecycleService({
+  logger,
+  resolveFineTuningQueuePriorityFromSnapshot,
+  enqueueTrainingFineTuningRun,
+  cancelLoraJob: async (loraJobId) => {
+    await cancelJob(loraJobId);
+  },
+  createHttpError: (status, payload) => new TrainingHttpError(status, payload),
 });
 
-const systemConfigPatchSchema = z.object({
-  configs: z.record(z.string().min(1), z.string().min(1)),
+registerTrainingPlatformRoutes(app, {
+  logger,
+  getEmbeddingsCircuitBreakerSnapshot: () => ({
+    opened: gpuManagerEmbeddingsBreaker.opened,
+    halfOpen: gpuManagerEmbeddingsBreaker.halfOpen,
+    stats: {
+      failures: gpuManagerEmbeddingsBreaker.stats.failures,
+      successes: gpuManagerEmbeddingsBreaker.stats.successes,
+      timeouts: gpuManagerEmbeddingsBreaker.stats.timeouts,
+    },
+  }),
+  getImmutableAuditIntegrityState: () => trainingImmutableAuditIntegrityState,
+  isPoolHealthy: async () => isPoolHealthy(),
+  tradingQueueNames: {
+    universe: tradingQueueNames.universe,
+    backtest: tradingQueueNames.backtest,
+    calibration: tradingQueueNames.calibration,
+    rebalance: tradingQueueNames.rebalance,
+    modelRisk: tradingQueueNames.modelRisk,
+    portfolioAutoRun: tradingQueueNames.portfolioAutoRun,
+    signalAutoRun: tradingQueueNames.signalAutoRun,
+  },
+  enqueueTradingJob: async (queueName, payload) => enqueueTradingJob(
+    queueName as (typeof tradingQueueNames)[keyof typeof tradingQueueNames],
+    payload,
+  ),
+  parseTradingUniverseEnqueuePayload: (body) => tradingUniverseEnqueueSchema.parse(body),
+  parseTradingBacktestEnqueuePayload: (body) => tradingBacktestEnqueueSchema.parse(body),
+  parseTradingCalibrationEnqueuePayload: (body) => tradingCalibrationEnqueueSchema.parse(body),
+  parseTradingRebalanceEnqueuePayload: (body) => tradingRebalanceEnqueueSchema.parse(body),
+  parseTradingModelRiskEnqueuePayload: (body) => tradingModelRiskEnqueueSchema.parse(body),
+  parseTradingAutoPortfolioPayload: (body) => tradingAutoPortfolioPayloadSchema.parse(body),
+  parseTradingAutoSignalPayload: (body) => tradingAutoSignalPayloadSchema.parse(body),
+  buildTradingIdempotencyKey: (queueName, payload) => buildTradingIdempotencyKey(
+    queueName as Parameters<typeof buildTradingIdempotencyKey>[0],
+    payload,
+  ),
 });
 
-const SYSTEM_CONFIG_PATCH_KEYS = [...SYSTEM_CONFIG_KNOWN_KEYS] as const;
+registerTrainingAuditRoutes(app, {
+  logger,
+  runTrainingImmutableAuditIntegrityCheck,
+  getTrainingImmutableAuditIntegrityState: () => trainingImmutableAuditIntegrityState,
+  resolveAuthorizedTenantId,
+  isTrainingGovernanceAuditAction,
+});
 
-app.patch('/api/training/system-config', requirePermission('config:system:write'), async (req: Request, res: Response) => {
-  try {
-    const body = systemConfigPatchSchema.parse(req.body);
-    const unknownKeys = Object.keys(body.configs).filter(
-      (key) => !SYSTEM_CONFIG_PATCH_KEYS.includes(key as (typeof SYSTEM_CONFIG_PATCH_KEYS)[number])
-    );
-    if (unknownKeys.length > 0) {
-      return res.status(400).json({
-        error: 'Chaves de configuracao desconhecidas',
-        unknownKeys,
-      });
-    }
-    for (const [key, value] of Object.entries(body.configs)) {
-      const normalized = normalizeSystemConfigValue(
-        key as (typeof SYSTEM_CONFIG_PATCH_KEYS)[number],
-        String(value)
-      );
-      await setSystemConfig(key, normalized);
-    }
-    const config = await getAllSystemConfig();
-    res.json(config);
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      res.status(400).json({ error: 'Payload invÃ¡lido', details: error.flatten() });
-      return;
-    }
-    logger.error({ error }, 'Erro ao atualizar system config');
-    res.status(500).json({ error: 'Erro ao atualizar configuraÃ§Ãµes' });
-  }
+registerTrainingLoraOrchestratorRoutes(app, {
+  logger,
+  resolveAuthorizedTenantId,
+  activateLoraAdapter,
+  getActiveAdapter,
+  deactivateLoraAdapter,
+  gpuManagerUrlOrchestrator: process.env.GPU_MANAGER_URL || 'http://alice-gpu-manager:3010',
+  internalApiSecretOrchestrator: process.env.INTERNAL_API_SECRET,
+});
+
+registerTrainingRuntimeRoutes(app, {
+  logger,
+  resolveAuthorizedTenantId,
+  readScheduleScopeMetadata,
+  loadTrainingSystemRuntimeConfig,
+  loadTrainingGovernanceRuntimeConfig,
+  getFineTuningQueuesStatus,
+  getTenantInflightFineTuningJobsCount: async (tenantId) => getTenantInflightFineTuningJobsCount(db, tenantId),
+  getTradingDataGovernancePolicy: () => tradingDataGovernancePolicy,
+  trainingRunStartRequireIdempotencyKey: TRAINING_RUN_START_REQUIRE_IDEMPOTENCY_KEY,
+});
+
+registerTrainingRunManagementRoutes(app, {
+  logger,
+  resolveAuthorizedTenantId,
+  cancelFineTuningJobAndLora: (params) => trainingJobLifecycleService.cancelFineTuningJobAndLora(params),
+  toTrainingHttpErrorResponse: (error) => (
+    error instanceof TrainingHttpError
+      ? { status: error.status, payload: error.responsePayload }
+      : null
+  ),
+});
+
+registerTrainingScheduleRoutes(app, {
+  logger,
+  resolveAuthorizedTenantId,
+  findNamespaceByIdInTenant,
+  loadTrainingSystemRuntimeConfig,
+  loadTrainingEnterpriseConfig,
+  isSameScheduleScope,
+  scheduleConfig: SCHEDULE_CONFIG,
+});
+
+registerTrainingDataRoutes(app, {
+  logger,
+  resolveAuthorizedTenantId,
+  parseCollectTrainingDataBody: (body) => collectTrainingDataSchema.parse(body),
+  parseCollectTrainingDataPayload: (body) => collectTrainingDataPayloadSchema.parse(body),
+  collectTrainingDataForTenant: async (params) => collectTrainingDataForTenant({
+    tenantId: params.tenantId,
+    createdBy: params.createdBy,
+    payload: params.payload as z.infer<typeof collectTrainingDataPayloadSchema>,
+  }),
+  toTrainingHttpErrorResponse: (error) => (
+    error instanceof TrainingHttpError
+      ? { status: error.status, payload: error.responsePayload }
+      : null
+  ),
+  findNamespaceByIdInTenant,
+  findAgentByIdInTenant,
+  persistTrainingGovernanceAudit: async (params) => trainingGovernanceAuditService.persistTrainingGovernanceAudit({
+    tenantId: params.tenantId,
+    userId: params.userId,
+    action: params.action,
+    resource: params.resource,
+    resourceId: params.resourceId,
+    request: params.request,
+    details: params.details,
+  }),
+  incrementReviewMetric: (status) => {
+    trainingPipelineMetrics.reviewTotal.labels(status).inc();
+  },
+  incrementScopeOverrideMetric: (source) => {
+    trainingPipelineMetrics.scopeOverrideTotal.inc({ source });
+  },
+  incrementScopeResolvedMetric: (source) => {
+    trainingPipelineMetrics.scopeResolvedTotal.inc({ source });
+  },
+  incrementGovernanceAuditWritesMetric: (result) => {
+    trainingPipelineMetrics.governanceAuditWritesTotal.inc({
+      action: 'training_scope_binding_changed',
+      result,
+    });
+  },
+});
+
+registerTrainingDataReviewRoutes(app, {
+  logger,
+  resolveAuthorizedTenantId,
+  incrementReviewMetric: (status, count) => {
+    trainingPipelineMetrics.reviewTotal.labels(status).inc(count);
+  },
+});
+
+registerTrainingBulkImportRoutes(app, {
+  logger,
+  resolveAuthorizedTenantId,
+  parseBulkImportBody: (body) => bulkImportSchema.parse(body),
+  findNamespaceByIdInTenant,
+  findAgentByIdInTenant,
+  computeSemHash,
+  evaluateTrainingQuality,
+  resolveScope,
+  observeScopeConfidence: (value) => {
+    trainingPipelineMetrics.scopeConfidenceHistogram.observe(value);
+  },
+  incrementScopeQuarantineTotal: ({ sourceType, reason }) => {
+    trainingPipelineMetrics.scopeQuarantineTotal.inc({
+      source_type: sourceType,
+      reason,
+    });
+  },
+  incrementScopeSuggestedNewNamespaceTotal: ({ sourceType }) => {
+    trainingPipelineMetrics.scopeSuggestedNewNamespaceTotal.inc({
+      source_type: sourceType,
+    });
+  },
+  getTrainingDataMinQuality: () => TRAINING_DATA_MIN_QUALITY,
+  buildTrainingIdempotencyKey: (params) => buildTrainingIdempotencyKey(params),
+  parseTrainingEmbeddingDedupeQueuePayload: (payload) => trainingEmbeddingDedupeQueuePayloadSchema.parse(payload),
+  enqueueTrainingEmbeddingDedupeJob,
+});
+
+registerTrainingWebhookRoutes(app, {
+  logger,
+  collectTrainingDataForTenant,
+  parseCollectTrainingDataPayload: (body) => collectTrainingDataPayloadSchema.parse(body),
+  toTrainingHttpErrorResponse: (error) => (
+    error instanceof TrainingHttpError
+      ? { status: error.status, payload: error.responsePayload }
+      : null
+  ),
+  incrementWebhookAuthValidationTotal: ({ mode, result }) => {
+    trainingPipelineMetrics.webhookAuthValidationTotal.inc({ mode, result });
+  },
+  incrementWebhookBodyDigestValidationTotal: ({ result }) => {
+    trainingPipelineMetrics.webhookBodyDigestValidationTotal.inc({ result });
+  },
+  incrementWebhookNonceValidationTotal: ({ storage, result }) => {
+    trainingPipelineMetrics.webhookNonceValidationTotal.inc({ storage, result });
+  },
 });
 
 const messageSchema = z.object({
@@ -3202,19 +2914,7 @@ type TrainingNamespaceProfileRuntime = {
 };
 
 async function getDefaultNamespaceProfileConfigForTraining(): Promise<NamespaceProfileConfig> {
-  const raw = await getSystemConfig('NAMESPACE_PROFILE_DEFAULT_CONFIG_JSON');
-  if (!raw) {
-    throw new Error('NAMESPACE_PROFILE_DEFAULT_CONFIG_JSON ausente no system_config');
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (error) {
-    throw new Error(
-      `JSON invÃ¡lido em NAMESPACE_PROFILE_DEFAULT_CONFIG_JSON: ${error instanceof Error ? error.message : String(error)}`
-    );
-  }
-  return NamespaceProfileConfigSchema.parse(parsed);
+  return getNamespaceProfileDefaultConfig();
 }
 
 async function resolveTrainingNamespaceProfile(params: {
@@ -3769,2393 +3469,211 @@ async function collectTrainingDataForTenant(params: {
   };
 }
 
-app.post('/api/training/data', requirePermission('training:training_data:write'), async (req: Request, res: Response) => {
-  try {
-    const body = collectTrainingDataSchema.parse(req.body);
-    const tenantResolution = resolveAuthorizedTenantId(req, body.tenantId);
-    if (!tenantResolution.ok) {
-      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
-    }
-    const { tenantId: _tenantId, ...payload } = body;
-    const result = await collectTrainingDataForTenant({
-      tenantId: tenantResolution.tenantId,
-      createdBy: tenantResolution.authContext.userId ?? undefined,
-      payload: collectTrainingDataPayloadSchema.parse(payload),
-    });
-    return res.json(result);
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: 'Payload invalido', details: error.flatten() });
-    }
-    if (error instanceof TrainingHttpError) {
-      return res.status(error.status).json(error.responsePayload);
-    }
-    logger.error({ error }, 'Falha ao coletar dados de treinamento');
-    return res.status(500).json({ error: 'Erro interno do servidor' });
-  }
+registerTrainingJobQueryRoutes(app, {
+  logger,
+  resolveAuthorizedTenantId,
+  getPromotionApprovalSummary,
+  buildFineTuningJobStreamFingerprint,
+  isActiveFineTuningJobStatus,
+  trainingJobStreamPollIntervalMs: TRAINING_JOB_STREAM_POLL_INTERVAL_MS,
+  trainingJobStreamHeartbeatMs: TRAINING_JOB_STREAM_HEARTBEAT_MS,
+  trainingGovernanceAuditActions: TRAINING_GOVERNANCE_AUDIT_ACTIONS,
 });
 
-app.get('/api/training/data', requirePermission('training:training_data:read'), async (req: Request, res: Response) => {
-  // OWASP API3: ValidaÃ§Ã£o de query params
-  const queryResult = trainingDataQuerySchema.safeParse(req.query);
-  if (!queryResult.success) {
-    return res.status(400).json({ error: 'ParÃ¢metros invÃ¡lidos', details: queryResult.error.format() });
-  }
-  const { status, namespaceId, agentId, inferredDomain, needsHumanReview, sourceType } = queryResult.data;
-
-  try {
-    const tenantResolution = resolveAuthorizedTenantId(req);
-    if (!tenantResolution.ok) {
-      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
-    }
-
-    const conditions = [eq(schema.trainingData.tenantId, tenantResolution.tenantId)];
-    if (status) conditions.push(eq(schema.trainingData.status, status as 'pending' | 'approved' | 'rejected' | 'reserved' | 'used'));
-    if (namespaceId) conditions.push(eq(schema.trainingData.namespaceId, namespaceId));
-    if (agentId) conditions.push(eq(schema.trainingData.agentId, agentId));
-    if (inferredDomain) conditions.push(eq(schema.trainingData.inferredDomain, inferredDomain));
-    if (needsHumanReview) conditions.push(eq(schema.trainingData.needsHumanReview, needsHumanReview === 'true'));
-    if (sourceType) conditions.push(eq(schema.trainingData.sourceType, sourceType));
-
-    const trainingData = await db.query.trainingData.findMany({
-      where: conditions.length > 0 ? and(...conditions) : undefined,
-      orderBy: [desc(schema.trainingData.criadoEm)],
-      limit: 100,
-    });
-
-    res.json({ trainingData });
-  } catch (error) {
-    logger.error({ error }, 'Falha ao buscar dados de treinamento');
-    res.status(500).json({ error: 'Erro interno do servidor' });
-  }
-});
-
-// OWASP API3 - Schema para validaÃ§Ã£o de parÃ¢metros de rota (UUID)
-const uuidParamSchema = z.object({
-  id: z.string().uuid('ID deve ser um UUID vÃ¡lido'),
-});
-
-// OWASP API3 - Schema para validaÃ§Ã£o de status
-const statusUpdateSchema = z.object({
-  status: z.enum(['approved', 'rejected']),
-  purpose: z.enum(['behavior_sft', 'knowledge_rag', 'eval_only']).optional(),
-  reviewNotes: z.string().max(2000).optional(),
-  overrideScope: z.object({
-    namespaceId: z.string().uuid().optional().nullable(),
-    agentId: z.string().uuid().optional().nullable(),
-    domain: z.string().min(1).max(120).optional().nullable(),
-    reason: z.string().min(10).max(2000),
-  }).optional(),
-});
-
-const promotionApprovalBodySchema = z.object({
-  decision: z.enum(['approved', 'rejected']),
-  reason: z.string().max(2000).optional(),
-});
-
-const rollbackBodySchema = z.object({
-  reason: z.string().trim().min(10).max(500),
-});
-
-async function getPromotionApprovalSummary(params: {
-  tenantId: string;
-  fineTuningJobId: string;
-  requesterUserId: string;
-}): Promise<{
-  approvedDistinctUsersCount: number;
-  requesterHasApproved: boolean;
-  approvals: Array<{
-    approverUserId: string;
-    decision: 'approved' | 'rejected';
-    reason: string | null;
-    updatedAt: Date;
-  }>;
-}> {
-  const approvals = await db.query.fineTuningPromotionApprovals.findMany({
-    where: and(
-      eq(schema.fineTuningPromotionApprovals.tenantId, params.tenantId),
-      eq(schema.fineTuningPromotionApprovals.fineTuningJobId, params.fineTuningJobId)
-    ),
-    orderBy: [desc(schema.fineTuningPromotionApprovals.updatedAt)],
-  });
-
-  const approvedDistinctUsersCount = approvals
-    .filter((approval) => approval.decision === 'approved')
-    .length;
-  const requesterHasApproved = approvals.some((approval) => (
-    approval.approverUserId === params.requesterUserId
-    && approval.decision === 'approved'
-  ));
-
-  return {
-    approvedDistinctUsersCount,
-    requesterHasApproved,
-    approvals: approvals.map((approval) => ({
-      approverUserId: approval.approverUserId,
-      decision: approval.decision,
-      reason: approval.reason,
-      updatedAt: approval.updatedAt,
-    })),
-  };
-}
-
-type TrainingGovernanceAuditAction =
-  | 'training_promotion_approval_recorded'
-  | 'training_model_promoted'
-  | 'training_model_rollback_executed'
-  | 'training_run_start_requested'
-  | 'training_scope_binding_changed';
-const TRAINING_GOVERNANCE_AUDIT_ACTIONS: TrainingGovernanceAuditAction[] = [
-  'training_promotion_approval_recorded',
-  'training_model_promoted',
-  'training_model_rollback_executed',
-  'training_run_start_requested',
-  'training_scope_binding_changed',
-];
-
-type TrainingAuditExecutor = Pick<Database, 'execute' | 'select' | 'insert'>;
-
-function extractRequestCorrelationId(request: Request): string | null {
-  const raw = request.headers['x-correlation-id'];
-  const parsed = Array.isArray(raw) ? raw[0] : raw;
-  if (typeof parsed !== 'string') return null;
-  const trimmed = parsed.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
-function buildTrainingGovernanceAuditValues(params: {
-  tenantId: string;
-  userId: string | null;
-  action: TrainingGovernanceAuditAction;
-  resource?: 'fine_tuning_job' | 'training_data';
-  resourceId: string;
-  request: Request;
-  details: Record<string, unknown>;
-}) {
-  return {
-    tenantId: params.tenantId,
-    userId: params.userId,
-    acao: params.action,
-    recurso: params.resource ?? 'fine_tuning_job',
-    recursoId: params.resourceId,
-    detalhes: params.details,
-    ip: extractRequestIp(params.request),
-    userAgent: extractRequestUserAgent(params.request),
-  };
-}
-
-async function persistTrainingGovernanceAudit(params: {
-  tenantId: string;
-  userId: string | null;
-  action: TrainingGovernanceAuditAction;
-  resource?: 'fine_tuning_job' | 'training_data';
-  resourceId: string;
-  request: Request;
-  details: Record<string, unknown>;
-  executor?: TrainingAuditExecutor;
-}): Promise<void> {
-  const auditValues = buildTrainingGovernanceAuditValues({
+registerTrainingJobCreateRoutes(app, {
+  logger,
+  resolveAuthorizedTenantId,
+  readOptionalTrainingIdempotencyKey: (req) => trainingRunStartIdempotencyService.readOptionalTrainingIdempotencyKey(req),
+  buildRunStartRequestFingerprint: (params) => trainingRunStartIdempotencyService.buildRunStartRequestFingerprint(params),
+  hashIdempotencyKeyForAudit: (key) => trainingRunStartIdempotencyService.hashIdempotencyKeyForAudit(key),
+  lookupRunStartIdempotencyReplay: (params) => trainingRunStartIdempotencyService.lookupRunStartIdempotencyReplay(params),
+  sendTrainingRunStartError: (params) => trainingRunStartIdempotencyService.sendTrainingRunStartError(params),
+  applyIdempotencyResponseHeaders: (res, key, status) => (
+    trainingRunStartIdempotencyService.applyIdempotencyResponseHeaders(res, key, status)
+  ),
+  storeRunStartIdempotencyRecord: (params) => trainingRunStartIdempotencyService.storeRunStartIdempotencyRecord(params),
+  findNamespaceByIdInTenant,
+  findAgentByIdInTenant,
+  enqueueTrainingFineTuningRun,
+  persistTrainingGovernanceAudit: async (params) => trainingGovernanceAuditService.persistTrainingGovernanceAudit({
     tenantId: params.tenantId,
     userId: params.userId,
     action: params.action,
-    resource: params.resource,
     resourceId: params.resourceId,
     request: params.request,
     details: params.details,
-  });
-  const immutableInput = {
-    tenantId: params.tenantId,
-    stream: 'training_governance',
-    streamKey: `${auditValues.recurso}:${auditValues.recursoId}`,
-    eventType: params.action,
-    resourceType: auditValues.recurso,
-    resourceId: auditValues.recursoId ?? null,
-    actorUserId: params.userId,
-    sourceService: 'training-service',
-    requestId: extractRequestCorrelationId(params.request),
-    ipAddress: auditValues.ip ?? null,
-    userAgent: auditValues.userAgent ?? null,
-    payload: params.details,
-  } as const;
-
-  try {
-    if (params.executor) {
-      await params.executor.insert(schema.auditLogs).values(auditValues);
-      await appendImmutableAuditEventWithExecutor({
-        executor: params.executor,
-        input: immutableInput,
-      });
-      trainingPipelineMetrics.highRiskAuditEventsTotal.inc({
-        service: 'training-service',
-        event_type: params.action,
-        result: 'success',
-      });
-      return;
-    }
-
-    await db.transaction(async (tx) => {
-      await tx.insert(schema.auditLogs).values(auditValues);
-      await appendImmutableAuditEventWithExecutor({
-        executor: tx,
-        input: immutableInput,
-      });
+  }),
+  trainingRunStartRequireIdempotencyKey: TRAINING_RUN_START_REQUIRE_IDEMPOTENCY_KEY,
+  trainingRunStartContentionRetryAfterSeconds: TRAINING_RUN_START_CONTENTION_RETRY_AFTER_SECONDS,
+  trainingRunStartCapacityRetryAfterSeconds: TRAINING_RUN_START_CAPACITY_RETRY_AFTER_SECONDS,
+  incrementRunStartIdempotencyMetric: (result) => {
+    trainingPipelineMetrics.runStartIdempotencyTotal.inc({
+      endpoint: 'custom_job',
+      result,
     });
-    trainingPipelineMetrics.highRiskAuditEventsTotal.inc({
-      service: 'training-service',
-      event_type: params.action,
-      result: 'success',
-    });
-  } catch (error) {
-    trainingPipelineMetrics.highRiskAuditEventsTotal.inc({
-      service: 'training-service',
-      event_type: params.action,
-      result: 'error',
-    });
-    throw error;
-  }
-}
-
-app.patch('/api/training/data/:id/status', requirePermission('training:training_data:manage'), async (req: Request, res: Response) => {
-  // OWASP API3: ValidaÃ§Ã£o Zod obrigatÃ³ria de parÃ¢metros de rota
-  const paramsResult = uuidParamSchema.safeParse(req.params);
-  if (!paramsResult.success) {
-    return res.status(400).json({ error: 'ID invÃ¡lido', details: paramsResult.error.format() });
-  }
-  const { id } = paramsResult.data;
-  
-  // OWASP API3: ValidaÃ§Ã£o de body
-  const bodyResult = statusUpdateSchema.safeParse(req.body);
-  if (!bodyResult.success) {
-    return res.status(400).json({ error: 'Status invÃ¡lido', details: bodyResult.error.format() });
-  }
-  const { status, purpose, reviewNotes, overrideScope } = bodyResult.data;
-  const tenantResolution = resolveAuthorizedTenantId(req);
-  if (!tenantResolution.ok) {
-    return res.status(tenantResolution.status).json({ error: tenantResolution.error });
-  }
-  const reviewedBy = tenantResolution.authContext.userId;
-
-  try {
-    const existing = await db.query.trainingData.findFirst({
-      where: eq(schema.trainingData.id, id),
-    });
-
-    if (!existing) {
-      return res.status(404).json({ error: 'Registro de treinamento nÃ£o encontrado' });
-    }
-
-    if (existing.tenantId !== tenantResolution.tenantId) {
-      return res.status(403).json({ error: 'Registro de treinamento nao pertence ao tenant autenticado' });
-    }
-
-    if (!existing.namespaceId && status === 'approved' && !overrideScope?.namespaceId) {
-      return res.status(400).json({
-        error: 'NÃ£o Ã© possÃ­vel aprovar sem namespace definido. Resolva o escopo primeiro.',
-      });
-    }
-
-    if (existing.needsHumanReview && status === 'approved' && !overrideScope) {
-      return res.status(400).json({
-        error: 'Item em quarentena de escopo. Resolva o escopo antes de aprovar.',
-      });
-    }
-
-    let nextNamespaceId = existing.namespaceId;
-    let nextAgentId = existing.agentId;
-    let nextDomain = existing.inferredDomain;
-    const overrideApplied =
-      Boolean(overrideScope) &&
-      (
-        (overrideScope?.namespaceId ?? existing.namespaceId) !== existing.namespaceId ||
-        (overrideScope?.agentId ?? existing.agentId) !== existing.agentId ||
-        (overrideScope?.domain ?? existing.inferredDomain) !== existing.inferredDomain
-      );
-
-    if (overrideScope) {
-      if (!existing.tenantId) {
-        return res.status(400).json({ error: 'Item sem tenant valido nao pode receber override de escopo' });
-      }
-      if (!overrideScope.reason?.trim()) {
-        return res.status(400).json({ error: 'Motivo Ã© obrigatÃ³rio para override de escopo' });
-      }
-
-      if (overrideScope.namespaceId) {
-        const namespace = await findNamespaceByIdInTenant(existing.tenantId, overrideScope.namespaceId);
-        if (!namespace) {
-          return res.status(403).json({ error: 'Namespace de override invalido para o tenant do item' });
-        }
-        nextNamespaceId = namespace.id;
-      }
-
-      if (overrideScope.agentId) {
-        const agent = await findAgentByIdInTenant(existing.tenantId, overrideScope.agentId);
-        if (!agent) {
-          return res.status(403).json({ error: 'Agente de override invalido para o tenant do item' });
-        }
-        if (nextNamespaceId && agent.namespaceId && agent.namespaceId !== nextNamespaceId) {
-          return res.status(403).json({ error: 'Agente selecionado nao pertence ao namespace alvo' });
-        }
-        nextAgentId = agent.id;
-        if (!nextNamespaceId && agent.namespaceId) {
-          nextNamespaceId = agent.namespaceId;
-        }
-      }
-
-      if (overrideScope.domain) {
-        nextDomain = overrideScope.domain;
-      }
-
-      if (overrideApplied && reviewedBy) {
-        if (!existing.tenantId) {
-          return res.status(400).json({
-            error: 'Item sem tenant vÃ¡lido nÃ£o pode receber override de escopo',
-          });
-        }
-        await db.insert(schema.trainingScopeOverrides).values({
-          trainingDataId: id,
-          tenantId: existing.tenantId,
-          oldNamespaceId: existing.namespaceId,
-          newNamespaceId: nextNamespaceId,
-          oldDomain: existing.inferredDomain,
-          newDomain: nextDomain,
-          oldAgentId: existing.agentId,
-          newAgentId: nextAgentId,
-          changedBy: reviewedBy,
-          reason: overrideScope.reason,
-          source: 'training_review',
-        });
-        trainingPipelineMetrics.scopeOverrideTotal.inc({ source: 'training_review' });
-        try {
-          await persistTrainingGovernanceAudit({
-            tenantId: existing.tenantId,
-            userId: reviewedBy,
-            action: 'training_scope_binding_changed',
-            resource: 'training_data',
-            resourceId: existing.id,
-            request: req,
-            details: {
-              source: 'training_review',
-              reason: overrideScope.reason,
-              oldScope: {
-                namespaceId: existing.namespaceId,
-                agentId: existing.agentId,
-                domain: existing.inferredDomain,
-              },
-              newScope: {
-                namespaceId: nextNamespaceId,
-                agentId: nextAgentId,
-                domain: nextDomain,
-              },
-            },
-          });
-          trainingPipelineMetrics.governanceAuditWritesTotal.inc({
-            action: 'training_scope_binding_changed',
-            result: 'success',
-          });
-        } catch (auditError) {
-          logger.warn({ auditError, trainingDataId: existing.id }, 'Falha ao registrar auditoria de mudanca de escopo');
-          trainingPipelineMetrics.governanceAuditWritesTotal.inc({
-            action: 'training_scope_binding_changed',
-            result: 'error',
-          });
-        }
-      }
-    }
-
-    const reviewedAt = new Date();
-    const nextPurpose: 'behavior_sft' | 'knowledge_rag' | 'eval_only' | 'rejected' = status === 'rejected'
-      ? 'rejected'
-      : (purpose ?? (existing.purpose as 'behavior_sft' | 'knowledge_rag' | 'eval_only' | 'rejected'));
-    const [updated] = await db.update(schema.trainingData)
-      .set({ 
-        status: status as 'approved' | 'rejected',
-        purpose: nextPurpose,
-        processadoEm: reviewedAt,
-        processedAt: reviewedAt,
-        reviewedBy,
-        reviewedAt,
-        reviewNotes: reviewNotes ?? null,
-        namespaceId: nextNamespaceId,
-        agentId: nextAgentId,
-        inferredDomain: nextDomain,
-        needsHumanReview: false,
-        quarantineReason: null,
-        quarantinedAt: null,
-      })
-      .where(and(
-        eq(schema.trainingData.id, id),
-        eq(schema.trainingData.tenantId, tenantResolution.tenantId)
-      ))
-      .returning();
-
-    trainingPipelineMetrics.reviewTotal.labels(status).inc();
-
-    logger.info({ trainingDataId: id, status, overrideApplied }, 'Status de treinamento atualizado');
-    res.json({ trainingData: updated });
-  } catch (error) {
-    logger.error({ error }, 'Falha ao atualizar status de treinamento');
-    res.status(500).json({ error: 'Erro interno do servidor' });
-  }
-});
-
-const resolveScopeSchema = z.object({
-  namespaceId: z.string().uuid(),
-  agentId: z.string().uuid().optional().nullable(),
-  domain: z.string().min(1).max(120).optional().nullable(),
-  reason: z.string().min(10).max(2000),
-});
-
-app.patch('/api/training/data/:id/resolve-scope', requirePermission('training:training_data:manage'), async (req: Request, res: Response) => {
-  const paramsResult = uuidParamSchema.safeParse(req.params);
-  if (!paramsResult.success) {
-    return res.status(400).json({ error: 'ID invÃ¡lido', details: paramsResult.error.format() });
-  }
-  const bodyResult = resolveScopeSchema.safeParse(req.body);
-  if (!bodyResult.success) {
-    return res.status(400).json({ error: 'Payload invÃ¡lido', details: bodyResult.error.format() });
-  }
-
-  const tenantResolution = resolveAuthorizedTenantId(req);
-  if (!tenantResolution.ok) {
-    return res.status(tenantResolution.status).json({ error: tenantResolution.error });
-  }
-  const changedBy = tenantResolution.authContext.userId;
-  if (!changedBy) {
-    return res.status(403).json({ error: 'UsuÃ¡rio nÃ£o identificado para resolver escopo' });
-  }
-
-  try {
-    const existing = await db.query.trainingData.findFirst({
-      where: eq(schema.trainingData.id, paramsResult.data.id),
-    });
-    if (!existing) {
-      return res.status(404).json({ error: 'Registro de treinamento nÃ£o encontrado' });
-    }
-    if (existing.tenantId !== tenantResolution.tenantId) {
-      return res.status(403).json({ error: 'Registro de treinamento nao pertence ao tenant autenticado' });
-    }
-    if (!existing.tenantId) {
-      return res.status(400).json({ error: 'Item sem tenant vÃ¡lido nÃ£o pode ser resolvido' });
-    }
-
-    const namespace = await findNamespaceByIdInTenant(existing.tenantId, bodyResult.data.namespaceId);
-    if (!namespace) {
-      return res.status(403).json({ error: 'Namespace nÃ£o pertence ao tenant do item' });
-    }
-
-    const nextAgentId: string | null = bodyResult.data.agentId ?? null;
-    if (nextAgentId) {
-      const agent = await findAgentByIdInTenant(existing.tenantId, nextAgentId);
-      if (!agent) {
-        return res.status(403).json({ error: 'Agente invÃ¡lido para o tenant do item' });
-      }
-      if (agent.namespaceId && agent.namespaceId !== namespace.id) {
-        return res.status(403).json({ error: 'Agente nÃ£o pertence ao namespace informado' });
-      }
-    }
-
-    await db.insert(schema.trainingScopeOverrides).values({
-      trainingDataId: existing.id,
-      tenantId: existing.tenantId,
-      oldNamespaceId: existing.namespaceId,
-      newNamespaceId: namespace.id,
-      oldDomain: existing.inferredDomain,
-      newDomain: bodyResult.data.domain ?? existing.inferredDomain,
-      oldAgentId: existing.agentId,
-      newAgentId: nextAgentId,
-      changedBy,
-      reason: bodyResult.data.reason,
-      source: 'quarantine_resolution',
-    });
-    trainingPipelineMetrics.scopeOverrideTotal.inc({ source: 'quarantine_resolution' });
-    trainingPipelineMetrics.scopeResolvedTotal.inc({ source: 'quarantine_resolution' });
-    try {
-      await persistTrainingGovernanceAudit({
-        tenantId: existing.tenantId,
-        userId: changedBy,
-        action: 'training_scope_binding_changed',
-        resource: 'training_data',
-        resourceId: existing.id,
-        request: req,
-        details: {
-          source: 'quarantine_resolution',
-          reason: bodyResult.data.reason,
-          oldScope: {
-            namespaceId: existing.namespaceId,
-            agentId: existing.agentId,
-            domain: existing.inferredDomain,
-          },
-          newScope: {
-            namespaceId: namespace.id,
-            agentId: nextAgentId,
-            domain: bodyResult.data.domain ?? existing.inferredDomain,
-          },
-        },
-      });
-      trainingPipelineMetrics.governanceAuditWritesTotal.inc({
-        action: 'training_scope_binding_changed',
-        result: 'success',
-      });
-    } catch (auditError) {
-      logger.warn({ auditError, trainingDataId: existing.id }, 'Falha ao registrar auditoria de resolucao de escopo');
-      trainingPipelineMetrics.governanceAuditWritesTotal.inc({
-        action: 'training_scope_binding_changed',
-        result: 'error',
-      });
-    }
-
-    const [updated] = await db.update(schema.trainingData)
-      .set({
-        namespaceId: namespace.id,
-        agentId: nextAgentId,
-        inferredDomain: bodyResult.data.domain ?? existing.inferredDomain,
-        needsHumanReview: false,
-        quarantineReason: null,
-        quarantinedAt: null,
-        scopeResolvedAt: new Date(),
-        reviewedBy: changedBy,
-        reviewedAt: new Date(),
-      })
-      .where(and(
-        eq(schema.trainingData.id, existing.id),
-        eq(schema.trainingData.tenantId, tenantResolution.tenantId)
-      ))
-      .returning();
-
-    return res.json({ trainingData: updated });
-  } catch (error) {
-    logger.error({ error }, 'Falha ao resolver escopo em quarentena');
-    return res.status(500).json({ error: 'Erro interno do servidor' });
-  }
-});
-
-app.get('/api/training/jobs', requirePermission('training:fine_tuning_jobs:read'), async (req: Request, res: Response) => {
-  // OWASP API3: ValidaÃ§Ã£o de query params
-  const queryResult = jobsQuerySchema.safeParse(req.query);
-  if (!queryResult.success) {
-    return res.status(400).json({ error: 'ParÃ¢metros invÃ¡lidos', details: queryResult.error.format() });
-  }
-  const { tenantId } = queryResult.data;
-
-  try {
-    const tenantResolution = resolveAuthorizedTenantId(req, tenantId);
-    if (!tenantResolution.ok) {
-      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
-    }
-
-    const jobs = await db.query.fineTuningJobs.findMany({
-      where: eq(schema.fineTuningJobs.tenantId, tenantResolution.tenantId),
-      orderBy: [desc(schema.fineTuningJobs.criadoEm)],
-      limit: 50,
-    });
-
-    res.json({ jobs });
-  } catch (error) {
-    logger.error({ error }, 'Falha ao buscar jobs');
-    res.status(500).json({ error: 'Erro interno do servidor' });
-  }
-});
-
-const createJobSchema = z.object({
-  tenantId: z.string().uuid().optional(),
-  namespaceId: z.string().uuid(),
-  agentId: z.string().uuid().optional(),
-  domain: z.string().min(1).max(120).optional(),
-  name: z.string().min(1),
-  baseModel: z.string().default(GPU_MANAGER_CONFIG.models.llm),
-  hyperparameters: TrainingHyperparamsOverrideSchema.optional(),
-  hyperparametersPreset: z.enum(['safe', 'standard', 'large']).optional(),
-  forceMinSize: z.boolean().optional(),
-});
-
-app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:start'), async (req: Request, res: Response) => {
-  try {
-    const body = createJobSchema.parse(req.body);
-    const idempotencyHeader = readOptionalTrainingIdempotencyKey(req);
-    if (idempotencyHeader.error) {
-      trainingPipelineMetrics.runStartIdempotencyTotal.inc({
-        endpoint: 'custom_job',
-        result: 'invalid_header',
-      });
-      return res.status(400).json({ error: idempotencyHeader.error });
-    }
-    if (TRAINING_RUN_START_REQUIRE_IDEMPOTENCY_KEY && !idempotencyHeader.key) {
-      trainingPipelineMetrics.runStartIdempotencyTotal.inc({
-        endpoint: 'custom_job',
-        result: 'missing_required',
-      });
-      return res.status(400).json({
-        error: 'Header X-Idempotency-Key obrigatorio para iniciar treino',
-        code: 'IDEMPOTENCY_KEY_REQUIRED',
-      });
-    }
-    const tenantResolution = resolveAuthorizedTenantId(req, body.tenantId ?? null);
-    if (!tenantResolution.ok) {
-      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
-    }
-    const authorizedTenantId = tenantResolution.tenantId;
-
-    const namespace = await findNamespaceByIdInTenant(authorizedTenantId, body.namespaceId);
-    if (!namespace) {
-      return res.status(404).json({ error: 'Namespace nao encontrado' });
-    }
-    if (body.tenantId && namespace.tenantId !== body.tenantId) {
-      return res.status(403).json({ error: 'Namespace nao pertence ao tenant informado' });
-    }
-    const tenantId = authorizedTenantId;
-    if (namespace.tenantId !== tenantId) {
-      return res.status(403).json({ error: 'Namespace nao pertence ao tenant autenticado' });
-    }
-    if (!tenantId) {
-      return res.status(400).json({ error: 'Tenant invalido para criacao de job de treinamento' });
-    }
-    const requestFingerprint = buildRunStartRequestFingerprint({
-      operation: 'custom_job',
-      tenantId,
-      payload: {
-        namespaceId: body.namespaceId,
-        agentId: body.agentId ?? null,
-        domain: body.domain ?? null,
-        name: body.name,
-        baseModel: body.baseModel,
-        hyperparametersPreset: body.hyperparametersPreset ?? null,
-        hyperparameters: body.hyperparameters ?? null,
-        forceMinSize: body.forceMinSize ?? false,
-      },
-    });
-    const idempotencyKeyHash = idempotencyHeader.key ? hashIdempotencyKeyForAudit(idempotencyHeader.key) : null;
-
-    const redis = getRedisClient();
-    let lockHandle: Awaited<ReturnType<typeof acquireTrainingOperationLock>> = null;
-    if (!redis) {
-      trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
-        operation: 'run_start',
-        result: 'redis_unavailable',
-      });
-      return res.status(503).json({ error: 'Redis indisponivel para controle de concorrencia de inicio de treino' });
-    }
-    if (idempotencyHeader.key) {
-      const replay = await lookupRunStartIdempotencyReplay({
-        redis,
-        operation: 'custom_job',
-        tenantId,
-        idempotencyKey: idempotencyHeader.key,
-        fingerprint: requestFingerprint,
-      });
-      if (replay.status === 'payload_mismatch') {
-        return sendTrainingRunStartError({
-          res,
-          status: 409,
-          error: 'Idempotency-Key reutilizada com payload diferente',
-          code: 'IDEMPOTENCY_KEY_PAYLOAD_MISMATCH',
-          idempotencyKey: idempotencyHeader.key,
-        });
-      }
-      if (replay.status === 'hit') {
-        applyIdempotencyResponseHeaders(res, idempotencyHeader.key, 'replayed');
-        return res.status(200).json({
-          job: replay.job,
-          loraJobId: replay.job.loraJobId,
-          enqueued: false,
-          idempotencyHit: true,
-        });
-      }
-    }
-    const startLockKey = buildTrainingScopeOperationLockKey({
-      scope: {
-        tenantId,
-        namespaceId: null,
-        agentId: null,
-      },
-      operation: 'run_start',
-    });
-    lockHandle = await acquireTrainingOperationLock({
-      redis,
-      key: startLockKey,
-      ttlSeconds: 300,
-    });
-    if (!lockHandle) {
-      trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
-        operation: 'run_start',
-        result: 'contention',
-      });
-      return sendTrainingRunStartError({
-        res,
-        status: 409,
-        error: 'Ja existe inicializacao de treino em andamento para este tenant',
-        code: 'RUN_START_LOCK_CONTENTION',
-        retryAfterSeconds: TRAINING_RUN_START_CONTENTION_RETRY_AFTER_SECONDS,
-        idempotencyKey: idempotencyHeader.key,
-      });
-    }
+  },
+  incrementGovernanceLockAttemptsMetric: (result) => {
     trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
       operation: 'run_start',
-      result: 'acquired',
+      result,
     });
-
-    try {
-      const governanceConfig = await loadTrainingGovernanceRuntimeConfig();
-      const inflightCount = await getTenantInflightFineTuningJobsCount(db, tenantId);
-      if (inflightCount >= governanceConfig.maxInflightRunsPerTenant) {
-        return sendTrainingRunStartError({
-          res,
-          status: 429,
-          error: `Capacidade de treinamento esgotada para este tenant (inflight=${inflightCount}, max=${governanceConfig.maxInflightRunsPerTenant})`,
-          code: 'RUN_START_CAPACITY_EXHAUSTED',
-          retryAfterSeconds: TRAINING_RUN_START_CAPACITY_RETRY_AFTER_SECONDS,
-          idempotencyKey: idempotencyHeader.key,
-        });
-      }
-
-      if (body.agentId) {
-        const agent = await findAgentByIdInTenant(tenantId, body.agentId);
-        if (!agent) {
-          return res.status(403).json({ error: 'Agente invalido para o tenant autenticado' });
-        }
-        if (agent.namespaceId && agent.namespaceId !== namespace.id) {
-          return res.status(403).json({ error: 'Agente nao pertence ao namespace informado' });
-        }
-      }
-
-      const approvedConditions = [
-        eq(schema.trainingData.status, 'approved'),
-        eq(schema.trainingData.purpose, 'behavior_sft'),
-        eq(schema.trainingData.isDuplicate, false),
-        isNull(schema.trainingData.usedInJobId),
-        eq(schema.trainingData.namespaceId, body.namespaceId),
-      ];
-      approvedConditions.push(eq(schema.trainingData.tenantId, tenantId));
-      if (body.agentId) approvedConditions.push(eq(schema.trainingData.agentId, body.agentId));
-
-    const approvedDataRaw = await db.query.trainingData.findMany({
-      where: and(...approvedConditions),
+  },
+  incrementGovernanceAuditWritesMetric: (result) => {
+    trainingPipelineMetrics.governanceAuditWritesTotal.inc({
+      action: 'training_run_start_requested',
+      result,
     });
+  },
+});
 
-    const profileSelection = await selectExamplesByProfile(
-      {
-        tenantId,
-        namespaceId: body.namespaceId,
-        agentId: body.agentId ?? null,
-        domain: body.domain ?? null,
-      },
-      'training_job',
-      approvedDataRaw.map((item) => ({
-        id: item.id,
-        sourceType: item.sourceType,
-        sourceMetadata: item.sourceMetadata as Record<string, unknown>,
-        qualityScore: item.qualityScore,
-        messages: item.messages as Array<{ role: 'user' | 'assistant' | 'system'; content: string }>,
-      }))
-    );
+registerTrainingJobCancelRoutes(app, {
+  logger,
+  resolveAuthorizedTenantId,
+  cancelFineTuningJobAndLora: (params) => trainingJobLifecycleService.cancelFineTuningJobAndLora(params),
+  toTrainingHttpErrorResponse: (error) => (
+    error instanceof TrainingHttpError
+      ? { status: error.status, payload: error.responsePayload }
+      : null
+  ),
+});
 
-    const approvedIds = new Set(profileSelection.selected.map((item) => item.id));
-    const approvedData = approvedDataRaw.filter((item) => approvedIds.has(item.id));
-
-    const [trainingRuntimeConfig, trainingEnterpriseConfig] = await Promise.all([
-      loadTrainingSystemRuntimeConfig(),
-      loadTrainingEnterpriseConfig(),
-    ]);
-    const minRequired = body.forceMinSize ? 1 : trainingEnterpriseConfig.minOndemandDatasetSize;
-    if (approvedData.length < minRequired) {
-      return res.status(400).json({
-        error: 'Dados de treinamento insuficientes',
-        required: minRequired,
-        available: approvedData.length,
-        hint: body.forceMinSize ? 'Poucos exemplos podem prejudicar o modelo. Use por sua conta e risco.' : undefined,
-      });
-    }
-
-    const selectedPreset = body.hyperparametersPreset ?? 'standard';
-    const presetHyperparameters = trainingRuntimeConfig.presets[selectedPreset];
-    const jobHyperparameters: TradingLoraHyperparams = TradingLoraHyperparamsSchema.parse({
-      ...trainingRuntimeConfig.defaultHyperparams,
-      ...presetHyperparameters,
-      ...(body.hyperparameters ?? {}),
+registerTrainingJobPromotionApprovalRoutes(app, {
+  logger,
+  resolveAuthorizedTenantId,
+  getPromotionApprovalSummary,
+  persistTrainingGovernanceAudit: async (params) => trainingGovernanceAuditService.persistTrainingGovernanceAudit({
+    tenantId: params.tenantId,
+    userId: params.userId,
+    action: params.action,
+    resourceId: params.resourceId,
+    request: params.request,
+    details: params.details,
+    executor: params.executor,
+  }),
+  trainingOperationLockTtlSeconds: TRAINING_OPERATION_LOCK_TTL_SECONDS,
+  incrementGovernanceLockAttemptsMetric: (result) => {
+    trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
+      operation: 'promotion_approval',
+      result,
     });
-
-    const datasetSnapshot = await persistCanonicalDatasetSnapshot({
-      scope: {
-        tenantId,
-        namespaceId: body.namespaceId,
-        agentId: body.agentId ?? null,
-        domain: body.domain ?? null,
-      },
-      options: {
-        includeTradingDataset: true,
-        datasetMaxRows: trainingRuntimeConfig.datasetMaxRows,
-        trainEvalSplitRatio: trainingRuntimeConfig.trainEvalSplitRatio,
-        minDatasetSize: minRequired,
-        seed: `${tenantId}:${body.namespaceId}:${body.agentId ?? 'all'}:${Date.now().toString(36)}`,
-        profileId: null,
-        profileVersion: 1,
-        inputRows: approvedData.map((item) => ({
-          id: item.id,
-          sourceType: item.sourceType,
-          semhash: item.semhash,
-          criadoEm: item.criadoEm,
-          messages: item.messages,
-          sourceMetadata: item.sourceMetadata,
-          purpose: item.purpose,
-        })),
-      },
+  },
+  incrementGovernanceAuditWritesMetric: (result) => {
+    trainingPipelineMetrics.governanceAuditWritesTotal.inc({
+      action: 'training_promotion_approval_recorded',
+      result,
     });
+  },
+});
 
-    const [loraJob] = await db.insert(schema.loraJobs).values({
-      tenantId,
-      scopeType: body.agentId ? 'agent' : 'namespace',
-      scopeNamespaceId: body.namespaceId,
-      scopeAgentId: body.agentId ?? null,
-      source: 'explicit_job',
-      datasetVersionId: datasetSnapshot.datasetVersionId,
-      name: `${body.name} (linked LoRA)`,
-      description: 'Job LoRA vinculado ao fine_tuning_jobs',
-      baseModel: body.baseModel,
-      status: 'queued',
-      datasetCount: datasetSnapshot.manifest.totals.train,
-      validationCount: datasetSnapshot.manifest.totals.validation,
-      includeTradingDataset: datasetSnapshot.splitPolicy !== 'chat_deterministic_hash',
-      hyperparameters: jobHyperparameters,
-      metrics: {
-        holdoutCount: datasetSnapshot.manifest.totals.holdout,
-        splitPolicy: datasetSnapshot.splitPolicy,
-        datasetManifestHash: datasetSnapshot.manifest.hashes.manifest,
-      },
-    }).returning({ id: schema.loraJobs.id });
-
-    const datasetRowIds = [
-      ...datasetSnapshot.trainRows.map((row) => row.id),
-      ...datasetSnapshot.validationRows.map((row) => row.id),
-      ...datasetSnapshot.holdoutRows.map((row) => row.id),
-    ];
-    await reserveDatasetRowsForJob({
-      jobId: loraJob.id,
-      rowIds: datasetRowIds,
+registerTrainingJobRollbackRoutes(app, {
+  logger,
+  resolveAuthorizedTenantId,
+  persistTrainingGovernanceAudit: async (params) => trainingGovernanceAuditService.persistTrainingGovernanceAudit({
+    tenantId: params.tenantId,
+    userId: params.userId,
+    action: params.action,
+    resourceId: params.resourceId,
+    request: params.request,
+    details: params.details,
+    executor: params.executor,
+  }),
+  trainingOperationLockTtlSeconds: TRAINING_OPERATION_LOCK_TTL_SECONDS,
+  incrementGovernanceLockAttemptsMetric: (result) => {
+    trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
+      operation: 'rollback',
+      result,
     });
-    await db.insert(schema.trainingLineageEvents).values([
-      {
-        tenantId,
-        namespaceId: body.namespaceId,
-        eventType: 'dataset_version_created',
-        sourceTable: 'training_data',
-        sourceId: datasetSnapshot.datasetHash,
-        producedTable: 'training_dataset_versions',
-        producedId: datasetSnapshot.datasetVersionId,
-        metadata: {
-          datasetCount: datasetSnapshot.manifest.totals.eligible,
-          splitPolicy: datasetSnapshot.splitPolicy,
-        },
-      },
-      {
-        tenantId,
-        namespaceId: body.namespaceId,
-        eventType: 'lora_job_created',
-        sourceTable: 'training_dataset_versions',
-        sourceId: datasetSnapshot.datasetVersionId,
-        producedTable: 'lora_jobs',
-        producedId: loraJob.id,
-        metadata: {
-          datasetVersionId: datasetSnapshot.datasetVersionId,
-          datasetManifestHash: datasetSnapshot.manifest.hashes.manifest,
-        },
-      },
-    ]);
-
-    const [job] = await db.insert(schema.fineTuningJobs).values({
-      tenantId,
-      name: body.name,
-      baseModel: body.baseModel,
-      status: 'pending',
-      runSource: 'custom_job',
-      trainingDataCount: datasetSnapshot.manifest.totals.train,
-      validationDataCount: datasetSnapshot.manifest.totals.validation,
-      datasetVersionId: datasetSnapshot.datasetVersionId,
-      loraJobId: loraJob.id,
-      scopeNamespaceId: body.namespaceId,
-      scopeAgentId: body.agentId ?? null,
-      configSnapshot: {
-        runSource: 'custom_job',
-        execution: {
-          trigger: 'manual',
-          profile: 'advanced_job',
-        },
-        priority: 'normal',
-        scope: {
-          namespaceId: body.namespaceId,
-          agentId: body.agentId ?? null,
-          domain: body.domain ?? null,
-        },
-        hyperparametersPreset: selectedPreset,
-        hyperparameters: jobHyperparameters,
-        minDatasetSizeUsed: minRequired,
-        datasetManifest: {
-          generatedAt: new Date().toISOString(),
-          splitPolicy: datasetSnapshot.splitPolicy,
-          manifestHash: datasetSnapshot.manifest.hashes.manifest,
-          trainingRowIds: datasetSnapshot.trainRows.map((row) => row.id),
-          validationRowIds: datasetSnapshot.validationRows.map((row) => row.id),
-          holdoutRowIds: datasetSnapshot.holdoutRows.map((row) => row.id),
-          datasetRowIds,
-          total: datasetSnapshot.manifest.totals.eligible,
-          training: datasetSnapshot.manifest.totals.train,
-          validation: datasetSnapshot.manifest.totals.validation,
-          holdout: datasetSnapshot.manifest.totals.holdout,
-        },
-      },
-      hyperparameters: jobHyperparameters,
-      metrics: {
-        scope: {
-          namespaceId: body.namespaceId,
-          agentId: body.agentId ?? null,
-          domain: body.domain ?? null,
-        },
-        dataset: {
-          total: datasetSnapshot.manifest.totals.eligible,
-          training: datasetSnapshot.manifest.totals.train,
-          validation: datasetSnapshot.manifest.totals.validation,
-          holdout: datasetSnapshot.manifest.totals.holdout,
-          splitPolicy: datasetSnapshot.splitPolicy,
-          datasetManifestHash: datasetSnapshot.manifest.hashes.manifest,
-        },
-      },
-      evaluationStatus: 'pending',
-      promotionStatus: 'candidate',
-    }).returning();
-
-    const enqueueResult = await enqueueTrainingFineTuningRun({
-      fineTuningJobId: job.id,
-      tenantId,
-      priority: 'normal',
-      requestedBy: tenantResolution.authContext.userId ?? null,
+  },
+  incrementGovernanceAuditWritesMetric: (result) => {
+    trainingPipelineMetrics.governanceAuditWritesTotal.inc({
+      action: 'training_model_rollback_executed',
+      result,
     });
-    if (idempotencyHeader.key) {
-      await storeRunStartIdempotencyRecord({
-        redis,
-        operation: 'custom_job',
-        tenantId,
-        idempotencyKey: idempotencyHeader.key,
-        fingerprint: requestFingerprint,
-        jobId: job.id,
-      });
-    }
+  },
+});
 
-    try {
-      await persistTrainingGovernanceAudit({
-        tenantId,
-        userId: tenantResolution.authContext.userId ?? null,
-        action: 'training_run_start_requested',
-        resourceId: job.id,
-        request: req,
-        details: {
-          source: 'custom_job',
-          after: {
-            status: job.status,
-            promotionStatus: job.promotionStatus,
-            trainingDataCount: job.trainingDataCount,
-            scopeNamespaceId: job.scopeNamespaceId,
-            scopeAgentId: job.scopeAgentId,
-          },
-          metadata: {
-            operation: 'run_start',
-            queuePriority: 'normal',
-            runSource: 'custom_job',
-            idempotencyKeyHash,
-          },
-        },
-      });
-      trainingPipelineMetrics.governanceAuditWritesTotal.inc({
-        action: 'training_run_start_requested',
-        result: 'success',
-      });
-    } catch (auditError) {
-      trainingPipelineMetrics.governanceAuditWritesTotal.inc({
-        action: 'training_run_start_requested',
-        result: 'failure',
-      });
-      logger.error(
-        {
-          error: auditError instanceof Error ? auditError.message : String(auditError),
-          tenantId,
-          jobId: job.id,
-        },
-        'Falha ao registrar auditoria de inicio de treino (job customizado)'
-      );
-    }
+registerTrainingJobPromoteRoutes(app, {
+  logger,
+  resolveAuthorizedTenantId,
+  getPromotionApprovalSummary,
+  persistTrainingGovernanceAudit: async (params) => trainingGovernanceAuditService.persistTrainingGovernanceAudit({
+    tenantId: params.tenantId,
+    userId: params.userId,
+    action: params.action,
+    resourceId: params.resourceId,
+    request: params.request,
+    details: params.details,
+    executor: params.executor,
+  }),
+  trainingOperationLockTtlSeconds: TRAINING_OPERATION_LOCK_TTL_SECONDS,
+  incrementGovernanceLockAttemptsMetric: (result) => {
+    trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
+      operation: 'promote',
+      result,
+    });
+  },
+  incrementGovernanceAuditWritesMetric: (result) => {
+    trainingPipelineMetrics.governanceAuditWritesTotal.inc({
+      action: 'training_model_promoted',
+      result,
+    });
+  },
+});
 
-      logger.info({
-        jobId: job.id,
-        loraJobId: loraJob.id,
-        dataCount: approvedData.length,
-        scope: { tenantId, namespaceId: body.namespaceId, agentId: body.agentId ?? null },
-        profileVersion: profileSelection.profileVersion,
-        enqueued: enqueueResult.enqueued,
-        queueRunId: enqueueResult.runId,
-        idempotencyKeyHash,
-      }, 'Job de fine-tuning criado e enfileirado');
-
-      if (idempotencyHeader.key) {
-        applyIdempotencyResponseHeaders(res, idempotencyHeader.key, 'created');
-      }
-
-      return res.status(202).json({
-        job,
-        loraJobId: loraJob.id,
-        enqueued: enqueueResult.enqueued,
-        profileSelection: profileSelection.diagnostics,
-      });
-    } finally {
-      if (lockHandle) {
-        try {
-          await releaseTrainingOperationLock({
-            redis,
-            handle: lockHandle,
-          });
-        } catch (releaseError) {
-          logger.error(
-            {
-              error: releaseError instanceof Error ? releaseError.message : String(releaseError),
-              tenantId,
-            },
-            'Falha ao liberar lock de inicializacao de treino (job customizado)'
-          );
-        }
-      }
-    }
-  } catch (error) {
-    logger.error({ error }, 'Falha ao criar job');
-    return res.status(500).json({ error: 'Erro interno do servidor' });
-  }
+registerTrainingRunStartRoutes(app, {
+  logger,
+  resolveAuthorizedTenantId,
+  readOptionalTrainingIdempotencyKey: (req) => trainingRunStartIdempotencyService.readOptionalTrainingIdempotencyKey(req),
+  buildRunStartRequestFingerprint: (params) => trainingRunStartIdempotencyService.buildRunStartRequestFingerprint(params),
+  hashIdempotencyKeyForAudit: (key) => trainingRunStartIdempotencyService.hashIdempotencyKeyForAudit(key),
+  lookupRunStartIdempotencyReplay: (params) => trainingRunStartIdempotencyService.lookupRunStartIdempotencyReplay(params),
+  sendTrainingRunStartError: (params) => trainingRunStartIdempotencyService.sendTrainingRunStartError(params),
+  applyIdempotencyResponseHeaders: (res, key, status) => (
+    trainingRunStartIdempotencyService.applyIdempotencyResponseHeaders(res, key, status)
+  ),
+  loadTrainingGovernanceRuntimeConfig,
+  loadTrainingEnterpriseConfig,
+  getTenantInflightFineTuningJobsCount: async (tenantId) => getTenantInflightFineTuningJobsCount(db, tenantId),
+  findNamespaceByIdInTenant,
+  evaluateDataQuality,
+  startProgressiveLoRA,
+  enqueueTrainingFineTuningRun,
+  storeRunStartIdempotencyRecord: (params) => trainingRunStartIdempotencyService.storeRunStartIdempotencyRecord(params),
+  persistTrainingGovernanceAudit: async (params) => trainingGovernanceAuditService.persistTrainingGovernanceAudit({
+    tenantId: params.tenantId,
+    userId: params.userId,
+    action: params.action,
+    resourceId: params.resourceId,
+    request: params.request,
+    details: params.details,
+    executor: params.executor,
+  }),
+  baseModel: GPU_MANAGER_CONFIG.models.llm,
+  trainingRunStartRequireIdempotencyKey: TRAINING_RUN_START_REQUIRE_IDEMPOTENCY_KEY,
+  trainingRunStartContentionRetryAfterSeconds: TRAINING_RUN_START_CONTENTION_RETRY_AFTER_SECONDS,
+  trainingRunStartCapacityRetryAfterSeconds: TRAINING_RUN_START_CAPACITY_RETRY_AFTER_SECONDS,
+  incrementRunStartIdempotencyMetric: (result) => {
+    trainingPipelineMetrics.runStartIdempotencyTotal.inc({
+      endpoint: 'on_demand',
+      result,
+    });
+  },
+  incrementGovernanceLockAttemptsMetric: (result) => {
+    trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
+      operation: 'run_start',
+      result,
+    });
+  },
+  incrementGovernanceAuditWritesMetric: (result) => {
+    trainingPipelineMetrics.governanceAuditWritesTotal.inc({
+      action: 'training_run_start_requested',
+      result,
+    });
+  },
 });
 
 // NOTA: Nao usamos polling in-memory. Estado e persistido em DB e retomado no startup.
-
-async function resumePendingFineTuningJobs(): Promise<void> {
-  const pending = await db.query.fineTuningJobs.findMany({
-    where: and(
-      not(eq(schema.fineTuningJobs.status, 'completed')),
-      not(eq(schema.fineTuningJobs.status, 'failed')),
-      not(eq(schema.fineTuningJobs.status, 'cancelled'))
-    ),
-    limit: 10,
-  });
-
-  for (const job of pending) {
-    if (!job.tenantId) {
-      logger.warn({ jobId: job.id }, 'Ignorando reenqueue de fine_tuning_job sem tenantId');
-      continue;
-    }
-    try {
-      const enqueueResult = await enqueueTrainingFineTuningRun({
-        fineTuningJobId: job.id,
-        tenantId: job.tenantId,
-        priority: resolveFineTuningQueuePriorityFromSnapshot(job.runSource, job.configSnapshot),
-      });
-      logger.info(
-        {
-          jobId: job.id,
-          enqueued: enqueueResult.enqueued,
-          queueRunId: enqueueResult.runId,
-        },
-        'fine_tuning_job pendente reenfileirado'
-      );
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      logger.error({ jobId: job.id, error: msg }, 'Falha ao reenfileirar fine_tuning_job');
-    }
-  }
-}
-
-async function resumePendingLoraJobs(): Promise<void> {
-  const pending = await db.query.loraJobs.findMany({
-    where: and(
-      not(eq(schema.loraJobs.status, 'completed')),
-      not(eq(schema.loraJobs.status, 'failed')),
-      not(eq(schema.loraJobs.status, 'cancelled'))
-    ),
-    limit: 5,
-  });
-
-  if (pending.length > 0) {
-    logger.info(
-      { count: pending.length },
-      'lora_jobs pendentes detectados; execucao ocorre via fila de fine_tuning'
-    );
-  }
-}
-// Polling removido (Regra 6): cancelamento e progresso sÃ£o tratados via DB + gpu-trainer
-
-app.get('/api/training/jobs/:id', requirePermission('training:fine_tuning_jobs:read'), async (req: Request, res: Response) => {
-  // OWASP API3: ValidaÃ§Ã£o Zod obrigatÃ³ria de parÃ¢metros de rota
-  const paramsResult = uuidParamSchema.safeParse(req.params);
-  if (!paramsResult.success) {
-    return res.status(400).json({ error: 'ID invÃ¡lido', details: paramsResult.error.format() });
-  }
-  const { id } = paramsResult.data;
-
-  try {
-    const tenantResolution = resolveAuthorizedTenantId(req);
-    if (!tenantResolution.ok) {
-      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
-    }
-
-    const job = await db.query.fineTuningJobs.findFirst({
-      where: and(
-        eq(schema.fineTuningJobs.id, id),
-        eq(schema.fineTuningJobs.tenantId, tenantResolution.tenantId)
-      ),
-    });
-
-    if (!job) {
-      return res.status(404).json({ error: 'Job nÃ£o encontrado' });
-    }
-
-    res.json({ job });
-  } catch (error) {
-    logger.error({ error }, 'Falha ao buscar job');
-    res.status(500).json({ error: 'Erro interno do servidor' });
-  }
-});
-
-app.get('/api/training/jobs/:id/stream', requirePermission('training:fine_tuning_jobs:read'), async (req: Request, res: Response) => {
-  const paramsResult = uuidParamSchema.safeParse(req.params);
-  if (!paramsResult.success) {
-    return res.status(400).json({ error: 'ID invalido', details: paramsResult.error.format() });
-  }
-
-  try {
-    const tenantResolution = resolveAuthorizedTenantId(req);
-    if (!tenantResolution.ok) {
-      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
-    }
-
-    const loadJob = async (): Promise<FineTuningJobRow | null> => {
-      const job = await db.query.fineTuningJobs.findFirst({
-        where: and(
-          eq(schema.fineTuningJobs.id, paramsResult.data.id),
-          eq(schema.fineTuningJobs.tenantId, tenantResolution.tenantId)
-        ),
-      });
-      return job ?? null;
-    };
-
-    const initialJob = await loadJob();
-    if (!initialJob) {
-      return res.status(404).json({ error: 'Job de fine-tuning nao encontrado' });
-    }
-
-    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
-    res.setHeader('Cache-Control', 'no-cache, no-transform');
-    res.setHeader('Connection', 'keep-alive');
-    res.setHeader('X-Accel-Buffering', 'no');
-    res.flushHeaders();
-
-    const flushSseChunk = () => {
-      const flusher = (res as unknown as { flush?: () => void }).flush;
-      if (typeof flusher === 'function') flusher();
-    };
-
-    const writeSseEvent = (event: string, payload: unknown): boolean => {
-      if (res.writableEnded) return false;
-      try {
-        res.write(`event: ${event}\n`);
-        res.write(`data: ${JSON.stringify(payload)}\n\n`);
-        flushSseChunk();
-        return true;
-      } catch (writeError) {
-        logger.warn(
-          {
-            jobId: paramsResult.data.id,
-            error: writeError instanceof Error ? writeError.message : String(writeError),
-          },
-          'Falha ao escrever evento SSE de fine-tuning'
-        );
-        return false;
-      }
-    };
-
-    let pollingInFlight = false;
-    let closed = false;
-    let lastFingerprint = buildFineTuningJobStreamFingerprint(initialJob);
-    let pollInterval: ReturnType<typeof setInterval> | null = null;
-    let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
-
-    const closeStream = (reason: string): void => {
-      if (closed) return;
-      closed = true;
-      if (pollInterval) {
-        clearInterval(pollInterval);
-        pollInterval = null;
-      }
-      if (heartbeatInterval) {
-        clearInterval(heartbeatInterval);
-        heartbeatInterval = null;
-      }
-      if (!res.writableEnded) {
-        res.end();
-      }
-      logger.debug({ jobId: paramsResult.data.id, reason }, 'Stream SSE de fine-tuning encerrado');
-    };
-
-    if (!writeSseEvent('job', { job: initialJob, sentAt: new Date().toISOString() })) {
-      closeStream('initial_write_failed');
-      return;
-    }
-
-    heartbeatInterval = setInterval(() => {
-      if (closed || res.writableEnded) {
-        closeStream('heartbeat_stream_not_writable');
-        return;
-      }
-      try {
-        res.write(':\n\n');
-        flushSseChunk();
-      } catch {
-        closeStream('heartbeat_write_failed');
-      }
-    }, TRAINING_JOB_STREAM_HEARTBEAT_MS);
-
-    req.on('close', () => closeStream('request_closed'));
-    res.on('close', () => closeStream('response_closed'));
-    res.on('finish', () => closeStream('response_finished'));
-
-    if (!isActiveFineTuningJobStatus(initialJob.status)) {
-      writeSseEvent('end', { reason: 'terminal_snapshot', status: initialJob.status });
-      closeStream('initial_terminal_status');
-      return;
-    }
-
-    pollInterval = setInterval(() => {
-      void (async () => {
-        if (closed || pollingInFlight) return;
-        pollingInFlight = true;
-        try {
-          const nextJob = await loadJob();
-          if (!nextJob) {
-            writeSseEvent('error', { error: 'Job de fine-tuning nao encontrado durante streaming' });
-            closeStream('job_missing_during_poll');
-            return;
-          }
-
-          const nextFingerprint = buildFineTuningJobStreamFingerprint(nextJob);
-          if (nextFingerprint !== lastFingerprint) {
-            lastFingerprint = nextFingerprint;
-            if (!writeSseEvent('job', { job: nextJob, sentAt: new Date().toISOString() })) {
-              closeStream('delta_write_failed');
-              return;
-            }
-          }
-
-          if (!isActiveFineTuningJobStatus(nextJob.status)) {
-            writeSseEvent('end', { reason: 'terminal_status', status: nextJob.status });
-            closeStream('terminal_status_reached');
-          }
-        } catch (error) {
-          logger.error(
-            {
-              jobId: paramsResult.data.id,
-              error: error instanceof Error ? error.message : String(error),
-            },
-            'Falha ao consultar job no stream SSE de fine-tuning'
-          );
-          writeSseEvent('error', { error: 'Falha interna no stream de fine-tuning' });
-          closeStream('poll_failed');
-        } finally {
-          pollingInFlight = false;
-        }
-      })();
-    }, TRAINING_JOB_STREAM_POLL_INTERVAL_MS);
-  } catch (error) {
-    logger.error(
-      {
-        jobId: paramsResult.data.id,
-        error: error instanceof Error ? error.message : String(error),
-      },
-      'Falha ao inicializar stream SSE do job de fine-tuning'
-    );
-    if (!res.headersSent) {
-      return res.status(500).json({ error: 'Erro interno do servidor' });
-    }
-    return res.end();
-  }
-});
-
-async function cancelFineTuningJobAndLora(params: {
-  fineTuningJob: FineTuningJobRow;
-  tenantId: string;
-  reason: string;
-}): Promise<FineTuningJobRow> {
-  if (!params.fineTuningJob.loraJobId) {
-    throw new TrainingHttpError(409, { error: 'Job sem loraJobId vinculado' });
-  }
-
-  const linkedLoraJob = await db.query.loraJobs.findFirst({
-    where: and(
-      eq(schema.loraJobs.id, params.fineTuningJob.loraJobId),
-      eq(schema.loraJobs.tenantId, params.tenantId)
-    ),
-    columns: { id: true, status: true },
-  });
-  if (!linkedLoraJob) {
-    throw new TrainingHttpError(404, { error: 'Job LoRA vinculado nao encontrado' });
-  }
-
-  if (linkedLoraJob.status === 'completed' || linkedLoraJob.status === 'failed') {
-    throw new TrainingHttpError(409, {
-      error: `Nao e possivel cancelar: job LoRA vinculado ja esta em estado terminal (${linkedLoraJob.status})`,
-    });
-  }
-
-  if (linkedLoraJob.status !== 'cancelled') {
-    await cancelLoraJob(linkedLoraJob.id);
-  }
-
-  const [updated] = await db.update(schema.fineTuningJobs)
-    .set({
-      status: 'cancelled',
-      completadoEm: new Date(),
-      errorMessage: params.reason,
-    })
-    .where(and(
-      eq(schema.fineTuningJobs.id, params.fineTuningJob.id),
-      eq(schema.fineTuningJobs.tenantId, params.tenantId)
-    ))
-    .returning();
-
-  if (!updated) {
-    throw new Error(`Falha ao atualizar status cancelado para fine_tuning_job ${params.fineTuningJob.id}`);
-  }
-
-  return updated;
-}
-
-app.delete('/api/training/jobs/:id', requirePermission('training:fine_tuning_jobs:cancel'), async (req: Request, res: Response) => {
-  // OWASP API3: ValidaÃ§Ã£o Zod obrigatÃ³ria de parÃ¢metros de rota
-  const paramsResult = uuidParamSchema.safeParse(req.params);
-  if (!paramsResult.success) {
-    return res.status(400).json({ error: 'ID invÃ¡lido', details: paramsResult.error.format() });
-  }
-  const { id } = paramsResult.data;
-
-  try {
-    const tenantResolution = resolveAuthorizedTenantId(req);
-    if (!tenantResolution.ok) {
-      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
-    }
-
-    const job = await db.query.fineTuningJobs.findFirst({
-      where: and(
-        eq(schema.fineTuningJobs.id, id),
-        eq(schema.fineTuningJobs.tenantId, tenantResolution.tenantId)
-      ),
-    });
-
-    if (!job) {
-      return res.status(404).json({ error: 'Job nÃ£o encontrado' });
-    }
-
-    if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') {
-      return res.status(400).json({ error: 'Job jÃ¡ finalizado ou cancelado' });
-    }
-
-    const updated = await cancelFineTuningJobAndLora({
-      fineTuningJob: job,
-      tenantId: tenantResolution.tenantId,
-      reason: 'Cancelado via endpoint /api/training/jobs/:id',
-    });
-
-    logger.info({ jobId: id }, 'Job de fine-tuning cancelado');
-    return res.json({ job: updated });
-  } catch (error) {
-    if (error instanceof TrainingHttpError) {
-      return res.status(error.status).json(error.responsePayload);
-    }
-    logger.error({ error }, 'Falha ao cancelar job');
-    return res.status(500).json({ error: 'Erro interno do servidor' });
-  }
-});
-
-app.get('/api/training/jobs/:id/promotion-approvals', requirePermission('training:fine_tuning_jobs:read'), async (req: Request, res: Response) => {
-  const paramsResult = uuidParamSchema.safeParse(req.params);
-  if (!paramsResult.success) {
-    return res.status(400).json({ error: 'ID invalido', details: paramsResult.error.format() });
-  }
-
-  try {
-    const tenantResolution = resolveAuthorizedTenantId(req);
-    if (!tenantResolution.ok) {
-      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
-    }
-    if (!tenantResolution.authContext.userId) {
-      return res.status(403).json({ error: 'Usuario nao identificado para leitura de aprovacoes' });
-    }
-
-    const fineTuningJob = await db.query.fineTuningJobs.findFirst({
-      where: and(
-        eq(schema.fineTuningJobs.id, paramsResult.data.id),
-        eq(schema.fineTuningJobs.tenantId, tenantResolution.tenantId)
-      ),
-      columns: { id: true },
-    });
-    if (!fineTuningJob) {
-      return res.status(404).json({ error: 'Job de fine-tuning nao encontrado' });
-    }
-
-    const summary = await getPromotionApprovalSummary({
-      tenantId: tenantResolution.tenantId,
-      fineTuningJobId: fineTuningJob.id,
-      requesterUserId: tenantResolution.authContext.userId,
-    });
-    return res.json(summary);
-  } catch (error) {
-    logger.error({ error, jobId: req.params.id }, 'Falha ao consultar aprovacoes de promocao');
-    return res.status(500).json({ error: 'Erro interno do servidor' });
-  }
-});
-
-app.get('/api/training/jobs/:id/audit-trail', requirePermission('training:fine_tuning_jobs:read'), async (req: Request, res: Response) => {
-  const paramsResult = uuidParamSchema.safeParse(req.params);
-  if (!paramsResult.success) {
-    return res.status(400).json({ error: 'ID invalido', details: paramsResult.error.format() });
-  }
-
-  try {
-    const tenantResolution = resolveAuthorizedTenantId(req);
-    if (!tenantResolution.ok) {
-      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
-    }
-
-    const fineTuningJob = await db.query.fineTuningJobs.findFirst({
-      where: and(
-        eq(schema.fineTuningJobs.id, paramsResult.data.id),
-        eq(schema.fineTuningJobs.tenantId, tenantResolution.tenantId)
-      ),
-      columns: { id: true },
-    });
-    if (!fineTuningJob) {
-      return res.status(404).json({ error: 'Job de fine-tuning nao encontrado' });
-    }
-
-    const events = await db.query.auditLogs.findMany({
-      where: and(
-        eq(schema.auditLogs.tenantId, tenantResolution.tenantId),
-        eq(schema.auditLogs.recurso, 'fine_tuning_job'),
-        eq(schema.auditLogs.recursoId, fineTuningJob.id),
-        inArray(schema.auditLogs.acao, TRAINING_GOVERNANCE_AUDIT_ACTIONS)
-      ),
-      orderBy: [desc(schema.auditLogs.criadoEm)],
-      limit: 100,
-    });
-
-    const userIds = Array.from(new Set(
-      events
-        .map((event) => event.userId)
-        .filter((userId): userId is string => typeof userId === 'string' && userId.length > 0)
-    ));
-    const users = userIds.length > 0
-      ? await db.query.users.findMany({
-        where: inArray(schema.users.id, userIds),
-        columns: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          email: true,
-        },
-      })
-      : [];
-    const usersById = new Map(users.map((user) => [user.id, user]));
-    const immutableStreamKey = `fine_tuning_job:${fineTuningJob.id}`;
-    const immutableEvents = await db.query.immutableAuditEvents.findMany({
-      where: and(
-        eq(schema.immutableAuditEvents.tenantId, tenantResolution.tenantId),
-        eq(schema.immutableAuditEvents.stream, 'training_governance'),
-        eq(schema.immutableAuditEvents.streamKey, immutableStreamKey),
-      ),
-      orderBy: [asc(schema.immutableAuditEvents.chainPosition)],
-      limit: 500,
-    });
-    const immutableIntegrity = verifyImmutableAuditChain(
-      immutableEvents.map((event) => ({
-        chainPosition: event.chainPosition,
-        prevEventHash: event.prevEventHash,
-        eventHash: event.eventHash,
-      }))
-    );
-
-    return res.json({
-      events: events.map((event) => {
-        const user = event.userId ? usersById.get(event.userId) : undefined;
-        return {
-          id: event.id,
-          action: event.acao,
-          resourceId: event.recursoId,
-          details: event.detalhes,
-          ip: event.ip,
-          userAgent: event.userAgent,
-          createdAt: event.criadoEm,
-          user: user ? {
-            id: user.id,
-            name: [user.firstName, user.lastName].filter(Boolean).join(' ').trim() || user.email || user.id,
-            email: user.email,
-          } : null,
-        };
-      }),
-      immutableAudit: {
-        stream: 'training_governance',
-        streamKey: immutableStreamKey,
-        integrity: immutableIntegrity,
-        events: immutableEvents.map((event) => ({
-          id: event.id,
-          chainPosition: event.chainPosition,
-          eventType: event.eventType,
-          resourceType: event.resourceType,
-          resourceId: event.resourceId,
-          payload: event.payload,
-          prevEventHash: event.prevEventHash,
-          eventHash: event.eventHash,
-          occurredAt: event.occurredAt,
-          createdAt: event.createdAt,
-        })),
-      },
-    });
-  } catch (error) {
-    logger.error({ error, jobId: req.params.id }, 'Falha ao consultar trilha de auditoria de training');
-    return res.status(500).json({ error: 'Erro interno do servidor' });
-  }
-});
-
-app.post('/api/training/jobs/:id/promotion-approval', requirePermission('training:fine_tuning_jobs:start'), async (req: Request, res: Response) => {
-  const paramsResult = uuidParamSchema.safeParse(req.params);
-  if (!paramsResult.success) {
-    return res.status(400).json({ error: 'ID invalido', details: paramsResult.error.format() });
-  }
-  const bodyResult = promotionApprovalBodySchema.safeParse(req.body);
-  if (!bodyResult.success) {
-    return res.status(400).json({ error: 'Payload invalido', details: bodyResult.error.format() });
-  }
-
-  const redis = getRedisClient();
-  let lockHandle: Awaited<ReturnType<typeof acquireTrainingOperationLock>> = null;
-
-  try {
-    const tenantResolution = resolveAuthorizedTenantId(req);
-    if (!tenantResolution.ok) {
-      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
-    }
-    if (!tenantResolution.authContext.userId) {
-      return res.status(403).json({ error: 'Usuario nao identificado para aprovar promocao' });
-    }
-
-    const fineTuningJob = await db.query.fineTuningJobs.findFirst({
-      where: and(
-        eq(schema.fineTuningJobs.id, paramsResult.data.id),
-        eq(schema.fineTuningJobs.tenantId, tenantResolution.tenantId)
-      ),
-      columns: { id: true, status: true },
-    });
-    if (!fineTuningJob) {
-      return res.status(404).json({ error: 'Job de fine-tuning nao encontrado' });
-    }
-    if (fineTuningJob.status !== 'completed') {
-      return res.status(409).json({ error: 'Somente jobs concluidos podem receber aprovacao de promocao' });
-    }
-
-    if (!redis) {
-      trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
-        operation: 'promotion_approval',
-        result: 'redis_unavailable',
-      });
-      return res.status(503).json({ error: 'Redis indisponivel para controle de concorrencia de aprovacao' });
-    }
-    const lockKey = buildTrainingJobOperationLockKey({
-      tenantId: tenantResolution.tenantId,
-      fineTuningJobId: fineTuningJob.id,
-      operation: 'promotion_approval',
-    });
-    lockHandle = await acquireTrainingOperationLock({
-      redis,
-      key: lockKey,
-      ttlSeconds: TRAINING_OPERATION_LOCK_TTL_SECONDS,
-    });
-    if (!lockHandle) {
-      trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
-        operation: 'promotion_approval',
-        result: 'lock_conflict',
-      });
-      return res.status(409).json({ error: 'Aprovacao de promocao em andamento para este job; tente novamente' });
-    }
-    trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
-      operation: 'promotion_approval',
-      result: 'acquired',
-    });
-
-    const now = new Date();
-    await db.transaction(async (tx) => {
-      const existingApproval = await tx.query.fineTuningPromotionApprovals.findFirst({
-        where: and(
-          eq(schema.fineTuningPromotionApprovals.tenantId, tenantResolution.tenantId),
-          eq(schema.fineTuningPromotionApprovals.fineTuningJobId, fineTuningJob.id),
-          eq(schema.fineTuningPromotionApprovals.approverUserId, tenantResolution.authContext.userId)
-        ),
-        columns: {
-          decision: true,
-          reason: true,
-          updatedAt: true,
-        },
-      });
-
-      await tx.insert(schema.fineTuningPromotionApprovals).values({
-        tenantId: tenantResolution.tenantId,
-        fineTuningJobId: fineTuningJob.id,
-        approverUserId: tenantResolution.authContext.userId,
-        decision: bodyResult.data.decision,
-        reason: bodyResult.data.reason ?? null,
-        createdAt: now,
-        updatedAt: now,
-      }).onConflictDoUpdate({
-        target: [
-          schema.fineTuningPromotionApprovals.fineTuningJobId,
-          schema.fineTuningPromotionApprovals.approverUserId,
-        ],
-        set: {
-          decision: bodyResult.data.decision,
-          reason: bodyResult.data.reason ?? null,
-          updatedAt: now,
-        },
-      });
-
-      await persistTrainingGovernanceAudit({
-        tenantId: tenantResolution.tenantId,
-        userId: tenantResolution.authContext.userId,
-        action: 'training_promotion_approval_recorded',
-        resourceId: fineTuningJob.id,
-        request: req,
-        details: {
-          before: existingApproval ? {
-            decision: existingApproval.decision,
-            reason: existingApproval.reason,
-            updatedAt: existingApproval.updatedAt.toISOString(),
-          } : undefined,
-          after: {
-            decision: bodyResult.data.decision,
-            reason: bodyResult.data.reason ?? null,
-          },
-          reason: bodyResult.data.reason ?? undefined,
-          metadata: {
-            operation: 'promotion_approval',
-          },
-        },
-        executor: tx,
-      });
-    });
-    trainingPipelineMetrics.governanceAuditWritesTotal.inc({
-      action: 'training_promotion_approval_recorded',
-      result: 'success',
-    });
-
-    const summary = await getPromotionApprovalSummary({
-      tenantId: tenantResolution.tenantId,
-      fineTuningJobId: fineTuningJob.id,
-      requesterUserId: tenantResolution.authContext.userId,
-    });
-
-    return res.json({
-      success: true,
-      ...summary,
-    });
-  } catch (error) {
-    logger.error({ error, jobId: req.params.id }, 'Falha ao registrar aprovacao de promocao');
-    return res.status(500).json({ error: 'Erro interno do servidor' });
-  } finally {
-    if (redis && lockHandle) {
-      await releaseTrainingOperationLock({ redis, handle: lockHandle }).catch((lockError) => {
-        logger.warn(
-          { lockKey: lockHandle?.key, error: lockError instanceof Error ? lockError.message : String(lockError) },
-          'Falha ao liberar lock de aprovacao de promocao'
-        );
-      });
-    }
-  }
-});
-
-app.post('/api/training/jobs/:id/promote', requirePermission('training:fine_tuning_jobs:start'), async (req: Request, res: Response) => {
-  const paramsResult = uuidParamSchema.safeParse(req.params);
-  if (!paramsResult.success) {
-    return res.status(400).json({ error: 'ID invalido', details: paramsResult.error.format() });
-  }
-
-  const redis = getRedisClient();
-  let lockHandle: Awaited<ReturnType<typeof acquireTrainingOperationLock>> = null;
-
-  try {
-    const tenantResolution = resolveAuthorizedTenantId(req);
-    if (!tenantResolution.ok) {
-      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
-    }
-    if (!tenantResolution.authContext.userId) {
-      return res.status(403).json({ error: 'Usuario nao identificado para promocao' });
-    }
-
-    const fineTuningJob = await db.query.fineTuningJobs.findFirst({
-      where: and(
-        eq(schema.fineTuningJobs.id, paramsResult.data.id),
-        eq(schema.fineTuningJobs.tenantId, tenantResolution.tenantId)
-      ),
-    });
-    if (!fineTuningJob) {
-      return res.status(404).json({ error: 'Job de fine-tuning nao encontrado' });
-    }
-    if (fineTuningJob.status !== 'completed') {
-      return res.status(409).json({ error: 'Somente jobs concluidos podem ser promovidos' });
-    }
-    if (!fineTuningJob.loraJobId) {
-      return res.status(409).json({ error: 'Job sem loraJobId vinculado' });
-    }
-    if (fineTuningJob.promotionStatus === 'active' && fineTuningJob.modelVersionId) {
-      const activeVersion = await db.query.modelVersions.findFirst({
-        where: and(
-          eq(schema.modelVersions.id, fineTuningJob.modelVersionId),
-          eq(schema.modelVersions.tenantId, tenantResolution.tenantId),
-          eq(schema.modelVersions.isActive, true)
-        ),
-      });
-      if (activeVersion) {
-        return res.json({
-          success: true,
-          alreadyActive: true,
-          fineTuningJobId: fineTuningJob.id,
-          modelVersion: activeVersion,
-        });
-      }
-    }
-    if (fineTuningJob.promotionStatus === 'active') {
-      return res.status(409).json({ error: 'Job ja esta com promocao ativa neste escopo' });
-    }
-    let scopedModelRegistry: ReturnType<typeof assertValidModelRegistryScope>;
-    try {
-      scopedModelRegistry = assertValidModelRegistryScope({
-        namespaceId: fineTuningJob.scopeNamespaceId,
-        agentId: fineTuningJob.scopeAgentId,
-      });
-    } catch (scopeError) {
-      return res.status(409).json({
-        error: scopeError instanceof Error ? scopeError.message : 'Escopo de promocao invalido',
-      });
-    }
-    const governanceConfig = await loadTrainingGovernanceRuntimeConfig();
-    const evaluationStatus = fineTuningJob.evaluationStatus ?? 'pending';
-    const approvalSummary = await getPromotionApprovalSummary({
-      tenantId: tenantResolution.tenantId,
-      fineTuningJobId: fineTuningJob.id,
-      requesterUserId: tenantResolution.authContext.userId,
-    });
-    const promotionCheck = canPromoteFineTuningJob({
-      evaluationStatus,
-      requireEvalPassedForPromotion: governanceConfig.requireEvalPassedForPromotion,
-      requireDualApprovalForPromotion: governanceConfig.requireDualApprovalForPromotion,
-      promotionMinApprovals: governanceConfig.promotionMinApprovals,
-      approvedDistinctUsersCount: approvalSummary.approvedDistinctUsersCount,
-      requesterHasApproved: approvalSummary.requesterHasApproved,
-    });
-    if (!promotionCheck.allowed) {
-      return res.status(409).json({
-        error: promotionCheck.reason,
-        approvals: {
-          approvedDistinctUsersCount: approvalSummary.approvedDistinctUsersCount,
-          requesterHasApproved: approvalSummary.requesterHasApproved,
-          minApprovals: governanceConfig.promotionMinApprovals,
-          requireDualApprovalForPromotion: governanceConfig.requireDualApprovalForPromotion,
-        },
-      });
-    }
-    const configSnapshot = (typeof fineTuningJob.configSnapshot === 'object' && fineTuningJob.configSnapshot !== null)
-      ? fineTuningJob.configSnapshot as Record<string, unknown>
-      : {};
-    const datasetManifest = (typeof configSnapshot.datasetManifest === 'object' && configSnapshot.datasetManifest !== null)
-      ? configSnapshot.datasetManifest as Record<string, unknown>
-      : {};
-    const stableHoldoutCount = typeof datasetManifest.holdout === 'number' ? datasetManifest.holdout : 0;
-    const stableManifestHash = typeof datasetManifest.manifestHash === 'string'
-      ? datasetManifest.manifestHash
-      : null;
-    if (stableHoldoutCount < 1 || !stableManifestHash) {
-      return res.status(409).json({
-        error: 'Promocao bloqueada: avaliacao estavel ausente (holdout/manifest hash nao encontrado)',
-        evaluation: {
-          holdoutCount: stableHoldoutCount,
-          datasetManifestHash: stableManifestHash,
-        },
-      });
-    }
-
-    if (!redis) {
-      trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
-        operation: 'promote',
-        result: 'redis_unavailable',
-      });
-      return res.status(503).json({ error: 'Redis indisponivel para controle de concorrencia de promocao' });
-    }
-    const lockKey = buildTrainingScopeOperationLockKey({
-      scope: {
-        tenantId: tenantResolution.tenantId,
-        namespaceId: scopedModelRegistry.namespaceId,
-        agentId: scopedModelRegistry.agentId,
-      },
-      operation: 'promote',
-    });
-    lockHandle = await acquireTrainingOperationLock({
-      redis,
-      key: lockKey,
-      ttlSeconds: TRAINING_OPERATION_LOCK_TTL_SECONDS,
-    });
-    if (!lockHandle) {
-      trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
-        operation: 'promote',
-        result: 'lock_conflict',
-      });
-      return res.status(409).json({ error: 'Promocao em andamento neste escopo; tente novamente' });
-    }
-    trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
-      operation: 'promote',
-      result: 'acquired',
-    });
-
-    await db.update(schema.fineTuningJobs)
-      .set({ promotionStatus: 'activating' })
-      .where(eq(schema.fineTuningJobs.id, fineTuningJob.id));
-
-    let activationResult: Awaited<ReturnType<typeof activateLoraAdapter>>;
-    let modelVersion: typeof schema.modelVersions.$inferSelect;
-    try {
-      activationResult = await activateLoraAdapter(
-        fineTuningJob.loraJobId,
-        tenantResolution.authContext.userId
-      );
-
-      const modelVersionScopeCondition = buildModelVersionScopeCondition(scopedModelRegistry);
-      const fineJobScopeCondition = buildFineTuningScopeCondition(scopedModelRegistry);
-
-      const [createdModelVersion] = await db.transaction(async (tx) => {
-        const latestScopedVersion = await tx.query.modelVersions.findFirst({
-          where: and(
-            eq(schema.modelVersions.tenantId, tenantResolution.tenantId),
-            modelVersionScopeCondition
-          ),
-          orderBy: [desc(schema.modelVersions.version)],
-          columns: { version: true },
-        });
-        const activeScopedVersion = await tx.query.modelVersions.findFirst({
-          where: and(
-            eq(schema.modelVersions.tenantId, tenantResolution.tenantId),
-            modelVersionScopeCondition,
-            eq(schema.modelVersions.isActive, true)
-          ),
-          orderBy: [desc(schema.modelVersions.version)],
-          columns: { id: true, metrics: true },
-        });
-
-        await tx.update(schema.modelVersions)
-          .set({
-            isActive: false,
-            status: 'deprecated',
-            deprecadoEm: new Date(),
-          })
-          .where(and(
-            eq(schema.modelVersions.tenantId, tenantResolution.tenantId),
-            modelVersionScopeCondition,
-            eq(schema.modelVersions.isActive, true)
-          ));
-
-        await tx.update(schema.fineTuningJobs)
-          .set({ promotionStatus: 'archived' })
-          .where(and(
-            eq(schema.fineTuningJobs.tenantId, tenantResolution.tenantId),
-            fineJobScopeCondition,
-            eq(schema.fineTuningJobs.promotionStatus, 'active')
-          ));
-
-        const nextVersion = (latestScopedVersion?.version ?? 0) + 1;
-        const jobMetrics = (fineTuningJob.metrics ?? {}) as Record<string, unknown>;
-        const datasetMetrics = typeof jobMetrics.dataset === 'object' && jobMetrics.dataset !== null
-          ? (jobMetrics.dataset as Record<string, unknown>)
-          : {};
-        const imagesUsedRaw = datasetMetrics.imagesUsed;
-        const imageDataCount = typeof imagesUsedRaw === 'number' && Number.isFinite(imagesUsedRaw)
-          ? imagesUsedRaw
-          : 0;
-        const baselineMetrics = (activeScopedVersion?.metrics ?? {}) as Record<string, unknown>;
-        const [createdVersion] = await tx.insert(schema.modelVersions).values({
-          tenantId: tenantResolution.tenantId,
-          namespaceId: scopedModelRegistry.namespaceId,
-          agentId: scopedModelRegistry.agentId,
-          name: `${fineTuningJob.name}-v${nextVersion}`,
-          version: nextVersion,
-          baseModel: fineTuningJob.baseModel,
-          loraPath: activationResult.adapterPath,
-          status: 'active',
-          fineTuningJobId: fineTuningJob.id,
-          trainingDataCount: fineTuningJob.trainingDataCount ?? 0,
-          imageDataCount,
-          metrics: jobMetrics,
-          baselineMetrics,
-          isActive: true,
-          ativadoEm: new Date(),
-        }).returning();
-
-        await tx.update(schema.fineTuningJobs)
-          .set({
-            modelVersionId: createdVersion.id,
-            promotionStatus: 'active',
-          })
-          .where(eq(schema.fineTuningJobs.id, fineTuningJob.id));
-
-        await persistTrainingGovernanceAudit({
-          tenantId: tenantResolution.tenantId,
-          userId: tenantResolution.authContext.userId,
-          action: 'training_model_promoted',
-          resourceId: fineTuningJob.id,
-          request: req,
-          details: {
-            after: {
-              modelVersionId: createdVersion.id,
-              promotionStatus: 'active',
-            },
-            metadata: {
-              operation: 'promote',
-              scope: scopedModelRegistry,
-              loraJobId: fineTuningJob.loraJobId,
-              approvedDistinctUsersCount: approvalSummary.approvedDistinctUsersCount,
-              requesterHasApproved: approvalSummary.requesterHasApproved,
-              previousActiveModelVersionId: activeScopedVersion?.id ?? null,
-            },
-          },
-          executor: tx,
-        });
-
-        return [createdVersion];
-      });
-      modelVersion = createdModelVersion;
-    } catch (promotionError) {
-      await db.update(schema.fineTuningJobs)
-        .set({
-          promotionStatus: 'failed_activation',
-          errorMessage: promotionError instanceof Error ? promotionError.message : String(promotionError),
-        })
-        .where(eq(schema.fineTuningJobs.id, fineTuningJob.id));
-      throw promotionError;
-    }
-    trainingPipelineMetrics.governanceAuditWritesTotal.inc({
-      action: 'training_model_promoted',
-      result: 'success',
-    });
-
-    logger.info(
-      {
-        fineTuningJobId: fineTuningJob.id,
-        loraJobId: fineTuningJob.loraJobId,
-        modelVersionId: modelVersion.id,
-      },
-      'Promocao de modelo concluida'
-    );
-
-    return res.json({
-      success: true,
-      fineTuningJobId: fineTuningJob.id,
-      modelVersion,
-      activation: activationResult,
-      approvals: {
-        approvedDistinctUsersCount: approvalSummary.approvedDistinctUsersCount,
-        requesterHasApproved: approvalSummary.requesterHasApproved,
-        minApprovals: governanceConfig.promotionMinApprovals,
-        requireDualApprovalForPromotion: governanceConfig.requireDualApprovalForPromotion,
-      },
-    });
-  } catch (error) {
-    logger.error({ error, jobId: req.params.id }, 'Falha ao promover modelo');
-    return res.status(500).json({ error: 'Erro interno do servidor' });
-  } finally {
-    if (redis && lockHandle) {
-      await releaseTrainingOperationLock({ redis, handle: lockHandle }).catch((lockError) => {
-        logger.warn(
-          { lockKey: lockHandle?.key, error: lockError instanceof Error ? lockError.message : String(lockError) },
-          'Falha ao liberar lock de promocao'
-        );
-      });
-    }
-  }
-});
-
-app.post('/api/training/jobs/:id/rollback', requirePermission('training:fine_tuning_jobs:start'), async (req: Request, res: Response) => {
-  const paramsResult = uuidParamSchema.safeParse(req.params);
-  if (!paramsResult.success) {
-    return res.status(400).json({ error: 'ID invalido', details: paramsResult.error.format() });
-  }
-  const bodyResult = rollbackBodySchema.safeParse(req.body);
-  if (!bodyResult.success) {
-    return res.status(400).json({ error: 'Payload invalido', details: bodyResult.error.format() });
-  }
-  const rollbackReason = bodyResult.data.reason.trim();
-
-  const redis = getRedisClient();
-  let lockHandle: Awaited<ReturnType<typeof acquireTrainingOperationLock>> = null;
-
-  try {
-    const tenantResolution = resolveAuthorizedTenantId(req);
-    if (!tenantResolution.ok) {
-      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
-    }
-    if (!tenantResolution.authContext.userId) {
-      return res.status(403).json({ error: 'Usuario nao identificado para rollback' });
-    }
-
-    const currentJob = await db.query.fineTuningJobs.findFirst({
-      where: and(
-        eq(schema.fineTuningJobs.id, paramsResult.data.id),
-        eq(schema.fineTuningJobs.tenantId, tenantResolution.tenantId)
-      ),
-    });
-    if (!currentJob) {
-      return res.status(404).json({ error: 'Job de fine-tuning nao encontrado' });
-    }
-    if (!currentJob.modelVersionId) {
-      return res.status(409).json({ error: 'Job sem modelVersionId para rollback' });
-    }
-
-    const currentVersion = await db.query.modelVersions.findFirst({
-      where: and(
-        eq(schema.modelVersions.id, currentJob.modelVersionId),
-        eq(schema.modelVersions.tenantId, tenantResolution.tenantId)
-      ),
-    });
-    if (!currentVersion) {
-      return res.status(404).json({ error: 'Model version atual nao encontrada' });
-    }
-    if (!currentVersion.isActive) {
-      return res.status(409).json({ error: 'Somente model version ativa pode sofrer rollback' });
-    }
-    if (currentJob.promotionStatus !== 'active') {
-      return res.status(409).json({ error: 'Somente job com promocao ativa pode sofrer rollback' });
-    }
-
-    let scopedModelRegistry: ReturnType<typeof assertValidModelRegistryScope>;
-    try {
-      scopedModelRegistry = assertValidModelRegistryScope({
-        namespaceId: currentVersion.namespaceId,
-        agentId: currentVersion.agentId,
-      });
-    } catch (scopeError) {
-      return res.status(409).json({
-        error: scopeError instanceof Error ? scopeError.message : 'Escopo do model version invalido para rollback',
-      });
-    }
-
-    if (!redis) {
-      trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
-        operation: 'rollback',
-        result: 'redis_unavailable',
-      });
-      return res.status(503).json({ error: 'Redis indisponivel para controle de concorrencia de rollback' });
-    }
-    const lockKey = buildTrainingScopeOperationLockKey({
-      scope: {
-        tenantId: tenantResolution.tenantId,
-        namespaceId: scopedModelRegistry.namespaceId,
-        agentId: scopedModelRegistry.agentId,
-      },
-      operation: 'rollback',
-    });
-    lockHandle = await acquireTrainingOperationLock({
-      redis,
-      key: lockKey,
-      ttlSeconds: TRAINING_OPERATION_LOCK_TTL_SECONDS,
-    });
-    if (!lockHandle) {
-      trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
-        operation: 'rollback',
-        result: 'lock_conflict',
-      });
-      return res.status(409).json({ error: 'Rollback em andamento neste escopo; tente novamente' });
-    }
-    trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
-      operation: 'rollback',
-      result: 'acquired',
-    });
-
-    const scopedCondition = buildModelVersionScopeCondition(scopedModelRegistry);
-    const previousVersion = await db.query.modelVersions.findFirst({
-      where: and(
-        eq(schema.modelVersions.tenantId, tenantResolution.tenantId),
-        scopedCondition,
-        lte(schema.modelVersions.version, currentVersion.version - 1)
-      ),
-      orderBy: [desc(schema.modelVersions.version)],
-    });
-    if (!previousVersion || !previousVersion.fineTuningJobId) {
-      return res.status(404).json({ error: 'Nao existe versao anterior para rollback neste escopo' });
-    }
-
-    const previousJob = await db.query.fineTuningJobs.findFirst({
-      where: and(
-        eq(schema.fineTuningJobs.id, previousVersion.fineTuningJobId),
-        eq(schema.fineTuningJobs.tenantId, tenantResolution.tenantId)
-      ),
-    });
-    if (!previousJob?.loraJobId) {
-      return res.status(409).json({ error: 'Versao anterior nao possui loraJobId valido' });
-    }
-
-    const activationResult = await activateLoraAdapter(
-      previousJob.loraJobId,
-      tenantResolution.authContext.userId
-    );
-
-    await db.transaction(async (tx) => {
-      await tx.update(schema.modelVersions)
-        .set({
-          isActive: false,
-          status: 'rolled_back',
-          deprecadoEm: new Date(),
-          rolledBackFrom: previousVersion.id,
-          rolledBackReason: rollbackReason,
-        })
-        .where(eq(schema.modelVersions.id, currentVersion.id));
-
-      await tx.update(schema.modelVersions)
-        .set({
-          isActive: true,
-          status: 'active',
-          ativadoEm: new Date(),
-        })
-        .where(eq(schema.modelVersions.id, previousVersion.id));
-
-      await tx.update(schema.fineTuningJobs)
-        .set({ promotionStatus: 'rolled_back' })
-        .where(eq(schema.fineTuningJobs.id, currentJob.id));
-
-      await tx.update(schema.fineTuningJobs)
-        .set({ promotionStatus: 'active' })
-        .where(eq(schema.fineTuningJobs.id, previousJob.id));
-
-      await persistTrainingGovernanceAudit({
-        tenantId: tenantResolution.tenantId,
-        userId: tenantResolution.authContext.userId,
-        action: 'training_model_rollback_executed',
-        resourceId: currentJob.id,
-        request: req,
-        details: {
-          before: {
-            modelVersionId: currentVersion.id,
-            promotionStatus: currentJob.promotionStatus,
-          },
-          after: {
-            modelVersionId: previousVersion.id,
-            promotionStatus: 'active',
-          },
-          reason: rollbackReason,
-          metadata: {
-            operation: 'rollback',
-            scope: scopedModelRegistry,
-            previousJobId: previousJob.id,
-            previousVersion: previousVersion.version,
-          },
-        },
-        executor: tx,
-      });
-    });
-    trainingPipelineMetrics.governanceAuditWritesTotal.inc({
-      action: 'training_model_rollback_executed',
-      result: 'success',
-    });
-
-    logger.info(
-      {
-        currentJobId: currentJob.id,
-        previousJobId: previousJob.id,
-        previousModelVersionId: previousVersion.id,
-      },
-      'Rollback de modelo concluido'
-    );
-
-    return res.json({
-      success: true,
-      rolledBackJobId: currentJob.id,
-      activeJobId: previousJob.id,
-      activeModelVersionId: previousVersion.id,
-      activation: activationResult,
-    });
-  } catch (error) {
-    logger.error({ error, jobId: req.params.id }, 'Falha ao executar rollback');
-    return res.status(500).json({ error: 'Erro interno do servidor' });
-  } finally {
-    if (redis && lockHandle) {
-      await releaseTrainingOperationLock({ redis, handle: lockHandle }).catch((lockError) => {
-        logger.warn(
-          { lockKey: lockHandle?.key, error: lockError instanceof Error ? lockError.message : String(lockError) },
-          'Falha ao liberar lock de rollback'
-        );
-      });
-    }
-  }
-});
-
-// ============================================================================
-// LoRA ADAPTER MANAGEMENT - AtivaÃ§Ã£o, Consulta e DesativaÃ§Ã£o
-// ============================================================================
-
-/**
- * POST /api/training/lora/activate/:jobId
- * Aprova e ativa um adapter LoRA treinado, tornando-o disponÃ­vel para inferÃªncia no vLLM.
- * O adapter Ã© copiado para /opt/alice/data/lora-adapters/trading-global/
- * e o vLLM carrega automaticamente via filesystem resolver (sem restart).
- */
-app.post('/api/training/lora/activate/:jobId', requirePermission('training:fine_tuning_jobs:start'), async (req: Request, res: Response) => {
-  const paramsResult = uuidParamSchema.safeParse({ id: req.params.jobId });
-  if (!paramsResult.success) {
-    return res.status(400).json({ error: 'jobId invÃ¡lido', details: paramsResult.error.format() });
-  }
-
-  try {
-    const tenantResolution = resolveAuthorizedTenantId(req);
-    if (!tenantResolution.ok) {
-      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
-    }
-    if (!tenantResolution.authContext.userId) {
-      return res.status(403).json({ error: 'UsuÃ¡rio nÃ£o identificado para aprovaÃ§Ã£o' });
-    }
-
-    const loraJob = await db.query.loraJobs.findFirst({
-      where: and(
-        eq(schema.loraJobs.id, paramsResult.data.id),
-        eq(schema.loraJobs.tenantId, tenantResolution.tenantId)
-      ),
-      columns: { id: true },
-    });
-    if (!loraJob) {
-      return res.status(404).json({ error: 'Job LoRA nao encontrado para o tenant autenticado' });
-    }
-
-    const result = await activateLoraAdapter(paramsResult.data.id, tenantResolution.authContext.userId);
-    logger.info({ jobId: paramsResult.data.id, approvedBy: tenantResolution.authContext.userId }, 'Adapter LoRA ativado via endpoint');
-    res.json(result);
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
-    logger.error({ error, jobId: req.params.jobId }, 'Falha ao ativar adapter LoRA');
-    res.status(400).json({ error: errorMessage });
-  }
-});
-
-/**
- * GET /api/training/lora/active
- * Retorna o adapter LoRA atualmente ativo, ou null se nenhum estiver ativo.
- * Usado pelo GPU Manager e integrations-service para saber qual modelo solicitar.
- */
-app.get('/api/training/lora/active', requirePermission('training:fine_tuning_jobs:read'), async (_req: Request, res: Response) => {
-  try {
-    const querySchema = z.object({
-      tenantId: z.string().uuid().optional(),
-      namespaceId: z.string().uuid().optional(),
-      agentId: z.string().uuid().optional(),
-    });
-    const parsed = querySchema.safeParse(_req.query);
-    if (!parsed.success) {
-      return res.status(400).json({ error: 'ParÃ¢metros invÃ¡lidos', details: parsed.error.format() });
-    }
-    const tenantResolution = resolveAuthorizedTenantId(_req, parsed.data.tenantId ?? null);
-    if (!tenantResolution.ok) {
-      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
-    }
-    const active = await getActiveAdapter({
-      tenantId: tenantResolution.tenantId,
-      namespaceId: parsed.data.namespaceId,
-      agentId: parsed.data.agentId,
-    });
-    res.json({ adapter: active });
-  } catch (error) {
-    logger.error({ error }, 'Falha ao consultar adapter ativo');
-    res.status(500).json({ error: 'Erro interno do servidor' });
-  }
-});
-
-/**
- * DELETE /api/training/lora/active
- * Desativa o adapter LoRA ativo, voltando a usar apenas o modelo base.
- */
-app.delete('/api/training/lora/active', requirePermission('training:fine_tuning_jobs:start'), async (_req: Request, res: Response) => {
-  try {
-    const bodySchema = z.object({
-      tenantId: z.string().uuid().optional(),
-      namespaceId: z.string().uuid().optional(),
-      agentId: z.string().uuid().optional(),
-    });
-    const parsed = bodySchema.safeParse(_req.body ?? {});
-    if (!parsed.success) {
-      return res.status(400).json({ error: 'Payload invÃ¡lido', details: parsed.error.format() });
-    }
-    const tenantResolution = resolveAuthorizedTenantId(_req, parsed.data.tenantId ?? null);
-    if (!tenantResolution.ok) {
-      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
-    }
-    await deactivateLoraAdapter({
-      tenantId: tenantResolution.tenantId,
-      namespaceId: parsed.data.namespaceId,
-      agentId: parsed.data.agentId,
-    });
-    res.json({ success: true, message: 'Adapter LoRA desativado. vLLM usarÃ¡ modelo base.' });
-  } catch (error) {
-    logger.error({ error }, 'Falha ao desativar adapter LoRA');
-    res.status(500).json({ error: 'Erro interno do servidor' });
-  }
-});
-
-// ============================================================================
-// GPU ORCHESTRATOR PROXY - Estado e retorno (Frontend usa via /api/training/*)
-// ============================================================================
-// Proxy para GPU Manager Service: frontend nÃ£o tem acesso direto ao GPU Manager.
-// Training service autentica com INTERNAL_API_SECRET e repassa requisiÃ§Ãµes.
-// Ref: gpu-orchestrator.ts (switchToLlmEmbeddings, getOrchestratorState)
-// ============================================================================
-
-const GPU_MANAGER_URL_ORCHESTRATOR = process.env.GPU_MANAGER_URL || 'http://alice-gpu-manager:3010';
-const INTERNAL_API_SECRET_ORCHESTRATOR = process.env.INTERNAL_API_SECRET;
-
-app.get('/api/training/gpu-orchestrator/state', requirePermission('training:fine_tuning_jobs:read'), async (_req: Request, res: Response) => {
-  if (!INTERNAL_API_SECRET_ORCHESTRATOR) {
-    return res.status(503).json({ error: 'ServiÃ§o indisponÃ­vel', orchestratorAvailable: false });
-  }
-  try {
-    const controller = new AbortController();
-    const t = setTimeout(() => controller.abort(), 5000);
-    const r = await fetch(`${GPU_MANAGER_URL_ORCHESTRATOR}/api/gpu/orchestrator/state`, {
-      signal: controller.signal,
-      headers: { 'X-Internal-Api-Secret': INTERNAL_API_SECRET_ORCHESTRATOR, Accept: 'application/json' },
-    });
-    clearTimeout(t);
-    const data = (await r.json()) as Record<string, unknown>;
-    res.status(r.status).json(data);
-  } catch (err) {
-    logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'Proxy gpu-orchestrator/state falhou');
-    res.status(503).json({ error: 'GPU Manager indisponÃ­vel', orchestratorAvailable: false });
-  }
-});
-
-app.post('/api/training/gpu-orchestrator/return', requirePermission('training:fine_tuning_jobs:start'), async (_req: Request, res: Response) => {
-  if (!INTERNAL_API_SECRET_ORCHESTRATOR) {
-    return res.status(503).json({ error: 'ServiÃ§o indisponÃ­vel' });
-  }
-  try {
-    const controller = new AbortController();
-    const t = setTimeout(() => controller.abort(), 10000);
-    const r = await fetch(`${GPU_MANAGER_URL_ORCHESTRATOR}/api/gpu/orchestrator/return`, {
-      method: 'POST',
-      signal: controller.signal,
-      headers: { 'X-Internal-Api-Secret': INTERNAL_API_SECRET_ORCHESTRATOR, 'Content-Type': 'application/json' },
-    });
-    clearTimeout(t);
-    const data = (await r.json().catch(() => ({}))) as Record<string, unknown>;
-    res.status(r.status).json(data);
-  } catch (err) {
-    logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'Proxy gpu-orchestrator/return falhou');
-    res.status(503).json({ error: 'GPU Manager indisponÃ­vel' });
-  }
-});
+// Polling removido (Regra 6): cancelamento e progresso sao tratados via DB + gpu-trainer.
 
 // ============================================================================
 // BULK IMPORT - ImportaÃ§Ã£o em Lote de Dados de Treinamento
@@ -6177,1790 +3695,25 @@ const bulkImportSchema = z.object({
   autoApprove: z.boolean().optional().default(false),
 });
 
-app.post('/api/training/bulk-import', requirePermission('training:training_data:write'), async (req: Request, res: Response) => {
-  try {
-    const tenantResolution = resolveAuthorizedTenantId(req);
-    
-    if (!tenantResolution.ok) {
-      logger.warn({ path: req.path }, 'Tentativa de bulk-import sem tenant vÃ¡lido');
-      return res.status(403).json({ error: 'Tenant nÃ£o identificado. AutenticaÃ§Ã£o obrigatÃ³ria.' });
-    }
-
-    const tenantId = tenantResolution.tenantId;
-    const validation = bulkImportSchema.safeParse(req.body);
-
-    if (!validation.success) {
-      return res.status(400).json({ 
-        error: 'Dados invÃ¡lidos',
-        details: validation.error.issues,
-      });
-    }
-
-    const { source, sourceType, namespaceId, agentId, domain, data, autoApprove } = validation.data;
-    const sourceTypeForImport = sourceType ?? 'external';
-
-    if (namespaceId) {
-      try {
-        await validateNamespaceTenantConsistency(
-          namespaceId,
-          tenantId,
-          async (id) => findNamespaceByIdInTenant(tenantId, id)
-        );
-      } catch (validationError) {
-        logger.warn({
-          tenantId,
-          namespaceId,
-          error: validationError instanceof Error ? validationError.message : String(validationError),
-        }, 'Bulk import rejeitado por namespace fora do tenant');
-        return res.status(403).json({ error: 'Namespace invÃ¡lido para o tenant autenticado.' });
-      }
-    }
-
-    if (agentId) {
-      const agent = await findAgentByIdInTenant(tenantId, agentId);
-      try {
-        validateTenantConsistency('agent', agent, tenantId, 'training_bulk_import');
-      } catch (validationError) {
-        logger.warn({
-          tenantId,
-          agentId,
-          error: validationError instanceof Error ? validationError.message : String(validationError),
-        }, 'Bulk import rejeitado por agente fora do tenant');
-        return res.status(403).json({ error: 'Agente invÃ¡lido para o tenant autenticado.' });
-      }
-      if (namespaceId && agent?.namespaceId && agent.namespaceId !== namespaceId) {
-        logger.warn({ tenantId, agentId, namespaceId, agentNamespaceId: agent.namespaceId }, 'Bulk import rejeitado por inconsistÃªncia agentId/namespaceId');
-        return res.status(403).json({ error: 'O agente informado nÃ£o pertence ao namespace selecionado.' });
-      }
-    }
-
-    const importedIds: string[] = [];
-    const duplicatesSkipped: number[] = [];
-    const chunkSize = 100;
-    for (let offset = 0; offset < data.length; offset += chunkSize) {
-      const chunk = data.slice(offset, offset + chunkSize);
-      const indexedChunk = chunk.map((entry, position) => ({
-        entry,
-        absoluteIndex: offset + position,
-        semhash: computeSemHash(entry.messages.map((m) => m.content).join(' ')),
-      }));
-      const semhashes = Array.from(new Set(indexedChunk.map((item) => item.semhash)));
-      const existingRows = semhashes.length > 0
-        ? await db.query.trainingData.findMany({
-            where: and(
-              eq(schema.trainingData.tenantId, tenantId),
-              inArray(schema.trainingData.semhash, semhashes)
-            ),
-            columns: { semhash: true },
-          })
-        : [];
-      const existingSemhashes = new Set(
-        existingRows
-          .map((row) => row.semhash)
-          .filter((value): value is string => typeof value === 'string' && value.length > 0)
-      );
-
-      const enqueuePayloads: Array<{
-        trainingDataId: string;
-        namespaceId: string | null;
-        agentId: string | null;
-        semhash: string;
-      }> = [];
-
-      await db.transaction(async (tx) => {
-        for (const item of indexedChunk) {
-          if (existingSemhashes.has(item.semhash)) {
-            duplicatesSkipped.push(item.absoluteIndex);
-            continue;
-          }
-
-          const qualityAssessment = evaluateTrainingQuality({
-            sourceType: sourceTypeForImport,
-            messages: item.entry.messages.map((message) => ({
-              role: message.role,
-              content: message.content,
-            })),
-            sourceMetadata: {
-              bulkSource: source,
-              bulkSourceType: sourceTypeForImport,
-            },
-          });
-          const qualityScore = qualityAssessment.score;
-          const scope = await resolveScope({
-            tenantId,
-            namespaceId: namespaceId ?? null,
-            agentId: agentId ?? null,
-            domain: domain ?? null,
-            sourceType: sourceTypeForImport,
-            sourceMetadata: {
-              bulkSource: source,
-              bulkSourceType: sourceTypeForImport,
-            },
-            messagesText: item.entry.messages.map((m) => m.content).join('\n'),
-          });
-          trainingPipelineMetrics.scopeConfidenceHistogram.observe(scope.confidence);
-          if (scope.needsHumanReview) {
-            trainingPipelineMetrics.scopeQuarantineTotal.inc({
-              source_type: sourceTypeForImport,
-              reason: 'low_confidence_or_missing_namespace',
-            });
-          }
-          if (scope.suggestedNewNamespace) {
-            trainingPipelineMetrics.scopeSuggestedNewNamespaceTotal.inc({
-              source_type: sourceTypeForImport,
-            });
-          }
-
-          const defaultPurpose = sourceTypeForImport === 'rag_document' || sourceTypeForImport === 'rag_media'
-            ? 'knowledge_rag'
-            : 'behavior_sft';
-          const autoRejectedByQuality = qualityScore < TRAINING_DATA_MIN_QUALITY;
-          const status = autoRejectedByQuality
-            ? 'rejected'
-            : (autoApprove && (item.entry.rating || 0) >= 4 ? 'approved' : 'pending');
-          const reviewNotesParts = [
-            autoRejectedByQuality
-              ? `Auto-rejeitado: qualidade ${qualityScore.toFixed(2)} abaixo do mÃ­nimo (${TRAINING_DATA_MIN_QUALITY}).`
-              : null,
-            defaultPurpose === 'knowledge_rag' ? 'knowledge_rag_default' : null,
-            qualityAssessment.rejectionReasons.length > 0
-              ? `quality_reasons:${qualityAssessment.rejectionReasons.join(',')}`
-              : null,
-          ].filter((value): value is string => Boolean(value));
-
-          const [inserted] = await tx.insert(schema.trainingData).values({
-            tenantId,
-            namespaceId: scope.namespaceId,
-            agentId: scope.agentId,
-            source: `bulk_import:${source}`,
-            sourceType: sourceTypeForImport,
-            sourceMetadata: {
-              bulkSource: source,
-              bulkSourceType: sourceTypeForImport,
-              qualityAssessment: {
-                score: qualityScore,
-                rejectionReasons: qualityAssessment.rejectionReasons,
-              },
-            },
-            inferredNamespaceId: scope.namespaceId,
-            inferredAgentId: scope.agentId,
-            inferredDomain: scope.domain,
-            inferenceConfidence: scope.confidence,
-            inferenceTrace: scope.trace,
-            scopeResolverVersion: 'v1',
-            profileVersion: 1,
-            needsHumanReview: scope.needsHumanReview || defaultPurpose === 'knowledge_rag',
-            quarantineReason: scope.needsHumanReview
-              ? 'low_confidence_or_missing_namespace'
-              : (defaultPurpose === 'knowledge_rag' ? 'knowledge_rag_default' : null),
-            scopeResolvedAt: new Date(),
-            quarantinedAt: scope.needsHumanReview || defaultPurpose === 'knowledge_rag' ? new Date() : null,
-            messages: item.entry.messages,
-            rating: item.entry.rating,
-            qualityScore,
-            status,
-            purpose: status === 'rejected' ? 'rejected' : defaultPurpose,
-            reviewNotes: reviewNotesParts.length > 0 ? reviewNotesParts.join(' | ') : null,
-            semhash: item.semhash,
-            embedding: null,
-            isDuplicate: false,
-          }).returning({ id: schema.trainingData.id });
-
-          importedIds.push(inserted.id);
-          existingSemhashes.add(item.semhash);
-
-          if (status !== 'rejected') {
-            enqueuePayloads.push({
-              trainingDataId: inserted.id,
-              namespaceId: scope.namespaceId ?? null,
-              agentId: scope.agentId ?? null,
-              semhash: item.semhash,
-            });
-          }
-        }
-      });
-
-      for (const payload of enqueuePayloads) {
-        const idempotencyKey = buildTrainingIdempotencyKey({
-          tenantId,
-          sourceType: sourceTypeForImport,
-          sourceId: null,
-          semhash: payload.semhash,
-        });
-        const queuePayload = trainingEmbeddingDedupeQueuePayloadSchema.parse({
-          trainingDataId: payload.trainingDataId,
-          tenantId,
-          namespaceId: payload.namespaceId ?? undefined,
-          agentId: payload.agentId ?? undefined,
-          semhash: payload.semhash,
-          sourceType: sourceTypeForImport,
-          sourceId: undefined,
-          idempotencyKey,
-          createdAt: new Date().toISOString(),
-        });
-        try {
-          await enqueueTrainingEmbeddingDedupeJob(queuePayload);
-        } catch (queueError) {
-          logger.warn({
-            trainingDataId: payload.trainingDataId,
-            error: queueError instanceof Error ? queueError.message : String(queueError),
-          }, 'Falha ao enfileirar job de dedupe/embedding no bulk import');
-        }
-      }
-    }
-
-    logger.info({
-      tenantId,
-      source,
-      sourceType: sourceTypeForImport,
-      namespaceId: namespaceId ?? null,
-      agentId: agentId ?? null,
-      totalReceived: data.length,
-      imported: importedIds.length,
-      duplicatesSkipped: duplicatesSkipped.length,
-      autoApprove,
-    }, 'Bulk import concluÃ­do');
-
-    res.status(201).json({
-      success: true,
-      imported: importedIds.length,
-      duplicatesSkipped: duplicatesSkipped.length,
-      sourceType: sourceTypeForImport,
-      ids: importedIds,
-    });
-  } catch (error) {
-    logger.error({ error }, 'Falha no bulk import');
-    res.status(500).json({ error: 'Erro interno do servidor' });
-  }
-});
-
 // ============================================================================
 // WEBHOOK - Receber Dados de Sistemas Externos
 // ============================================================================
-
-const webhookSchema = z.object({
-  event: z.enum(['training_data', 'feedback']),
-  payload: z.object({
-    messages: z.array(z.object({
-      role: z.enum(['system', 'user', 'assistant']),
-      content: z.string(),
-      timestamp: z.string().datetime().optional(),
-    })).optional(),
-    rating: z.number().min(1).max(5).optional(),
-    conversationId: z.string().optional(),
-    metadata: z.record(z.unknown()).optional(),
-  }),
-  timestamp: z.string().optional(),
-});
-
-const webhookInternalHeadersSchema = z.object({
-  'x-webhook-secret': z.string().min(1),
-  'x-internal-signature': z.string().regex(/^[a-f0-9]{64}$/i),
-  'x-internal-timestamp': z.string().regex(/^\d+$/),
-  'x-internal-user-id': z.string().min(1),
-  'x-internal-tenant-id': z.string().uuid(),
-  'x-internal-role': z.string().min(1),
-  'x-internal-nonce': z.string().uuid(),
-  'x-internal-body-sha256': z.string().regex(/^[a-f0-9]{64}$/i).optional(),
-});
-
-const webhookNonceStore = new Map<string, number>();
-const WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS = 300;
-const WEBHOOK_NONCE_TTL_MS = 10 * 60 * 1000;
-const WEBHOOK_NONCE_REDIS_PREFIX = 'alice:training:webhook:nonce';
-const WEBHOOK_NONCE_REQUIRE_REDIS = parseEnvBoolean(
-  process.env.TRAINING_WEBHOOK_NONCE_REQUIRE_REDIS,
-  process.env.NODE_ENV === 'production'
-);
-const webhookNonceCleanupTimer = setInterval(() => {
-  const now = Date.now();
-  for (const [nonce, expiresAt] of webhookNonceStore.entries()) {
-    if (expiresAt <= now) {
-      webhookNonceStore.delete(nonce);
-    }
-  }
-}, 60_000);
-webhookNonceCleanupTimer.unref?.();
-
-type WebhookNonceValidationResult = {
-  accepted: boolean;
-  storage: 'redis' | 'memory';
-  result:
-    | 'accepted'
-    | 'replay'
-    | 'fallback_after_redis_error'
-    | 'redis_error_blocked'
-    | 'redis_unavailable_blocked';
-};
-
-async function validateAndStoreWebhookNonce(params: {
-  tenantId: string;
-  nonce: string;
-}): Promise<WebhookNonceValidationResult> {
-  const inMemoryKey = `${params.tenantId}:${params.nonce}`;
-  const redis = getRedisClient();
-
-  if (redis) {
-    try {
-      const redisKey = `${WEBHOOK_NONCE_REDIS_PREFIX}:${params.tenantId}:${params.nonce}`;
-      const lock = await redis.set(redisKey, '1', { NX: true, PX: WEBHOOK_NONCE_TTL_MS });
-      if (lock !== 'OK') {
-        return { accepted: false, storage: 'redis', result: 'replay' };
-      }
-      return { accepted: true, storage: 'redis', result: 'accepted' };
-    } catch (error) {
-      logger.error(
-        { error, tenantId: params.tenantId },
-        'Falha ao validar nonce do webhook no Redis'
-      );
-      if (WEBHOOK_NONCE_REQUIRE_REDIS) {
-        return { accepted: false, storage: 'redis', result: 'redis_error_blocked' };
-      }
-      const nonceExpiry = webhookNonceStore.get(inMemoryKey);
-      if (nonceExpiry && nonceExpiry > Date.now()) {
-        return { accepted: false, storage: 'memory', result: 'replay' };
-      }
-      webhookNonceStore.set(inMemoryKey, Date.now() + WEBHOOK_NONCE_TTL_MS);
-      return { accepted: true, storage: 'memory', result: 'fallback_after_redis_error' };
-    }
-  }
-
-  if (WEBHOOK_NONCE_REQUIRE_REDIS) {
-    return { accepted: false, storage: 'redis', result: 'redis_unavailable_blocked' };
-  }
-
-  const nonceExpiry = webhookNonceStore.get(inMemoryKey);
-  if (nonceExpiry && nonceExpiry > Date.now()) {
-    return { accepted: false, storage: 'memory', result: 'replay' };
-  }
-  webhookNonceStore.set(inMemoryKey, Date.now() + WEBHOOK_NONCE_TTL_MS);
-  return { accepted: true, storage: 'memory', result: 'accepted' };
-}
-
-// OWASP API3 - Schema para aprovaÃ§Ã£o em lote
-const batchApproveSchema = z.object({
-  ids: z.array(z.string().uuid()).min(1).max(1000),
-  action: z.enum(['approve', 'reject']),
-  reviewNotes: z.string().max(2000).optional(),
-});
 
 // ============================================================================
 // OWASP API3 - Schemas Zod para validaÃ§Ã£o de query params
 // Previne type coercion issues e input tampering
 // ============================================================================
 
-// Schema para query params de training data
-const trainingDataQuerySchema = z.object({
-  status: z.enum(['pending', 'approved', 'rejected', 'reserved', 'used']).optional(),
-  namespaceId: z.string().uuid().optional(),
-  agentId: z.string().uuid().optional(),
-  inferredDomain: z.string().min(1).max(120).optional(),
-  needsHumanReview: z.enum(['true', 'false']).optional(),
-  sourceType: trainingSourceTypeSchema.optional(),
-});
-
-// Schema para query params de jobs
-const jobsQuerySchema = z.object({
-  tenantId: z.string().uuid().optional(),
-});
-
-// Schema para query params de auto-learning status
-const autoLearningStatusQuerySchema = z.object({
-  tenantId: z.string().uuid().optional(),
-});
-
-// Schema para query params de stats
-const trainingStatsQuerySchema = z.object({
-  tenantId: z.string().uuid().optional(),
-});
-
-const trainingExecutionModesQuerySchema = z.object({
-  tenantId: z.string().uuid().optional(),
-});
-
-app.post('/api/training/webhook', async (req: Request, res: Response) => {
-  const expectedSecret = process.env.TRAINING_WEBHOOK_SECRET;
-
-  if (!expectedSecret) {
-    logger.error('TRAINING_WEBHOOK_SECRET nao configurado - webhook desabilitado por seguranca');
-    return res.status(503).json({ error: 'Webhook nao configurado. Configure TRAINING_WEBHOOK_SECRET.' });
-  }
-
-  const headersValidation = webhookInternalHeadersSchema.safeParse(req.headers);
-  if (!headersValidation.success) {
-    logger.warn({ issues: headersValidation.error.issues }, 'Webhook com headers internos invalidos');
-    return res.status(401).json({ error: 'Headers internos invalidos' });
-  }
-
-  const {
-    'x-webhook-secret': webhookSecret,
-    'x-internal-signature': internalSignature,
-    'x-internal-timestamp': internalTimestamp,
-    'x-internal-user-id': internalUserId,
-    'x-internal-tenant-id': internalTenantId,
-    'x-internal-role': internalRole,
-    'x-internal-nonce': internalNonce,
-    'x-internal-body-sha256': internalBodySha256,
-  } = headersValidation.data;
-
-  const secretBuffer = Buffer.from(webhookSecret, 'utf-8');
-  const expectedBuffer = Buffer.from(expectedSecret, 'utf-8');
-  const lengthsMatch = secretBuffer.length === expectedBuffer.length;
-  const secretValid = lengthsMatch && crypto.timingSafeEqual(
-    secretBuffer,
-    lengthsMatch ? expectedBuffer : Buffer.alloc(secretBuffer.length)
-  );
-
-  if (!secretValid) {
-    logger.warn({ hasSecret: true }, 'Tentativa de webhook com secret invalido');
-    return res.status(401).json({ error: 'Webhook secret invalido' });
-  }
-
-  const timestampNum = Number.parseInt(internalTimestamp, 10);
-  const nowSeconds = Math.floor(Date.now() / 1000);
-  if (!Number.isFinite(timestampNum) || Math.abs(nowSeconds - timestampNum) > WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS) {
-    return res.status(401).json({ error: 'Timestamp interno invalido ou expirado' });
-  }
-
-  const rawBody = (req as RequestWithRawBody).rawBody ?? null;
-  const computedBodyDigest = crypto
-    .createHash('sha256')
-    .update(rawBody ?? Buffer.from(JSON.stringify(req.body), 'utf8'))
-    .digest('hex');
-  const signaturePayloadV1 = `${internalUserId}:${internalTenantId}:${internalRole}:${internalNonce}:${internalTimestamp}`;
-  const signaturePayloadV2 = `${signaturePayloadV1}:${computedBodyDigest}`;
-  const allowLegacySignature = process.env.TRAINING_WEBHOOK_ALLOW_LEGACY_SIGNATURE === 'true';
-  let signatureVersion: 'v1' | 'v2' = 'v2';
-  let signatureValidation = validateWebhookSignature({
-    signature: internalSignature,
-    payload: signaturePayloadV2,
-    webhookSecret: expectedSecret,
-    internalApiSecret: process.env.INTERNAL_API_SECRET,
-    allowLegacySignature,
-  });
-  if (!signatureValidation.ok) {
-    signatureVersion = 'v1';
-    signatureValidation = validateWebhookSignature({
-      signature: internalSignature,
-      payload: signaturePayloadV1,
-      webhookSecret: expectedSecret,
-      internalApiSecret: process.env.INTERNAL_API_SECRET,
-      allowLegacySignature,
-    });
-  }
-  trainingPipelineMetrics.webhookAuthValidationTotal.inc({
-    mode: signatureValidation.mode,
-    result: signatureValidation.ok ? 'accepted' : 'rejected',
-  });
-  if (!signatureValidation.ok) {
-    return res.status(401).json({ error: 'Assinatura interna invalida' });
-  }
-  if (signatureValidation.mode === 'legacy_webhook_secret') {
-    logger.warn(
-      { tenantId: internalTenantId },
-      'Webhook autenticado via assinatura legada; migre para assinatura com INTERNAL_API_SECRET'
-    );
-  }
-  if (signatureValidation.ok && signatureVersion === 'v1') {
-    logger.warn(
-      { tenantId: internalTenantId },
-      'Webhook autenticado sem bind criptografico do corpo (payload v1); migre para payload v2'
-    );
-  }
-
-  const bodyDigestValidation = validateWebhookBodyDigest({
-    payload: req.body,
-    expectedDigest: internalBodySha256,
-    rawBody,
-  });
-  trainingPipelineMetrics.webhookBodyDigestValidationTotal.inc({
-    result: bodyDigestValidation.result,
-  });
-  if (!bodyDigestValidation.ok) {
-    return res.status(401).json({ error: 'Integridade do payload do webhook invalida' });
-  }
-
-  const nonceValidation = await validateAndStoreWebhookNonce({
-    tenantId: internalTenantId,
-    nonce: internalNonce,
-  });
-  trainingPipelineMetrics.webhookNonceValidationTotal.inc({
-    storage: nonceValidation.storage,
-    result: nonceValidation.result,
-  });
-  if (!nonceValidation.accepted) {
-    if (
-      nonceValidation.result === 'redis_error_blocked' ||
-      nonceValidation.result === 'redis_unavailable_blocked'
-    ) {
-      return res.status(503).json({ error: 'Validacao de nonce indisponivel; webhook bloqueado (fail-closed)' });
-    }
-    return res.status(409).json({ error: 'Nonce ja utilizado (replay detectado)' });
-  }
-
-  const tenantId = internalTenantId;
-  const tenant = await db.query.tenants.findFirst({
-    where: eq(schema.tenants.id, tenantId),
-    columns: { id: true },
-  });
-  if (!tenant) {
-    return res.status(403).json({ error: 'Tenant invalido para webhook' });
-  }
-  const internalUser = await db.query.users.findFirst({
-    where: eq(schema.users.id, internalUserId),
-    columns: { id: true, tenantId: true },
-  });
-  if (!internalUser) {
-    return res.status(401).json({ error: 'Usuario interno invalido para webhook' });
-  }
-  try {
-    validateTenantConsistency('user', internalUser, tenantId, 'training_webhook');
-  } catch {
-    return res.status(403).json({ error: 'Usuario nao pertence ao tenant do webhook' });
-  }
-
-  try {
-    const validation = webhookSchema.safeParse(req.body);
-
-    if (!validation.success) {
-      return res.status(400).json({ 
-        error: 'Payload invÃ¡lido',
-        details: validation.error.issues,
-      });
-    }
-
-    const { event, payload } = validation.data;
-
-    if (event === 'training_data' && payload.messages) {
-      const payloadMetadata = (payload.metadata ?? {}) as Record<string, unknown>;
-      const sourceIdRaw = payloadMetadata.sourceId;
-      const sourceId = typeof sourceIdRaw === 'string' && sourceIdRaw.trim().length > 0
-        ? sourceIdRaw.trim().slice(0, 255)
-        : undefined;
-      const collectResult = await collectTrainingDataForTenant({
-        tenantId,
-        createdBy: internalUserId,
-        payload: collectTrainingDataPayloadSchema.parse({
-          namespaceId: readUuidFromUnknown(payloadMetadata.namespaceId) ?? undefined,
-          agentId: readUuidFromUnknown(payloadMetadata.agentId) ?? undefined,
-          domain: typeof payloadMetadata.domain === 'string' ? payloadMetadata.domain : undefined,
-          conversationId: readUuidFromUnknown(payload.conversationId) ?? undefined,
-          source: 'webhook',
-          sourceType: 'external',
-          sourceId,
-          sourceMetadata: {
-            ...payloadMetadata,
-            event,
-            webhookTimestamp: validation.data.timestamp ?? null,
-            internalRole,
-          },
-          messages: payload.messages.map((message) => ({
-            role: message.role,
-            content: message.content,
-          })),
-          rating: payload.rating,
-        }),
-      });
-
-      const statusCode = collectResult.idempotencyHit ? 200 : 201;
-      logger.info({
-        id: collectResult.trainingData.id,
-        event,
-        queued: collectResult.queued,
-        idempotencyHit: Boolean(collectResult.idempotencyHit),
-      }, 'Dados recebidos via webhook');
-      return res.status(statusCode).json({
-        success: true,
-        id: collectResult.trainingData.id,
-        queued: collectResult.queued,
-        idempotencyHit: Boolean(collectResult.idempotencyHit),
-      });
-    } else if (event === 'feedback' && payload.conversationId) {
-      await db.update(schema.trainingData)
-        .set({ rating: payload.rating })
-        .where(and(
-          eq(schema.trainingData.conversationId, payload.conversationId),
-          eq(schema.trainingData.tenantId, tenantId)
-        ));
-
-      logger.info({ conversationId: payload.conversationId, rating: payload.rating }, 'Feedback atualizado via webhook');
-      res.json({ success: true });
-    } else {
-      return res.status(400).json({ error: 'Evento nÃ£o suportado ou payload incompleto' });
-    }
-  } catch (error) {
-    if (error instanceof TrainingHttpError) {
-      return res.status(error.status).json(error.responsePayload);
-    }
-    logger.error({ error }, 'Falha ao processar webhook');
-    return res.status(500).json({ error: 'Erro interno do servidor' });
-  }
-});
-
-// ============================================================================
-// APROVAÃ‡ÃƒO EM LOTE
-// ============================================================================
-
-app.post('/api/training/data/approve-batch', requirePermission('training:training_data:manage'), async (req: Request, res: Response) => {
-  // OWASP API3 - ValidaÃ§Ã£o Zod obrigatÃ³ria
-  const parseResult = batchApproveSchema.safeParse(req.body);
-  if (!parseResult.success) {
-    return res.status(400).json({ error: 'Input invÃ¡lido' });
-  }
-  const { ids, action, reviewNotes } = parseResult.data;
-  const tenantResolution = resolveAuthorizedTenantId(req);
-  if (!tenantResolution.ok) {
-    return res.status(tenantResolution.status).json({ error: tenantResolution.error });
-  }
-  const reviewedBy = tenantResolution.authContext.userId;
-
-  try {
-    const newStatus = action === 'approve' ? 'approved' : 'rejected';
-    let updatedCount = 0;
-    let skippedByQuarantine = 0;
-    let skippedByMissingNamespace = 0;
-    let skippedByTenantMismatch = 0;
-
-    for (const id of ids) {
-      const current = await db.query.trainingData.findFirst({
-        where: eq(schema.trainingData.id, id),
-        columns: { tenantId: true, needsHumanReview: true, namespaceId: true },
-      });
-      if (!current) {
-        continue;
-      }
-      if (current.tenantId !== tenantResolution.tenantId) {
-        skippedByTenantMismatch += 1;
-        continue;
-      }
-
-      if (newStatus === 'approved' && current.needsHumanReview) {
-        skippedByQuarantine += 1;
-        continue;
-      }
-      if (newStatus === 'approved' && !current.namespaceId) {
-        skippedByMissingNamespace += 1;
-        continue;
-      }
-
-      const reviewedAt = new Date();
-      const [updated] = await db.update(schema.trainingData)
-        .set({ 
-          status: newStatus,
-          processadoEm: reviewedAt,
-          processedAt: reviewedAt,
-          reviewedBy,
-          reviewedAt,
-          reviewNotes: reviewNotes ?? null,
-          needsHumanReview: false,
-          quarantineReason: null,
-          quarantinedAt: null,
-        })
-        .where(and(
-          eq(schema.trainingData.id, id),
-          eq(schema.trainingData.tenantId, tenantResolution.tenantId)
-        ))
-        .returning();
-
-      if (updated) updatedCount++;
-    }
-
-    if (updatedCount > 0) {
-      trainingPipelineMetrics.reviewTotal.labels(newStatus).inc(updatedCount);
-    }
-
-    logger.info(
-      { action, count: updatedCount, skippedByQuarantine, skippedByMissingNamespace, skippedByTenantMismatch },
-      'AprovaÃ§Ã£o em lote concluÃ­da'
-    );
-    res.json({ success: true, updated: updatedCount, skippedByQuarantine, skippedByMissingNamespace, skippedByTenantMismatch });
-  } catch (error) {
-    logger.error({ error }, 'Falha na aprovaÃ§Ã£o em lote');
-    res.status(500).json({ error: 'Erro interno do servidor' });
-  }
-});
-
-// ============================================================================
-// AUTO-LEARNING STATUS
-// ============================================================================
-
-app.get('/api/training/auto-learning/status', requirePermission('training:training_data:read'), async (req: Request, res: Response) => {
-  // OWASP API3: ValidaÃ§Ã£o de query params
-  const queryResult = autoLearningStatusQuerySchema.safeParse(req.query);
-  if (!queryResult.success) {
-    return res.status(400).json({ error: 'ParÃ¢metros invÃ¡lidos', details: queryResult.error.format() });
-  }
-  const { tenantId } = queryResult.data;
-
-  try {
-    const tenantResolution = resolveAuthorizedTenantId(req, tenantId);
-    if (!tenantResolution.ok) {
-      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
-    }
-    const scopedTenantId = tenantResolution.tenantId;
-
-    const modelVersions = await db.query.modelVersions.findMany({
-      where: eq(schema.modelVersions.tenantId, scopedTenantId),
-      orderBy: [desc(schema.modelVersions.version)],
-      limit: 10,
-    });
-
-    const activeVersion = modelVersions.find((v: typeof schema.modelVersions.$inferSelect) => v.isActive);
-
-    const schedules = await db.query.autoLearningSchedule.findMany({
-      where: and(
-        eq(schema.autoLearningSchedule.tenantId, scopedTenantId),
-        eq(schema.autoLearningSchedule.status, 'scheduled')
-      ),
-      orderBy: [asc(schema.autoLearningSchedule.scheduledFor)],
-      limit: 20,
-    });
-
-    const pendingDataConditions = [
-      eq(schema.trainingData.status, 'approved'),
-      isNull(schema.trainingData.usedInJobId),
-    ];
-    pendingDataConditions.push(eq(schema.trainingData.tenantId, scopedTenantId));
-    
-    const pendingData = await db.select({ count: sql<number>`count(*)` })
-      .from(schema.trainingData)
-      .where(and(...pendingDataConditions));
-
-    const pendingImagesConditions = [
-      eq(schema.generatedImages.approvedForTraining, true),
-      eq(schema.generatedImages.usedInFineTuning, false),
-    ];
-    pendingImagesConditions.push(eq(schema.generatedImages.tenantId, scopedTenantId));
-    
-    const pendingImages = await db.select({ count: sql<number>`count(*)` })
-      .from(schema.generatedImages)
-      .where(and(...pendingImagesConditions));
-
-    res.json({
-      activeModel: {
-        version: activeVersion?.version || 0,
-        name: activeVersion?.name || 'baseline',
-        improvementPercent: activeVersion?.improvementPercent || 0,
-        trainingDataUsed: activeVersion?.trainingDataCount || 0,
-        imagesUsed: activeVersion?.imageDataCount || 0,
-      },
-      pendingData: {
-        trainingEntries: pendingData[0]?.count || 0,
-        images: pendingImages[0]?.count || 0,
-      },
-      recentVersions: modelVersions.slice(0, 5).map((v: typeof schema.modelVersions.$inferSelect) => ({
-        version: v.version,
-        status: v.status,
-        namespaceId: v.namespaceId ?? null,
-        agentId: v.agentId ?? null,
-        createdAt: v.criadoEm,
-      })),
-      upcomingSchedules: schedules
-        .filter((s: typeof schema.autoLearningSchedule.$inferSelect) => new Date(s.scheduledFor).getTime() > Date.now())
-        .map((s: typeof schema.autoLearningSchedule.$inferSelect) => ({
-          id: s.id,
-          type: s.scheduleType,
-          scheduledFor: s.scheduledFor,
-          status: s.status,
-          namespaceId: readScheduleScopeMetadata(s.metadata).namespaceId ?? null,
-        })),
-    });
-  } catch (error) {
-    logger.error({ error }, 'Falha ao obter status do auto-learning');
-    res.status(500).json({ error: 'Erro interno do servidor' });
-  }
-});
-
-app.get('/api/training/execution-modes', requirePermission('training:training_data:read'), async (req: Request, res: Response) => {
-  const queryResult = trainingExecutionModesQuerySchema.safeParse(req.query);
-  if (!queryResult.success) {
-    return res.status(400).json({ error: 'Parâmetros inválidos', details: queryResult.error.format() });
-  }
-
-  try {
-    const tenantResolution = resolveAuthorizedTenantId(req, queryResult.data.tenantId ?? null);
-    if (!tenantResolution.ok) {
-      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
-    }
-
-    const [runtimeConfig, governanceConfig] = await Promise.all([
-      loadTrainingSystemRuntimeConfig(),
-      loadTrainingGovernanceRuntimeConfig(),
-    ]);
-
-    return res.json({
-      tenantId: tenantResolution.tenantId,
-      modes: [
-        {
-          id: 'quick_run',
-          runSource: 'on_demand',
-          endpoint: '/api/training/run/start',
-          scope: 'tenant_or_namespace',
-          trigger: 'manual_immediate',
-          datasetPolicy: {
-            source: 'training_data_approved',
-            minApprovedData: runtimeConfig.minOndemandDatasetSize,
-          },
-          hyperparametersPolicy: 'runtime_defaults',
-          schedulePolicy: 'none',
-        },
-        {
-          id: 'advanced_job',
-          runSource: 'custom_job',
-          endpoint: '/api/training/jobs',
-          scope: 'namespace_required',
-          trigger: 'manual_immediate',
-          datasetPolicy: {
-            source: 'training_data_approved_by_namespace',
-            minApprovedData: runtimeConfig.minOndemandDatasetSize,
-          },
-          hyperparametersPolicy: 'preset_with_overrides',
-          schedulePolicy: 'none',
-        },
-        {
-          id: 'auto_schedule',
-          runSource: 'scheduled',
-          endpoint: '/api/training/schedule/configure',
-          scope: 'tenant_or_namespace',
-          trigger: 'cron_recurring',
-          datasetPolicy: {
-            source: 'training_data_approved_by_scope',
-            minApprovedDataIncremental: runtimeConfig.minScheduledDatasetSizeIncremental,
-            minApprovedDataFull: runtimeConfig.minScheduledDatasetSizeFull,
-          },
-          hyperparametersPolicy: 'runtime_defaults',
-          schedulePolicy: 'cron_configurable',
-        },
-      ],
-      governance: {
-        maxInflightRunsPerTenant: governanceConfig.maxInflightRunsPerTenant,
-        requireEvalPassedForPromotion: governanceConfig.requireEvalPassedForPromotion,
-        requireDualApprovalForPromotion: governanceConfig.requireDualApprovalForPromotion,
-        promotionMinApprovals: governanceConfig.promotionMinApprovals,
-        requireIdempotencyKeyForRunStart: TRAINING_RUN_START_REQUIRE_IDEMPOTENCY_KEY,
-        requireStrictApprovedDataForAutoEngine: tradingDataGovernancePolicy.requireStrictApprovedDataForAutoEngine,
-        enforceMinInferenceConfidence: tradingDataGovernancePolicy.enforceMinInferenceConfidence,
-        tradingMinInferenceConfidence: tradingDataGovernancePolicy.minInferenceConfidence,
-      },
-    });
-  } catch (error) {
-    logger.error({ error }, 'Falha ao obter modos de execução de treinamento');
-    return res.status(500).json({ error: 'Erro interno do servidor' });
-  }
-});
-
-app.get('/api/training/stats', requirePermission('training:training_data:read'), async (req: Request, res: Response) => {
-  // OWASP API3: ValidaÃ§Ã£o de query params
-  const queryResult = trainingStatsQuerySchema.safeParse(req.query);
-  if (!queryResult.success) {
-    return res.status(400).json({ error: 'ParÃ¢metros invÃ¡lidos', details: queryResult.error.format() });
-  }
-  const { tenantId } = queryResult.data;
-
-  try {
-    const tenantResolution = resolveAuthorizedTenantId(req, tenantId);
-    if (!tenantResolution.ok) {
-      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
-    }
-    const scopedTenantId = tenantResolution.tenantId;
-
-    const pendingConditions = [eq(schema.trainingData.status, 'pending')];
-    pendingConditions.push(eq(schema.trainingData.tenantId, scopedTenantId));
-    
-    const pendingCount = await db.select({ count: sql<number>`count(*)` })
-      .from(schema.trainingData)
-      .where(and(...pendingConditions));
-
-    const approvedConditions = [eq(schema.trainingData.status, 'approved')];
-    approvedConditions.push(eq(schema.trainingData.tenantId, scopedTenantId));
-    
-    const approvedCount = await db.select({ count: sql<number>`count(*)` })
-      .from(schema.trainingData)
-      .where(and(...approvedConditions));
-
-    const duplicateConditions = [eq(schema.trainingData.isDuplicate, true)];
-    duplicateConditions.push(eq(schema.trainingData.tenantId, scopedTenantId));
-    
-    const duplicatesCount = await db.select({ count: sql<number>`count(*)` })
-      .from(schema.trainingData)
-      .where(and(...duplicateConditions));
-
-    const jobConditions = [eq(schema.fineTuningJobs.status, 'completed')];
-    jobConditions.push(eq(schema.fineTuningJobs.tenantId, scopedTenantId));
-    
-    const completedJobs = await db.select({ count: sql<number>`count(*)` })
-      .from(schema.fineTuningJobs)
-      .where(and(...jobConditions));
-
-    res.json({
-      trainingData: {
-        pending: pendingCount[0]?.count || 0,
-        approved: approvedCount[0]?.count || 0,
-        duplicatesFiltered: duplicatesCount[0]?.count || 0,
-      },
-      jobs: {
-        completed: completedJobs[0]?.count || 0,
-      },
-    });
-  } catch (error) {
-    logger.error({ error }, 'Falha ao obter estatÃ­sticas');
-    res.status(500).json({ error: 'Erro interno do servidor' });
-  }
-});
-
 // ============================================================================
 // Gate 2 (15/01/2026): Training Schedule + On-Demand
 // Endpoints enterprise para configurar e executar treinamentos
 // ============================================================================
 
-// Schema para configuraÃ§Ã£o de schedule
-const scheduleConfigSchema = z.object({
-  tenantId: z.string().uuid(),
-  scheduleType: z.enum(['incremental_fine_tuning', 'complete_fine_tuning']),
-  enabled: z.boolean().default(true),
-  cronPattern: z.string().optional(), // Ex: '0 3 * * 0' para domingo Ã s 3h
-  minDataRequired: z.number().int().min(1).optional(),
-  namespaceId: z.string().uuid().optional().nullable(),
-});
-
-// Schema para iniciar treinamento on-demand
-const startTrainingSchema = z.object({
-  tenantId: z.string().uuid(),
-  trainingType: z.enum(['incremental', 'full']).default('incremental'),
-  includeImages: z.boolean().default(false),
-  priority: z.enum(['low', 'normal', 'high']).default('normal'),
-  description: z.string().max(500).optional(),
-  /** Escopo namespace: treino on-demand por namespace (LoRA por namespace). */
-  namespaceId: z.string().uuid().optional(),
-});
-
-// Schema para cancelar treinamento
-const cancelTrainingSchema = z.object({
-  trainingRunId: z.string().uuid(),
-  reason: z.string().max(500).optional(),
-});
-
-/**
- * POST /api/training/schedule/configure
- * Configura o agendamento automÃ¡tico de treinamento
- */
-app.post('/api/training/schedule/configure', requirePermission('training:training_data:manage'), async (req: Request, res: Response) => {
-  const parseResult = scheduleConfigSchema.safeParse(req.body);
-  if (!parseResult.success) {
-    return res.status(400).json({ error: 'Input invï¿½lido', details: parseResult.error.format() });
-  }
-
-  const { tenantId, scheduleType, enabled, cronPattern, minDataRequired, namespaceId } = parseResult.data;
-
-  try {
-    const tenantResolution = resolveAuthorizedTenantId(req, tenantId);
-    if (!tenantResolution.ok) {
-      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
-    }
-    const scopedTenantId = tenantResolution.tenantId;
-    const scheduleNamespaceId = namespaceId ?? null;
-
-    if (scheduleNamespaceId) {
-      const namespace = await findNamespaceByIdInTenant(scopedTenantId, scheduleNamespaceId);
-      if (!namespace) {
-        return res.status(403).json({ error: 'Namespace nao pertence ao tenant autenticado' });
-      }
-    }
-
-    const [trainingRuntimeConfig, trainingEnterpriseConfig] = await Promise.all([
-      loadTrainingSystemRuntimeConfig(),
-      loadTrainingEnterpriseConfig(),
-    ]);
-
-    const resolvedMinDataRequired = minDataRequired
-      ?? (
-        scheduleType === 'incremental_fine_tuning'
-          ? trainingEnterpriseConfig.minScheduledIncremental
-          : trainingEnterpriseConfig.minScheduledFull
-      );
-
-    const activeSchedules = await db.query.autoLearningSchedule.findMany({
-      where: and(
-        eq(schema.autoLearningSchedule.tenantId, scopedTenantId),
-        eq(schema.autoLearningSchedule.scheduleType, scheduleType),
-        eq(schema.autoLearningSchedule.status, 'scheduled')
-      ),
-      orderBy: [desc(schema.autoLearningSchedule.criadoEm)],
-    });
-
-    const schedulesForScope = activeSchedules.filter((item) =>
-      isSameScheduleScope(item.metadata, scheduleNamespaceId)
-    );
-    const existing = schedulesForScope[0];
-    const duplicatedScheduleIds = schedulesForScope.slice(1).map((item) => item.id);
-
-    if (!enabled) {
-      if (schedulesForScope.length === 0) {
-        return res.json({ success: true, action: 'no_change', scheduleId: null });
-      }
-
-      await db.update(schema.autoLearningSchedule)
-        .set({
-          status: 'skipped',
-          completedAt: new Date(),
-          errorMessage: null,
-        })
-        .where(inArray(schema.autoLearningSchedule.id, schedulesForScope.map((item) => item.id)));
-
-      logger.info({
-        tenantId: scopedTenantId,
-        scheduleType,
-        namespaceId: scheduleNamespaceId,
-        affectedSchedules: schedulesForScope.length,
-      }, 'Schedule de treinamento desabilitado para escopo');
-
-      return res.json({
-        success: true,
-        action: 'disabled',
-        scheduleId: existing?.id ?? null,
-        disabledCount: schedulesForScope.length,
-      });
-    }
-
-    const scheduleMetadata = {
-      minDataRequired: resolvedMinDataRequired,
-      cronPattern: cronPattern
-        ?? (
-          scheduleType === 'incremental_fine_tuning'
-            ? trainingRuntimeConfig.autoLearningCronIncremental
-            : trainingRuntimeConfig.autoLearningCronFull
-        ),
-      namespaceId: scheduleNamespaceId,
-      configuredAt: new Date().toISOString(),
-    };
-
-    if (existing) {
-      const scheduledFor = calculateNextScheduleDate(scheduleType, scheduleMetadata.cronPattern ?? undefined);
-
-      await db.update(schema.autoLearningSchedule)
-        .set({
-          scheduledFor,
-          status: 'scheduled',
-          metadata: scheduleMetadata,
-          errorMessage: null,
-        })
-        .where(eq(schema.autoLearningSchedule.id, existing.id));
-
-      if (duplicatedScheduleIds.length > 0) {
-        await db.update(schema.autoLearningSchedule)
-          .set({
-            status: 'skipped',
-            completedAt: new Date(),
-            errorMessage: 'Schedule duplicado desativado por reconciliacao de escopo',
-          })
-          .where(inArray(schema.autoLearningSchedule.id, duplicatedScheduleIds));
-      }
-
-      logger.info({
-        tenantId: scopedTenantId,
-        scheduleType,
-        namespaceId: scheduleNamespaceId,
-        scheduledFor,
-        scheduleId: existing.id,
-        minDataRequired: resolvedMinDataRequired,
-        skippedDuplicates: duplicatedScheduleIds.length,
-      }, 'Schedule de treinamento atualizado');
-
-      return res.json({
-        success: true,
-        action: 'updated',
-        scheduleId: existing.id,
-        scheduledFor,
-        minDataRequired: resolvedMinDataRequired,
-        skippedDuplicates: duplicatedScheduleIds.length,
-      });
-    }
-
-    const scheduledFor = calculateNextScheduleDate(scheduleType, scheduleMetadata.cronPattern ?? undefined);
-
-    const [newSchedule] = await db.insert(schema.autoLearningSchedule).values({
-      tenantId: scopedTenantId,
-      scheduleType,
-      status: 'scheduled',
-      scheduledFor,
-      metadata: scheduleMetadata,
-    }).returning();
-
-    logger.info({
-      tenantId: scopedTenantId,
-      scheduleType,
-      namespaceId: scheduleNamespaceId,
-      scheduledFor,
-      scheduleId: newSchedule.id,
-      minDataRequired: resolvedMinDataRequired,
-    }, 'Schedule de treinamento configurado');
-
-    return res.json({
-      success: true,
-      action: 'scheduled',
-      scheduleId: newSchedule.id,
-      scheduledFor,
-      minDataRequired: resolvedMinDataRequired,
-    });
-  } catch (error) {
-    logger.error({ error }, 'Falha ao configurar schedule de treinamento');
-    res.status(500).json({ error: 'Erro interno do servidor' });
-  }
-});
 /**
  * POST /api/training/run/start
  * Inicia treinamento on-demand
  */
-app.post('/api/training/run/start', requirePermission('training:training_data:manage'), async (req: Request, res: Response) => {
-  const parseResult = startTrainingSchema.safeParse(req.body);
-  if (!parseResult.success) {
-    return res.status(400).json({ error: 'Input invalido', details: parseResult.error.format() });
-  }
-  const idempotencyHeader = readOptionalTrainingIdempotencyKey(req);
-  if (idempotencyHeader.error) {
-    trainingPipelineMetrics.runStartIdempotencyTotal.inc({
-      endpoint: 'on_demand',
-      result: 'invalid_header',
-    });
-    return res.status(400).json({ error: idempotencyHeader.error });
-  }
-  if (TRAINING_RUN_START_REQUIRE_IDEMPOTENCY_KEY && !idempotencyHeader.key) {
-    trainingPipelineMetrics.runStartIdempotencyTotal.inc({
-      endpoint: 'on_demand',
-      result: 'missing_required',
-    });
-    return res.status(400).json({
-      error: 'Header X-Idempotency-Key obrigatorio para iniciar treino',
-      code: 'IDEMPOTENCY_KEY_REQUIRED',
-    });
-  }
-
-  const { tenantId, trainingType, includeImages, priority, description, namespaceId } = parseResult.data;
-
-  try {
-    const tenantResolution = resolveAuthorizedTenantId(req, tenantId);
-    if (!tenantResolution.ok) {
-      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
-    }
-    const scopedTenantId = tenantResolution.tenantId;
-    const [governanceConfig, trainingEnterpriseConfig] = await Promise.all([
-      loadTrainingGovernanceRuntimeConfig(),
-      loadTrainingEnterpriseConfig(),
-    ]);
-    const redis = getRedisClient();
-    let lockHandle: Awaited<ReturnType<typeof acquireTrainingOperationLock>> = null;
-    if (!redis) {
-      trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
-        operation: 'run_start',
-        result: 'redis_unavailable',
-      });
-      return res.status(503).json({ error: 'Redis indisponivel para controle de concorrencia de inicio de treino' });
-    }
-    const requestFingerprint = buildRunStartRequestFingerprint({
-      operation: 'on_demand',
-      tenantId: scopedTenantId,
-      payload: {
-        trainingType,
-        includeImages,
-        priority,
-        description: description ?? null,
-        namespaceId: namespaceId ?? null,
-      },
-    });
-    const idempotencyKeyHash = idempotencyHeader.key ? hashIdempotencyKeyForAudit(idempotencyHeader.key) : null;
-    if (idempotencyHeader.key) {
-      const replay = await lookupRunStartIdempotencyReplay({
-        redis,
-        operation: 'on_demand',
-        tenantId: scopedTenantId,
-        idempotencyKey: idempotencyHeader.key,
-        fingerprint: requestFingerprint,
-      });
-      if (replay.status === 'payload_mismatch') {
-        return sendTrainingRunStartError({
-          res,
-          status: 409,
-          error: 'Idempotency-Key reutilizada com payload diferente',
-          code: 'IDEMPOTENCY_KEY_PAYLOAD_MISMATCH',
-          idempotencyKey: idempotencyHeader.key,
-        });
-      }
-      if (replay.status === 'hit') {
-        applyIdempotencyResponseHeaders(res, idempotencyHeader.key, 'replayed');
-        return res.status(200).json({
-          success: true,
-          jobId: replay.job.id,
-          loraJobId: replay.job.loraJobId,
-          modelVersionId: replay.job.modelVersionId,
-          version: null,
-          trainingDataUsed: replay.job.trainingDataCount,
-          imagesUsed: null,
-          status: replay.job.status,
-          enqueued: false,
-          idempotencyHit: true,
-        });
-      }
-    }
-    const startLockKey = buildTrainingScopeOperationLockKey({
-      scope: {
-        tenantId: scopedTenantId,
-        namespaceId: null,
-        agentId: null,
-      },
-      operation: 'run_start',
-    });
-    lockHandle = await acquireTrainingOperationLock({
-      redis,
-      key: startLockKey,
-      ttlSeconds: 300,
-    });
-    if (!lockHandle) {
-      trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
-        operation: 'run_start',
-        result: 'contention',
-      });
-      return sendTrainingRunStartError({
-        res,
-        status: 409,
-        error: 'Ja existe inicializacao de treino em andamento para este tenant',
-        code: 'RUN_START_LOCK_CONTENTION',
-        retryAfterSeconds: TRAINING_RUN_START_CONTENTION_RETRY_AFTER_SECONDS,
-        idempotencyKey: idempotencyHeader.key,
-      });
-    }
-    trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
-      operation: 'run_start',
-      result: 'acquired',
-    });
-
-    try {
-      const runningJobs = await db.query.fineTuningJobs.findMany({
-        where: and(
-          eq(schema.fineTuningJobs.tenantId, scopedTenantId),
-          or(
-            eq(schema.fineTuningJobs.status, 'pending'),
-            eq(schema.fineTuningJobs.status, 'training'),
-            eq(schema.fineTuningJobs.status, 'preparing'),
-            eq(schema.fineTuningJobs.status, 'validating')
-          )
-        ),
-      });
-
-      if (runningJobs.length > 0) {
-        return sendTrainingRunStartError({
-          res,
-          status: 409,
-          error: `Ja existe treinamento em andamento ou enfileirado (jobId=${runningJobs[0].id})`,
-          code: 'RUN_START_ALREADY_ACTIVE',
-          retryAfterSeconds: TRAINING_RUN_START_CONTENTION_RETRY_AFTER_SECONDS,
-          idempotencyKey: idempotencyHeader.key,
-        });
-      }
-
-      const inflightCount = await getTenantInflightFineTuningJobsCount(db, scopedTenantId);
-      if (inflightCount >= governanceConfig.maxInflightRunsPerTenant) {
-        return sendTrainingRunStartError({
-          res,
-          status: 429,
-          error: `Capacidade de treinamento esgotada para este tenant (inflight=${inflightCount}, max=${governanceConfig.maxInflightRunsPerTenant})`,
-          code: 'RUN_START_CAPACITY_EXHAUSTED',
-          retryAfterSeconds: TRAINING_RUN_START_CAPACITY_RETRY_AFTER_SECONDS,
-          idempotencyKey: idempotencyHeader.key,
-        });
-      }
-
-    if (namespaceId) {
-      const namespace = await findNamespaceByIdInTenant(scopedTenantId, namespaceId);
-      if (!namespace) {
-        return res.status(403).json({ error: 'Namespace nao pertence ao tenant autenticado' });
-      }
-    }
-
-    const scheduleType = trainingType === 'full' ? 'complete_fine_tuning' : 'incremental_fine_tuning';
-    const evaluation = await evaluateDataQuality(
-      scheduleType,
-      scopedTenantId,
-      trainingEnterpriseConfig.minOndemandDatasetSize,
-      namespaceId,
-      false
-    );
-
-    if (!evaluation.isReady) {
-      return res.status(400).json({
-        error: 'Dados insuficientes ou qualidade baixa',
-        evaluation,
-        recommendation: evaluation.recommendation,
-        reason: evaluation.reason,
-      });
-    }
-
-    const loraResult = await startProgressiveLoRA(scopedTenantId, {
-      includeImages,
-      namespaceId,
-    });
-    await db.update(schema.loraJobs)
-      .set({
-        description: `on_demand:${scheduleType}:priority:${priority}`,
-      })
-      .where(eq(schema.loraJobs.id, loraResult.loraJobId));
-
-    const [job] = await db.insert(schema.fineTuningJobs).values({
-      tenantId: scopedTenantId,
-      name: description || `Treinamento ${trainingType} on-demand`,
-      baseModel: GPU_MANAGER_CONFIG.models.llm,
-      status: 'pending',
-      runSource: 'on_demand',
-      trainingDataCount: loraResult.trainingDataUsed,
-      datasetVersionId: loraResult.datasetVersionId,
-      loraJobId: loraResult.loraJobId,
-      scopeNamespaceId: namespaceId ?? null,
-      configSnapshot: {
-        runSource: 'on_demand',
-        execution: {
-          trigger: 'manual',
-          profile: 'quick_run',
-        },
-        scheduleType,
-        priority,
-        includeImages,
-        namespaceId: namespaceId ?? null,
-        evaluation,
-      },
-      evaluationStatus: 'pending',
-      promotionStatus: 'candidate',
-    }).returning();
-
-    const enqueueResult = await enqueueTrainingFineTuningRun({
-      fineTuningJobId: job.id,
-      tenantId: scopedTenantId,
-      priority,
-      requestedBy: tenantResolution.authContext.userId ?? null,
-    });
-    if (idempotencyHeader.key) {
-      await storeRunStartIdempotencyRecord({
-        redis,
-        operation: 'on_demand',
-        tenantId: scopedTenantId,
-        idempotencyKey: idempotencyHeader.key,
-        fingerprint: requestFingerprint,
-        jobId: job.id,
-      });
-    }
-
-      try {
-        await persistTrainingGovernanceAudit({
-          tenantId: scopedTenantId,
-          userId: tenantResolution.authContext.userId ?? null,
-          action: 'training_run_start_requested',
-          resourceId: job.id,
-          request: req,
-          details: {
-            source: 'on_demand',
-            after: {
-              status: job.status,
-              promotionStatus: job.promotionStatus,
-              trainingDataCount: job.trainingDataCount,
-              scopeNamespaceId: job.scopeNamespaceId,
-              scopeAgentId: job.scopeAgentId,
-            },
-            metadata: {
-              operation: 'run_start',
-              queuePriority: priority,
-              runSource: 'on_demand',
-              includeImages,
-              trainingType,
-              idempotencyKeyHash,
-            },
-          },
-        });
-        trainingPipelineMetrics.governanceAuditWritesTotal.inc({
-          action: 'training_run_start_requested',
-          result: 'success',
-        });
-      } catch (auditError) {
-        trainingPipelineMetrics.governanceAuditWritesTotal.inc({
-          action: 'training_run_start_requested',
-          result: 'failure',
-        });
-        logger.error(
-          {
-            error: auditError instanceof Error ? auditError.message : String(auditError),
-            tenantId: scopedTenantId,
-            jobId: job.id,
-          },
-          'Falha ao registrar auditoria de inicio de treino (on-demand)'
-        );
-      }
-
-      logger.info({
-        jobId: job.id,
-        loraJobId: loraResult.loraJobId,
-        tenantId: scopedTenantId,
-        trainingType,
-        priority,
-        dataCount: evaluation.dataCount,
-        imageCount: evaluation.imageCount,
-        enqueued: enqueueResult.enqueued,
-        queueRunId: enqueueResult.runId,
-        idempotencyKeyHash,
-      }, 'Treinamento on-demand enfileirado');
-
-      if (idempotencyHeader.key) {
-        applyIdempotencyResponseHeaders(res, idempotencyHeader.key, 'created');
-      }
-
-      return res.status(202).json({
-        success: true,
-        jobId: job.id,
-        loraJobId: loraResult.loraJobId,
-        modelVersionId: loraResult.modelVersionId,
-        version: loraResult.version,
-        trainingDataUsed: loraResult.trainingDataUsed,
-        imagesUsed: loraResult.imagesUsed,
-        status: 'queued',
-        enqueued: enqueueResult.enqueued,
-      });
-    } finally {
-      if (lockHandle) {
-        try {
-          await releaseTrainingOperationLock({
-            redis,
-            handle: lockHandle,
-          });
-        } catch (releaseError) {
-          logger.error(
-            {
-              error: releaseError instanceof Error ? releaseError.message : String(releaseError),
-              tenantId: scopedTenantId,
-            },
-            'Falha ao liberar lock de inicializacao de treino (on-demand)'
-          );
-        }
-      }
-    }
-  } catch (error) {
-    logger.error({ error }, 'Falha ao iniciar treinamento on-demand');
-    return res.status(500).json({ error: 'Erro interno do servidor' });
-  }
-});
-
-/**
- * GET /api/training/run/status
- * Obtem status atual do treinamento
- */
-app.get('/api/training/run/status', requirePermission('training:training_data:read'), async (req: Request, res: Response) => {
-  const queryResult = z.object({ tenantId: z.string().uuid().optional() }).safeParse(req.query);
-  if (!queryResult.success) {
-    return res.status(400).json({ error: 'ParÃ¢metros invÃ¡lidos' });
-  }
-  const { tenantId } = queryResult.data;
-
-  try {
-    // Buscar jobs com status 'training' ou 'preparing' (em execuÃ§Ã£o)
-    // FIX Bug 1: Incluir 'preparing' na verificaÃ§Ã£o (fase de preparaÃ§Ã£o de dados)
-    const tenantResolution = resolveAuthorizedTenantId(req, tenantId);
-    if (!tenantResolution.ok) {
-      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
-    }
-    const conditions = [
-      eq(schema.fineTuningJobs.tenantId, tenantResolution.tenantId),
-      or(
-        eq(schema.fineTuningJobs.status, 'training'),
-        eq(schema.fineTuningJobs.status, 'preparing')
-      )
-    ];
-
-    const runningJobs = await db.query.fineTuningJobs.findMany({
-      where: and(...conditions),
-      orderBy: [desc(schema.fineTuningJobs.iniciadoEm)],
-      limit: 5,
-    });
-
-    if (runningJobs.length === 0) {
-      return res.json({
-        hasRunningTraining: false,
-        status: 'idle',
-        message: 'Nenhum treinamento em andamento',
-      });
-    }
-
-    const currentJob = runningJobs[0];
-    const elapsedMs = currentJob.iniciadoEm ? Date.now() - new Date(currentJob.iniciadoEm).getTime() : 0;
-
-    // Usar campos existentes no schema: name, trainingDataCount, progress
-    res.json({
-      hasRunningTraining: true,
-      status: 'training',
-      currentJob: {
-        id: currentJob.id,
-        name: currentJob.name,
-        baseModel: currentJob.baseModel,
-        trainingDataCount: currentJob.trainingDataCount,
-        progress: currentJob.progress || 0,
-        elapsedSeconds: Math.round(elapsedMs / 1000),
-        startedAt: currentJob.iniciadoEm,
-      },
-    });
-  } catch (error) {
-    logger.error({ error }, 'Falha ao obter status do treinamento');
-    res.status(500).json({ error: 'Erro interno do servidor' });
-  }
-});
-
-/**
- * GET /api/training/queue/status
- * Status enterprise das filas de fine-tuning (prioridades + DLQ + governanÃ§a)
- */
-app.get('/api/training/queue/status', requirePermission('training:fine_tuning_jobs:read'), async (req: Request, res: Response) => {
-  const queryResult = z.object({ tenantId: z.string().uuid().optional() }).safeParse(req.query);
-  if (!queryResult.success) {
-    return res.status(400).json({ error: 'Parametros invalidos' });
-  }
-
-  try {
-    const tenantResolution = resolveAuthorizedTenantId(req, queryResult.data.tenantId ?? null);
-    if (!tenantResolution.ok) {
-      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
-    }
-
-    const [governanceConfig, queues, inflightCount] = await Promise.all([
-      loadTrainingGovernanceRuntimeConfig(),
-      getFineTuningQueuesStatus(),
-      getTenantInflightFineTuningJobsCount(db, tenantResolution.tenantId),
-    ]);
-
-    return res.json({
-      queues,
-      governance: {
-        maxInflightRunsPerTenant: governanceConfig.maxInflightRunsPerTenant,
-        requireEvalPassedForPromotion: governanceConfig.requireEvalPassedForPromotion,
-        requireDualApprovalForPromotion: governanceConfig.requireDualApprovalForPromotion,
-        promotionMinApprovals: governanceConfig.promotionMinApprovals,
-        requireIdempotencyKeyForRunStart: TRAINING_RUN_START_REQUIRE_IDEMPOTENCY_KEY,
-        requireStrictApprovedDataForAutoEngine: tradingDataGovernancePolicy.requireStrictApprovedDataForAutoEngine,
-        enforceMinInferenceConfidence: tradingDataGovernancePolicy.enforceMinInferenceConfidence,
-        tradingMinInferenceConfidence: tradingDataGovernancePolicy.minInferenceConfidence,
-      },
-      tenant: {
-        id: tenantResolution.tenantId,
-        inflightCount,
-      },
-    });
-  } catch (error) {
-    logger.error({ error }, 'Falha ao obter status das filas de fine-tuning');
-    return res.status(500).json({ error: 'Erro interno do servidor' });
-  }
-});
-
-/**
- * GET /api/training/run/history
- * ObtÃ©m histÃ³rico de treinamentos
- */
-app.get('/api/training/run/history', requirePermission('training:training_data:read'), async (req: Request, res: Response) => {
-  const queryResult = z.object({ 
-    tenantId: z.string().uuid().optional(),
-    limit: z.coerce.number().int().min(1).max(100).default(20),
-  }).safeParse(req.query);
-  
-  if (!queryResult.success) {
-    return res.status(400).json({ error: 'ParÃ¢metros invÃ¡lidos' });
-  }
-  const { tenantId, limit } = queryResult.data;
-
-  try {
-    const tenantResolution = resolveAuthorizedTenantId(req, tenantId);
-    if (!tenantResolution.ok) {
-      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
-    }
-
-    const jobs = await db.query.fineTuningJobs.findMany({
-      where: eq(schema.fineTuningJobs.tenantId, tenantResolution.tenantId),
-      orderBy: [desc(schema.fineTuningJobs.criadoEm)],
-      limit,
-    });
-
-    const history = jobs.map((job: typeof schema.fineTuningJobs.$inferSelect) => ({
-      id: job.id,
-      jobType: job.name, // name contÃ©m tipo do job (qlora_incremental, etc)
-      status: job.status,
-      totalRecords: job.trainingDataCount,
-      processedRecords: job.progress ? Math.round((job.progress / 100) * (job.trainingDataCount ?? 0)) : 0,
-      description: job.name,
-      startedAt: job.iniciadoEm,
-      completedAt: job.completadoEm,
-      durationSeconds: job.iniciadoEm && job.completadoEm 
-        ? Math.round((new Date(job.completadoEm).getTime() - new Date(job.iniciadoEm).getTime()) / 1000)
-        : null,
-      errorMessage: job.errorMessage,
-    }));
-
-    res.json({
-      total: history.length,
-      history,
-    });
-  } catch (error) {
-    logger.error({ error }, 'Falha ao obter histÃ³rico de treinamentos');
-    res.status(500).json({ error: 'Erro interno do servidor' });
-  }
-});
-
-/**
- * DELETE /api/training/run/cancel
- * Cancela treinamento em andamento
- */
-app.delete('/api/training/run/cancel', requirePermission('training:training_data:manage'), async (req: Request, res: Response) => {
-  const parseResult = cancelTrainingSchema.safeParse(req.body);
-  if (!parseResult.success) {
-    return res.status(400).json({ error: 'Input invÃ¡lido', details: parseResult.error.format() });
-  }
-  
-  const { trainingRunId, reason } = parseResult.data;
-
-  try {
-    const tenantResolution = resolveAuthorizedTenantId(req);
-    if (!tenantResolution.ok) {
-      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
-    }
-
-    const job = await db.query.fineTuningJobs.findFirst({
-      where: and(
-        eq(schema.fineTuningJobs.id, trainingRunId),
-        eq(schema.fineTuningJobs.tenantId, tenantResolution.tenantId)
-      ),
-    });
-
-    if (!job) {
-      return res.status(404).json({ error: 'Treinamento nÃ£o encontrado' });
-    }
-
-    if (job.status !== 'training' && job.status !== 'pending' && job.status !== 'preparing') {
-      return res.status(400).json({ 
-        error: 'Treinamento nÃ£o pode ser cancelado',
-        currentStatus: job.status,
-      });
-    }
-
-    await cancelFineTuningJobAndLora({
-      fineTuningJob: job,
-      tenantId: tenantResolution.tenantId,
-      reason: reason || 'Cancelado pelo usuÃ¡rio',
-    });
-
-    logger.info({ trainingRunId, reason }, 'Treinamento cancelado');
-
-    return res.json({
-      success: true,
-      trainingRunId,
-      previousStatus: job.status,
-      newStatus: 'cancelled',
-    });
-  } catch (error) {
-    if (error instanceof TrainingHttpError) {
-      return res.status(error.status).json(error.responsePayload);
-    }
-    logger.error({ error }, 'Falha ao cancelar treinamento');
-    return res.status(500).json({ error: 'Erro interno do servidor' });
-  }
-});
-
 // FunÃ§Ãµes auxiliares para schedule
-
-/**
- * Calcula a prÃ³xima data de execuÃ§Ã£o baseado no cron pattern ou intervalo padrÃ£o.
- * 
- * Suporta padrÃµes cron bÃ¡sicos:
- * - '0 3 * * 0' â†’ Domingo Ã s 3:00 AM
- * - '0 1 1,15 * *' â†’ Dias 1 e 15 de cada mÃªs Ã s 1:00 AM
- * 
- * FIX Bug 3: Agora honra o cronPattern passado pelo usuÃ¡rio
- */
-function calculateNextScheduleDate(scheduleType: string, cronPattern?: string): Date {
-  const config = scheduleType === 'incremental_fine_tuning'
-    ? SCHEDULE_CONFIG.incrementalFineTuning
-    : SCHEDULE_CONFIG.completeFineTuning;
-  
-  // Se nÃ£o tiver cron pattern customizado, usar intervalo padrÃ£o
-  if (!cronPattern) {
-    return new Date(Date.now() + config.intervalMs);
-  }
-  
-  // Parse bÃ¡sico do cron pattern: 'minuto hora diaDoMes mes diaDaSemana'
-  // Exemplo: '0 3 * * 0' = minuto 0, hora 3, qualquer dia do mÃªs, qualquer mÃªs, domingo
-  const parts = cronPattern.trim().split(/\s+/);
-  if (parts.length !== 5) {
-    logger.warn({ cronPattern }, 'Cron pattern invÃ¡lido, usando intervalo padrÃ£o');
-    return new Date(Date.now() + config.intervalMs);
-  }
-  
-  const [minute, hour, dayOfMonth, _month, dayOfWeek] = parts;
-  const now = new Date();
-  const next = new Date(now);
-  
-  // Configurar hora e minuto
-  const targetHour = hour === '*' ? now.getHours() : parseInt(hour, 10);
-  const targetMinute = minute === '*' ? 0 : parseInt(minute, 10);
-  
-  next.setHours(targetHour, targetMinute, 0, 0);
-  
-  // Se for dia da semana especÃ­fico (ex: '0' = domingo)
-  if (dayOfWeek !== '*') {
-    const targetDay = parseInt(dayOfWeek, 10); // 0 = domingo, 6 = sÃ¡bado
-    let daysUntil = targetDay - now.getDay();
-    
-    // Se o dia jÃ¡ passou esta semana, ir para prÃ³xima semana
-    if (daysUntil < 0 || (daysUntil === 0 && now >= next)) {
-      daysUntil += 7;
-    }
-    
-    next.setDate(now.getDate() + daysUntil);
-  }
-  // Se for dia do mÃªs especÃ­fico (ex: '1,15' = dias 1 e 15)
-  else if (dayOfMonth !== '*') {
-    const days = dayOfMonth.split(',').map(d => parseInt(d.trim(), 10)).sort((a, b) => a - b);
-    const currentDay = now.getDate();
-    
-    // Encontrar prÃ³ximo dia vÃ¡lido
-    let targetDayOfMonth = days.find(d => d > currentDay || (d === currentDay && now < next));
-    
-    if (targetDayOfMonth === undefined) {
-      // Nenhum dia disponÃ­vel este mÃªs, ir para prÃ³ximo mÃªs
-      targetDayOfMonth = days[0];
-      // FIX Bug 2: Definir dia como 1 ANTES de incrementar mÃªs para evitar overflow
-      // Exemplo: 31/Jan + 1 mÃªs = 3/Mar se nÃ£o fizermos isso (Fev nÃ£o tem 31 dias)
-      next.setDate(1);
-      next.setMonth(next.getMonth() + 1);
-    }
-    
-    // FIX Bug 3 (11/01/2026): Verificar se o dia existe no mÃªs alvo
-    // Exemplo: Cron '0 1 31 * *' apÃ³s Janeiro â†’ Fevereiro nÃ£o tem dia 31
-    // JavaScript Date overflow: setDate(31) em Fevereiro â†’ 3 de MarÃ§o (ERRADO)
-    // SoluÃ§Ã£o: AvanÃ§ar meses atÃ© encontrar um que tenha o dia desejado
-    const getDaysInMonth = (date: Date): number => {
-      // Criar data no primeiro dia do prÃ³ximo mÃªs e subtrair 1 dia
-      return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
-    };
-    
-    // AvanÃ§ar meses se o dia nÃ£o existir no mÃªs atual (mÃ¡ximo 12 iteraÃ§Ãµes para seguranÃ§a)
-    for (let i = 0; i < 12; i++) {
-      const daysInMonth = getDaysInMonth(next);
-      if (targetDayOfMonth <= daysInMonth) {
-        break; // MÃªs atual tem o dia desejado
-      }
-      // MÃªs nÃ£o tem o dia (ex: Fevereiro nÃ£o tem 31), ir para prÃ³ximo mÃªs
-      next.setDate(1);
-      next.setMonth(next.getMonth() + 1);
-    }
-    
-    next.setDate(targetDayOfMonth);
-  }
-  // Se jÃ¡ passou o horÃ¡rio de hoje, ir para amanhÃ£
-  else if (now >= next) {
-    next.setDate(next.getDate() + 1);
-  }
-  
-  logger.debug({ cronPattern, nextSchedule: next.toISOString() }, 'PrÃ³ximo schedule calculado');
-  return next;
-}
 
 function _estimateRemainingTime(job: typeof schema.fineTuningJobs.$inferSelect): number | null {
   if (!job.iniciadoEm || !job.trainingDataCount || !job.progress) return null;
@@ -8269,19 +4022,19 @@ let autoLearningLoopActive = false;
       logger.info({ intervalMs: TRAINING_SCHEDULER_POLL_MS }, 'Scheduler de auto-learning iniciado');
 
       // Retomar jobs pendentes apÃ³s restart (Regra 6: sem dependÃªncia de state em memÃ³ria)
-      resumePendingFineTuningJobs().catch((error: unknown) => {
+      trainingJobLifecycleService.resumePendingFineTuningJobs().catch((error: unknown) => {
         const errObj = error instanceof Error ? error : new Error(String(error));
         logger.error({ err: errObj }, 'Falha ao retomar jobs de fine-tuning pendentes');
       });
-      resumePendingLoraJobs().catch((error: unknown) => {
+      trainingJobLifecycleService.resumePendingLoraJobs().catch((error: unknown) => {
         const errObj = error instanceof Error ? error : new Error(String(error));
         logger.error({ err: errObj }, 'Falha ao retomar jobs de trading LoRA pendentes');
       });
 
       // Tick periÃ³dico: garante execuÃ§Ã£o de jobs criados por scheduler/rotas mesmo apÃ³s long uptimes
       setInterval(() => {
-        resumePendingFineTuningJobs().catch(() => {});
-        resumePendingLoraJobs().catch(() => {});
+        trainingJobLifecycleService.resumePendingFineTuningJobs().catch(() => {});
+        trainingJobLifecycleService.resumePendingLoraJobs().catch(() => {});
       }, 30000);
     });
 

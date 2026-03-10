@@ -15,6 +15,7 @@ import {
   generateInternalAuthHeaders,
   isInternalAuthEnabled,
 } from '@alice/shared-utils';
+import { getServiceUrl } from '@alice/config';
 import { createLogger } from '@alice/logger';
 
 // CORREÇÃO AUDITORIA 17/12/2025: Usar createLogger padronizado da plataforma
@@ -22,11 +23,7 @@ import { createLogger } from '@alice/logger';
 const logger = createLogger('chat-rag-client');
 
 // REGRA 6: Fail-fast em TODOS os ambientes - variável DEVE estar definida
-const RAG_SERVICE_URL = process.env.RAG_SERVICE_URL;
-if (!RAG_SERVICE_URL) {
-  throw new Error('RAG_SERVICE_URL é obrigatório (Regra 6 - fail-fast)');
-}
-const RAG_SERVICE_URL_FINAL = RAG_SERVICE_URL;
+const RAG_SERVICE_URL_FINAL = getServiceUrl('rag');
 const RAG_REQUEST_TIMEOUT_MS = (() => {
   const raw = process.env.RAG_REQUEST_TIMEOUT_MS;
   if (!raw) return 12000;

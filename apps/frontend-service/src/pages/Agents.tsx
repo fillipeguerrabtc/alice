@@ -17,6 +17,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { asResolver } from "@/lib/form-helpers";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
+import { WorkspaceFilterBar } from "@/components/ui/workspace-filter-bar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -136,6 +137,15 @@ interface AgentModelOptionsResponse {
   };
 }
 
+type AgentFormTabKey = 'basic' | 'prompt' | 'model' | 'capabilities';
+type AgentFormWorkspaceKey = 'all' | 'identity' | 'behavior' | 'runtime';
+
+type AgentFormTabDescriptor = {
+  value: AgentFormTabKey;
+  icon: typeof User;
+  labelKey: string;
+};
+
 // Presets de temperatura
 const TEMPERATURE_PRESETS = [
   { value: 0, label: 'Determinístico', description: 'Respostas consistentes e previsíveis' },
@@ -242,6 +252,27 @@ const statusOptionsConfig = [
   { value: "deprecated", icon: Briefcase, color: "text-muted-foreground", bgColor: "bg-muted" },
 ];
 
+const AGENT_FORM_TAB_DESCRIPTORS: AgentFormTabDescriptor[] = [
+  { value: 'basic', icon: User, labelKey: 'agents.tabs.basic' },
+  { value: 'prompt', icon: FileText, labelKey: 'agents.tabs.prompt' },
+  { value: 'model', icon: Settings2, labelKey: 'agents.tabs.model' },
+  { value: 'capabilities', icon: Sparkles, labelKey: 'agents.tabs.capabilities' },
+];
+
+const AGENT_FORM_WORKSPACE_TABS: Record<AgentFormWorkspaceKey, AgentFormTabKey[]> = {
+  all: AGENT_FORM_TAB_DESCRIPTORS.map((tab) => tab.value),
+  identity: ['basic'],
+  behavior: ['prompt', 'capabilities'],
+  runtime: ['model', 'capabilities'],
+};
+
+const AGENT_FORM_WORKSPACES: Array<{ value: AgentFormWorkspaceKey; label: string }> = [
+  { value: 'all', label: 'Todos' },
+  { value: 'identity', label: 'Identidade' },
+  { value: 'behavior', label: 'Comportamento' },
+  { value: 'runtime', label: 'Runtime' },
+];
+
 function AgentCardSkeleton() {
   return (
     <Card className="overflow-hidden">
@@ -292,7 +323,31 @@ export default function Agents() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [agentToDelete, setAgentToDelete] = useState<Agent | null>(null);
   const [newCapability, setNewCapability] = useState('');
-  const [activeTab, setActiveTab] = useState('basic');
+  const [activeTab, setActiveTab] = useState<AgentFormTabKey>('basic');
+  const [activeWorkspace, setActiveWorkspace] = useState<AgentFormWorkspaceKey>('all');
+
+  const visibleTabs = useMemo(() => {
+    const allowed = AGENT_FORM_WORKSPACE_TABS[activeWorkspace];
+    return AGENT_FORM_TAB_DESCRIPTORS.filter((tab) => allowed.includes(tab.value));
+  }, [activeWorkspace]);
+
+  const handleWorkspaceChange = (workspace: AgentFormWorkspaceKey): void => {
+    setActiveWorkspace(workspace);
+    if (workspace === 'all') return;
+    const allowed = AGENT_FORM_WORKSPACE_TABS[workspace];
+    if (!allowed.includes(activeTab)) {
+      setActiveTab(allowed[0] ?? 'basic');
+    }
+  };
+
+  const handleTabChange = (nextTab: string): void => {
+    const normalized = AGENT_FORM_TAB_DESCRIPTORS.find((tab) => tab.value === nextTab)?.value;
+    if (!normalized) return;
+    setActiveTab(normalized);
+    if (activeWorkspace !== 'all' && !AGENT_FORM_WORKSPACE_TABS[activeWorkspace].includes(normalized)) {
+      setActiveWorkspace('all');
+    }
+  };
 
   const statusLabels = statusOptionsConfig.map(opt => ({
     ...opt,
@@ -483,7 +538,7 @@ export default function Agents() {
   const handleSubmitError = (errors: FieldErrors<AgentFormData>) => {
     const firstField = Object.keys(errors)[0] as keyof AgentFormData | undefined;
     if (firstField) {
-      const fieldTabMap: Partial<Record<keyof AgentFormData, string>> = {
+      const fieldTabMap: Partial<Record<keyof AgentFormData, AgentFormTabKey>> = {
         nome: 'basic',
         preferredName: 'basic',
         slug: 'basic',
@@ -772,25 +827,29 @@ export default function Agents() {
 
           <Form {...form}>
             <form onSubmit={form.handleSubmit(handleSubmit, handleSubmitError)} className="space-y-6">
-              <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                <TabsList className="grid w-full grid-cols-4 mb-4">
-                  <TabsTrigger value="basic" className="text-xs sm:text-sm">
-                    <User className="h-4 w-4 mr-1 hidden sm:inline" />
-                    {t('agents.tabs.basic')}
-                  </TabsTrigger>
-                  <TabsTrigger value="prompt" className="text-xs sm:text-sm">
-                    <FileText className="h-4 w-4 mr-1 hidden sm:inline" />
-                    {t('agents.tabs.prompt')}
-                  </TabsTrigger>
-                  <TabsTrigger value="model" className="text-xs sm:text-sm">
-                    <Settings2 className="h-4 w-4 mr-1 hidden sm:inline" />
-                    {t('agents.tabs.model')}
-                  </TabsTrigger>
-                  <TabsTrigger value="capabilities" className="text-xs sm:text-sm">
-                    <Sparkles className="h-4 w-4 mr-1 hidden sm:inline" />
-                    {t('agents.tabs.capabilities')}
-                  </TabsTrigger>
-                </TabsList>
+              <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
+                <WorkspaceFilterBar
+                  activeWorkspace={activeWorkspace}
+                  options={AGENT_FORM_WORKSPACES.map((workspace) => ({
+                    value: workspace.value,
+                    label: workspace.label,
+                  }))}
+                  onWorkspaceChange={handleWorkspaceChange}
+                  getTestId={(workspace) => `agents-workspace-${workspace}`}
+                />
+                <div className="w-full min-w-0 overflow-x-auto pb-2 -mx-2 px-2 md:mx-0 md:px-0">
+                  <TabsList className="inline-flex min-w-max flex-nowrap items-center gap-1 whitespace-nowrap">
+                    {visibleTabs.map((tab) => {
+                      const Icon = tab.icon;
+                      return (
+                        <TabsTrigger key={tab.value} value={tab.value} className="text-xs sm:text-sm whitespace-nowrap shrink-0">
+                          <Icon className="h-4 w-4 mr-1 hidden sm:inline" />
+                          {t(tab.labelKey)}
+                        </TabsTrigger>
+                      );
+                    })}
+                  </TabsList>
+                </div>
 
                 {/* Tab: Informações Básicas */}
                 <TabsContent value="basic" className="space-y-4 mt-0">

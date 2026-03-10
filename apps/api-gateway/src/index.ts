@@ -21,7 +21,8 @@ import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { createProxyMiddleware, Options } from 'http-proxy-middleware';
 import CircuitBreaker from 'opossum';
-import pino from 'pino';
+import { createLogger } from '@alice/logger';
+import { getServiceUrl } from '@alice/config';
 import {
   createSecurityMiddleware,
   createRateLimiter,
@@ -34,14 +35,7 @@ import {
 } from '@alice/shared-utils';
 import { z } from 'zod';
 
-const logger = pino({
-  name: 'api-gateway',
-  level: process.env.LOG_LEVEL || 'info',
-  transport: process.env.NODE_ENV === 'development' ? {
-    target: 'pino-pretty',
-    options: { colorize: true },
-  } : undefined,
-});
+const logger = createLogger('api-gateway');
 
 // Schema de configuração do gateway
 const gatewayConfigSchema = z.object({
@@ -80,12 +74,12 @@ try {
     config = {
       NODE_ENV: 'development',
       PORT: 3000,
-      AUTH_SERVICE_URL: 'http://localhost:3001',
-      CHAT_SERVICE_URL: 'http://localhost:3002',
-      RAG_SERVICE_URL: 'http://localhost:3003',
-      TRAINING_SERVICE_URL: 'http://localhost:3004',
-      INTEGRATIONS_SERVICE_URL: 'http://localhost:3005',
-      OBSERVABILITY_SERVICE_URL: 'http://localhost:3007',
+      AUTH_SERVICE_URL: getServiceUrl('auth'),
+      CHAT_SERVICE_URL: getServiceUrl('chat'),
+      RAG_SERVICE_URL: getServiceUrl('rag'),
+      TRAINING_SERVICE_URL: getServiceUrl('training'),
+      INTEGRATIONS_SERVICE_URL: getServiceUrl('integrations'),
+      OBSERVABILITY_SERVICE_URL: getServiceUrl('observability'),
       RATE_LIMIT_WINDOW_MS: 60000,
       RATE_LIMIT_MAX_REQUESTS: 100,
       CORS_ORIGIN: 'http://localhost:5000',
@@ -155,16 +149,16 @@ try {
         })(),
       };
     } else {
-      // Defaults apenas para desenvolvimento
+      // Em desenvolvimento, manter governança de URLs via config central
       config = {
         NODE_ENV: config.NODE_ENV,
         PORT: config.PORT,
-        AUTH_SERVICE_URL: config.AUTH_SERVICE_URL || 'http://localhost:3001',
-        CHAT_SERVICE_URL: config.CHAT_SERVICE_URL || 'http://localhost:3002',
-        RAG_SERVICE_URL: config.RAG_SERVICE_URL || 'http://localhost:3003',
-        TRAINING_SERVICE_URL: config.TRAINING_SERVICE_URL || 'http://localhost:3004',
-        INTEGRATIONS_SERVICE_URL: config.INTEGRATIONS_SERVICE_URL || 'http://localhost:3005',
-        OBSERVABILITY_SERVICE_URL: config.OBSERVABILITY_SERVICE_URL || 'http://localhost:3007',
+        AUTH_SERVICE_URL: getServiceUrl('auth'),
+        CHAT_SERVICE_URL: getServiceUrl('chat'),
+        RAG_SERVICE_URL: getServiceUrl('rag'),
+        TRAINING_SERVICE_URL: getServiceUrl('training'),
+        INTEGRATIONS_SERVICE_URL: getServiceUrl('integrations'),
+        OBSERVABILITY_SERVICE_URL: getServiceUrl('observability'),
         RATE_LIMIT_WINDOW_MS: config.RATE_LIMIT_WINDOW_MS ?? 60000,
         RATE_LIMIT_MAX_REQUESTS: config.RATE_LIMIT_MAX_REQUESTS ?? 100,
         CORS_ORIGIN: config.CORS_ORIGIN || 'http://localhost:5000',
@@ -182,12 +176,12 @@ try {
   config = {
     NODE_ENV: 'development',
     PORT: 3000,
-    AUTH_SERVICE_URL: 'http://localhost:3001',
-    CHAT_SERVICE_URL: 'http://localhost:3002',
-    RAG_SERVICE_URL: 'http://localhost:3003',
-    TRAINING_SERVICE_URL: 'http://localhost:3004',
-    INTEGRATIONS_SERVICE_URL: 'http://localhost:3005',
-    OBSERVABILITY_SERVICE_URL: 'http://localhost:3007',
+    AUTH_SERVICE_URL: getServiceUrl('auth'),
+    CHAT_SERVICE_URL: getServiceUrl('chat'),
+    RAG_SERVICE_URL: getServiceUrl('rag'),
+    TRAINING_SERVICE_URL: getServiceUrl('training'),
+    INTEGRATIONS_SERVICE_URL: getServiceUrl('integrations'),
+    OBSERVABILITY_SERVICE_URL: getServiceUrl('observability'),
     RATE_LIMIT_WINDOW_MS: 60000,
     RATE_LIMIT_MAX_REQUESTS: 100,
     CORS_ORIGIN: 'http://localhost:5000',

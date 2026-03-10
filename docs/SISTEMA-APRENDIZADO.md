@@ -1,8 +1,10 @@
 # Sistema de Aprendizado da Alice
 
 **Autor:** Fillipe Guerra  
-**Versão:** 5.6 - Ecossistema LLM + Configurações editáveis via UI  
-**Data:** 11 de Fevereiro de 2026
+**Versão:** 5.7 - Ecossistema LLM + modularização de rotas Twilio no integrations-service  
+**Data:** 06 de Março de 2026
+
+> **ATUALIZAÇÃO 06/03/2026:** Webhooks do WhatsApp/Twilio foram modularizados para `apps/integrations-service/src/routes/twilio-webhook-routes.ts` e os helpers de canal para `apps/integrations-service/src/twilio-channel-service.ts`, mantendo `apps/integrations-service/src/index.ts` como composition root.
 
 > **ATUALIZAÇÃO 11/02/2026:** Configurações do Sistema editáveis via UI (DOCUMENT_MAX_CHUNKS, TRAINING_DOC_MAX_SAMPLES, TRAINING_CONVERSATION_MAX_MESSAGES, CONVERSATION_SLICE_SIZE, MIN_ONDEMAND_DATASET_SIZE, maxSeqLen). Valores em PostgreSQL têm precedência sobre env; alterações aplicadas imediatamente.
 
@@ -119,7 +121,7 @@ for (const { slice, startIndex, endIndex } of windows) {
 | **Imagens** | Automático | OpenAI Vision (descrição textual, sem embeddings de imagem) |
 | **Áudios** | Automático | OpenAI ASR (gpt-4o-transcribe) + Qwen3-Embedding-0.6B embeddings (1024 dim → Qdrant) |
 
-**Integração Implementada (integrations-service/index.ts linha 2369):**
+**Integração Implementada (integrations-service - fluxo WhatsApp/Twilio):**
 ```typescript
 // Após cada interação WhatsApp bem-sucedida
 const rating = chatResult.escalated ? 1 : 5; // Inferir rating baseado em escalação
@@ -579,8 +581,8 @@ Acessíveis em `/dashboard/analytics`:
 - ✅ Fine-tuning QLoRA via Docker Compose profile (on-demand)
 
 ### 3. Coleta de Dados para Treinamento
-- ✅ **Chat Web:** `chat-service/index.ts` linha 3905 - POST `/api/training/data`
-- ✅ **WhatsApp:** `integrations-service/index.ts` linha 2369 - POST `/api/training/data`
+- ✅ **Chat Web:** `apps/chat-service/src/index.ts` - POST `/api/training/data`
+- ✅ **WhatsApp:** `apps/integrations-service/src/routes/twilio-webhook-routes.ts` - POST interno `/api/training/data`
 - ✅ Rating inferido automaticamente (sem escalação = 5, com escalação = 1)
 
 ### 4. Schedule de Treinamento (Gate 2)
@@ -641,7 +643,9 @@ Acessíveis em `/dashboard/analytics`:
 - `RAG_SERVICE_URL` adicionado ao docker-compose para integrations-service
 
 **Arquivos modificados:**
-- `apps/integrations-service/src/index.ts` - Nova função e chamada no webhook
+- `apps/integrations-service/src/routes/twilio-webhook-routes.ts` - fluxo de webhook e coleta de treino
+- `apps/integrations-service/src/twilio-channel-service.ts` - assinatura Twilio e envio WhatsApp reutilizável
+- `apps/integrations-service/src/index.ts` - registro do módulo no composition root
 - `infra/docker/docker-compose.prod.yml` - RAG_SERVICE_URL e depends_on alice-rag
 
 ### GAP 4: Imagens Docker GPU ✅ RESOLVIDO (Gate 2)
@@ -670,7 +674,7 @@ Acessíveis em `/dashboard/analytics`:
 
 ---
 
-## 📊 RESUMO EXECUTIVO (15/12/2025)
+## 📊 RESUMO EXECUTIVO HISTÓRICO (15/12/2025)
 
 | Item | Status | Observação |
 |------|--------|------------|
@@ -684,14 +688,14 @@ Acessíveis em `/dashboard/analytics`:
 | Dashboard Upload Multimodal | ✅ GAP #1 Resolvido | Nova tab em /training |
 | Página /documents | ✅ GAP #2 Já existia | UI completa |
 | Mídia WhatsApp → RAG | ✅ GAP #3 Resolvido | Indexação automática |
-| Build Imagens GPU | ⏳ GAP #4 Pendente | Workflow manual necessário |
+| Build Imagens GPU | ✅ GAP #4 Resolvido | Pipeline `release.yml` com build/retag automático |
 | Limpeza código obsoleto | ✅ GAP #5 Resolvido | Arquivo deletado |
 
 ---
 
 *Autor: Fillipe Guerra*
 *Documentação em Português Brasileiro (Regra 10 CLAUDE.md)*
-*Versão 5.4 - 22 de Janeiro de 2026 - Gate 2*
+*Versão 5.7 - 06 de Março de 2026 - Gate 2*
 *LLM (texto): Qwen2.5 7B Instruct AWQ (vLLM) via GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB)*
 *Embeddings texto: Qwen3-Embedding-0.6B INT8 (1024 dim → Qdrant) + Imagem: OpenAI Vision (descrição textual, sem embeddings de imagem)*
 *ASR: OpenAI gpt-4o-transcribe via API externa*

@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
-
-function loadIntegrationsSource(): string {
-  const sourcePath = path.join(process.cwd(), 'apps', 'integrations-service', 'src', 'index.ts');
-  return readFileSync(sourcePath, 'utf-8');
-}
+import { loadIntegrationsSource } from './helpers/integrations-source';
 
 describe('integrations-service auth guards', () => {
   it('protects /api/integrations/health with integrations read permission', () => {

@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
-
-function loadTrainingSource(): string {
-  const sourcePath = path.join(process.cwd(), 'apps', 'training-service', 'src', 'index.ts');
-  return readFileSync(sourcePath, 'utf-8');
-}
+import { loadTrainingSource } from './helpers/training-source';
 
 describe('training-service security guards', () => {
   it('keeps manage RBAC on schedule/run start/cancel endpoints', () => {

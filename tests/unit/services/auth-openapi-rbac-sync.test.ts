@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { authServicePaths } from '../../../apps/auth-service/src/openapi-specs';
 
@@ -63,8 +63,16 @@ function escapeRegex(input: string): string {
 }
 
 function loadAuthSource(): string {
-  const sourcePath = path.join(process.cwd(), 'apps', 'auth-service', 'src', 'index.ts');
-  return readFileSync(sourcePath, 'utf-8');
+  const authSrcDir = path.join(process.cwd(), 'apps', 'auth-service', 'src');
+  const files = [
+    path.join(authSrcDir, 'index.ts'),
+    path.join(authSrcDir, 'routes', 'rbac-admin-routes.ts'),
+    path.join(authSrcDir, 'routes', 'user-management-routes.ts'),
+  ];
+  return files
+    .filter((filePath) => existsSync(filePath))
+    .map((filePath) => readFileSync(filePath, 'utf-8'))
+    .join('\n');
 }
 
 describe('Auth OpenAPI RBAC contract sync', () => {

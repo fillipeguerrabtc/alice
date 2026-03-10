@@ -7,6 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { asResolver } from "@/lib/form-helpers";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
+import { WorkspaceFilterBar } from "@/components/ui/workspace-filter-bar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -88,6 +89,15 @@ const defaultColors = [
   "#EC4899",
   "#06B6D4",
   "#84CC16",
+];
+
+type NamespaceWorkspace = 'all' | 'operations' | 'governance' | 'triage';
+
+const namespaceWorkspaceOptions: Array<{ id: NamespaceWorkspace; label: string }> = [
+  { id: 'all', label: 'Todos' },
+  { id: 'operations', label: 'Operações' },
+  { id: 'governance', label: 'Governança' },
+  { id: 'triage', label: 'Triage' },
 ];
 
 /** Resposta da API de estatísticas de fallback LLM */
@@ -238,6 +248,7 @@ export default function Namespaces() {
   const [settingsNamespace, setSettingsNamespace] = useState<Namespace | null>(null);
   const [detailsNamespace, setDetailsNamespace] = useState<Namespace | null>(null);
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
+  const [activeWorkspace, setActiveWorkspace] = useState<NamespaceWorkspace>('all');
   const [profileJsonDraft, setProfileJsonDraft] = useState<string>("");
   const [clusterNamespaceSelections, setClusterNamespaceSelections] = useState<Record<string, string>>({});
   const [reviewQueueNamespaceSelections, setReviewQueueNamespaceSelections] = useState<Record<string, string>>({});
@@ -468,6 +479,10 @@ export default function Namespaces() {
     if (!hybridPolicyData?.policy) return;
     setHybridPolicyDraft(JSON.stringify(hybridPolicyData.policy, null, 2));
   }, [hybridPolicyData]);
+
+  const showOperationsWorkspace = activeWorkspace === 'all' || activeWorkspace === 'operations';
+  const showGovernanceWorkspace = activeWorkspace === 'all' || activeWorkspace === 'governance';
+  const showTriageWorkspace = activeWorkspace === 'all' || activeWorkspace === 'triage';
 
   const mapFallbackReasonLabel = (reason: string) => {
     if (reason === 'namespace_unmapped') return t('namespaces.alerts.reasonNamespaceUnmapped');
@@ -791,57 +806,71 @@ export default function Namespaces() {
         </Dialog>
       </div>
 
+      <WorkspaceFilterBar
+        activeWorkspace={activeWorkspace}
+        options={namespaceWorkspaceOptions.map((workspace) => ({
+          value: workspace.id,
+          label: workspace.label,
+        }))}
+        onWorkspaceChange={setActiveWorkspace}
+        getTestId={(workspace) => `namespaces-workspace-${workspace}`}
+        containerClassName="mb-0"
+      />
+
       {/* Seção de avisos e sugestões (fallbacks e contextos não mapeados) */}
-      {(fallbackStats?.last7d ? fallbackStats.last7d > 0 : false) ||
-      (unmappedData?.items?.length ? unmappedData.items.length > 0 : false) ||
-      (hybridReviewQueueData?.items?.length ? hybridReviewQueueData.items.length > 0 : false) ||
-      Boolean(hybridPolicyData?.policy) ? (
+      {(showTriageWorkspace && (
+        (fallbackStats?.last7d ? fallbackStats.last7d > 0 : false)
+        || (unmappedData?.items?.length ? unmappedData.items.length > 0 : false)
+        || (hybridReviewQueueData?.items?.length ? hybridReviewQueueData.items.length > 0 : false)
+      )) || (showGovernanceWorkspace && Boolean(hybridPolicyData?.policy)) ? (
         <div className="space-y-4">
-          <Alert>
-            <Settings className="h-4 w-4" />
-            <AlertTitle>{t("namespaces.alerts.hybridPolicyTitle")}</AlertTitle>
-            <AlertDescription>
-              <p className="mb-2">
-                {t("namespaces.alerts.hybridPolicyDesc")}
-              </p>
-              <div className="mb-2 flex flex-wrap gap-2 text-xs">
-                <Badge variant="outline">
-                  autoAccept: {Math.round(((hybridPolicyData?.policy.thresholds.autoAccept ?? 0) * 100))}%
-                </Badge>
-                <Badge variant="outline">
-                  humanReview: {Math.round(((hybridPolicyData?.policy.thresholds.humanReview ?? 0) * 100))}%
-                </Badge>
-                <Badge variant="outline">
-                  default: {hybridPolicyData?.policy.transversalDefault.defaultNamespaceSlug ?? '-'}
-                </Badge>
-                {isLoadingHybridPolicy ? <Badge variant="secondary">{t('common.loading')}</Badge> : null}
-              </div>
-              <Textarea
-                value={hybridPolicyDraft}
-                onChange={(event) => setHybridPolicyDraft(event.target.value)}
-                className="min-h-[200px] font-mono text-xs"
-                data-testid="textarea-hybrid-routing-policy"
-              />
-              <div className="mt-2">
-                <Button
-                  size="sm"
-                  disabled={updateHybridPolicyMutation.isPending || !hybridPolicyDraft.trim().length}
-                  onClick={() => {
-                    try {
-                      const parsed = JSON.parse(hybridPolicyDraft) as HybridRoutingPolicy;
-                      updateHybridPolicyMutation.mutate(parsed);
-                    } catch {
-                      toast({ title: t('namespaces.alerts.hybridPolicyInvalidJson'), variant: 'destructive' });
-                    }
-                  }}
-                  data-testid="button-save-hybrid-policy"
-                >
-                  {t("namespaces.alerts.hybridPolicySave")}
-                </Button>
-              </div>
-            </AlertDescription>
-          </Alert>
-          {fallbackStats && fallbackStats.last7d > 0 && (
+          {showGovernanceWorkspace ? (
+            <Alert>
+              <Settings className="h-4 w-4" />
+              <AlertTitle>{t("namespaces.alerts.hybridPolicyTitle")}</AlertTitle>
+              <AlertDescription>
+                <p className="mb-2">
+                  {t("namespaces.alerts.hybridPolicyDesc")}
+                </p>
+                <div className="mb-2 flex flex-wrap gap-2 text-xs">
+                  <Badge variant="outline">
+                    autoAccept: {Math.round(((hybridPolicyData?.policy.thresholds.autoAccept ?? 0) * 100))}%
+                  </Badge>
+                  <Badge variant="outline">
+                    humanReview: {Math.round(((hybridPolicyData?.policy.thresholds.humanReview ?? 0) * 100))}%
+                  </Badge>
+                  <Badge variant="outline">
+                    default: {hybridPolicyData?.policy.transversalDefault.defaultNamespaceSlug ?? '-'}
+                  </Badge>
+                  {isLoadingHybridPolicy ? <Badge variant="secondary">{t('common.loading')}</Badge> : null}
+                </div>
+                <Textarea
+                  value={hybridPolicyDraft}
+                  onChange={(event) => setHybridPolicyDraft(event.target.value)}
+                  className="min-h-[200px] font-mono text-xs"
+                  data-testid="textarea-hybrid-routing-policy"
+                />
+                <div className="mt-2">
+                  <Button
+                    size="sm"
+                    disabled={updateHybridPolicyMutation.isPending || !hybridPolicyDraft.trim().length}
+                    onClick={() => {
+                      try {
+                        const parsed = JSON.parse(hybridPolicyDraft) as HybridRoutingPolicy;
+                        updateHybridPolicyMutation.mutate(parsed);
+                      } catch {
+                        toast({ title: t('namespaces.alerts.hybridPolicyInvalidJson'), variant: 'destructive' });
+                      }
+                    }}
+                    data-testid="button-save-hybrid-policy"
+                  >
+                    {t("namespaces.alerts.hybridPolicySave")}
+                  </Button>
+                </div>
+              </AlertDescription>
+            </Alert>
+          ) : null}
+          {showTriageWorkspace && fallbackStats && fallbackStats.last7d > 0 && (
             <Alert variant={fallbackStats.last24h > 0 ? "destructive" : "default"}>
               <AlertTriangle className="h-4 w-4" />
               <AlertTitle>{t("namespaces.alerts.fallbackTitle")}</AlertTitle>
@@ -862,7 +891,7 @@ export default function Namespaces() {
               </AlertDescription>
             </Alert>
           )}
-          {fallbackEventsData?.items && fallbackEventsData.items.length > 0 && (
+          {showTriageWorkspace && fallbackEventsData?.items && fallbackEventsData.items.length > 0 && (
             <Alert>
               <AlertTriangle className="h-4 w-4" />
               <AlertTitle>{t("namespaces.alerts.eventsTitle")}</AlertTitle>
@@ -894,7 +923,7 @@ export default function Namespaces() {
               </AlertDescription>
             </Alert>
           )}
-          {hybridReviewQueueData?.items && hybridReviewQueueData.items.length > 0 && (
+          {showTriageWorkspace && hybridReviewQueueData?.items && hybridReviewQueueData.items.length > 0 && (
             <Alert>
               <AlertTriangle className="h-4 w-4" />
               <AlertTitle>{t("namespaces.alerts.reviewQueueTitle")}</AlertTitle>
@@ -946,7 +975,7 @@ export default function Namespaces() {
               </AlertDescription>
             </Alert>
           )}
-          {fallbackClustersData?.clusters && fallbackClustersData.clusters.length > 0 && (
+          {showTriageWorkspace && fallbackClustersData?.clusters && fallbackClustersData.clusters.length > 0 && (
             <Alert>
               <Lightbulb className="h-4 w-4" />
               <AlertTitle>{t("namespaces.alerts.clustersTitle")}</AlertTitle>
@@ -1030,7 +1059,7 @@ export default function Namespaces() {
               </AlertDescription>
             </Alert>
           )}
-          {unmappedData?.items && unmappedData.items.length > 0 && (
+          {showTriageWorkspace && unmappedData?.items && unmappedData.items.length > 0 && (
             <Alert>
               <Lightbulb className="h-4 w-4" />
               <AlertTitle>{t("namespaces.alerts.unmappedTitle")}</AlertTitle>
@@ -1051,13 +1080,13 @@ export default function Namespaces() {
         </div>
       ) : null}
 
-      {isLoading ? (
+      {showOperationsWorkspace && isLoading ? (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {[1, 2, 3, 4, 5, 6].map((i) => (
             <NamespaceCardSkeleton key={i} />
           ))}
         </div>
-      ) : namespaces && namespaces.length > 0 ? (
+      ) : showOperationsWorkspace && namespaces && namespaces.length > 0 ? (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {namespaces.map((namespace) => (
             <Card
@@ -1139,7 +1168,7 @@ export default function Namespaces() {
             </Card>
           ))}
         </div>
-      ) : (
+      ) : showOperationsWorkspace ? (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-16">
             <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 mb-4">
@@ -1155,7 +1184,7 @@ export default function Namespaces() {
             </Button>
           </CardContent>
         </Card>
-      )}
+      ) : null}
 
       <Dialog
         open={isDetailsDialogOpen}

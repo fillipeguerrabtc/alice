@@ -1,6 +1,6 @@
 import { and, eq, schema } from '@alice/database';
 import type { Database } from '@alice/database';
-import { getSystemConfig } from '@alice/database/system-config';
+import { getNamespaceProfileDefaultConfig } from '@alice/database/system-config';
 import {
   NamespaceProfileConfigSchema,
   type NamespaceProfileConfig,
@@ -24,22 +24,8 @@ export type NamespaceProfileRuntime = {
   config: NamespaceProfileConfig;
 };
 
-function safeJsonParse(input: string): unknown {
-  try {
-    return JSON.parse(input);
-  } catch (error) {
-    throw new Error(
-      `JSON inválido em NAMESPACE_PROFILE_DEFAULT_CONFIG_JSON: ${error instanceof Error ? error.message : String(error)}`
-    );
-  }
-}
-
 export async function getDefaultNamespaceProfileConfig(): Promise<NamespaceProfileConfig> {
-  const raw = await getSystemConfig('NAMESPACE_PROFILE_DEFAULT_CONFIG_JSON');
-  if (!raw) {
-    throw new Error('NAMESPACE_PROFILE_DEFAULT_CONFIG_JSON ausente no system_config');
-  }
-  return NamespaceProfileConfigSchema.parse(safeJsonParse(raw));
+  return getNamespaceProfileDefaultConfig();
 }
 
 export async function getNamespaceProfile(

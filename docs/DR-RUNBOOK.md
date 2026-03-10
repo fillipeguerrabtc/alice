@@ -1,6 +1,7 @@
 # DR Runbook - Backup and Restore Game Day
 
-Data: 2026-03-05  
+Autor: Fillipe Guerra  
+Data: 07 de Março de 2026  
 Escopo: Alice Platform (PostgreSQL, Redis, Qdrant, services)  
 Objetivo: validar recuperação ponta a ponta com evidência operacional
 
@@ -16,9 +17,13 @@ Objetivo: validar recuperação ponta a ponta com evidência operacional
   - `infra/scripts/preflight-secrets.sh --stack backup --env-file .env --compose-file infra/docker/stacks/docker-compose.base.yml --compose-file infra/docker/stacks/docker-compose.backup.yml`
   - `infra/scripts/preflight-secrets.ps1 -Stack backup -EnvFile .env -ComposeFile infra/docker/stacks/docker-compose.base.yml,infra/docker/stacks/docker-compose.backup.yml`
 - Acesso operacional aos endpoints:
+  - `POST /api/backup/verify/:id`
   - `POST /api/backup/restore`
   - `GET /api/backup/status`
   - `GET /api/backup/history`
+- Se `BACKUP_OFFSITE_DIR` estiver habilitado:
+  - `BACKUP_CIPHER_PASS` válido no ambiente;
+  - manifesto de verificação em `<BACKUP_OFFSITE_DIR>/<backup-id>/offsite-verification.json`.
 
 ## 3. Procedimento de Game Day
 1. Registrar baseline:
@@ -28,16 +33,18 @@ Objetivo: validar recuperação ponta a ponta com evidência operacional
 2. Selecionar backup alvo (id e timestamp).
 3. Rodar simulação (dry run):
    - `POST /api/backup/restore` com `dryRun=true`.
-4. Validar plano de restore gerado e aprovar execução.
-5. Rodar restore real:
+4. Rodar verificação operacional:
+   - `POST /api/backup/verify/:id` para validar integridade local/offsite + `pgbackrest verify`.
+5. Validar plano de restore gerado e aprovar execução.
+6. Rodar restore real:
    - `POST /api/backup/restore` com `confirm=true`.
-6. Validar pós-restore:
+7. Validar pós-restore:
    - health de serviços;
    - leitura/escrita em PostgreSQL;
    - conectividade Redis;
    - coleções Qdrant acessíveis;
    - smoke test de chat/trading/training/rag.
-7. Validar métricas e auditoria:
+8. Validar métricas e auditoria:
    - duração total;
    - sucesso/falha;
    - trilha de auditoria da operação.
@@ -62,6 +69,7 @@ bash infra/scripts/run-dr-game-day.sh \
 - Horário de início/fim.
 - Duração total.
 - Resultado por componente (PostgreSQL/Redis/Qdrant).
+- Evidência de verificação offsite (quando habilitado).
 - Logs de auditoria da execução.
 - Resultado de smoke tests.
 

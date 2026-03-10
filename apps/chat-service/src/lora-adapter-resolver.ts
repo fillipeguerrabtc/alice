@@ -5,6 +5,7 @@
  */
 
 import { createLogger } from '@alice/logger';
+import { getServiceUrl } from '@alice/config';
 import { buildLlmAdapterCacheKey, resolveLlmModelByScope } from '@alice/shared-utils';
 import { Counter, Histogram } from 'prom-client';
 
@@ -23,10 +24,7 @@ const loraResolveLatency = new Histogram({
 });
 
 const CACHE_TTL_SECONDS = 60;
-const TRAINING_SERVICE_URL = process.env.TRAINING_SERVICE_URL?.trim();
-if (!TRAINING_SERVICE_URL) {
-  throw new Error('TRAINING_SERVICE_URL é obrigatório para resolver adapter LoRA no chat-service');
-}
+const TRAINING_SERVICE_URL = getServiceUrl('training');
 const STRICT_BINDING_POLICY = process.env.LORA_STRICT_BINDING === 'true';
 const CACHE_PREFIX = 'alice:chat:lora:active-adapter';
 

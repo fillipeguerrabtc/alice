@@ -35,14 +35,27 @@ describe('canPromoteFineTuningJob', () => {
     const result = canPromoteFineTuningJob({
       evaluationStatus: 'passed',
       requireEvalPassedForPromotion: true,
+      requireApprovalGatesForPromotion: false,
     });
     expect(result.allowed).toBe(true);
+  });
+
+  it('blocks promotion when approval gates require quorum and approvals are missing', () => {
+    const result = canPromoteFineTuningJob({
+      evaluationStatus: 'passed',
+      requireEvalPassedForPromotion: true,
+      requireApprovalGatesForPromotion: true,
+      promotionMinApprovals: 2,
+      approvedDistinctUsersCount: 1,
+    });
+    expect(result.allowed).toBe(false);
   });
 
   it('blocks promotion when dual-control requires more approvals', () => {
     const result = canPromoteFineTuningJob({
       evaluationStatus: 'passed',
       requireEvalPassedForPromotion: true,
+      requireApprovalGatesForPromotion: true,
       requireDualApprovalForPromotion: true,
       promotionMinApprovals: 2,
       approvedDistinctUsersCount: 1,
@@ -55,6 +68,7 @@ describe('canPromoteFineTuningJob', () => {
     const result = canPromoteFineTuningJob({
       evaluationStatus: 'passed',
       requireEvalPassedForPromotion: true,
+      requireApprovalGatesForPromotion: true,
       requireDualApprovalForPromotion: true,
       promotionMinApprovals: 2,
       approvedDistinctUsersCount: 2,

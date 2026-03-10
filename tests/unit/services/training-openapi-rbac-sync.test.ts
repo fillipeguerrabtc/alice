@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
 import { trainingServicePaths } from '../../../apps/training-service/src/openapi-specs';
+import { loadTrainingSource } from './helpers/training-source';
 
 type HttpMethod = 'get' | 'post' | 'patch' | 'delete';
 
@@ -33,11 +32,6 @@ function openApiPathToExpressPath(pathname: string): string {
 
 function escapeRegex(input: string): string {
   return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function loadTrainingSource(): string {
-  const sourcePath = path.join(process.cwd(), 'apps', 'training-service', 'src', 'index.ts');
-  return readFileSync(sourcePath, 'utf-8');
 }
 
 describe('Training OpenAPI RBAC contract sync', () => {

@@ -44,6 +44,8 @@ import {
   createAlicePrometheus,
   registerShutdownCallback,
   ShutdownPriority,
+  getCorsConfig,
+  requireInternalHmacAuth,
 } from '@alice/shared-utils';
 import { createLogger } from '@alice/logger';
 import { 
@@ -110,6 +112,18 @@ function requireInternalAuth(req: Request, res: Response, next: NextFunction): v
     return next();
   }
 
+  const hasHmacHeaders = Boolean(
+    req.headers['x-internal-signature']
+    && req.headers['x-internal-timestamp']
+    && req.headers['x-internal-user-id']
+    && req.headers['x-internal-role']
+  );
+  if (hasHmacHeaders) {
+    const hmacMiddleware = requireInternalHmacAuth();
+    hmacMiddleware(req, res, next);
+    return;
+  }
+
   // Em desenvolvimento sem secret configurado, permitir acesso
   if (!INTERNAL_API_SECRET && !IS_PRODUCTION) {
     logger.warn('INTERNAL_API_SECRET não configurado - permitindo acesso (apenas desenvolvimento)');
@@ -124,6 +138,7 @@ function requireInternalAuth(req: Request, res: Response, next: NextFunction): v
     res.status(401).json({ error: 'Token de autenticação inválido ou ausente' });
     return;
   }
+  logger.warn({ path: req.path }, 'Autenticação interna legada por segredo estático utilizada; migre para HMAC');
 
   next();
 }
@@ -992,7 +1007,7 @@ app.use(compression({
     return defaultCompressionFilter(req, res);
   },
 }));
-app.use(cors());
+app.use(cors(getCorsConfig()));
 app.use(express.json({ limit: '50mb' }));
 app.use(createCorrelationMiddleware({ serviceName: 'gpu-manager' }));
 app.use(createSecurityMiddleware());

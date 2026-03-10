@@ -1,7 +1,6 @@
 import type { Database } from '@alice/database';
 import { and, eq, isNotNull, isNull, schema } from '@alice/database';
-import { getSystemConfig } from '@alice/database/system-config';
-import { NamespaceProfileConfigSchema } from '@alice/shared';
+import { getNamespaceProfileDefaultConfig } from '@alice/database/system-config';
 import {
   getRedisClient,
   RedisStreamQueue,
@@ -51,21 +50,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 async function loadDefaultNamespaceProfileConfig() {
-  const raw = await getSystemConfig('NAMESPACE_PROFILE_DEFAULT_CONFIG_JSON');
-  if (!raw) {
-    throw new Error('system_config NAMESPACE_PROFILE_DEFAULT_CONFIG_JSON ausente');
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (error) {
-    throw new Error(
-      `JSON inválido em NAMESPACE_PROFILE_DEFAULT_CONFIG_JSON: ${error instanceof Error ? error.message : String(error)}`
-    );
-  }
-
-  return NamespaceProfileConfigSchema.parse(parsed);
+  return getNamespaceProfileDefaultConfig();
 }
 
 export function createNamespaceProfileReconcileWorker(

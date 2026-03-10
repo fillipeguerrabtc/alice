@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
-
-function loadTrainingSource(): string {
-  const sourcePath = path.join(process.cwd(), 'apps', 'training-service', 'src', 'index.ts');
-  return readFileSync(sourcePath, 'utf-8');
-}
+import { loadTrainingSource } from './helpers/training-source';
 
 describe('training tenant-context hardening', () => {
   it('keeps namespace and agent lookup helpers scoped by withTenantContext', () => {
@@ -24,7 +18,7 @@ describe('training tenant-context hardening', () => {
     const collectHelperAgentPattern =
       /async function collectTrainingDataForTenant\([\s\S]*?const agent = await findAgentByIdInTenant\(resolvedTenantId, body\.agentId\);/;
     const dataRouteDelegationPattern =
-      /app\.post\('\/api\/training\/data',[\s\S]*?const result = await collectTrainingDataForTenant\(/;
+      /app\.post\('\/api\/training\/data',[\s\S]*?const result = await deps\.collectTrainingDataForTenant\(/;
     expect(collectHelperNamespacePattern.test(source)).toBe(true);
     expect(collectHelperAgentPattern.test(source)).toBe(true);
     expect(dataRouteDelegationPattern.test(source)).toBe(true);
@@ -33,9 +27,9 @@ describe('training tenant-context hardening', () => {
   it('uses tenant-scoped helpers in /api/training/bulk-import scope ownership checks', () => {
     const source = loadTrainingSource();
     const bulkNamespacePattern =
-      /app\.post\('\/api\/training\/bulk-import',[\s\S]*?validateNamespaceTenantConsistency\([\s\S]*?async \(id\) => findNamespaceByIdInTenant\(tenantId, id\)/;
+      /app\.post\('\/api\/training\/bulk-import',[\s\S]*?validateNamespaceTenantConsistency\([\s\S]*?async \(id\) => deps\.findNamespaceByIdInTenant\(tenantId, id\)/;
     const bulkAgentPattern =
-      /app\.post\('\/api\/training\/bulk-import',[\s\S]*?const agent = await findAgentByIdInTenant\(tenantId, agentId\);/;
+      /app\.post\('\/api\/training\/bulk-import',[\s\S]*?const agent = await deps\.findAgentByIdInTenant\(tenantId, body\.agentId\);/;
     expect(bulkNamespacePattern.test(source)).toBe(true);
     expect(bulkAgentPattern.test(source)).toBe(true);
   });

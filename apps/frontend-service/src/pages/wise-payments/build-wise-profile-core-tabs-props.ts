@@ -1,0 +1,131 @@
+import { formatDate, formatNumber } from '@/lib/utils';
+import { CURRENCIES } from './wise-payments-constants';
+import type {
+  BuildWiseProfileTabsPropsOptions,
+  WiseProfileCoreTabsProps,
+} from './wise-profile-tabs-props-types';
+
+export function buildWiseProfileCoreTabsProps({
+  accountCardDisputeActions,
+  cardSpendActions,
+  dataQueries,
+  derivedData,
+  locale,
+  profileScopedTabProps,
+  referenceActions,
+  refreshActions,
+  t,
+  timeZone,
+}: BuildWiseProfileTabsPropsOptions): WiseProfileCoreTabsProps {
+  const accountDetailsTabProps = {
+    ...profileScopedTabProps,
+    accountDetails: derivedData.accountDetails,
+    accountDetailsOrders: derivedData.accountDetailsOrders,
+    accountDetailsPayload: accountCardDisputeActions.accountDetailsPayload,
+    accountDetailsResponse: accountCardDisputeActions.accountDetailsResponse,
+    isCreatingAccountDetailsOrder: accountCardDisputeActions.isPendingCreateAccountDetailsOrder,
+    isLoadingAccountDetails: dataQueries.isLoadingAccountDetails,
+    isLoadingAccountDetailsOrders: dataQueries.isLoadingAccountDetailsOrders,
+    onCreateAccountDetailsOrder: accountCardDisputeActions.handleCreateAccountDetailsOrder,
+    onFetchRecipientRequirements: referenceActions.handleFetchRecipientRequirements,
+    onRecipientRequirementsFieldChange: referenceActions.onRecipientRequirementsFieldChange,
+    onRefreshAccountDetails: refreshActions.handleRefreshAccountDetails,
+    onRefreshAccountDetailsOrders: refreshActions.handleRefreshAccountDetailsOrders,
+    recipientRequirementsForm: referenceActions.recipientRequirementsForm,
+    recipientRequirementsResult: referenceActions.recipientRequirementsResult,
+    setAccountDetailsPayload: accountCardDisputeActions.setAccountDetailsPayload,
+    t,
+  };
+
+  const cardsTabProps = {
+    ...profileScopedTabProps,
+    cardStatusUpdates: cardSpendActions.cardStatusUpdates,
+    cards: derivedData.cards,
+    isLoadingCards: dataQueries.isLoadingCards,
+    isUpdatingCardStatus: cardSpendActions.isPendingUpdateCardStatus,
+    onRefreshCards: refreshActions.handleRefreshCards,
+    onUpdateCardStatus: cardSpendActions.handleUpdateCardStatus,
+    setCardStatusUpdates: cardSpendActions.setCardStatusUpdates,
+    t,
+  };
+
+  const cardOrdersTabProps = {
+    ...profileScopedTabProps,
+    cardOrderAvailability: accountCardDisputeActions.cardOrderAvailability,
+    cardOrderDetails: accountCardDisputeActions.cardOrderDetails,
+    cardOrderId: accountCardDisputeActions.cardOrderId,
+    cardOrderPayload: accountCardDisputeActions.cardOrderPayload,
+    cardOrderPinPayload: accountCardDisputeActions.cardOrderPinPayload,
+    cardOrderRequirements: accountCardDisputeActions.cardOrderRequirements,
+    cardOrderStatusPayload: accountCardDisputeActions.cardOrderStatusPayload,
+    cardOrderValidationPayload: accountCardDisputeActions.cardOrderValidationPayload,
+    cardOrders: derivedData.cardOrders,
+    cardOrdersPage: dataQueries.cardOrdersPage,
+    formatDate,
+    isLoadingCardOrders: dataQueries.isLoadingCardOrders,
+    isPendingCardOrderAvailability: accountCardDisputeActions.isPendingCardOrderAvailability,
+    isPendingCardOrderCreate: accountCardDisputeActions.isPendingCardOrderCreate,
+    isPendingCardOrderPin: accountCardDisputeActions.isPendingCardOrderPin,
+    isPendingCardOrderStatusUpdate: accountCardDisputeActions.isPendingCardOrderStatusUpdate,
+    isPendingCardOrderValidateAddress: accountCardDisputeActions.isPendingCardOrderValidateAddress,
+    locale,
+    onCreateCardOrder: accountCardDisputeActions.handleCreateCardOrder,
+    onFetchCardOrderAvailability: accountCardDisputeActions.handleFetchCardOrderAvailability,
+    onFetchCardOrderDetails: accountCardDisputeActions.handleFetchCardOrderDetails,
+    onFetchCardOrderRequirements: accountCardDisputeActions.handleFetchCardOrderRequirements,
+    onRefreshCardOrders: refreshActions.handleRefreshCardOrders,
+    onSetCardOrderPin: accountCardDisputeActions.handlePresetCardOrderPin,
+    onUpdateCardOrderStatus: accountCardDisputeActions.handleUpdateCardOrderStatus,
+    onValidateCardOrderAddress: accountCardDisputeActions.handleValidateCardOrderAddress,
+    setCardOrderId: accountCardDisputeActions.setCardOrderId,
+    setCardOrderPayload: accountCardDisputeActions.setCardOrderPayload,
+    setCardOrderPinPayload: accountCardDisputeActions.setCardOrderPinPayload,
+    setCardOrdersPage: dataQueries.setCardOrdersPage,
+    setCardOrderStatusPayload: accountCardDisputeActions.setCardOrderStatusPayload,
+    setCardOrderValidationPayload: accountCardDisputeActions.setCardOrderValidationPayload,
+    t,
+    timeZone,
+  };
+
+  const cardTransactionsTabProps = {
+    ...profileScopedTabProps,
+    cardTransactionDetails: accountCardDisputeActions.cardTransactionDetails,
+    cardTransactionId: accountCardDisputeActions.cardTransactionId,
+    isPendingCardTransactionFetch: accountCardDisputeActions.isPendingCardTransactionFetch,
+    onFetchCardTransaction: accountCardDisputeActions.handleFetchCardTransaction,
+    setCardTransactionId: accountCardDisputeActions.setCardTransactionId,
+    t,
+  };
+
+  const spendControlsTabProps = {
+    ...profileScopedTabProps,
+    assignSpendControlPending: cardSpendActions.isPendingAssignSpendControl,
+    createSpendControlPending: cardSpendActions.isPendingCreateSpendControl,
+    currencies: CURRENCIES,
+    deleteSpendControlPending: cardSpendActions.isPendingDeleteSpendControl,
+    formatNumber,
+    isLoadingSpendControls: dataQueries.isLoadingSpendControls,
+    locale,
+    onAssignSpendControl: cardSpendActions.handleAssignSpendControl,
+    onCreateSpendControl: cardSpendActions.handleCreateSpendControl,
+    onDeleteSpendControl: cardSpendActions.handleDeleteSpendControl,
+    onRefreshSpendControls: refreshActions.handleRefreshSpendControls,
+    setSpendControlAssignment: cardSpendActions.setSpendControlAssignment,
+    setSpendControlDeleteId: cardSpendActions.setSpendControlDeleteId,
+    setSpendControlForm: cardSpendActions.setSpendControlForm,
+    spendControlAssignment: cardSpendActions.spendControlAssignment,
+    spendControlDeleteId: cardSpendActions.spendControlDeleteId,
+    spendControlForm: cardSpendActions.spendControlForm,
+    spendControls: derivedData.spendControls,
+    t,
+    unassignSpendControlPending: cardSpendActions.isPendingUnassignSpendControl,
+  };
+
+  return {
+    accountDetailsTabProps,
+    cardOrdersTabProps,
+    cardTransactionsTabProps,
+    cardsTabProps,
+    spendControlsTabProps,
+  };
+}

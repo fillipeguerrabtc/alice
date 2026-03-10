@@ -1,8 +1,8 @@
 # Observability Service - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra  
-**Data:** 28 de Janeiro de 2026
-**Versão:** 3.2.1 - Grafana 12.3.2 validado
+**Data:** 07 de Março de 2026
+**Versão:** 3.3.0 - DR offsite criptografado + verificação operacional
 
 Stack de observabilidade **SEPARADO e INDEPENDENTE** para garantir monitoramento mesmo se o sistema principal travar.
 
@@ -125,6 +125,24 @@ O frontend usa `credentials: 'include'` para enviar cookies de sessão automatic
 | `/api/observability/urls` | GET | URLs de acesso |
 | `/metrics` | GET | Métricas Prometheus |
 
+## Backup e DR (Offsite Criptografado)
+
+- O `backup-orchestrator` mantém artefatos por backup em `BACKUP_DIR/artifacts/<backupId>`.
+- O endpoint `POST /api/backup/verify/:id` valida:
+  - integridade local de manifesto/artefatos;
+  - integridade offsite (quando configurado);
+  - `pgbackrest verify` para PostgreSQL.
+- A sincronização offsite criptografada usa OpenSSL AES-256-CBC com PBKDF2.
+
+### Variáveis de ambiente de DR
+
+| Variável | Obrigatória | Descrição |
+|----------|-------------|-----------|
+| `BACKUP_OFFSITE_DIR` | Não | Diretório offsite para cópia de artefatos por `backupId` |
+| `BACKUP_OFFSITE_REQUIRED` | Não (default `true`) | Quando `true`, falha de sync offsite reprova o backup |
+| `BACKUP_OFFSITE_ENCRYPTION_REQUIRED` | Não (default `true`) | Exige criptografia dos artefatos sincronizados |
+| `BACKUP_CIPHER_PASS` | Sim quando offsite criptografado | Passphrase usada na criptografia OpenSSL |
+
 ## Variáveis de Ambiente
 
 Consulte `.env.example` para a lista completa. Em produção, configure via GitHub Secrets:
@@ -217,6 +235,6 @@ apps/observability-service/
 
 *Autor: Fillipe Guerra*
 *Documentação em Português Brasileiro (Regra 10 CLAUDE.md)*
-*Versão 3.2.0 - 02 de Janeiro de 2026*
+*Versão 3.3.0 - 07 de Março de 2026*
 *Tecnologias: Node.js 22 LTS (Alpine 3.21), pnpm 10.26.2, TypeScript 5.9.3*
 *Total de Containers: 36 (8 infraestrutura + 8 Alice + 14 observability + 6 GPU + 1 backup)*

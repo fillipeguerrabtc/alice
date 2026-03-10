@@ -14,6 +14,7 @@ import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import cors from 'cors';
 import compression from 'compression';
+import { getServiceUrl } from '@alice/config';
 // CORREÇÃO PR#107 (10/01/2026): Usar prefixo 'node:' para módulos Node.js built-in
 // REF: https://nodejs.org/api/esm.html#node-imports
 // REF: Best Practices Node.js ESM 2025 - evita conflitos com pacotes npm de mesmo nome
@@ -244,19 +245,11 @@ function withOpenAiDispatcher(init: RequestInit): RequestInit {
 
 // URL do Integrations Service para comunicação cross-service (Regra 15 - Microsserviços)
 // REGRA 6: Fail-fast em TODOS os ambientes - variável DEVE estar definida
-const INTEGRATIONS_SERVICE_URL = process.env.INTEGRATIONS_SERVICE_URL;
-if (!INTEGRATIONS_SERVICE_URL) {
-  throw new Error('INTEGRATIONS_SERVICE_URL é obrigatório (Regra 6 - fail-fast)');
-}
-const INTEGRATIONS_SERVICE_URL_FINAL = INTEGRATIONS_SERVICE_URL;
+const INTEGRATIONS_SERVICE_URL_FINAL = getServiceUrl('integrations');
 
 // URL do Training Service para coleta de dados de treinamento (Regra 15 - Microsserviços)
 // REGRA 6: Fail-fast em TODOS os ambientes - variável DEVE estar definida
-const TRAINING_SERVICE_URL = process.env.TRAINING_SERVICE_URL;
-if (!TRAINING_SERVICE_URL) {
-  throw new Error('TRAINING_SERVICE_URL é obrigatório (Regra 6 - fail-fast)');
-}
-const TRAINING_SERVICE_URL_FINAL = TRAINING_SERVICE_URL;
+const TRAINING_SERVICE_URL_FINAL = getServiceUrl('training');
 
 // SEGURANÇA: Usar req.tenantId populado pelo middleware requireAuth
 // Alinhado com Express.js 2025 + OWASP 2025 best practices
