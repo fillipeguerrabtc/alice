@@ -66,7 +66,7 @@ import {
   insertConversationParticipantSchema,
   insertConversationEscalationSchema,
   insertGeneratedImageSchema,
-} from '@shared/schema';
+} from '@alice/shared/schema';
 
 // ============================================================================
 // TESTES DE ENUMS
@@ -136,7 +136,7 @@ describe('Schema - Enums RBAC', () => {
   describe('trainingDataStatusEnum', () => {
     it('deve ter status válidos de dados de treinamento', () => {
       const statuses = trainingDataStatusEnum.enumValues;
-      expect(statuses).toEqual(['pending', 'approved', 'rejected', 'used']);
+      expect(statuses).toEqual(['pending', 'approved', 'rejected', 'reserved', 'used']);
     });
   });
 

@@ -84,7 +84,7 @@ export interface DatabaseOperations {
  * @example
  * ```typescript
  * import { db } from './db';
- * import { featureFlags } from '@shared/schema';
+ * import { featureFlags } from '@alice/shared/schema';
  * import { createPostgreSQLStorage } from '@alice/shared-utils/feature-flags-storage';
  * 
  * const dbOps: DatabaseOperations = {

@@ -5,7 +5,7 @@ import {
   documents, type Document,
   namespaces, type Namespace,
   agents, type Agent,
-} from "@shared/schema";
+} from "@alice/shared/schema";
 import { db } from "./db";
 import { eq, desc, sql } from "drizzle-orm";
 
