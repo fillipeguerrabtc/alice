@@ -53,19 +53,24 @@ export function useTradingSignalSchedulerQueries({
     },
     refetchInterval: signalRefetchInterval,
     enabled: statusIsConfigured && !statusRequiresTenant,
+    refetchIntervalInBackground: false,
   });
 
   const signals = signalsData?.data || [];
 
   useEffect(() => {
     if (signals.length === 0) {
-      setSelectedSignalId(null);
+      if (selectedSignalId !== null) {
+        setSelectedSignalId(null);
+      }
       return;
     }
-    if (selectedSignalId && signals.some((signal) => signal.id === selectedSignalId)) {
-      return;
+    if (!selectedSignalId || !signals.some((signal) => signal.id === selectedSignalId)) {
+      const nextId = signals[0]?.id ?? null;
+      if (nextId !== selectedSignalId) {
+        setSelectedSignalId(nextId);
+      }
     }
-    setSelectedSignalId(signals[0]?.id ?? null);
   }, [selectedSignalId, setSelectedSignalId, signals]);
 
   const selectedSignal = useMemo(

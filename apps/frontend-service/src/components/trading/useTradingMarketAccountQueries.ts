@@ -54,8 +54,9 @@ export function useTradingMarketAccountQueries({
       const res = await apiRequest('GET', `/api/integrations/trading/market/${requestSymbol}?${marketQueryString}`);
       return res.json();
     },
-    enabled: symbolReady && statusIsConfigured && isSymbolValidForMarket,
-    refetchInterval: 10_000,
+    enabled: symbolReady && statusIsConfigured && !statusRequiresTenant && isSymbolValidForMarket,
+    refetchInterval: accountRefetchInterval,
+    refetchIntervalInBackground: false,
   });
 
   const {
@@ -70,7 +71,8 @@ export function useTradingMarketAccountQueries({
       return res.json();
     },
     refetchInterval: accountRefetchInterval,
-    enabled: symbolReady && statusIsConfigured && isSymbolValidForMarket,
+    enabled: symbolReady && statusIsConfigured && !statusRequiresTenant && isSymbolValidForMarket,
+    refetchIntervalInBackground: false,
   });
 
   const {
@@ -85,7 +87,8 @@ export function useTradingMarketAccountQueries({
       return res.json();
     },
     refetchInterval: accountRefetchInterval,
-    enabled: statusIsConfigured && isSymbolValidForMarket && selectedMarketType === 'futures',
+    enabled: symbolReady && statusIsConfigured && !statusRequiresTenant && isSymbolValidForMarket && selectedMarketType === 'futures',
+    refetchIntervalInBackground: false,
   });
 
   const {
@@ -101,6 +104,7 @@ export function useTradingMarketAccountQueries({
     },
     refetchInterval: accountRefetchInterval,
     enabled: statusIsConfigured && !statusRequiresTenant,
+    refetchIntervalInBackground: false,
   });
 
   return {

@@ -73,11 +73,14 @@ const STATUS_REFETCH_INTERVAL = 30_000;
 /** Intervalo de atualização da lista de símbolos (10 min - muda raramente) */
 const SYMBOLS_REFETCH_INTERVAL = 600_000;
 
-/** Intervalo de atualização dos sinais de trading (15s) */
-const SIGNALS_REFETCH_INTERVAL = 15_000;
+/** Intervalo de atualização dos sinais de trading (30s) */
+const SIGNALS_REFETCH_INTERVAL = 30_000;
 
-/** Intervalo de atualização de conta/posições/ordens (10s) */
-const ACCOUNT_REFETCH_INTERVAL = 10_000;
+/** Intervalo de atualização de conta/posições/ordens (20s) */
+const ACCOUNT_REFETCH_INTERVAL = 20_000;
+
+/** Intervalo de atualização dos runs automáticos (15s) */
+const AUTO_RUNS_REFETCH_INTERVAL = 15_000;
 
 /**
  * ARQUITETURA REAL-TIME (10/02/2026):
@@ -247,6 +250,7 @@ export function TradingContent() {
     selectedMarketType,
     selectedPortfolioAutoId,
     selectedSymbol,
+    signalAutoRunsRefetchInterval: AUTO_RUNS_REFETCH_INTERVAL,
     signalProfileForm,
     statusRefetchInterval: STATUS_REFETCH_INTERVAL,
     userId: user?.id,
@@ -435,7 +439,9 @@ export function TradingContent() {
     postmortems,
     refetchPostmortems,
   } = useTradingPostmortemTrainingQueries({
+    activeTab,
     selectedMarketType,
+    showPostmortemTrainingDialog,
     statusIsConfigured,
     statusRequiresTenant,
   });

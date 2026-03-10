@@ -103,7 +103,13 @@ export function useTradingBootstrapStateSync({
   }, [signalArbitrageCatalogResponse, signalProfileForm.arbitrageConfig, updateSignalArbitrageConfig]);
 
   useEffect(() => {
-    setAutoSelectedAssetKeys((previous) => previous.filter((key) => autoSignalAssetMap.has(key)));
+    setAutoSelectedAssetKeys((previous) => {
+      const filtered = previous.filter((key) => autoSignalAssetMap.has(key));
+      if (filtered.length === previous.length && filtered.every((value, index) => value === previous[index])) {
+        return previous;
+      }
+      return filtered;
+    });
   }, [autoSignalAssetMap, setAutoSelectedAssetKeys]);
 
   useEffect(() => {

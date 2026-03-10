@@ -16,6 +16,7 @@ type UseTradingSetupQueriesOptions = {
   selectedMarketType: 'futures' | 'spot' | 'margin';
   selectedPortfolioAutoId: string;
   selectedSymbol: string;
+  signalAutoRunsRefetchInterval: number;
   signalProfileForm: TradingProfileForm;
   statusRefetchInterval: number;
   userId?: string;
@@ -27,6 +28,7 @@ export function useTradingSetupQueries({
   selectedMarketType,
   selectedPortfolioAutoId,
   selectedSymbol,
+  signalAutoRunsRefetchInterval,
   signalProfileForm,
   statusRefetchInterval,
   userId,
@@ -40,6 +42,7 @@ export function useTradingSetupQueries({
     queryKey: ['/api/integrations/trading/status'],
     refetchInterval: statusRefetchInterval,
     enabled: Boolean(userId) && csrfReady,
+    refetchIntervalInBackground: false,
   });
 
   const statusIsConfigured = Boolean(statusData?.data?.isConfigured);
@@ -83,6 +86,7 @@ export function useTradingSetupQueries({
       if (status === 'succeeded' || status === 'failed' || status === 'cancelled') return false;
       return 3000;
     },
+    refetchIntervalInBackground: false,
   });
 
   const {
@@ -92,7 +96,8 @@ export function useTradingSetupQueries({
     queryKey: ['/api/trading/auto/runs', 'signal_auto'],
     queryFn: async () => getTradingAutoRuns({ type: 'signal_auto', limit: 30 }),
     enabled: Boolean(userId) && csrfReady,
-    refetchInterval: 5000,
+    refetchInterval: signalAutoRunsRefetchInterval,
+    refetchIntervalInBackground: false,
   });
 
   const {
@@ -126,7 +131,7 @@ export function useTradingSetupQueries({
       const response = await apiRequest('GET', `/api/integrations/trading/analysis-profile?${params.toString()}`);
       return response.json();
     },
-    enabled: Boolean(selectedSymbol),
+    enabled: Boolean(userId) && csrfReady && statusIsConfigured && !statusRequiresTenant && Boolean(selectedSymbol),
   });
 
   const {
@@ -160,7 +165,11 @@ export function useTradingSetupQueries({
       const response = await apiRequest('GET', `/api/integrations/trading/arbitrage/catalog?${params.toString()}`);
       return response.json();
     },
-    enabled: Boolean(signalProfileForm.arbitrageConfig && signalProfileForm.techniques.includes('arbitrage_triangular')),
+    enabled: Boolean(userId)
+      && csrfReady
+      && statusIsConfigured
+      && !statusRequiresTenant
+      && Boolean(signalProfileForm.arbitrageConfig && signalProfileForm.techniques.includes('arbitrage_triangular')),
   });
 
   return {

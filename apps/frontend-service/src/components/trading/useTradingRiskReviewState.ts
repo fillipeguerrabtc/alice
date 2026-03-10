@@ -36,8 +36,12 @@ export function useTradingRiskReviewState({
     if (!riskConfigData?.data) return;
 
     const config = riskConfigData.data;
-    setRiskForm(createRiskFormFromConfig(config));
-    setControlMode('manual');
+    const nextRiskForm = createRiskFormFromConfig(config);
+    setRiskForm((previous) => {
+      const sameRiskForm = JSON.stringify(previous) === JSON.stringify(nextRiskForm);
+      return sameRiskForm ? previous : nextRiskForm;
+    });
+    setControlMode((previous) => (previous === 'manual' ? previous : 'manual'));
 
     if (!marketDefaultsInitialized) {
       setSelectedMarketType(config.defaultMarketType ?? 'futures');

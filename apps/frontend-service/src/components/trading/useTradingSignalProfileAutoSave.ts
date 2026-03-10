@@ -45,14 +45,22 @@ export function useTradingSignalProfileAutoSave({
       ensembleConfig: signalProfileResponse.data.ensembleConfig ?? DEFAULT_ENSEMBLE_CONFIG,
       arbitrageConfig: signalProfileResponse.data.arbitrageConfig ?? null,
     };
-
-    setSignalProfileForm(nextForm);
-    autoSaveSignalEnabledRef.current = true;
-    autoSaveSignalLastPayloadRef.current = JSON.stringify(buildTradingSignalProfilePayload({
+    const nextPayloadKey = JSON.stringify(buildTradingSignalProfilePayload({
       form: nextForm,
       selectedMarketType,
       selectedSymbol,
     }));
+
+    setSignalProfileForm((previous) => {
+      const previousPayloadKey = JSON.stringify(buildTradingSignalProfilePayload({
+        form: previous,
+        selectedMarketType,
+        selectedSymbol,
+      }));
+      return previousPayloadKey === nextPayloadKey ? previous : nextForm;
+    });
+    autoSaveSignalEnabledRef.current = true;
+    autoSaveSignalLastPayloadRef.current = nextPayloadKey;
   }, [
     autoSaveSignalEnabledRef,
     autoSaveSignalLastPayloadRef,

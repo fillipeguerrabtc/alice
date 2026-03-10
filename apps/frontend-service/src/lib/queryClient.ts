@@ -133,10 +133,17 @@ export const queryClient = new QueryClient({
       refetchOnWindowFocus: false,
       staleTime: 1000 * 60 * 5,
       retry: (failureCount, error) => {
-        if (error instanceof ApiError && error.status === 401) {
+        if (error instanceof ApiError && [400, 401, 403, 404, 409, 422, 429].includes(error.status)) {
           return false;
         }
-        return failureCount < 3;
+        return failureCount < 2;
+      },
+      retryDelay: (attemptIndex, error) => {
+        if (error instanceof ApiError && error.retryAfterSeconds && error.retryAfterSeconds > 0) {
+          return Math.min(error.retryAfterSeconds * 1000, 120_000);
+        }
+
+        return Math.min(1000 * Math.pow(2, attemptIndex), 15_000);
       },
     },
     mutations: {

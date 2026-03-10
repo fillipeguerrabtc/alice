@@ -4,16 +4,24 @@ import { apiRequest } from '@/lib/queryClient';
 import type { NamespaceOption, TradingPostMortem } from './TradingDomainTypes';
 
 type UseTradingPostmortemTrainingQueriesOptions = {
+  activeTab: string;
   selectedMarketType: 'futures' | 'spot' | 'margin';
+  showPostmortemTrainingDialog: boolean;
   statusIsConfigured: boolean;
   statusRequiresTenant: boolean;
 };
 
 export function useTradingPostmortemTrainingQueries({
+  activeTab,
   selectedMarketType,
+  showPostmortemTrainingDialog,
   statusIsConfigured,
   statusRequiresTenant,
 }: UseTradingPostmortemTrainingQueriesOptions) {
+  const shouldLoadPostmortems = statusIsConfigured
+    && !statusRequiresTenant
+    && (activeTab === 'postmortems' || showPostmortemTrainingDialog);
+
   const {
     data: postmortemsData,
     isLoading: isLoadingPostmortems,
@@ -29,7 +37,7 @@ export function useTradingPostmortemTrainingQueries({
       const response = await apiRequest('GET', `/api/integrations/postmortem?${params.toString()}`);
       return response.json();
     },
-    enabled: statusIsConfigured && !statusRequiresTenant,
+    enabled: shouldLoadPostmortems,
   });
 
   const postmortems = postmortemsData?.data ?? [];
@@ -37,6 +45,7 @@ export function useTradingPostmortemTrainingQueries({
   const { data: namespacesData } = useQuery<NamespaceOption[]>({
     queryKey: ['/api/namespaces'],
     staleTime: 60_000,
+    enabled: showPostmortemTrainingDialog,
   });
 
   const availableNamespaces = useMemo(
@@ -52,7 +61,7 @@ export function useTradingPostmortemTrainingQueries({
       return json.data ?? [];
     },
     staleTime: 30_000,
-    enabled: statusIsConfigured && !statusRequiresTenant,
+    enabled: shouldLoadPostmortems,
   });
 
   const postmortemIdsSentToTraining = useMemo(() => {

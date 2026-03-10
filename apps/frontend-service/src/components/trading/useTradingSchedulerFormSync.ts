@@ -14,6 +14,13 @@ export function useTradingSchedulerFormSync({
 }: UseTradingSchedulerFormSyncOptions) {
   useEffect(() => {
     if (!schedulerConfig) return;
-    setSchedulerForm(createSchedulerFormFromConfig(schedulerConfig));
+    const nextForm = createSchedulerFormFromConfig(schedulerConfig);
+    setSchedulerForm((previous) => {
+      const isEqual = previous.enabled === nextForm.enabled
+        && previous.intervalMinutes === nextForm.intervalMinutes
+        && previous.maxSignalsPerRun === nextForm.maxSignalsPerRun
+        && previous.symbols === nextForm.symbols;
+      return isEqual ? previous : nextForm;
+    });
   }, [schedulerConfig, setSchedulerForm]);
 }

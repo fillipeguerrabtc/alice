@@ -20,7 +20,8 @@ export function useTradingOperationalQueries({
   const { data: wsStatusData } = useQuery<{ success: boolean; data: KucoinWsStatus }>({
     queryKey: ['/api/integrations/trading/ws/status'],
     refetchInterval: statusRefetchInterval,
-    enabled: statusIsConfigured,
+    enabled: statusIsConfigured && !statusRequiresTenant,
+    refetchIntervalInBackground: false,
   });
 
   const {
@@ -43,7 +44,7 @@ export function useTradingOperationalQueries({
       const res = await apiRequest('GET', '/api/integrations/trading/control-history');
       return res.json();
     },
-    enabled: statusIsConfigured,
+    enabled: statusIsConfigured && !statusRequiresTenant,
   });
 
   return {
