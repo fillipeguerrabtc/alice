@@ -7,6 +7,7 @@
 
 ---
 
+- **Fechamento de pendências de validação (10/03/2026):** correção dos 7 testes falhos pós-refactor (guards de Chat/Trading/Auth/Training/Integrations) com atualização de asserts para os novos boundaries modulares; suíte voltou para **120/120 arquivos e 1352/1352 testes** em status OK.
 - **Consolidação histórica concluída (10/03/2026):** rebase/squash não-interativo finalizado sobre `origin/main`, com backup preservado em `backup/pre-squash-20260310-1` e normalização objetiva dos indicadores de governança de commits.
 - **Guardrails operacionais em enforcement real (10/03/2026):** scripts `verify:enterprise-focus`, `verify:enterprise-focus:full` e `validate:enterprise` ativados no `package.json` com `ENFORCE_FAILURE=true`.
 - **Métricas pós-consolidação (10/03/2026):** janela 418 com churn documental em 8,76% e foco Wise em 0,87%; janela 50 com churn documental em 4,85% e foco Wise em 0,00% (todos os checks em status OK).

@@ -8,8 +8,11 @@ function loadBiometricsSource(): string {
 }
 
 function loadAuthSource(): string {
-  const sourcePath = path.join(process.cwd(), 'apps', 'auth-service', 'src', 'index.ts');
-  return readFileSync(sourcePath, 'utf-8');
+  const indexSourcePath = path.join(process.cwd(), 'apps', 'auth-service', 'src', 'index.ts');
+  const biometricsRoutesSourcePath = path.join(process.cwd(), 'apps', 'auth-service', 'src', 'routes', 'auth-biometrics-routes.ts');
+  return [indexSourcePath, biometricsRoutesSourcePath]
+    .map((sourcePath) => readFileSync(sourcePath, 'utf-8'))
+    .join('\n');
 }
 
 describe('biometrics liveness hardening guards', () => {
@@ -35,6 +38,7 @@ describe('biometrics liveness hardening guards', () => {
     const source = loadAuthSource();
     expect(source.includes('class BiometricsServiceError extends Error')).toBe(true);
     expect(source.includes('function resolveBiometricsError(error: unknown)')).toBe(true);
+    expect(source.includes('const mapped = resolveBiometricsError(error);')).toBe(true);
     expect(source.includes('res.status(mapped.status).json({ error: mapped.message });')).toBe(true);
   });
 });

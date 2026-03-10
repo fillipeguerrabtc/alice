@@ -68,6 +68,7 @@
 
 ## Atualização incremental mais recente (10/03/2026)
 
+- Fechamento das pendências de validação pós-refactor: 7 testes de guardas estáticas (Chat/Trading/Auth/Training/Integrations) foram atualizados para os novos boundaries modulares, preservando os controles enterprise e restaurando a suíte para **120/120 arquivos e 1352/1352 testes** em status OK.
 - Rebase/squash não-interativo concluído sobre `origin/main` com backup da linha pré-consolidação em `backup/pre-squash-20260310-1`.
 - Governança contínua ativada no fluxo padrão com scripts `verify:enterprise-focus`, `verify:enterprise-focus:full` e `validate:enterprise` (enforcement real com `ENFORCE_FAILURE=true`).
 - Consolidação técnica adicional no frontend: `wise-payments` reduzido para 176 arquivos TS/TSX e 13.976 linhas (arquivos `<40` linhas reduzidos para 16), `TradingContent.tsx` reduzido para 1321 linhas e `useChatPageLayoutController.ts` para 591 linhas.

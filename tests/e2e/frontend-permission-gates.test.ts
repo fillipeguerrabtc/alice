@@ -15,10 +15,11 @@ describe('frontend permission gates guards', () => {
   });
 
   it('keeps Trading page gated by integrations:trading:read permission', () => {
-    const source = read('apps/frontend-service/src/pages/Trading.tsx');
-    expect(source.includes("'/api/auth/rbac/permissions'")).toBe(true);
-    expect(source.includes("'integrations:trading:read'")).toBe(true);
-    expect(source.includes('if (!canReadTrading)')).toBe(true);
+    const tradingWrapperSource = read('apps/frontend-service/src/pages/Trading.tsx');
+    const tradingPermissionsQuerySource = read('apps/frontend-service/src/components/trading/useTradingPermissionsQuery.ts');
+    expect(tradingPermissionsQuerySource.includes("'/api/auth/rbac/permissions'")).toBe(true);
+    expect(tradingWrapperSource.includes("'integrations:trading:read'")).toBe(true);
+    expect(tradingWrapperSource.includes('if (!canReadTrading)')).toBe(true);
   });
 
   it('keeps Observability page gated by observability:read permission', () => {

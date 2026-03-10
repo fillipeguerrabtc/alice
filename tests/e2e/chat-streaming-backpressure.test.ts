@@ -14,9 +14,10 @@ describe('chat streaming backpressure guards', () => {
   });
 
   it('keeps stream cancellation and flush guards in chat page', () => {
-    const pageSource = read('apps/frontend-service/src/pages/Chat/index.tsx');
-    expect(pageSource.includes('streamControllerRef')).toBe(true);
-    expect(pageSource.includes('cancelPendingContentFlush')).toBe(true);
-    expect(pageSource.includes('AbortController')).toBe(true);
+    const controllerSource = read('apps/frontend-service/src/pages/Chat/useChatPageLayoutController.ts');
+    const streamMutationSource = read('apps/frontend-service/src/pages/Chat/chat-stream-mutation.ts');
+    expect(controllerSource.includes('streamControllerRef')).toBe(true);
+    expect(streamMutationSource.includes('cancelPendingContentFlush')).toBe(true);
+    expect(streamMutationSource.includes('AbortController')).toBe(true);
   });
 });

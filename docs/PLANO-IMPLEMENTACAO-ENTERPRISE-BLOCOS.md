@@ -8,6 +8,24 @@
 - Cada bloco concluído gera commit consolidado em inglês.
 - Sem push automático.
 
+## Rodada de Fechamento de Pendências de Validação (Concluído em 10/03/2026)
+### Escopo fechado nesta rodada
+- Correção dos 7 testes falhos identificados no `validate:enterprise` após modularizações recentes.
+- Atualização de testes de guardas estáticas para refletir os novos boundaries sem reduzir controles enterprise:
+  - Chat streaming/backpressure: asserts migrados do container `Chat/index.tsx` para `useChatPageLayoutController.ts` e `chat-stream-mutation.ts`.
+  - Trading permission gate: assert de endpoint RBAC migrado para `useTradingPermissionsQuery.ts` mantendo gate em `Trading.tsx`.
+  - Auth biometrics error mapping: cobertura ajustada para leitura conjunta de `auth-service/src/index.ts` + `routes/auth-biometrics-routes.ts`.
+  - Training idempotency: cobertura ajustada para `training-request-utils.ts` + `training-create-job-dialog.tsx` + `Training.tsx`.
+  - Integrations immutable audit/training-only: asserts ajustados para contratos atuais com `deps.*` e estado de integridade em rotas modulares.
+
+### Evidência objetiva pós-rodada
+- `npx pnpm typecheck` -> OK
+- `npx pnpm test` -> OK (**120/120 arquivos**, **1352/1352 testes**)
+- `npx pnpm lint` -> OK
+- `npx pnpm build` -> OK
+- `npx pnpm verify:enterprise-focus` -> OK
+- `npx pnpm verify:enterprise-focus:full` -> OK
+
 ## Rodada de Consolidação Histórica e Governança (Concluído em 10/03/2026)
 ### Escopo fechado nesta rodada
 - **Passo 1 (Histórico):** rebase/squash não-interativo concluído com consolidação dos commits locais em base `origin/main` (backup preservado em `backup/pre-squash-20260310-1`).

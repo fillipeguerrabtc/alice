@@ -5,7 +5,7 @@ describe('integrations training-only approval audit guards', () => {
   it('records trading audit for neutral/hold approval path', () => {
     const source = loadIntegrationsSource();
     expect(source.includes('APPROVE_SIGNAL_TRAINING_ONLY')).toBe(true);
-    expect(source.includes('kucoinService.recordTradingAuditEvent({')).toBe(true);
+    expect(source.includes('deps.recordTradingAuditEvent({')).toBe(true);
     expect(source.includes('auditLogId: auditResult.auditLogId,')).toBe(true);
   });
 
