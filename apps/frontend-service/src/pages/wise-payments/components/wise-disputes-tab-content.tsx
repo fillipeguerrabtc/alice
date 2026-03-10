@@ -1,9 +1,10 @@
-import { CardDescription } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Skeleton } from '@/components/ui/skeleton';
 import { TabsContent } from '@/components/ui/tabs';
 import { WiseDisputeFlowCard } from './wise-dispute-flow-card';
-import { WiseDisputeReasonsCard } from './wise-dispute-reasons-card';
 import { WiseDisputeStatusUpdateCard } from './wise-dispute-status-update-card';
-import { WiseDisputeUploadCard } from './wise-dispute-upload-card';
 import { WiseDisputesListCard } from './wise-disputes-list-card';
 import type { WiseDisputesTabContentProps } from './wise-disputes-tab-types';
 import { WiseDisputesToolbar } from './wise-disputes-toolbar';
@@ -50,11 +51,21 @@ export function WiseDisputesTabContent({
         />
       </div>
 
-      <WiseDisputeReasonsCard
-        disputeReasonsData={disputeReasonsData}
-        isLoadingDisputeReasons={isLoadingDisputeReasons}
-        t={t}
-      />
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('wise.disputes.reasonsTitle')}</CardTitle>
+          <CardDescription>{t('wise.disputes.reasonsSubtitle')}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {isLoadingDisputeReasons ? (
+            <Skeleton className="h-32" />
+          ) : (
+            <pre className="max-h-64 overflow-auto rounded-md bg-muted/50 p-3 text-xs">
+              {disputeReasonsData ? JSON.stringify(disputeReasonsData, null, 2) : t('wise.disputes.noReasons')}
+            </pre>
+          )}
+        </CardContent>
+      </Card>
 
       <WiseDisputeFlowCard
         disputeFlowForm={disputeFlowForm}
@@ -68,12 +79,22 @@ export function WiseDisputesTabContent({
         t={t}
       />
 
-      <WiseDisputeUploadCard
-        isPendingDisputeFileUpload={isPendingDisputeFileUpload}
-        onDisputeFileChange={onDisputeFileChange}
-        onDisputeFileUpload={onDisputeFileUpload}
-        t={t}
-      />
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('wise.disputes.uploadTitle')}</CardTitle>
+          <CardDescription>{t('wise.disputes.uploadSubtitle')}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Input
+            type="file"
+            onChange={(event) => onDisputeFileChange(event.target.files?.[0] ?? null)}
+            data-testid="input-dispute-file"
+          />
+          <Button onClick={onDisputeFileUpload} disabled={isPendingDisputeFileUpload} data-testid="button-dispute-upload">
+            {t('wise.disputes.upload')}
+          </Button>
+        </CardContent>
+      </Card>
 
       <WiseDisputeStatusUpdateCard
         disputeStatusUpdate={disputeStatusUpdate}

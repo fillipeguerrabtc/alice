@@ -21,6 +21,18 @@ export interface WiseCatalogOperation {
   bodyDefault?: string;
 }
 
+export type WiseCatalogParams = {
+  profileId: string;
+  cardToken: string;
+  disputeId: string;
+  transferId: string;
+  kycReviewId: string;
+  subscriptionId: string;
+  action: string;
+  ruleId: string;
+  application: string;
+};
+
 export const WISE_CATALOG_OPERATIONS: WiseCatalogOperation[] = [
   {
     id: 'listProfiles',

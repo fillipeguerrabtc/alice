@@ -1,7 +1,14 @@
+import { CardDescription } from '@/components/ui/card';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { TabsContent } from '@/components/ui/tabs';
 import { WiseSimulationsOperationCard } from './wise-simulations-operation-card';
 import type { WiseSimulationsTabContentProps } from './wise-simulations-tab-types';
-import { WiseSimulationsToolbar } from './wise-simulations-toolbar';
 
 export function WiseSimulationsTabContent({
   isPendingRunSimulation,
@@ -24,12 +31,21 @@ export function WiseSimulationsTabContent({
 }: WiseSimulationsTabContentProps) {
   return (
     <TabsContent value="simulations" className="space-y-4 mt-6">
-      <WiseSimulationsToolbar
-        profileFilter={profileFilter}
-        profiles={profiles}
-        setProfileFilter={setProfileFilter}
-        t={t}
-      />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <CardDescription>{t('wise.simulations.subtitle')}</CardDescription>
+        <Select value={profileFilter} onValueChange={setProfileFilter}>
+          <SelectTrigger className="min-w-[200px]" data-testid="select-simulations-profile">
+            <SelectValue placeholder={t('wise.catalog.profileId')} />
+          </SelectTrigger>
+          <SelectContent>
+            {profiles.map((profile) => (
+              <SelectItem key={profile.id} value={String(profile.id)}>
+                {profile.id} • {profile.type}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
 
       <WiseSimulationsOperationCard
         isPendingRunSimulation={isPendingRunSimulation}

@@ -1,8 +1,8 @@
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { TabsContent } from '@/components/ui/tabs';
 import type { WiseWebhooksTabContentProps } from './wise-webhooks-tab-types';
 import { WiseWebhooksCreateCard } from './wise-webhooks-create-card';
 import { WiseWebhooksDeleteCard } from './wise-webhooks-delete-card';
-import { WiseWebhooksResponseCard } from './wise-webhooks-response-card';
 import { WiseWebhooksToolbar } from './wise-webhooks-toolbar';
 
 export function WiseWebhooksTabContent({
@@ -53,7 +53,17 @@ export function WiseWebhooksTabContent({
         webhookDeleteId={webhookDeleteId}
       />
 
-      <WiseWebhooksResponseCard t={t} webhookResponse={webhookResponse} />
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('wise.webhooks.responseTitle')}</CardTitle>
+          <CardDescription>{t('wise.webhooks.responseSubtitle')}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <pre className="max-h-80 overflow-auto rounded-md bg-muted/50 p-3 text-xs">
+            {webhookResponse ?? t('wise.webhooks.responseEmpty')}
+          </pre>
+        </CardContent>
+      </Card>
     </TabsContent>
   );
 }

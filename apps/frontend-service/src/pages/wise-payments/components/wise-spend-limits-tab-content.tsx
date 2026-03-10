@@ -1,7 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
 import { TabsContent } from '@/components/ui/tabs';
 import { WiseSpendLimitsFetchControls } from './wise-spend-limits-fetch-controls';
-import { WiseSpendLimitsResponsePanels } from './wise-spend-limits-response-panels';
 import type { WiseSpendLimitsTabContentProps } from './wise-spend-limits-tab-types';
 import { WiseSpendLimitsUpdatePanels } from './wise-spend-limits-update-panels';
 
@@ -60,11 +60,20 @@ export function WiseSpendLimitsTabContent({
             spendLimitsPayload={spendLimitsPayload}
             t={t}
           />
-          <WiseSpendLimitsResponsePanels
-            spendLimitsCardResult={spendLimitsCardResult}
-            spendLimitsProfileResult={spendLimitsProfileResult}
-            t={t}
-          />
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label>{t('wise.spendLimits.profileResponse')}</Label>
+              <pre className="max-h-64 overflow-auto rounded-md bg-muted/50 p-3 text-xs">
+                {spendLimitsProfileResult ?? t('wise.spendLimits.responseEmpty')}
+              </pre>
+            </div>
+            <div className="space-y-2">
+              <Label>{t('wise.spendLimits.cardResponse')}</Label>
+              <pre className="max-h-64 overflow-auto rounded-md bg-muted/50 p-3 text-xs">
+                {spendLimitsCardResult ?? t('wise.spendLimits.responseEmpty')}
+              </pre>
+            </div>
+          </div>
         </CardContent>
       </Card>
     </TabsContent>

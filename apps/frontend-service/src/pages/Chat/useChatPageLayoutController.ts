@@ -32,7 +32,7 @@ import { useChatUiInteractionHandlers } from './useChatUiInteractionHandlers';
 import { useChatMessageSyncEffects } from './useChatMessageSyncEffects';
 import { useChatWorkspacePresentation } from './useChatWorkspacePresentation';
 import { useChatSectionProps } from './useChatSectionProps';
-import { useChatQueryState, type ChatApprovalPolicy } from './useChatQueryState';
+import { useChatQueryState } from './useChatQueryState';
 import { useChatLocalState } from './useChatLocalState';
 import { useChatContainerBindings } from './useChatContainerBindings';
 import { useChatSendMessageMutation } from './useChatSendMessageMutation';
@@ -223,12 +223,6 @@ export function useChatPageLayoutController() {
     setSidebarOpen,
     t,
   });
-  const handleDeleteConversation = useCallback((targetConversationId: string) => {
-    deleteConversation.mutate(targetConversationId);
-  }, [deleteConversation]);
-  const handleUpdateApprovalPolicy = useCallback((policy: ChatApprovalPolicy) => {
-    updateApprovalPolicy.mutate(policy);
-  }, [updateApprovalPolicy]);
   const {
     fallbackMessageUser,
     handleApprovalPolicyChange,
@@ -239,8 +233,8 @@ export function useChatPageLayoutController() {
     conversationId,
     currentUser,
     deleteTargetId,
-    onDeleteConversation: handleDeleteConversation,
-    onUpdateApprovalPolicy: handleUpdateApprovalPolicy,
+    onDeleteConversation: deleteConversation.mutate,
+    onUpdateApprovalPolicy: updateApprovalPolicy.mutate,
     setDeleteTargetId,
   });
 

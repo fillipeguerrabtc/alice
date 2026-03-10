@@ -6,7 +6,7 @@ import type {
   WiseCatalogOperation,
   WiseCatalogParamKey,
   WiseCatalogParams,
-} from './wise-catalog-types';
+} from './wise-payments-constants';
 
 type NotifyFn = (params: { title: string; description?: string; variant?: 'default' | 'destructive' }) => void;
 

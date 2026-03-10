@@ -8,6 +8,24 @@
 - Cada bloco concluído gera commit consolidado em inglês.
 - Sem push automático.
 
+## Rodada de Consolidação Histórica e Governança (Concluído em 10/03/2026)
+### Escopo fechado nesta rodada
+- **Passo 1 (Histórico):** rebase/squash não-interativo concluído com consolidação dos commits locais em base `origin/main` (backup preservado em `backup/pre-squash-20260310-1`).
+- **Passo 2 (Operacional):** baseline de foco/churn normalizado após consolidação de histórico, com métricas reavaliadas via guardrail.
+- **Passo 3 (Técnico Frontend):** redução adicional de fragmentação em Wise por consolidação de componentes/constantes e remoção de arquivos redundantes; redução incremental de densidade em Trading/Chat.
+- **Passo 4 (Governança):** enforcement contínuo ativado no fluxo padrão via scripts de `package.json`:
+  - `verify:enterprise-focus`
+  - `verify:enterprise-focus:full`
+  - `validate:enterprise`
+
+### Evidência objetiva pós-rodada
+- Guardrail (janela 418): `docs+README` **8,76%**, foco Wise **0,87%**, status **OK**.
+- Guardrail (janela 50): `docs+README` **4,85%**, foco Wise **0,00%**, status **OK**.
+- `apps/frontend-service/src/pages/wise-payments`: **176 arquivos TS/TSX** (antes 187) e **13.976 linhas** (antes 14.155).
+- Arquivos Wise `<40 linhas`: **16** (antes 29).
+- `TradingContent.tsx`: **1321 linhas** (antes 1331).
+- `useChatPageLayoutController.ts`: **591 linhas** (antes 597).
+
 ## Rodada de Correção - Itens da Review Final (Concluído em 10/03/2026)
 ### Escopo fechado nesta rodada
 - **Item 1 (Alta) - Fragmentação WisePayments:** consolidação de wrappers redundantes em `apps/frontend-service/src/pages/wise-payments/use-wise-page-composition.ts` com remoção de 6 arquivos de passthrough:

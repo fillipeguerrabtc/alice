@@ -1,8 +1,8 @@
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { WiseSimulationsOperationFields } from './wise-simulations-operation-fields';
-import { WiseSimulationsOperationResponse } from './wise-simulations-operation-response';
 import { WiseSimulationsOperationSelect } from './wise-simulations-operation-select';
 import type { WiseSimulationsTabContentProps } from './wise-simulations-tab-types';
 
@@ -74,12 +74,16 @@ export function WiseSimulationsOperationCard({
           />
         </div>
 
-        <WiseSimulationsOperationResponse
-          isPendingRunSimulation={isPendingRunSimulation}
-          onRunSimulation={onRunSimulation}
-          simulationResponse={simulationResponse}
-          t={t}
-        />
+        <Button onClick={onRunSimulation} disabled={isPendingRunSimulation} data-testid="button-run-simulation">
+          {t('wise.simulations.run')}
+        </Button>
+
+        <div className="space-y-2">
+          <Label>{t('wise.simulations.response')}</Label>
+          <pre className="max-h-80 overflow-auto rounded-md bg-muted/50 p-3 text-xs">
+            {simulationResponse ?? t('wise.simulations.responseEmpty')}
+          </pre>
+        </div>
       </CardContent>
     </Card>
   );

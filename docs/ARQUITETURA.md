@@ -10,6 +10,10 @@
 
 ### Atualizações incrementais recentes (10/03/2026)
 
+- Rebase/squash não-interativo concluído sobre `origin/main`, com consolidação histórica e backup da linha pré-consolidação em `backup/pre-squash-20260310-1`.
+- Guardrails de governança ativados em enforcement contínuo via `package.json` (`verify:enterprise-focus`, `verify:enterprise-focus:full`, `validate:enterprise`) com `ENFORCE_FAILURE=true`.
+- Frontend Wise: nova rodada de consolidação reduziu o domínio `apps/frontend-service/src/pages/wise-payments` para 176 arquivos TS/TSX e 13.976 linhas, removendo microcomponentes/constantes redundantes e reduzindo arquivos `<40` linhas para 16.
+- Frontend Trading/Chat: redução incremental adicional de densidade em `apps/frontend-service/src/pages/TradingContent.tsx` (1321 linhas) e `apps/frontend-service/src/pages/Chat/useChatPageLayoutController.ts` (591 linhas).
 - Frontend Wise: consolidação de composição em `apps/frontend-service/src/pages/wise-payments/use-wise-page-composition.ts` com remoção de wrappers redundantes (`use-wise-tab-props.ts`, `build-wise-profile-scoped-tab-props.ts`, `build-wise-operational-tabs-props.ts`, `build-wise-tab-profile-props.ts`, `build-wise-tab-operational-props.ts` e `wise-tab-props-types.ts`), reduzindo fragmentação local sem alterar contratos.
 - Governança de execução: novo guardrail `scripts/verify-enterprise-focus.sh` para monitorar churn documental, concentração de foco por domínio e densidade/fragmentação de containers frontend.
 - Frontend Trading/Chat: redução incremental de densidade em `apps/frontend-service/src/pages/TradingContent.tsx` (1387 -> 1331 linhas) e `apps/frontend-service/src/pages/Chat/useChatPageLayoutController.ts` (612 -> 597 linhas), mantendo comportamento e contratos.

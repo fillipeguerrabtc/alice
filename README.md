@@ -68,6 +68,9 @@
 
 ## Atualização incremental mais recente (10/03/2026)
 
+- Rebase/squash não-interativo concluído sobre `origin/main` com backup da linha pré-consolidação em `backup/pre-squash-20260310-1`.
+- Governança contínua ativada no fluxo padrão com scripts `verify:enterprise-focus`, `verify:enterprise-focus:full` e `validate:enterprise` (enforcement real com `ENFORCE_FAILURE=true`).
+- Consolidação técnica adicional no frontend: `wise-payments` reduzido para 176 arquivos TS/TSX e 13.976 linhas (arquivos `<40` linhas reduzidos para 16), `TradingContent.tsx` reduzido para 1321 linhas e `useChatPageLayoutController.ts` para 591 linhas.
 - Correção dos 4 itens finais de review: WisePayments teve consolidação de wrappers redundantes em `apps/frontend-service/src/pages/wise-payments/use-wise-page-composition.ts` com redução de 193 para 187 arquivos TS/TSX (14.245 -> 14.155 linhas); `TradingContent.tsx` e `useChatPageLayoutController.ts` tiveram redução incremental de densidade.
 - Governança operacional: novo script `scripts/verify-enterprise-focus.sh` para monitorar churn documental, concentração de foco por domínio e densidade/fragmentação de frontend em janelas de commits.
 - Plano enterprise por blocos: fechamento formal com conclusão dos blocos remanescentes (P0/P1/P2) e consolidação do status em 100% no SSOT `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`.

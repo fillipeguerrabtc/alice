@@ -7,7 +7,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import type { WiseCatalogParams } from '../wise-catalog-types';
+import type { WiseCatalogParams } from '../wise-payments-constants';
 
 type WiseCatalogQueryParamControlsProps = {
   showApplication: boolean;

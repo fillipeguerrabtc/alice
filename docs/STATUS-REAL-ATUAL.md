@@ -7,6 +7,10 @@
 
 ---
 
+- **Consolidação histórica concluída (10/03/2026):** rebase/squash não-interativo finalizado sobre `origin/main`, com backup preservado em `backup/pre-squash-20260310-1` e normalização objetiva dos indicadores de governança de commits.
+- **Guardrails operacionais em enforcement real (10/03/2026):** scripts `verify:enterprise-focus`, `verify:enterprise-focus:full` e `validate:enterprise` ativados no `package.json` com `ENFORCE_FAILURE=true`.
+- **Métricas pós-consolidação (10/03/2026):** janela 418 com churn documental em 8,76% e foco Wise em 0,87%; janela 50 com churn documental em 4,85% e foco Wise em 0,00% (todos os checks em status OK).
+- **Redução adicional de fragmentação/densidade no frontend (10/03/2026):** domínio `wise-payments` reduzido para 176 arquivos TS/TSX e 13.976 linhas; arquivos `<40` linhas reduzidos para 16; `TradingContent.tsx` reduzido para 1321 linhas e `useChatPageLayoutController.ts` para 591 linhas.
 - **Correção objetiva dos 4 itens finais de review (10/03/2026):** consolidado em `apps/frontend-service/src/pages/wise-payments/use-wise-page-composition.ts` com remoção de 6 wrappers redundantes (`use-wise-tab-props.ts`, `build-wise-profile-scoped-tab-props.ts`, `build-wise-operational-tabs-props.ts`, `build-wise-tab-profile-props.ts`, `build-wise-tab-operational-props.ts` e `wise-tab-props-types.ts`), reduzindo o domínio Wise de 193 para 187 arquivos TS/TSX e de 14.245 para 14.155 linhas.
 - **Governança anti-churn e anti-desbalanceamento (10/03/2026):** novo guardrail operacional `scripts/verify-enterprise-focus.sh` adiciona checagens de churn documental, concentração de foco por domínio e densidade/fragmentação de frontend para evitar regressão em próximas rodadas.
 - **Densidade de containers reduzida (10/03/2026):** `apps/frontend-service/src/pages/TradingContent.tsx` foi reduzido de 1387 para 1331 linhas e `apps/frontend-service/src/pages/Chat/useChatPageLayoutController.ts` de 612 para 597 linhas sem alteração de comportamento, contratos de API ou RBAC.

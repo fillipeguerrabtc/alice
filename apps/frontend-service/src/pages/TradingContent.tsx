@@ -91,20 +91,10 @@ const ACCOUNT_REFETCH_INTERVAL = 10_000;
 const DEFAULT_INTERVAL = '5m';
 
 /**
- * Componente interno com toda a lógica e hooks do Trading.
- *
- * CORREÇÃO (22/02/2026) — Causa raiz dos crashes em produção:
- * O componente original declarava hooks (useState, useQuery, etc.) APÓS
- * early returns condicionais (isAuthLoading / !user?.id). Isso viola a
- * Regra de Hooks do React: hooks devem ser chamados na mesma ordem em
- * todos os renders. A violação causava:
- *   1. React Error #310 ("Rendered more hooks than during the previous render")
- *   2. ReferenceError TDZ no build minificado de produção
- *      ("Cannot access 'X' before initialization")
- *
- * Solução: separar em wrapper (Trading) + inner (TradingContent).
- * O inner é montado apenas quando o usuário está autenticado, portanto
- * TODOS os seus hooks são sempre chamados na mesma ordem.
+ * Núcleo de composição do Trading.
+ * Mantém a regra de hooks estável: todos os hooks são chamados sempre na mesma ordem.
+ * O gate de autenticação fica no wrapper externo (`Trading.tsx`), e este módulo assume
+ * execução já autenticada para evitar regressões de render condicional.
  */
 export function TradingContent() {
   const { t } = useTranslation();

@@ -1,5 +1,5 @@
 import type { TFunction } from 'i18next';
-import type { WiseCatalogOperation, WiseCatalogParams } from '../wise-catalog-types';
+import type { WiseCatalogOperation, WiseCatalogParams } from '../wise-payments-constants';
 
 export type WiseCatalogTabContentProps = {
   catalogBody: string;
