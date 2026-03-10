@@ -3,10 +3,11 @@
 **Autor:** Fillipe Guerra  
 **Data:** 10 de Março de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 15.16 - Hardening pós-plano (security deps + idempotência mandatory + redução de monólitos)
+**Versão:** 15.17 - Correção de deploy (permissions race no ClickHouse) + hardening pós-plano
 
 ---
 
+- **Correção de falha de deploy em permissões (10/03/2026):** `infra/scripts/fix-production-permissions.sh` foi ajustado para tratar corretamente corrida de arquivos efêmeros do ClickHouse durante `find -exec chown` (ex.: `tmp_merge_*`/`delete_tmp_*`), com classificação explícita de erro transitório, uso condicional de `-ignore_readdir_race` e proteção fail-safe no scanner de arquivos incorretos. Resultado: erro transitório deixa de derrubar o step de preparação.
 - **Hardening pós-plano executado (10/03/2026):** cadeia de dependências produtivas foi endurecida via `pnpm.overrides` (`minimatch`, `underscore`, `lodash`, `qs`, `undici`) com lockfile atualizado e auditoria produtiva em status limpo (`pnpm audit --prod --audit-level high`: **No known vulnerabilities found**).
 - **Idempotência obrigatória por default no Training (10/03/2026):** `TRAINING_RUN_START_REQUIRE_IDEMPOTENCY_KEY` passou para default `true` em `apps/training-service/src/index.ts`, reforçando fail-closed para criação/start de run sem `x-idempotency-key`.
 - **Redução adicional de densidade em monólitos críticos (10/03/2026):** `apps/chat-service/src/index.ts` foi reduzido de 21169 para 21027 linhas com extração de runtime para `apps/chat-service/src/runtime-config.ts`; `apps/training-service/src/index.ts` foi reduzido de 4161 para 4098 linhas com extração de utilitários de stream para `apps/training-service/src/training-job-stream.ts`.

@@ -109,6 +109,30 @@ log_error() {
     echo -e "${RED}[✗]${NC} $*"
 }
 
+is_transient_find_chown_error() {
+    local error_output="$1"
+
+    # Remove linhas vazias para facilitar validação.
+    local normalized
+    normalized=$(echo "$error_output" | sed '/^[[:space:]]*$/d')
+
+    if [[ -z "$normalized" ]]; then
+        return 1
+    fi
+
+    local line
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+
+        # Permite apenas assinaturas de erro transitório por corrida de arquivo.
+        if ! echo "$line" | grep -qiE "No such file or directory|cannot access|Arquivo ou diretório inexistente"; then
+            return 1
+        fi
+    done <<< "$normalized"
+
+    return 0
+}
+
 print_banner() {
     echo ""
     echo "============================================================================="
@@ -299,8 +323,10 @@ find_wrong_files_excluding_exceptions() {
         find_cmd+=" | head -n $limit"
     fi
     
-    # Executar comando com eval para expandir exclusões corretamente
-    eval "$find_cmd" 2>/dev/null
+    # Executar comando com eval para expandir exclusões corretamente.
+    # Arquivos efêmeros (ex: tmp_merge do ClickHouse) podem desaparecer
+    # durante a varredura; isso não deve falhar a execução do script.
+    eval "$find_cmd" 2>/dev/null || true
 }
 
 # =============================================================================
@@ -603,13 +629,18 @@ create_mode() {
             local exclusions
             exclusions=$(get_find_exclusions_for_path "$path")
             
-            local chown_cmd="find \"$path\" \\( ! -user \"$uid\" -o ! -group \"$gid\" \\) $exclusions -exec chown \"${uid}:${gid}\" {} \\;"
+            local find_ignore_race=""
+            if find --help 2>&1 | grep -q -- "-ignore_readdir_race"; then
+                find_ignore_race="-ignore_readdir_race"
+            fi
+
+            local chown_cmd="find ${find_ignore_race} \"$path\" \\( ! -user \"$uid\" -o ! -group \"$gid\" \\) $exclusions -exec chown \"${uid}:${gid}\" {} \\;"
             
             local chown_error=""
             if ! chown_error=$(eval "$chown_cmd" 2>&1); then
                 # ClickHouse gera arquivos temporários e pode apagar durante o chown.
-                # Se o erro for APENAS "No such file or directory", tratar como warning.
-                if [[ -n "$chown_error" ]] && ! echo "$chown_error" | grep -qi "No such file or directory"; then
+                # Se o erro for APENAS transitório de corrida, tratar como warning.
+                if ! is_transient_find_chown_error "$chown_error"; then
                     log_error "  ❌ Falha ao atualizar ownership: $path"
                     log_error "     Detalhe: $chown_error"
                 else

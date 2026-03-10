@@ -9192,3 +9192,32 @@
 ### Próximo foco atualizado (continuação 298)
 - Sem pendências abertas deste bloco.
 - Próximas rodadas devem priorizar apenas backlog incremental de evolução, mantendo guardrails de anti-fragmentação e enforcement contínuo já ativo.
+
+### Escopo entregue nesta rodada (continuação 299 - 10/03/2026)
+- Correção cirúrgica de falha de deploy no fluxo de permissões (Prepare Deployment):
+  - arquivo ajustado: `infra/scripts/fix-production-permissions.sh`.
+  - causa raiz tratada: corrida de arquivos efêmeros do ClickHouse (`tmp_merge_*`/`delete_tmp_*`) durante `find -exec chown`, que gerava `No such file or directory` e era promovida para falha fatal.
+  - melhorias aplicadas:
+    - novo helper `is_transient_find_chown_error()` para classificar de forma determinística erros transitórios de corrida;
+    - `find_wrong_files_excluding_exceptions()` passou a ser fail-safe para arquivos efêmeros (`eval ... || true`);
+    - `create_mode` passou a usar `find -ignore_readdir_race` quando suportado, reduzindo ruído por readdir race;
+    - branch de erro do `chown` passou a falhar apenas para erro real (não transitório) e manter warning para corrida esperada de arquivo temporário.
+  - sem alteração de workflows/triggers, sem alteração de contratos de API, sem alteração de RBAC.
+- Atualização de SSOT documental desta rodada:
+  - `README.md`
+  - `docs/ARQUITETURA.md`
+  - `docs/INDEX.md`
+  - `docs/STATUS-REAL-ATUAL.md`
+  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+
+### Validação executada nesta rodada (sequencial - continuação 299)
+1. `bash -n infra/scripts/fix-production-permissions.sh`
+2. `npx --yes pnpm@10.26.2 typecheck`
+3. `npx --yes pnpm@10.26.2 test`
+4. `npx --yes pnpm@10.26.2 lint`
+5. `npx --yes pnpm@10.26.2 build`
+6. `npx --yes pnpm@10.26.2 verify:enterprise-focus`
+
+### Próximo foco atualizado (continuação 299)
+- Reexecutar o workflow `Deploy - Production (Modular)` para confirmar o fix no ambiente alvo.
+- Caso apareça novo erro, coletar bloco completo do step e manter correção apenas no script SSOT de permissões (sem tocar em gatilhos do workflow).
