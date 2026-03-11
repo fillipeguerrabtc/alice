@@ -1,232 +1,63 @@
 /**
  * Alice Enterprise Platform - API Gateway (Desenvolvimento)
- * 
+ *
  * Gateway de desenvolvimento para orquestrar microserviços localmente.
  * Em produção, usar Caddy com a configuração em infra/docker/Caddyfile
- * 
+ *
  * Funcionalidades:
  * - Rate limiting (Regra 16 - Best Practices 2025)
  * - Health checks agregados
  * - Circuit breaker para resiliência
  * - Proxy reverso para microserviços
  * - Logging centralizado via Pino
- * 
+ *
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
 import express from 'express';
-import type { Request, Response, NextFunction, RequestHandler, ErrorRequestHandler } from 'express';
-import compression from 'compression';
-import cors from 'cors';
-import rateLimit from 'express-rate-limit';
-import { createProxyMiddleware, Options } from 'http-proxy-middleware';
-import CircuitBreaker from 'opossum';
 import { createLogger } from '@alice/logger';
+import { startGatewayServer } from './bootstrap.js';
+import { registerGatewayErrorHandlers } from './error-handlers.js';
+import { createServiceCircuitBreakers, registerHealthRoutes } from './health.js';
 import {
-  getNodeEnv,
-  getOptionalServiceUrl,
-  resolveBaseUrl,
-  resolveCorsOrigins,
-} from '@alice/config';
-import {
-  createSecurityMiddleware,
-  createRateLimiter,
-  createErrorHandler,
-  createNotFoundHandler,
-  createCircuitBreaker,
-  CIRCUIT_BREAKER_PRESETS,
-  registerShutdownCallback,
-  ShutdownPriority,
-} from '@alice/shared-utils';
-import { z } from 'zod';
+  configureCoreMiddleware,
+  registerAuthRateLimiters,
+  registerRequestLogger,
+} from './middleware.js';
+import { registerGatewayProxies } from './proxy.js';
+import { resolveGatewayRuntimeConfig } from './runtime-config.js';
+import { buildServiceConfigs, resolveIntegrationsService } from './services.js';
+import { registerGatewayShutdownCallbacks } from './shutdown.js';
 
 const logger = createLogger('api-gateway');
 
-// Schema de configuração do gateway
-const gatewayRuntimeConfigSchema = z.object({
-  NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
-  PORT: z.coerce.number().default(3000),
-  // Rate limiting
-  RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60000),
-  RATE_LIMIT_MAX_REQUESTS: z.coerce.number().default(100),
-});
-
-type GatewayRuntimeConfig = z.infer<typeof gatewayRuntimeConfigSchema>;
-type GatewayConfig = GatewayRuntimeConfig & {
-  AUTH_SERVICE_URL: string;
-  CHAT_SERVICE_URL: string;
-  RAG_SERVICE_URL: string;
-  TRAINING_SERVICE_URL: string;
-  INTEGRATIONS_SERVICE_URL: string;
-  OBSERVABILITY_SERVICE_URL: string;
-};
-
-let config: GatewayConfig;
-// REGRA 6: Origens CORS resolvidas de forma tipada e centralizada
-let validatedCorsOrigins: string[] = [];
-const nodeEnv = getNodeEnv();
-
-const developmentServiceFallbacks = {
-  auth: 'http://localhost:3001',
-  chat: 'http://localhost:3002',
-  rag: 'http://localhost:3003',
-  training: 'http://localhost:3004',
-  integrations: 'http://localhost:3005',
-  observability: 'http://localhost:3006',
-} as const;
-
-function resolveGatewayServiceUrl(
-  serviceName: keyof typeof developmentServiceFallbacks,
-): string {
-  const configuredUrl = getOptionalServiceUrl(serviceName);
-  if (configuredUrl) {
-    return configuredUrl;
-  }
-
-  if (nodeEnv === 'production') {
-    throw new Error(`URL de serviço obrigatória ausente para ${serviceName} em produção`);
-  }
-
-  return developmentServiceFallbacks[serviceName];
-}
+let runtimeState: ReturnType<typeof resolveGatewayRuntimeConfig>;
 
 try {
-  const result = gatewayRuntimeConfigSchema.safeParse(process.env);
-  let runtimeConfig: GatewayRuntimeConfig;
-
-  if (!result.success) {
-    if (nodeEnv === 'production') {
-      logger.error({ errors: result.error.format() }, 'Configuração inválida em produção. Abortando (Regra 6 - fail-fast).');
-      process.exit(1);
-    }
-    logger.warn({ errors: result.error.format() }, 'Configuração parcial, usando defaults (apenas desenvolvimento)');
-    runtimeConfig = {
-      NODE_ENV: 'development',
-      PORT: 3000,
-      RATE_LIMIT_WINDOW_MS: 60000,
-      RATE_LIMIT_MAX_REQUESTS: 100,
-    };
-  } else {
-    runtimeConfig = result.data;
-  }
-
-  const developmentBaseUrl = resolveBaseUrl({
-    requiredInProduction: false,
-    developmentFallback: 'http://localhost:5000',
-  });
-
-  validatedCorsOrigins = resolveCorsOrigins({
-    requiredInProduction: true,
-    developmentFallback: [developmentBaseUrl],
-  });
-
-  config = {
-    ...runtimeConfig,
-    AUTH_SERVICE_URL: resolveGatewayServiceUrl('auth'),
-    CHAT_SERVICE_URL: resolveGatewayServiceUrl('chat'),
-    RAG_SERVICE_URL: resolveGatewayServiceUrl('rag'),
-    TRAINING_SERVICE_URL: resolveGatewayServiceUrl('training'),
-    INTEGRATIONS_SERVICE_URL: resolveGatewayServiceUrl('integrations'),
-    OBSERVABILITY_SERVICE_URL: resolveGatewayServiceUrl('observability'),
-  };
+  runtimeState = resolveGatewayRuntimeConfig(logger);
 } catch (error) {
   logger.error({ error }, 'Falha crítica ao carregar configuração do API Gateway. Abortando.');
   process.exit(1);
 }
 
+const {
+  config,
+  validatedCorsOrigins,
+  nodeEnv,
+} = runtimeState;
+
 const app: express.Application = express();
 
-// SEGURANÇA: Desabilitar X-Powered-By header (Express.js 2025 + OWASP API8)
-app.disable('x-powered-by');
-
-// SEGURANÇA: Trust proxy = 1 para confiar apenas no primeiro proxy (Caddy)
-// Evita bypass de rate limiting (express-rate-limit 2025 best practice)
-app.set('trust proxy', 1);
-
-const defaultCompressionFilter: (req: Request, res: Response) => boolean =
-  typeof (compression as unknown as { filter?: (req: Request, res: Response) => boolean }).filter === 'function'
-    ? (compression as unknown as { filter: (req: Request, res: Response) => boolean }).filter
-    : () => true;
-
-function shouldBypassCompressionForSse(req: Request): boolean {
-  const acceptHeader = req.headers.accept ?? '';
-  const acceptsSse = typeof acceptHeader === 'string' && acceptHeader.includes('text/event-stream');
-  const isStreamPath = req.path.includes('/stream');
-  return acceptsSse || isStreamPath;
-}
-
-// PERFORMANCE: Compression para respostas HTTP (Express.js 2025 Best Practices)
-app.use(compression({
-  level: 6,
-  threshold: 1024,
-  filter: (req, res) => {
-    if (shouldBypassCompressionForSse(req)) {
-      logger.debug({ path: req.path, accept: req.headers.accept ?? null }, 'Bypass de compression para SSE/stream no API Gateway');
-      return false;
-    }
-    return defaultCompressionFilter(req, res);
-  },
-}));
-
-// SEGURANÇA: Helmet centralizado com CSP (módulo @alice/shared-utils)
-// Express 5: usar type assertion para middleware de segurança
-app.use(createSecurityMiddleware({
-  contentSecurityPolicy: config.NODE_ENV === 'production',
-  isDevelopment: config.NODE_ENV === 'development',
-}));
-
-// CORS configurado
-// REGRA 6: Usar validatedCorsOrigins (já validado e sem duplicatas)
-// Em produção, o helper central valida CORS_ORIGIN/CORS_ORIGINS e falha quando necessário
-// Em desenvolvimento, fallback local controlado é aplicado
-// NOTA: Não lemos process.env.CORS_ORIGINS novamente para evitar duplicação e bypass de validação
-app.use(cors({
-  origin: validatedCorsOrigins,
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'X-Requested-With', 'x-tenant-id', 'x-correlation-id'],
-}));
-
-// Rate limiting global com suporte multi-tenant (módulo @alice/shared-utils)
-// Express 5: usar type assertion para rate limiter
-app.use(createRateLimiter({
-  windowMs: config.RATE_LIMIT_WINDOW_MS,
-  max: config.RATE_LIMIT_MAX_REQUESTS,
-  serviceName: 'api-gateway',
-  skipRoutes: ['/health', '/api/health', '/metrics'],
-}) as RequestHandler);
-
-// Rate limiting mais restrito para autenticação
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 10, // 10 tentativas
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Muitas tentativas de login. Tente novamente em 15 minutos.' },
-  keyGenerator: (req) => req.ip || 'unknown',
+configureCoreMiddleware({
+  app,
+  config,
+  validatedCorsOrigins,
+  logger,
 });
 
-// SEGURANÇA: Limites de payload para prevenir DoS (OWASP API4)
-app.use(express.json({ limit: '10mb' }));
+const services = buildServiceConfigs(config);
+const integrationsService = resolveIntegrationsService(services);
 
-// Definição dos serviços e suas configurações
-interface ServiceConfig {
-  name: string;
-  url: string;
-  healthPath: string;
-  pathPrefix: string;
-}
-
-const services: ServiceConfig[] = [
-  { name: 'auth-service', url: config.AUTH_SERVICE_URL, healthPath: '/api/auth/health', pathPrefix: '/api/auth' },
-  { name: 'chat-service', url: config.CHAT_SERVICE_URL, healthPath: '/api/chat/health', pathPrefix: '/api/chat' },
-  { name: 'rag-service', url: config.RAG_SERVICE_URL, healthPath: '/api/rag/health', pathPrefix: '/api/rag' },
-  { name: 'training-service', url: config.TRAINING_SERVICE_URL, healthPath: '/api/training/health', pathPrefix: '/api/training' },
-  { name: 'integrations-service', url: config.INTEGRATIONS_SERVICE_URL, healthPath: '/api/integrations/health', pathPrefix: '/api/integrations' },
-  { name: 'observability-service', url: config.OBSERVABILITY_SERVICE_URL, healthPath: '/health', pathPrefix: '/api/observability' },
-];
-
-const integrationsService = services.find((service) => service.name === 'integrations-service');
 if (!integrationsService) {
   logger.error('Serviço integrations-service não configurado no API Gateway.');
   if (nodeEnv === 'production') {
@@ -234,333 +65,32 @@ if (!integrationsService) {
   }
 }
 
-// Circuit Breaker para cada serviço
-const circuitBreakers = new Map<string, CircuitBreaker>();
+const circuitBreakers = createServiceCircuitBreakers(services);
 
-interface HealthCheckFunction {
-  (): Promise<{ status: string; service: string }>;
-}
+registerHealthRoutes(app, services, circuitBreakers);
+registerRequestLogger(app, logger);
+registerAuthRateLimiters(app);
 
-services.forEach(service => {
-  const healthCheck: HealthCheckFunction = async () => {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-    
-    try {
-      const response = await fetch(`${service.url}${service.healthPath}`, {
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-      
-      if (!response.ok) {
-        throw new Error(`Serviço ${service.name} não está saudável`);
-      }
-      return { status: 'ok', service: service.name };
-    } catch (error) {
-      clearTimeout(timeoutId);
-      throw error;
-    }
-  };
-
-  // Usa CIRCUIT_BREAKER_PRESETS.healthCheck centralizado (Regra 2 - Não Duplicar)
-  const breaker = createCircuitBreaker(healthCheck, {
-    name: `health-${service.name}`,
-    ...CIRCUIT_BREAKER_PRESETS.healthCheck,
-    timeout: 10000, // Override para health checks de serviços
-  });
-
-  circuitBreakers.set(service.name, breaker);
+registerGatewayProxies({
+  app,
+  services,
+  integrationsService,
+  logger,
 });
 
-// Health check agregado
-app.get('/api/health', async (_req: Request, res: Response) => {
-  const healthResults: Record<string, unknown> = {
-    gateway: { status: 'ok', timestamp: new Date().toISOString() },
-    services: {},
-  };
+registerGatewayErrorHandlers(app, logger);
 
-  const serviceChecks = await Promise.allSettled(
-    services.map(async (service) => {
-      const breaker = circuitBreakers.get(service.name);
-      if (!breaker) {
-        return { name: service.name, status: 'unknown' };
-      }
-
-      try {
-        await breaker.fire();
-        return { name: service.name, status: 'ok', circuit: 'closed' };
-      } catch {
-        return { 
-          name: service.name, 
-          status: 'error', 
-          circuit: breaker.opened ? 'open' : 'closed',
-        };
-      }
-    })
-  );
-
-  let allHealthy = true;
-  serviceChecks.forEach((result) => {
-    if (result.status === 'fulfilled') {
-      const serviceResult = result.value as { name: string; status: string; circuit?: string };
-      (healthResults.services as Record<string, unknown>)[serviceResult.name] = {
-        status: serviceResult.status,
-        circuit: serviceResult.circuit || 'unknown',
-      };
-      if (serviceResult.status !== 'ok') {
-        allHealthy = false;
-      }
-    } else {
-      allHealthy = false;
-    }
-  });
-
-  healthResults.overall = allHealthy ? 'healthy' : 'degraded';
-  res.status(allHealthy ? 200 : 503).json(healthResults);
+const server = startGatewayServer({
+  app,
+  port: config.PORT,
+  services,
+  logger,
 });
 
-// Health check simples (para load balancers)
-app.get('/health', (_req: Request, res: Response) => {
-  res.json({ status: 'ok', service: 'api-gateway', timestamp: new Date().toISOString() });
+registerGatewayShutdownCallbacks({
+  server,
+  circuitBreakers,
+  logger,
 });
-
-// ============================================================================
-// KUBERNETES PROBES: /ready e /live (Regra 16 - Best Practices 2025)
-// /live: Processo está vivo? Se não, Kubernetes reinicia o container
-// /ready: Pronto para tráfego? Verifica se pelo menos um serviço backend responde
-// ============================================================================
-
-// Liveness probe - verificação simples que o processo responde
-app.get('/live', (_req: Request, res: Response) => {
-  res.status(200).json({ 
-    status: 'alive', 
-    service: 'api-gateway',
-    timestamp: new Date().toISOString(),
-  });
-});
-
-// Readiness probe - verifica se pelo menos um serviço backend está acessível
-app.get('/ready', async (_req: Request, res: Response) => {
-  let atLeastOneServiceUp = false;
-  const serviceStatuses: Record<string, string> = {};
-
-  // Verificar se pelo menos um serviço backend responde
-  const checks = await Promise.allSettled(
-    services.map(async (service) => {
-      const breaker = circuitBreakers.get(service.name);
-      if (!breaker) {
-        return { name: service.name, ready: false };
-      }
-
-      try {
-        await breaker.fire();
-        return { name: service.name, ready: true };
-      } catch {
-        return { name: service.name, ready: false };
-      }
-    })
-  );
-
-  checks.forEach((result) => {
-    if (result.status === 'fulfilled') {
-      const { name, ready } = result.value;
-      serviceStatuses[name] = ready ? 'ready' : 'not_ready';
-      if (ready) {
-        atLeastOneServiceUp = true;
-      }
-    }
-  });
-
-  if (atLeastOneServiceUp) {
-    res.status(200).json({
-      status: 'ready',
-      service: 'api-gateway',
-      timestamp: new Date().toISOString(),
-      backends: serviceStatuses,
-    });
-  } else {
-    res.status(503).json({
-      status: 'not_ready',
-      service: 'api-gateway',
-      reason: 'Nenhum serviço backend disponível',
-      timestamp: new Date().toISOString(),
-      backends: serviceStatuses,
-    });
-  }
-});
-
-// Métricas básicas (para Prometheus/Grafana)
-app.get('/metrics', (_req: Request, res: Response) => {
-  const metrics: string[] = [];
-  
-  circuitBreakers.forEach((breaker, serviceName) => {
-    const stats = breaker.stats;
-    metrics.push(`# HELP circuit_breaker_${serviceName}_fires Total de requisições`);
-    metrics.push(`circuit_breaker_${serviceName}_fires ${stats.fires}`);
-    metrics.push(`circuit_breaker_${serviceName}_failures ${stats.failures}`);
-    metrics.push(`circuit_breaker_${serviceName}_successes ${stats.successes}`);
-    metrics.push(`circuit_breaker_${serviceName}_timeouts ${stats.timeouts}`);
-    metrics.push(`circuit_breaker_${serviceName}_state ${breaker.opened ? 1 : 0}`);
-  });
-
-  res.type('text/plain').send(metrics.join('\n'));
-});
-
-// Middleware de logging para requisições
-const requestLogger = (req: Request, _res: Response, next: NextFunction) => {
-  const start = Date.now();
-  _res.on('finish', () => {
-    const duration = Date.now() - start;
-    logger.info({
-      method: req.method,
-      path: req.path,
-      status: _res.statusCode,
-      duration,
-      ip: req.ip,
-    }, 'Requisição processada');
-  });
-  next();
-};
-app.use(requestLogger);
-
-// Configurar proxy para cada serviço
-const createServiceProxy = (service: ServiceConfig): Options => ({
-  target: service.url,
-  changeOrigin: true,
-  pathRewrite: undefined,
-  on: {
-    proxyReq: (_proxyReq, req) => {
-      logger.debug({ 
-        service: service.name, 
-        path: (req as Request).path,
-        method: (req as Request).method,
-      }, 'Proxy request');
-    },
-    proxyRes: (proxyRes, req, res) => {
-      const request = req as Request;
-      const response = res as Response;
-      const contentTypeHeader = proxyRes.headers['content-type'];
-      const contentType = Array.isArray(contentTypeHeader) ? contentTypeHeader.join(';') : (contentTypeHeader ?? '');
-      const isSseResponse = (typeof contentType === 'string' && contentType.includes('text/event-stream'))
-        || shouldBypassCompressionForSse(request);
-
-      if (isSseResponse) {
-        response.setHeader('Cache-Control', 'no-cache, no-transform');
-        response.setHeader('Connection', 'keep-alive');
-        response.setHeader('X-Accel-Buffering', 'no');
-        logger.debug(
-          { service: service.name, path: request.path, contentType: typeof contentType === 'string' ? contentType : null },
-          'Headers anti-buffer aplicados para proxy SSE'
-        );
-      }
-    },
-    error: (err, _req, res) => {
-      logger.error({ error: err, service: service.name }, 'Erro no proxy');
-      if (res && 'writeHead' in res && typeof res.writeHead === 'function') {
-        const response = res as Response;
-        if (!response.headersSent) {
-          response.status(503).json({ 
-            error: 'Serviço temporariamente indisponível',
-            service: service.name,
-          });
-        }
-      }
-    },
-  },
-});
-
-const createLongRunningProxy = (service: ServiceConfig, timeoutMs: number): Options => ({
-  ...createServiceProxy(service),
-  timeout: timeoutMs,
-  proxyTimeout: timeoutMs,
-});
-
-// Rate limiter especial para login
-// Express 5: usar type assertion para rate limiter
-app.use('/api/auth/login', authLimiter as RequestHandler);
-app.use('/api/auth/register', authLimiter as RequestHandler);
-
-// Rotas de longa duração (Trading + LLM/GPU)
-if (integrationsService) {
-  const longRunningTimeoutMs = 180000;
-  app.use(
-    '/api/integrations/trading/signals/generate',
-    createProxyMiddleware(createLongRunningProxy(integrationsService, longRunningTimeoutMs))
-  );
-  app.use(
-    '/api/integrations/trading/analysis',
-    createProxyMiddleware(createLongRunningProxy(integrationsService, longRunningTimeoutMs))
-  );
-}
-
-// Configurar proxies para cada serviço
-services.forEach(service => {
-  const proxyOptions = createServiceProxy(service);
-  app.use(service.pathPrefix, createProxyMiddleware(proxyOptions));
-  logger.info({ service: service.name, prefix: service.pathPrefix, target: service.url }, 'Proxy configurado');
-});
-
-// Rota 404 para paths não encontrados (módulo @alice/shared-utils)
-// Express 5: usar type assertion para 404 handler
-app.use(createNotFoundHandler({ serviceName: 'api-gateway' }) as RequestHandler);
-
-// Error handler global (módulo @alice/shared-utils)
-// Express 5: usar type assertion para error handler
-app.use(createErrorHandler({
-  serviceName: 'api-gateway',
-  logger: {
-    error: (obj: object, msg: string) => logger.error(obj, msg),
-  },
-}) as ErrorRequestHandler);
-
-// Iniciar servidor
-const PORT = config.PORT;
-
-const server = app.listen(PORT, '0.0.0.0', () => {
-  logger.info({ port: PORT }, 'API Gateway iniciado');
-  logger.info({ services: services.map(s => ({ name: s.name, url: s.url })) }, 'Serviços configurados');
-});
-
-// SEGURANÇA: Timeouts para prevenir conexões pendentes (Node.js 20 LTS Best Practices)
-server.timeout = 180000; // 180s para requisições longas (Trading/LLM)
-server.keepAliveTimeout = 65000; // 65s (maior que ALB timeout padrão de 60s)
-server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
-
-// ============================================================================
-// GRACEFUL SHUTDOWN (Enterprise-Grade - Regra 16 CLAUDE.md)
-// ShutdownManager centralizado elimina duplicação de listeners (Regra 6)
-// Ordem: Circuit Breakers → HTTP server
-// ============================================================================
-
-registerShutdownCallback(
-  'api-gateway-circuit-breakers',
-  async () => {
-    logger.info('Encerrando circuit breakers...');
-    circuitBreakers.forEach((breaker, name) => {
-      breaker.shutdown();
-      logger.info({ service: name }, 'Circuit breaker encerrado');
-    });
-  },
-  { priority: ShutdownPriority.EXTERNAL_CONNECTIONS }
-);
-
-registerShutdownCallback(
-  'api-gateway-http-server',
-  async () => {
-    logger.info('Encerrando HTTP server...');
-    await new Promise<void>((resolve, reject) => {
-      server.close((err) => {
-        if (err) {
-          logger.error({ error: err }, 'Erro ao fechar HTTP server');
-          reject(err);
-        } else {
-          logger.info('HTTP server encerrado com sucesso');
-          resolve();
-        }
-      });
-    });
-  },
-  { priority: ShutdownPriority.HTTP_SERVER }
-);
 
 export { app, server };

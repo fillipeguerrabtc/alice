@@ -23,7 +23,7 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - `P0-CORE-SERVICES-05`: Concluído
 - `P0-EXT-GPU-06`: Concluído
 - `P0-DOCS-07`: Concluído
-- `P1-API-01`: Não iniciado
+- `P1-API-01`: Concluído
 - `P1-AUTH-02`: Não iniciado
 - `P1-CHAT-03`: Não iniciado
 - `P1-RAG-04`: Não iniciado
@@ -43,7 +43,7 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - `P2-DOCS-06`: Não iniciado
 
 ## Bloco atual
-`P0-DOCS-07` (Concluído)
+`P1-API-01` (Concluído)
 
 ## Histórico de rodadas
 
@@ -300,6 +300,33 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
   - Risco residual controlado: documentação histórica extensa permanece por rastreabilidade temporal; para status de execução do backlog prevalece o tracking canônico.
 - Próximo bloco recomendado: `P1-API-01`.
 
+### Rodada 8
+- Data: 2026-03-10
+- Bloco executado: `P1-API-01`
+- Objetivo: Modularizar `apps/api-gateway/src/index.ts` extraindo bootstrap, config, health checks, registro de proxies e tratamento de erros, preservando comportamento funcional do gateway.
+- Diagnóstico: `apps/api-gateway/src/index.ts` concentrava bootstrap/config/middlewares/health/proxy/errors/shutdown em um único arquivo com 566 linhas e sem módulos internos em `src/`, reduzindo legibilidade e testabilidade.
+- Arquivos lidos: `CLAUDE.md` (1-120), `package.json`, `apps/api-gateway/src/index.ts` (1-566 em chunks), `apps/api-gateway/package.json`, `apps/api-gateway/tsconfig.json`, `docs/ARQUITETURA.md`, `docs/STATUS-REAL-ATUAL.md`, `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Arquivos alterados: `apps/api-gateway/src/index.ts`, `apps/api-gateway/src/bootstrap.ts`, `apps/api-gateway/src/runtime-config.ts`, `apps/api-gateway/src/services.ts`, `apps/api-gateway/src/middleware.ts`, `apps/api-gateway/src/health.ts`, `apps/api-gateway/src/proxy.ts`, `apps/api-gateway/src/error-handlers.ts`, `apps/api-gateway/src/shutdown.ts`, `apps/api-gateway/src/types.ts`, `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Validações executadas:
+  - `pnpm exec tsc -p apps/api-gateway/tsconfig.json --noEmit` (executado via `npx -y pnpm@10.26.2 exec tsc -p apps/api-gateway/tsconfig.json --noEmit`)
+  - `pnpm exec eslint apps/api-gateway/src/` (executado via `npx -y pnpm@10.26.2 exec eslint apps/api-gateway/src/`)
+  - `pnpm --filter @alice/api-gateway build` (executado via `npx -y pnpm@10.26.2 --filter @alice/api-gateway build`)
+  - `pnpm lint` (executado via `npx -y pnpm@10.26.2 lint`)
+  - `pnpm build` (executado via `npx -y pnpm@10.26.2 build`)
+- Resultado das validações:
+  - Todas as validações obrigatórias da rodada foram aprovadas.
+  - `apps/api-gateway/src/index.ts` foi reduzido de 566 para 96 linhas, mantendo os mesmos endpoints de health/probes/métricas e o mesmo registro de proxies.
+  - Observação de ambiente: binário global `pnpm` permanece quebrado; os comandos foram executados com `npx -y pnpm@10.26.2`, preservando os comandos lógicos exigidos.
+- Documentação atualizada: tracking canônico atualizado com evidências factuais da Rodada 8.
+- Commit realizado: `refactor: modularize api gateway bootstrap and contracts`.
+- Pendências:
+  - Avaliar cobertura OpenAPI específica do gateway no bloco `P1-CONTRACTS-10`; nesta rodada não foi criado contrato novo por se tratar de endpoints operacionais de health/proxy já existentes.
+  - Validar posteriormente no ambiente do usuário a correção do binário global `pnpm`.
+- Riscos ou bloqueios:
+  - Sem bloqueio ativo para continuação.
+  - Risco residual controlado: a modularização foi restrita ao gateway sem alteração de responsabilidades de auth nem mudança de contratos públicos.
+- Próximo bloco recomendado: `P1-AUTH-02`.
+
 ## Pendências abertas
 - Correção do binário global `pnpm` no ambiente local (fora do escopo deste bloco).
 - Reduzir leituras diretas de `process.env` remanescentes fora do escopo autorizado, seguindo próximos blocos.
@@ -312,4 +339,4 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - Risco residual controlado: documentação histórica volumosa pode conter contexto de planos anteriores; status atual de execução do backlog governado deve sempre ser consultado no tracking canônico.
 
 ## Próximos blocos permitidos
-- `P1-API-01`
+- `P1-AUTH-02`
