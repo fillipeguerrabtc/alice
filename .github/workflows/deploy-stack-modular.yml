@@ -1870,6 +1870,7 @@ jobs:
             --include='shared/***' \
             --include='packages/***' \
             --include='migrations/***' \
+            --include='.npmrc' \
             --include='package.json' \
             --include='pnpm-lock.yaml' \
             --include='pnpm-workspace.yaml' \
@@ -4904,7 +4905,7 @@ jobs:
                 fi
                 npm install -g pnpm@\$PNPM_VERSION
                 export NPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS=true
-                pnpm install --frozen-lockfile
+                pnpm install --frozen-lockfile --config.inject-workspace-packages=true
                 pnpm drizzle-kit push --verbose
               " 2>&1 | tee "$DRIZZLE_LOG"; then
               echo "❌ ERRO CRÍTICO: Drizzle push falhou!"
