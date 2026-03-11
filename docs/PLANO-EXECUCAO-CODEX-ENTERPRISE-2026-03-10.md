@@ -30,7 +30,7 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - `P1-TRAINING-05`: Concluído
 - `P1-INTEGRATIONS-06`: Concluído
 - `P1-GPU-LLM-07`: Concluído
-- `P1-OBS-08`: Não iniciado
+- `P1-OBS-08`: Concluído
 - `P1-FRONT-09`: Não iniciado
 - `P1-CONTRACTS-10`: Não iniciado
 - `P1-BIOMETRICS-11`: Não iniciado
@@ -43,7 +43,7 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - `P2-DOCS-06`: Não iniciado
 
 ## Bloco atual
-`P1-GPU-LLM-07` (Concluído)
+`P1-OBS-08` (Concluído)
 
 ## Histórico de rodadas
 
@@ -497,8 +497,42 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
   - `apps/gpu-manager-service/src/index.ts` ainda mantém grande volume de lógica de fila/processamento interno, mesmo com separação de domínios de composição.
 - Riscos ou bloqueios:
   - Sem bloqueio ativo para continuação.
-  - Risco residual controlado: modularização preservou contratos e políticas atuais sem introduzir novas regras de governance/admission.
+- Risco residual controlado: modularização preservou contratos e políticas atuais sem introduzir novas regras de governance/admission.
 - Próximo bloco recomendado: `P1-OBS-08`.
+
+### Rodada 15
+- Data: 2026-03-10
+- Bloco executado: `P1-OBS-08`
+- Objetivo: Modularizar `observability-service` separando bootstrap, backup orchestration, métricas, health e fluxos admin com preservação de comportamento funcional.
+- Diagnóstico: `apps/observability-service/src/index.ts` concentrava autenticação interna, health checks com circuit breaker, métricas Prometheus, rotas admin, wiring de backup e bootstrap/shutdown em um único arquivo (1089 linhas), com alto acoplamento de responsabilidades.
+- Arquivos lidos: `CLAUDE.md` (1-120), `package.json`, `apps/observability-service/src/index.ts` (1-1089 em chunks de 200-300 linhas), `apps/observability-service/src/backup-orchestrator.ts` (chunks relevantes incluindo topo/config e bloco de rotas), `apps/observability-service/src/openapi-specs.ts`, `apps/observability-service/package.json`, `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Arquivos alterados: `apps/observability-service/src/index.ts`, `apps/observability-service/src/observability-health-monitor.ts`, `apps/observability-service/src/observability-health-routes.ts`, `apps/observability-service/src/observability-metrics-routes.ts`, `apps/observability-service/src/observability-admin-routes.ts`, `apps/observability-service/src/observability-backup-routes.ts`, `apps/observability-service/src/observability-bootstrap.ts`, `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Validações executadas:
+  - `pnpm --filter @alice/observability-service typecheck` (falha por binário global `pnpm` quebrado no ambiente)
+  - `npx -y pnpm@10.26.2 --filter @alice/observability-service typecheck` (workspace sem script `typecheck`)
+  - `pnpm --filter @alice/observability-service lint` (falha por binário global `pnpm` quebrado no ambiente)
+  - `npx -y pnpm@10.26.2 --filter @alice/observability-service lint` (workspace sem script `lint`)
+  - `pnpm --filter @alice/observability-service build` (falha por binário global `pnpm` quebrado no ambiente)
+  - `npx -y pnpm@10.26.2 --filter @alice/observability-service build`
+  - `npx -y pnpm@10.26.2 exec tsc -p apps/observability-service/tsconfig.json --noEmit` (equivalente local para `typecheck` do workspace)
+  - `npx -y pnpm@10.26.2 exec eslint apps/observability-service/src/` (equivalente local para `lint` do workspace)
+  - `pnpm lint` (falha por binário global `pnpm` quebrado no ambiente)
+  - `npx -y pnpm@10.26.2 lint`
+  - `pnpm build` (falha por binário global `pnpm` quebrado no ambiente)
+  - `npx -y pnpm@10.26.2 build`
+- Resultado das validações:
+  - Todas as validações obrigatórias da rodada foram aprovadas ao final.
+  - `apps/observability-service/src/index.ts` foi reduzido de 1089 para 286 linhas com extração de módulos por domínio (`health`, `metrics`, `admin`, `backup` e `bootstrap`), preservando rotas e contratos existentes.
+  - O workspace `@alice/observability-service` não possui scripts próprios de `typecheck`/`lint`; por regra operacional, foram executados equivalentes locais (`tsc --noEmit` e `eslint`) e aprovados.
+  - Observação de ambiente: binário global `pnpm` permanece quebrado; comandos executados via `npx -y pnpm@10.26.2`, preservando os comandos lógicos exigidos.
+- Documentação atualizada: tracking canônico atualizado com evidências factuais da Rodada 15.
+- Commit realizado: `refactor: modularize observability service orchestration`
+- Pendências:
+  - Validar posteriormente no ambiente do usuário a correção do binário global `pnpm`.
+- Riscos ou bloqueios:
+  - Sem bloqueio ativo para continuação.
+  - Risco residual controlado: `apps/observability-service/src/backup-orchestrator.ts` permanece monolítico (2543 linhas) por estar fora do escopo de decomposição autorizado desta rodada.
+- Próximo bloco recomendado: `P1-FRONT-09`.
 
 ## Pendências abertas
 - Correção do binário global `pnpm` no ambiente local (fora do escopo deste bloco).
@@ -512,4 +546,4 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - Risco residual controlado: documentação histórica volumosa pode conter contexto de planos anteriores; status atual de execução do backlog governado deve sempre ser consultado no tracking canônico.
 
 ## Próximos blocos permitidos
-- `P1-OBS-08`
+- `P1-FRONT-09`
