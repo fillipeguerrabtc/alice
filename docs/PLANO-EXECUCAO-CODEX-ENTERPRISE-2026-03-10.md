@@ -39,11 +39,11 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - `P2-CI-02`: Concluído
 - `P2-INFRA-03`: Concluído
 - `P2-OTEL-04`: Concluído
-- `P2-TSCONFIG-05`: Não iniciado
+- `P2-TSCONFIG-05`: Concluído
 - `P2-DOCS-06`: Não iniciado
 
 ## Bloco atual
-`P2-OTEL-04` (Concluído)
+`P2-TSCONFIG-05` (Concluído)
 
 ## Histórico de rodadas
 
@@ -775,6 +775,43 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
   - Risco residual controlado: o endpoint `/metrics` permanece textual e compatível com Prometheus, agora com volume maior por agregar métricas HTTP/default e métricas customizadas no mesmo payload.
 - Próximo bloco recomendado: `P2-TSCONFIG-05`.
 
+### Rodada 24
+- Data: 2026-03-11
+- Bloco executado: `P2-TSCONFIG-05`
+- Objetivo: Endurecer disciplina de compilação/lint de forma incremental com ativação progressiva de `noUnusedLocals` e `noUnusedParameters` no escopo seguro da rodada.
+- Diagnóstico: `packages/tsconfig.base.json` mantinha `noUnusedLocals` e `noUnusedParameters` desativados; validação prévia mostrou que a ativação imediata para os pacotes geraria apenas 2 falhas reais e pontuais (`packages/database/src/index.ts` e `packages/shared-utils/src/session-auth.ts`), sem avalanche no monorepo.
+- Arquivos lidos: `CLAUDE.md` (1-120), `packages/tsconfig.base.json`, `eslint.config.mjs`, `apps/api-gateway/tsconfig.json`, `apps/auth-service/tsconfig.json`, `apps/chat-service/tsconfig.json`, `apps/rag-service/tsconfig.json`, `packages/logger/tsconfig.json`, `packages/config/tsconfig.json`, `packages/shared/tsconfig.json`, `packages/database/tsconfig.json`, `packages/shared-utils/tsconfig.json`, `packages/database/src/index.ts` (chunk relevante), `packages/shared-utils/src/session-auth.ts` (chunk relevante), `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Arquivos alterados: `packages/tsconfig.base.json`, `packages/database/src/index.ts`, `packages/shared-utils/src/session-auth.ts`, `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Validações executadas:
+  - Diagnóstico incremental pré-ativação:
+    - `npx -y pnpm@10.26.2 exec tsc -p packages/logger/tsconfig.json --noEmit --noUnusedLocals --noUnusedParameters`
+    - `npx -y pnpm@10.26.2 exec tsc -p packages/config/tsconfig.json --noEmit --noUnusedLocals --noUnusedParameters`
+    - `npx -y pnpm@10.26.2 exec tsc -p packages/database/tsconfig.json --noEmit --noUnusedLocals --noUnusedParameters`
+    - `npx -y pnpm@10.26.2 exec tsc -p packages/shared-utils/tsconfig.json --noEmit --noUnusedLocals --noUnusedParameters`
+    - `npx -y pnpm@10.26.2 exec tsc -p packages/shared/tsconfig.json --noEmit --noUnusedLocals --noUnusedParameters`
+  - Typecheck dos workspaces impactados:
+    - `npx -y pnpm@10.26.2 --filter @alice/logger typecheck`
+    - `npx -y pnpm@10.26.2 --filter @alice/config typecheck`
+    - `npx -y pnpm@10.26.2 --filter @alice/shared typecheck`
+    - `npx -y pnpm@10.26.2 --filter @alice/database typecheck`
+    - `npx -y pnpm@10.26.2 --filter @alice/shared-utils typecheck`
+  - Validação global:
+    - `npx -y pnpm@10.26.2 lint`
+    - `npx -y pnpm@10.26.2 build`
+- Resultado das validações:
+  - Todas as validações obrigatórias do bloco foram aprovadas.
+  - `noUnusedLocals` e `noUnusedParameters` foram ativados de forma incremental para os pacotes que herdam `packages/tsconfig.base.json`, com correções pontuais apenas no escopo necessário.
+  - Não houve avalanche de refatoração em serviços/apps; o endurecimento permaneceu controlado no domínio de `packages/*`.
+  - Observação de ambiente: binário global `pnpm` permanece quebrado; comandos executados via `npx -y pnpm@10.26.2`, preservando os comandos lógicos exigidos.
+- Documentação atualizada: tracking canônico atualizado com evidências factuais da Rodada 24.
+- Commit realizado: `chore: tighten compiler and linting discipline incrementally`
+- Pendências:
+  - Validar posteriormente no ambiente do usuário a correção do binário global `pnpm`.
+- Riscos ou bloqueios:
+  - Sem bloqueio ativo para continuação.
+  - Risco residual controlado: serviços em `apps/*` que não herdam `packages/tsconfig.base.json` permanecem fora deste endurecimento nesta rodada para evitar quebra ampla fora de escopo.
+- Próximo bloco recomendado: `P2-DOCS-06`.
+
 ## Pendências abertas
 - Correção do binário global `pnpm` no ambiente local (fora do escopo deste bloco).
 - Reduzir leituras diretas de `process.env` remanescentes fora do escopo autorizado, seguindo próximos blocos.
@@ -787,5 +824,4 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - Risco residual controlado: documentação histórica volumosa pode conter contexto de planos anteriores; status atual de execução do backlog governado deve sempre ser consultado no tracking canônico.
 
 ## Próximos blocos permitidos
-- `P2-TSCONFIG-05`
 - `P2-DOCS-06`

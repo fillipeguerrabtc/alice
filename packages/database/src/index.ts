@@ -397,8 +397,7 @@ export async function connectWithRetry(options: ConnectWithRetryOptions = {}): P
   while (attempt < maxRetries) {
     try {
       // Tentar obter database (cria pool se não existir)
-      // _db não é usado diretamente, mas getDatabase() inicializa o pool
-      const _db = getDatabase();
+      getDatabase();
       
       // Verificar se conexão funciona com query simples
       const pool = getPool();

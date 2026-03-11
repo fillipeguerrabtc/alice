@@ -351,7 +351,7 @@ interface SessionAuthMiddlewareOptions {
 export function createSessionAuthMiddleware(options: SessionAuthMiddlewareOptions) {
   const { pool, publicPaths = [] } = options;
   
-  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  return async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
     // Skip para rotas públicas
     if (publicPaths.some(path => req.path.startsWith(path))) {
       return next();
