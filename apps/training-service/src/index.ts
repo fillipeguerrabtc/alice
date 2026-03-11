@@ -132,6 +132,7 @@ import {
   loadTrainingSystemRuntimeConfig,
   runTrainingFineTuningJob,
 } from './training-runner.js';
+import { createTrainingGpuOrchestrationClient } from './training-gpu-orchestration.js';
 import { loadTrainingEnterpriseConfig } from './training-config.js';
 import {
   getTenantInflightFineTuningJobsCount,
@@ -357,6 +358,11 @@ if (IS_PRODUCTION && !GPU_MANAGER_URL_FROM_CONFIG) {
 }
 const GPU_MANAGER_URL_FINAL = GPU_MANAGER_URL_FROM_CONFIG ?? 'http://alice-gpu-manager:3010';
 const INTERNAL_API_SECRET = readOptionalStringEnv('INTERNAL_API_SECRET') ?? undefined;
+const trainingGpuOrchestrationClient = createTrainingGpuOrchestrationClient({
+  gpuManagerUrl: GPU_MANAGER_URL_FINAL,
+  internalApiSecret: INTERNAL_API_SECRET,
+  logger,
+});
 const CORS_ORIGINS = resolveCorsOrigins({
   requiredInProduction: true,
   developmentFallback: [],
@@ -3151,6 +3157,7 @@ function createAndStartWorkers(): Array<() => Promise<void>> {
           db,
           payload,
           fineTuningJobId: payload.fineTuningJobId,
+          gpuOrchestrationClient: trainingGpuOrchestrationClient,
         });
       },
     }),

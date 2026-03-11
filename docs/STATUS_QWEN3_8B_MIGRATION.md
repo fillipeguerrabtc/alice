@@ -4,8 +4,83 @@
 **Data:** 11 de Marco de 2026
 
 ## Rodada Atual
-- Rodada: 4
+- Rodada: 5
 - Status: Concluída
+
+## Rodada 5 - Início
+
+### Objetivo
+Garantir preempção automática de serving no `training-service` para treinos on-demand e agendados, com restauração de serving ao concluir e vínculo auditável de intent/resultado por run/job.
+
+### Premissas
+- A orquestração canônica de runtime GPU já está disponível no `gpu-manager-service`:
+  - `POST /api/gpu/orchestrator/prepare-training`
+  - `POST /api/gpu/orchestrator/restore-serving`
+  - alias legado `POST /api/gpu/orchestrator/return`
+- Execução de treino deve permanecer assíncrona via fila/worker (sem treino no thread HTTP).
+- Runtime em GPU única segue mutuamente exclusivo:
+  - serving = `gpu-llm` + `gpu-embeddings`
+  - training = `gpu-trainer`
+- Idempotência e locks já existentes no `training-service` devem ser preservados.
+
+### Escopo
+- Acionar preparação automática do runtime de treino no início do processamento assíncrono de `fine_tuning_jobs`.
+- Garantir restauração de serving ao final de execuções on-demand e scheduled.
+- Persistir intent/resultado de orquestração vinculado a `runId`/`fineTuningJobId` para auditoria operacional.
+- Ajustar rotas de orquestração expostas pelo `training-service` para semântica canônica, mantendo compatibilidade legada.
+- Atualizar OpenAPI e este status.
+
+## Rodada 5 - Conclusão
+
+### Alterações
+- `apps/training-service/src/training-gpu-orchestration.ts`:
+  - Novo cliente compartilhado de orquestração com contrato tipado para:
+    - `prepareTrainingRuntime()`
+    - `restoreServingRuntime()`
+  - Registro estruturado de tentativa/resultado (status HTTP, estado do orquestrador, erro, duração, run/job).
+- `apps/training-service/src/training-runner.ts`:
+  - Integração da preempção automática no fluxo assíncrono de worker:
+    - prepara runtime de treino antes de `processLoraJob`;
+    - restaura serving ao final da execução.
+  - Persistência de intent e ledger operacional por tentativa em:
+    - `fine_tuning_jobs.metrics.runner.orchestration`
+    - `fine_tuning_jobs.config_snapshot.orchestration`
+  - Vínculo explícito de auditoria operacional por `runId`, `idempotencyKey`, `tenantId` e `fineTuningJobId`.
+  - Tratamento de falhas com preservação de estado recuperável e trilha auditável.
+- `apps/training-service/src/index.ts`:
+  - Injeção do cliente de orquestração no `runTrainingFineTuningJob`, mantendo execução assíncrona via fila.
+- `apps/training-service/src/routes/training-lora-orchestrator-routes.ts`:
+  - Rotas canônicas adicionadas:
+    - `POST /api/training/gpu-orchestrator/prepare-training`
+    - `POST /api/training/gpu-orchestrator/restore-serving`
+  - Alias legado mantido:
+    - `POST /api/training/gpu-orchestrator/return` (deprecado) apontando para semântica de restore.
+- `apps/training-service/src/openapi-specs.ts`:
+  - Contratos OpenAPI das rotas canônicas adicionados.
+  - Alias `/return` marcado como legado (`deprecated`).
+- Testes atualizados/adicionados:
+  - `tests/unit/training-gpu-orchestration.test.ts` (novo).
+  - `tests/unit/services/training-openapi-sync.test.ts`.
+  - `tests/unit/services/training-openapi-rbac-sync.test.ts`.
+  - `tests/unit/services/training-service.test.ts`.
+
+### Inventário de Acoplamentos Qwen2.5
+- Sem novos acoplamentos Qwen2.5 introduzidos na Rodada 5.
+- Compatibilidade histórica de registros legados Qwen2.5 permanece preservada.
+
+### Validações
+Executadas em sequência, sem paralelização:
+1. `typecheck` (`cmd.exe /c pnpm typecheck`) -> OK
+2. `testes` (`cmd.exe /c pnpm test`) -> OK (124 arquivos, 1368 testes)
+3. `eslint` (`cmd.exe /c pnpm lint`) -> OK
+4. `build` (`cmd.exe /c pnpm build`) -> OK
+
+### Riscos
+- Falhas de restore após treino bem-sucedido passam a invalidar o run (status final `failed`) para sinalizar inconsistência operacional; integração com UX de aviso para operador/chat ainda pendente em rodadas futuras.
+- A autorização de controle da orquestração no `gpu-manager` ainda mantém compatibilidade para chamadas internas legadas sem contexto completo assinado; endurecimento total depende de rollout coordenado entre serviços.
+
+### Próximo Passo
+Aguardar prompt da próxima rodada para integrar notificação de interrupção/restauração em chats ativos e evolução de UX/painel operacional de treinamento.
 
 ## Rodada 4 - Início
 

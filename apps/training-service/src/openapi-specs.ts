@@ -590,13 +590,32 @@ export const trainingServicePaths = {
     get: {
       summary: 'Get GPU orchestrator state',
       tags: ['GPU'],
+      'x-required-permission': 'training:fine_tuning_jobs:read',
       responses: { 200: { description: 'Current orchestrator state' } },
+    },
+  },
+  '/api/training/gpu-orchestrator/prepare-training': {
+    post: {
+      summary: 'Prepare GPU runtime for training preemption',
+      tags: ['GPU'],
+      'x-required-permission': 'training:fine_tuning_jobs:start',
+      responses: { 200: { description: 'GPU runtime prepared for training' } },
+    },
+  },
+  '/api/training/gpu-orchestrator/restore-serving': {
+    post: {
+      summary: 'Restore serving runtime after training',
+      tags: ['GPU'],
+      'x-required-permission': 'training:fine_tuning_jobs:start',
+      responses: { 200: { description: 'Serving runtime restored' } },
     },
   },
   '/api/training/gpu-orchestrator/return': {
     post: {
-      summary: 'Return GPU lease to orchestrator',
+      summary: 'Legacy alias for restore-serving',
       tags: ['GPU'],
+      'x-required-permission': 'training:fine_tuning_jobs:start',
+      deprecated: true,
       responses: { 200: { description: 'GPU lease returned' } },
     },
   },

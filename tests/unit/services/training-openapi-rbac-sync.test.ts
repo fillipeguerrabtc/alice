@@ -24,6 +24,10 @@ const CRITICAL_TRAINING_RBAC_CONTRACTS: Array<{
   { method: 'get', openapiPath: '/api/training/queue/status', requiredPermission: 'training:fine_tuning_jobs:read' },
   { method: 'get', openapiPath: '/api/training/auto-learning/status', requiredPermission: 'training:training_data:read' },
   { method: 'get', openapiPath: '/api/training/execution-modes', requiredPermission: 'training:training_data:read' },
+  { method: 'get', openapiPath: '/api/training/gpu-orchestrator/state', requiredPermission: 'training:fine_tuning_jobs:read' },
+  { method: 'post', openapiPath: '/api/training/gpu-orchestrator/prepare-training', requiredPermission: 'training:fine_tuning_jobs:start' },
+  { method: 'post', openapiPath: '/api/training/gpu-orchestrator/restore-serving', requiredPermission: 'training:fine_tuning_jobs:start' },
+  { method: 'post', openapiPath: '/api/training/gpu-orchestrator/return', requiredPermission: 'training:fine_tuning_jobs:start' },
 ];
 
 function openApiPathToExpressPath(pathname: string): string {

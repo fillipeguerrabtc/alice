@@ -21,6 +21,8 @@ const CRITICAL_OPENAPI_ROUTES: Array<{ method: HttpMethod; path: string }> = [
   { method: 'get', path: '/api/training/queue/status' },
   { method: 'get', path: '/api/training/auto-learning/status' },
   { method: 'get', path: '/api/training/execution-modes' },
+  { method: 'post', path: '/api/training/gpu-orchestrator/prepare-training' },
+  { method: 'post', path: '/api/training/gpu-orchestrator/restore-serving' },
 ];
 
 function openApiPathToExpressPath(pathname: string): string {

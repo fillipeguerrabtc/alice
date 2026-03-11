@@ -58,6 +58,8 @@ describe('Training Service - OpenAPI (critical contracts)', () => {
     expect(paths).toContain('/api/training/run/history');
     expect(paths).toContain('/api/training/run/cancel');
     expect(paths).toContain('/api/training/execution-modes');
+    expect(paths).toContain('/api/training/gpu-orchestrator/prepare-training');
+    expect(paths).toContain('/api/training/gpu-orchestrator/restore-serving');
   });
 
   it('exposes governance and webhook endpoints', () => {

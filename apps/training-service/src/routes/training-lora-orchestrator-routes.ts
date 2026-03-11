@@ -173,14 +173,19 @@ export function registerTrainingLoraOrchestratorRoutes(
     }
   });
 
-  app.post('/api/training/gpu-orchestrator/return', requirePermission('training:fine_tuning_jobs:start'), async (_req: Request, res: Response) => {
+  const proxyOrchestratorAction = async (params: {
+    res: Response;
+    routeLabel: string;
+    targetPath: '/api/gpu/orchestrator/prepare-training' | '/api/gpu/orchestrator/restore-serving';
+    timeoutMs: number;
+  }): Promise<Response> => {
     if (!deps.internalApiSecretOrchestrator) {
-      return res.status(503).json({ error: 'Servico indisponivel' });
+      return params.res.status(503).json({ error: 'Servico indisponivel' });
     }
     try {
       const controller = new AbortController();
-      const timeoutHandle = setTimeout(() => controller.abort(), 10000);
-      const response = await fetchFn(`${deps.gpuManagerUrlOrchestrator}/api/gpu/orchestrator/return`, {
+      const timeoutHandle = setTimeout(() => controller.abort(), params.timeoutMs);
+      const response = await fetchFn(`${deps.gpuManagerUrlOrchestrator}${params.targetPath}`, {
         method: 'POST',
         signal: controller.signal,
         headers: {
@@ -190,14 +195,42 @@ export function registerTrainingLoraOrchestratorRoutes(
       });
       clearTimeout(timeoutHandle);
       const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
-      return res.status(response.status).json(data);
+      return params.res.status(response.status).json(data);
     } catch (error) {
       logger.warn(
         { err: error instanceof Error ? error.message : String(error) },
-        'Proxy gpu-orchestrator/return falhou',
+        `Proxy ${params.routeLabel} falhou`,
       );
-      return res.status(503).json({ error: 'GPU Manager indisponivel' });
+      return params.res.status(503).json({ error: 'GPU Manager indisponivel' });
     }
+  };
+
+  app.post('/api/training/gpu-orchestrator/prepare-training', requirePermission('training:fine_tuning_jobs:start'), async (_req: Request, res: Response) => {
+    return proxyOrchestratorAction({
+      res,
+      routeLabel: 'gpu-orchestrator/prepare-training',
+      targetPath: '/api/gpu/orchestrator/prepare-training',
+      timeoutMs: 180000,
+    });
+  });
+
+  app.post('/api/training/gpu-orchestrator/restore-serving', requirePermission('training:fine_tuning_jobs:start'), async (_req: Request, res: Response) => {
+    return proxyOrchestratorAction({
+      res,
+      routeLabel: 'gpu-orchestrator/restore-serving',
+      targetPath: '/api/gpu/orchestrator/restore-serving',
+      timeoutMs: 180000,
+    });
+  });
+
+  app.post('/api/training/gpu-orchestrator/return', requirePermission('training:fine_tuning_jobs:start'), async (_req: Request, res: Response) => {
+    res.setHeader('X-Alice-Deprecated-Alias', '/api/training/gpu-orchestrator/restore-serving');
+    return proxyOrchestratorAction({
+      res,
+      routeLabel: 'gpu-orchestrator/return',
+      targetPath: '/api/gpu/orchestrator/restore-serving',
+      timeoutMs: 180000,
+    });
   });
 
   logger.info('Training LoRA and GPU orchestrator routes registered');

@@ -33,6 +33,10 @@ import {
   buildTrainingScopeOperationLockKey,
   releaseTrainingOperationLock,
 } from './training-enterprise-controls.js';
+import type {
+  TrainingGpuOrchestrationAttempt,
+  TrainingGpuOrchestrationClient,
+} from './training-gpu-orchestration.js';
 
 const runnerLogger = createLogger('training-runner');
 const TRAINING_AUTO_PROMOTION_LOCK_TTL_SECONDS = 45;
@@ -231,6 +235,91 @@ function resolveMinDatasetSizeForRun(params: {
     return params.runtimeConfig.minScheduledDatasetSizeFull;
   }
   return params.runtimeConfig.minScheduledDatasetSizeIncremental;
+}
+
+function buildOrchestrationIntent(params: {
+  payload: TrainingFineTuningQueuePayload;
+  fineTuningJobId: string;
+  tenantId: string;
+  runSource: 'custom_job' | 'on_demand' | 'scheduled';
+}): Record<string, unknown> {
+  return {
+    mode: 'automatic_preemption',
+    runId: params.payload.runId,
+    idempotencyKey: params.payload.idempotencyKey,
+    fineTuningJobId: params.fineTuningJobId,
+    tenantId: params.tenantId,
+    runSource: params.runSource,
+    requestedAt: new Date().toISOString(),
+  };
+}
+
+function appendOrchestrationAttempt(
+  metrics: Record<string, unknown>,
+  snapshot: Record<string, unknown>,
+  attempt: TrainingGpuOrchestrationAttempt,
+): {
+  metrics: Record<string, unknown>;
+  snapshot: Record<string, unknown>;
+} {
+  const runnerMetrics = isRecord(metrics.runner) ? metrics.runner : {};
+  const orchestrationMetrics = isRecord(runnerMetrics.orchestration)
+    ? runnerMetrics.orchestration
+    : {};
+  const existingAttemptMetrics = Array.isArray(orchestrationMetrics.attempts)
+    ? orchestrationMetrics.attempts.filter(isRecord)
+    : [];
+  const nextAttemptMetrics = [...existingAttemptMetrics, attempt].slice(-20);
+
+  const nextMetrics: Record<string, unknown> = {
+    ...metrics,
+    runner: {
+      ...runnerMetrics,
+      orchestration: {
+        ...orchestrationMetrics,
+        mode: 'automatic_preemption',
+        runId: attempt.runId,
+        idempotencyKey: attempt.idempotencyKey,
+        runSource: attempt.runSource,
+        lastUpdatedAt: attempt.completedAt,
+        lastAction: attempt.action,
+        lastStatus: attempt.success ? 'success' : 'error',
+        lastError: attempt.success ? null : attempt.error,
+        attempts: nextAttemptMetrics,
+      },
+    },
+  };
+
+  const orchestrationSnapshot = isRecord(snapshot.orchestration)
+    ? snapshot.orchestration
+    : {};
+  const existingSnapshotAttempts = Array.isArray(orchestrationSnapshot.attempts)
+    ? orchestrationSnapshot.attempts.filter(isRecord)
+    : [];
+  const nextSnapshotAttempts = [...existingSnapshotAttempts, attempt].slice(-20);
+
+  const nextSnapshot: Record<string, unknown> = {
+    ...snapshot,
+    orchestration: {
+      ...orchestrationSnapshot,
+      mode: 'automatic_preemption',
+      runId: attempt.runId,
+      idempotencyKey: attempt.idempotencyKey,
+      runSource: attempt.runSource,
+      fineTuningJobId: attempt.fineTuningJobId,
+      tenantId: attempt.tenantId,
+      lastUpdatedAt: attempt.completedAt,
+      lastAction: attempt.action,
+      lastStatus: attempt.success ? 'success' : 'error',
+      lastError: attempt.success ? null : attempt.error,
+      attempts: nextSnapshotAttempts,
+    },
+  };
+
+  return {
+    metrics: nextMetrics,
+    snapshot: nextSnapshot,
+  };
 }
 
 export async function loadTrainingSystemRuntimeConfig(): Promise<TrainingSystemRuntimeConfig> {
@@ -554,9 +643,11 @@ export async function runTrainingFineTuningJob(params: {
   db: Database;
   payload: TrainingFineTuningQueuePayload;
   fineTuningJobId: string;
+  gpuOrchestrationClient: TrainingGpuOrchestrationClient;
 }): Promise<void> {
   let loraJobForError: LoraJob | null = null;
   let fineTuningMetrics: Record<string, unknown> = {};
+  let mutableSnapshot: Record<string, unknown> = {};
 
   try {
     const fineTuningJob = await params.db.query.fineTuningJobs.findFirst({
@@ -604,7 +695,7 @@ export async function runTrainingFineTuningJob(params: {
           snapshot,
         });
 
-    let mutableSnapshot: Record<string, unknown> = {
+    mutableSnapshot = {
       ...snapshot,
       hyperparameters: runnerConfig.hyperparameters,
       runner: runnerConfig,
@@ -621,7 +712,44 @@ export async function runTrainingFineTuningJob(params: {
         runPriority: runnerConfig.runPriority,
       },
     };
-    fineTuningMetrics = baseMetrics;
+    const orchestrationIntent = buildOrchestrationIntent({
+      payload: params.payload,
+      fineTuningJobId: fineTuningJob.id,
+      tenantId: fineTuningJob.tenantId,
+      runSource: fineTuningJob.runSource,
+    });
+    const runnerMetrics = isRecord(baseMetrics.runner) ? baseMetrics.runner : {};
+    const existingRunnerOrchestration = isRecord(runnerMetrics.orchestration)
+      ? runnerMetrics.orchestration
+      : {};
+    fineTuningMetrics = {
+      ...baseMetrics,
+      runner: {
+        ...runnerMetrics,
+        orchestration: {
+          ...existingRunnerOrchestration,
+          ...orchestrationIntent,
+          lastStatus: 'pending',
+          lastAction: null,
+          lastError: null,
+          lastUpdatedAt: startedAt.toISOString(),
+        },
+      },
+    };
+    const snapshotOrchestration = isRecord(mutableSnapshot.orchestration)
+      ? mutableSnapshot.orchestration
+      : {};
+    mutableSnapshot = {
+      ...mutableSnapshot,
+      orchestration: {
+        ...snapshotOrchestration,
+        ...orchestrationIntent,
+        lastStatus: 'pending',
+        lastAction: null,
+        lastError: null,
+        lastUpdatedAt: startedAt.toISOString(),
+      },
+    };
 
     await params.db.update(schema.fineTuningJobs)
       .set({
@@ -633,216 +761,285 @@ export async function runTrainingFineTuningJob(params: {
       })
       .where(eq(schema.fineTuningJobs.id, fineTuningJob.id));
 
-    await processLoraJob(loraJob.id, {
-      sliceSteps: runnerConfig.sliceSteps,
-      gpuTimeoutMs: runnerConfig.gpuTimeoutMs,
-      gpuPriority: runnerConfig.runPriority,
-      datasetMaxRows: runnerConfig.datasetMaxRows,
-      trainEvalSplitRatio: runnerConfig.trainEvalSplitRatio,
-      minDatasetSize: runnerConfig.minDatasetSize,
-      seed: runnerConfig.seed,
-      includeImages: runnerConfig.includeImages,
-      includeTradingDataset: runnerConfig.includeTradingDataset,
-      agentId: runnerConfig.scope.agentId ?? undefined,
-      domain: runnerConfig.scope.domain ?? undefined,
-      hyperparametersOverride: runnerConfig.hyperparameters,
-      onDatasetPrepared: async (manifest: PreparedDatasetManifest) => {
-        const nowIso = new Date().toISOString();
-        mutableSnapshot = {
-          ...mutableSnapshot,
-          datasetManifest: {
-            generatedAt: nowIso,
-            seed: runnerConfig.seed,
-            splitPolicy: manifest.splitPolicy,
-            manifestHash: manifest.manifestHash,
-            trainingRowIds: manifest.trainingRowIds,
-            validationRowIds: manifest.validationRowIds,
-            holdoutRowIds: manifest.holdoutRowIds,
-            datasetRowIds: manifest.datasetIds,
-            total: manifest.total,
-            training: manifest.training,
-            validation: manifest.validation,
-            holdout: manifest.holdout,
-          },
-        };
-        fineTuningMetrics = {
-          ...fineTuningMetrics,
-          dataset: {
-            total: manifest.total,
-            training: manifest.training,
-            validation: manifest.validation,
-            holdout: manifest.holdout,
-            splitPolicy: manifest.splitPolicy,
-            datasetManifestHash: manifest.manifestHash,
-            imagesUsed: manifest.imagesUsed,
-          },
-        };
-        await params.db.update(schema.fineTuningJobs)
-          .set({
-            trainingDataCount: manifest.training,
-            validationDataCount: manifest.validation,
-            configSnapshot: mutableSnapshot,
-            metrics: fineTuningMetrics,
-          })
-          .where(eq(schema.fineTuningJobs.id, fineTuningJob.id));
-      },
-      onProgress: async (progress) => {
-        const nextStatus = mapStatusForFineTuning(progress.status);
-        const nowIso = new Date().toISOString();
-        fineTuningMetrics = {
-          ...fineTuningMetrics,
-          progress: {
-            status: progress.status ?? null,
-            progress: progress.progress ?? null,
-            currentStep: progress.currentStep ?? null,
-            totalSteps: progress.totalSteps ?? null,
-            updatedAt: nowIso,
-          },
-          adapterPath: progress.adapterPath ?? (fineTuningMetrics.adapterPath as string | null) ?? null,
-        };
-
-        await params.db.update(schema.fineTuningJobs)
-          .set({
-            status: nextStatus ?? undefined,
-            progress: progress.progress ?? undefined,
-            resultModel: progress.adapterPath ?? undefined,
-            iniciadoEm: nextStatus && nextStatus !== 'pending' ? startedAt : undefined,
-            completadoEm: nextStatus === 'completed' ? new Date() : undefined,
-            metrics: fineTuningMetrics,
-            evaluationStatus: nextStatus === 'validating' ? 'running' : undefined,
-          })
-          .where(eq(schema.fineTuningJobs.id, fineTuningJob.id));
-      },
-    });
-
-    const finalLoraJob = await params.db.query.loraJobs.findFirst({
-      where: eq(schema.loraJobs.id, loraJob.id),
-      columns: {
-        resultAdapterPath: true,
-        datasetCount: true,
-        validationCount: true,
-        metrics: true,
-      },
-    });
-    if (!finalLoraJob?.resultAdapterPath) {
-      throw new Error(`Adapter final ausente para lora_job ${loraJob.id}`);
-    }
-
-    fineTuningMetrics = {
-      ...fineTuningMetrics,
-      loraMetrics: isRecord(finalLoraJob.metrics) ? finalLoraJob.metrics : {},
-      completedAt: new Date().toISOString(),
-    };
-    const loraMetrics = isRecord(finalLoraJob.metrics) ? finalLoraJob.metrics : {};
-    const datasetMetrics = isRecord(fineTuningMetrics.dataset)
-      ? fineTuningMetrics.dataset
-      : {};
-    const holdoutCount = typeof datasetMetrics.holdout === 'number'
-      ? datasetMetrics.holdout
-      : 0;
-    const datasetManifestHash = typeof datasetMetrics.datasetManifestHash === 'string'
-      ? datasetMetrics.datasetManifestHash
-      : null;
-    const hasStableEvalArtifact = holdoutCount > 0 && Boolean(datasetManifestHash);
-    const evaluationStatus = hasStableEvalArtifact
-      ? resolveEvaluationStatus(
-          loraMetrics,
-          runnerConfig.evalMaxLoss
-        )
-      : 'failed';
-    if (!hasStableEvalArtifact) {
-      fineTuningMetrics = {
-        ...fineTuningMetrics,
-        evaluation: {
-          status: 'failed',
-          reason: 'missing_holdout_or_dataset_manifest',
-          holdoutCount,
-          datasetManifestHash,
-          at: new Date().toISOString(),
-        },
-      };
-    }
-    const autoPromotionBlockedByApprovalGates = (
-      fineTuningJob.runSource === 'scheduled'
-      && runnerConfig.autoPromoteScheduled
-      && runnerConfig.requireApprovalGatesForPromotion
-      && evaluationStatus === 'passed'
+    const orchestrationContext = {
+      fineTuningJobId: fineTuningJob.id,
+      tenantId: fineTuningJob.tenantId,
+      runId: params.payload.runId,
+      idempotencyKey: params.payload.idempotencyKey,
+      runSource: fineTuningJob.runSource,
+    } as const;
+    const prepareAttempt = await params.gpuOrchestrationClient.prepareTrainingRuntime(orchestrationContext);
+    const preparedResult = appendOrchestrationAttempt(
+      fineTuningMetrics,
+      mutableSnapshot,
+      prepareAttempt,
     );
-    if (autoPromotionBlockedByApprovalGates) {
-      fineTuningMetrics = {
-        ...fineTuningMetrics,
-        promotion: {
-          autoPromoteScheduled: true,
-          status: 'waiting_approvals',
-          reason: 'promotion_approval_gates_required',
-          at: new Date().toISOString(),
-        },
-      };
-    }
-    const autoPromotionEnabled = fineTuningJob.runSource === 'scheduled'
-      && runnerConfig.autoPromoteScheduled
-      && !autoPromotionBlockedByApprovalGates;
-    const promotionStatus = resolveFineTuningPromotionStatus({
-      evaluationStatus,
-      requireEvalPassedForPromotion: runnerConfig.requireEvalPassedForPromotion,
-    });
-
+    fineTuningMetrics = preparedResult.metrics;
+    mutableSnapshot = preparedResult.snapshot;
     await params.db.update(schema.fineTuningJobs)
       .set({
-        status: 'completed',
-        progress: 100,
-        resultModel: finalLoraJob.resultAdapterPath,
-        trainingDataCount: finalLoraJob.datasetCount ?? undefined,
-        validationDataCount: finalLoraJob.validationCount ?? undefined,
-        completadoEm: new Date(),
+        configSnapshot: mutableSnapshot,
         metrics: fineTuningMetrics,
-        evaluationStatus,
-        promotionStatus,
       })
       .where(eq(schema.fineTuningJobs.id, fineTuningJob.id));
 
-    if (autoPromotionEnabled && evaluationStatus === 'passed') {
-      try {
-        await promoteFineTuningJobAsActive({
-          db: params.db,
-          fineTuningJob,
-          metrics: fineTuningMetrics,
-        });
-      } catch (promotionError) {
-        const message = promotionError instanceof Error
-          ? promotionError.message
-          : String(promotionError);
+    let executionFailed = false;
+    let restoreFailureMessage: string | null = null;
+    try {
+      if (!prepareAttempt.success) {
+        const message = prepareAttempt.error ?? 'Falha desconhecida ao preparar runtime GPU para treinamento';
+        throw new Error(`Preempção automática não concluída: ${message}`);
+      }
+
+      await processLoraJob(loraJob.id, {
+        sliceSteps: runnerConfig.sliceSteps,
+        gpuTimeoutMs: runnerConfig.gpuTimeoutMs,
+        gpuPriority: runnerConfig.runPriority,
+        datasetMaxRows: runnerConfig.datasetMaxRows,
+        trainEvalSplitRatio: runnerConfig.trainEvalSplitRatio,
+        minDatasetSize: runnerConfig.minDatasetSize,
+        seed: runnerConfig.seed,
+        includeImages: runnerConfig.includeImages,
+        includeTradingDataset: runnerConfig.includeTradingDataset,
+        agentId: runnerConfig.scope.agentId ?? undefined,
+        domain: runnerConfig.scope.domain ?? undefined,
+        hyperparametersOverride: runnerConfig.hyperparameters,
+        onDatasetPrepared: async (manifest: PreparedDatasetManifest) => {
+          const nowIso = new Date().toISOString();
+          mutableSnapshot = {
+            ...mutableSnapshot,
+            datasetManifest: {
+              generatedAt: nowIso,
+              seed: runnerConfig.seed,
+              splitPolicy: manifest.splitPolicy,
+              manifestHash: manifest.manifestHash,
+              trainingRowIds: manifest.trainingRowIds,
+              validationRowIds: manifest.validationRowIds,
+              holdoutRowIds: manifest.holdoutRowIds,
+              datasetRowIds: manifest.datasetIds,
+              total: manifest.total,
+              training: manifest.training,
+              validation: manifest.validation,
+              holdout: manifest.holdout,
+            },
+          };
+          fineTuningMetrics = {
+            ...fineTuningMetrics,
+            dataset: {
+              total: manifest.total,
+              training: manifest.training,
+              validation: manifest.validation,
+              holdout: manifest.holdout,
+              splitPolicy: manifest.splitPolicy,
+              datasetManifestHash: manifest.manifestHash,
+              imagesUsed: manifest.imagesUsed,
+            },
+          };
+          await params.db.update(schema.fineTuningJobs)
+            .set({
+              trainingDataCount: manifest.training,
+              validationDataCount: manifest.validation,
+              configSnapshot: mutableSnapshot,
+              metrics: fineTuningMetrics,
+            })
+            .where(eq(schema.fineTuningJobs.id, fineTuningJob.id));
+        },
+        onProgress: async (progress) => {
+          const nextStatus = mapStatusForFineTuning(progress.status);
+          const nowIso = new Date().toISOString();
+          fineTuningMetrics = {
+            ...fineTuningMetrics,
+            progress: {
+              status: progress.status ?? null,
+              progress: progress.progress ?? null,
+              currentStep: progress.currentStep ?? null,
+              totalSteps: progress.totalSteps ?? null,
+              updatedAt: nowIso,
+            },
+            adapterPath: progress.adapterPath ?? (fineTuningMetrics.adapterPath as string | null) ?? null,
+          };
+
+          await params.db.update(schema.fineTuningJobs)
+            .set({
+              status: nextStatus ?? undefined,
+              progress: progress.progress ?? undefined,
+              resultModel: progress.adapterPath ?? undefined,
+              iniciadoEm: nextStatus && nextStatus !== 'pending' ? startedAt : undefined,
+              completadoEm: nextStatus === 'completed' ? new Date() : undefined,
+              metrics: fineTuningMetrics,
+              evaluationStatus: nextStatus === 'validating' ? 'running' : undefined,
+            })
+            .where(eq(schema.fineTuningJobs.id, fineTuningJob.id));
+        },
+      });
+
+      const finalLoraJob = await params.db.query.loraJobs.findFirst({
+        where: eq(schema.loraJobs.id, loraJob.id),
+        columns: {
+          resultAdapterPath: true,
+          datasetCount: true,
+          validationCount: true,
+          metrics: true,
+        },
+      });
+      if (!finalLoraJob?.resultAdapterPath) {
+        throw new Error(`Adapter final ausente para lora_job ${loraJob.id}`);
+      }
+
+      fineTuningMetrics = {
+        ...fineTuningMetrics,
+        loraMetrics: isRecord(finalLoraJob.metrics) ? finalLoraJob.metrics : {},
+        completedAt: new Date().toISOString(),
+      };
+      const loraMetrics = isRecord(finalLoraJob.metrics) ? finalLoraJob.metrics : {};
+      const datasetMetrics = isRecord(fineTuningMetrics.dataset)
+        ? fineTuningMetrics.dataset
+        : {};
+      const holdoutCount = typeof datasetMetrics.holdout === 'number'
+        ? datasetMetrics.holdout
+        : 0;
+      const datasetManifestHash = typeof datasetMetrics.datasetManifestHash === 'string'
+        ? datasetMetrics.datasetManifestHash
+        : null;
+      const hasStableEvalArtifact = holdoutCount > 0 && Boolean(datasetManifestHash);
+      const evaluationStatus = hasStableEvalArtifact
+        ? resolveEvaluationStatus(
+            loraMetrics,
+            runnerConfig.evalMaxLoss
+          )
+        : 'failed';
+      if (!hasStableEvalArtifact) {
+        fineTuningMetrics = {
+          ...fineTuningMetrics,
+          evaluation: {
+            status: 'failed',
+            reason: 'missing_holdout_or_dataset_manifest',
+            holdoutCount,
+            datasetManifestHash,
+            at: new Date().toISOString(),
+          },
+        };
+      }
+      const autoPromotionBlockedByApprovalGates = (
+        fineTuningJob.runSource === 'scheduled'
+        && runnerConfig.autoPromoteScheduled
+        && runnerConfig.requireApprovalGatesForPromotion
+        && evaluationStatus === 'passed'
+      );
+      if (autoPromotionBlockedByApprovalGates) {
         fineTuningMetrics = {
           ...fineTuningMetrics,
           promotion: {
             autoPromoteScheduled: true,
-            status: 'failed',
-            error: message,
+            status: 'waiting_approvals',
+            reason: 'promotion_approval_gates_required',
             at: new Date().toISOString(),
           },
         };
-        await params.db.update(schema.fineTuningJobs)
-          .set({
-            metrics: fineTuningMetrics,
-            promotionStatus: 'failed_activation',
-          })
-          .where(eq(schema.fineTuningJobs.id, fineTuningJob.id));
+      }
+      const autoPromotionEnabled = fineTuningJob.runSource === 'scheduled'
+        && runnerConfig.autoPromoteScheduled
+        && !autoPromotionBlockedByApprovalGates;
+      const promotionStatus = resolveFineTuningPromotionStatus({
+        evaluationStatus,
+        requireEvalPassedForPromotion: runnerConfig.requireEvalPassedForPromotion,
+      });
 
-        runnerLogger.error(
-          { fineTuningJobId: fineTuningJob.id, error: message },
-          'Promocao automatica de modelo falhou'
-        );
+      await params.db.update(schema.fineTuningJobs)
+        .set({
+          status: 'completed',
+          progress: 100,
+          resultModel: finalLoraJob.resultAdapterPath,
+          trainingDataCount: finalLoraJob.datasetCount ?? undefined,
+          validationDataCount: finalLoraJob.validationCount ?? undefined,
+          completadoEm: new Date(),
+          metrics: fineTuningMetrics,
+          evaluationStatus,
+          promotionStatus,
+        })
+        .where(eq(schema.fineTuningJobs.id, fineTuningJob.id));
+
+      if (autoPromotionEnabled && evaluationStatus === 'passed') {
+        try {
+          await promoteFineTuningJobAsActive({
+            db: params.db,
+            fineTuningJob,
+            metrics: fineTuningMetrics,
+          });
+        } catch (promotionError) {
+          const message = promotionError instanceof Error
+            ? promotionError.message
+            : String(promotionError);
+          fineTuningMetrics = {
+            ...fineTuningMetrics,
+            promotion: {
+              autoPromoteScheduled: true,
+              status: 'failed',
+              error: message,
+              at: new Date().toISOString(),
+            },
+          };
+          await params.db.update(schema.fineTuningJobs)
+            .set({
+              metrics: fineTuningMetrics,
+              promotionStatus: 'failed_activation',
+            })
+            .where(eq(schema.fineTuningJobs.id, fineTuningJob.id));
+
+          runnerLogger.error(
+            { fineTuningJobId: fineTuningJob.id, error: message },
+            'Promocao automatica de modelo falhou'
+          );
+        }
+      }
+
+      runnerLogger.info(
+        {
+          fineTuningJobId: fineTuningJob.id,
+          loraJobId: loraJob.id,
+          resultAdapterPath: finalLoraJob.resultAdapterPath,
+        },
+        'TrainingRunner concluiu execucao de fine-tuning'
+      );
+    } catch (executionError) {
+      executionFailed = true;
+      throw executionError;
+    } finally {
+      const restoreAttempt = await params.gpuOrchestrationClient.restoreServingRuntime(orchestrationContext);
+      const restoredResult = appendOrchestrationAttempt(
+        fineTuningMetrics,
+        mutableSnapshot,
+        restoreAttempt,
+      );
+      fineTuningMetrics = restoredResult.metrics;
+      mutableSnapshot = restoredResult.snapshot;
+      await params.db.update(schema.fineTuningJobs)
+        .set({
+          configSnapshot: mutableSnapshot,
+          metrics: fineTuningMetrics,
+        })
+        .where(eq(schema.fineTuningJobs.id, fineTuningJob.id));
+
+      if (!restoreAttempt.success) {
+        const restoreMessage = restoreAttempt.error ?? 'Falha desconhecida ao restaurar serving';
+        if (executionFailed) {
+          runnerLogger.error(
+            {
+              fineTuningJobId: fineTuningJob.id,
+              runId: params.payload.runId,
+              error: restoreMessage,
+            },
+            'Restauração automática de serving falhou após erro de execução do treino'
+          );
+        } else {
+          restoreFailureMessage = restoreMessage;
+        }
       }
     }
 
-    runnerLogger.info(
-      {
-        fineTuningJobId: fineTuningJob.id,
-        loraJobId: loraJob.id,
-        resultAdapterPath: finalLoraJob.resultAdapterPath,
-      },
-      'TrainingRunner concluiu execucao de fine-tuning'
-    );
+    if (restoreFailureMessage) {
+      throw new Error(`Restauração automática de serving não concluída: ${restoreFailureMessage}`);
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     runnerLogger.error(
