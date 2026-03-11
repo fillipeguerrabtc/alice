@@ -4,67 +4,99 @@
 **Data:** 11 de Marco de 2026
 
 ## Rodada Atual
-- Rodada: 2
+- Rodada: 3
 - Status: Concluída
 
-## Objetivo
-Criar persistência durável para estado e eventos de runtime GPU com auditoria operacional no banco PostgreSQL.
+## Rodada 3 - Início
 
-## Premissas
-- Persistência durável deve ser SSOT para estado operacional de runtime GPU.
-- Tabelas alvo desta rodada:
-  - `gpu_runtime_state`
-  - `gpu_runtime_events`
-- Escopo restrito a schema + migration + camada de leitura/escrita no `gpu-manager-service`.
-- Sem alterações de transição real de containers, UI ou workflows.
+### Objetivo
+Implementar a FSM canônica de orquestração GPU no `gpu-manager-service` com endpoints operacionais e integração com persistência durável.
 
-## Escopo da Rodada
-- Adicionar entidades no schema compartilhado (`packages/shared/src/schema.ts`).
-- Criar migration SQL real com próximo número disponível em `migrations/`.
-- Incluir índices e constraints para operação e auditoria.
-- Implementar camada de acesso no `gpu-manager-service` para leitura/escrita do estado durável.
-- Cobrir com testes do escopo.
+### Premissas
+- Estados canônicos obrigatórios:
+  - `serving_ready`
+  - `serving_draining`
+  - `training_starting`
+  - `training_active`
+  - `training_finishing`
+  - `serving_restoring`
+  - `error`
+- Runtime mutuamente exclusivo:
+  - serving = `gpu-llm` + `gpu-embeddings`
+  - training = `gpu-trainer`
+- Manter compatibilidade com integrações internas existentes.
+- Ainda sem avisos de chat e sem alterações de UI Training nesta rodada.
 
-## Alterações
-- `packages/shared/src/schema.ts`:
-  - Novos enums de runtime GPU: `gpu_runtime_mode`, `gpu_orchestrator_state`, `gpu_orchestration_mode`, `gpu_runtime_event_type`, `gpu_runtime_trigger_source`, `gpu_runtime_event_outcome`.
-  - Novas entidades duráveis: `gpu_runtime_state` e `gpu_runtime_events`.
-  - Índices operacionais e de auditoria para leitura de estado atual, histórico temporal e filtros por `requestId`/`correlationId`.
-  - Relations e tipos exportados para uso seguro no ecossistema.
-- `migrations/0106_gpu_runtime_state_and_events.sql`:
-  - Migration real com criação de enums, tabelas, constraints e índices.
-  - Constraints de integridade para evitar chaves vazias e garantir formato JSON válido (`array`/`object`) nos campos críticos.
-  - Índice parcial para erros (`idx_gpu_runtime_events_failed_only`) visando troubleshooting operacional.
-- `apps/gpu-manager-service/src/gpu-runtime-state-store.ts`:
-  - Nova camada de acesso durável com transação única para snapshot + evento.
-  - Leitura do estado corrente com histórico (`getCurrentStateWithEvents`) e escrita auditável (`recordSnapshot`).
-  - Mapeamento de estado do orquestrador para modo de runtime e serviços ativos.
+### Escopo
+- Refatorar `apps/gpu-manager-service/src/gpu-orchestrator.ts` para FSM canônica.
+- Expor endpoints:
+  - `GET /api/gpu/orchestrator/state`
+  - `POST /api/gpu/orchestrator/prepare-training`
+  - `POST /api/gpu/orchestrator/restore-serving`
+- Manter `POST /api/gpu/orchestrator/return` como alias legado compatível.
+- Integrar FSM com persistência durável criada na rodada anterior.
+- Adicionar auth interna e autorização para controle de orquestração.
+- Incluir métricas e logs de transição.
+- Atualizar OpenAPI.
+
+## Rodada 3 - Conclusão
+
+### Alterações
+- `apps/gpu-manager-service/src/gpu-orchestrator.ts`:
+  - Implementada FSM canônica com transições explícitas e listener de transição.
+  - Novas ações canônicas:
+    - `prepareTrainingRuntime()`
+    - `restoreServingRuntime()`
+  - Sem retorno automático por timeout/idle.
+  - Mantidos aliases legados:
+    - `switchToTraining()`
+    - `switchToLlmEmbeddings()`
 - `apps/gpu-manager-service/src/index.ts`:
-  - Integração da persistência em pontos críticos:
-    - startup (`state_snapshot`);
-    - preempção por fila (`switch_requested`, `switch_completed`, `switch_failed`);
-    - restore manual (`manual_restore_requested`, `manual_restore_completed`, `manual_restore_failed`);
-    - endpoint de estado com seed inicial quando necessário.
-  - Normalização defensiva de `actorUserId`/`actorTenantId` (UUID) e captura de `correlationId`.
-- `tests/unit/services/gpu-runtime-persistence-guards.test.ts`:
-  - Guardas para schema, migration, caminho transacional e integração no `gpu-manager-service`.
-- `apps/gpu-manager-service/package.json` + `pnpm-lock.yaml`:
-  - Inclusão de `@alice/database` no serviço para resolver build e garantir linking correto no workspace.
+  - Integração da FSM com persistência durável em transições manuais e por fila.
+  - Endpoints canônicos adicionados:
+    - `GET /api/gpu/orchestrator/state`
+    - `POST /api/gpu/orchestrator/prepare-training`
+    - `POST /api/gpu/orchestrator/restore-serving`
+  - Alias legado mantido:
+    - `POST /api/gpu/orchestrator/return` (com header de depreciação).
+  - Adicionado middleware de autorização para controle de orquestração com RBAC (`admin`/`super_admin`/`superadmin`) mantendo compatibilidade para chamadas internas legadas sem contexto de usuário.
+  - Registro de transições da FSM em métricas e trilha de auditoria durável.
+- `apps/gpu-manager-service/src/gpu-runtime-state-store.ts`:
+  - Mapeamentos atualizados para os novos estados canônicos e serviços ativos.
+- `apps/gpu-manager-service/src/gpu-metrics.ts`:
+  - Novas métricas:
+    - `gpu_orchestrator_transitions_total`
+    - `gpu_orchestrator_transition_duration_seconds`
+    - `gpu_orchestrator_state`
+- `apps/gpu-manager-service/src/openapi-specs.ts`:
+  - Contratos OpenAPI dos endpoints canônicos adicionados.
+  - Alias `/return` marcado como legado/deprecated.
+- `packages/shared/src/schema.ts`:
+  - Enum `gpu_orchestrator_state` expandido com estados canônicos e preservação dos estados legados para compatibilidade histórica.
+  - Default de `gpu_runtime_state.orchestrator_state` atualizado para `serving_ready`.
+- `migrations/0107_gpu_orchestrator_fsm_states.sql`:
+  - Migration para adicionar estados canônicos no enum PostgreSQL.
+  - Backfill de valores legados para equivalentes canônicos em `gpu_runtime_state` e `gpu_runtime_events`.
+  - Default de `orchestrator_state` ajustado para `serving_ready`.
+- `tests/unit/gpu-orchestrator-compose-fallback.test.ts`:
+  - Ajustado para nova sequência de comandos e estado final `training_active`.
+- `tests/unit/gpu-orchestrator-fsm.test.ts`:
+  - Novos testes cobrindo transições principais de sucesso e erro da FSM.
 
-## Inventário de Acoplamentos Qwen2.5 (Contexto)
-- Sem alterações nesta rodada.
-- Mantida a estratégia de compatibilidade histórica definida na Rodada 1 (leitura de legados Qwen2.5 via camada SSOT de modelos).
+### Inventário de Acoplamentos Qwen2.5
+- Sem novos acoplamentos introduzidos na Rodada 3.
+- Compatibilidade histórica com registros legados permanece suportada via enums e resolução de estado/modelo definida nas rodadas anteriores.
 
-## Validações
+### Validações
 Executadas em sequência, sem paralelização:
 1. `typecheck` (`cmd.exe /c pnpm typecheck`) -> OK
-2. `testes` (`cmd.exe /c pnpm test`) -> OK (121 arquivos, 1356 testes)
+2. `testes` (`cmd.exe /c pnpm test`) -> OK (122 arquivos, 1359 testes)
 3. `eslint` (`cmd.exe /c pnpm lint`) -> OK
 4. `build` (`cmd.exe /c pnpm build`) -> OK
 
-## Riscos
-- Introdução de persistência durável no caminho do `gpu-manager-service` exige tratamento fail-safe para não degradar fluxo crítico de fila.
-- Ainda falta, em rodadas futuras, conectar essa persistência a uma FSM completa de transição de runtime e a notificações de chat/frontend.
+### Riscos
+- A estratégia de autorização preserva compatibilidade para chamadas internas sem contexto de usuário; endurecimento total (bloqueio estrito sem contexto RBAC) deve ser planejado com rollout coordenado para não quebrar integrações atuais.
+- Notificação de interrupção/restauração para chats ativos ainda pendente para rodada futura.
 
-## Próximo Passo
-Aguardar prompt da próxima rodada para iniciar FSM de orquestração GPU e integração de interrupção/restauração com fluxos de chat/training.
+### Próximo Passo
+Aguardar prompt da próxima rodada para integração de notificação de chat, fluxo de UI Training e demais etapas de orquestração fim-a-fim.

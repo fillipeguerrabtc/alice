@@ -25,23 +25,23 @@ type RuntimeMode = typeof schema.gpuRuntimeModeEnum.enumValues[number];
 type OrchestrationMode = typeof schema.gpuOrchestrationModeEnum.enumValues[number];
 
 function mapOrchestratorStateToRuntimeMode(orchestratorState: OrchestratorState): RuntimeMode {
-  if (orchestratorState === 'training') return 'training';
-  if (orchestratorState === 'switching_to_training') return 'switching_to_training';
-  if (orchestratorState === 'switching_to_llm') return 'switching_to_serving';
+  if (orchestratorState === 'serving_ready') return 'serving';
+  if (orchestratorState === 'serving_draining' || orchestratorState === 'training_starting') return 'switching_to_training';
+  if (orchestratorState === 'training_active') return 'training';
+  if (orchestratorState === 'training_finishing' || orchestratorState === 'serving_restoring') return 'switching_to_serving';
   return 'serving';
 }
 
 function deriveActiveServices(orchestratorState: OrchestratorState): string[] {
-  if (orchestratorState === 'training') {
+  if (orchestratorState === 'training_active' || orchestratorState === 'training_starting' || orchestratorState === 'training_finishing') {
     return ['training'];
   }
 
-  if (orchestratorState === 'switching_to_training' || orchestratorState === 'switching_to_llm') {
-    // Transição operacional: ambos podem coexistir por curto período.
-    return ['llm', 'embeddings', 'training'];
+  if (orchestratorState === 'serving_ready' || orchestratorState === 'serving_restoring' || orchestratorState === 'serving_draining') {
+    return ['llm', 'embeddings'];
   }
 
-  return ['llm', 'embeddings'];
+  return [];
 }
 
 export interface RuntimeSnapshotInput {

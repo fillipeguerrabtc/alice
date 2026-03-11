@@ -51,6 +51,28 @@ export function createGpuManagerMetrics(registry: Registry) {
     registers: [registry],
   });
 
+  const gpuOrchestratorTransitionsTotal = new Counter({
+    name: 'gpu_orchestrator_transitions_total',
+    help: 'Total de transições de estado da FSM de orquestração GPU',
+    labelNames: ['from_state', 'to_state', 'trigger', 'outcome'] as const,
+    registers: [registry],
+  });
+
+  const gpuOrchestratorTransitionDurationSeconds = new Histogram({
+    name: 'gpu_orchestrator_transition_duration_seconds',
+    help: 'Duração das operações de transição da FSM de orquestração GPU',
+    labelNames: ['action', 'trigger', 'outcome'] as const,
+    buckets: [0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 30, 60, 120],
+    registers: [registry],
+  });
+
+  const gpuOrchestratorState = new Gauge({
+    name: 'gpu_orchestrator_state',
+    help: 'Estado atual da FSM de orquestração GPU (one-hot por label state)',
+    labelNames: ['state'] as const,
+    registers: [registry],
+  });
+
   return {
     gpuVramTotalBytes,
     gpuVramUsedBytes,
@@ -59,5 +81,8 @@ export function createGpuManagerMetrics(registry: Registry) {
     gpuManagerQueueDepth,
     gpuManagerQueueWaitDuration,
     gpuManagerRejectionsTotal,
+    gpuOrchestratorTransitionsTotal,
+    gpuOrchestratorTransitionDurationSeconds,
+    gpuOrchestratorState,
   };
 }

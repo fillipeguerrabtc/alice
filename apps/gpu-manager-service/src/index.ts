@@ -59,10 +59,14 @@ import { randomUUID } from 'crypto';
 import {
   isOrchestratorAvailable,
   getOrchestratorState,
-  switchToTraining,
-  switchToLlmEmbeddings,
-  reportTrainingActivity,
+  isTrainingRuntimeState,
+  onOrchestratorTransition,
+  prepareTrainingRuntime,
+  restoreServingRuntime,
   shutdownOrchestrator,
+  type OrchestratorState,
+  type OrchestratorTransition,
+  type OrchestratorTransitionTrigger,
   GPU_ORCHESTRATION_MODE,
 } from './gpu-orchestrator.js';
 import {
@@ -185,6 +189,136 @@ async function persistRuntimeSnapshot(params: {
       },
       'Falha ao persistir snapshot/evento de runtime GPU'
     );
+  }
+}
+
+const ORCHESTRATOR_ALLOWED_ROLES = new Set(['admin', 'super_admin', 'superadmin']);
+const ORCHESTRATOR_STATES: OrchestratorState[] = [
+  'serving_ready',
+  'serving_draining',
+  'training_starting',
+  'training_active',
+  'training_finishing',
+  'serving_restoring',
+  'error',
+];
+
+function readHeaderStringValue(headerValue: string | string[] | undefined): string | undefined {
+  if (typeof headerValue === 'string') {
+    const normalized = headerValue.trim();
+    return normalized.length > 0 ? normalized : undefined;
+  }
+
+  if (Array.isArray(headerValue) && headerValue.length > 0) {
+    const first = headerValue[0];
+    if (typeof first === 'string') {
+      const normalized = first.trim();
+      return normalized.length > 0 ? normalized : undefined;
+    }
+  }
+
+  return undefined;
+}
+
+function normalizeInternalRole(role: string | undefined): string | undefined {
+  if (!role) return undefined;
+  return role.trim().toLowerCase();
+}
+
+function requireOrchestratorControlAuthorization(req: Request, res: Response, next: NextFunction): void {
+  const actorUserId = readHeaderStringValue(req.headers['x-internal-user-id']);
+  const actorRoleRaw = readHeaderStringValue(req.headers['x-internal-role']);
+  const actorRole = normalizeInternalRole(actorRoleRaw);
+
+  // Compatibilidade: chamadas internas legado (service-to-service) sem contexto de usuário continuam válidas.
+  if (!actorUserId && !actorRole) {
+    return next();
+  }
+
+  if (!actorUserId || !actorRole || !ORCHESTRATOR_ALLOWED_ROLES.has(actorRole)) {
+    logger.warn(
+      {
+        path: req.path,
+        actorUserId: actorUserId ?? null,
+        actorRole: actorRole ?? null,
+      },
+      'Acesso negado ao controle de orquestração GPU (role insuficiente)',
+    );
+    res.status(403).json({ error: 'Permissão insuficiente para controle de orquestração GPU' });
+    return;
+  }
+
+  next();
+}
+
+function resolveRuntimeTriggerSource(trigger: OrchestratorTransitionTrigger): RuntimePersistenceTriggerSource {
+  if (trigger === 'queue_request') return 'queue_request';
+  if (trigger === 'manual_api') return 'manual_api';
+  if (trigger === 'startup') return 'startup';
+  return 'system';
+}
+
+function trackOrchestratorStateGauge(state: OrchestratorState): void {
+  for (const candidate of ORCHESTRATOR_STATES) {
+    gpuOrchestratorState.set({ state: candidate }, candidate === state ? 1 : 0);
+  }
+}
+
+async function recordOrchestratorTransition(transition: OrchestratorTransition): Promise<void> {
+  const outcome = transition.toState === 'error' ? 'error' : 'success';
+  gpuOrchestratorTransitionsTotal.inc({
+    from_state: transition.fromState,
+    to_state: transition.toState,
+    trigger: transition.trigger,
+    outcome,
+  });
+  trackOrchestratorStateGauge(transition.toState);
+
+  await persistRuntimeSnapshot({
+    eventType: 'state_snapshot',
+    triggerSource: resolveRuntimeTriggerSource(transition.trigger),
+    outcome: outcome === 'error' ? 'error' : 'success',
+    reason: `FSM ${transition.fromState} -> ${transition.toState}: ${transition.reason}`,
+    metadata: {
+      transition: {
+        fromState: transition.fromState,
+        toState: transition.toState,
+        trigger: transition.trigger,
+        at: transition.at,
+      },
+    },
+  });
+}
+
+async function runOrchestratorAction(params: {
+  action: 'prepare_training' | 'restore_serving';
+  trigger: OrchestratorTransitionTrigger;
+  reason: string;
+}): Promise<void> {
+  const actionStart = Date.now();
+  try {
+    if (params.action === 'prepare_training') {
+      await prepareTrainingRuntime({
+        trigger: params.trigger,
+        reason: params.reason,
+      });
+    } else {
+      await restoreServingRuntime({
+        trigger: params.trigger,
+        reason: params.reason,
+      });
+    }
+
+    gpuOrchestratorTransitionDurationSeconds.observe(
+      { action: params.action, trigger: params.trigger, outcome: 'success' },
+      (Date.now() - actionStart) / 1000,
+    );
+  } catch (error) {
+    gpuOrchestratorTransitionDurationSeconds.observe(
+      { action: params.action, trigger: params.trigger, outcome: 'error' },
+      (Date.now() - actionStart) / 1000,
+    );
+    throw error;
   }
 }
 
@@ -672,7 +806,11 @@ async function processGpuRequest(request: GpuRequest): Promise<GpuResponse> {
           metadata: { serviceType },
         });
         try {
-          await switchToTraining();
+          await runOrchestratorAction({
+            action: 'prepare_training',
+            trigger: 'queue_request',
+            reason: 'Treinamento solicitado pela fila GPU',
+          });
           await persistRuntimeSnapshot({
             eventType: 'switch_completed',
             triggerSource: 'queue_request',
@@ -697,43 +835,10 @@ async function processGpuRequest(request: GpuRequest): Promise<GpuResponse> {
           });
           throw error;
         }
-      } else if (serviceType === GpuServiceType.EMBEDDINGS && getOrchestratorState() === 'training' && GPU_ORCHESTRATION_MODE === 'preemptive') {
-        await persistRuntimeSnapshot({
-          eventType: 'switch_requested',
-          triggerSource: 'queue_request',
-          requestId: request.id,
-          correlationId,
-          reason: 'Embeddings solicitado durante training no modo preemptive',
-          actorUserId: request.userId,
-          actorTenantId: request.tenantId,
-          metadata: { serviceType },
-        });
-        try {
-          await switchToLlmEmbeddings();
-          await persistRuntimeSnapshot({
-            eventType: 'switch_completed',
-            triggerSource: 'queue_request',
-            requestId: request.id,
-            correlationId,
-            reason: 'Runtime GPU retornado para serving após requisição de embeddings',
-            actorUserId: request.userId,
-            actorTenantId: request.tenantId,
-            metadata: { serviceType },
-          });
-        } catch (error) {
-          await persistRuntimeSnapshot({
-            eventType: 'switch_failed',
-            triggerSource: 'queue_request',
-            outcome: 'error',
-            requestId: request.id,
-            correlationId,
-            reason: error instanceof Error ? error.message : String(error),
-            actorUserId: request.userId,
-            actorTenantId: request.tenantId,
-            metadata: { serviceType },
-          });
-          throw error;
-        }
+      } else if (isTrainingRuntimeState(getOrchestratorState())) {
+        throw new Error(
+          `GPU_RUNTIME_TRAINING_ACTIVE: inferencia indisponivel durante treinamento (serviceType=${serviceType})`,
+        );
       }
     } else if (serviceType === GpuServiceType.TRAINING) {
       const trainerReachable = await isTrainingServiceReachable();
@@ -906,8 +1011,55 @@ async function startQueueWorker(): Promise<void> {
           const resultKey = `${REDIS_QUEUE_PREFIX}:result:${request.id}`;
           await redis.setEx(resultKey, 300, JSON.stringify(response)); // 5 min TTL
 
-          if (serviceType === GpuServiceType.TRAINING && response.success && orchestratorAvailable) {
-            reportTrainingActivity();
+          if (serviceType === GpuServiceType.TRAINING && orchestratorAvailable) {
+            const correlationId = readCorrelationIdFromHeaders(request.headers);
+            await persistRuntimeSnapshot({
+              eventType: 'switch_requested',
+              triggerSource: 'queue_request',
+              requestId: request.id,
+              correlationId,
+              reason: 'Treinamento finalizado na fila GPU; iniciando restore de serving',
+              actorUserId: request.userId,
+              actorTenantId: request.tenantId,
+              metadata: { serviceType, phase: 'post_training_restore' },
+            });
+
+            try {
+              await runOrchestratorAction({
+                action: 'restore_serving',
+                trigger: 'queue_request',
+                reason: 'Treinamento finalizado na fila GPU',
+              });
+              await persistRuntimeSnapshot({
+                eventType: 'switch_completed',
+                triggerSource: 'queue_request',
+                requestId: request.id,
+                correlationId,
+                reason: 'Serving restaurado ao final do treinamento',
+                actorUserId: request.userId,
+                actorTenantId: request.tenantId,
+                metadata: { serviceType, phase: 'post_training_restore' },
+              });
+            } catch (restoreError) {
+              await persistRuntimeSnapshot({
+                eventType: 'switch_failed',
+                triggerSource: 'queue_request',
+                outcome: 'error',
+                requestId: request.id,
+                correlationId,
+                reason: restoreError instanceof Error ? restoreError.message : String(restoreError),
+                actorUserId: request.userId,
+                actorTenantId: request.tenantId,
+                metadata: { serviceType, phase: 'post_training_restore' },
+              });
+              logger.error(
+                {
+                  requestId: request.id,
+                  restoreError,
+                },
+                'Falha ao restaurar serving apos conclusão de treinamento',
+              );
+            }
           }
           logger.info({
             requestId: request.id,
@@ -1163,7 +1315,23 @@ app.get('/api/gpu/queue/:requestId', requireInternalAuth, asyncHandler(async (re
   res.json(response);
 }));
 
-// Orquestrador: estado e retorno manual
+type OrchestratorActorContext = {
+  requestId: string;
+  actorUserId: string | undefined;
+  actorTenantId: string | undefined;
+  correlationId: string | undefined;
+};
+
+function buildOrchestratorActorContext(req: Request): OrchestratorActorContext {
+  return {
+    requestId: randomUUID(),
+    actorUserId: readHeaderStringValue(req.headers['x-internal-user-id']),
+    actorTenantId: readHeaderStringValue(req.headers['x-internal-tenant-id']),
+    correlationId: readHeaderStringValue(req.headers['x-correlation-id']),
+  };
+}
+
+// Orquestrador: estado e controles canônicos
 app.get('/api/gpu/orchestrator/state', requireInternalAuth, asyncHandler(async (_req: Request, res: Response) => {
   const snapshot = await gpuRuntimeStateStore.getCurrentStateWithEvents(10);
   if (!snapshot.state) {
@@ -1177,63 +1345,168 @@ app.get('/api/gpu/orchestrator/state', requireInternalAuth, asyncHandler(async (
 
   res.json({
     state: getOrchestratorState(),
+    fsmState: getOrchestratorState(),
     orchestratorAvailable,
     orchestrationMode: GPU_ORCHESTRATION_MODE,
+    durableState: snapshot.state,
+    recentEvents: snapshot.events,
   });
 }));
 
-app.post('/api/gpu/orchestrator/return', requireInternalAuth, asyncHandler(async (req: Request, res: Response) => {
-  if (GPU_ORCHESTRATION_MODE === 'simultaneous') {
-    trackGpuRejection(GpuServiceType.TRAINING, 'simultaneous_policy');
-    return res.status(409).json({ error: 'Operação bloqueada: modo simultaneous proíbe stop/start de containers GPU' });
-  }
-  if (!orchestratorAvailable || GPU_ORCHESTRATION_MODE !== 'preemptive') {
+app.post('/api/gpu/orchestrator/prepare-training', requireInternalAuth, requireOrchestratorControlAuthorization, asyncHandler(async (req: Request, res: Response) => {
+  if (!orchestratorAvailable) {
     return res.status(503).json({ error: 'Orquestrador não disponível' });
   }
-  const requestId = randomUUID();
-  const actorUserId = typeof req.headers['x-internal-user-id'] === 'string' ? req.headers['x-internal-user-id'] : undefined;
-  const actorTenantId = typeof req.headers['x-internal-tenant-id'] === 'string' ? req.headers['x-internal-tenant-id'] : undefined;
-  const correlationId = typeof req.headers['x-correlation-id'] === 'string' ? req.headers['x-correlation-id'] : undefined;
+  const actor = buildOrchestratorActorContext(req);
+
+  await persistRuntimeSnapshot({
+    eventType: 'switch_requested',
+    triggerSource: 'manual_api',
+    requestId: actor.requestId,
+    correlationId: actor.correlationId,
+    reason: 'Preparação manual da GPU para treinamento solicitada por operador',
+    actorUserId: actor.actorUserId,
+    actorTenantId: actor.actorTenantId,
+    metadata: { endpoint: '/api/gpu/orchestrator/prepare-training' },
+  });
+
+  try {
+    await runOrchestratorAction({
+      action: 'prepare_training',
+      trigger: 'manual_api',
+      reason: 'Preparação manual da GPU para treinamento',
+    });
+    await persistRuntimeSnapshot({
+      eventType: 'switch_completed',
+      triggerSource: 'manual_api',
+      requestId: actor.requestId,
+      correlationId: actor.correlationId,
+      reason: 'Preparação manual da GPU para treinamento concluída',
+      actorUserId: actor.actorUserId,
+      actorTenantId: actor.actorTenantId,
+      metadata: { endpoint: '/api/gpu/orchestrator/prepare-training' },
+    });
+  } catch (error) {
+    await persistRuntimeSnapshot({
+      eventType: 'switch_failed',
+      triggerSource: 'manual_api',
+      outcome: 'error',
+      requestId: actor.requestId,
+      correlationId: actor.correlationId,
+      reason: error instanceof Error ? error.message : String(error),
+      actorUserId: actor.actorUserId,
+      actorTenantId: actor.actorTenantId,
+      metadata: { endpoint: '/api/gpu/orchestrator/prepare-training' },
+    });
+    throw error;
+  }
+
+  res.json({ state: getOrchestratorState(), message: 'GPU preparada para treinamento' });
+}));
+
+app.post('/api/gpu/orchestrator/restore-serving', requireInternalAuth, requireOrchestratorControlAuthorization, asyncHandler(async (req: Request, res: Response) => {
+  if (!orchestratorAvailable) {
+    return res.status(503).json({ error: 'Orquestrador não disponível' });
+  }
+  const actor = buildOrchestratorActorContext(req);
 
   await persistRuntimeSnapshot({
     eventType: 'manual_restore_requested',
     triggerSource: 'manual_api',
-    requestId,
-    correlationId,
-    reason: 'Restore manual de inferência solicitado por operador',
-    actorUserId,
-    actorTenantId,
-    metadata: { endpoint: '/api/gpu/orchestrator/return' },
+    requestId: actor.requestId,
+    correlationId: actor.correlationId,
+    reason: 'Restore manual de serving solicitado por operador',
+    actorUserId: actor.actorUserId,
+    actorTenantId: actor.actorTenantId,
+    metadata: { endpoint: '/api/gpu/orchestrator/restore-serving' },
   });
 
   try {
-    await switchToLlmEmbeddings();
+    await runOrchestratorAction({
+      action: 'restore_serving',
+      trigger: 'manual_api',
+      reason: 'Restore manual de serving',
+    });
     await persistRuntimeSnapshot({
       eventType: 'manual_restore_completed',
       triggerSource: 'manual_api',
-      requestId,
-      correlationId,
-      reason: 'Restore manual de inferência concluído',
-      actorUserId,
-      actorTenantId,
-      metadata: { endpoint: '/api/gpu/orchestrator/return' },
+      requestId: actor.requestId,
+      correlationId: actor.correlationId,
+      reason: 'Restore manual de serving concluído',
+      actorUserId: actor.actorUserId,
+      actorTenantId: actor.actorTenantId,
+      metadata: { endpoint: '/api/gpu/orchestrator/restore-serving' },
     });
   } catch (error) {
     await persistRuntimeSnapshot({
       eventType: 'manual_restore_failed',
       triggerSource: 'manual_api',
       outcome: 'error',
-      requestId,
-      correlationId,
+      requestId: actor.requestId,
+      correlationId: actor.correlationId,
       reason: error instanceof Error ? error.message : String(error),
-      actorUserId,
-      actorTenantId,
-      metadata: { endpoint: '/api/gpu/orchestrator/return' },
+      actorUserId: actor.actorUserId,
+      actorTenantId: actor.actorTenantId,
+      metadata: { endpoint: '/api/gpu/orchestrator/restore-serving' },
     });
     throw error;
   }
 
-  res.json({ state: getOrchestratorState(), message: 'Retornado para LLM+Embeddings' });
+  res.json({ state: getOrchestratorState(), message: 'Serving restaurado com sucesso' });
+}));
+
+// Alias de compatibilidade legada.
+app.post('/api/gpu/orchestrator/return', requireInternalAuth, requireOrchestratorControlAuthorization, asyncHandler(async (req: Request, res: Response) => {
+  res.setHeader('X-Alice-Deprecated-Alias', '/api/gpu/orchestrator/restore-serving');
+
+  if (!orchestratorAvailable) {
+    return res.status(503).json({ error: 'Orquestrador não disponível' });
+  }
+  const actor = buildOrchestratorActorContext(req);
+
+  await persistRuntimeSnapshot({
+    eventType: 'manual_restore_requested',
+    triggerSource: 'manual_api',
+    requestId: actor.requestId,
+    correlationId: actor.correlationId,
+    reason: 'Restore manual de serving solicitado por alias legado',
+    actorUserId: actor.actorUserId,
+    actorTenantId: actor.actorTenantId,
+    metadata: { endpoint: '/api/gpu/orchestrator/return', aliasFor: '/api/gpu/orchestrator/restore-serving' },
+  });
+
+  try {
+    await runOrchestratorAction({
+      action: 'restore_serving',
+      trigger: 'manual_api',
+      reason: 'Restore manual de serving (alias legado /return)',
+    });
+    await persistRuntimeSnapshot({
+      eventType: 'manual_restore_completed',
+      triggerSource: 'manual_api',
+      requestId: actor.requestId,
+      correlationId: actor.correlationId,
+      reason: 'Restore manual de serving concluído por alias legado',
+      actorUserId: actor.actorUserId,
+      actorTenantId: actor.actorTenantId,
+      metadata: { endpoint: '/api/gpu/orchestrator/return', aliasFor: '/api/gpu/orchestrator/restore-serving' },
+    });
+  } catch (error) {
+    await persistRuntimeSnapshot({
+      eventType: 'manual_restore_failed',
+      triggerSource: 'manual_api',
+      outcome: 'error',
+      requestId: actor.requestId,
+      correlationId: actor.correlationId,
+      reason: error instanceof Error ? error.message : String(error),
+      actorUserId: actor.actorUserId,
+      actorTenantId: actor.actorTenantId,
+      metadata: { endpoint: '/api/gpu/orchestrator/return', aliasFor: '/api/gpu/orchestrator/restore-serving' },
+    });
+    throw error;
+  }
+
+  res.json({ state: getOrchestratorState(), message: 'Serving restaurado com sucesso' });
 }));
 
 // Streaming LLM (bypass fila - proxy direto com verificação de circuit breaker e VRAM)
@@ -1498,7 +1771,13 @@ const {
   gpuManagerQueueDepth,
   gpuManagerQueueWaitDuration,
   gpuManagerRejectionsTotal,
+  gpuOrchestratorTransitionsTotal,
+  gpuOrchestratorTransitionDurationSeconds,
+  gpuOrchestratorState,
 } = createGpuManagerMetrics(prometheus.registry);
+
+trackOrchestratorStateGauge(getOrchestratorState());
+onOrchestratorTransition((transition) => recordOrchestratorTransition(transition));
 
 // CORREÇÃO 26/12/2025: Usar contentType correto do registry (application/openmetrics-text)
 // Padrão consistente com packages/shared-utils/src/prometheus.ts linha 702

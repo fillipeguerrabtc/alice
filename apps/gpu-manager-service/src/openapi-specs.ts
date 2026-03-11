@@ -99,13 +99,36 @@ export const gpuManagerServicePaths = {
       },
     },
   },
-  '/api/gpu/orchestrator/return': {
+  '/api/gpu/orchestrator/prepare-training': {
     post: {
-      summary: 'Retornar orquestrador para LLM+Embeddings',
+      summary: 'Preparar runtime GPU para treinamento (FSM canônica)',
       tags: ['Orchestrator'],
       responses: {
-        200: { description: 'Retorno executado' },
-        409: { description: 'Operação bloqueada pela política de orquestração' },
+        200: { description: 'Runtime preparado para treinamento' },
+        403: { description: 'Permissão insuficiente (admin/superadmin)' },
+        503: { description: 'Orquestrador indisponível' },
+      },
+    },
+  },
+  '/api/gpu/orchestrator/restore-serving': {
+    post: {
+      summary: 'Restaurar runtime de serving (LLM + Embeddings)',
+      tags: ['Orchestrator'],
+      responses: {
+        200: { description: 'Serving restaurado' },
+        403: { description: 'Permissão insuficiente (admin/superadmin)' },
+        503: { description: 'Orquestrador indisponível' },
+      },
+    },
+  },
+  '/api/gpu/orchestrator/return': {
+    post: {
+      summary: 'Alias legado de restore-serving',
+      tags: ['Orchestrator'],
+      deprecated: true,
+      responses: {
+        200: { description: 'Serving restaurado' },
+        403: { description: 'Permissão insuficiente (admin/superadmin)' },
         503: { description: 'Orquestrador indisponível' },
       },
     },

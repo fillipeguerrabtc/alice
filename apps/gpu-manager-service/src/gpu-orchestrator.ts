@@ -1,22 +1,28 @@
 /**
- * GPU Orchestrator - Orquestração simplificada de containers GPU
+ * GPU Orchestrator - FSM canônica de orquestração GPU
  *
- * ABORDAGEM SIMPLES (menor latência):
- * - Troca apenas Embeddings ↔ Trainer (LLM permanece sempre ativo)
- * - Em modo simultaneous, embeddings não são parados; trainer sobe apenas sob demanda
- * - VRAM: LLM ~6GB + Trainer ~12GB ≈ 18GB < 20GB (coexistência viável)
+ * Estados canônicos:
+ * - serving_ready
+ * - serving_draining
+ * - training_starting
+ * - training_active
+ * - training_finishing
+ * - serving_restoring
+ * - error
  *
- * Estados:
- * - llm_embeddings: LLM + Embeddings ativos (padrão)
- * - training: LLM + Trainer ativos (embeddings parado)
+ * Regras operacionais:
+ * - serving = gpu-llm + gpu-embeddings
+ * - training = gpu-trainer
+ * - Sem retorno automático por timeout
+ * - Retorno para serving apenas por conclusão explícita do ciclo de treinamento
+ *   (chamador) ou por restore manual.
  *
- * Fluxo:
- * - Treino solicitado → para embeddings → sobe trainer
- * - RAG/embeddings durante treino → interrompe treino → volta embeddings
- * - 10 min idle pós-treino → volta automaticamente para embeddings
+ * Compatibilidade:
+ * - Mantém exports legados `switchToTraining` e `switchToLlmEmbeddings`
+ *   como aliases para os comandos canônicos.
  *
  * Autor: Fillipe Guerra
- * Data: 11 de Fevereiro de 2026
+ * Data: 11 de Março de 2026
  */
 
 import { exec } from 'child_process';
@@ -27,12 +33,26 @@ const execAsync = promisify(exec);
 const logger = createLogger('gpu-orchestrator');
 const GPU_TRAINING_PROFILE = 'gpu-training';
 
-/** Estado atual do orquestrador */
 export type OrchestratorState =
-  | 'llm_embeddings'   // LLM + Embeddings (padrão)
-  | 'training'         // LLM + Trainer
-  | 'switching_to_training'
-  | 'switching_to_llm';
+  | 'serving_ready'
+  | 'serving_draining'
+  | 'training_starting'
+  | 'training_active'
+  | 'training_finishing'
+  | 'serving_restoring'
+  | 'error';
+
+export type OrchestratorTransitionTrigger = 'startup' | 'queue_request' | 'manual_api' | 'system';
+
+export interface OrchestratorTransition {
+  fromState: OrchestratorState;
+  toState: OrchestratorState;
+  trigger: OrchestratorTransitionTrigger;
+  reason: string;
+  at: string;
+}
+
+type TransitionListener = (transition: OrchestratorTransition) => Promise<void> | void;
 
 /** Configuração do orquestrador (env vars) */
 const COMPOSE_DIR = process.env.GPU_ORCHESTRATOR_COMPOSE_DIR || '/opt/alice/compose/stacks';
@@ -41,7 +61,6 @@ const TRAINING_ONLY_COMPOSE_FILE =
   process.env.GPU_ORCHESTRATOR_TRAINING_COMPOSE_FILE || `${COMPOSE_DIR}/docker-compose.gpu-training.yml`;
 const COMPOSE_PROJECT = process.env.GPU_ORCHESTRATOR_PROJECT || 'alice-alice';
 const DOCKER_COMPOSE_CMD = process.env.DOCKER_COMPOSE_CMD || 'docker compose';
-const IDLE_RETURN_MS = parseInt(process.env.GPU_ORCHESTRATOR_IDLE_MS || '600000', 10); // 10 min
 const resolvedConcurrencyMode = process.env.GPU_CONCURRENCY_MODE ?? process.env.GPU_ORCHESTRATION_MODE ?? 'simultaneous';
 if (resolvedConcurrencyMode !== 'simultaneous' && resolvedConcurrencyMode !== 'preemptive') {
   throw new Error(`GPU_CONCURRENCY_MODE inválido: ${resolvedConcurrencyMode}. Valores permitidos: simultaneous|preemptive`);
@@ -50,10 +69,64 @@ export const GPU_CONCURRENCY_MODE = resolvedConcurrencyMode;
 // Compatibilidade retroativa para variáveis/código legado
 export const GPU_ORCHESTRATION_MODE = GPU_CONCURRENCY_MODE;
 
-/** Estado em memória (persistência opcional via Redis em versão futura) */
-let currentState: OrchestratorState = 'llm_embeddings';
-let _lastTrainingActivityAt = 0;
-let idleReturnTimer: ReturnType<typeof setTimeout> | null = null;
+/** Estado em memória da FSM */
+let currentState: OrchestratorState = 'serving_ready';
+const transitionListeners = new Set<TransitionListener>();
+
+function isTransitionState(state: OrchestratorState): boolean {
+  return (
+    state === 'serving_draining'
+    || state === 'training_starting'
+    || state === 'training_finishing'
+    || state === 'serving_restoring'
+  );
+}
+
+async function transitionTo(
+  nextState: OrchestratorState,
+  params: { trigger: OrchestratorTransitionTrigger; reason: string },
+): Promise<void> {
+  if (currentState === nextState) {
+    return;
+  }
+
+  const previousState = currentState;
+  currentState = nextState;
+
+  const transition: OrchestratorTransition = {
+    fromState: previousState,
+    toState: nextState,
+    trigger: params.trigger,
+    reason: params.reason,
+    at: new Date().toISOString(),
+  };
+
+  logger.info(
+    {
+      fromState: transition.fromState,
+      toState: transition.toState,
+      trigger: transition.trigger,
+      reason: transition.reason,
+    },
+    'FSM de orquestração GPU: transição de estado',
+  );
+
+  for (const listener of transitionListeners) {
+    try {
+      await listener(transition);
+    } catch (error) {
+      logger.error(
+        {
+          error,
+          fromState: transition.fromState,
+          toState: transition.toState,
+          trigger: transition.trigger,
+        },
+        'Listener de transição da FSM falhou',
+      );
+    }
+  }
+}
 
 /**
  * Executa comando docker compose (timeout configurável)
@@ -75,7 +148,7 @@ async function runCompose(args: string[], timeoutMs = 60000): Promise<{ stdout: 
 
     logger.warn(
       { cmd: cmdWithEnvFile, composeEnvFile: COMPOSE_ENV_FILE, error: primaryError },
-      'Permissao negada no env-file do compose; tentando fallback com env do processo'
+      'Permissao negada no env-file do compose; tentando fallback com env do processo',
     );
 
     const cmdWithoutEnvFile = buildComposeCommand(args, { includeEnvFile: false });
@@ -91,7 +164,7 @@ async function runCompose(args: string[], timeoutMs = 60000): Promise<{ stdout: 
       if (!isEnvFilePermissionError(fallbackMessage)) {
         logger.error(
           { cmd: cmdWithoutEnvFile, error: fallbackMessage, initialError: primaryError },
-          'Falha ao executar docker compose no fallback sem env-file'
+          'Falha ao executar docker compose no fallback sem env-file',
         );
         throw new Error(`docker compose failed: ${fallbackMessage}`);
       }
@@ -99,7 +172,7 @@ async function runCompose(args: string[], timeoutMs = 60000): Promise<{ stdout: 
       const cmdTrainingOnly = buildComposeCommand(args, { includeEnvFile: false, mode: 'training_only' });
       logger.warn(
         { cmd: cmdTrainingOnly, error: fallbackMessage },
-        'Fallback sem env-file ainda bloqueado; tentando compose dedicado do gpu-trainer'
+        'Fallback sem env-file ainda bloqueado; tentando compose dedicado do gpu-trainer',
       );
 
       try {
@@ -118,7 +191,7 @@ async function runCompose(args: string[], timeoutMs = 60000): Promise<{ stdout: 
             previousError: fallbackMessage,
             initialError: primaryError,
           },
-          'Falha ao executar docker compose no fallback dedicado do gpu-trainer'
+          'Falha ao executar docker compose no fallback dedicado do gpu-trainer',
         );
         throw new Error(`docker compose failed: ${trainingOnlyMessage}`);
       }
@@ -160,7 +233,7 @@ export async function isOrchestratorAvailable(): Promise<boolean> {
   } catch (error) {
     logger.warn(
       { error: error instanceof Error ? error.message : String(error) },
-      'Orquestrador indisponivel: docker info falhou (socket/permissoes)'
+      'Orquestrador indisponivel: docker info falhou (socket/permissoes)',
     );
     return false;
   }
@@ -173,119 +246,113 @@ export function getOrchestratorState(): OrchestratorState {
   return currentState;
 }
 
-/**
- * Troca para modo treino (para embeddings, sobe trainer)
- */
-export async function switchToTraining(): Promise<void> {
-  if (currentState === 'training') {
-    _lastTrainingActivityAt = Date.now();
+export function isTrainingRuntimeState(state: OrchestratorState = currentState): boolean {
+  return (
+    state === 'training_starting'
+    || state === 'training_active'
+    || state === 'training_finishing'
+  );
+}
+
+export function onOrchestratorTransition(listener: TransitionListener): () => void {
+  transitionListeners.add(listener);
+  return () => {
+    transitionListeners.delete(listener);
+  };
+}
+
+export async function prepareTrainingRuntime(options?: {
+  trigger?: OrchestratorTransitionTrigger;
+  reason?: string;
+}): Promise<void> {
+  const trigger = options?.trigger ?? 'system';
+  const reason = options?.reason ?? 'Preparar runtime GPU para treinamento';
+
+  if (currentState === 'training_active') {
     return;
   }
-  if (currentState === 'switching_to_training' || currentState === 'switching_to_llm') {
-    throw new Error('Troca em andamento');
+  if (isTransitionState(currentState)) {
+    throw new Error('Transição de orquestração já em andamento');
   }
 
-  currentState = 'switching_to_training';
-  if (GPU_ORCHESTRATION_MODE === 'simultaneous') {
-    logger.info('Orquestrador: subindo trainer sob demanda (modo simultaneous)');
-    try {
-      await runCompose(['--profile', GPU_TRAINING_PROFILE, 'up', '-d', 'gpu-trainer'], 120000);
-      currentState = 'training';
-      _lastTrainingActivityAt = Date.now();
-      scheduleIdleReturn();
-      logger.info('Orquestrador: trainer ativo (modo simultaneous)');
-      return;
-    } catch (error) {
-      currentState = 'llm_embeddings';
-      scheduleIdleReturn();
-      throw error;
-    }
-  }
-  logger.info('Orquestrador: trocando para modo treino (parando embeddings, subindo trainer)');
+  await transitionTo('serving_draining', { trigger, reason: `${reason} - drenando serving` });
 
   try {
-    await runCompose(['stop', 'gpu-embeddings'], 30000);
+    // Runtime mutuamente exclusivo: desliga serving antes de iniciar trainer.
+    await runCompose(['stop', 'gpu-llm', 'gpu-embeddings'], 90000);
+
+    await transitionTo('training_starting', { trigger, reason: `${reason} - iniciando trainer` });
     await runCompose(['--profile', GPU_TRAINING_PROFILE, 'up', '-d', 'gpu-trainer'], 120000);
-    currentState = 'training';
-    _lastTrainingActivityAt = Date.now();
-    scheduleIdleReturn();
-    logger.info('Orquestrador: modo treino ativo');
+
+    await transitionTo('training_active', { trigger, reason: `${reason} - treinamento ativo` });
   } catch (error) {
-    currentState = 'llm_embeddings';
-    scheduleIdleReturn();
+    await transitionTo('error', {
+      trigger,
+      reason: `${reason} - falha: ${error instanceof Error ? error.message : String(error)}`,
+    });
+    throw error;
+  }
+}
+
+export async function restoreServingRuntime(options?: {
+  trigger?: OrchestratorTransitionTrigger;
+  reason?: string;
+}): Promise<void> {
+  const trigger = options?.trigger ?? 'system';
+  const reason = options?.reason ?? 'Restaurar runtime de serving';
+
+  if (currentState === 'serving_ready') {
+    return;
+  }
+  if (isTransitionState(currentState)) {
+    throw new Error('Transição de orquestração já em andamento');
+  }
+
+  const isRecoveringFromError = currentState === 'error';
+  if (!isRecoveringFromError) {
+    await transitionTo('training_finishing', { trigger, reason: `${reason} - finalizando treinamento` });
+  }
+
+  try {
+    await runCompose(['--profile', GPU_TRAINING_PROFILE, 'stop', 'gpu-trainer'], 90000);
+
+    await transitionTo('serving_restoring', { trigger, reason: `${reason} - restaurando serving` });
+    await runCompose(['up', '-d', 'gpu-llm', 'gpu-embeddings'], 120000);
+
+    await transitionTo('serving_ready', { trigger, reason: `${reason} - serving pronto` });
+  } catch (error) {
+    await transitionTo('error', {
+      trigger,
+      reason: `${reason} - falha: ${error instanceof Error ? error.message : String(error)}`,
+    });
     throw error;
   }
 }
 
 /**
- * Volta para modo LLM+Embeddings (para trainer, sobe embeddings)
+ * Compatibilidade retroativa de API interna.
+ */
+export async function switchToTraining(): Promise<void> {
+  await prepareTrainingRuntime({ trigger: 'system', reason: 'Alias compatível switchToTraining' });
+}
+
+/**
+ * Compatibilidade retroativa de API interna.
  */
 export async function switchToLlmEmbeddings(): Promise<void> {
-  if (currentState === 'llm_embeddings') return;
-  if (currentState === 'switching_to_training' || currentState === 'switching_to_llm') {
-    throw new Error('Troca em andamento');
-  }
-
-  currentState = 'switching_to_llm';
-  cancelIdleReturn();
-  if (GPU_ORCHESTRATION_MODE === 'simultaneous') {
-    logger.info('Orquestrador: parando trainer (modo simultaneous)');
-    try {
-      await runCompose(['--profile', GPU_TRAINING_PROFILE, 'stop', 'gpu-trainer'], 60000);
-      currentState = 'llm_embeddings';
-      logger.info('Orquestrador: trainer parado (modo simultaneous)');
-      return;
-    } catch (error) {
-      currentState = 'training';
-      throw error;
-    }
-  }
-  logger.info('Orquestrador: voltando para LLM+Embeddings (parando trainer, subindo embeddings)');
-
-  try {
-    await runCompose(['--profile', GPU_TRAINING_PROFILE, 'stop', 'gpu-trainer'], 60000);
-    await runCompose(['up', '-d', 'gpu-embeddings'], 120000);
-    currentState = 'llm_embeddings';
-    logger.info('Orquestrador: modo LLM+Embeddings ativo');
-  } catch (error) {
-    currentState = 'training';
-    throw error;
-  }
-}
-
-function scheduleIdleReturn(): void {
-  cancelIdleReturn();
-  if (currentState !== 'training') return;
-
-  idleReturnTimer = setTimeout(() => {
-    idleReturnTimer = null;
-    logger.info('Orquestrador: 10 min idle - retornando para LLM+Embeddings');
-    switchToLlmEmbeddings().catch((err) => {
-      logger.error({ err }, 'Falha no retorno automático por idle');
-    });
-  }, IDLE_RETURN_MS);
-}
-
-function cancelIdleReturn(): void {
-  if (idleReturnTimer) {
-    clearTimeout(idleReturnTimer);
-    idleReturnTimer = null;
-  }
+  await restoreServingRuntime({ trigger: 'system', reason: 'Alias compatível switchToLlmEmbeddings' });
 }
 
 /**
- * Registra atividade de treino (reset do timer de idle)
+ * Semântica mantida por compatibilidade; retorno automático por idle foi removido.
  */
 export function reportTrainingActivity(): void {
-  _lastTrainingActivityAt = Date.now();
-  if (currentState === 'training') {
-    scheduleIdleReturn();
-  }
+  logger.debug('reportTrainingActivity chamado; idle return desabilitado na FSM canônica');
 }
 
 /**
  * Cleanup (shutdown)
  */
 export function shutdownOrchestrator(): void {
-  cancelIdleReturn();
+  transitionListeners.clear();
 }

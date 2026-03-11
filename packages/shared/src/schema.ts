@@ -1305,6 +1305,14 @@ export const gpuRuntimeModeEnum = pgEnum("gpu_runtime_mode", [
 ]);
 
 export const gpuOrchestratorStateEnum = pgEnum("gpu_orchestrator_state", [
+  "serving_ready",
+  "serving_draining",
+  "training_starting",
+  "training_active",
+  "training_finishing",
+  "serving_restoring",
+  "error",
+  // Legado (compatibilidade histórica de registros pré-FSM canônica)
   "llm_embeddings",
   "training",
   "switching_to_training",
@@ -1344,7 +1352,7 @@ export const gpuRuntimeState = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     runtimeKey: varchar("runtime_key", { length: 64 }).notNull().default("global"),
     runtimeMode: gpuRuntimeModeEnum("runtime_mode").notNull().default("serving"),
-    orchestratorState: gpuOrchestratorStateEnum("orchestrator_state").notNull().default("llm_embeddings"),
+    orchestratorState: gpuOrchestratorStateEnum("orchestrator_state").notNull().default("serving_ready"),
     orchestrationMode: gpuOrchestrationModeEnum("orchestration_mode").notNull().default("simultaneous"),
     orchestratorAvailable: boolean("orchestrator_available").notNull().default(false),
     activeServices: jsonb("active_services").$type<string[]>().notNull().default([]),
