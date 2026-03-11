@@ -28,7 +28,7 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - `P1-CHAT-03`: Concluído
 - `P1-RAG-04`: Concluído
 - `P1-TRAINING-05`: Concluído
-- `P1-INTEGRATIONS-06`: Não iniciado
+- `P1-INTEGRATIONS-06`: Concluído
 - `P1-GPU-LLM-07`: Não iniciado
 - `P1-OBS-08`: Não iniciado
 - `P1-FRONT-09`: Não iniciado
@@ -43,7 +43,7 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - `P2-DOCS-06`: Não iniciado
 
 ## Bloco atual
-`P1-TRAINING-05` (Concluído)
+`P1-INTEGRATIONS-06` (Concluído)
 
 ## Histórico de rodadas
 
@@ -436,8 +436,36 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
   - Validar posteriormente no ambiente do usuário a correção do binário global `pnpm`.
 - Riscos ou bloqueios:
   - Sem bloqueio ativo para continuação.
-  - Risco residual controlado: o `index.ts` do `training-service` permanece volumoso em domínios de auto-run/decisão de sinal e registro de rotas, apesar da separação de bootstrap e lifecycle.
+- Risco residual controlado: o `index.ts` do `training-service` permanece volumoso em domínios de auto-run/decisão de sinal e registro de rotas, apesar da separação de bootstrap e lifecycle.
 - Próximo bloco recomendado: `P1-INTEGRATIONS-06`.
+
+### Rodada 13
+- Data: 2026-03-10
+- Bloco executado: `P1-INTEGRATIONS-06`
+- Objetivo: Decompor `apps/integrations-service` separando bootstrap, rotas, adapters externos, clients, parsers, risk gates e orquestração sem alterar lógica de negócio.
+- Diagnóstico: `apps/integrations-service/src/index.ts` ainda concentrava schemas de validação Wise, composição inline de adapter de conta KuCoin e lifecycle de bootstrap/shutdown HTTP, enquanto `kucoinService.ts` mantinha o risk gate acoplado ao arquivo monolítico.
+- Arquivos lidos: `CLAUDE.md` (1-120), `package.json`, `apps/integrations-service/src/index.ts` (1-2745 em chunks de 200-300 linhas), `apps/integrations-service/src/kucoinService.ts` (regiões relevantes em chunks), `apps/integrations-service/src/kucoinClient.ts` (chunk inicial), `apps/integrations-service/src/kucoinUnifiedWebSocket.ts` (chunk inicial), `apps/integrations-service/src/kucoinSpotClient.ts` (chunk inicial), `apps/integrations-service/src/kucoinMarginClient.ts` (chunk inicial), `apps/integrations-service/src/wiseService.ts` (chunk inicial), `apps/integrations-service/src/demo-trading-engine.ts` (chunk inicial), `apps/integrations-service/src/openapi-specs.ts` (chunk inicial), `apps/integrations-service/src/routes/trading-account-management-routes.ts`, `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Arquivos alterados: `apps/integrations-service/src/index.ts`, `apps/integrations-service/src/kucoinService.ts`, `apps/integrations-service/src/wise-route-schemas.ts`, `apps/integrations-service/src/kucoin-account-client-adapter.ts`, `apps/integrations-service/src/integrations-lifecycle.ts`, `apps/integrations-service/src/trading-risk-gate.ts`, `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Validações executadas:
+  - `pnpm --filter @alice/integrations-service typecheck` (executado via `npx -y pnpm@10.26.2 --filter @alice/integrations-service typecheck`)
+  - `pnpm --filter @alice/integrations-service typecheck` (reexecução após ajuste de tipagem em `trading-risk-gate.ts`, executado via `npx -y pnpm@10.26.2 --filter @alice/integrations-service typecheck`)
+  - `pnpm --filter @alice/integrations-service lint` (executado via `npx -y pnpm@10.26.2 --filter @alice/integrations-service lint`)
+  - `pnpm --filter @alice/integrations-service build` (executado via `npx -y pnpm@10.26.2 --filter @alice/integrations-service build`)
+  - `pnpm lint` (executado via `npx -y pnpm@10.26.2 lint`)
+  - `pnpm build` (executado via `npx -y pnpm@10.26.2 build`)
+- Resultado das validações:
+  - Todas as validações obrigatórias da rodada foram aprovadas ao final.
+  - Houve 1 falha inicial em `@alice/integrations-service typecheck` por incompatibilidade de nulabilidade no contrato do novo módulo `trading-risk-gate.ts` (`tradingEnabled` nullable no schema real); correção aplicada no escopo e revalidação aprovada.
+  - Observação de ambiente: binário global `pnpm` permanece quebrado; os comandos foram executados com `npx -y pnpm@10.26.2`, preservando os comandos lógicos exigidos.
+- Documentação atualizada: tracking canônico atualizado com evidências factuais da Rodada 13.
+- Commit realizado: `refactor: decompose integrations service adapters and composition`
+- Pendências:
+  - Validar posteriormente no ambiente do usuário a correção do binário global `pnpm`.
+  - `apps/integrations-service/src/index.ts` permanece volumoso em domínios de registro de rotas de trading/wise, apesar da extração de parsers, lifecycle e adapter.
+- Riscos ou bloqueios:
+  - Sem bloqueio ativo para continuação.
+  - Risco residual controlado: a decomposição foi restrita a composição e boundary modules para não alterar estratégia de trading nem contratos já existentes.
+- Próximo bloco recomendado: `P1-GPU-LLM-07`.
 
 ## Pendências abertas
 - Correção do binário global `pnpm` no ambiente local (fora do escopo deste bloco).
@@ -451,4 +479,4 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - Risco residual controlado: documentação histórica volumosa pode conter contexto de planos anteriores; status atual de execução do backlog governado deve sempre ser consultado no tracking canônico.
 
 ## Próximos blocos permitidos
-- `P1-INTEGRATIONS-06`
+- `P1-GPU-LLM-07`

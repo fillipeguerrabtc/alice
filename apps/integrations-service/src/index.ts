@@ -20,8 +20,6 @@ import {
   initFeatureFlags,
   createAlicePrometheus,
   initRbacPrometheusMetrics,
-  registerShutdownCallback,
-  ShutdownPriority,
   setupSwaggerUI,
   INTEGRATIONS_SERVICE_TAGS,
   setPermissionResolver,
@@ -64,7 +62,6 @@ import { isWiseConfigured, getSandboxStatus, getProfileIdSafe, getWiseCircuitBre
 import * as kucoinClient from './kucoinClient.js';
 import * as kucoinSpotClient from './kucoinSpotClient.js';
 import * as kucoinMarginClient from './kucoinMarginClient.js';
-import * as kucoinAccountClient from './kucoinAccountClient.js';
 import * as kucoinService from './kucoinService.js';
 import {
   closeWebSocketClients as closeKucoinWebSocketClients,
@@ -259,6 +256,39 @@ import { registerWiseSpendLimitsRoutes } from './routes/wise-spend-limits-routes
 import { registerWiseVerificationKycRoutes } from './routes/wise-verification-kyc-routes.js';
 import { registerWiseWebhookManagementRoutes } from './routes/wise-webhook-management-routes.js';
 import { registerWiseWebhookRoutes } from './routes/wise-webhook-routes.js';
+import {
+  batchGroupIdParamSchema,
+  balanceIdParamSchema,
+  numericIdParamSchema,
+  paginationQuerySchema,
+  wiseActivityQuerySchema,
+  wiseBalanceCreateSchema,
+  wiseBalanceMovementSchema,
+  wiseBalancesQuerySchema,
+  wiseBalanceStatementQuerySchema,
+  wiseCardOrderIdParamSchema,
+  wiseCardOrdersQuerySchema,
+  wiseCardTokenParamSchema,
+  wiseCurrencyQuerySchema,
+  wiseDisputeIdParamSchema,
+  wiseFileUploadSchema,
+  wiseGenericPayloadSchema,
+  wiseJosePayloadSchema,
+  wiseKycReviewIdParamSchema,
+  wiseProfileIdParamSchema,
+  wiseQuoteCreateSchema,
+  wiseRatesQuerySchema,
+  wiseRecipientRequirementsQuerySchema,
+  wiseRecipientsQuerySchema,
+  wiseSimulationActionSchema,
+  wiseTransactionIdParamSchema,
+  wiseWebhookIdParamSchema,
+} from './wise-route-schemas.js';
+import { createKucoinAccountClientAdapter } from './kucoin-account-client-adapter.js';
+import {
+  registerIntegrationsShutdownCallbacks,
+  startIntegrationsServer,
+} from './integrations-lifecycle.js';
 
 const logger = createLogger('integrations-service');
 const config = loadConfig(integrationsServiceConfigSchema);
@@ -1207,207 +1237,6 @@ registerHealthProbeRoutes(app, {
 // OWASP API3 - Schemas Zod para validação de parâmetros de rota e query
 // Previne NaN e injection via parâmetros não validados
 // ============================================================================
-
-// Schema para ID numérico positivo (Wise recipient/transfer IDs)
-const numericIdParamSchema = z.object({
-  id: z.string().regex(/^\d+$/, 'ID deve ser numérico').transform(Number).refine(n => n > 0, 'ID deve ser positivo'),
-});
-
-const balanceIdParamSchema = z.object({
-  balanceId: z.string().regex(/^\d+$/, 'balanceId deve ser numérico').transform(Number).refine(n => n > 0, 'balanceId deve ser positivo'),
-});
-
-// Schema para ID string (batch groups usam UUID) - reservado para uso futuro
-const _stringIdParamSchema = z.object({
-  id: z.string().min(1).max(100),
-});
-
-// Schema para query params de paginação
-const paginationQuerySchema = z.object({
-  limit: z.string().regex(/^\d+$/).transform(Number).refine(n => n >= 1 && n <= 100, 'limit deve ser entre 1 e 100').optional(),
-  offset: z.string().regex(/^\d+$/).transform(Number).refine(n => n >= 0, 'offset deve ser >= 0').optional(),
-});
-
-// OWASP API3: Schemas para validação de query params Wise
-// Previne injection e garante tipos corretos
-
-// Schema para taxas de câmbio (source/target currencies)
-const wiseRatesQuerySchema = z.object({
-  source: z.string()
-    .min(3, 'source deve ter 3 caracteres')
-    .max(3, 'source deve ter 3 caracteres')
-    .regex(/^[A-Z]{3}$/, 'source deve ser código de moeda válido (ex: USD, EUR, BRL)'),
-  target: z.string()
-    .min(3, 'target deve ter 3 caracteres')
-    .max(3, 'target deve ter 3 caracteres')
-    .regex(/^[A-Z]{3}$/, 'target deve ser código de moeda válido (ex: USD, EUR, BRL)'),
-});
-
-// Schema para filtro de destinatários por moeda (opcional)
-const wiseRecipientsQuerySchema = z.object({
-  currency: z.string()
-    .min(3, 'currency deve ter 3 caracteres')
-    .max(3, 'currency deve ter 3 caracteres')
-    .regex(/^[A-Z]{3}$/, 'currency deve ser código de moeda válido')
-    .optional(),
-});
-
-const wiseBalancesQuerySchema = z.object({
-  types: z.string()
-    .regex(/^[A-Z,]+$/, 'types deve conter apenas letras e vírgulas')
-    .optional(),
-});
-
-const wiseBalanceCreateSchema = z.object({
-  currency: z.string()
-    .min(3, 'currency deve ter 3 caracteres')
-    .max(3, 'currency deve ter 3 caracteres')
-    .regex(/^[A-Z]{3}$/, 'currency deve ser código de moeda válido'),
-  type: z.enum(['STANDARD', 'SAVINGS']),
-  name: z.string().min(1).max(100).optional(),
-}).superRefine((data, ctx) => {
-  if (data.type === 'SAVINGS' && !data.name) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'name é obrigatório para saldo SAVINGS', path: ['name'] });
-  }
-});
-
-const wiseBalanceStatementQuerySchema = z.object({
-  currency: z.string()
-    .min(3, 'currency deve ter 3 caracteres')
-    .max(3, 'currency deve ter 3 caracteres')
-    .regex(/^[A-Z]{3}$/, 'currency deve ser código de moeda válido'),
-  intervalStart: z.string().min(10, 'intervalStart inválido'),
-  intervalEnd: z.string().min(10, 'intervalEnd inválido'),
-  type: z.enum(['COMPACT', 'FLAT']).optional(),
-});
-
-const wiseBalanceMovementSchema = z.object({
-  quoteId: z.string().uuid().optional(),
-  sourceBalanceId: z.coerce.number().int().positive().optional(),
-  targetBalanceId: z.coerce.number().int().positive().optional(),
-  amount: z.object({
-    value: z.coerce.number().positive(),
-    currency: z.string().min(3).max(3).regex(/^[A-Z]{3}$/),
-  }).optional(),
-}).superRefine((data, ctx) => {
-  const hasQuote = Boolean(data.quoteId);
-  const hasAmount = Boolean(data.amount);
-  const hasBalances = Boolean(data.sourceBalanceId && data.targetBalanceId);
-  if (!hasQuote && !hasAmount) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'quoteId ou amount é obrigatório', path: ['quoteId'] });
-  }
-  if (hasAmount && !hasBalances) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'sourceBalanceId e targetBalanceId são obrigatórios com amount', path: ['sourceBalanceId'] });
-  }
-});
-
-const wiseCurrencyQuerySchema = z.object({
-  currency: z.string()
-    .min(3, 'currency deve ter 3 caracteres')
-    .max(3, 'currency deve ter 3 caracteres')
-    .regex(/^[A-Z]{3}$/, 'currency deve ser código de moeda válido'),
-});
-
-const wiseQuoteCreateSchema = z.object({
-  sourceCurrency: z.string()
-    .min(3, 'sourceCurrency deve ter 3 caracteres')
-    .max(3, 'sourceCurrency deve ter 3 caracteres')
-    .regex(/^[A-Z]{3}$/, 'sourceCurrency deve ser código de moeda válido'),
-  targetCurrency: z.string()
-    .min(3, 'targetCurrency deve ter 3 caracteres')
-    .max(3, 'targetCurrency deve ter 3 caracteres')
-    .regex(/^[A-Z]{3}$/, 'targetCurrency deve ser código de moeda válido'),
-  sourceAmount: z.coerce.number().positive().optional(),
-  targetAmount: z.coerce.number().positive().optional(),
-  payOut: z.enum(['BANK_TRANSFER', 'BALANCE', 'SWIFT', 'SWIFT_OUR', 'INTERAC']).optional(),
-  preferredPayIn: z.enum(['BANK_TRANSFER', 'BALANCE']).optional(),
-  targetAccount: z.coerce.number().int().positive().optional(),
-}).superRefine((data, ctx) => {
-  if (!data.sourceAmount && !data.targetAmount) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'sourceAmount ou targetAmount é obrigatório', path: ['sourceAmount'] });
-  }
-  if (data.sourceAmount && data.targetAmount) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Informe apenas sourceAmount ou targetAmount', path: ['targetAmount'] });
-  }
-});
-
-// Schema para requisitos de destinatário
-const wiseRecipientRequirementsQuerySchema = z.object({
-  sourceCurrency: z.string()
-    .min(3, 'sourceCurrency deve ter 3 caracteres')
-    .max(3, 'sourceCurrency deve ter 3 caracteres')
-    .regex(/^[A-Z]{3}$/, 'sourceCurrency deve ser código de moeda válido'),
-  targetCurrency: z.string()
-    .min(3, 'targetCurrency deve ter 3 caracteres')
-    .max(3, 'targetCurrency deve ter 3 caracteres')
-    .regex(/^[A-Z]{3}$/, 'targetCurrency deve ser código de moeda válido'),
-  sourceAmount: z.string()
-    .regex(/^\d+(\.\d{1,2})?$/, 'sourceAmount deve ser número válido')
-    .transform(Number)
-    .refine(n => n > 0, 'sourceAmount deve ser positivo'),
-});
-
-const wiseProfileIdParamSchema = z.object({
-  profileId: z.string().regex(/^\d+$/, 'profileId deve ser numérico').transform(Number).refine(n => n > 0, 'profileId deve ser positivo'),
-});
-
-const wiseCardTokenParamSchema = z.object({
-  cardToken: z.string().min(16, 'cardToken inválido').max(128, 'cardToken inválido'),
-});
-
-const wiseDisputeIdParamSchema = z.object({
-  disputeId: z.string().min(1).max(128),
-});
-
-const wiseKycReviewIdParamSchema = z.object({
-  kycReviewId: z.string().min(1).max(128),
-});
-
-const wiseCardOrderIdParamSchema = z.object({
-  cardOrderId: z.string().min(1).max(128),
-});
-
-const wiseTransactionIdParamSchema = z.object({
-  transactionId: z.string().min(1).max(128),
-});
-
-const wiseWebhookIdParamSchema = z.object({
-  subscriptionId: z.string().min(1).max(128),
-});
-
-const batchGroupIdParamSchema = z.object({
-  id: z.string().min(1).max(100),
-});
-
-const wiseGenericPayloadSchema = z.object({}).passthrough();
-
-const wiseJosePayloadSchema = z.object({
-  josePayload: z.string().min(20, 'josePayload inválido'),
-});
-
-const wiseFileUploadSchema = z.object({
-  fileBase64: z.string().min(100, 'fileBase64 inválido'),
-  fileName: z.string().min(1, 'fileName inválido').max(255),
-  contentType: z.string().min(3, 'contentType inválido').max(100),
-});
-
-const wiseActivityQuerySchema = z.object({
-  profileId: z.string().regex(/^\d+$/).transform(Number).optional(),
-  monetaryResourceType: z.string().optional(),
-  status: z.string().optional(),
-  since: z.string().optional(),
-  until: z.string().optional(),
-  size: z.string().regex(/^\d+$/).transform(Number).optional(),
-});
-
-const wiseCardOrdersQuerySchema = z.object({
-  pageNumber: z.string().regex(/^\d+$/).transform(Number).optional(),
-  pageSize: z.string().regex(/^\d+$/).transform(Number).optional(),
-});
-
-const wiseSimulationActionSchema = z.object({
-  action: z.string().min(1).max(100),
-});
 
 // Validar secrets obrigatórios em produção (Regra 16 - Segurança Enterprise)
 // STRIPE: Fail-fast se produção sem webhook secret
@@ -2495,60 +2324,7 @@ async function generateTradingSignalFromLlm(params: {
 // --- ACCOUNT MANAGEMENT: Funding, Sub-Accounts, Deposits, Withdrawals, Transfers, Fees ---
 registerTradingAccountManagementRoutes(app, {
   logger,
-  accountClient: {
-    isAccountConfigured: () => kucoinAccountClient.isAccountConfigured(),
-    getAccountSummaryInfo: () => kucoinAccountClient.getAccountSummaryInfo(),
-    getApikeyInfo: () => kucoinAccountClient.getApikeyInfo(),
-    getAccountTypeSpot: () => kucoinAccountClient.getAccountTypeSpot(),
-    getAccountDetailSpot: (accountId) => kucoinAccountClient.getAccountDetailSpot(accountId),
-    getAccountLedgersSpotMargin: (params) => kucoinAccountClient.getAccountLedgersSpotMargin(
-      params as Parameters<typeof kucoinAccountClient.getAccountLedgersSpotMargin>[0],
-    ),
-    getAccountLedgersTradeHf: (params) => kucoinAccountClient.getAccountLedgersTradeHf(
-      params as Parameters<typeof kucoinAccountClient.getAccountLedgersTradeHf>[0],
-    ),
-    getAccountLedgersMarginHf: (params) => kucoinAccountClient.getAccountLedgersMarginHf(
-      params as Parameters<typeof kucoinAccountClient.getAccountLedgersMarginHf>[0],
-    ),
-    getAccountLedgersFutures: (params) => kucoinAccountClient.getAccountLedgersFutures(
-      params as Parameters<typeof kucoinAccountClient.getAccountLedgersFutures>[0],
-    ),
-    addSubAccount: (payload) => kucoinAccountClient.addSubAccount(
-      payload as Parameters<typeof kucoinAccountClient.addSubAccount>[0],
-    ),
-    addSubAccountMarginPermission: (subUserId) => kucoinAccountClient.addSubAccountMarginPermission(subUserId),
-    addSubAccountFuturesPermission: (subUserId) => kucoinAccountClient.addSubAccountFuturesPermission(subUserId),
-    getSubAccountListSummary: (params) => kucoinAccountClient.getSubAccountListSummary(
-      params as Parameters<typeof kucoinAccountClient.getSubAccountListSummary>[0],
-    ),
-    getSubAccountDetailBalance: (subUserId) => kucoinAccountClient.getSubAccountDetailBalance(subUserId),
-    getSubAccountListSpotBalance: (params) => kucoinAccountClient.getSubAccountListSpotBalance(
-      params as Parameters<typeof kucoinAccountClient.getSubAccountListSpotBalance>[0],
-    ),
-    getSubAccountListFuturesBalance: (params) => kucoinAccountClient.getSubAccountListFuturesBalance(
-      params as Parameters<typeof kucoinAccountClient.getSubAccountListFuturesBalance>[0],
-    ),
-    addDepositAddress: (currency, chain) => kucoinAccountClient.addDepositAddress(currency, chain),
-    getDepositAddress: (currency, chain) => kucoinAccountClient.getDepositAddress(currency, chain),
-    getDepositHistory: (params) => kucoinAccountClient.getDepositHistory(
-      params as Parameters<typeof kucoinAccountClient.getDepositHistory>[0],
-    ),
-    getWithdrawalQuotas: (currency, chain) => kucoinAccountClient.getWithdrawalQuotas(currency, chain),
-    withdraw: (payload) => kucoinAccountClient.withdraw(
-      payload as Parameters<typeof kucoinAccountClient.withdraw>[0],
-    ),
-    cancelWithdrawal: (id) => kucoinAccountClient.cancelWithdrawal(id),
-    getWithdrawalHistory: (params) => kucoinAccountClient.getWithdrawalHistory(
-      params as Parameters<typeof kucoinAccountClient.getWithdrawalHistory>[0],
-    ),
-    getWithdrawalById: (id) => kucoinAccountClient.getWithdrawalById(id),
-    getTransferQuotas: (currency, type) => kucoinAccountClient.getTransferQuotas(currency, type),
-    flexTransfer: (payload) => kucoinAccountClient.flexTransfer(
-      payload as Parameters<typeof kucoinAccountClient.flexTransfer>[0],
-    ),
-    getBasicFeeSpotMargin: (currencyType) => kucoinAccountClient.getBasicFeeSpotMargin(currencyType),
-    getActualFeeFutures: (symbol) => kucoinAccountClient.getActualFeeFutures(symbol),
-  },
+  accountClient: createKucoinAccountClientAdapter(),
   respondKucoinNotConfigured,
   sendKucoinErrorResponse,
 });
@@ -2592,8 +2368,10 @@ initializeCaches().then(() => {
     logger.error({ error }, 'Falha no bootstrap de integrações');
   });
 
-  const server = app.listen(PORT, '0.0.0.0', () => {
-    logger.info({ port: PORT }, 'Integrations service started');
+  const server = startIntegrationsServer({
+    app,
+    port: PORT,
+    logger,
   });
 
   // Validação de credenciais KuCoin no startup (Regra 6 - fail-fast com log claro)
@@ -2626,119 +2404,23 @@ initializeCaches().then(() => {
     });
   }, INTEGRATION_HEALTH_REFRESH_MS);
 
-  // SEGURANÇA: Timeouts para prevenir conexões pendentes (Node.js 20 LTS Best Practices)
-  server.timeout = 180000; // 180s para requisições longas (LLM/Trading)
-  server.keepAliveTimeout = 65000; // 65s (maior que ALB timeout padrão de 60s)
-  server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
-
-  // ============================================================================
-  // GRACEFUL SHUTDOWN (Enterprise-Grade - Regra 16 CLAUDE.md)
-  // ShutdownManager centralizado elimina duplicação de listeners (Regra 6)
-  // Ordem: HTTP server → Database pool (coordenado pelo ShutdownManager)
-  // ============================================================================
-
-  registerShutdownCallback(
-    'integrations-http-server',
-    async () => {
-      logger.info('Encerrando HTTP server...');
-      await new Promise<void>((resolve, reject) => {
-        server.close((err) => {
-          if (err) {
-            logger.error({ error: err }, 'Erro ao fechar HTTP server');
-            reject(err);
-          } else {
-            logger.info('HTTP server encerrado com sucesso');
-            resolve();
-          }
-        });
-      });
-    },
-    { priority: ShutdownPriority.HTTP_SERVER }
-  );
-
-  registerShutdownCallback(
-    'integrations-database-pool',
-    async () => {
-      logger.info('Encerrando pool de conexões database...');
-      await closeDatabasePool();
-      logger.info('Pool de conexões encerrado com sucesso');
-    },
-    { priority: ShutdownPriority.DATABASE }
-  );
-
-  registerShutdownCallback(
-    'integrations-trading-metrics',
-    async () => {
-      stopTradingMetricsScheduler();
-    },
-    { priority: ShutdownPriority.BACKGROUND_JOBS }
-  );
-
-  registerShutdownCallback(
-    'integrations-immutable-audit-integrity',
-    async () => {
-      stopIntegrationsImmutableAuditIntegrityScheduler();
-    },
-    { priority: ShutdownPriority.BACKGROUND_JOBS }
-  );
-
-  registerShutdownCallback(
-    'integrations-trading-signal-scheduler',
-    async () => {
-      stopTradingSignalScheduler();
-    },
-    { priority: ShutdownPriority.BACKGROUND_JOBS }
-  );
-
-  registerShutdownCallback(
-    'integrations-trading-analysis-scheduler',
-    async () => {
-      stopTradingAnalysisScheduler();
-    },
-    { priority: ShutdownPriority.BACKGROUND_JOBS }
-  );
-
-  registerShutdownCallback(
-    'integrations-health-metrics',
-    async () => {
+  registerIntegrationsShutdownCallbacks({
+    logger,
+    server,
+    closeDatabasePool,
+    stopTradingMetricsScheduler,
+    stopIntegrationsImmutableAuditIntegrityScheduler,
+    stopTradingSignalScheduler,
+    stopTradingAnalysisScheduler,
+    stopDemoScheduler,
+    stopPostMortemWorker,
+    closeKucoinWebSocketClients,
+    closeSpotWebSocketClients,
+    closeBroadcast,
+    clearIntegrationHealthInterval: () => {
       clearInterval(integrationHealthInterval);
     },
-    { priority: ShutdownPriority.BACKGROUND_JOBS }
-  );
-
-  registerShutdownCallback(
-    'integrations-demo-scheduler',
-    async () => {
-      stopDemoScheduler();
-    },
-    { priority: ShutdownPriority.BACKGROUND_JOBS }
-  );
-
-  registerShutdownCallback(
-    'integrations-postmortem-worker',
-    async () => {
-      stopPostMortemWorker();
-    },
-    { priority: ShutdownPriority.BACKGROUND_JOBS }
-  );
-
-  registerShutdownCallback(
-    'integrations-kucoin-websocket',
-    async () => {
-      // WS5: garante shutdown limpo dos clientes WS (evita sockets pendurados)
-      closeKucoinWebSocketClients();
-      closeSpotWebSocketClients();
-    },
-    { priority: ShutdownPriority.EXTERNAL_CONNECTIONS }
-  );
-
-  registerShutdownCallback(
-    'integrations-trading-broadcast',
-    async () => {
-      await closeBroadcast();
-    },
-    { priority: ShutdownPriority.EXTERNAL_CONNECTIONS }
-  );
+  });
 }).catch((error: unknown) => {
   logger.error({ error }, 'Erro fatal ao inicializar serviço');
   process.exit(1);
