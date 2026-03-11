@@ -15,6 +15,10 @@
 import crypto from 'node:crypto';
 import { createLogger } from '@alice/logger';
 import {
+  readNumberEnv,
+  readOptionalStringEnv,
+} from '@alice/config';
+import {
   instrumentCircuitBreaker,
   createProtectedFetch,
   type CIRCUIT_BREAKER_PRESETS,
@@ -26,11 +30,16 @@ const logger = createLogger('kucoin-request');
 // ============================================================================
 // CONFIGURAÇÃO DE CREDENCIAIS (shared)
 // ============================================================================
-const KUCOIN_PRO_API_KEY = process.env.KUCOIN_PRO_API_KEY;
-const KUCOIN_PRO_API_SECRET = process.env.KUCOIN_PRO_API_SECRET;
-const KUCOIN_PRO_API_PASSPHRASE = process.env.KUCOIN_PRO_API_PASSPHRASE;
-const KUCOIN_PRO_API_KEY_VERSION = (process.env.KUCOIN_PRO_API_KEY_VERSION || '2').trim();
-const KUCOIN_TIME_SYNC_INTERVAL_MS = Number(process.env.KUCOIN_TIME_SYNC_INTERVAL_MS || 300_000);
+const KUCOIN_PRO_API_KEY = readOptionalStringEnv('KUCOIN_PRO_API_KEY');
+const KUCOIN_PRO_API_SECRET = readOptionalStringEnv('KUCOIN_PRO_API_SECRET');
+const KUCOIN_PRO_API_PASSPHRASE = readOptionalStringEnv('KUCOIN_PRO_API_PASSPHRASE');
+const KUCOIN_PRO_API_KEY_VERSION = readOptionalStringEnv('KUCOIN_PRO_API_KEY_VERSION') ?? '2';
+const KUCOIN_TIME_SYNC_INTERVAL_MS = readNumberEnv('KUCOIN_TIME_SYNC_INTERVAL_MS', {
+  defaultValue: 300_000,
+  integer: true,
+  min: 60_000,
+  max: 3_600_000,
+});
 
 // ============================================================================
 // TIPOS

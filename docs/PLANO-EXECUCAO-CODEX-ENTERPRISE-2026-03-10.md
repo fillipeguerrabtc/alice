@@ -21,7 +21,7 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - `P0-BOOT-03`: Concluído
 - `P0-GATEWAY-AUTH-04`: Concluído
 - `P0-CORE-SERVICES-05`: Concluído
-- `P0-EXT-GPU-06`: Não iniciado
+- `P0-EXT-GPU-06`: Concluído
 - `P0-DOCS-07`: Não iniciado
 - `P1-API-01`: Não iniciado
 - `P1-AUTH-02`: Não iniciado
@@ -43,7 +43,7 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - `P2-DOCS-06`: Não iniciado
 
 ## Bloco atual
-`P0-CORE-SERVICES-05` (Concluído)
+`P0-EXT-GPU-06` (Concluído)
 
 ## Histórico de rodadas
 
@@ -242,6 +242,40 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
   - Compatibilidade local mantida para `GPU_MANAGER_URL` no `training-service` via fallback restrito a desenvolvimento; em produção o serviço passa a falhar deterministicamente quando a variável não estiver configurada.
 - Próximo bloco recomendado: `P0-EXT-GPU-06`.
 
+### Rodada 6
+- Data: 2026-03-10
+- Bloco executado: `P0-EXT-GPU-06`
+- Objetivo: Hardening cirúrgico de integrações externas, `gpu-manager-service` e `llm-gateway-service` com foco em config tipada, URLs, timeouts e previsibilidade de boot/runtime.
+- Diagnóstico: O escopo tinha leitura direta de `process.env` em módulos críticos de integração externa (`kucoinClient`, `kucoinRequest`, `kucoinUnifiedWebSocket`, `wiseService`, `wiseClient`) e nos entrypoints de `gpu-manager-service`/`llm-gateway-service`, além de constantes de timeout hardcoded em pontos operacionais.
+- Arquivos lidos: `CLAUDE.md` (1-120), `package.json`, `packages/config/src/index.ts`, `packages/shared-utils/src/config.ts`, `apps/integrations-service/src/index.ts` (chunks), `apps/integrations-service/src/kucoinService.ts` (chunks), `apps/integrations-service/src/kucoinClient.ts` (chunks), `apps/integrations-service/src/kucoinUnifiedWebSocket.ts` (chunks), `apps/integrations-service/src/wiseService.ts` (chunks), `apps/gpu-manager-service/src/index.ts` (chunks), `apps/llm-gateway-service/src/index.ts` (chunks), `apps/llm-gateway-service/src/governance.ts`, `apps/integrations-service/src/kucoinRequest.ts`, `apps/integrations-service/src/wiseClient.ts`, `apps/integrations-service/src/runtime-config.ts`, `apps/gpu-manager-service/src/gpu-orchestrator.ts`, `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Arquivos alterados: `apps/integrations-service/src/index.ts`, `apps/integrations-service/src/kucoinClient.ts`, `apps/integrations-service/src/kucoinRequest.ts`, `apps/integrations-service/src/kucoinUnifiedWebSocket.ts`, `apps/integrations-service/src/wiseClient.ts`, `apps/integrations-service/src/wiseService.ts`, `apps/gpu-manager-service/src/index.ts`, `apps/gpu-manager-service/package.json`, `apps/llm-gateway-service/src/index.ts`, `pnpm-lock.yaml`, `docs/STATUS-REAL-ATUAL.md`, `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Validações executadas:
+  - `pnpm --filter @alice/integrations-service typecheck` (executado via `npx -y pnpm@10.26.2 --filter @alice/integrations-service typecheck`)
+  - `pnpm --filter @alice/integrations-service lint` (executado via `npx -y pnpm@10.26.2 --filter @alice/integrations-service lint`)
+  - `pnpm --filter @alice/integrations-service build` (executado via `npx -y pnpm@10.26.2 --filter @alice/integrations-service build`)
+  - `pnpm --filter @alice/gpu-manager-service typecheck` (executado via `npx -y pnpm@10.26.2 --filter @alice/gpu-manager-service typecheck`)
+  - `pnpm --filter @alice/gpu-manager-service lint` (executado via `npx -y pnpm@10.26.2 --filter @alice/gpu-manager-service lint`)
+  - `pnpm --filter @alice/gpu-manager-service build` (executado via `npx -y pnpm@10.26.2 --filter @alice/gpu-manager-service build`)
+  - `pnpm --filter @alice/llm-gateway-service typecheck` (executado via `npx -y pnpm@10.26.2 --filter @alice/llm-gateway-service typecheck`)
+  - `pnpm --filter @alice/llm-gateway-service lint` (executado via `npx -y pnpm@10.26.2 --filter @alice/llm-gateway-service lint`)
+  - `pnpm --filter @alice/llm-gateway-service build` (executado via `npx -y pnpm@10.26.2 --filter @alice/llm-gateway-service build`)
+  - `pnpm test` (executado via `npx -y pnpm@10.26.2 test`)
+  - `pnpm lint` (executado via `npx -y pnpm@10.26.2 lint`)
+  - `pnpm build` (executado via `npx -y pnpm@10.26.2 build`)
+- Resultado das validações:
+  - Todas as validações obrigatórias da rodada foram aprovadas ao final.
+  - Houve 1 falha inicial em `pnpm --filter @alice/gpu-manager-service typecheck` por ausência de link local de `@alice/config` após alteração de dependência do workspace; correção aplicada com `npx -y pnpm@10.26.2 install --filter @alice/gpu-manager-service --no-frozen-lockfile` e revalidação completa aprovada.
+  - Observação de ambiente: binário global `pnpm` permanece quebrado; os comandos foram executados com `npx -y pnpm@10.26.2`, preservando os comandos lógicos exigidos.
+- Documentação atualizada: `docs/STATUS-REAL-ATUAL.md` e tracking canônico atualizados com os fatos da Rodada 6.
+- Commit realizado: `refactor: harden external integrations gpu and llm runtime settings`.
+- Pendências:
+  - Validar posteriormente no ambiente do usuário a correção do binário global `pnpm`.
+  - Permanecem leituras diretas de `process.env` em módulos fora do escopo autorizado da rodada.
+- Riscos ou bloqueios:
+  - Sem bloqueio ativo para continuação.
+  - Novos parâmetros tipados com defaults operacionais (`WISE_API_TIMEOUT_MS`, `EXTERNAL_API_TIMEOUT_MS`) exigem alinhamento explícito no ambiente caso valores customizados sejam necessários.
+- Próximo bloco recomendado: `P0-DOCS-07`.
+
 ## Pendências abertas
 - Correção do binário global `pnpm` no ambiente local (fora do escopo deste bloco).
 - Reduzir leituras diretas de `process.env` remanescentes fora do escopo autorizado desta rodada, seguindo próximos blocos.
@@ -253,5 +287,4 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - Risco residual controlado: módulos de suporte multimodal do RAG dependem de fail-fast no entrypoint/execução para bloquear operação sem `OPENAI_API_KEY` em produção.
 
 ## Próximos blocos permitidos
-- `P0-EXT-GPU-06`
 - `P0-DOCS-07`

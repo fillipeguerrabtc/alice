@@ -17,6 +17,10 @@
 
 import { createLogger } from '@alice/logger';
 import {
+  isProductionEnv,
+  readOptionalStringEnv,
+} from '@alice/config';
+import {
   CIRCUIT_BREAKER_PRESETS,
   createAlicePrometheus,
 } from '@alice/shared-utils';
@@ -29,6 +33,7 @@ import {
 } from './kucoinRequest.js';
 
 const logger = createLogger('kucoin-client');
+const IS_PRODUCTION = isProductionEnv();
 
 export { KucoinRequestError, isKucoinRequestError, isKucoinTransientError };
 
@@ -42,19 +47,19 @@ export { KucoinRequestError, isKucoinRequestError, isKucoinTransientError };
 // NOTA: Secret no GitHub é KUCOIN_PRO_BASE_URL (não KUCOIN_FUTURES_BASE_URL)
 // NOTA: Não é secret. Se ausente, usamos a URL oficial de produção.
 const KUCOIN_FUTURES_BASE_URL = (() => {
-  const url = process.env.KUCOIN_PRO_BASE_URL;
-  if (!url && process.env.NODE_ENV === 'production') {
+  const url = readOptionalStringEnv('KUCOIN_PRO_BASE_URL');
+  if (!url && IS_PRODUCTION) {
     logger.info('KUCOIN_PRO_BASE_URL não configurada em produção, usando URL oficial padrão');
   }
-  return url || 'https://api-futures.kucoin.com';
+  return url ?? 'https://api-futures.kucoin.com';
 })();
 
 // Credenciais da API - Usando nomes corretos dos secrets GitHub
 // ANTES: KUCOIN_API_KEY, KUCOIN_API_SECRET, KUCOIN_API_PASSPHRASE (workaround)
 // AGORA: KUCOIN_PRO_API_KEY, KUCOIN_PRO_API_SECRET, KUCOIN_PRO_API_PASSPHRASE (enterprise)
-const KUCOIN_PRO_API_KEY = process.env.KUCOIN_PRO_API_KEY;
-const KUCOIN_PRO_API_SECRET = process.env.KUCOIN_PRO_API_SECRET;
-const KUCOIN_PRO_API_PASSPHRASE = process.env.KUCOIN_PRO_API_PASSPHRASE;
+const KUCOIN_PRO_API_KEY = readOptionalStringEnv('KUCOIN_PRO_API_KEY');
+const KUCOIN_PRO_API_SECRET = readOptionalStringEnv('KUCOIN_PRO_API_SECRET');
+const KUCOIN_PRO_API_PASSPHRASE = readOptionalStringEnv('KUCOIN_PRO_API_PASSPHRASE');
 
 export function getKucoinConfigStatus(): { isConfigured: boolean; missingKeys: string[] } {
   const missingKeys: string[] = [];
@@ -91,13 +96,13 @@ export async function getAllowedSymbols(): Promise<string[]> {
  * Fonte: API KuCoin + opcionalmente KUCOIN_DEFAULT_SYMBOL (validação real).
  */
 export async function getDefaultSymbol(): Promise<string> {
-  const configured = process.env.KUCOIN_DEFAULT_SYMBOL?.trim().toUpperCase();
+  const configured = readOptionalStringEnv('KUCOIN_DEFAULT_SYMBOL')?.toUpperCase();
   const allowed = await getAllowedSymbols();
 
   if (configured) {
     if (!allowed.includes(configured)) {
       const message = `KUCOIN_DEFAULT_SYMBOL inválido: "${configured}". Valores permitidos: ${allowed.join(', ')}`;
-      if (process.env.NODE_ENV === 'production') {
+      if (IS_PRODUCTION) {
         throw new Error(message);
       }
       logger.warn(message);
@@ -373,7 +378,7 @@ const kucoinFuturesRequester = createKucoinRequester({
 
 // URL base da API KuCoin Spot/Margin (produção)
 // Spot e Margin usam a mesma base URL — diferem apenas nos endpoints de conta/ordens
-const KUCOIN_SPOT_BASE_URL = process.env.KUCOIN_SPOT_BASE_URL || 'https://api.kucoin.com';
+const KUCOIN_SPOT_BASE_URL = readOptionalStringEnv('KUCOIN_SPOT_BASE_URL') ?? 'https://api.kucoin.com';
 
 const kucoinSpotRequester = createKucoinRequester({
   name: 'kucoin-spot',

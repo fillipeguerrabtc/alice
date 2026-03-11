@@ -19,6 +19,11 @@ import compression from 'compression';
 import crypto from 'node:crypto';
 import { createLogger } from '@alice/logger';
 import {
+  getNodeEnv,
+  readNumberEnv,
+  readOptionalStringEnv,
+} from '@alice/config';
+import {
   resolveNamespaceByRoute,
   resolveLlmModelByScope,
   requestGpu,
@@ -80,10 +85,15 @@ import { resolveGovernanceActor } from './governance-auth.js';
 
 const logger = createLogger('llm-gateway');
 
-const PORT = parseInt(process.env.PORT || '3011', 10);
-const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET || '';
-const IS_PRODUCTION = process.env.NODE_ENV === 'production';
-const DEFAULT_MODEL = process.env.DEFAULT_LLM_MODEL || 'Qwen2.5-7B-Instruct-AWQ';
+const PORT = readNumberEnv('PORT', { defaultValue: 3011, integer: true, min: 1, max: 65535 });
+const INTERNAL_API_SECRET = readOptionalStringEnv('INTERNAL_API_SECRET') ?? '';
+const IS_PRODUCTION = getNodeEnv() === 'production';
+const DEFAULT_MODEL = readOptionalStringEnv('DEFAULT_LLM_MODEL') ?? 'Qwen2.5-7B-Instruct-AWQ';
+const GPU_REQUEST_TIMEOUT_MS = readNumberEnv('GPU_REQUEST_TIMEOUT_MS', {
+  defaultValue: 60000,
+  integer: true,
+  min: 1000,
+});
 
 if (!INTERNAL_API_SECRET && IS_PRODUCTION) {
   logger.error('INTERNAL_API_SECRET é obrigatório em produção para autenticação interna');
@@ -947,7 +957,7 @@ app.post(
       endpoint: '/v1/chat/completions',
       method: 'POST',
       priority: requestOptions?.priority ? priorityMap[requestOptions.priority] ?? GpuRequestPriority.CRITICAL : GpuRequestPriority.CRITICAL,
-      timeout: requestOptions?.timeout ?? 60000,
+      timeout: requestOptions?.timeout ?? GPU_REQUEST_TIMEOUT_MS,
       body,
     });
 
@@ -1249,7 +1259,7 @@ app.post(
       endpoint: '/v1/chat/completions',
       method: 'POST',
       priority: GpuRequestPriority.CRITICAL,
-      timeout: 60000,
+      timeout: GPU_REQUEST_TIMEOUT_MS,
       body: {
         model,
         messages,

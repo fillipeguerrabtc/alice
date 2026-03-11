@@ -31,6 +31,11 @@ import { createServer } from 'http';
 import cors from 'cors';
 import compression from 'compression';
 import { Counter, Gauge, Histogram } from 'prom-client';
+import {
+  getNodeEnv,
+  readNumberEnv,
+  readOptionalStringEnv,
+} from '@alice/config';
 import { 
   CIRCUIT_BREAKER_PRESETS,
   createProtectedFetch,
@@ -73,17 +78,17 @@ import {
 const execAsync = promisify(exec);
 const logger = createLogger('gpu-manager');
 
-const PORT = process.env.PORT || 3010;
+const IS_PRODUCTION = getNodeEnv() === 'production';
+const PORT = readNumberEnv('PORT', { defaultValue: 3010, integer: true, min: 1, max: 65535 });
 // BUG FIX 26/12/2025: REDIS_URL removido - Redis é configurado via getRedisClient() de @alice/shared-utils
 // BUG FIX 25/12/2025: REGRA 6 - Sem fallback em produção - variável DEVE estar definida
 // INTERNAL_API_SECRET é obrigatório para autenticação service-to-service
 // Fallback para string vazia desabilita autenticação, permitindo requisições não autenticadas
-const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET;
-if (!INTERNAL_API_SECRET && process.env.NODE_ENV === 'production') {
+const INTERNAL_API_SECRET = readOptionalStringEnv('INTERNAL_API_SECRET');
+if (!INTERNAL_API_SECRET && IS_PRODUCTION) {
   logger.error('INTERNAL_API_SECRET é obrigatório em produção (Regra 6 - fail-fast)');
   process.exit(1);
 }
-const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
 /**
  * GPU_SERVICE_TIMEOUT: Timeout padrão para requisições GPU (ms)
@@ -93,11 +98,11 @@ const IS_PRODUCTION = process.env.NODE_ENV === 'production';
  * ENTERPRISE (27/12/2025): Variável lida do docker-compose.prod.yml
  * para permitir configuração dinâmica de timeouts em produção.
  */
-const GPU_SERVICE_TIMEOUT = parseInt(process.env.GPU_SERVICE_TIMEOUT || '60000', 10);
-if (isNaN(GPU_SERVICE_TIMEOUT) || GPU_SERVICE_TIMEOUT < 1000) {
-  logger.error('GPU_SERVICE_TIMEOUT deve ser um número válido >= 1000ms');
-  process.exit(1);
-}
+const GPU_SERVICE_TIMEOUT = readNumberEnv('GPU_SERVICE_TIMEOUT', {
+  defaultValue: 60000,
+  integer: true,
+  min: 1000,
+});
 logger.info({ gpuServiceTimeout: GPU_SERVICE_TIMEOUT }, 'Timeout GPU configurado');
 
 /** Orquestrador: disponibilidade verificada uma vez no startup */
@@ -181,12 +186,26 @@ function capabilityForServiceType(serviceType: GpuServiceType): GpuCapability {
   }
 }
 
+function resolveGpuServiceUrl(envKey: string, fallbackUrl: string): string {
+  const rawUrl = readOptionalStringEnv(envKey) ?? fallbackUrl;
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new Error(`Protocolo inválido para ${envKey}: ${parsed.protocol}`);
+    }
+    return rawUrl.replace(/\/+$/, '');
+  } catch (error) {
+    logger.error({ envKey, rawUrl, error }, 'URL de serviço GPU inválida');
+    process.exit(1);
+  }
+}
+
 /** URLs dos serviços GPU (container names na rede Docker) */
 // Gate 2: LLM separado (capabilities)
 const GPU_SERVICE_URLS = {
-  [GpuServiceType.LLM]: process.env.LLM_GPU_URL || 'http://gpu-llm:8000',
-  [GpuServiceType.EMBEDDINGS]: process.env.EMBEDDINGS_GPU_URL || 'http://gpu-embeddings:8000',
-  [GpuServiceType.TRAINING]: process.env.TRAINING_GPU_URL || 'http://gpu-trainer:8000',
+  [GpuServiceType.LLM]: resolveGpuServiceUrl('LLM_GPU_URL', 'http://gpu-llm:8000'),
+  [GpuServiceType.EMBEDDINGS]: resolveGpuServiceUrl('EMBEDDINGS_GPU_URL', 'http://gpu-embeddings:8000'),
+  [GpuServiceType.TRAINING]: resolveGpuServiceUrl('TRAINING_GPU_URL', 'http://gpu-trainer:8000'),
 };
 
 async function isTrainingServiceReachable(): Promise<boolean> {
@@ -223,9 +242,9 @@ async function isTrainingServiceReachable(): Promise<boolean> {
  * Para coexistência em 20GB, usamos requisitos conservadores.
  */
 const VRAM_REQUIREMENTS: Record<GpuServiceType, number> = {
-  [GpuServiceType.LLM]: Number(process.env.GPU_VRAM_BUDGET_LLM ?? '6'),
-  [GpuServiceType.EMBEDDINGS]: Number(process.env.GPU_VRAM_BUDGET_EMBEDDINGS ?? '3'),
-  [GpuServiceType.TRAINING]: Number(process.env.GPU_VRAM_BUDGET_TRAINING ?? '8'),
+  [GpuServiceType.LLM]: readNumberEnv('GPU_VRAM_BUDGET_LLM', { defaultValue: 6, min: 0.1 }),
+  [GpuServiceType.EMBEDDINGS]: readNumberEnv('GPU_VRAM_BUDGET_EMBEDDINGS', { defaultValue: 3, min: 0.1 }),
+  [GpuServiceType.TRAINING]: readNumberEnv('GPU_VRAM_BUDGET_TRAINING', { defaultValue: 8, min: 0.1 }),
 };
 
 // Validar budgets por serviço
@@ -238,16 +257,20 @@ for (const [serviceType, budget] of Object.entries(VRAM_REQUIREMENTS)) {
 
 /** VRAM total disponível (20GB para RTX 4000 Ada - Hetzner GEX44) */
 // BUG FIX 25/12/2025: Corrigido de 24GB (RTX 4090) para 20GB (RTX 4000 Ada)
-const TOTAL_VRAM_GB = Number(process.env.GPU_TOTAL_VRAM_GB ?? '20');
+const TOTAL_VRAM_GB = readNumberEnv('GPU_TOTAL_VRAM_GB', { defaultValue: 20, min: 0.1 });
 
 /** Margem de segurança (GB) */
-const VRAM_SAFETY_MARGIN_GB = Number(process.env.GPU_VRAM_SAFETY_MARGIN_GB ?? '2');
-const GPU_RETRY_AFTER_SECONDS = Number(process.env.GPU_RETRY_AFTER_SECONDS ?? '5');
+const VRAM_SAFETY_MARGIN_GB = readNumberEnv('GPU_VRAM_SAFETY_MARGIN_GB', { defaultValue: 2, min: 0 });
+const GPU_RETRY_AFTER_SECONDS = readNumberEnv('GPU_RETRY_AFTER_SECONDS', {
+  defaultValue: 5,
+  integer: true,
+  min: 1,
+});
 
 const ADMISSION_MIN_FREE_GB: Record<GpuServiceType, number> = {
-  [GpuServiceType.LLM]: Number(process.env.GPU_ADMISSION_MIN_FREE_GB_LLM ?? '2'),
-  [GpuServiceType.EMBEDDINGS]: Number(process.env.GPU_ADMISSION_MIN_FREE_GB_EMBEDDINGS ?? '1.5'),
-  [GpuServiceType.TRAINING]: Number(process.env.GPU_ADMISSION_MIN_FREE_GB_TRAINING ?? '2'),
+  [GpuServiceType.LLM]: readNumberEnv('GPU_ADMISSION_MIN_FREE_GB_LLM', { defaultValue: 2, min: 0 }),
+  [GpuServiceType.EMBEDDINGS]: readNumberEnv('GPU_ADMISSION_MIN_FREE_GB_EMBEDDINGS', { defaultValue: 1.5, min: 0 }),
+  [GpuServiceType.TRAINING]: readNumberEnv('GPU_ADMISSION_MIN_FREE_GB_TRAINING', { defaultValue: 2, min: 0 }),
 };
 
 for (const [serviceType, threshold] of Object.entries(ADMISSION_MIN_FREE_GB)) {
@@ -255,10 +278,6 @@ for (const [serviceType, threshold] of Object.entries(ADMISSION_MIN_FREE_GB)) {
     logger.error({ serviceType, threshold }, 'Threshold de admission control inválido');
     process.exit(1);
   }
-}
-if (!Number.isFinite(GPU_RETRY_AFTER_SECONDS) || GPU_RETRY_AFTER_SECONDS < 1) {
-  logger.error({ retryAfterSeconds: GPU_RETRY_AFTER_SECONDS }, 'GPU_RETRY_AFTER_SECONDS inválido');
-  process.exit(1);
 }
 
 /** Prefixo Redis para fila GPU */
@@ -1490,7 +1509,7 @@ const gpuManagerRejectionsTotal = new Counter({
 });
 
 // Helper: GPU única no GEX44 (RTX 4000 Ada). Mantemos configurável para suportar expansão futura.
-const GPU_ID = process.env.NVIDIA_GPU_ID ?? '0';
+const GPU_ID = readOptionalStringEnv('NVIDIA_GPU_ID') ?? '0';
 // CORREÇÃO 26/12/2025: Usar contentType correto do registry (application/openmetrics-text)
 // Padrão consistente com packages/shared-utils/src/prometheus.ts linha 702
 app.get('/metrics', async (_req: Request, res: Response) => {

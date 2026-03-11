@@ -6,6 +6,11 @@
 
 import { createLogger } from '@alice/logger';
 import crypto from 'crypto';
+import {
+  getNodeEnv,
+  readNumberEnv,
+  readOptionalStringEnv,
+} from '@alice/config';
 import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS, createAlicePrometheus } from '@alice/shared-utils';
 import type { BodyInit } from 'undici-types';
 
@@ -68,10 +73,14 @@ function classifyWiseError(error: unknown): string {
 }
 
 // RESILIÊNCIA: Timeout para chamadas à API Wise (Best Practices 2025)
-const WISE_API_TIMEOUT_MS = 30000; // 30 segundos
+const WISE_API_TIMEOUT_MS = readNumberEnv('WISE_API_TIMEOUT_MS', {
+  defaultValue: 30000,
+  integer: true,
+  min: 1000,
+});
 
 // URLs da API Wise (docs oficiais)
-const WISE_API_URL = process.env.WISE_API_URL || 'https://api.wise.com';
+const WISE_API_URL = readOptionalStringEnv('WISE_API_URL') ?? 'https://api.wise.com';
 const WISE_SANDBOX_URL = 'https://api.wise-sandbox.com';
 
 // Usa CIRCUIT_BREAKER_PRESETS.wiseApi centralizado (Regra 2 - Não Duplicar)
@@ -85,8 +94,8 @@ interface WiseClientConfig {
 
 // Verifica se o Wise está configurado (sem lançar erro)
 export function isWiseConfigured(): boolean {
-  const apiKey = process.env.WISE_API_KEY;
-  const profileId = process.env.WISE_PROFILE_ID;
+  const apiKey = readOptionalStringEnv('WISE_API_KEY');
+  const profileId = readOptionalStringEnv('WISE_PROFILE_ID');
   return Boolean(apiKey && profileId);
 }
 
@@ -94,8 +103,8 @@ export function isWiseConfigured(): boolean {
 // POLÍTICA: Sandbox apenas quando WISE_SANDBOX=true (explicitamente configurado)
 // Se não configurado, usa produção por padrão conforme decisão operacional
 export function getSandboxStatus(): boolean {
-  const wiseSandbox = process.env.WISE_SANDBOX;
-  const isProduction = process.env.NODE_ENV === 'production';
+  const wiseSandbox = readOptionalStringEnv('WISE_SANDBOX');
+  const isProduction = getNodeEnv() === 'production';
   
   // WISE_SANDBOX deve ser explicitamente 'false' para usar produção
   if (wiseSandbox === 'false') {
@@ -117,13 +126,13 @@ export function getSandboxStatus(): boolean {
 
 // Obtém Profile ID de forma segura (retorna null se não configurado)
 export function getProfileIdSafe(): string | null {
-  return process.env.WISE_PROFILE_ID || null;
+  return readOptionalStringEnv('WISE_PROFILE_ID');
 }
 
 // Obtém configuração do Wise das variáveis de ambiente
 function getWiseConfig(): WiseClientConfig {
-  const apiKey = process.env.WISE_API_KEY;
-  const profileId = process.env.WISE_PROFILE_ID;
+  const apiKey = readOptionalStringEnv('WISE_API_KEY');
+  const profileId = readOptionalStringEnv('WISE_PROFILE_ID');
   const useSandbox = getSandboxStatus();
 
   if (!apiKey) {
@@ -476,8 +485,9 @@ VwIDAQAB
 -----END PUBLIC KEY-----`;
 
 function getWiseWebhookPublicKey(): string | null {
-  if (process.env.WISE_WEBHOOK_PUBLIC_KEY) {
-    return process.env.WISE_WEBHOOK_PUBLIC_KEY;
+  const configuredPublicKey = readOptionalStringEnv('WISE_WEBHOOK_PUBLIC_KEY');
+  if (configuredPublicKey) {
+    return configuredPublicKey;
   }
   return getSandboxStatus() ? WISE_WEBHOOK_PUBLIC_KEY_SANDBOX : WISE_WEBHOOK_PUBLIC_KEY_PROD;
 }

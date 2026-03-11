@@ -1061,7 +1061,11 @@ const executeStripeCall = createExecuteStripeCall(observeIntegrationCall);
 // Configuração de timeout para chamadas externas (Best Practices 2025)
 
 // RESILIÊNCIA: Timeout para chamadas externas (Best Practices 2025)
-const EXTERNAL_API_TIMEOUT_MS = 8000;
+const EXTERNAL_API_TIMEOUT_MS = readNumberEnv('EXTERNAL_API_TIMEOUT_MS', {
+  defaultValue: 8000,
+  integer: true,
+  min: 1000,
+});
 
 // Inicializar sistema de feature flags com storage PostgreSQL (Regra 16 - Enterprise)
 const featureFlagStorage = createDrizzleFeatureFlagStorage();

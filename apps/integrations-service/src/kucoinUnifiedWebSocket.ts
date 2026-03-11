@@ -31,16 +31,17 @@ import WebSocket from 'ws';
 import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { createLogger } from '@alice/logger';
+import { readOptionalStringEnv } from '@alice/config';
 import { getKucoinAuthHeaders } from './kucoinRequest.js';
 
 // ============================================================================
 // CONFIGURAÇÃO (via variáveis de ambiente - Regra 6: sem hardcoded)
 // ============================================================================
-const KUCOIN_FUTURES_BASE_URL = process.env.KUCOIN_PRO_BASE_URL || 'https://api-futures.kucoin.com';
-const KUCOIN_SPOT_BASE_URL = process.env.KUCOIN_SPOT_BASE_URL || 'https://api.kucoin.com';
-const KUCOIN_PRO_API_KEY = process.env.KUCOIN_PRO_API_KEY;
-const KUCOIN_PRO_API_SECRET = process.env.KUCOIN_PRO_API_SECRET;
-const KUCOIN_PRO_API_PASSPHRASE = process.env.KUCOIN_PRO_API_PASSPHRASE;
+const KUCOIN_FUTURES_BASE_URL = readOptionalStringEnv('KUCOIN_PRO_BASE_URL') ?? 'https://api-futures.kucoin.com';
+const KUCOIN_SPOT_BASE_URL = readOptionalStringEnv('KUCOIN_SPOT_BASE_URL') ?? 'https://api.kucoin.com';
+const KUCOIN_PRO_API_KEY = readOptionalStringEnv('KUCOIN_PRO_API_KEY');
+const KUCOIN_PRO_API_SECRET = readOptionalStringEnv('KUCOIN_PRO_API_SECRET');
+const KUCOIN_PRO_API_PASSPHRASE = readOptionalStringEnv('KUCOIN_PRO_API_PASSPHRASE');
 const KUCOIN_WS_MAX_TOPICS = 400;
 
 // ============================================================================

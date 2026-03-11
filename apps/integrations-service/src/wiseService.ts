@@ -11,6 +11,7 @@ import {
   isWiseSandbox,
 } from './wiseClient.js';
 import { createLogger } from '@alice/logger';
+import { readOptionalStringEnv } from '@alice/config';
 import crypto from 'crypto';
 
 // Logger padronizado (Regra 2 - Não Duplicar)
@@ -259,8 +260,8 @@ export class WiseService {
   }
 
   private getClientCredentials(): { clientId: string; clientSecret: string } {
-    const clientId = process.env.WISE_CLIENT_ID;
-    const clientSecret = process.env.WISE_CLIENT_SECRET;
+    const clientId = readOptionalStringEnv('WISE_CLIENT_ID');
+    const clientSecret = readOptionalStringEnv('WISE_CLIENT_SECRET');
     if (!clientId || !clientSecret) {
       throw new Error('WISE_CLIENT_ID/WISE_CLIENT_SECRET não configurados para OAuth');
     }
