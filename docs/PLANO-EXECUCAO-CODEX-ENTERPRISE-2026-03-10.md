@@ -27,7 +27,7 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - `P1-AUTH-02`: Concluído
 - `P1-CHAT-03`: Concluído
 - `P1-RAG-04`: Concluído
-- `P1-TRAINING-05`: Não iniciado
+- `P1-TRAINING-05`: Concluído
 - `P1-INTEGRATIONS-06`: Não iniciado
 - `P1-GPU-LLM-07`: Não iniciado
 - `P1-OBS-08`: Não iniciado
@@ -43,7 +43,7 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - `P2-DOCS-06`: Não iniciado
 
 ## Bloco atual
-`P1-RAG-04` (Concluído)
+`P1-TRAINING-05` (Concluído)
 
 ## Histórico de rodadas
 
@@ -407,8 +407,37 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
   - A decomposição do domínio de criação/upload de documentos ainda permanece parcialmente no `index.ts` para continuidade no próximo bloco de modularização (`P1-TRAINING-05`) sem expansão de escopo nesta rodada.
 - Riscos ou bloqueios:
   - Sem bloqueio ativo para continuação.
-  - Risco residual controlado: o `index.ts` do `rag-service` ainda permanece volumoso em áreas não extraídas nesta rodada, apesar da redução material de responsabilidade no composition root.
+- Risco residual controlado: o `index.ts` do `rag-service` ainda permanece volumoso em áreas não extraídas nesta rodada, apesar da redução material de responsabilidade no composition root.
 - Próximo bloco recomendado: `P1-TRAINING-05`.
+
+### Rodada 12
+- Data: 2026-03-10
+- Bloco executado: `P1-TRAINING-05`
+- Objetivo: Decompor `apps/training-service/src/index.ts` e alinhar a orquestração de training separando bootstrap, lifecycle de dataset, lineage e execução assíncrona de jobs sem alterar contratos.
+- Diagnóstico: `apps/training-service/src/index.ts` concentrava bootstrap/startup/shutdown, setup de workers/schedulers e lifecycle de coleta de dados de treinamento no mesmo arquivo; havia acoplamento alto entre composition root, governança e dataset lifecycle.
+- Arquivos lidos: `CLAUDE.md` (1-120), `package.json`, `apps/training-service/src/index.ts` (1-4103 em chunks de 200-300 linhas), `apps/training-service/src/lora-job-manager.ts`, `apps/training-service/src/openapi-specs.ts`, `apps/training-service/src/auto-learning-scheduler.ts`, `apps/training-service/src/scope-resolver.ts`, `apps/training-service/src/routes/training-data-routes.ts`, `apps/training-service/src/routes/training-bulk-import-routes.ts`, `apps/training-service/src/routes/training-webhook-routes.ts`, `apps/training-service/src/routes/training-job-promotion-approval-routes.ts`, `apps/training-service/src/routes/training-job-promote-routes.ts`, `apps/training-service/src/routes/training-job-rollback-routes.ts`, `apps/training-service/src/routes/training-run-start-routes.ts`, `apps/training-service/src/routes/training-job-create-routes.ts`, `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Arquivos alterados: `apps/training-service/src/index.ts`, `apps/training-service/src/training-bootstrap.ts`, `apps/training-service/src/training-data-lifecycle.ts`, `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Validações executadas:
+  - `pnpm --filter @alice/training-service typecheck` (falhou por binário global `pnpm` quebrado no ambiente)
+  - `npx -y pnpm@10.26.2 --filter @alice/training-service typecheck`
+  - `npx -y pnpm@10.26.2 --filter @alice/training-service lint`
+  - `npx -y pnpm@10.26.2 --filter @alice/training-service lint` (reexecução após correção de imports não usados)
+  - `npx -y pnpm@10.26.2 --filter @alice/training-service build`
+  - `npx -y pnpm@10.26.2 lint`
+  - `npx -y pnpm@10.26.2 build`
+- Resultado das validações:
+  - Todas as validações obrigatórias da rodada foram aprovadas ao final.
+  - Houve falhas intermediárias no typecheck por incompatibilidade de assinaturas entre módulos extraídos e código existente (`findNamespaceByIdInTenant`, `resolveScope`, retorno de `processScheduledJobs`) e 2 warnings de lint por imports não utilizados; ajustes cirúrgicos aplicados e revalidados com sucesso.
+  - `apps/training-service/src/index.ts` foi reduzido de 4103 para 3328 linhas, com extração de bootstrap/runtime (`training-bootstrap.ts`) e dataset lifecycle/lineage (`training-data-lifecycle.ts`).
+  - Observação de ambiente: binário global `pnpm` permanece quebrado; execução realizada com `npx -y pnpm@10.26.2`, preservando os comandos lógicos exigidos.
+- Documentação atualizada: tracking canônico atualizado com evidências factuais da Rodada 12.
+- Commit realizado: `refactor: decompose training service orchestration`
+- Pendências:
+  - Validar posteriormente no ambiente do usuário a correção do binário global `pnpm`.
+- Riscos ou bloqueios:
+  - Sem bloqueio ativo para continuação.
+  - Risco residual controlado: o `index.ts` do `training-service` permanece volumoso em domínios de auto-run/decisão de sinal e registro de rotas, apesar da separação de bootstrap e lifecycle.
+- Próximo bloco recomendado: `P1-INTEGRATIONS-06`.
 
 ## Pendências abertas
 - Correção do binário global `pnpm` no ambiente local (fora do escopo deste bloco).
@@ -422,4 +451,4 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - Risco residual controlado: documentação histórica volumosa pode conter contexto de planos anteriores; status atual de execução do backlog governado deve sempre ser consultado no tracking canônico.
 
 ## Próximos blocos permitidos
-- `P1-TRAINING-05`
+- `P1-INTEGRATIONS-06`

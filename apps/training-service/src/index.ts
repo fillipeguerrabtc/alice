@@ -44,13 +44,9 @@ import {
   instrumentCircuitBreaker,
   createCircuitBreaker,
   CIRCUIT_BREAKER_PRESETS,
-  registerShutdownCallback,
-  ShutdownPriority,
   setupSwaggerUI,
   TRAINING_SERVICE_TAGS,
   extractAuthContext,
-  validateNamespaceTenantConsistency,
-  validateTenantConsistency,
   setPermissionResolver,
   // Auth hÃ­brida (WS4): SessÃ£o (cookie) + Bearer JWT (OIDC) com validaÃ§Ã£o local via JWKS
   createSessionAuthMiddleware,
@@ -88,21 +84,15 @@ import {
   Counter as PromCounter,
   Histogram as PromHistogram,
   computeSemHash,
-  applyPrivacyPolicy,
   generateInternalAuthHeaders,
   verifyImmutableAuditChain,
 } from '@alice/shared-utils';
 import { trainingServicePaths, trainingServiceSchemas } from './openapi-specs.js';
-import { eq, and, desc, asc, sql, isNull, inArray, lte, ne } from '@alice/database';
+import { eq, and, desc, asc, sql, inArray, lte } from '@alice/database';
 import { z } from 'zod';
 import {
-  getNamespaceProfileDefaultConfig,
-} from '@alice/database/system-config';
-import {
-  NamespaceProfileConfigSchema,
   TradingTechniqueSchema,
   type TradingSignalMetadata,
-  type NamespaceProfileConfig,
   type TradingTechnique,
 } from '@alice/shared';
 
@@ -154,9 +144,25 @@ import { getPromotionApprovalSummary } from './training-promotion-approvals.js';
 import { createTrainingJobLifecycleService } from './training-job-lifecycle.js';
 import { createTrainingRunStartIdempotencyService } from './training-run-start-idempotency.js';
 import {
+  SCHEDULE_CONFIG,
+  evaluateDataQuality,
+  startProgressiveLoRA,
+  processScheduledJobs,
+  initAutoLearningScheduler,
+} from './auto-learning-scheduler.js';
+import {
   buildTradingDataEligibilityConditions,
   loadTradingDataGovernancePolicyFromEnv,
 } from './trading-data-governance.js';
+import { startTrainingBootstrap } from './training-bootstrap.js';
+import {
+  TrainingHttpError,
+  bulkImportSchema,
+  collectTrainingDataPayloadSchema,
+  collectTrainingDataSchema,
+  createTrainingDataLifecycleService,
+  evaluateTrainingQuality,
+} from './training-data-lifecycle.js';
 import { registerTrainingPlatformRoutes } from './routes/training-platform-routes.js';
 import { registerTrainingAuditRoutes } from './routes/training-audit-routes.js';
 import { registerTrainingLoraOrchestratorRoutes } from './routes/training-lora-orchestrator-routes.js';
@@ -827,7 +833,6 @@ const TRAINING_IMMUTABLE_AUDIT_EVENTS_PER_STREAM_LIMIT = parseEnvInt(
 let trainingMetricsInterval: NodeJS.Timeout | null = null;
 let namespaceProfileReconcileInterval: NodeJS.Timeout | null = null;
 let trainingImmutableAuditIntegrityInterval: NodeJS.Timeout | null = null;
-const tradingWorkerStoppers: Array<() => Promise<void>> = [];
 
 type ImmutableAuditIntegrityHealthState = {
   status: 'unknown' | 'ok' | 'error';
@@ -947,6 +952,13 @@ function startTrainingMetricsScheduler(): void {
   }, TRAINING_METRICS_INTERVAL_MS);
 }
 
+function stopTrainingMetricsScheduler(): void {
+  if (trainingMetricsInterval) {
+    clearInterval(trainingMetricsInterval);
+    trainingMetricsInterval = null;
+  }
+}
+
 async function runTrainingImmutableAuditIntegrityCheck(): Promise<void> {
   try {
     const recentEvents = await db.query.immutableAuditEvents.findMany({
@@ -1061,6 +1073,13 @@ function startTrainingImmutableAuditIntegrityScheduler(): void {
   }, TRAINING_IMMUTABLE_AUDIT_CHECK_INTERVAL_MS);
 }
 
+function stopTrainingImmutableAuditIntegrityScheduler(): void {
+  if (trainingImmutableAuditIntegrityInterval) {
+    clearInterval(trainingImmutableAuditIntegrityInterval);
+    trainingImmutableAuditIntegrityInterval = null;
+  }
+}
+
 
 async function enqueueTradingJob(
   queueName: (typeof tradingQueueNames)[keyof typeof tradingQueueNames],
@@ -1151,6 +1170,13 @@ function startNamespaceProfileReconcileScheduler(): void {
       );
     });
   }, NAMESPACE_PROFILE_RECONCILE_INTERVAL_MS);
+}
+
+function stopNamespaceProfileReconcileScheduler(): void {
+  if (namespaceProfileReconcileInterval) {
+    clearInterval(namespaceProfileReconcileInterval);
+    namespaceProfileReconcileInterval = null;
+  }
 }
 
 function createTradingWorker<T extends { idempotencyKey: string }>(
@@ -1381,88 +1407,6 @@ app.use(createSessionAuthMiddleware({
 
 const SIMILARITY_THRESHOLD = TRAINING_DATA_SIMILARITY_THRESHOLD;
 // BUG FIX 26/12/2025: JOB_POLLING_INTERVAL_MS removido - fine-tuning em migraÃ§Ã£o para Hetzner GPU
-
-type TrainingQualityAssessment = {
-  score: number;
-  rejectionReasons: string[];
-};
-
-function clampQualityScore(value: number): number {
-  if (value < 0) return 0;
-  if (value > 1) return 1;
-  return value;
-}
-
-function evaluateTrainingQuality(params: {
-  sourceType: string;
-  messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
-  sourceMetadata?: Record<string, unknown>;
-}): TrainingQualityAssessment {
-  const reasons: string[] = [];
-  const sourceMetadata = params.sourceMetadata ?? {};
-  const messages = params.messages;
-
-  if (messages.length < 2) {
-    reasons.push('insufficient_message_count');
-  }
-  const hasUser = messages.some((msg) => msg.role === 'user');
-  const hasAssistant = messages.some((msg) => msg.role === 'assistant');
-  if (!hasUser) reasons.push('missing_user_message');
-  if (!hasAssistant) reasons.push('missing_assistant_message');
-
-  const normalizedContents = messages.map((msg) => msg.content.trim()).filter((content) => content.length > 0);
-  const totalLength = normalizedContents.reduce((sum, content) => sum + content.length, 0);
-  const avgLength = normalizedContents.length > 0 ? totalLength / normalizedContents.length : 0;
-
-  if (totalLength < 120) {
-    reasons.push('content_too_short');
-  }
-  if (avgLength < 30) {
-    reasons.push('average_message_too_short');
-  }
-
-  const uniqueContent = new Set(normalizedContents.map((content) => content.toLowerCase()));
-  if (normalizedContents.length > 0 && uniqueContent.size / normalizedContents.length < 0.5) {
-    reasons.push('high_content_repetition');
-  }
-
-  const isTradingSource = params.sourceType.startsWith('trading_');
-  if (isTradingSource) {
-    const actionType = sourceMetadata.actionType;
-    const timeframe = sourceMetadata.timeframe;
-    if (typeof actionType !== 'string' || actionType.trim().length === 0) {
-      reasons.push('missing_trading_action_type');
-    }
-    if (typeof timeframe !== 'string' || timeframe.trim().length === 0) {
-      reasons.push('missing_trading_timeframe');
-    }
-  }
-
-  if (params.sourceType === 'rag_document' || params.sourceType === 'rag_media') {
-    reasons.push('knowledge_rag_default');
-  }
-
-  let score = 1;
-  for (const reason of reasons) {
-    if (reason === 'knowledge_rag_default') {
-      score -= 0.1;
-      continue;
-    }
-    if (reason.startsWith('missing_trading_')) {
-      score -= 0.15;
-      continue;
-    }
-    score -= 0.12;
-  }
-  if (params.sourceType === 'rag_document' || params.sourceType === 'rag_media') {
-    score = Math.min(score, 0.55);
-  }
-
-  return {
-    score: clampQualityScore(score),
-    rejectionReasons: reasons,
-  };
-}
 
 // ============================================================================
 // TRADING AUTO ENGINE - Jobs automÃ¡ticos de portfÃ³lio e sinais IA
@@ -2793,26 +2737,6 @@ registerTrainingWebhookRoutes(app, {
   },
 });
 
-const messageSchema = z.object({
-  role: z.enum(['user', 'assistant', 'system']),
-  content: z.string().min(1, 'ConteÃºdo da mensagem Ã© obrigatÃ³rio'),
-});
-
-const trainingSourceTypeSchema = z.enum([
-  'chat',
-  'trading_signal',
-  'trading_order',
-  'trading_demo',
-  'trading_postmortem',
-  'document',
-  'rag_document',
-  'rag_media', // Plano RAG Multimodal Fase 4 - mÃ­dia (imagem/Ã¡udio) promovida para treinamento
-  'upload',
-  'external',
-  'manual',
-  'system',
-]);
-
 function parseEnvFloat(envValue: string | undefined, defaultValue: number, varName: string): number {
   const raw = envValue ?? String(defaultValue);
   const trimmed = raw.trim();
@@ -2849,569 +2773,59 @@ const TRAINING_SCHEDULER_POLL_MS = parseEnvInt(
   60000,
   'TRAINING_SCHEDULER_POLL_MS'
 );
-
-type TrainingNamespaceProfileRuntime = {
-  profileVersion: number;
-  isActive: boolean;
-  autoCollectEnabled: boolean;
-  exists: boolean;
-  config: NamespaceProfileConfig;
-};
-
-async function getDefaultNamespaceProfileConfigForTraining(): Promise<NamespaceProfileConfig> {
-  return getNamespaceProfileDefaultConfig();
-}
-
-async function resolveTrainingNamespaceProfile(params: {
-  tenantId: string;
-  namespaceId?: string | null;
-}): Promise<TrainingNamespaceProfileRuntime> {
-  const defaultConfig = await getDefaultNamespaceProfileConfigForTraining();
-  if (!params.namespaceId) {
-    return {
-      profileVersion: 1,
-      isActive: true,
-      autoCollectEnabled: false,
-      exists: false,
-      config: defaultConfig,
-    };
-  }
-
-  const profile = await db.query.namespaceProfiles.findFirst({
-    where: and(
-      eq(schema.namespaceProfiles.tenantId, params.tenantId),
-      eq(schema.namespaceProfiles.namespaceId, params.namespaceId)
-    ),
-  });
-  if (!profile) {
-    return {
-      profileVersion: 1,
-      isActive: true,
-      autoCollectEnabled: true,
-      exists: false,
-      config: defaultConfig,
-    };
-  }
-  return {
-    profileVersion: profile.version,
-    isActive: profile.isActive,
-    autoCollectEnabled: profile.autoCollectEnabled,
-    exists: true,
-    config: NamespaceProfileConfigSchema.parse(profile.config),
-  };
-}
-
-const collectTrainingDataSchema = z.object({
-  tenantId: z.string().uuid('Tenant ID deve ser UUID vÃ¡lido'),
-  namespaceId: z.string().uuid('Namespace ID deve ser UUID vÃ¡lido').optional(),
-  agentId: z.string().uuid('Agent ID deve ser UUID vÃ¡lido').optional(),
-  domain: z.string().min(1).max(120).optional(),
-  conversationId: z.string().uuid('Conversation ID deve ser UUID vÃ¡lido').optional(),
-  source: z.string().min(1, 'Fonte Ã© obrigatÃ³ria'),
-  sourceType: trainingSourceTypeSchema.optional(),
-  sourceId: z.string().min(1).max(255).optional(),
-  sourceMetadata: z.record(z.unknown()).optional(),
-  messages: z.array(messageSchema).min(1, 'Pelo menos uma mensagem Ã© obrigatÃ³ria'),
-  rating: z.number().min(1).max(5).optional(),
+const trainingDataLifecycleService = createTrainingDataLifecycleService({
+  logger,
+  db,
+  findNamespaceByIdInTenant,
+  findAgentByIdInTenant,
+  resolveScope,
+  enqueueNamespaceProfileReconcileJob,
+  enqueueTrainingEmbeddingDedupeJob,
+  metrics: {
+    recordPrivacyRedactions: (count) => {
+      trainingPipelineMetrics.privacyRedactionsTotal.inc(count);
+    },
+    incrementPrivacyQuarantine: () => {
+      trainingPipelineMetrics.privacyQuarantineTotal.inc();
+    },
+    incrementDataRejected: (reason, sourceType) => {
+      trainingPipelineMetrics.dataRejectedTotal.labels(reason, sourceType).inc();
+    },
+    incrementConsentRejected: () => {
+      trainingPipelineMetrics.consentRejectedTotal.inc();
+    },
+    observeScopeConfidence: (value) => {
+      trainingPipelineMetrics.scopeConfidenceHistogram.observe(value);
+    },
+    incrementScopeQuarantine: (sourceType, reason) => {
+      trainingPipelineMetrics.scopeQuarantineTotal.inc({
+        source_type: sourceType,
+        reason,
+      });
+    },
+    incrementScopeSuggestedNewNamespace: (sourceType) => {
+      trainingPipelineMetrics.scopeSuggestedNewNamespaceTotal.inc({
+        source_type: sourceType,
+      });
+    },
+    incrementDataCollected: (sourceType, status) => {
+      trainingPipelineMetrics.dataCollectedTotal.labels(sourceType, status).inc();
+    },
+    observeQualityScore: (value) => {
+      trainingPipelineMetrics.qualityScore.observe(value);
+    },
+    incrementDataDuplicates: (sourceType) => {
+      trainingPipelineMetrics.dataDuplicatesTotal.labels(sourceType).inc();
+    },
+  },
 });
-
-const collectTrainingDataPayloadSchema = collectTrainingDataSchema.omit({ tenantId: true });
-const TRAINING_DATA_ACTIVE_FINGERPRINT_UNIQUE_INDEX = 'training_data_active_fingerprint_uidx';
-const TRAINING_DATA_ACTIVE_STATUSES_FOR_FINGERPRINT = ['pending', 'approved', 'reserved', 'used'] as const;
-
-class TrainingHttpError extends Error {
-  constructor(
-    public readonly status: number,
-    public readonly responsePayload: Record<string, unknown>
-  ) {
-    super(`Training HTTP error ${status}`);
-    this.name = 'TrainingHttpError';
-  }
-}
-
-function isPgUniqueConstraintViolation(error: unknown, constraintName: string): boolean {
-  if (!error || typeof error !== 'object') return false;
-  const candidate = error as { code?: unknown; constraint?: unknown };
-  return candidate.code === '23505' && candidate.constraint === constraintName;
-}
 
 async function collectTrainingDataForTenant(params: {
   tenantId: string;
   createdBy?: string;
   payload: z.infer<typeof collectTrainingDataPayloadSchema>;
-}): Promise<{
-  trainingData: typeof schema.trainingData.$inferSelect;
-  queued: boolean;
-  idempotencyKey: string;
-  idempotencyHit?: boolean;
-  isDuplicate: boolean;
-  duplicateOfId: string | null;
-  similarityScore: number | null;
-}> {
-  const body = params.payload;
-  const resolvedTenantId = params.tenantId;
-  const createdBy = params.createdBy;
-
-  if (body.namespaceId) {
-    await validateNamespaceTenantConsistency(
-      body.namespaceId,
-      resolvedTenantId,
-      async (id) => findNamespaceByIdInTenant(resolvedTenantId, id)
-    );
-  }
-  if (body.agentId) {
-    const agent = await findAgentByIdInTenant(resolvedTenantId, body.agentId);
-    validateTenantConsistency('agent', agent, resolvedTenantId, 'training_data');
-  }
-
-  const sourceType = body.sourceType ?? 'manual';
-  const namespaceProfile = await resolveTrainingNamespaceProfile({
-    tenantId: resolvedTenantId,
-    namespaceId: body.namespaceId ?? null,
-  });
-
-  if (!namespaceProfile.exists && body.namespaceId) {
-    const runId = crypto.randomUUID();
-    const reconcilePayload = trainingNamespaceProfileReconcileQueuePayloadSchema.parse({
-      runId,
-      idempotencyKey: buildNamespaceProfileReconcileIdempotencyKey({ runId }),
-      createdAt: new Date().toISOString(),
-    });
-    const enqueued = await enqueueNamespaceProfileReconcileJob(reconcilePayload);
-    logger.warn(
-      {
-        tenantId: resolvedTenantId,
-        namespaceId: body.namespaceId,
-        runId,
-        enqueued,
-      },
-      'Namespace profile ausente; reconcile enfileirado'
-    );
-  }
-
-  const privacyResult = applyPrivacyPolicy({
-    messages: body.messages,
-    privacyConfig: namespaceProfile.config.privacy,
-  });
-  const messagesForStorage = privacyResult.messagesRedacted;
-  if (privacyResult.summary.totalMatches > 0) {
-    trainingPipelineMetrics.privacyRedactionsTotal.inc(privacyResult.summary.totalMatches);
-  }
-  if (privacyResult.action === 'quarantine') {
-    trainingPipelineMetrics.privacyQuarantineTotal.inc();
-  }
-
-  if (sourceType === 'chat' && body.source === 'chat-auto') {
-    if (!namespaceProfile.isActive || !namespaceProfile.autoCollectEnabled || !namespaceProfile.config.autoCollect.enabled) {
-      trainingPipelineMetrics.dataRejectedTotal.labels('policy', sourceType).inc();
-      throw new TrainingHttpError(403, { error: 'namespace_profile_auto_collect_disabled' });
-    }
-  }
-
-  if (sourceType === 'chat' && body.source === 'chat-auto' && namespaceProfile.config.autoCollect.requiresUserConsent) {
-    const sourceMetadataUserId = typeof body.sourceMetadata?.['userId'] === 'string' ? body.sourceMetadata.userId : null;
-    const userIdForConsent = sourceMetadataUserId ?? createdBy ?? null;
-    if (!userIdForConsent) {
-      trainingPipelineMetrics.consentRejectedTotal.inc();
-      throw new TrainingHttpError(403, { error: 'user_opt_out' });
-    }
-    const userRecord = await db.query.users.findFirst({
-      where: and(
-        eq(schema.users.id, userIdForConsent),
-        eq(schema.users.tenantId, resolvedTenantId)
-      ),
-      columns: { preferencias: true },
-    });
-    const prefs = (userRecord?.preferencias ?? {}) as {
-      training?: { allowTrainingUsage?: boolean; allowAutoCollect?: boolean };
-    };
-    if (prefs.training?.allowTrainingUsage === false || prefs.training?.allowAutoCollect === false) {
-      trainingPipelineMetrics.consentRejectedTotal.inc();
-      throw new TrainingHttpError(403, { error: 'user_opt_out' });
-    }
-  }
-
-  const messagesText = messagesForStorage.map((m) => m.content).join('\n');
-  const scope = await resolveScope({
-    tenantId: resolvedTenantId,
-    namespaceId: body.namespaceId ?? null,
-    agentId: body.agentId ?? null,
-    domain: body.domain ?? null,
-    sourceType: body.sourceType ?? null,
-    sourceId: body.sourceId ?? null,
-    sourceMetadata: body.sourceMetadata ?? {},
-    conversationId: body.conversationId ?? null,
-    messagesText,
-  });
-  trainingPipelineMetrics.scopeConfidenceHistogram.observe(scope.confidence);
-
-  const effectiveNamespaceId = body.namespaceId ?? scope.namespaceId ?? null;
-  const effectiveAgentId = body.agentId ?? scope.agentId ?? null;
-  const inferredStatusNotes: string[] = [];
-  if (scope.needsHumanReview) {
-    inferredStatusNotes.push(
-      `Escopo em quarentena automÃ¡tica: confidence=${scope.confidence.toFixed(2)}`
-    );
-    trainingPipelineMetrics.scopeQuarantineTotal.inc({
-      source_type: body.sourceType ?? 'unknown',
-      reason: 'low_confidence_or_missing_namespace',
-    });
-  }
-  if (scope.suggestedNewNamespace) {
-    trainingPipelineMetrics.scopeSuggestedNewNamespaceTotal.inc({
-      source_type: body.sourceType ?? 'unknown',
-    });
-  }
-  const semhash = computeSemHash(messagesText);
-  const qualityAssessment = evaluateTrainingQuality({
-    sourceType,
-    messages: messagesForStorage,
-    sourceMetadata: body.sourceMetadata,
-  });
-  const qualityScore = qualityAssessment.score;
-  const idempotencyKey = buildTrainingIdempotencyKey({
-    tenantId: resolvedTenantId,
-    sourceType,
-    sourceId: body.sourceId ?? null,
-    semhash,
-  });
-
-  const qualityMinScore = namespaceProfile.config.quality.minScore;
-  const qualityAutoReject = namespaceProfile.config.quality.autoRejectBelowMin;
-  const defaultPurpose = sourceType === 'rag_document' || sourceType === 'rag_media'
-    ? 'knowledge_rag'
-    : 'behavior_sft';
-  const autoRejectedByQuality = qualityAutoReject && qualityScore < qualityMinScore;
-  if (autoRejectedByQuality || privacyResult.action === 'reject') {
-    const reviewNotes = autoRejectedByQuality
-      ? `Auto-rejeitado: qualidade ${qualityScore.toFixed(2)} abaixo do mÃ­nimo (${qualityMinScore}).`
-      : 'Rejeitado por polÃ­tica de privacidade';
-    const processedAt = new Date();
-    const [trainingData] = await db.insert(schema.trainingData).values({
-      tenantId: resolvedTenantId,
-      namespaceId: effectiveNamespaceId,
-      agentId: effectiveAgentId,
-      conversationId: body.conversationId,
-      source: body.source,
-      sourceType,
-      sourceId: body.sourceId ?? null,
-      sourceMetadata: body.sourceMetadata ?? {},
-      inferredNamespaceId: scope.namespaceId,
-      inferredAgentId: scope.agentId,
-      inferredDomain: scope.domain,
-      inferenceConfidence: scope.confidence,
-      inferenceTrace: scope.trace,
-      scopeResolverVersion: 'v1',
-      profileVersion: namespaceProfile.profileVersion,
-      needsHumanReview: scope.needsHumanReview || !namespaceProfile.exists,
-      quarantineReason: !namespaceProfile.exists
-        ? 'missing_namespace_profile'
-        : scope.needsHumanReview
-          ? 'low_confidence_or_missing_namespace'
-          : null,
-      scopeResolvedAt: new Date(),
-      quarantinedAt: scope.needsHumanReview || !namespaceProfile.exists ? new Date() : null,
-      messages: messagesForStorage,
-      rating: body.rating,
-      qualityScore,
-      createdBy,
-      semhash,
-      embedding: null,
-      isDuplicate: false,
-      duplicateOfId: null,
-      similarityScore: null,
-      purpose: 'rejected',
-      status: 'rejected',
-      reviewNotes: [
-        reviewNotes,
-        !namespaceProfile.exists ? 'Namespace profile ausente; item em modo restritivo.' : null,
-        privacyResult.action === 'reject' ? 'privacy_policy_match' : null,
-        qualityAssessment.rejectionReasons.length > 0
-          ? `quality_reasons:${qualityAssessment.rejectionReasons.join(',')}`
-          : null,
-        ...inferredStatusNotes,
-      ].filter(Boolean).join(' | ') || null,
-      processedAt,
-      processadoEm: processedAt,
-    }).returning();
-
-    trainingPipelineMetrics.dataCollectedTotal.labels(sourceType, 'rejected').inc();
-    trainingPipelineMetrics.qualityScore.observe(qualityScore);
-    trainingPipelineMetrics.dataRejectedTotal.labels(
-      privacyResult.action === 'reject' ? 'privacy' : 'quality',
-      sourceType
-    ).inc();
-    await db.insert(schema.trainingLineageEvents).values({
-      tenantId: resolvedTenantId,
-      namespaceId: effectiveNamespaceId,
-      eventType: 'training_data.rejected_policy',
-      sourceTable: 'training_data',
-      sourceId: trainingData.id,
-      producedTable: 'training_data',
-      producedId: trainingData.id,
-      metadata: {
-        sourceType,
-        qualityScore,
-        minScore: qualityMinScore,
-        privacyAction: privacyResult.action,
-      },
-    });
-
-    logger.info({
-      trainingDataId: trainingData.id,
-      qualityScore,
-      queued: false,
-      idempotencyKey,
-    }, 'Dados de treinamento rejeitados por qualidade mÃ­nima');
-
-    return {
-      trainingData,
-      queued: false,
-      idempotencyKey,
-      isDuplicate: false,
-      duplicateOfId: null,
-      similarityScore: null,
-    };
-  }
-
-  const sameFingerprintConditions = [
-    eq(schema.trainingData.tenantId, resolvedTenantId),
-    eq(schema.trainingData.sourceType, sourceType),
-    eq(schema.trainingData.semhash, semhash),
-  ];
-  if (body.sourceId) {
-    sameFingerprintConditions.push(eq(schema.trainingData.sourceId, body.sourceId));
-  } else {
-    sameFingerprintConditions.push(isNull(schema.trainingData.sourceId));
-  }
-
-  const existingByFingerprint = await db.query.trainingData.findFirst({
-    where: and(...sameFingerprintConditions),
-    orderBy: [desc(schema.trainingData.criadoEm)],
-  });
-  if (existingByFingerprint) {
-    const alreadyProcessed = Boolean(existingByFingerprint.embedding && existingByFingerprint.processedAt);
-    logger.info({
-      trainingDataId: existingByFingerprint.id,
-      queued: !alreadyProcessed && existingByFingerprint.status === 'pending',
-      idempotencyKey,
-    }, 'RequisiÃ§Ã£o idempotente detectada em training_data');
-
-    return {
-      trainingData: existingByFingerprint,
-      queued: !alreadyProcessed && existingByFingerprint.status === 'pending',
-      idempotencyKey,
-      idempotencyHit: true,
-      isDuplicate: Boolean(existingByFingerprint.isDuplicate),
-      duplicateOfId: existingByFingerprint.duplicateOfId,
-      similarityScore: existingByFingerprint.similarityScore ?? null,
-    };
-  }
-
-  let trainingData: typeof schema.trainingData.$inferSelect | null = null;
-  try {
-    [trainingData] = await db.insert(schema.trainingData).values({
-      tenantId: resolvedTenantId,
-      namespaceId: effectiveNamespaceId,
-      agentId: effectiveAgentId,
-      conversationId: body.conversationId,
-      source: body.source,
-      sourceType,
-      sourceId: body.sourceId ?? null,
-      sourceMetadata: {
-        ...(body.sourceMetadata ?? {}),
-        privacySummary: namespaceProfile.config.privacy.logRedactionSummary ? privacyResult.summary : undefined,
-        qualityAssessment: {
-          score: qualityScore,
-          rejectionReasons: qualityAssessment.rejectionReasons,
-        },
-      },
-      inferredNamespaceId: scope.namespaceId,
-      inferredAgentId: scope.agentId,
-      inferredDomain: scope.domain,
-      inferenceConfidence: scope.confidence,
-      inferenceTrace: scope.trace,
-      scopeResolverVersion: 'v1',
-      profileVersion: namespaceProfile.profileVersion,
-      needsHumanReview: scope.needsHumanReview
-        || !namespaceProfile.exists
-        || privacyResult.action === 'quarantine'
-        || defaultPurpose === 'knowledge_rag',
-      quarantineReason: defaultPurpose === 'knowledge_rag'
-        ? 'knowledge_rag_default'
-        : privacyResult.action === 'quarantine'
-        ? 'privacy_policy_match'
-        : !namespaceProfile.exists
-          ? 'missing_namespace_profile'
-          : scope.needsHumanReview
-            ? 'low_confidence_or_missing_namespace'
-            : null,
-      scopeResolvedAt: new Date(),
-      quarantinedAt: scope.needsHumanReview || !namespaceProfile.exists || privacyResult.action === 'quarantine' || defaultPurpose === 'knowledge_rag' ? new Date() : null,
-      messages: messagesForStorage,
-      rating: body.rating,
-      qualityScore,
-      createdBy,
-      semhash,
-      embedding: null,
-      isDuplicate: false,
-      duplicateOfId: null,
-      similarityScore: null,
-      purpose: defaultPurpose,
-      status: 'pending',
-      reviewNotes: [
-        ...inferredStatusNotes,
-        !namespaceProfile.exists ? 'Namespace profile ausente; reconcile solicitado.' : null,
-        privacyResult.action === 'quarantine' ? 'privacy_policy_match' : null,
-        defaultPurpose === 'knowledge_rag' ? 'knowledge_rag_default' : null,
-        qualityAssessment.rejectionReasons.length > 0
-          ? `quality_reasons:${qualityAssessment.rejectionReasons.join(',')}`
-          : null,
-      ].filter(Boolean).join(' | ') || null,
-    }).returning();
-  } catch (error) {
-    if (!isPgUniqueConstraintViolation(error, TRAINING_DATA_ACTIVE_FINGERPRINT_UNIQUE_INDEX)) {
-      throw error;
-    }
-
-    const existingAfterConflict = await db.query.trainingData.findFirst({
-      where: and(
-        ...sameFingerprintConditions,
-        inArray(schema.trainingData.status, [...TRAINING_DATA_ACTIVE_STATUSES_FOR_FINGERPRINT])
-      ),
-      orderBy: [desc(schema.trainingData.criadoEm)],
-    });
-    if (!existingAfterConflict) {
-      throw error;
-    }
-
-    const alreadyProcessed = Boolean(existingAfterConflict.embedding && existingAfterConflict.processedAt);
-    logger.warn({
-      trainingDataId: existingAfterConflict.id,
-      queued: !alreadyProcessed && existingAfterConflict.status === 'pending',
-      idempotencyKey,
-    }, 'Conflito de fingerprint resolvido por unique index (idempotÃªncia concorrente)');
-
-    return {
-      trainingData: existingAfterConflict,
-      queued: !alreadyProcessed && existingAfterConflict.status === 'pending',
-      idempotencyKey,
-      idempotencyHit: true,
-      isDuplicate: Boolean(existingAfterConflict.isDuplicate),
-      duplicateOfId: existingAfterConflict.duplicateOfId,
-      similarityScore: existingAfterConflict.similarityScore ?? null,
-    };
-  }
-
-  if (!trainingData) {
-    throw new Error('Falha ao inserir training_data');
-  }
-
-  await db.insert(schema.trainingLineageEvents).values({
-    tenantId: resolvedTenantId,
-    namespaceId: effectiveNamespaceId,
-    eventType: privacyResult.action === 'quarantine' || !namespaceProfile.exists || scope.needsHumanReview
-      ? 'training_data.quarantined_policy'
-      : 'training_data.collected',
-    sourceTable: 'training_data',
-    sourceId: trainingData.id,
-    producedTable: 'training_data',
-    producedId: trainingData.id,
-    metadata: {
-      sourceType,
-      qualityScore,
-      profileVersion: namespaceProfile.profileVersion,
-      privacyAction: privacyResult.action,
-    },
-  });
-
-  const queuePayload = trainingEmbeddingDedupeQueuePayloadSchema.parse({
-    trainingDataId: trainingData.id,
-    tenantId: resolvedTenantId,
-    namespaceId: effectiveNamespaceId ?? undefined,
-    agentId: effectiveAgentId ?? undefined,
-    semhash,
-    sourceType,
-    sourceId: body.sourceId ?? undefined,
-    idempotencyKey,
-    createdAt: new Date().toISOString(),
-  });
-  const queued = await enqueueTrainingEmbeddingDedupeJob(queuePayload);
-
-  if (!queued) {
-    const processedAt = new Date();
-    const canonical = await db.query.trainingData.findFirst({
-      where: and(
-        ...sameFingerprintConditions,
-        ne(schema.trainingData.id, trainingData.id)
-      ),
-      orderBy: [desc(schema.trainingData.criadoEm)],
-    });
-    const [updatedDuplicate] = await db.update(schema.trainingData)
-      .set({
-        isDuplicate: true,
-        duplicateOfId: canonical?.id ?? null,
-        similarityScore: 1,
-        status: 'rejected',
-        reviewNotes: [
-          'RequisiÃ§Ã£o idempotente duplicada: job jÃ¡ enfileirado para fingerprint idÃªntico.',
-          trainingData.reviewNotes,
-        ].filter(Boolean).join(' | '),
-        processedAt,
-        processadoEm: processedAt,
-      })
-      .where(eq(schema.trainingData.id, trainingData.id))
-      .returning();
-
-    const duplicateRow = updatedDuplicate ?? trainingData;
-    trainingPipelineMetrics.dataCollectedTotal.labels(sourceType, 'rejected').inc();
-    trainingPipelineMetrics.dataRejectedTotal.labels('duplicate', sourceType).inc();
-    trainingPipelineMetrics.qualityScore.observe(qualityScore);
-    trainingPipelineMetrics.dataDuplicatesTotal.labels(sourceType).inc();
-
-    logger.info({
-      trainingDataId: duplicateRow.id,
-      queued: false,
-      idempotencyKey,
-    }, 'RequisiÃ§Ã£o idempotente duplicada sem novo enqueue');
-
-    return {
-      trainingData: duplicateRow,
-      queued: false,
-      idempotencyKey,
-      idempotencyHit: true,
-      isDuplicate: true,
-      duplicateOfId: duplicateRow.duplicateOfId,
-      similarityScore: duplicateRow.similarityScore ?? null,
-    };
-  }
-
-  trainingPipelineMetrics.dataCollectedTotal.labels(sourceType, 'pending').inc();
-  trainingPipelineMetrics.qualityScore.observe(qualityScore);
-
-  logger.info({
-    trainingDataId: trainingData.id,
-    queued,
-    idempotencyKey,
-    scope: {
-      namespaceId: effectiveNamespaceId,
-      agentId: effectiveAgentId,
-      inferredNamespaceId: scope.namespaceId,
-      inferredAgentId: scope.agentId,
-      inferredDomain: scope.domain,
-      confidence: scope.confidence,
-      needsHumanReview: scope.needsHumanReview,
-    },
-  }, 'Dados de treinamento coletados');
-
-  return {
-    trainingData,
-    queued,
-    idempotencyKey,
-    isDuplicate: false,
-    duplicateOfId: null,
-    similarityScore: null,
-  };
+}) {
+  return trainingDataLifecycleService.collectTrainingDataForTenant(params);
 }
 
 registerTrainingJobQueryRoutes(app, {
@@ -3621,26 +3035,6 @@ registerTrainingRunStartRoutes(app, {
 // Polling removido (Regra 6): cancelamento e progresso sao tratados via DB + gpu-trainer.
 
 // ============================================================================
-// BULK IMPORT - ImportaÃ§Ã£o em Lote de Dados de Treinamento
-// ============================================================================
-
-const bulkImportSchema = z.object({
-  source: z.string().min(1).max(50),
-  sourceType: trainingSourceTypeSchema.optional(),
-  namespaceId: z.string().uuid().optional(),
-  agentId: z.string().uuid().optional(),
-  domain: z.string().min(1).max(120).optional(),
-  data: z.array(z.object({
-    messages: z.array(z.object({
-      role: z.enum(['user', 'assistant', 'system']),
-      content: z.string().min(1),
-    })).min(2),
-    rating: z.number().min(1).max(5).optional(),
-  })).min(1).max(1000),
-  autoApprove: z.boolean().optional().default(false),
-});
-
-// ============================================================================
 // WEBHOOK - Receber Dados de Sistemas Externos
 // ============================================================================
 
@@ -3674,15 +3068,6 @@ function _estimateRemainingTime(job: typeof schema.fineTuningJobs.$inferSelect):
   return Math.round(Math.max(0, remainingMs) / 1000);
 }
 
-// Importar funÃ§Ãµes do auto-learning scheduler
-import { 
-  SCHEDULE_CONFIG, 
-  evaluateDataQuality, 
-  startProgressiveLoRA,
-  processScheduledJobs,
-  initAutoLearningScheduler,
-} from './auto-learning-scheduler.js';
-
 // ============================================================================
 // MIDDLEWARE: Not Found + Error Handler (Express.js 2025)
 // ============================================================================
@@ -3696,10 +3081,6 @@ app.use(createErrorHandler({
   logger,
   includeStackInDev: true,
 }));
-
-// CORREÃ‡ÃƒO 31/12/2025: Usar connectWithRetry para garantir PostgreSQL + pgvector prontos
-// Previne crash loop quando PostgreSQL ainda estÃ¡ inicializando
-import { connectWithRetry } from '@alice/database';
 
 // SSOT validation (Plano 11/02/2026): TEXT_EMBEDDING_DIM (embeddings-gpu) = EMBEDDING_DIMENSIONS.TEXT
 async function validateEmbeddingDimensionsSSOT(): Promise<void> {
@@ -3749,354 +3130,198 @@ async function validateEmbeddingDimensionsSSOT(): Promise<void> {
     }
   }
 }
+function createAndStartWorkers(): Array<() => Promise<void>> {
+  const workerStoppers: Array<() => Promise<void>> = [];
 
-let server: ReturnType<typeof app.listen>;
-let autoLearningLoopActive = false;
+  workerStoppers.push(
+    createTrainingFineTuningWorker({
+      db,
+      logger,
+      metrics: {
+        jobsTotal: trainingPipelineMetrics.fineTuningQueueJobsTotal,
+        durationSeconds: trainingPipelineMetrics.fineTuningQueueDurationSeconds,
+      },
+      pollIntervalMs: TRAINING_FINE_TUNING_WORKER_POLL_INTERVAL_MS,
+      processJob: async (_job, payload) => {
+        await runTrainingFineTuningJob({
+          db,
+          payload,
+          fineTuningJobId: payload.fineTuningJobId,
+        });
+      },
+    }),
+  );
+  logger.info(
+    {
+      queues: [
+        TRAINING_FINE_TUNING_QUEUE_HIGH,
+        TRAINING_FINE_TUNING_QUEUE_NORMAL,
+        TRAINING_FINE_TUNING_QUEUE_LOW,
+      ],
+      pollIntervalMs: TRAINING_FINE_TUNING_WORKER_POLL_INTERVAL_MS,
+    },
+    'Worker de fila fine-tuning inicializado',
+  );
 
-(async () => {
-  try {
-    // Conectar ao PostgreSQL com retry logic ANTES de iniciar servidor HTTP
-    // Training-service usa pgvector para colunas vetoriais (documentos/metadata)
-    await connectWithRetry({
-      maxRetries: 15,
-      initialDelayMs: 2000,
-      checkPgvector: true, // Verificar extensÃ£o pgvector (obrigatÃ³rio para embeddings)
-    });
+  workerStoppers.push(
+    createNamespaceProfileReconcileWorker({
+      db,
+      logger,
+      metrics: {
+        jobsTotal: trainingPipelineMetrics.namespaceProfileReconcileJobsTotal,
+        reconcileCreatedTotal: trainingPipelineMetrics.namespaceProfileReconcileCreatedTotal,
+        reconcileMissingTotal: trainingPipelineMetrics.namespaceProfileReconcileMissingTotal,
+        durationSeconds: trainingPipelineMetrics.namespaceProfileReconcileDurationSeconds,
+      },
+      pollIntervalMs: Math.min(NAMESPACE_PROFILE_RECONCILE_INTERVAL_MS, 30_000),
+    }),
+  );
+  logger.info(
+    {
+      queue: TRAINING_NAMESPACE_PROFILE_RECONCILE_QUEUE,
+      intervalMs: NAMESPACE_PROFILE_RECONCILE_INTERVAL_MS,
+    },
+    'Worker de reconciliação de namespace_profiles inicializado',
+  );
 
-    // Inicializar auto-learning scheduler com instÃ¢ncia do banco (Regra 6: sem db undefined)
-    // CORREÃ‡ÃƒO 11/02/2026: initAutoLearningScheduler NUNCA era chamada, causando
-    // db=undefined â†’ TypeError a cada 60s no processScheduledJobs â†’ alerta Grafana
+  workerStoppers.push(
+    createTrainingEmbeddingDedupeWorker({
+      db,
+      logger,
+      metrics: {
+        jobsTotal: trainingPipelineMetrics.embeddingDedupeJobsTotal,
+        dedupeHitsTotal: trainingPipelineMetrics.embeddingDedupeHitsTotal,
+        durationSeconds: trainingPipelineMetrics.embeddingDedupeDurationSeconds,
+      },
+      pollIntervalMs: TRAINING_EMBEDDING_DEDUPE_WORKER_POLL_INTERVAL_MS,
+      similarityThreshold: SIMILARITY_THRESHOLD,
+      generateEmbedding,
+    }),
+  );
+  workerStoppers.push(
+    createTrainingDataPolicyGateWorker({
+      db,
+      pollIntervalMs: TRAINING_POLICY_GATE_WORKER_POLL_INTERVAL_MS,
+    }),
+  );
+  logger.info(
+    {
+      queue: TRAINING_DATA_POLICY_GATE_QUEUE,
+      pollIntervalMs: TRAINING_POLICY_GATE_WORKER_POLL_INTERVAL_MS,
+    },
+    'Worker de policy gate de treinamento inicializado',
+  );
+  logger.info(
+    {
+      queue: TRAINING_EMBEDDING_DEDUPE_QUEUE,
+      pollIntervalMs: TRAINING_EMBEDDING_DEDUPE_WORKER_POLL_INTERVAL_MS,
+    },
+    'Worker de embedding/dedupe inicializado',
+  );
+
+  workerStoppers.push(createTradingWorker(
+    tradingQueueNames.universe,
+    tradingUniverseEnqueueSchema,
+    async (payload) => {
+      const result = await runUniverseScanWorker(payload);
+      tradingMetrics.candidateCount.inc({ side: result.side, marketType: payload.marketType });
+    },
+    tradingMetrics.universeScanSeconds,
+  ));
+  workerStoppers.push(createTradingWorker(
+    tradingQueueNames.backtest,
+    tradingBacktestEnqueueSchema,
+    async (payload) => {
+      const result = await runBacktestWorker(payload);
+      tradingMetrics.backtestDsr.set({ marketType: payload.marketType, strategyKey: payload.strategyKey }, result.dsr);
+      tradingMetrics.backtestPbo.set({ marketType: payload.marketType, strategyKey: payload.strategyKey }, result.pbo);
+    },
+    tradingMetrics.backtestSeconds,
+  ));
+  workerStoppers.push(createTradingWorker(
+    tradingQueueNames.calibration,
+    tradingCalibrationEnqueueSchema,
+    async (payload) => {
+      await runCalibrationWorker(payload);
+    },
+    tradingMetrics.calibrationSeconds,
+  ));
+  workerStoppers.push(createTradingWorker(
+    tradingQueueNames.rebalance,
+    tradingRebalanceEnqueueSchema,
+    async (payload) => {
+      await runPortfolioRebalanceWorker(payload);
+    },
+    tradingMetrics.rebalanceSeconds,
+  ));
+  workerStoppers.push(createTradingWorker(
+    tradingQueueNames.modelRisk,
+    tradingModelRiskEnqueueSchema,
+    async (payload) => {
+      await runModelRiskWorker(payload);
+      tradingMetrics.modelRiskEventsTotal.inc();
+    },
+    tradingMetrics.modelRiskSeconds,
+  ));
+
+  workerStoppers.push(createTradingWorker(
+    tradingQueueNames.portfolioAutoRun,
+    tradingAutoPortfolioPayloadSchema.extend({ idempotencyKey: z.string() }),
+    async (payload) => {
+      await processPortfolioAutoRun(payload);
+    },
+    tradingMetrics.portfolioAutoRunSeconds,
+  ));
+  workerStoppers.push(createTradingWorker(
+    tradingQueueNames.signalAutoRun,
+    tradingAutoSignalPayloadSchema.extend({ idempotencyKey: z.string() }),
+    async (payload) => {
+      await processSignalAutoRun({
+        ...payload,
+        selectAllAssets: payload.selectAllAssets ?? false,
+      });
+    },
+    tradingMetrics.signalAutoRunSeconds,
+  ));
+
+  return workerStoppers;
+}
+
+void startTrainingBootstrap({
+  app,
+  logger,
+  port: PORT,
+  trainingHttpServerTimeoutMs: TRAINING_HTTP_SERVER_TIMEOUT_MS,
+  trainingMetricsIntervalMs: TRAINING_METRICS_INTERVAL_MS,
+  trainingImmutableAuditCheckIntervalMs: TRAINING_IMMUTABLE_AUDIT_CHECK_INTERVAL_MS,
+  namespaceProfileReconcileIntervalMs: NAMESPACE_PROFILE_RECONCILE_INTERVAL_MS,
+  trainingSchedulerPollMs: TRAINING_SCHEDULER_POLL_MS,
+  connectWithRetryMaxRetries: 15,
+  connectWithRetryInitialDelayMs: 2000,
+  initializeAutoLearningScheduler: () => {
     initAutoLearningScheduler(getDatabase());
-
-    // SSOT validation (Plano 11/02/2026): embeddings-gpu text_dimensions = EMBEDDING_DIMENSIONS.TEXT
-    await validateEmbeddingDimensionsSSOT();
-
-    // WS4: Redis cache + session-auth cache (evita queries repetitivas em PostgreSQL)
-    // - Em produÃ§Ã£o: Redis Ã© obrigatÃ³rio (fail-fast dentro de initializeSessionAuthCache)
-    // - Em dev/test: cache fica desabilitado (sem in-memory)
-    await initializeRedisCache();
-    await initializeSessionAuthCache();
-    logger.info('Auth cache (session-auth) inicializado');
-    tradingWorkerStoppers.push(
-      createTrainingFineTuningWorker({
-        db,
-        logger,
-        metrics: {
-          jobsTotal: trainingPipelineMetrics.fineTuningQueueJobsTotal,
-          durationSeconds: trainingPipelineMetrics.fineTuningQueueDurationSeconds,
-        },
-        pollIntervalMs: TRAINING_FINE_TUNING_WORKER_POLL_INTERVAL_MS,
-        processJob: async (_job, payload) => {
-          await runTrainingFineTuningJob({
-            db,
-            payload,
-            fineTuningJobId: payload.fineTuningJobId,
-          });
-        },
-      })
-    );
-    logger.info(
-      {
-        queues: [
-          TRAINING_FINE_TUNING_QUEUE_HIGH,
-          TRAINING_FINE_TUNING_QUEUE_NORMAL,
-          TRAINING_FINE_TUNING_QUEUE_LOW,
-        ],
-        pollIntervalMs: TRAINING_FINE_TUNING_WORKER_POLL_INTERVAL_MS,
-      },
-      'Worker de fila fine-tuning inicializado'
-    );
-    tradingWorkerStoppers.push(
-      createNamespaceProfileReconcileWorker({
-        db,
-        logger,
-        metrics: {
-          jobsTotal: trainingPipelineMetrics.namespaceProfileReconcileJobsTotal,
-          reconcileCreatedTotal: trainingPipelineMetrics.namespaceProfileReconcileCreatedTotal,
-          reconcileMissingTotal: trainingPipelineMetrics.namespaceProfileReconcileMissingTotal,
-          durationSeconds: trainingPipelineMetrics.namespaceProfileReconcileDurationSeconds,
-        },
-        pollIntervalMs: Math.min(NAMESPACE_PROFILE_RECONCILE_INTERVAL_MS, 30_000),
-      })
-    );
-    logger.info(
-      {
-        queue: TRAINING_NAMESPACE_PROFILE_RECONCILE_QUEUE,
-        intervalMs: NAMESPACE_PROFILE_RECONCILE_INTERVAL_MS,
-      },
-      'Worker de reconciliaÃ§Ã£o de namespace_profiles inicializado'
-    );
-    tradingWorkerStoppers.push(
-      createTrainingEmbeddingDedupeWorker({
-        db,
-        logger,
-        metrics: {
-          jobsTotal: trainingPipelineMetrics.embeddingDedupeJobsTotal,
-          dedupeHitsTotal: trainingPipelineMetrics.embeddingDedupeHitsTotal,
-          durationSeconds: trainingPipelineMetrics.embeddingDedupeDurationSeconds,
-        },
-        pollIntervalMs: TRAINING_EMBEDDING_DEDUPE_WORKER_POLL_INTERVAL_MS,
-        similarityThreshold: SIMILARITY_THRESHOLD,
-        generateEmbedding,
-      })
-    );
-    tradingWorkerStoppers.push(
-      createTrainingDataPolicyGateWorker({
-        db,
-        pollIntervalMs: TRAINING_POLICY_GATE_WORKER_POLL_INTERVAL_MS,
-      })
-    );
-    logger.info(
-      {
-        queue: TRAINING_DATA_POLICY_GATE_QUEUE,
-        pollIntervalMs: TRAINING_POLICY_GATE_WORKER_POLL_INTERVAL_MS,
-      },
-      'Worker de policy gate de treinamento inicializado'
-    );
-    logger.info(
-      {
-        queue: TRAINING_EMBEDDING_DEDUPE_QUEUE,
-        pollIntervalMs: TRAINING_EMBEDDING_DEDUPE_WORKER_POLL_INTERVAL_MS,
-      },
-      'Worker de embedding/dedupe inicializado'
-    );
-    tradingWorkerStoppers.push(createTradingWorker(
-      tradingQueueNames.universe,
-      tradingUniverseEnqueueSchema,
-      async (payload) => {
-        const result = await runUniverseScanWorker(payload);
-        tradingMetrics.candidateCount.inc({ side: result.side, marketType: payload.marketType });
-      },
-      tradingMetrics.universeScanSeconds,
-    ));
-    tradingWorkerStoppers.push(createTradingWorker(
-      tradingQueueNames.backtest,
-      tradingBacktestEnqueueSchema,
-      async (payload) => {
-        const result = await runBacktestWorker(payload);
-        tradingMetrics.backtestDsr.set({ marketType: payload.marketType, strategyKey: payload.strategyKey }, result.dsr);
-        tradingMetrics.backtestPbo.set({ marketType: payload.marketType, strategyKey: payload.strategyKey }, result.pbo);
-      },
-      tradingMetrics.backtestSeconds,
-    ));
-    tradingWorkerStoppers.push(createTradingWorker(
-      tradingQueueNames.calibration,
-      tradingCalibrationEnqueueSchema,
-      async (payload) => {
-        await runCalibrationWorker(payload);
-      },
-      tradingMetrics.calibrationSeconds,
-    ));
-    tradingWorkerStoppers.push(createTradingWorker(
-      tradingQueueNames.rebalance,
-      tradingRebalanceEnqueueSchema,
-      async (payload) => {
-        await runPortfolioRebalanceWorker(payload);
-      },
-      tradingMetrics.rebalanceSeconds,
-    ));
-    tradingWorkerStoppers.push(createTradingWorker(
-      tradingQueueNames.modelRisk,
-      tradingModelRiskEnqueueSchema,
-      async (payload) => {
-        await runModelRiskWorker(payload);
-        tradingMetrics.modelRiskEventsTotal.inc();
-      },
-      tradingMetrics.modelRiskSeconds,
-    ));
-
-    // Auto Engine Workers
-    tradingWorkerStoppers.push(createTradingWorker(
-      tradingQueueNames.portfolioAutoRun,
-      tradingAutoPortfolioPayloadSchema.extend({ idempotencyKey: z.string() }),
-      async (payload) => {
-        await processPortfolioAutoRun(payload);
-      },
-      tradingMetrics.portfolioAutoRunSeconds,
-    ));
-    tradingWorkerStoppers.push(createTradingWorker(
-      tradingQueueNames.signalAutoRun,
-      tradingAutoSignalPayloadSchema.extend({ idempotencyKey: z.string() }),
-      async (payload) => {
-        await processSignalAutoRun({
-          ...payload,
-          selectAllAssets: payload.selectAllAssets ?? false,
-        });
-      },
-      tradingMetrics.signalAutoRunSeconds,
-    ));
-    
-    server = app.listen(PORT, '0.0.0.0', () => {
-      logger.info({ 
-        port: PORT, 
-        embeddingsConfigured: true, // Embeddings via GPU Manager Service (Gate 2)
-        fineTuningConfigured: true, // Fine-tuning LoRA via gpu-trainer (prioridade baixa)
-        circuitBreaker: 'enabled',
-      }, 'Training service iniciado com Circuit Breaker');
-
-      startTrainingMetricsScheduler();
-      logger.info({ intervalMs: TRAINING_METRICS_INTERVAL_MS }, 'Scheduler de mÃ©tricas de training iniciado');
-      startTrainingImmutableAuditIntegrityScheduler();
-      logger.info(
-        { intervalMs: TRAINING_IMMUTABLE_AUDIT_CHECK_INTERVAL_MS },
-        'Scheduler de verificacao de integridade do ledger imutavel iniciado'
-      );
-      startNamespaceProfileReconcileScheduler();
-      logger.info(
-        { intervalMs: NAMESPACE_PROFILE_RECONCILE_INTERVAL_MS },
-        'Scheduler de reconciliaÃ§Ã£o de namespace_profiles iniciado'
-      );
-
-      autoLearningLoopActive = true;
-      void (async () => {
-        while (autoLearningLoopActive) {
-          try {
-            await processScheduledJobs();
-            trainingPipelineMetrics.schedulerRunsTotal.labels('success').inc();
-          } catch (error: unknown) {
-            trainingPipelineMetrics.schedulerRunsTotal.labels('error').inc();
-            const errObj = error instanceof Error ? error : new Error(String(error));
-            logger.warn({ err: errObj }, 'Falha ao processar jobs agendados de auto-learning');
-          }
-          await sleep(TRAINING_SCHEDULER_POLL_MS);
-        }
-      })();
-      logger.info({ intervalMs: TRAINING_SCHEDULER_POLL_MS }, 'Scheduler de auto-learning iniciado');
-
-      // Retomar jobs pendentes apÃ³s restart (Regra 6: sem dependÃªncia de state em memÃ³ria)
-      trainingJobLifecycleService.resumePendingFineTuningJobs().catch((error: unknown) => {
-        const errObj = error instanceof Error ? error : new Error(String(error));
-        logger.error({ err: errObj }, 'Falha ao retomar jobs de fine-tuning pendentes');
-      });
-      trainingJobLifecycleService.resumePendingLoraJobs().catch((error: unknown) => {
-        const errObj = error instanceof Error ? error : new Error(String(error));
-        logger.error({ err: errObj }, 'Falha ao retomar jobs de trading LoRA pendentes');
-      });
-
-      // Tick periÃ³dico: garante execuÃ§Ã£o de jobs criados por scheduler/rotas mesmo apÃ³s long uptimes
-      setInterval(() => {
-        trainingJobLifecycleService.resumePendingFineTuningJobs().catch(() => {});
-        trainingJobLifecycleService.resumePendingLoraJobs().catch(() => {});
-      }, 30000);
-    });
-
-    // SEGURANÃ‡A: Timeouts para prevenir conexÃµes pendentes (Node.js 20 LTS Best Practices)
-    // Bulk import pode processar centenas de entradas e exceder 30s.
-    // Em produÃ§Ã£o, 30s causava socket close no upstream e 502 no Caddy (EOF).
-    server.timeout = TRAINING_HTTP_SERVER_TIMEOUT_MS;
-    server.keepAliveTimeout = 65000; // 65s (maior que ALB timeout padrÃ£o de 60s)
-    server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
-    logger.info(
-      {
-        serverTimeoutMs: TRAINING_HTTP_SERVER_TIMEOUT_MS,
-        keepAliveTimeoutMs: server.keepAliveTimeout,
-        headersTimeoutMs: server.headersTimeout,
-      },
-      'Timeouts HTTP do training-service configurados'
-    );
-    
-    // ============================================================================
-    // GRACEFUL SHUTDOWN (Enterprise-Grade - Regra 16 CLAUDE.md)
-    // CORREÃ‡ÃƒO 31/12/2025: Callbacks movidos para dentro do IIFE para garantir
-    // que 'server' estÃ¡ definido antes de registrar o callback
-    // ShutdownManager centralizado elimina duplicaÃ§Ã£o de listeners (Regra 6)
-    // Ordem: HTTP server â†’ Database pool
-    // ============================================================================
-
-    registerShutdownCallback(
-      'training-http-server',
-      async () => {
-        logger.info('Encerrando HTTP server...');
-        await new Promise<void>((resolve, reject) => {
-          server.close((err) => {
-            if (err) {
-              logger.error({ error: err }, 'Erro ao fechar HTTP server');
-              reject(err);
-            } else {
-              logger.info('HTTP server encerrado com sucesso');
-              resolve();
-            }
-          });
-        });
-      },
-      { priority: ShutdownPriority.HTTP_SERVER }
-    );
-
-    registerShutdownCallback(
-      'training-redis-cache',
-      async () => {
-        logger.info('Encerrando cliente Redis cache...');
-        await closeRedisCacheClient();
-        logger.info('Cliente Redis cache encerrado com sucesso');
-      },
-      { priority: ShutdownPriority.CACHE }
-    );
-
-    registerShutdownCallback(
-      'training-metrics-scheduler',
-      async () => {
-        if (trainingMetricsInterval) {
-          clearInterval(trainingMetricsInterval);
-          trainingMetricsInterval = null;
-        }
-      },
-      { priority: ShutdownPriority.BACKGROUND_JOBS }
-    );
-
-    registerShutdownCallback(
-      'training-immutable-audit-integrity-scheduler',
-      async () => {
-        if (trainingImmutableAuditIntegrityInterval) {
-          clearInterval(trainingImmutableAuditIntegrityInterval);
-          trainingImmutableAuditIntegrityInterval = null;
-        }
-      },
-      { priority: ShutdownPriority.BACKGROUND_JOBS }
-    );
-
-    registerShutdownCallback(
-      'training-namespace-profile-reconcile-scheduler',
-      async () => {
-        if (namespaceProfileReconcileInterval) {
-          clearInterval(namespaceProfileReconcileInterval);
-          namespaceProfileReconcileInterval = null;
-        }
-      },
-      { priority: ShutdownPriority.BACKGROUND_JOBS }
-    );
-
-    registerShutdownCallback(
-      'training-trading-workers',
-      async () => {
-        await Promise.all(tradingWorkerStoppers.map((stop) => stop()));
-      },
-      { priority: ShutdownPriority.BACKGROUND_JOBS }
-    );
-
-    registerShutdownCallback(
-      'training-auto-learning-scheduler',
-      async () => {
-        autoLearningLoopActive = false;
-      },
-      { priority: ShutdownPriority.BACKGROUND_JOBS }
-    );
-
-    registerShutdownCallback(
-      'training-database-pool',
-      async () => {
-        logger.info('Encerrando pool de conexÃµes database...');
-        await closeDatabasePool();
-        logger.info('Pool de conexÃµes encerrado com sucesso');
-      },
-      { priority: ShutdownPriority.DATABASE }
-    );
-    
-  } catch (error) {
-    logger.fatal({ error: error instanceof Error ? error.message : String(error) }, 
-      'âŒ FATAL: Falha ao conectar ao PostgreSQL - training-service nÃ£o pode iniciar');
-    process.exit(1);
-  }
-})();
+  },
+  validateEmbeddingDimensionsSSOT,
+  initializeRedisCache,
+  initializeSessionAuthCache,
+  createAndStartWorkers,
+  onServiceListening: () => ({
+    startTrainingMetricsScheduler,
+    startTrainingImmutableAuditIntegrityScheduler,
+    startNamespaceProfileReconcileScheduler,
+    processScheduledJobs,
+    incrementSchedulerRunsMetric: (result) => {
+      trainingPipelineMetrics.schedulerRunsTotal.labels(result).inc();
+    },
+    resumePendingFineTuningJobs: () => trainingJobLifecycleService.resumePendingFineTuningJobs(),
+    resumePendingLoraJobs: () => trainingJobLifecycleService.resumePendingLoraJobs(),
+  }),
+  stopTrainingMetricsScheduler,
+  stopTrainingImmutableAuditIntegrityScheduler,
+  stopNamespaceProfileReconcileScheduler,
+  closeRedisCacheClient,
+  closeDatabasePool,
+});
 
 
 
