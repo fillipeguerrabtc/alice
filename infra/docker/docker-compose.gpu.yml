@@ -38,7 +38,7 @@ services:
   # Qwen2.5 7B Instruct (AWQ) - LLM (Texto) - 8k
   # =============================================================================
   gpu-llm:
-    image: ghcr.io/${DOCKERHUB_USERNAME:-fillipeguerrabtc}/alice-llm-qwen25:${IMAGE_TAG:-latest}
+    image: ghcr.io/${DOCKERHUB_USERNAME:-fillipeguerrabtc}/alice-llm-qwen25:${IMAGE_TAG:?IMAGE_TAG obrigatório}
     platform: linux/amd64
     container_name: gpu-llm
     restart: unless-stopped
@@ -90,7 +90,7 @@ services:
   # Gate 2: Texto 1024 dim (Qdrant) - imagens usam OpenAI (sem GPU)
   # =============================================================================
   gpu-embeddings:
-    image: ghcr.io/${DOCKERHUB_USERNAME:-fillipeguerrabtc}/alice-embeddings-gpu:${IMAGE_TAG:-latest}
+    image: ghcr.io/${DOCKERHUB_USERNAME:-fillipeguerrabtc}/alice-embeddings-gpu:${IMAGE_TAG:?IMAGE_TAG obrigatório}
     platform: linux/amd64
     container_name: gpu-embeddings
     restart: unless-stopped
@@ -135,7 +135,7 @@ services:
   # Gate 2: Profile 'training' - só inicia quando necessário
   # =============================================================================
   gpu-trainer:
-    image: ghcr.io/${DOCKERHUB_USERNAME:-fillipeguerrabtc}/alice-qwen-trainer:${IMAGE_TAG:-latest}
+    image: ghcr.io/${DOCKERHUB_USERNAME:-fillipeguerrabtc}/alice-qwen-trainer:${IMAGE_TAG:?IMAGE_TAG obrigatório}
     platform: linux/amd64
     container_name: gpu-trainer
     restart: "no"

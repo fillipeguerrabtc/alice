@@ -52,7 +52,7 @@ services:
   # Ref: https://pgbackrest.org/configuration.html#section-stanza/option-pg-host
   # ===========================================================================
   pgbackrest:
-    image: ${IMAGE_PREFIX}-pgbackrest:${IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX}-pgbackrest:${IMAGE_TAG:?IMAGE_TAG obrigatório}
     platform: linux/amd64
     container_name: alice-pgbackrest
     # NOTA: UID 70 definido no Dockerfile.pgbackrest (mesmo que PostgreSQL Alpine)
@@ -127,7 +127,7 @@ services:
   # Ref: https://github.com/woblerr/pgbackrest_exporter
   # ===========================================================================
   pgbackrest-exporter:
-    image: ${PGBACKREST_EXPORTER_IMAGE:-woblerr/pgbackrest_exporter}:${PGBACKREST_EXPORTER_VERSION:-latest}
+    image: ${PGBACKREST_EXPORTER_IMAGE:-woblerr/pgbackrest_exporter}:${PGBACKREST_EXPORTER_VERSION:?PGBACKREST_EXPORTER_VERSION obrigatório}
     platform: linux/amd64
     container_name: alice-pgbackrest-exporter
     restart: unless-stopped

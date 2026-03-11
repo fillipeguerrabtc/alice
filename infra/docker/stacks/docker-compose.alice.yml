@@ -64,7 +64,7 @@ services:
   # NOTA: Dependência do caddy (stack infra) verificada via job check-dependencies
   # ===========================================================================
   alice-frontend:
-    image: ${IMAGE_PREFIX}-frontend:${IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX}-frontend:${IMAGE_TAG:?IMAGE_TAG obrigatório}
     platform: linux/amd64
     container_name: alice-frontend
     restart: unless-stopped
@@ -118,7 +118,7 @@ services:
   # ALICE AUTH SERVICE - OAuth/SAML/OIDC Provider
   # ===========================================================================
   alice-auth:
-    image: ${IMAGE_PREFIX}-auth:${IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX}-auth:${IMAGE_TAG:?IMAGE_TAG obrigatório}
     platform: linux/amd64
     container_name: alice-auth
     restart: unless-stopped
@@ -175,7 +175,7 @@ services:
   # ALICE BIOMETRICS SERVICE - Biometria Facial (CPU-only)
   # ===========================================================================
   alice-biometrics:
-    image: ${IMAGE_PREFIX}-biometrics:${IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX}-biometrics:${IMAGE_TAG:?IMAGE_TAG obrigatório}
     platform: linux/amd64
     container_name: alice-biometrics
     restart: unless-stopped
@@ -216,7 +216,7 @@ services:
   # ALICE CHAT SERVICE - WebSocket + LLM
   # ===========================================================================
   alice-chat:
-    image: ${IMAGE_PREFIX}-chat:${IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX}-chat:${IMAGE_TAG:?IMAGE_TAG obrigatório}
     platform: linux/amd64
     container_name: alice-chat
     restart: unless-stopped
@@ -231,7 +231,7 @@ services:
       NODE_ENV: production
       PORT: 3002
       SERVICE_NAME: chat-service
-      APP_VERSION: ${IMAGE_TAG:-latest}
+      APP_VERSION: ${IMAGE_TAG:?IMAGE_TAG obrigatório}
       DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@alice-pgbouncer:6432/${POSTGRES_DB:-alice_prod}?sslmode=disable
       INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
@@ -274,7 +274,7 @@ services:
   # Plano Enterprise - Agentes Especializados por Namespace
   # ===========================================================================
   alice-llm-gateway:
-    image: ${IMAGE_PREFIX}-llm-gateway:${IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX}-llm-gateway:${IMAGE_TAG:?IMAGE_TAG obrigatório}
     platform: linux/amd64
     container_name: alice-llm-gateway
     restart: unless-stopped
@@ -318,7 +318,7 @@ services:
   # ALICE RAG SERVICE - Knowledge Base + Embeddings
   # ===========================================================================
   alice-rag:
-    image: ${IMAGE_PREFIX}-rag:${IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX}-rag:${IMAGE_TAG:?IMAGE_TAG obrigatório}
     platform: linux/amd64
     container_name: alice-rag
     restart: unless-stopped
@@ -380,7 +380,7 @@ services:
   # ALICE TRAINING SERVICE - Fine-tuning + Learning
   # ===========================================================================
   alice-training:
-    image: ${IMAGE_PREFIX}-training:${IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX}-training:${IMAGE_TAG:?IMAGE_TAG obrigatório}
     platform: linux/amd64
     container_name: alice-training
     restart: unless-stopped
@@ -433,7 +433,7 @@ services:
   # ALICE INTEGRATIONS SERVICE - Stripe, Twilio, Wise, KuCoin
   # ===========================================================================
   alice-integrations:
-    image: ${IMAGE_PREFIX}-integrations:${IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX}-integrations:${IMAGE_TAG:?IMAGE_TAG obrigatório}
     platform: linux/amd64
     container_name: alice-integrations
     restart: unless-stopped
@@ -448,7 +448,7 @@ services:
       NODE_ENV: production
       PORT: 3005
       SERVICE_NAME: integrations-service
-      APP_VERSION: ${IMAGE_TAG:-latest}
+      APP_VERSION: ${IMAGE_TAG:?IMAGE_TAG obrigatório}
       DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@alice-pgbouncer:6432/${POSTGRES_DB:-alice_prod}?sslmode=disable
       INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
@@ -530,7 +530,7 @@ services:
   # ALICE OBSERVABILITY SERVICE - Health Checks
   # ===========================================================================
   alice-observability:
-    image: ${IMAGE_PREFIX}-observability:${IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX}-observability:${IMAGE_TAG:?IMAGE_TAG obrigatório}
     platform: linux/amd64
     container_name: alice-observability
     restart: unless-stopped
@@ -591,7 +591,7 @@ services:
   # - GPU Manager permanece modelo-agnóstico (dashboards/alertas não mudam quando trocar modelo)
   # ===========================================================================
   gpu-manager:
-    image: ${IMAGE_PREFIX}-gpu-manager:${IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX}-gpu-manager:${IMAGE_TAG:?IMAGE_TAG obrigatório}
     platform: linux/amd64
     container_name: alice-gpu-manager
     restart: unless-stopped
@@ -668,7 +668,7 @@ services:
   # LLM (texto) - Qwen2.5 7B Instruct (AWQ)
   # ===========================================================================
   gpu-llm:
-    image: ${IMAGE_PREFIX}-llm-qwen25:${IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX}-llm-qwen25:${IMAGE_TAG:?IMAGE_TAG obrigatório}
     platform: linux/amd64
     container_name: gpu-llm
     restart: unless-stopped
@@ -730,7 +730,7 @@ services:
   # Embeddings GPU - Qwen3-Embedding-0.6B INT8
   # Gate 2: Quantizado para INT8 (budget ~2-3GB VRAM, dependendo do backend)
   gpu-embeddings:
-    image: ${IMAGE_PREFIX}-embeddings-gpu:${IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX}-embeddings-gpu:${IMAGE_TAG:?IMAGE_TAG obrigatório}
     platform: linux/amd64
     container_name: gpu-embeddings
     restart: unless-stopped
@@ -775,7 +775,7 @@ services:
 
   # QLoRA Trainer - Fine-tuning (Sob demanda)
   gpu-trainer:
-    image: ${IMAGE_PREFIX}-qwen-trainer:${IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX}-qwen-trainer:${IMAGE_TAG:?IMAGE_TAG obrigatório}
     platform: linux/amd64
     container_name: gpu-trainer
     # Subir manualmente quando necessário:

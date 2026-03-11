@@ -155,7 +155,7 @@ services:
   # NOTA: Caddy roteia tráfego dos serviços públicos pela rede alice-network
   # ===========================================================================
   caddy:
-    image: ${IMAGE_PREFIX}-caddy:${IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX}-caddy:${IMAGE_TAG:?IMAGE_TAG obrigatório}
     platform: linux/amd64
     container_name: alice-caddy
     restart: unless-stopped
@@ -213,7 +213,7 @@ services:
   # Ref: https://pgbackrest.org/command.html#command-stanza-create
   # ===========================================================================
   pgbackrest-init:
-    image: ${IMAGE_PREFIX}-pgbackrest:${IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX}-pgbackrest:${IMAGE_TAG:?IMAGE_TAG obrigatório}
     platform: linux/amd64
     container_name: alice-pgbackrest-init
     # NOTA: UID 70 definido no Dockerfile.pgbackrest (mesmo que PostgreSQL Alpine)
@@ -350,7 +350,7 @@ services:
   # POSTGRESQL - Banco Principal com pgvector
   # ===========================================================================
   postgres:
-    image: ${IMAGE_PREFIX}-postgres:${IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX}-postgres:${IMAGE_TAG:?IMAGE_TAG obrigatório}
     platform: linux/amd64
     container_name: alice-postgres
     restart: always
@@ -508,7 +508,7 @@ services:
   # Porta 6432 é a porta oficial do PgBouncer (pgbouncer.org)
   # ===========================================================================
   pgbouncer:
-    image: ${PGBOUNCER_IMAGE:-edoburu/pgbouncer}:${PGBOUNCER_VERSION:-latest}
+    image: ${PGBOUNCER_IMAGE:-edoburu/pgbouncer}:${PGBOUNCER_VERSION:?PGBOUNCER_VERSION obrigatório}
     platform: linux/amd64
     container_name: alice-pgbouncer
     restart: unless-stopped
@@ -750,7 +750,7 @@ services:
   # Ref: https://quay.io/repository/minio/minio
   # ===========================================================================
   minio:
-    image: ${MINIO_IMAGE:-quay.io/minio/minio}:${MINIO_VERSION:-latest}
+    image: ${MINIO_IMAGE:-quay.io/minio/minio}:${MINIO_VERSION:?MINIO_VERSION obrigatório}
     platform: linux/amd64
     container_name: alice-minio
     restart: unless-stopped
@@ -811,7 +811,7 @@ services:
   # MINIO INIT - Cria bucket para Langfuse
   # ===========================================================================
   minio-init:
-    image: ${MINIO_MC_IMAGE:-quay.io/minio/mc}:${MINIO_MC_VERSION:-latest}
+    image: ${MINIO_MC_IMAGE:-quay.io/minio/mc}:${MINIO_MC_VERSION:?MINIO_MC_VERSION obrigatório}
     platform: linux/amd64
     container_name: alice-minio-init
     entrypoint: ["/bin/sh", "-c"]

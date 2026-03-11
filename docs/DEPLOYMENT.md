@@ -1,8 +1,8 @@
 # Alice Enterprise Platform - Guia de Deploy
 
 **Autor:** Fillipe Guerra  
-**Data:** 06 de Março de 2026  
-**Versão:** 11.19 - Validação robusta de manifests no prepare (anti falso-erro de rede)
+**Data:** 11 de Março de 2026  
+**Versão:** 11.20 - Hardening de pinagem de imagens e tag de release obrigatória
 
 ## Visão geral
 
@@ -42,6 +42,17 @@ drizzle-push (executa somente quando há diff real)
   ↓
 health-{stack} + rollback-{stack} (se necessário)
 ```
+
+### Política de imagens (imutável no release)
+
+- `IMAGE_TAG` é obrigatório nos compose stacks de release (`infra/docker/stacks/*.yml`) e não possui mais fallback para `latest`.
+- O arquivo `infra/docker/.env.prod.example` foi ajustado para exigir preenchimento explícito de `IMAGE_TAG` de release.
+- As versões de imagens públicas são definidas no SSOT `infra/versions.env` e geradas em `.env.prod` sem fallback implícito.
+- Tags mutáveis remanescentes em imagens públicas foram substituídas por tags explícitas:
+  - `MINIO_VERSION=RELEASE.2025-09-07T16-13-09Z`
+  - `MINIO_MC_VERSION=RELEASE.2025-08-13T08-35-41Z`
+  - `PGBOUNCER_VERSION=v1.25.1-p0`
+  - `PGBACKREST_EXPORTER_VERSION=v0.23.0-alpine`
 
 ### Migrações obrigatórias (próximo deploy)
 

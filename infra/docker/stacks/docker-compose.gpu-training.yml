@@ -14,7 +14,7 @@
 
 services:
   gpu-trainer:
-    image: ${IMAGE_PREFIX}-qwen-trainer:${IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX}-qwen-trainer:${IMAGE_TAG:?IMAGE_TAG obrigatório}
     platform: linux/amd64
     container_name: gpu-trainer
     profiles: ["gpu-training"]

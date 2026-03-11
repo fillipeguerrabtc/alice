@@ -37,13 +37,13 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - `P1-DOCS-12`: Concluído
 - `P2-HYGIENE-01`: Concluído
 - `P2-CI-02`: Concluído
-- `P2-INFRA-03`: Não iniciado
+- `P2-INFRA-03`: Concluído
 - `P2-OTEL-04`: Não iniciado
 - `P2-TSCONFIG-05`: Não iniciado
 - `P2-DOCS-06`: Não iniciado
 
 ## Bloco atual
-`P2-CI-02` (Concluído)
+`P2-INFRA-03` (Concluído)
 
 ## Histórico de rodadas
 
@@ -710,8 +710,37 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
   - Validar posteriormente no ambiente do usuário a correção do binário global `pnpm`.
 - Riscos ou bloqueios:
   - Sem bloqueio ativo para continuação.
-  - Risco residual controlado: `deploy-stack-modular.yml` segue extenso e com muitos blocos inline por legado operacional; o hardening desta rodada foi cirúrgico e restrito aos pontos de robustez mapeados.
+- Risco residual controlado: `deploy-stack-modular.yml` segue extenso e com muitos blocos inline por legado operacional; o hardening desta rodada foi cirúrgico e restrito aos pontos de robustez mapeados.
 - Próximo bloco recomendado: `P2-INFRA-03`.
+
+### Rodada 22
+- Data: 2026-03-11
+- Bloco executado: `P2-INFRA-03`
+- Objetivo: Endurecer compose stacks e release imutável, reduzindo uso de tags mutáveis e removendo defaults frágeis de imagem/tag no fluxo principal de release.
+- Diagnóstico: Os compose stacks de release ainda usavam fallback implícito `${IMAGE_TAG:-latest}` em múltiplos serviços críticos; `infra/versions.env` mantinha tags mutáveis (`latest`) para MinIO, MinIO MC, PgBouncer e pgBackRest exporter, e `generate-env-prod.sh` ainda gravava versões com fallback para defaults (incluindo `latest`) mesmo após carregar SSOT.
+- Arquivos lidos: `CLAUDE.md` (1-120), `infra/docker/stacks/docker-compose.base.yml`, `infra/docker/stacks/docker-compose.infra.yml` (1-874 em chunks), `infra/docker/stacks/docker-compose.alice.yml` (1-825 em chunks), `infra/docker/stacks/docker-compose.observability.yml` (1-679 em chunks), `infra/docker/stacks/docker-compose.backup.yml`, `infra/docker/stacks/docker-compose.deploy-observability.yml`, `infra/docker/stacks/docker-compose.gpu-training.yml`, `infra/versions.env`, `infra/docker/.env.prod.example`, `infra/docker/docker-compose.gpu.yml`, `infra/scripts/generate-env-prod.sh` (1-1011 em chunks), `infra/scripts/prepare-production-server.sh` (1-300 em chunks), `infra/scripts/deploy-functions.sh`, `docs/DEPLOYMENT.md` (1-553 em chunks), `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Arquivos alterados: `infra/docker/stacks/docker-compose.alice.yml`, `infra/docker/stacks/docker-compose.infra.yml`, `infra/docker/stacks/docker-compose.backup.yml`, `infra/docker/stacks/docker-compose.gpu-training.yml`, `infra/docker/docker-compose.gpu.yml`, `infra/versions.env`, `infra/scripts/generate-env-prod.sh`, `infra/docker/.env.prod.example`, `docs/DEPLOYMENT.md`, `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Validações executadas:
+  - `python3` com `yaml.safe_load` para validação sintática dos compose alterados (`infra/docker/stacks/docker-compose.alice.yml`, `infra/docker/stacks/docker-compose.infra.yml`, `infra/docker/stacks/docker-compose.backup.yml`, `infra/docker/stacks/docker-compose.gpu-training.yml`, `infra/docker/docker-compose.gpu.yml`)
+  - `pnpm lint` (falha por binário global `pnpm` quebrado no ambiente)
+  - `npx -y pnpm@10.26.2 lint`
+  - `pnpm build` (falha por binário global `pnpm` quebrado no ambiente)
+  - `npx -y pnpm@10.26.2 build`
+- Resultado das validações:
+  - Todas as validações obrigatórias do bloco foram aprovadas ao final.
+  - Compose files alterados ficaram sintaticamente válidos.
+  - O hardening removeu fallback implícito `latest` para `IMAGE_TAG` nos stacks de release e no compose GPU legado, exigindo tag explícita de release.
+  - `infra/versions.env` passou a usar tags explícitas para MinIO, MinIO MC, PgBouncer e pgBackRest exporter, reduzindo mutabilidade operacional.
+  - `generate-env-prod.sh` passou a exigir e propagar variáveis de versão do SSOT sem fallback silencioso para defaults.
+  - Observação de ambiente: binário global `pnpm` permanece quebrado; comandos lógicos exigidos executados via `npx -y pnpm@10.26.2`.
+- Documentação atualizada: `docs/DEPLOYMENT.md` (política de imagens imutáveis no release) e tracking canônico.
+- Commit realizado: `ops: harden compose release configuration and image pinning`
+- Pendências:
+  - Validar posteriormente no ambiente do usuário a correção do binário global `pnpm`.
+- Riscos ou bloqueios:
+  - Sem bloqueio ativo para continuação.
+  - Risco residual controlado: alguns defaults não mutáveis (ex.: versões estáveis explícitas de observability em compose) permanecem por compatibilidade operacional e não introduzem drift de tag mutável.
+- Próximo bloco recomendado: `P2-OTEL-04`.
 
 ## Pendências abertas
 - Correção do binário global `pnpm` no ambiente local (fora do escopo deste bloco).
@@ -725,4 +754,4 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - Risco residual controlado: documentação histórica volumosa pode conter contexto de planos anteriores; status atual de execução do backlog governado deve sempre ser consultado no tracking canônico.
 
 ## Próximos blocos permitidos
-- `P2-INFRA-03`
+- `P2-OTEL-04`
