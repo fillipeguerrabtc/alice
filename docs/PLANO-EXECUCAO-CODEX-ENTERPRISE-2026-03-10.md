@@ -35,7 +35,7 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - `P1-CONTRACTS-10`: Concluído
 - `P1-BIOMETRICS-11`: Concluído
 - `P1-DOCS-12`: Concluído
-- `P2-HYGIENE-01`: Não iniciado
+- `P2-HYGIENE-01`: Concluído
 - `P2-CI-02`: Não iniciado
 - `P2-INFRA-03`: Não iniciado
 - `P2-OTEL-04`: Não iniciado
@@ -43,7 +43,7 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - `P2-DOCS-06`: Não iniciado
 
 ## Bloco atual
-`P1-DOCS-12` (Concluído)
+`P2-HYGIENE-01` (Concluído)
 
 ## Histórico de rodadas
 
@@ -654,8 +654,36 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
   - Validar posteriormente no ambiente do usuário a correção do binário global `pnpm`.
 - Riscos ou bloqueios:
   - Sem bloqueio ativo para continuação.
-  - Risco residual controlado: ainda existem seções históricas em documentos operacionais para contexto legado, porém com precedência canônica agora explícita e sem duplicidade crítica no topo dos SSOT principais.
+- Risco residual controlado: ainda existem seções históricas em documentos operacionais para contexto legado, porém com precedência canônica agora explícita e sem duplicidade crítica no topo dos SSOT principais.
 - Próximo bloco recomendado: `P2-HYGIENE-01`.
+
+### Rodada 20
+- Data: 2026-03-11
+- Bloco executado: `P2-HYGIENE-01`
+- Objetivo: Sanear workspace com lockfiles conflitantes e artefatos gerados indevidamente, consolidando o `pnpm` como package manager oficial.
+- Diagnóstico: O monorepo já declarava `pnpm@10.26.2` como package manager oficial no root, porém havia lockfiles npm versionados (`package-lock.json` no root e no `frontend-service`) e artefato incremental versionado (`apps/frontend-service/tsconfig.node.tsbuildinfo`) gerando drift operacional desnecessário.
+- Arquivos lidos: `CLAUDE.md` (1-120), `package.json`, `pnpm-lock.yaml`, `package-lock.json`, `apps/frontend-service/package-lock.json`, `apps/frontend-service/tsconfig.node.tsbuildinfo`, `.gitignore`, `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Arquivos alterados: `.gitignore`, `package-lock.json` (removido), `apps/frontend-service/package-lock.json` (removido), `apps/frontend-service/tsconfig.node.tsbuildinfo` (removido), `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Validações executadas:
+  - `pnpm install --frozen-lockfile` (falha por binário global `pnpm` quebrado no ambiente)
+  - `npx -y pnpm@10.26.2 install --frozen-lockfile`
+  - `pnpm lint` (falha por binário global `pnpm` quebrado no ambiente)
+  - `npx -y pnpm@10.26.2 lint`
+  - `pnpm build` (falha por binário global `pnpm` quebrado no ambiente)
+  - `npx -y pnpm@10.26.2 build`
+- Resultado das validações:
+  - Todas as validações obrigatórias do bloco foram aprovadas ao final.
+  - O lockfile oficial `pnpm-lock.yaml` permaneceu íntegro e sem alteração de conteúdo funcional.
+  - O workspace ficou sem lockfiles conflitantes ou `*.tsbuildinfo` versionados no escopo mapeado da rodada.
+  - Observação de ambiente: binário global `pnpm` permanece quebrado; os comandos foram executados com `npx -y pnpm@10.26.2`, preservando os comandos lógicos exigidos.
+- Documentação atualizada: tracking canônico atualizado com evidências factuais da Rodada 20.
+- Commit realizado: `chore: clean conflicting lockfiles and generated artifacts`
+- Pendências:
+  - Validar posteriormente no ambiente do usuário a correção do binário global `pnpm`.
+- Riscos ou bloqueios:
+  - Sem bloqueio ativo para continuação.
+  - Risco residual controlado: arquivos gerados em build local podem reaparecer no workspace, porém estão cobertos por regra de ignore para evitar novo versionamento indevido.
+- Próximo bloco recomendado: `P2-CI-02`.
 
 ## Pendências abertas
 - Correção do binário global `pnpm` no ambiente local (fora do escopo deste bloco).
@@ -669,4 +697,4 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - Risco residual controlado: documentação histórica volumosa pode conter contexto de planos anteriores; status atual de execução do backlog governado deve sempre ser consultado no tracking canônico.
 
 ## Próximos blocos permitidos
-- `P2-HYGIENE-01`
+- `P2-CI-02`
