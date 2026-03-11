@@ -169,6 +169,20 @@ As seguintes variáveis de ambiente são opcionais e possuem defaults (documenta
 
 Configure em `docker-compose.alice.yml` ou via `.env.prod` quando necessário (ex.: livros grandes, ajuste de fatiamento).
 
+### Healthcheck do `alice-training` (fail-fast de URLs internas)
+
+Para evitar loop de reinício (`status=restarting`) no `alice-training`, o stack deve injetar explicitamente as URLs internas obrigatórias consumidas no bootstrap:
+
+| Variável | Valor recomendado no stack ALICE | Motivo |
+| --- | --- | --- |
+| `RAG_SERVICE_URL` | `http://alice-rag:3003` | exigida no startup (`getServiceUrl('rag')`) |
+| `INTEGRATIONS_SERVICE_URL` | `http://alice-integrations:3005` | exigida no startup (`getServiceUrl('integrations')`) |
+
+Sem essas variáveis, o serviço falha em modo fail-fast com erro de variável obrigatória e o healthcheck da stack ALICE não estabiliza.
+
+**Author:** Codex (GPT-5)  
+**Data:** 11 de Março de 2026
+
 ### Web Crawl (RAG) - allowlist de domínios
 
 Para evitar crashloop do `alice-rag` em produção, o deploy agora gera e valida automaticamente:
