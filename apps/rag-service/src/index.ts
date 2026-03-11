@@ -15,7 +15,6 @@
 
 import express from 'express';
 import type { NextFunction, Request, Response } from 'express';
-import http from 'http';
 import cors from 'cors';
 // helmet aplicado via createSecurityMiddleware de @alice/shared-utils
 import compression from 'compression';
@@ -55,13 +54,9 @@ import {
   CIRCUIT_BREAKER_PRESETS,
   registerShutdownCallback,
   ShutdownPriority,
-  setPermissionResolver,
-  createCacheAdapter,
   type CacheAdapter,
   setupSwaggerUI,
   RAG_SERVICE_TAGS,
-  // CORREÇÃO 23/12/2025: Redis cache distribuído para embedding-websocket
-  initializeRedisCache,
   requestGpu,
   GpuServiceType,
   GpuRequestPriority,
@@ -82,41 +77,34 @@ import { createLogger } from '@alice/logger';
 // Verificado: todos os módulos importados usam process.env.NODE_ENV diretamente, não isProduction local.
 const isProduction = getNodeEnv() === 'production';
 import { getStorageService } from './storage.js';
-import { getImageProcessor, getVisionCircuitBreakerStatus } from './image-processor.js';
+import { getImageProcessor } from './image-processor.js';
 import { startEmbeddingWorker, getEmbeddingWorkerStatus } from './workers/embedding-worker.js';
 import {
   startDocumentProcessingWorker,
   getDocumentProcessingWorkerStatus,
 } from './workers/document-processing-worker.js';
 import {
-  enqueueEmbeddingJob,
-  getEmbeddingJobStatus,
-  getEmbeddingQueueStats,
-  isQueueAvailable,
-  type EmbeddingJobType,
-} from './embedding-queue.js';
-import {
   enqueueDocumentProcessingJob,
   getDocumentProcessingJobIdForDocument,
   setDocumentProcessingQueueMetricObserver,
 } from './document-processing-queue.js';
-import { initEmbeddingWebSocket, closeEmbeddingWebSocket, getWebSocketStats } from './embedding-websocket.js';
 import { getAudioProcessor } from './audio-processor.js';
 import { getDocumentProcessor } from './document-processor.js';
-import { createWebSearchClient, WebSearchOptions, WebSearchResult } from './web-search.js';
-import { sanitizeWebSnippet } from './web-sanitize.js';
-import { createLearningTask, dequeueNextLearningTask, updateLearningTaskStatus } from './learning-orchestrator.js';
+import { createWebSearchClient, WebSearchOptions } from './web-search.js';
 import { startLearningWorker } from './workers/learning-worker.js';
 import { startWebCrawlWorker } from './workers/web-crawl-worker.js';
 import { selectTrainingChunks } from './training-chunk-selection.js';
+import { registerRagDocumentRoutes } from './rag-document-routes.js';
+import { registerRagRetrievalRoutes } from './rag-retrieval-routes.js';
+import { registerRagLearningRoutes } from './rag-learning-routes.js';
+import { registerRagEmbeddingRoutes } from './rag-embedding-routes.js';
+import { startRagBootstrap } from './rag-bootstrap.js';
 // Cliente Qdrant para busca de texto (1024 dim - Qwen3-Embedding-0.6B)
 // CORREÇÃO 17/12/2025: Adicionado upsertPoints para inserir documentos no Qdrant
 // Bug: Busca usava Qdrant mas inserção era apenas PostgreSQL - resultados sempre vazios
 import {
   searchPoints,
   upsertPoints,
-  deletePointsByFilter,
-  initTextCollection,
   isQdrantConfigured,
   healthCheck as qdrantHealthCheck,
   getQdrantCircuitBreakerStatus,
@@ -124,7 +112,6 @@ import {
   TEXT_EMBEDDING_DIM,
   type QdrantSearchResult,
   createSessionAuthMiddleware,
-  initializeSessionAuthCache,
 } from '@alice/shared-utils';
 
 interface MulterRequest extends Request {
@@ -156,6 +143,8 @@ function getRequestCorrelationId(req: Request): string {
   }
   return crypto.randomUUID();
 }
+
+const getTenantIdFromRequest = (req: Request): string | undefined => req.tenantId;
 
 type TrainingChunk = { id: string; conteudo: string; posicao: number };
 
@@ -2179,38 +2168,12 @@ app.get('/ready', async (_req: Request, res: Response) => {
   }
 });
 
-app.get('/api/rag/documents', requireAuth(), requirePermission('rag:documents:read'), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
-  // SEGURANÇA: Usar req.tenantId populado pelo middleware (RLS Enterprise)
-  const tenantId = req.tenantId;
-  
-  // OWASP API3: Validação de query params
-  const correlationId = getRequestCorrelationId(req);
-  const queryResult = documentsQuerySchema.safeParse(req.query);
-  if (!queryResult.success) {
-    return res.status(400).json({ error: 'Parâmetros inválidos', details: queryResult.error.format() });
-  }
-  const { namespaceId } = queryResult.data;
-
-  try {
-    // MULTI-TENANCY: Documentos são isolados por namespace (que pertence a um tenant)
-    // Buscar com relação para namespace e filtrar pelo tenantId
-    const documents = await db.query.documents.findMany({
-      with: { namespace: true },
-      where: namespaceId ? eq(schema.documents.namespaceId, namespaceId) : undefined,
-      orderBy: [desc(schema.documents.criadoEm)],
-      limit: 100,
-    });
-
-    // Filtrar documentos pelo tenant do usuário (segurança adicional)
-    const tenantDocuments = documents.filter(doc => 
-      doc.namespace?.tenantId === tenantId
-    );
-
-    res.json({ documents: tenantDocuments });
-  } catch (error) {
-    logger.error({ error, tenantId, namespaceId, correlationId }, 'Falha ao buscar documentos');
-    res.status(500).json({ error: 'Erro interno do servidor' });
-  }
+registerRagDocumentRoutes({
+  app,
+  db,
+  logger,
+  parseDocumentProcessingMetadata,
+  invalidateRagCachesForTenant,
 });
 
 const promoteDocumentToTrainingSchema = z.object({
@@ -2359,110 +2322,6 @@ app.post('/api/rag/documents/:id/send-to-training', requireAuth(), requirePermis
     });
   } catch (error) {
     logger.error({ error, documentId: req.params.id, tenantId, correlationId }, 'Falha ao promover documento para treinamento');
-    return res.status(500).json({ error: 'Erro interno do servidor' });
-  }
-});
-
-app.get('/api/rag/documents/:id/status', requireAuth(), requirePermission('rag:documents:read'), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
-  const idValidation = z.object({ id: z.string().uuid('ID inválido') }).safeParse(req.params);
-  if (!idValidation.success) {
-    return res.status(400).json({ error: 'ID inválido', details: idValidation.error.format() });
-  }
-
-  const tenantId = req.tenantId;
-  if (!tenantId) {
-    return res.status(401).json({ error: 'Tenant não identificado' });
-  }
-
-  try {
-    const document = await db.query.documents.findFirst({
-      where: eq(schema.documents.id, idValidation.data.id),
-      with: { namespace: true },
-    });
-
-    if (!document || !document.namespace || document.namespace.tenantId !== tenantId) {
-      return res.status(404).json({ error: 'Documento não encontrado para este tenant' });
-    }
-
-    const metadataState = parseDocumentProcessingMetadata(document.metadata);
-    const processingStatus = document.processado
-      ? 'completed'
-      : metadataState.processingStatus;
-
-    return res.json({
-      processado: document.processado,
-      processingStatus,
-      processingError: metadataState.processingError,
-      processedAt: metadataState.processedAt,
-      chunksCount: metadataState.chunksCount,
-      sentToTrainingAt: document.sentToTrainingAt,
-    });
-  } catch (error) {
-    logger.error({ error, documentId: req.params.id, tenantId, correlationId: getRequestCorrelationId(req) }, 'Falha ao consultar status do documento');
-    return res.status(500).json({ error: 'Erro interno do servidor' });
-  }
-});
-
-app.post('/api/rag/documents/:id/reprocess', requireAuth(), requirePermission('rag:documents:write'), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
-  const idValidation = z.object({ id: z.string().uuid('ID inválido') }).safeParse(req.params);
-  if (!idValidation.success) {
-    return res.status(400).json({ error: 'ID inválido', details: idValidation.error.format() });
-  }
-
-  const tenantId = req.tenantId;
-  if (!tenantId) {
-    return res.status(401).json({ error: 'Tenant não identificado' });
-  }
-
-  try {
-    const document = await db.query.documents.findFirst({
-      where: eq(schema.documents.id, idValidation.data.id),
-      with: { namespace: true },
-    });
-
-    if (!document || !document.namespace || document.namespace.tenantId !== tenantId) {
-      return res.status(404).json({ error: 'Documento não encontrado para este tenant' });
-    }
-    if (!document.conteudo || document.conteudo.trim().length === 0) {
-      return res.status(422).json({ error: 'Documento sem conteúdo para reprocessamento' });
-    }
-
-    const correlationId = getRequestCorrelationId(req);
-    const metadataBase = typeof document.metadata === 'object' && document.metadata !== null
-      ? document.metadata as Record<string, unknown>
-      : {};
-
-    await db
-      .update(schema.documents)
-      .set({
-        processado: false,
-        metadata: {
-          ...metadataBase,
-          processingStatus: 'pending',
-          processingError: null,
-          reprocessRequestedAt: new Date().toISOString(),
-          correlationId,
-        },
-        atualizadoEm: new Date(),
-      })
-      .where(eq(schema.documents.id, document.id));
-
-    const jobId = await enqueueDocumentProcessingJob(
-      {
-        jobId: crypto.randomUUID(),
-        tenantId,
-        documentId: document.id,
-        namespaceId: document.namespaceId || document.namespace.id,
-        priority: 5,
-        correlationId,
-        attempts: 0,
-      },
-      { force: true }
-    );
-
-    return res.json({ jobId });
-  } catch (error) {
-    logger.error({ error, documentId: req.params.id, tenantId, correlationId: getRequestCorrelationId(req) }, 'Falha ao solicitar reprocessamento do documento');
     return res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
@@ -3150,467 +3009,28 @@ const uuidParamSchema = z.object({
   id: z.string().uuid('ID deve ser um UUID válido'),
 });
 
-app.delete('/api/rag/documents/:id', requireAuth(), requirePermission('rag:documents:delete'), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
-  // OWASP API3: Validação Zod obrigatória de parâmetros de rota
-  const paramsResult = uuidParamSchema.safeParse(req.params);
-  if (!paramsResult.success) {
-    return res.status(400).json({ error: 'ID inválido', details: paramsResult.error.format() });
-  }
-  const { id } = paramsResult.data;
-  
-  // SEGURANÇA: Usar req.tenantId populado pelo middleware (RLS Enterprise)
-  const tenantId = req.tenantId;
-  const correlationId = getRequestCorrelationId(req);
-
-  try {
-    // MULTI-TENANCY: Verificar se documento pertence ao tenant via namespace
-    const document = await db.query.documents.findFirst({
-      with: { namespace: true },
-      where: eq(schema.documents.id, id),
-    });
-    
-    // Verificar se documento existe e pertence ao tenant
-    if (!document || document.namespace?.tenantId !== tenantId) {
-      return res.status(404).json({ error: 'Documento não encontrado ou acesso negado' });
-    }
-    
-    if (isQdrantConfigured()) {
-      try {
-        await deletePointsByFilter(TEXT_COLLECTION_NAME, {
-          must: [
-            { key: 'tenantId', match: { value: tenantId } },
-            { key: 'documentId', match: { value: id } },
-            { key: 'type', match: { value: 'document_chunk' } },
-          ],
-        });
-      } catch (qdrantError) {
-        logger.error(
-          {
-            error: qdrantError,
-            tenantId,
-            documentId: id,
-            correlationId,
-          },
-          'Falha ao excluir embeddings do documento no Qdrant'
-        );
-        return res.status(502).json({ error: 'Falha ao excluir embeddings do documento' });
-      }
-    }
-
-    await db.delete(schema.documentChunks)
-      .where(eq(schema.documentChunks.documentId, id));
-
-    await db.delete(schema.documents)
-      .where(eq(schema.documents.id, id));
-
-    // Invalidação de cache RAG: exclusão altera resultados de busca/contexto
-    if (tenantId) {
-      await invalidateRagCachesForTenant(tenantId);
-    }
-
-    logger.info({ documentId: id, tenantId, correlationId }, 'Documento excluído');
-    res.json({ success: true });
-  } catch (error) {
-    logger.error({ error, documentId: id, tenantId, correlationId }, 'Falha ao excluir documento');
-    res.status(500).json({ error: 'Erro interno do servidor' });
-  }
-});
-
-app.get('/api/rag/namespaces/:id/stats', requirePermission('rag:namespaces:read'), async (req: Request, res: Response) => {
-  // OWASP API3: Validação Zod obrigatória de parâmetros de rota
-  const paramsResult = uuidParamSchema.safeParse(req.params);
-  if (!paramsResult.success) {
-    return res.status(400).json({ error: 'ID inválido', details: paramsResult.error.format() });
-  }
-  const { id } = paramsResult.data;
-
-  try {
-    const documents = await db.query.documents.findMany({
-      where: eq(schema.documents.namespaceId, id),
-    });
-
-    const totalDocuments = documents.length;
-    const processedDocuments = documents.filter(d => d.processado).length;
-
-    const chunks = await db.select({ count: sql<number>`count(*)` })
-      .from(schema.documentChunks)
-      .innerJoin(schema.documents, eq(schema.documentChunks.documentId, schema.documents.id))
-      .where(eq(schema.documents.namespaceId, id));
-
-    res.json({
-      totalDocuments,
-      processedDocuments,
-      totalChunks: chunks[0]?.count || 0,
-    });
-  } catch (error) {
-    logger.error({ error }, 'Falha ao obter estatísticas');
-    res.status(500).json({ error: 'Erro interno do servidor' });
-  }
-});
-
-// ============================================================================
-// AGENTIC RAG ENDPOINTS - Busca híbrida inteligente
-// ============================================================================
-
-const agenticSearchSchema = z.object({
-  query: z.string().min(1),
-  namespaceId: z.string().uuid().optional(),
-  limit: z.coerce.number().min(1).max(20).default(5),
-  threshold: z.coerce.number().min(0).max(1).default(0.6),
-  forceMode: z.enum(['internal', 'web', 'hybrid']).optional(),
-  webMode: z.enum(['web', 'deepweb']).optional(),
-});
-
-const webSearchSchema = z.object({
-  query: z.string().min(1),
-  limit: z.coerce.number().min(1).max(20).default(5),
-  mode: z.enum(['web', 'deepweb']).optional(),
-  engines: z.array(z.string().min(1)).optional(),
-  categories: z.string().min(1).optional(),
-  language: z.string().min(2).optional(),
-  safesearch: z.string().min(1).optional(),
-  timeRange: z.enum(['day', 'week', 'month', 'year']).optional(),
-});
-
-const webImageSearchSchema = z.object({
-  query: z.string().min(1),
-  limit: z.coerce.number().min(1).max(12).default(5),
-});
-
-const ragClassifySchema = z.object({
-  query: z.string().trim().min(1, 'Query é obrigatória'),
-});
-
-app.post('/api/rag/web-search', requireAuth(), async (req: Request, res: Response) => {
-  try {
-    const { query, limit, mode, engines, categories, language, safesearch, timeRange } = webSearchSchema.parse(req.body);
-    
-    if (!webSearchClient.isEnabled()) {
-      return res.status(503).json({ 
-        error: 'Busca web não configurada', 
-        message: 'SEARXNG_SECRET_KEY não está configurada',
-      });
-    }
-
-    const options: WebSearchOptions | undefined = mode === 'deepweb'
-      ? { engines: ['ahmia'] }
-      : {
-        engines,
-        categories,
-        language,
-        safesearch,
-        timeRange,
-      };
-    const results = await webSearch(query, limit, options);
-    
-    logger.info({ query, results: results.length }, 'Busca web concluída');
-    res.json({ results, source: 'searxng' });
-  } catch (error) {
-    logger.error({ error }, 'Falha na busca web');
-    res.status(500).json({ error: 'Erro interno do servidor' });
-  }
-});
-
-app.post('/api/rag/web-search/images', requireAuth(), async (req: Request, res: Response) => {
-  try {
-    const { query, limit } = webImageSearchSchema.parse(req.body);
-
-    if (!webSearchClient.isEnabled()) {
-      return res.status(503).json({
-        error: 'Busca web não configurada',
-        message: 'SEARXNG_SECRET_KEY não está configurada',
-      });
-    }
-
-    const results = await webSearchClient.searchImages(query, limit, { categories: 'images' });
-
-    logger.info({ query, results: results.length }, 'Busca de imagens na web concluída');
-    res.json({ results, source: 'searxng' });
-  } catch (error) {
-    logger.error({ error }, 'Falha na busca de imagens na web');
-    res.status(500).json({ error: 'Erro interno do servidor' });
-  }
-});
-
-app.post('/api/rag/classify', requireAuth(), async (req: Request, res: Response) => {
-  try {
-    const parseResult = ragClassifySchema.safeParse(req.body);
-    if (!parseResult.success) {
-      return res.status(400).json({ error: 'Payload inválido', details: parseResult.error.format() });
-    }
-    const { query } = parseResult.data;
-
-    const classification = classifyQuery(query);
-    
-    res.json({ 
-      query, 
-      classification,
-      webSearchAvailable: webSearchClient.isEnabled(),
-    });
-  } catch (error) {
-    logger.error({ error }, 'Falha na classificação');
-    res.status(500).json({ error: 'Erro interno do servidor' });
-  }
-});
-
-// SEGURANÇA: Usar req.tenantId populado pelo middleware requireAuth
-// Alinhado com Express.js 2025 + OWASP 2025 best practices
-function getTenantIdFromRequest(req: Request): string {
-  return req.tenantId as string;
-}
-
-app.post('/api/rag/agentic', requireAuth(), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
-  // SEGURANÇA: Usar req.tenantId populado pelo middleware
-  const tenantId = req.tenantId;
-  
-  if (!tenantId) {
-    return res.status(401).json({ error: 'Autenticação necessária' });
-  }
-
-  try {
-    const body = agenticSearchSchema.parse(req.body);
-    
-    const classification = body.forceMode 
-      ? { type: body.forceMode, confidence: 1, reason: 'Modo forçado pelo usuário' }
-      : classifyQuery(body.query);
-    const resolvedWebMode = body.webMode ?? classification.webMode ?? 'web';
-    
-    const results: {
-      internal: Array<{ documentId: string; titulo?: string; conteudo: string; similarity: number }>;
-      web: WebSearchResult[];
-      classification: ClassificationResult;
-    } = {
-      internal: [],
-      web: [],
-      classification,
-    };
-
-    if (classification.type === 'internal' || classification.type === 'hybrid') {
-      // ============================================================================
-      // BUSCA VETORIAL VIA QDRANT (Enterprise-Grade - 17/12/2025)
-      // ============================================================================
-      // Gate 2: Embeddings de texto com Qwen3-Embedding-0.6B (1024 dim) → Qdrant
-      // PERFORMANCE: Índice HNSW otimizado (dim=1024)
-      // MULTI-TENANCY: Filtro via payload (tenantId) no Qdrant
-      // ============================================================================
-      
-      if (!isQdrantConfigured()) {
-        logger.warn('Qdrant não configurado - busca interna indisponível para agentic');
-      } else {
-        const queryEmbedding = await generateEmbedding(body.query);
-        
-        // Buscar documentos similares via Qdrant
-        results.internal = await searchDocumentsForContext(queryEmbedding, tenantId, {
-          limit: body.limit,
-          threshold: body.threshold,
-          namespaceId: body.namespaceId,
-        });
-      }
-    }
-
-    if ((classification.type === 'web' || classification.type === 'hybrid') && webSearchClient.isEnabled()) {
-      const webOptions: WebSearchOptions | undefined = resolvedWebMode === 'deepweb'
-        ? { engines: ['ahmia'] }
-        : undefined;
-      results.web = await webSearch(body.query, body.limit, webOptions);
-    }
-
-    const context = buildAgenticContext(results.internal, results.web);
-
-    logger.info({ 
-      query: body.query, 
-      tenantId,
-      classification: classification.type,
-      internalResults: results.internal.length,
-      webResults: results.web.length,
-    }, 'Busca agentic concluída');
-
-    res.json({ 
-      ...results,
-      context,
-      sources: {
-        internal: results.internal.map(r => ({
-          documentId: r.documentId,
-          titulo: r.titulo,
-          similarity: r.similarity,
-        })),
-        web: results.web.map(r => ({
-          title: r.title,
-          url: r.url,
-        })),
-      },
-    });
-  } catch (error) {
-    logger.error({ error }, 'Falha na busca agentic');
-    res.status(500).json({ error: 'Erro interno do servidor' });
-  }
-});
-
-function buildAgenticContext(
-  internal: Array<{ titulo?: string; conteudo: string; similarity: number }>,
-  web: WebSearchResult[]
-): string {
-  const parts: string[] = [];
-
-  if (internal.length > 0) {
-    parts.push('## Documentos Internos\n');
-    internal.forEach((doc, i) => {
-      parts.push(`### ${i + 1}. ${doc.titulo || 'Documento sem título'} (Relevância: ${(doc.similarity * 100).toFixed(0)}%)`);
-      parts.push(doc.conteudo);
-      parts.push('');
-    });
-  }
-
-  if (web.length > 0) {
-    parts.push('\n## Resultados da Web\n');
-    web.forEach((result, i) => {
-      parts.push(`### ${i + 1}. ${result.title}`);
-      const sanitizedDescription = sanitizeWebSnippet(result.description);
-      if (sanitizedDescription) {
-        parts.push(sanitizedDescription);
-      }
-      parts.push('');
-    });
-  }
-
-  return parts.join('\n');
-}
-
-app.get('/api/rag/agentic/status', requireAuth(), async (_req: Request, res: Response) => {
-  const embeddingsState = gpuManagerEmbeddingsBreaker.opened ? 'open' : (gpuManagerEmbeddingsBreaker.halfOpen ? 'half-open' : 'closed');
-  const webSearchState = webSearchClient.breakerState();
-
-  res.json({
-    webSearchEnabled: webSearchClient.isEnabled(),
-    circuitBreakers: {
-      embeddings: {
-        state: embeddingsState,
-        stats: {
-          failures: gpuManagerEmbeddingsBreaker.stats.failures,
-          successes: gpuManagerEmbeddingsBreaker.stats.successes,
-          timeouts: gpuManagerEmbeddingsBreaker.stats.timeouts,
-        },
-      },
-      webSearch: {
-        state: webSearchState.state,
-        stats: webSearchState.stats,
-      },
-    },
-    classificationKeywords: {
-      web: WEB_SEARCH_KEYWORDS.length,
-      internal: INTERNAL_KEYWORDS.length,
-    },
-  });
+registerRagRetrievalRoutes({
+  app,
+  logger,
+  webSearchClient,
+  webSearch,
+  classifyQuery,
+  isQdrantConfigured,
+  generateEmbedding,
+  searchDocumentsForContext,
+  gpuManagerEmbeddingsBreaker,
+  webSearchKeywordCount: WEB_SEARCH_KEYWORDS.length,
+  internalKeywordCount: INTERNAL_KEYWORDS.length,
 });
 
 // ============================================================================
 // LEARNING ORCHESTRATOR - Fila priorizada com RLS
 // ============================================================================
 
-const learningTaskCreateSchema = z.object({
-  tipo: z.string().min(1),
-  prioridade: z.number().int().min(1).max(10).optional(),
-  agentId: z.string().uuid().optional().nullable(),
-  namespaceId: z.string().uuid().optional().nullable(),
-  parametros: z.record(z.string(), z.unknown()).optional(),
-  maxTentativas: z.number().int().min(1).max(10).optional(),
-  agendadoPara: z.string().datetime().optional(),
-});
-
-const learningTaskStatusSchema = z.object({
-  status: z.enum(['pending', 'processing', 'completed', 'failed', 'cancelled']),
-  progresso: z.number().int().min(0).max(100).optional(),
-  erro: z.string().optional().nullable(),
-  resultado: z.record(z.string(), z.unknown()).optional().nullable(),
-});
-
-const learningTaskParamsSchema = z.object({
-  id: z.string().uuid(),
-});
-
-app.post('/api/learning/tasks', requireAuth(), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
-  const tenantId = req.tenantId;
-  if (!tenantId) return res.status(401).json({ error: 'Autenticação necessária' });
-
-  const user = getAuthUser(req);
-  const isSuperAdmin = user.role === 'super_admin';
-
-  try {
-    const body = learningTaskCreateSchema.parse(req.body);
-
-    const task = await withTenantContext(tenantId, isSuperAdmin, (tenantDb) =>
-      createLearningTask(tenantDb, logger, {
-        tenantId,
-        tipo: body.tipo,
-        prioridade: body.prioridade,
-        agentId: body.agentId ?? null,
-        namespaceId: body.namespaceId ?? null,
-        parametros: body.parametros,
-        maxTentativas: body.maxTentativas,
-        agendadoPara: body.agendadoPara ? new Date(body.agendadoPara) : null,
-        criadoPor: user.userId ?? null,
-      })
-    );
-
-    res.status(201).json({ task });
-  } catch (error) {
-    logger.error({ error }, 'Falha ao criar learning task');
-    res.status(400).json({ error: (error as Error).message });
-  }
-});
-
-app.post('/api/learning/tasks/dequeue', requireAuth(), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
-  const tenantId = req.tenantId;
-  if (!tenantId) return res.status(401).json({ error: 'Autenticação necessária' });
-
-  const user = getAuthUser(req);
-  const isSuperAdmin = user.role === 'super_admin';
-
-  try {
-    const task = await withTenantContext(tenantId, isSuperAdmin, (tenantDb) =>
-      dequeueNextLearningTask(tenantDb, logger, tenantId)
-    );
-
-    res.json({ task });
-  } catch (error) {
-    logger.error({ error }, 'Falha ao dequeuer learning task');
-    res.status(500).json({ error: 'Erro interno do servidor' });
-  }
-});
-
-app.post('/api/learning/tasks/:id/status', requireAuth(), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
-  const tenantId = req.tenantId;
-  if (!tenantId) return res.status(401).json({ error: 'Autenticação necessária' });
-
-  const user = getAuthUser(req);
-  const isSuperAdmin = user.role === 'super_admin';
-
-  try {
-    const body = learningTaskStatusSchema.parse(req.body);
-    const { id: taskId } = learningTaskParamsSchema.parse(req.params);
-
-    await withTenantContext(tenantId, isSuperAdmin, (tenantDb) =>
-      updateLearningTaskStatus(tenantDb, logger, {
-        taskId,
-        tenantId,
-        status: body.status,
-        progresso: body.progresso,
-        erro: body.erro ?? null,
-        resultado: body.resultado ?? null,
-      })
-    );
-
-    if (body.status === 'completed') {
-      metrics.training.completedJobsTotal.inc();
-    } else if (body.status === 'failed') {
-      metrics.training.failedJobsTotal.inc();
-    }
-
-    res.json({ ok: true });
-  } catch (error) {
-    logger.error({ error }, 'Falha ao atualizar status de learning task');
-    res.status(400).json({ error: (error as Error).message });
-  }
+registerRagLearningRoutes({
+  app,
+  logger,
+  metrics,
 });
 
 // ============================================================================
@@ -4042,11 +3462,6 @@ const jsonUploadSchema = z.object({
 // OWASP API3 - Schemas Zod para validação de query params
 // Previne type coercion issues e input tampering
 // ============================================================================
-
-// Schema para query params de documentos
-const documentsQuerySchema = z.object({
-  namespaceId: z.string().uuid().optional(),
-});
 
 // Schema para query params de paginação com filtros de mídia
 // Plano RAG Multimodal Enterprise Fase 2: namespaceId para isolamento RAG/treinamento
@@ -4955,177 +4370,10 @@ app.get('/api/media/health', async (_req: Request, res: Response) => {
   }
 });
 
-// Status do circuit breaker OpenAI Vision (Regra 16 - Observability)
-app.get('/api/rag/circuit-breaker/embeddings', (_req: Request, res: Response) => {
-  const visionStatus = getVisionCircuitBreakerStatus();
-
-  res.json({
-    service: 'openai',
-    timestamp: new Date().toISOString(),
-    circuitBreakers: {
-      vision: visionStatus,
-    },
-  });
+registerRagEmbeddingRoutes({
+  app,
+  logger,
 });
-
-// ============================================================================
-// EMBEDDING QUEUE - Processamento Assíncrono (GPU Dedicada 24/7)
-// ============================================================================
-
-/**
- * Enfileira job de embedding para processamento assíncrono
- * Retorna imediatamente com jobId para consulta posterior
- */
-app.post('/api/rag/embeddings/queue',
-  requireAuth(),
-  async (req: Request, res: Response) => {
-    try {
-      const { tenantId } = getAuthUser(req);
-      
-      if (!tenantId) {
-        return res.status(401).json({ error: 'Tenant não identificado' });
-      }
-      
-      if (!isQueueAvailable()) {
-        return res.status(503).json({ 
-          error: 'Fila de embeddings não disponível',
-          detail: 'Redis não está conectado',
-        });
-      }
-      
-      const body = req.body as {
-        type: EmbeddingJobType;
-        text?: string;
-        texts?: string[];
-        priority?: number;
-        metadata?: {
-          source?: string;
-          correlationId?: string;
-          originalFilename?: string;
-        };
-      };
-      
-      if (!body.type) {
-        return res.status(400).json({ error: 'Campo "type" é obrigatório' });
-      }
-      
-      // Validar input conforme o tipo
-      if (body.type === 'text' && !body.text) {
-        return res.status(400).json({ error: 'Campo "text" é obrigatório para este tipo' });
-      }
-      
-      if (body.type === 'batch-text' && (!body.texts || body.texts.length === 0)) {
-        return res.status(400).json({ error: 'Campo "texts" é obrigatório para batch de texto' });
-      }
-      
-      
-      const jobId = await enqueueEmbeddingJob({
-        type: body.type,
-        tenantId,
-        userId: getAuthUser(req).userId,
-        priority: body.priority ?? 5,
-        input: {
-          text: body.text,
-          texts: body.texts,
-        },
-        metadata: body.metadata,
-      });
-      
-      logger.info({
-        jobId,
-        type: body.type,
-        tenantId,
-        gpuAvailable: true, // GPU dedicada Hetzner GEX44 24/7
-      }, 'Job de embedding enfileirado');
-      
-      res.status(202).json({
-        jobId,
-        status: 'pending',
-        message: 'Job enfileirado para processamento',
-        gpuStatus: {
-          available: true, // GPU dedicada Hetzner GEX44 - sempre disponível
-          dedicatedServer: true, // 24/7 - sem cold start
-          estimatedWaitMs: 1000, // GPU sempre disponível
-        },
-        statusUrl: `/api/rag/embeddings/queue/${jobId}`,
-      });
-    } catch (error) {
-      logger.error({ error }, 'Erro ao enfileirar job de embedding');
-      res.status(500).json({ error: 'Erro interno do servidor' });
-    }
-  }
-);
-
-/**
- * Estatísticas da fila de embeddings e WebSocket
- * IMPORTANTE: Esta rota estática DEVE vir ANTES da rota parametrizada /:jobId
- * para evitar que Express capture "stats" como jobId
- */
-app.get('/api/rag/embeddings/queue/stats',
-  requireAuth(),
-  async (_req: Request, res: Response) => {
-    try {
-      const queueStats = await getEmbeddingQueueStats();
-      const workerStatus = await getEmbeddingWorkerStatus();
-      const wsStats = getWebSocketStats();
-      
-      res.json({
-        queue: queueStats,
-        worker: workerStatus,
-        websocket: wsStats,
-        gpuDedicated: true, // GPU Hetzner GEX44 24/7
-        timestamp: new Date().toISOString(),
-      });
-    } catch (error) {
-      logger.error({ error }, 'Erro ao obter estatísticas da fila');
-      res.status(500).json({ error: 'Erro interno do servidor' });
-    }
-  }
-);
-
-/**
- * Consulta status de um job de embedding
- * NOTA: Esta rota parametrizada deve vir APÓS rotas estáticas como /stats
- */
-app.get('/api/rag/embeddings/queue/:jobId',
-  requireAuth(),
-  async (req: Request, res: Response) => {
-    try {
-      const { tenantId } = getAuthUser(req);
-      const { jobId } = req.params;
-      
-      if (!tenantId) {
-        return res.status(401).json({ error: 'Tenant não identificado' });
-      }
-      
-      const job = await getEmbeddingJobStatus(jobId);
-      
-      if (!job) {
-        return res.status(404).json({ error: 'Job não encontrado' });
-      }
-      
-      // Verificar isolamento de tenant
-      if (job.tenantId !== tenantId) {
-        return res.status(403).json({ error: 'Acesso negado a este job' });
-      }
-      
-      res.json({
-        jobId: job.id,
-        type: job.type,
-        status: job.status,
-        createdAt: job.createdAt,
-        startedAt: job.startedAt,
-        completedAt: job.completedAt,
-        error: job.error,
-        result: job.status === 'completed' ? job.result : undefined,
-        metadata: job.metadata,
-      });
-    } catch (error) {
-      logger.error({ error }, 'Erro ao consultar job de embedding');
-      res.status(500).json({ error: 'Erro interno do servidor' });
-    }
-  }
-);
 
 // ============================================================================
 // MIDDLEWARE: Not Found + Error Handler (Express.js 2025)
@@ -5162,258 +4410,25 @@ registerShutdownCallback(
   { priority: ShutdownPriority.BACKGROUND_JOBS }
 );
 
-// CORREÇÃO 23/12/2025: Inicializar Redis cache ANTES de iniciar o servidor
-// Evita race condition onde clientes WebSocket podem conectar antes do Redis estar pronto
-// O embedding-websocket usa getRedisClient() que precisa do cliente inicializado
-// ENTERPRISE-GRADE: Servidor só aceita conexões após dependências críticas estarem prontas (Regra 6)
-// BUG FIX 23/12/2025: Converter para async/await para melhor controle de erros e evitar unhandled rejections
-(async () => {
-  try {
-    setPermissionResolver(async (auth) => {
-      const db = getDatabase();
-      let customRoleId = auth.customRoleId;
-      if (!customRoleId) {
-        const user = await db.query.users.findFirst({
-          where: eq(schema.users.id, auth.userId),
-          columns: { customRoleId: true },
-        });
-        customRoleId = user?.customRoleId ?? undefined;
-      }
-      const isAdminRole = auth.role === 'admin' || auth.role === 'super_admin';
-      const rolePermissions = isAdminRole
-        ? await db.query.permissions.findMany({ columns: { codigo: true } })
-        : await db.query.rolePermissions.findMany({
-          where: eq(schema.rolePermissions.role, auth.role),
-          with: { permission: true },
-        });
-      const customRolePermissions = customRoleId
-        ? await db.query.customRolePermissions.findMany({
-          where: eq(schema.customRolePermissions.customRoleId, customRoleId),
-          with: { permission: true },
-        })
-        : [];
-      return [
-        ...rolePermissions
-          .map((rp) => ('codigo' in rp ? rp.codigo : (rp as { permission?: { codigo?: string | null } }).permission?.codigo))
-          .filter((code): code is string => Boolean(code)),
-        ...customRolePermissions
-          .map((rp) => (rp as { permission?: { codigo?: string | null } }).permission?.codigo)
-          .filter((code): code is string => Boolean(code)),
-      ];
-    });
-
-    // Inicializar Redis cache (crítico para embedding-websocket Pub/Sub)
-    // BUG FIX 23/12/2025: Unificar tratamento de erro - uma única verificação após try-catch
-    // Evita múltiplos pontos de exit e lógica duplicada
-    // BUG FIX 23/12/2025: Garantir que redisConnected seja sempre definido explicitamente
-    // Evita comportamento indefinido onde exceções podem deixar variável em estado inconsistente
-    let redisConnected = false;
-    try {
-      redisConnected = await initializeRedisCache();
-      // Garantir que redisConnected seja boolean explícito (não undefined)
-      redisConnected = Boolean(redisConnected);
-    } catch (redisError) {
-      // Se initializeRedisCache() lançar exceção, tratar como falha crítica
-      // IMPORTANTE: Definir redisConnected explicitamente como false para evitar estado indefinido
-      redisConnected = false;
-      logger.error({ error: redisError }, 'CRITICAL: Falha ao inicializar Redis cache - exceção lançada');
-      // Não re-lançar exceção - já tratamos acima e definimos redisConnected = false
-      // Verificação unificada abaixo tratará tanto false quanto exceções de forma consistente
-    }
-    
-    // CORREÇÃO PR#107 (WS4): Inicializar cache de sessões HTTP (sessão + JWT OIDC)
-    // - Em produção: Redis distribuído é obrigatório (fail-fast dentro de initializeSessionAuthCache)
-    // - Em dev/test: cache fica desabilitado (sem in-memory)
-    await initializeSessionAuthCache();
-
-    // BUG FIX 23/12/2025: Verificação unificada - redisConnected sempre definido (true ou false)
-    // Trata tanto retorno false quanto exceções de forma consistente
-    // Evita múltiplos pontos de exit e lógica duplicada
-    if (redisConnected) {
-      logger.info('Redis cache inicializado para embedding-websocket');
-    } else {
-      // BUG FIX 23/12/2025: Redis é crítico para embedding-websocket Pub/Sub
-      // Se Redis não estiver disponível, embedding-websocket não pode funcionar corretamente
-      // Fail-fast em produção (Regra 6 - sem workarounds)
-      // ÚNICO ponto de exit para falha de Redis - evita confusão sobre qual caminho foi tomado
-      if (isProduction) {
-        logger.error('CRITICAL: Redis é OBRIGATÓRIO para embedding-websocket Pub/Sub em produção. Abortando.');
-        process.exit(1);
-      } else {
-        logger.warn('Redis cache não disponível - WebSocket funcionará sem Pub/Sub (modo desenvolvimento)');
-      }
-    }
-
-    startEmbeddingWorkerWhenRedisReady(redisConnected);
-    startDocumentProcessingWorkerWhenRedisReady(redisConnected);
-    startDocumentProcessingReconcilerWhenRedisReady(redisConnected);
-    if (WORKER_TENANT_ID) {
-      startTenantScopedWorkers(WORKER_TENANT_ID);
-    } else {
-      logger.info('Workers tenant-scoped desativados: defina WORKER_TENANT_ID para habilitar learning/web-crawl em background');
-    }
-
-    // Inicializar cache RAG (apenas se Redis distribuído estiver disponível)
-    if (redisConnected) {
-      const searchAdapter = createCacheAdapter<RagSearchResponse>('rag-search', RAG_QUERY_CACHE_TTL_MS);
-      if (searchAdapter.isDistributed()) {
-        ragSearchCache = searchAdapter;
-      } else {
-        ragSearchCache = null;
-        logger.warn('Cache RAG (search) desabilitado: adapter não é distribuído');
-      }
-
-      const contextAdapter = createCacheAdapter<RagContextResponse>('rag-context', RAG_QUERY_CACHE_TTL_MS);
-      if (contextAdapter.isDistributed()) {
-        ragContextCache = contextAdapter;
-      } else {
-        ragContextCache = null;
-        logger.warn('Cache RAG (context) desabilitado: adapter não é distribuído');
-      }
-    } else {
-      // Sem in-memory: em dev/test, apenas não cacheamos.
-      ragSearchCache = null;
-      ragContextCache = null;
-      logger.info('Cache RAG desabilitado (Redis indisponível)');
-    }
-    
-    // SSOT validation (Plano 11/02/2026): embeddings-gpu text_dimensions = EMBEDDING_DIMENSIONS.TEXT
-    await validateEmbeddingDimensionsSSOT();
-
-    // BUG FIX 23/12/2025: Criar servidor HTTP mas NÃO iniciar ainda
-    // Isso permite inicializar WebSocket ANTES de aceitar conexões
-    // app.listen() começa a aceitar conexões imediatamente, causando race condition
-    // Solução: Criar servidor manualmente, inicializar WebSocket, depois iniciar servidor
-    const server = http.createServer(app);
-    
-    // BUG FIX 23/12/2025: Inicializar Qdrant collection ANTES de iniciar servidor HTTP
-    // Isso garante que a collection text_embeddings exista antes de aceitar requisições
-    if (isQdrantConfigured()) {
-      try {
-        await initTextCollection();
-        logger.info({ 
-          collection: TEXT_COLLECTION_NAME, 
-          dimension: TEXT_EMBEDDING_DIM 
-        }, 'Coleção Qdrant para embeddings de texto inicializada');
-      } catch (error) {
-        logger.error({ error }, 'Falha ao inicializar coleção Qdrant - servidor não iniciará');
-        throw error; // Fail-fast se Qdrant não puder ser inicializado
-      }
-    } else {
-      logger.warn('Qdrant não configurado (QDRANT_URL/QDRANT_API_KEY) - buscas de texto indisponíveis');
-    }
-    
-    // BUG FIX 23/12/2025: Inicializar WebSocket ANTES de iniciar servidor HTTP
-    // Isso garante que Redis Pub/Sub esteja pronto antes de aceitar qualquer conexão
-    // Evita race condition onde clientes conectam antes do Redis estar inicializado
-    // BUG FIX 23/12/2025: Em desenvolvimento, se Redis não estiver disponível, initEmbeddingWebSocket
-    // permite WebSocket funcionar sem Pub/Sub (funcionalidade limitada) ao invés de crashar
-    try {
-      await initEmbeddingWebSocket(server);
-      logger.info({ path: '/ws/embeddings' }, 'WebSocket para notificações de embeddings ativo');
-    } catch (error) {
-      // Em produção, erro já foi logado e propagado por initEmbeddingWebSocket
-      // Em desenvolvimento, erro não deve ocorrer (função permite operação sem Redis)
-      // Mas se ocorrer, tratar como erro crítico
-      logger.error({ error }, 'CRITICAL: Falha ao inicializar WebSocket - abortando');
-      throw error;
-    }
-    
-    // BUG FIX 23/12/2025: Registrar shutdown callbacks específicos do servidor ANTES de server.listen()
-    // Se o servidor falhar ao fazer bind na porta, server.on('error') chama process.exit(1)
-    // Os callbacks devem estar registrados ANTES para garantir cleanup mesmo em falhas de inicialização
-    // NOTA: Callback de database pool já está registrado fora do IIFE para garantir cleanup mesmo se inicialização falhar
-    registerShutdownCallback(
-      'rag-websocket-server',
-      async () => {
-        logger.info('Encerrando WebSocket server...');
-        // BUG FIX 23/12/2025: closeEmbeddingWebSocket() é async e precisa de await
-        // Sem await, cleanup (heartbeat intervals, Redis subscriber) pode não completar antes do shutdown
-        // Isso causa resource leaks e conexões pendentes
-        await closeEmbeddingWebSocket();
-        logger.info('WebSocket server encerrado com sucesso');
-      },
-      { priority: ShutdownPriority.WEBSOCKET }
-    );
-    
-    registerShutdownCallback(
-      'rag-http-server',
-      async () => {
-        logger.info('Encerrando HTTP server...');
-        await new Promise<void>((resolve, reject) => {
-          server.close((err) => {
-            if (err) {
-              logger.error({ error: err }, 'Erro ao fechar HTTP server');
-              reject(err);
-            } else {
-              logger.info('HTTP server encerrado com sucesso');
-              resolve();
-            }
-          });
-        });
-      },
-      { priority: ShutdownPriority.HTTP_SERVER }
-    );
-    
-    // Configurar timeouts do servidor
-    server.timeout = 60000; // 60s para processamento de embeddings/uploads
-    server.keepAliveTimeout = 65000; // 65s (maior que ALB timeout padrão de 60s)
-    server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
-    
-    // BUG FIX 23/12/2025: Capturar erros assíncronos de inicialização do servidor (ex: porta em uso)
-    // server.listen() emite evento 'error' se falhar após callback ser chamado
-    // Isso previne unhandled promise rejections e garante fail-fast adequado
-    // IMPORTANTE: Callbacks de shutdown já estão registrados acima, então cleanup será executado mesmo se servidor falhar
-    server.on('error', (err: NodeJS.ErrnoException) => {
-      logger.error({ 
-        error: err.message, 
-        code: err.code,
-        port: PORT,
-        stack: err.stack,
-      }, 'Falha crítica ao iniciar servidor HTTP - abortando');
-      // ENTERPRISE-GRADE: Fail-fast se servidor não pode iniciar (Regra 6 - sem workarounds)
-      // Callbacks de shutdown já estão registrados, então cleanup será executado durante process.exit()
-      process.exit(1);
-    });
-    
-    // BUG FIX 23/12/2025: Iniciar servidor HTTP APÓS WebSocket estar pronto E callbacks registrados
-    // Agora que Redis Pub/Sub está inicializado e callbacks de shutdown estão registrados,
-    // podemos aceitar conexões com segurança e garantir cleanup mesmo em falhas
-    server.listen(PORT, () => {
-      logger.info({ 
-        port: PORT, 
-        gpuManagerUrl: GPU_MANAGER_URL,
-        qdrantConfigured: isQdrantConfigured(),
-        qdrantUrl: readOptionalStringEnv('QDRANT_URL') ?? 'not_configured',
-        architecture: {
-          text: 'Qwen3-Embedding-0.6B (1024 dim) → Qdrant',
-          image: 'OpenAI Vision (descrição) - sem embeddings de imagem',
-        },
-        circuitBreaker: 'enabled',
-        gpuDedicated: true, // Hetzner GEX44 24/7
-        redisConnected,
-      }, 'RAG service iniciado - ARQUITETURA ENTERPRISE (26/12/2025) via GPU Manager Service');
-    });
-  } catch (error) {
-    // BUG FIX 23/12/2025: Capturar TODOS os erros (síncronos e assíncronos) da inicialização
-    // async/await garante que erros sejam propagados corretamente e capturados aqui
-    // Isso previne unhandled promise rejections e garante fail-fast adequado
-    logger.error({ 
-      error: (error as Error).message,
-      stack: (error as Error).stack,
-    }, 'Falha crítica ao inicializar servidor - abortando');
-    // ENTERPRISE-GRADE: Fail-fast se inicialização falhar (Regra 6 - sem workarounds)
-    process.exit(1);
-  }
-})().catch((error) => {
-  // BUG FIX 23/12/2025: Adicionar catch handler explícito para prevenir unhandled promise rejections
-  // Se qualquer erro assíncrono ocorrer fora do try-catch (ex: em callbacks de logger, promises não aguardadas),
-  // será capturado aqui. Isso previne crashes silenciosos e garante que todos os erros sejam logados antes de exit
-  logger.error({ 
-    error: error instanceof Error ? error.message : String(error),
-    stack: error instanceof Error ? error.stack : undefined,
-  }, 'CRITICAL: Unhandled rejection na inicialização do RAG service - abortando');
-  process.exit(1);
+void startRagBootstrap({
+  app,
+  logger,
+  port: PORT ?? 3004,
+  isProduction,
+  gpuManagerUrl: GPU_MANAGER_URL,
+  workerTenantId: WORKER_TENANT_ID ?? undefined,
+  ragQueryCacheTtlMs: RAG_QUERY_CACHE_TTL_MS,
+  startEmbeddingWorkerWhenRedisReady,
+  startDocumentProcessingWorkerWhenRedisReady,
+  startDocumentProcessingReconcilerWhenRedisReady,
+  startTenantScopedWorkers,
+  validateEmbeddingDimensionsSSOT,
+  setRagSearchCache: (cache) => {
+    ragSearchCache = cache as CacheAdapter<RagSearchResponse> | null;
+  },
+  setRagContextCache: (cache) => {
+    ragContextCache = cache as CacheAdapter<RagContextResponse> | null;
+  },
 });
 
 // ============================================================================
@@ -5433,4 +4448,3 @@ registerShutdownCallback(
 // BUG FIX 23/12/2025: registerShutdownCallback para rag-database-pool movido para dentro do async IIFE
 // Isso garante que o callback seja registrado mesmo se a inicialização falhar parcialmente
 // O callback agora está registrado após o servidor estar inicializado com sucesso (linha 3488)
-

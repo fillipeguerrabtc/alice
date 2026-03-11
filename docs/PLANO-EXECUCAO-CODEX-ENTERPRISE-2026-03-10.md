@@ -26,7 +26,7 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - `P1-API-01`: Concluído
 - `P1-AUTH-02`: Concluído
 - `P1-CHAT-03`: Concluído
-- `P1-RAG-04`: Não iniciado
+- `P1-RAG-04`: Concluído
 - `P1-TRAINING-05`: Não iniciado
 - `P1-INTEGRATIONS-06`: Não iniciado
 - `P1-GPU-LLM-07`: Não iniciado
@@ -43,7 +43,7 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - `P2-DOCS-06`: Não iniciado
 
 ## Bloco atual
-`P1-CHAT-03` (Concluído)
+`P1-RAG-04` (Concluído)
 
 ## Histórico de rodadas
 
@@ -379,8 +379,36 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
   - Decomposição adicional de outros domínios internos do `chat-service` permanece para blocos futuros de modularização (`P1-*`) sem expandir escopo desta rodada.
 - Riscos ou bloqueios:
   - Sem bloqueio ativo para continuação.
-  - Risco residual controlado: `index.ts` permanece volumoso em função de múltiplos domínios ainda concentrados, porém com redução de acoplamento nas áreas extraídas (bootstrap/ws-agent/imagens) sem alteração de contratos.
+- Risco residual controlado: `index.ts` permanece volumoso em função de múltiplos domínios ainda concentrados, porém com redução de acoplamento nas áreas extraídas (bootstrap/ws-agent/imagens) sem alteração de contratos.
 - Próximo bloco recomendado: `P1-RAG-04`.
+
+### Rodada 11
+- Data: 2026-03-10
+- Bloco executado: `P1-RAG-04`
+- Objetivo: Decompor `apps/rag-service/src/index.ts`, separando bootstrap, rotas de documentos, retrieval, governança e jobs, preservando contratos e filas existentes.
+- Diagnóstico: `apps/rag-service/src/index.ts` concentrava responsabilidades de composição root (boot/shutdown) e registro de múltiplos domínios HTTP no mesmo arquivo, com acoplamento direto entre lifecycle, rotas de documentos/retrieval/jobs e rotas de fila de embeddings.
+- Arquivos lidos: `CLAUDE.md` (1-120), `package.json`, `apps/rag-service/src/index.ts` (chunks sequenciais até o fim), `apps/rag-service/src/openapi-specs.ts` (arquivo completo em chunks), `apps/rag-service/src/storage.ts`, `apps/rag-service/src/image-processor.ts`, `apps/rag-service/src/workers/embedding-worker.ts`, `apps/rag-service/src/embedding-websocket.ts`, `apps/rag-service/src/audio-processor.ts`, `apps/rag-service/src/document-processor.ts`, `apps/rag-service/src/web-search.ts`, `apps/rag-service/src/web-sanitize.ts`, `apps/rag-service/src/learning-orchestrator.ts`, `apps/rag-service/src/workers/learning-worker.ts`, `apps/rag-service/src/workers/web-crawl-worker.ts`, `apps/rag-service/src/training-chunk-selection.ts`, `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Arquivos alterados: `apps/rag-service/src/index.ts`, `apps/rag-service/src/rag-bootstrap.ts`, `apps/rag-service/src/rag-document-routes.ts`, `apps/rag-service/src/rag-retrieval-routes.ts`, `apps/rag-service/src/rag-learning-routes.ts`, `apps/rag-service/src/rag-embedding-routes.ts`, `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Validações executadas:
+  - `pnpm --filter @alice/rag-service typecheck` (executado via `npx -y pnpm@10.26.2 --filter @alice/rag-service typecheck`)
+  - `pnpm --filter @alice/rag-service lint` (executado via `npx -y pnpm@10.26.2 --filter @alice/rag-service lint`)
+  - `pnpm --filter @alice/rag-service build` (executado via `npx -y pnpm@10.26.2 --filter @alice/rag-service build`)
+  - `pnpm lint` (executado via `npx -y pnpm@10.26.2 lint`)
+  - `pnpm build` (executado via `npx -y pnpm@10.26.2 build`)
+- Resultado das validações:
+  - Todas as validações obrigatórias da rodada foram aprovadas.
+  - A decomposição foi aplicada com preservação dos endpoints existentes nos domínios extraídos e sem alteração de contratos de fila/jobs já existentes.
+  - `apps/rag-service/src/index.ts` foi reduzido de 5436 para 4450 linhas, com extração de bootstrap e rotas por domínio para módulos dedicados.
+  - Observação de ambiente: binário global `pnpm` permanece quebrado; os comandos foram executados com `npx -y pnpm@10.26.2`, preservando os comandos lógicos exigidos.
+- Documentação atualizada: tracking canônico atualizado com evidências factuais da Rodada 11.
+- Commit realizado: `refactor: decompose rag service composition root`.
+- Pendências:
+  - Validar posteriormente no ambiente do usuário a correção do binário global `pnpm`.
+  - A decomposição do domínio de criação/upload de documentos ainda permanece parcialmente no `index.ts` para continuidade no próximo bloco de modularização (`P1-TRAINING-05`) sem expansão de escopo nesta rodada.
+- Riscos ou bloqueios:
+  - Sem bloqueio ativo para continuação.
+  - Risco residual controlado: o `index.ts` do `rag-service` ainda permanece volumoso em áreas não extraídas nesta rodada, apesar da redução material de responsabilidade no composition root.
+- Próximo bloco recomendado: `P1-TRAINING-05`.
 
 ## Pendências abertas
 - Correção do binário global `pnpm` no ambiente local (fora do escopo deste bloco).
@@ -394,4 +422,4 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - Risco residual controlado: documentação histórica volumosa pode conter contexto de planos anteriores; status atual de execução do backlog governado deve sempre ser consultado no tracking canônico.
 
 ## Próximos blocos permitidos
-- `P1-RAG-04`
+- `P1-TRAINING-05`
