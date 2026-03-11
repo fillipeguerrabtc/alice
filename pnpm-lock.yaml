@@ -876,6 +876,9 @@ importers:
       '@alice/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@alice/database':
+        specifier: workspace:*
+        version: link:../../packages/database
       '@alice/logger':
         specifier: workspace:*
         version: link:../../packages/logger

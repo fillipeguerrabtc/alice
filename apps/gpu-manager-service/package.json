@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@alice/config": "workspace:*",
+    "@alice/database": "workspace:*",
     "@alice/logger": "workspace:*",
     "@alice/shared-utils": "workspace:*",
     "compression": "1.7.5",

@@ -82,11 +82,16 @@ import { createGpuServiceClients, applyStructuredOutputs } from './gpu-service-c
 import { createGpuManagerMetrics } from './gpu-metrics.js';
 import { startGpuManagerBootstrap } from './gpu-bootstrap.js';
 import { gpuManagerServicePaths, gpuManagerServiceSchemas } from './openapi-specs.js';
+import { createGpuRuntimeStateStore } from './gpu-runtime-state-store.js';
 
 export { GpuRequestPriority, GpuServiceType } from './gpu-contracts.js';
 
 const execAsync = promisify(exec);
 const logger = createLogger('gpu-manager');
+const gpuRuntimeStateStore = createGpuRuntimeStateStore({
+  logger,
+  sourceService: 'gpu-manager-service',
+});
 
 const IS_PRODUCTION = getNodeEnv() === 'production';
 const PORT = readNumberEnv('PORT', { defaultValue: 3010, integer: true, min: 1, max: 65535 });
@@ -117,6 +122,71 @@ logger.info({ gpuServiceTimeout: GPU_SERVICE_TIMEOUT }, 'Timeout GPU configurado
 
 /** Orquestrador: disponibilidade verificada uma vez no startup */
 let orchestratorAvailable = false;
+
+type RuntimePersistenceEventType =
+  | 'state_snapshot'
+  | 'switch_requested'
+  | 'switch_completed'
+  | 'switch_failed'
+  | 'manual_restore_requested'
+  | 'manual_restore_completed'
+  | 'manual_restore_failed';
+type RuntimePersistenceTriggerSource = 'startup' | 'queue_request' | 'manual_api' | 'system';
+type RuntimePersistenceOutcome = 'success' | 'error';
+
+const UUID_V4_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function normalizeUuidCandidate(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  return UUID_V4_REGEX.test(trimmed) ? trimmed : undefined;
+}
+
+function readCorrelationIdFromHeaders(headers: Record<string, string> | undefined): string | undefined {
+  const correlationId = headers?.['x-correlation-id'];
+  if (!correlationId) return undefined;
+  const normalized = correlationId.trim();
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+async function persistRuntimeSnapshot(params: {
+  eventType: RuntimePersistenceEventType;
+  triggerSource: RuntimePersistenceTriggerSource;
+  outcome?: RuntimePersistenceOutcome;
+  requestId?: string;
+  correlationId?: string;
+  reason?: string;
+  actorUserId?: string;
+  actorTenantId?: string;
+  metadata?: Record<string, unknown>;
+}): Promise<void> {
+  try {
+    const orchestrationMode = GPU_ORCHESTRATION_MODE === 'preemptive' ? 'preemptive' : 'simultaneous';
+    await gpuRuntimeStateStore.recordSnapshot({
+      orchestratorState: getOrchestratorState(),
+      orchestrationMode,
+      orchestratorAvailable,
+      eventType: params.eventType,
+      triggerSource: params.triggerSource,
+      outcome: params.outcome ?? 'success',
+      requestId: params.requestId,
+      correlationId: params.correlationId,
+      reason: params.reason,
+      actorUserId: normalizeUuidCandidate(params.actorUserId),
+      actorTenantId: normalizeUuidCandidate(params.actorTenantId),
+      metadata: params.metadata,
+    });
+  } catch (error) {
+    logger.error(
+      {
+        error,
+        eventType: params.eventType,
+        triggerSource: params.triggerSource,
+      },
+      'Falha ao persistir snapshot/evento de runtime GPU'
+    );
+  }
+}
 
 // Middleware de autenticação interna (service-to-service)
 // BUG FIX 25/12/2025: GPU Manager Service endpoints devem aceitar X-Internal-Api-Secret, não requireAuth (OAuth/JWT)
@@ -589,10 +659,81 @@ async function processGpuRequest(request: GpuRequest): Promise<GpuResponse> {
   try {
     // Orquestração (se disponível): TRAINING/EMBEDDINGS trocam containers conforme demanda
     if (orchestratorAvailable) {
+      const correlationId = readCorrelationIdFromHeaders(request.headers);
       if (serviceType === GpuServiceType.TRAINING) {
-        await switchToTraining();
+        await persistRuntimeSnapshot({
+          eventType: 'switch_requested',
+          triggerSource: 'queue_request',
+          requestId: request.id,
+          correlationId,
+          reason: 'Treinamento solicitado pela fila GPU',
+          actorUserId: request.userId,
+          actorTenantId: request.tenantId,
+          metadata: { serviceType },
+        });
+        try {
+          await switchToTraining();
+          await persistRuntimeSnapshot({
+            eventType: 'switch_completed',
+            triggerSource: 'queue_request',
+            requestId: request.id,
+            correlationId,
+            reason: 'Runtime GPU preparado para treinamento',
+            actorUserId: request.userId,
+            actorTenantId: request.tenantId,
+            metadata: { serviceType },
+          });
+        } catch (error) {
+          await persistRuntimeSnapshot({
+            eventType: 'switch_failed',
+            triggerSource: 'queue_request',
+            outcome: 'error',
+            requestId: request.id,
+            correlationId,
+            reason: error instanceof Error ? error.message : String(error),
+            actorUserId: request.userId,
+            actorTenantId: request.tenantId,
+            metadata: { serviceType },
+          });
+          throw error;
+        }
       } else if (serviceType === GpuServiceType.EMBEDDINGS && getOrchestratorState() === 'training' && GPU_ORCHESTRATION_MODE === 'preemptive') {
-        await switchToLlmEmbeddings();
+        await persistRuntimeSnapshot({
+          eventType: 'switch_requested',
+          triggerSource: 'queue_request',
+          requestId: request.id,
+          correlationId,
+          reason: 'Embeddings solicitado durante training no modo preemptive',
+          actorUserId: request.userId,
+          actorTenantId: request.tenantId,
+          metadata: { serviceType },
+        });
+        try {
+          await switchToLlmEmbeddings();
+          await persistRuntimeSnapshot({
+            eventType: 'switch_completed',
+            triggerSource: 'queue_request',
+            requestId: request.id,
+            correlationId,
+            reason: 'Runtime GPU retornado para serving após requisição de embeddings',
+            actorUserId: request.userId,
+            actorTenantId: request.tenantId,
+            metadata: { serviceType },
+          });
+        } catch (error) {
+          await persistRuntimeSnapshot({
+            eventType: 'switch_failed',
+            triggerSource: 'queue_request',
+            outcome: 'error',
+            requestId: request.id,
+            correlationId,
+            reason: error instanceof Error ? error.message : String(error),
+            actorUserId: request.userId,
+            actorTenantId: request.tenantId,
+            metadata: { serviceType },
+          });
+          throw error;
+        }
       }
     } else if (serviceType === GpuServiceType.TRAINING) {
       const trainerReachable = await isTrainingServiceReachable();
@@ -1024,6 +1165,16 @@ app.get('/api/gpu/queue/:requestId', requireInternalAuth, asyncHandler(async (re
 
 // Orquestrador: estado e retorno manual
 app.get('/api/gpu/orchestrator/state', requireInternalAuth, asyncHandler(async (_req: Request, res: Response) => {
+  const snapshot = await gpuRuntimeStateStore.getCurrentStateWithEvents(10);
+  if (!snapshot.state) {
+    await persistRuntimeSnapshot({
+      eventType: 'state_snapshot',
+      triggerSource: 'system',
+      reason: 'Inicialização de estado durável por leitura operacional',
+      metadata: { endpoint: '/api/gpu/orchestrator/state' },
+    });
+  }
+
   res.json({
     state: getOrchestratorState(),
     orchestratorAvailable,
@@ -1031,7 +1182,7 @@ app.get('/api/gpu/orchestrator/state', requireInternalAuth, asyncHandler(async (
   });
 }));
 
-app.post('/api/gpu/orchestrator/return', requireInternalAuth, asyncHandler(async (_req: Request, res: Response) => {
+app.post('/api/gpu/orchestrator/return', requireInternalAuth, asyncHandler(async (req: Request, res: Response) => {
   if (GPU_ORCHESTRATION_MODE === 'simultaneous') {
     trackGpuRejection(GpuServiceType.TRAINING, 'simultaneous_policy');
     return res.status(409).json({ error: 'Operação bloqueada: modo simultaneous proíbe stop/start de containers GPU' });
@@ -1039,7 +1190,49 @@ app.post('/api/gpu/orchestrator/return', requireInternalAuth, asyncHandler(async
   if (!orchestratorAvailable || GPU_ORCHESTRATION_MODE !== 'preemptive') {
     return res.status(503).json({ error: 'Orquestrador não disponível' });
   }
-  await switchToLlmEmbeddings();
+  const requestId = randomUUID();
+  const actorUserId = typeof req.headers['x-internal-user-id'] === 'string' ? req.headers['x-internal-user-id'] : undefined;
+  const actorTenantId = typeof req.headers['x-internal-tenant-id'] === 'string' ? req.headers['x-internal-tenant-id'] : undefined;
+  const correlationId = typeof req.headers['x-correlation-id'] === 'string' ? req.headers['x-correlation-id'] : undefined;
+
+  await persistRuntimeSnapshot({
+    eventType: 'manual_restore_requested',
+    triggerSource: 'manual_api',
+    requestId,
+    correlationId,
+    reason: 'Restore manual de inferência solicitado por operador',
+    actorUserId,
+    actorTenantId,
+    metadata: { endpoint: '/api/gpu/orchestrator/return' },
+  });
+
+  try {
+    await switchToLlmEmbeddings();
+    await persistRuntimeSnapshot({
+      eventType: 'manual_restore_completed',
+      triggerSource: 'manual_api',
+      requestId,
+      correlationId,
+      reason: 'Restore manual de inferência concluído',
+      actorUserId,
+      actorTenantId,
+      metadata: { endpoint: '/api/gpu/orchestrator/return' },
+    });
+  } catch (error) {
+    await persistRuntimeSnapshot({
+      eventType: 'manual_restore_failed',
+      triggerSource: 'manual_api',
+      outcome: 'error',
+      requestId,
+      correlationId,
+      reason: error instanceof Error ? error.message : String(error),
+      actorUserId,
+      actorTenantId,
+      metadata: { endpoint: '/api/gpu/orchestrator/return' },
+    });
+    throw error;
+  }
+
   res.json({ state: getOrchestratorState(), message: 'Retornado para LLM+Embeddings' });
 }));
 
@@ -1340,6 +1533,12 @@ void startGpuManagerBootstrap({
   orchestrationMode: GPU_ORCHESTRATION_MODE,
   setOrchestratorAvailable: (value) => {
     orchestratorAvailable = value;
+    void persistRuntimeSnapshot({
+      eventType: 'state_snapshot',
+      triggerSource: 'startup',
+      reason: 'Snapshot inicial após verificação de disponibilidade do orquestrador',
+      metadata: { orchestratorAvailable: value },
+    });
   },
   startQueueWorker,
   stopQueueWorker,

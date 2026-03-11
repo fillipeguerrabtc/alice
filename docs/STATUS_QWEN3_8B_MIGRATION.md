@@ -4,81 +4,67 @@
 **Data:** 11 de Marco de 2026
 
 ## Rodada Atual
-- Rodada: 1
+- Rodada: 2
 - Status: Concluída
 
 ## Objetivo
-Implantar a fundação SSOT de modelos Qwen3-8B e contrato compartilhado de `reasoningMode`, com compatibilidade de leitura para registros históricos legados Qwen2.5.
+Criar persistência durável para estado e eventos de runtime GPU com auditoria operacional no banco PostgreSQL.
 
 ## Premissas
-- Serving alvo: `Qwen/Qwen3-8B-AWQ`.
-- Training base alvo: `Qwen/Qwen3-8B`.
-- Embeddings alvo: `Qwen/Qwen3-Embedding-0.6B`.
-- `reasoningMode` canônico: `auto | thinking | non_thinking` (default `auto`).
-- Compatibilidade histórica com valores legados Qwen2.5 deve ser preservada.
+- Persistência durável deve ser SSOT para estado operacional de runtime GPU.
+- Tabelas alvo desta rodada:
+  - `gpu_runtime_state`
+  - `gpu_runtime_events`
+- Escopo restrito a schema + migration + camada de leitura/escrita no `gpu-manager-service`.
+- Sem alterações de transição real de containers, UI ou workflows.
 
 ## Escopo da Rodada
-- Refatorar `packages/shared-utils/src/llm-models.ts` para catálogo estruturado com:
-  - `publicModelName`
-  - `servingModelId`
-  - `trainingBaseModelId`
-  - `reasoningDefault`
-- Introduzir Qwen3-8B como família principal.
-- Manter compatibilidade de leitura de valores legados Qwen2.5.
-- Alinhar defaults/resolução de modelo nos serviços/configs do escopo.
-- Introduzir contrato compartilhado de `reasoningMode`.
-- Atualizar inventário de acoplamentos Qwen2.5.
+- Adicionar entidades no schema compartilhado (`packages/shared/src/schema.ts`).
+- Criar migration SQL real com próximo número disponível em `migrations/`.
+- Incluir índices e constraints para operação e auditoria.
+- Implementar camada de acesso no `gpu-manager-service` para leitura/escrita do estado durável.
+- Cobrir com testes do escopo.
 
 ## Alterações
-- `packages/shared-utils/src/llm-models.ts`:
-  - Novo catálogo SSOT (`LLM_MODEL_CATALOG`) com família principal `qwen3_8b`.
-  - Campos canônicos por família: `publicModelName`, `servingModelId`, `trainingBaseModelId`, `reasoningDefault`.
-  - Defaults exportados: `DEFAULT_PUBLIC_LLM_MODEL_NAME`, `DEFAULT_LLM_SERVING_MODEL_ID`, `DEFAULT_LLM_TRAINING_BASE_MODEL_ID`, `DEFAULT_EMBEDDINGS_MODEL_ID`, `DEFAULT_REASONING_MODE`.
-  - Compatibilidade legada Qwen2.5 via aliases de resolução (`Qwen2.5-7B-Instruct-AWQ` -> `Qwen/Qwen3-8B-AWQ`).
-  - Contrato compartilhado de reasoning: `resolveReasoningMode` e `resolveReasoningModeWithHeuristic`.
-- `packages/config/src/index.ts`:
-  - Defaults atualizados para Qwen3 (`LLM_MODEL` -> `Qwen3-8B`).
-  - Contrato `REASONING_MODE_VALUES` exportado e novo `LLM_REASONING_MODE` no schema.
-- `packages/shared-utils/src/config.ts`:
-  - `GPU_MANAGER_CONFIG.models.llm` agora usa resolvedor SSOT (`resolveServingModelIdFromConfig`).
-  - `embeddings` alinhado para `DEFAULT_EMBEDDINGS_MODEL_ID`.
-- `apps/llm-gateway-service/src/index.ts`:
-  - `DEFAULT_MODEL` agora resolvido por SSOT (`resolveServingModelIdFromConfig`).
-- `apps/chat-service/src/index.ts`:
-  - `DEFAULT_LLM_CONFIG.model` migrado para `DEFAULT_LLM_SERVING_MODEL_ID` (Qwen3).
-  - `agentModelNameSchema` passa a usar `ALLOWED_AGENT_LLM_MODEL_NAMES` do SSOT.
-  - Default de `modeloBase` migrado para `DEFAULT_PUBLIC_LLM_MODEL_NAME`.
-  - Contrato `reasoningMode` propagado nos caminhos gateway `complete`/`stream` via `extraBody.alice_reasoning_mode`.
-  - Mensagens de validação ajustadas para alvo Qwen3.
-- `apps/training-service/src/index.ts`:
-  - Fallback de `TRADING_LLM_MODEL` migrado para resolvedor SSOT.
-  - Contrato `reasoningMode` aplicado via `TRADING_REASONING_MODE` com envio para gateway (`extraBody.alice_reasoning_mode`).
-- `tests/unit/config-validation.test.ts`:
-  - Expectativas atualizadas para default LLM Qwen3 no `GPU_MANAGER_CONFIG`.
+- `packages/shared/src/schema.ts`:
+  - Novos enums de runtime GPU: `gpu_runtime_mode`, `gpu_orchestrator_state`, `gpu_orchestration_mode`, `gpu_runtime_event_type`, `gpu_runtime_trigger_source`, `gpu_runtime_event_outcome`.
+  - Novas entidades duráveis: `gpu_runtime_state` e `gpu_runtime_events`.
+  - Índices operacionais e de auditoria para leitura de estado atual, histórico temporal e filtros por `requestId`/`correlationId`.
+  - Relations e tipos exportados para uso seguro no ecossistema.
+- `migrations/0106_gpu_runtime_state_and_events.sql`:
+  - Migration real com criação de enums, tabelas, constraints e índices.
+  - Constraints de integridade para evitar chaves vazias e garantir formato JSON válido (`array`/`object`) nos campos críticos.
+  - Índice parcial para erros (`idx_gpu_runtime_events_failed_only`) visando troubleshooting operacional.
+- `apps/gpu-manager-service/src/gpu-runtime-state-store.ts`:
+  - Nova camada de acesso durável com transação única para snapshot + evento.
+  - Leitura do estado corrente com histórico (`getCurrentStateWithEvents`) e escrita auditável (`recordSnapshot`).
+  - Mapeamento de estado do orquestrador para modo de runtime e serviços ativos.
+- `apps/gpu-manager-service/src/index.ts`:
+  - Integração da persistência em pontos críticos:
+    - startup (`state_snapshot`);
+    - preempção por fila (`switch_requested`, `switch_completed`, `switch_failed`);
+    - restore manual (`manual_restore_requested`, `manual_restore_completed`, `manual_restore_failed`);
+    - endpoint de estado com seed inicial quando necessário.
+  - Normalização defensiva de `actorUserId`/`actorTenantId` (UUID) e captura de `correlationId`.
+- `tests/unit/services/gpu-runtime-persistence-guards.test.ts`:
+  - Guardas para schema, migration, caminho transacional e integração no `gpu-manager-service`.
+- `apps/gpu-manager-service/package.json` + `pnpm-lock.yaml`:
+  - Inclusão de `@alice/database` no serviço para resolver build e garantir linking correto no workspace.
 
-## Inventário de Acoplamentos Qwen2.5 (Atualizado)
-- Resolvido no escopo da rodada:
-  - `packages/config/src/index.ts`
-  - `packages/shared-utils/src/config.ts`
-  - `packages/shared-utils/src/llm-models.ts`
-  - `apps/llm-gateway-service/src/index.ts`
-  - `apps/chat-service/src/index.ts` (defaults e validação de modelo)
-  - `apps/training-service/src/index.ts`
-- Mantido por compatibilidade histórica:
-  - Alias legados Qwen2.5 aceitos no resolvedor de modelo para leitura de registros antigos.
-- Fora do escopo desta rodada (pendente para rodadas futuras):
-  - referências textuais/comentários e defaults legados remanescentes em outros módulos e schemas de histórico.
+## Inventário de Acoplamentos Qwen2.5 (Contexto)
+- Sem alterações nesta rodada.
+- Mantida a estratégia de compatibilidade histórica definida na Rodada 1 (leitura de legados Qwen2.5 via camada SSOT de modelos).
 
 ## Validações
 Executadas em sequência, sem paralelização:
 1. `typecheck` (`cmd.exe /c pnpm typecheck`) -> OK
-2. `testes` (`cmd.exe /c pnpm test`) -> falha inicial em 1 teste de default antigo Qwen2.5, corrigido; reexecução -> OK
+2. `testes` (`cmd.exe /c pnpm test`) -> OK (121 arquivos, 1356 testes)
 3. `eslint` (`cmd.exe /c pnpm lint`) -> OK
 4. `build` (`cmd.exe /c pnpm build`) -> OK
 
 ## Riscos
-- Ainda existem referências legadas Qwen2.5 fora do escopo da rodada (principalmente em comentários/schemas históricos), sem impacto funcional imediato.
-- O campo `LLM_MODEL` em `@alice/config` foi atualizado para default Qwen3 (nome público), e integrações externas que assumiam o nome antigo podem exigir revisão de configuração em ambiente.
+- Introdução de persistência durável no caminho do `gpu-manager-service` exige tratamento fail-safe para não degradar fluxo crítico de fila.
+- Ainda falta, em rodadas futuras, conectar essa persistência a uma FSM completa de transição de runtime e a notificações de chat/frontend.
 
 ## Próximo Passo
-Iniciar Rodada 2 somente após prompt explícito, focando orquestração de runtime GPU (preempção automática serving/training) e controles operacionais com RBAC conforme Prompt Mestre Fixo.
+Aguardar prompt da próxima rodada para iniciar FSM de orquestração GPU e integração de interrupção/restauração com fluxos de chat/training.

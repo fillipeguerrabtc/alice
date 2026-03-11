@@ -1294,6 +1294,111 @@ export const llmFallbackLogs = pgTable(
 );
 
 // ============================================================================
+// GPU RUNTIME ORCHESTRATION (Estado durável + trilha auditável)
+// ============================================================================
+
+export const gpuRuntimeModeEnum = pgEnum("gpu_runtime_mode", [
+  "serving",
+  "training",
+  "switching_to_training",
+  "switching_to_serving",
+]);
+
+export const gpuOrchestratorStateEnum = pgEnum("gpu_orchestrator_state", [
+  "llm_embeddings",
+  "training",
+  "switching_to_training",
+  "switching_to_llm",
+]);
+
+export const gpuOrchestrationModeEnum = pgEnum("gpu_orchestration_mode", [
+  "simultaneous",
+  "preemptive",
+]);
+
+export const gpuRuntimeEventTypeEnum = pgEnum("gpu_runtime_event_type", [
+  "state_snapshot",
+  "switch_requested",
+  "switch_completed",
+  "switch_failed",
+  "manual_restore_requested",
+  "manual_restore_completed",
+  "manual_restore_failed",
+]);
+
+export const gpuRuntimeTriggerSourceEnum = pgEnum("gpu_runtime_trigger_source", [
+  "startup",
+  "queue_request",
+  "manual_api",
+  "system",
+]);
+
+export const gpuRuntimeEventOutcomeEnum = pgEnum("gpu_runtime_event_outcome", [
+  "success",
+  "error",
+]);
+
+export const gpuRuntimeState = pgTable(
+  "gpu_runtime_state",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    runtimeKey: varchar("runtime_key", { length: 64 }).notNull().default("global"),
+    runtimeMode: gpuRuntimeModeEnum("runtime_mode").notNull().default("serving"),
+    orchestratorState: gpuOrchestratorStateEnum("orchestrator_state").notNull().default("llm_embeddings"),
+    orchestrationMode: gpuOrchestrationModeEnum("orchestration_mode").notNull().default("simultaneous"),
+    orchestratorAvailable: boolean("orchestrator_available").notNull().default(false),
+    activeServices: jsonb("active_services").$type<string[]>().notNull().default([]),
+    lastRequestId: varchar("last_request_id", { length: 128 }),
+    lastReason: varchar("last_reason", { length: 255 }),
+    correlationId: varchar("correlation_id", { length: 128 }),
+    updatedByService: varchar("updated_by_service", { length: 64 }).notNull().default("gpu-manager-service"),
+    updatedByUserId: uuid("updated_by_user_id").references(() => users.id),
+    updatedByTenantId: uuid("updated_by_tenant_id").references(() => tenants.id),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    uqGpuRuntimeStateRuntimeKey: uniqueIndex("uq_gpu_runtime_state_runtime_key").on(table.runtimeKey),
+    idxGpuRuntimeStateMode: index("idx_gpu_runtime_state_mode").on(table.runtimeMode),
+    idxGpuRuntimeStateOrchestratorState: index("idx_gpu_runtime_state_orchestrator_state").on(table.orchestratorState),
+    idxGpuRuntimeStateUpdatedAt: index("idx_gpu_runtime_state_updated_at").on(table.updatedAt),
+    idxGpuRuntimeStateUpdatedByTenant: index("idx_gpu_runtime_state_updated_by_tenant").on(table.updatedByTenantId),
+  })
+);
+
+export const gpuRuntimeEvents = pgTable(
+  "gpu_runtime_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    runtimeStateId: uuid("runtime_state_id").notNull().references(() => gpuRuntimeState.id, { onDelete: "cascade" }),
+    eventType: gpuRuntimeEventTypeEnum("event_type").notNull(),
+    triggerSource: gpuRuntimeTriggerSourceEnum("trigger_source").notNull().default("system"),
+    outcome: gpuRuntimeEventOutcomeEnum("outcome").notNull().default("success"),
+    fromMode: gpuRuntimeModeEnum("from_mode"),
+    toMode: gpuRuntimeModeEnum("to_mode"),
+    fromOrchestratorState: gpuOrchestratorStateEnum("from_orchestrator_state"),
+    toOrchestratorState: gpuOrchestratorStateEnum("to_orchestrator_state"),
+    requestId: varchar("request_id", { length: 128 }),
+    correlationId: varchar("correlation_id", { length: 128 }),
+    reason: varchar("reason", { length: 255 }),
+    sourceService: varchar("source_service", { length: 64 }).notNull().default("gpu-manager-service"),
+    actorUserId: uuid("actor_user_id").references(() => users.id),
+    actorTenantId: uuid("actor_tenant_id").references(() => tenants.id),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    idxGpuRuntimeEventsStateCreated: index("idx_gpu_runtime_events_state_created").on(table.runtimeStateId, table.createdAt),
+    idxGpuRuntimeEventsTypeCreated: index("idx_gpu_runtime_events_type_created").on(table.eventType, table.createdAt),
+    idxGpuRuntimeEventsOutcomeCreated: index("idx_gpu_runtime_events_outcome_created").on(table.outcome, table.createdAt),
+    idxGpuRuntimeEventsRequestId: index("idx_gpu_runtime_events_request_id").on(table.requestId),
+    idxGpuRuntimeEventsCorrelationId: index("idx_gpu_runtime_events_correlation_id").on(table.correlationId),
+    idxGpuRuntimeEventsActorTenant: index("idx_gpu_runtime_events_actor_tenant").on(table.actorTenantId),
+  })
+);
+
+// ============================================================================
 // CONVERSAS
 // ============================================================================
 
@@ -5552,6 +5657,8 @@ export const tenantsRelations = relations(tenants, ({ many }) => ({
   llmConfigs: many(llmConfig),
   auditLogs: many(auditLogs),
   immutableAuditEvents: many(immutableAuditEvents),
+  gpuRuntimeStateUpdates: many(gpuRuntimeState),
+  gpuRuntimeEvents: many(gpuRuntimeEvents),
   usageMetrics: many(usageMetrics),
   assistantSettings: many(assistantSettings),
   agenticSettings: many(agenticSettings),
@@ -5579,6 +5686,8 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   messages: many(messages),
   auditLogs: many(auditLogs),
   immutableAuditEvents: many(immutableAuditEvents),
+  gpuRuntimeStateUpdates: many(gpuRuntimeState),
+  gpuRuntimeEvents: many(gpuRuntimeEvents),
   usageMetrics: many(usageMetrics),
   groupMemberships: many(userGroupMembers),
 }));
@@ -5878,6 +5987,33 @@ export const immutableAuditEventsRelations = relations(immutableAuditEvents, ({ 
   }),
 }));
 
+export const gpuRuntimeStateRelations = relations(gpuRuntimeState, ({ one, many }) => ({
+  updatedByUser: one(users, {
+    fields: [gpuRuntimeState.updatedByUserId],
+    references: [users.id],
+  }),
+  updatedByTenant: one(tenants, {
+    fields: [gpuRuntimeState.updatedByTenantId],
+    references: [tenants.id],
+  }),
+  events: many(gpuRuntimeEvents),
+}));
+
+export const gpuRuntimeEventsRelations = relations(gpuRuntimeEvents, ({ one }) => ({
+  runtimeState: one(gpuRuntimeState, {
+    fields: [gpuRuntimeEvents.runtimeStateId],
+    references: [gpuRuntimeState.id],
+  }),
+  actorUser: one(users, {
+    fields: [gpuRuntimeEvents.actorUserId],
+    references: [users.id],
+  }),
+  actorTenant: one(tenants, {
+    fields: [gpuRuntimeEvents.actorTenantId],
+    references: [tenants.id],
+  }),
+}));
+
 // ============================================================================
 // IDENTITY PROVISIONING (Outbox Pattern - Tarefa 6)
 // Sincronização Alice → Grafana
@@ -6109,6 +6245,10 @@ export type InsertLlmConfig = z.infer<typeof insertLlmConfigSchema>;
 export type AuditLog = typeof auditLogs.$inferSelect;
 export type ImmutableAuditEvent = typeof immutableAuditEvents.$inferSelect;
 export type InsertImmutableAuditEvent = typeof immutableAuditEvents.$inferInsert;
+export type GpuRuntimeState = typeof gpuRuntimeState.$inferSelect;
+export type InsertGpuRuntimeState = typeof gpuRuntimeState.$inferInsert;
+export type GpuRuntimeEvent = typeof gpuRuntimeEvents.$inferSelect;
+export type InsertGpuRuntimeEvent = typeof gpuRuntimeEvents.$inferInsert;
 export type UsageMetric = typeof usageMetrics.$inferSelect;
 
 export type TrainingData = typeof trainingData.$inferSelect;
