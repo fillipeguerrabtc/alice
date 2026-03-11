@@ -99,6 +99,36 @@ export interface ReasoningModeResolution {
   effectiveMode: EffectiveReasoningMode;
   source: 'manual' | 'heuristic';
   heuristicScore: number;
+  reasonResolution: string;
+}
+
+export interface ReasoningHeuristicSignals {
+  longMessage: boolean;
+  multiTurnContext: boolean;
+  highTokenBudget: boolean;
+  structuredOutput: boolean;
+  complexityKeyword: boolean;
+}
+
+export interface ResolvedReasoningRequest {
+  requestedReasoningMode: ReasoningMode;
+  resolvedReasoningMode: EffectiveReasoningMode;
+  reasonResolution: string;
+  source: 'manual' | 'heuristic';
+  heuristicScore: number;
+  heuristicSignals: ReasoningHeuristicSignals;
+  runtimeExtraBody: {
+    chat_template_kwargs: {
+      enable_thinking: boolean;
+    };
+  };
+  gatewayMetadataExtraBody: {
+    alice_requested_reasoning_mode: ReasoningMode;
+    alice_resolved_reasoning_mode: EffectiveReasoningMode;
+    alice_reason_resolution: string;
+    alice_reasoning_source: 'manual' | 'heuristic';
+    alice_reasoning_heuristic_score: number;
+  };
 }
 
 export interface ResolvedAgentLlmModel {
@@ -206,23 +236,74 @@ export function resolveReasoningModeWithHeuristic(params: {
       effectiveMode: requestedMode,
       source: 'manual',
       heuristicScore: 0,
+      reasonResolution: 'manual_override',
     };
   }
 
   const message = (params.userMessage ?? '').toLowerCase();
+  const heuristicSignals: ReasoningHeuristicSignals = {
+    longMessage: message.length >= 400,
+    multiTurnContext: (params.messageCount ?? 0) >= 6,
+    highTokenBudget: (params.maxTokens ?? 0) >= 1000,
+    structuredOutput: params.requiresStructuredOutput === true,
+    complexityKeyword: REASONING_COMPLEXITY_KEYWORDS.some((keyword) => message.includes(keyword)),
+  };
   const baseScore = [
-    message.length >= 400 ? 1 : 0,
-    (params.messageCount ?? 0) >= 6 ? 1 : 0,
-    (params.maxTokens ?? 0) >= 1000 ? 1 : 0,
-    params.requiresStructuredOutput ? 1 : 0,
-    REASONING_COMPLEXITY_KEYWORDS.some((keyword) => message.includes(keyword)) ? 1 : 0,
-  ].reduce((acc, current) => acc + current, 0);
+    heuristicSignals.longMessage,
+    heuristicSignals.multiTurnContext,
+    heuristicSignals.highTokenBudget,
+    heuristicSignals.structuredOutput,
+    heuristicSignals.complexityKeyword,
+  ].reduce<number>((acc, signal) => acc + (signal ? 1 : 0), 0);
 
   const effectiveMode: EffectiveReasoningMode = baseScore >= 2 ? 'thinking' : 'non_thinking';
+  const reasonResolution = effectiveMode === 'thinking'
+    ? 'auto_high_complexity'
+    : 'auto_low_complexity';
   return {
     requestedMode,
     effectiveMode,
     source: 'heuristic',
     heuristicScore: baseScore,
+    reasonResolution,
+  };
+}
+
+export function resolveReasoningRequest(params: {
+  requestedMode?: string | null;
+  userMessage?: string;
+  messageCount?: number;
+  maxTokens?: number;
+  requiresStructuredOutput?: boolean;
+}): ResolvedReasoningRequest {
+  const resolved = resolveReasoningModeWithHeuristic(params);
+  const message = (params.userMessage ?? '').toLowerCase();
+  const heuristicSignals: ReasoningHeuristicSignals = {
+    longMessage: message.length >= 400,
+    multiTurnContext: (params.messageCount ?? 0) >= 6,
+    highTokenBudget: (params.maxTokens ?? 0) >= 1000,
+    structuredOutput: params.requiresStructuredOutput === true,
+    complexityKeyword: REASONING_COMPLEXITY_KEYWORDS.some((keyword) => message.includes(keyword)),
+  };
+  const enableThinking = resolved.effectiveMode === 'thinking';
+  return {
+    requestedReasoningMode: resolved.requestedMode,
+    resolvedReasoningMode: resolved.effectiveMode,
+    reasonResolution: resolved.reasonResolution,
+    source: resolved.source,
+    heuristicScore: resolved.heuristicScore,
+    heuristicSignals,
+    runtimeExtraBody: {
+      chat_template_kwargs: {
+        enable_thinking: enableThinking,
+      },
+    },
+    gatewayMetadataExtraBody: {
+      alice_requested_reasoning_mode: resolved.requestedMode,
+      alice_resolved_reasoning_mode: resolved.effectiveMode,
+      alice_reason_resolution: resolved.reasonResolution,
+      alice_reasoning_source: resolved.source,
+      alice_reasoning_heuristic_score: resolved.heuristicScore,
+    },
   };
 }

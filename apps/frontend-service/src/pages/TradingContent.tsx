@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/hooks/use-auth';
 import { TIMEZONE } from '@/lib/i18n';
+import { isManualReasoningMode, type ReasoningMode } from '@/lib/reasoning-mode';
 import { ErrorBoundary } from '@/components/error-boundary'; // ✅ CORREÇÃO: Import ErrorBoundary para graceful degradation
 import { useToast } from '@/hooks/use-toast';
 import { useKucoinWebSocket } from '@/hooks/useKucoinWebSocket';
@@ -141,6 +142,7 @@ export function TradingContent() {
     selectedMarketType,
     selectedPortfolioAutoId,
     selectedPostmortemForTraining,
+    signalReasoningMode,
     selectedSignalId,
     selectedSignalNewsPresetId,
     selectedSymbol,
@@ -165,6 +167,7 @@ export function TradingContent() {
     setSelectedMarketType,
     setSelectedPortfolioAutoId,
     setSelectedPostmortemForTraining,
+    setSignalReasoningMode,
     setSelectedSignalId,
     setSelectedSignalNewsPresetId,
     setSelectedSymbol,
@@ -638,6 +641,7 @@ export function TradingContent() {
     refetchScheduler,
     refetchSignalAutoRuns,
     refetchSignals,
+    reasoningMode: signalReasoningMode,
     schedulerForm,
     selectedInterval,
     selectedMarginMode,
@@ -908,6 +912,19 @@ export function TradingContent() {
   });
   const riskConfig = riskConfigData?.data;
   const isTradingEnabled = Boolean(riskConfig?.tradingEnabled);
+  const reasoningModeOptions: Array<{ label: string; value: ReasoningMode }> = isAdminRole
+    ? [
+      { value: 'auto', label: t('trading.signals.reasoning.auto') },
+      { value: 'thinking', label: t('trading.signals.reasoning.thinking') },
+      { value: 'non_thinking', label: t('trading.signals.reasoning.nonThinking') },
+    ]
+    : [{ value: 'auto', label: t('trading.signals.reasoning.auto') }];
+  const handleSignalReasoningModeChange = (value: ReasoningMode) => {
+    if (!isAdminRole && isManualReasoningMode(value)) {
+      return;
+    }
+    setSignalReasoningMode(value);
+  };
   const orderBookDepth = orderBookResponse?.depth ?? restOrderBookDepth ?? null;
   const controlHistory = controlHistoryData?.data || [];
   // `wsStatusData` já é o payload `{ success, data: KucoinWsStatus }`.
@@ -983,6 +1000,7 @@ export function TradingContent() {
     bestAskPrice: market?.ticker?.bestAskPrice || '',
     bestBidPrice: market?.ticker?.bestBidPrice || '',
     canCreatePreset: canCreateSignalNewsPreset,
+    canOverrideReasoningMode: isAdminRole,
     canUpdatePreset: canUpdateSignalNewsPreset,
     defaultArbitrageMaxIntervalMinutes: DEFAULT_ARBITRAGE_CONFIG.maxIntervalMinutes,
     defaultEnsembleTopN: DEFAULT_ENSEMBLE_CONFIG.topN,
@@ -1055,6 +1073,7 @@ export function TradingContent() {
     onPrefillSellOrderFromAsset: prefillSellOrderFromAsset,
     onQuickOrder: handleQuickOrder,
     onRefreshPositions: handleRefreshPositions,
+    onReasoningModeChange: handleSignalReasoningModeChange,
     onRejectReviewOrder: handleRejectReviewOrderById,
     onRunAutoNow: handleRunAutoNow,
     onRunPipeline: runPortfolioAutoPipeline,
@@ -1074,6 +1093,8 @@ export function TradingContent() {
     orders,
     positionLiveQuotes,
     presets: newsPresets,
+    reasoningMode: signalReasoningMode,
+    reasoningModeOptions,
     renderOrderStatusBadge,
     renderSignalTypeBadge,
     schedulerConfig,

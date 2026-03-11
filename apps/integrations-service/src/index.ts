@@ -34,7 +34,7 @@ import {
   Role,
   verifyImmutableAuditChain,
 } from '@alice/shared-utils';
-import type { AuthContext } from '@alice/shared-utils';
+import type { AuthContext, ReasoningMode } from '@alice/shared-utils';
 import { integrationsServicePaths, integrationsServiceSchemas } from './openapi-specs.js';
 import {
   getServiceUrl,
@@ -2306,6 +2306,7 @@ async function generateTradingSignalFromLlm(params: {
   techniques?: TradingTechnique[];
   ensembleConfig?: TradingEnsembleConfig;
   arbitrageConfig?: TradingArbitrageConfig;
+  reasoningMode?: ReasoningMode;
 }): Promise<{
   signal: schema.TradingSignal;
   validationId: string;

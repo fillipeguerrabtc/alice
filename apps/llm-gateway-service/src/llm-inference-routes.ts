@@ -14,8 +14,10 @@ import {
   asyncHandler,
   GpuRequestPriority,
   GpuServiceType,
+  REASONING_MODE_VALUES,
   requestGpu,
   requestGpuStream,
+  resolveReasoningRequest,
   resolveLlmModelByScope,
   resolveNamespaceByRoute,
 } from '@alice/shared-utils';
@@ -59,6 +61,8 @@ const completeSchema = z.object({
 });
 
 const streamSchema = completeSchema;
+const reasoningModeSchema = z.enum(REASONING_MODE_VALUES);
+type ReasoningMode = z.infer<typeof reasoningModeSchema>;
 
 async function resolveModelWithAdapter(
   logger: Logger,
@@ -128,6 +132,83 @@ function isStructuredOutputRequest(extraBody: Record<string, unknown> | undefine
     || extraBody.schema
     || extraBody.structured_output
   );
+}
+
+function extractRequestedReasoningMode(extraBody: Record<string, unknown> | undefined): {
+  requestedMode?: ReasoningMode;
+  provided: boolean;
+  error?: string;
+} {
+  if (!extraBody) {
+    return { provided: false };
+  }
+  const raw = extraBody.alice_requested_reasoning_mode ?? extraBody.alice_reasoning_mode;
+  if (raw === undefined || raw === null) {
+    return { provided: false };
+  }
+  if (typeof raw !== 'string') {
+    return { provided: true, error: 'reasoningMode inválido: valor deve ser string.' };
+  }
+  const parsed = reasoningModeSchema.safeParse(raw.trim().toLowerCase());
+  if (!parsed.success) {
+    return { provided: true, error: 'reasoningMode inválido: use auto|thinking|non_thinking.' };
+  }
+  return {
+    requestedMode: parsed.data,
+    provided: true,
+  };
+}
+
+function resolveReasoningForGatewayRequest(params: {
+  extraBody: Record<string, unknown> | undefined;
+  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
+  maxTokens: number;
+  structuredOutputRequested: boolean;
+}) {
+  const extracted = extractRequestedReasoningMode(params.extraBody);
+  if (extracted.error) {
+    return { error: extracted.error };
+  }
+  const lastUserMessage = [...params.messages].reverse()
+    .find((message) => message.role === 'user')
+    ?.content;
+  const resolved = resolveReasoningRequest({
+    requestedMode: extracted.requestedMode,
+    userMessage: lastUserMessage,
+    messageCount: params.messages.length,
+    maxTokens: params.maxTokens,
+    requiresStructuredOutput: params.structuredOutputRequested,
+  });
+  return { resolved };
+}
+
+function mergeRuntimeReasoningExtraBody(
+  extraBody: Record<string, unknown> | undefined,
+  resolvedReasoning: ReturnType<typeof resolveReasoningRequest>,
+  logger: Logger
+): Record<string, unknown> {
+  const baseExtraBody = extraBody ? { ...extraBody } : {};
+  const chatTemplateRaw = baseExtraBody.chat_template_kwargs;
+  const existingChatTemplate = (
+    chatTemplateRaw && typeof chatTemplateRaw === 'object' && !Array.isArray(chatTemplateRaw)
+  ) ? chatTemplateRaw as Record<string, unknown> : {};
+  if (
+    typeof existingChatTemplate.enable_thinking === 'boolean'
+    && existingChatTemplate.enable_thinking !== resolvedReasoning.runtimeExtraBody.chat_template_kwargs.enable_thinking
+  ) {
+    logger.warn(
+      {
+        existingEnableThinking: existingChatTemplate.enable_thinking,
+        resolvedEnableThinking: resolvedReasoning.runtimeExtraBody.chat_template_kwargs.enable_thinking,
+      },
+      'chat_template_kwargs.enable_thinking sobrescrito pela resolução canônica de reasoning'
+    );
+  }
+  baseExtraBody.chat_template_kwargs = {
+    ...existingChatTemplate,
+    ...resolvedReasoning.runtimeExtraBody.chat_template_kwargs,
+  };
+  return baseExtraBody;
 }
 
 function sanitizeExtraBodyForGpu(extraBody: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
@@ -228,9 +309,24 @@ export function registerLlmInferenceRoutes(params: {
       let allowedTools: string[] = [];
       let deniedTools: string[] = [];
       let requestFingerprint = '';
-      const gpuExtraBody = sanitizeExtraBodyForGpu(extraBody);
       const temperature = config?.temperature ?? 0.7;
       const maxTokens = config?.maxTokens ?? 2048;
+      const reasoningResolution = resolveReasoningForGatewayRequest({
+        extraBody,
+        messages,
+        maxTokens,
+        structuredOutputRequested,
+      });
+      if ('error' in reasoningResolution) {
+        res.status(400).json({ error: reasoningResolution.error });
+        return;
+      }
+      const resolvedReasoning = reasoningResolution.resolved;
+      const gpuExtraBody = mergeRuntimeReasoningExtraBody(
+        sanitizeExtraBodyForGpu(extraBody),
+        resolvedReasoning,
+        logger
+      );
       let baseModel = config?.model ?? defaultModel;
       const isTradingRoute = context.route.startsWith('/trading');
       const scopeExplicitlyProvided = Boolean(context.namespaceId || context.agentId);
@@ -434,6 +530,16 @@ export function registerLlmInferenceRoutes(params: {
         high: GpuRequestPriority.HIGH,
         critical: GpuRequestPriority.CRITICAL,
       };
+      logger.info(
+        {
+          tenantId: context.tenantId,
+          route: context.route,
+          requestedReasoningMode: resolvedReasoning.requestedReasoningMode,
+          resolvedReasoningMode: resolvedReasoning.resolvedReasoningMode,
+          reasonResolution: resolvedReasoning.reasonResolution,
+        },
+        'Reasoning mode resolvido para inferência complete no gateway'
+      );
       const inferenceStart = process.hrtime.bigint();
       const gpuResponse = await requestGpu({
         serviceType: GpuServiceType.LLM,
@@ -469,6 +575,12 @@ export function registerLlmInferenceRoutes(params: {
             toolPolicyVersion,
             allowedTools,
             deniedTools,
+            requestedReasoningMode: resolvedReasoning.requestedReasoningMode,
+            resolvedReasoningMode: resolvedReasoning.resolvedReasoningMode,
+            reasonResolution: resolvedReasoning.reasonResolution,
+            reasoningSource: resolvedReasoning.source,
+            reasoningHeuristicScore: resolvedReasoning.heuristicScore,
+            reasoningHeuristicSignals: resolvedReasoning.heuristicSignals,
           },
         }, logger);
         res.status(502).json({ error: gpuResponse.error || 'Erro no GPU Manager' });
@@ -502,6 +614,12 @@ export function registerLlmInferenceRoutes(params: {
           toolPolicyVersion,
           allowedTools,
           deniedTools,
+          requestedReasoningMode: resolvedReasoning.requestedReasoningMode,
+          resolvedReasoningMode: resolvedReasoning.resolvedReasoningMode,
+          reasonResolution: resolvedReasoning.reasonResolution,
+          reasoningSource: resolvedReasoning.source,
+          reasoningHeuristicScore: resolvedReasoning.heuristicScore,
+          reasoningHeuristicSignals: resolvedReasoning.heuristicSignals,
         },
       }, logger);
       res.status(200).json(gpuResponse.data);
@@ -529,9 +647,24 @@ export function registerLlmInferenceRoutes(params: {
       let allowedTools: string[] = [];
       let deniedTools: string[] = [];
       let requestFingerprint = '';
-      const gpuExtraBody = sanitizeExtraBodyForGpu(extraBody);
       const temperature = config?.temperature ?? 0.7;
       const maxTokens = config?.maxTokens ?? 2048;
+      const reasoningResolution = resolveReasoningForGatewayRequest({
+        extraBody,
+        messages,
+        maxTokens,
+        structuredOutputRequested,
+      });
+      if ('error' in reasoningResolution) {
+        res.status(400).json({ error: reasoningResolution.error });
+        return;
+      }
+      const resolvedReasoning = reasoningResolution.resolved;
+      const gpuExtraBody = mergeRuntimeReasoningExtraBody(
+        sanitizeExtraBodyForGpu(extraBody),
+        resolvedReasoning,
+        logger
+      );
       let baseModel = config?.model ?? defaultModel;
       const isTradingRoute = context.route.startsWith('/trading');
       const scopeExplicitlyProvided = Boolean(context.namespaceId || context.agentId);
@@ -736,6 +869,16 @@ export function registerLlmInferenceRoutes(params: {
         streamErrorRecorded = true;
         metrics.llm.requestsTotal.inc({ model, type: 'stream', status: 'error' });
       };
+      logger.info(
+        {
+          tenantId: context.tenantId,
+          route: context.route,
+          requestedReasoningMode: resolvedReasoning.requestedReasoningMode,
+          resolvedReasoningMode: resolvedReasoning.resolvedReasoningMode,
+          reasonResolution: resolvedReasoning.reasonResolution,
+        },
+        'Reasoning mode resolvido para inferência stream no gateway'
+      );
 
       const gpuResponse = await requestGpuStream({
         serviceType: GpuServiceType.LLM,
@@ -780,6 +923,12 @@ export function registerLlmInferenceRoutes(params: {
             toolPolicyVersion,
             allowedTools,
             deniedTools,
+            requestedReasoningMode: resolvedReasoning.requestedReasoningMode,
+            resolvedReasoningMode: resolvedReasoning.resolvedReasoningMode,
+            reasonResolution: resolvedReasoning.reasonResolution,
+            reasoningSource: resolvedReasoning.source,
+            reasoningHeuristicScore: resolvedReasoning.heuristicScore,
+            reasoningHeuristicSignals: resolvedReasoning.heuristicSignals,
           },
         }, logger);
         res.status(502).json({ error: text || 'Erro no GPU Manager' });
@@ -839,6 +988,12 @@ export function registerLlmInferenceRoutes(params: {
             toolPolicyVersion,
             allowedTools,
             deniedTools,
+            requestedReasoningMode: resolvedReasoning.requestedReasoningMode,
+            resolvedReasoningMode: resolvedReasoning.resolvedReasoningMode,
+            reasonResolution: resolvedReasoning.reasonResolution,
+            reasoningSource: resolvedReasoning.source,
+            reasoningHeuristicScore: resolvedReasoning.heuristicScore,
+            reasoningHeuristicSignals: resolvedReasoning.heuristicSignals,
           },
         }, logger);
         res.end();
@@ -873,6 +1028,12 @@ export function registerLlmInferenceRoutes(params: {
             toolPolicyVersion,
             allowedTools,
             deniedTools,
+            requestedReasoningMode: resolvedReasoning.requestedReasoningMode,
+            resolvedReasoningMode: resolvedReasoning.resolvedReasoningMode,
+            reasonResolution: resolvedReasoning.reasonResolution,
+            reasoningSource: resolvedReasoning.source,
+            reasoningHeuristicScore: resolvedReasoning.heuristicScore,
+            reasoningHeuristicSignals: resolvedReasoning.heuristicSignals,
           },
         }, logger);
         res.end();

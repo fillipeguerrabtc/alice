@@ -7,6 +7,7 @@ import { normalizeRouteForContext } from './chat-page-routing';
 import { normalizeServerMessage, type ServerMessagePayload } from './chat-message-normalization';
 import type { AgentEvent, MediaAttachment, Message, RuntimeNotice, RuntimeNoticeCode } from './components/types';
 import type { RoutingDebugData, RoutingMode } from './useChatRoutingState';
+import type { ReasoningMode } from '@/lib/reasoning-mode';
 
 type NotifyFn = (params: {
   title: string;
@@ -57,6 +58,7 @@ export type ChatStreamMutationOptions = {
   routingAgentIds: string[];
   routingKey: string;
   routingMode: RoutingMode;
+  reasoningMode: ReasoningMode;
   setIsStreaming: Dispatch<SetStateAction<boolean>>;
   setLastResponseUsedFallback: Dispatch<SetStateAction<boolean>>;
   setMessages: Dispatch<SetStateAction<Message[]>>;
@@ -112,6 +114,7 @@ export function createChatStreamMutationConfig(options: ChatStreamMutationOption
       routingAgentIds,
       routingKey,
       routingMode,
+      reasoningMode,
       setIsStreaming,
       setLastResponseUsedFallback,
       setMessages,
@@ -276,6 +279,7 @@ export function createChatStreamMutationConfig(options: ChatStreamMutationOption
         mode: currentRoutingMode,
         agentIds: currentRoutingMode === 'manual' ? currentRoutingAgentIds : [],
       },
+      reasoningMode,
       streamDiagnostics: showStreamDiagnostics,
     };
 

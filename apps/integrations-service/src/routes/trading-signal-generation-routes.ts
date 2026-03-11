@@ -1,7 +1,8 @@
 import type { Express, Request, Response } from 'express';
 import { createLogger } from '@alice/logger';
 import { z } from 'zod';
-import { extractAuthContext, requirePermission } from '@alice/shared-utils';
+import { extractAuthContext, REASONING_MODE_VALUES, requirePermission } from '@alice/shared-utils';
+import type { Role } from '@alice/shared-utils';
 import { TradingArbitrageConfigSchema, TradingEnsembleConfigSchema, type TradingIndicatorKey, type TradingTechnique } from '@alice/shared';
 import type { schema } from '@alice/database';
 import type {
@@ -27,10 +28,12 @@ type TradingIntervalValue =
   | '12h'
   | '1d'
   | '1w';
+type ReasoningMode = (typeof REASONING_MODE_VALUES)[number];
 
 interface TradingAuthContext {
   tenantId: string;
   userId: string;
+  role: Role;
 }
 
 type UniverseSymbolSelection = {
@@ -78,6 +81,7 @@ interface RegisterTradingSignalGenerationRoutesDeps {
     arbitrageConfig?: TradingArbitrageConfig;
     modelConfig?: TradingProfileModelConfig;
     consensus?: TradingProfileConsensus;
+    reasoningMode?: ReasoningMode;
   }) => Promise<{
     signal: schema.TradingSignal;
     validationId: string;
@@ -99,10 +103,16 @@ function mapTradingSignalForApi(signal: schema.TradingSignal) {
 
 function getTradingAuthContext(req: Request): TradingAuthContext | null {
   const authContext = extractAuthContext(req);
-  if (!authContext?.tenantId || !authContext?.userId) {
+  if (!authContext?.tenantId || !authContext?.userId || !authContext.role) {
     return null;
   }
-  return { tenantId: authContext.tenantId, userId: authContext.userId };
+  return { tenantId: authContext.tenantId, userId: authContext.userId, role: authContext.role };
+}
+
+const REASONING_OVERRIDE_ALLOWED_ROLES = new Set<Role>(['admin', 'super_admin']);
+
+function canOverrideReasoningMode(role: Role): boolean {
+  return REASONING_OVERRIDE_ALLOWED_ROLES.has(role);
 }
 
 export function registerTradingSignalGenerationRoutes(
@@ -110,6 +120,7 @@ export function registerTradingSignalGenerationRoutes(
   deps: RegisterTradingSignalGenerationRoutesDeps,
 ): void {
   const logger = deps.logger ?? createLogger('integrations-service');
+  const reasoningModeZod = z.enum(REASONING_MODE_VALUES);
 
   const generateSchema = z.object({
     symbol: z.string().optional(),
@@ -128,6 +139,7 @@ export function registerTradingSignalGenerationRoutes(
       temperature: z.number().min(0).max(2).optional(),
       maxTokens: z.number().min(256).max(4096).optional(),
     }).optional(),
+    reasoningMode: reasoningModeZod.optional(),
     scanUniverse: z.boolean().optional(),
     maxAssets: z.number().int().min(1).max(200).optional(),
     consensus: z.object({
@@ -150,6 +162,14 @@ export function registerTradingSignalGenerationRoutes(
       const parsed = generateSchema.safeParse(req.body);
       if (!parsed.success) {
         res.status(400).json({ error: 'Dados inválidos', details: parsed.error.flatten() });
+        return;
+      }
+      if (
+        parsed.data.reasoningMode
+        && parsed.data.reasoningMode !== 'auto'
+        && !canOverrideReasoningMode(authContext.role)
+      ) {
+        res.status(403).json({ error: 'Apenas admin/superadmin podem definir reasoningMode manual.' });
         return;
       }
 
@@ -222,6 +242,7 @@ export function registerTradingSignalGenerationRoutes(
         arbitrageConfig: parsed.data.arbitrageConfig ?? undefined,
         modelConfig: parsed.data.modelConfig,
         consensus: consensusOverride,
+        reasoningMode: parsed.data.reasoningMode,
       });
 
       res.status(201).json({

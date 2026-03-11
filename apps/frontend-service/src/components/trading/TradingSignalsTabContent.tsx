@@ -16,6 +16,7 @@ import {
   TradingSignalsSchedulerSection,
 } from './TradingSignalsSchedulerSection';
 import type { TradingNewsConfigForm, TradingNewsPresetOption } from './NewsConfigEditor';
+import type { ReasoningMode } from '@/lib/reasoning-mode';
 
 type TradingSignalsArbitrageConfig = {
   exchanges: string[];
@@ -97,6 +98,7 @@ type TradingSignalsTabContentProps = {
   availableSignalArbitrageAssets: string[];
   availableSignalArbitrageExchanges: Array<{ id: string; label: string }>;
   canCreatePreset: boolean;
+  canOverrideReasoningMode: boolean;
   canUpdatePreset: boolean;
   defaultArbitrageMaxIntervalMinutes: number;
   defaultEnsembleTopN: number;
@@ -118,6 +120,8 @@ type TradingSignalsTabContentProps = {
   newsConfig: TradingNewsConfigForm;
   newsPresetDescription: string;
   newsPresetName: string;
+  reasoningMode: ReasoningMode;
+  reasoningModeOptions: Array<{ label: string; value: ReasoningMode }>;
   onApplyPreset: (preset: TradingNewsPresetOption) => void;
   onArbitrageAssetsChange: (values: string[]) => void;
   onArbitrageConfigChange: (patch: Partial<TradingSignalsArbitrageConfig>) => void;
@@ -129,6 +133,7 @@ type TradingSignalsTabContentProps = {
   onEnabledChange: (enabled: boolean) => void;
   onEnsembleTopNChange: (topN: number) => void;
   onGenerateNow: () => void;
+  onReasoningModeChange: (value: ReasoningMode) => void;
   onIndicatorsChange: (values: string[]) => void;
   onIntervalMinutesChange: (value: string) => void;
   onMaxSignalsPerRunChange: (value: string) => void;
@@ -168,6 +173,7 @@ export function TradingSignalsTabContent({
   availableSignalArbitrageAssets,
   availableSignalArbitrageExchanges,
   canCreatePreset,
+  canOverrideReasoningMode,
   canUpdatePreset,
   defaultArbitrageMaxIntervalMinutes,
   defaultEnsembleTopN,
@@ -189,6 +195,8 @@ export function TradingSignalsTabContent({
   newsConfig,
   newsPresetDescription,
   newsPresetName,
+  reasoningMode,
+  reasoningModeOptions,
   onApplyPreset,
   onArbitrageAssetsChange,
   onArbitrageConfigChange,
@@ -200,6 +208,7 @@ export function TradingSignalsTabContent({
   onEnabledChange,
   onEnsembleTopNChange,
   onGenerateNow,
+  onReasoningModeChange,
   onIndicatorsChange,
   onIntervalMinutesChange,
   onMaxSignalsPerRunChange,
@@ -285,11 +294,15 @@ export function TradingSignalsTabContent({
             newsConfig={newsConfig}
             newsPresetDescription={newsPresetDescription}
             newsPresetName={newsPresetName}
+            reasoningMode={reasoningMode}
+            reasoningModeOptions={reasoningModeOptions}
+            canOverrideReasoningMode={canOverrideReasoningMode}
             onApplyPreset={onApplyPreset}
             onChangeNewsConfig={onChangeNewsConfig}
             onCreatePreset={onCreatePreset}
             onDeletePreset={onDeletePreset}
             onGenerateNow={onGenerateNow}
+            onReasoningModeChange={onReasoningModeChange}
             onNewsPresetDescriptionChange={onNewsPresetDescriptionChange}
             onNewsPresetNameChange={onNewsPresetNameChange}
             onSaveProfile={onSaveProfile}

@@ -4,8 +4,80 @@
 **Data:** 11 de Marco de 2026
 
 ## Rodada Atual
-- Rodada: 7
+- Rodada: 8
 - Status: Concluída
+
+## Rodada 8 - Início
+
+### Objetivo
+Implementar reasoning mode fim-a-fim em Chat e Trading Signals, com padrão global `auto`, heurística auditável para resolução e suporte a override manual por usuário autorizado.
+
+### Premissas
+- O contrato SSOT de reasoning mode (`auto|thinking|non_thinking`) já existe em `packages/shared-utils/src/llm-models.ts`.
+- O `llm-gateway-service` já centraliza auditoria de execução (`llm_execution_audit`) e pode registrar metadata de resolução por request.
+- O fluxo de chat usa `POST /api/chat/stream` e o fluxo de sinais IA de trading usa rotas públicas do `integrations-service` com backend no `training-service`.
+- Compatibilidade legada deve ser preservada para chamadas sem `reasoningMode` explícito, mantendo default em `auto`.
+
+### Escopo
+- Backend:
+  - aceitar `reasoningMode` em Chat e geração de sinais IA de trading;
+  - aplicar resolução `auto` por heurística de complexidade auditável;
+  - restringir override manual (`thinking`/`non_thinking`) a usuários autorizados;
+  - propagar modo resolvido por request para runtime LLM;
+  - registrar metadata: `requestedReasoningMode`, `resolvedReasoningMode`, `reasonResolution`.
+- Frontend:
+  - adicionar seletor de `reasoningMode` no Chat;
+  - adicionar seletor de `reasoningMode` em Sinais IA de Trading.
+- Atualizar contratos Zod, OpenAPI, i18n e este status.
+
+## Rodada 8 - Conclusão
+
+### Alterações
+- Backend (Chat, LLM Gateway, Integrations e Training):
+  - Contrato `reasoningMode` (`auto|thinking|non_thinking`) aceito e validado em Chat e geração de sinais IA de Trading.
+  - Override manual (`thinking`/`non_thinking`) protegido por RBAC (`admin`/`super_admin`) com retorno 403 para perfis não autorizados.
+  - Resolução `auto` por heurística auditável aplicada por request, com metadados persistidos/logados:
+    - `requestedReasoningMode`
+    - `resolvedReasoningMode`
+    - `reasonResolution`
+  - Propagação do modo resolvido para runtime LLM por request em gateway/GPU direct (`chat_template_kwargs.enable_thinking` e metadata `alice_*`).
+  - OpenAPI e schemas Zod atualizados para endpoints de Chat e Trading Signals.
+- Frontend (Chat):
+  - Seletor de `reasoningMode` adicionado em governança do Chat.
+  - Modo padrão `auto` no estado local.
+  - Override manual visível/operacional apenas para `admin/super_admin`.
+  - `reasoningMode` propagado no payload de `/api/chat/stream`.
+- Frontend (Trading Signals):
+  - Seletor de `reasoningMode` adicionado em:
+    - seção de geração de sinal IA (on-demand);
+    - aba de auto-run de sinais IA.
+  - Estado local compartilhado com padrão `auto`.
+  - Override manual restrito a `admin/super_admin`.
+  - Propagação de `reasoningMode` para:
+    - `POST /api/integrations/trading/signals/generate`
+    - `POST /api/trading/auto/signal/run`
+- Contratos compartilhados:
+  - `packages/shared-utils/src/llm-models.ts` consolidado com `reasonResolution` e payloads de runtime/metadata de reasoning.
+  - `packages/shared/src/schema.ts` ampliado para suportar campos de metadata de reasoning em `TradingSignalMetadata`.
+
+### Inventário de Acoplamentos Qwen2.5
+- Mantida compatibilidade histórica de leitura/escrita para registros legados Qwen2.5 no catálogo SSOT.
+- Permanecem referências textuais legadas a Qwen2.5 em descrições de UI de Trading (sem impacto funcional).
+- Nenhum novo acoplamento funcional a Qwen2.5 foi introduzido nesta rodada.
+
+### Validações
+Executadas em sequência, sem paralelização:
+1. `typecheck` (`cmd.exe /c pnpm typecheck`) -> OK
+2. `testes` (`cmd.exe /c pnpm test`) -> OK (125 arquivos, 1371 testes)
+3. `eslint` (`cmd.exe /c pnpm lint`) -> OK
+4. `build` (`cmd.exe /c pnpm build`) -> OK
+
+### Riscos
+- O chunk de frontend `assets/reasoning-mode-*.js` teve crescimento relevante após inclusão dos novos fluxos de Trading/Chat; recomenda-se monitorar orçamento de bundle e lazy-loading nas próximas rodadas.
+- O enforcement de override manual está aplicado em backend e UI, mas auditoria de uso por perfil pode ser ampliada em painel operacional dedicado.
+
+### Próximo Passo
+Aguardar prompt da próxima rodada para continuidade da migração.
 
 ## Rodada 7 - Início
 

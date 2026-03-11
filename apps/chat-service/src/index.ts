@@ -38,8 +38,9 @@ import {
   DEFAULT_LLM_SERVING_MODEL_ID,
   DEFAULT_PUBLIC_LLM_MODEL_NAME,
   DEFAULT_REASONING_MODE,
+  REASONING_MODE_VALUES,
   resolveAgentLlmModel,
-  resolveReasoningMode,
+  resolveReasoningRequest,
 } from '@alice/shared-utils';
 import { chatServicePaths, chatServiceSchemas } from './openapi-specs.js';
 import { createLogger } from '@alice/logger';
@@ -83,6 +84,7 @@ import {
 import type { AuthContext } from '@alice/shared-utils';
 import type { Role } from '@alice/shared-utils';
 import type { ReasoningMode } from '@alice/shared-utils';
+import type { ResolvedReasoningRequest } from '@alice/shared-utils';
 import { eq, desc, inArray, and, or, lt, gte, lte, sql, not, asc, isNull } from '@alice/database';
 import { z } from 'zod';
 import type { AgenticDetectors } from '@alice/shared';
@@ -3361,6 +3363,50 @@ const DEFAULT_LLM_CONFIG: Required<LLMConfig> = {
   reasoningMode: DEFAULT_REASONING_MODE,
 };
 
+const REASONING_OVERRIDE_ALLOWED_ROLES = new Set<Role>(['admin', 'super_admin']);
+const reasoningModeSchema = z.enum(REASONING_MODE_VALUES);
+
+function canOverrideReasoningMode(role: Role | undefined): boolean {
+  if (!role) {
+    return false;
+  }
+  return REASONING_OVERRIDE_ALLOWED_ROLES.has(role);
+}
+
+function assertReasoningModeAuthorization(params: {
+  requestedMode: ReasoningMode | undefined;
+  role: Role | undefined;
+}): void {
+  if (!params.requestedMode || params.requestedMode === 'auto') {
+    return;
+  }
+  if (canOverrideReasoningMode(params.role)) {
+    return;
+  }
+  throw new ClientInputError(
+    'Apenas admin/superadmin podem definir reasoningMode manual.',
+    { statusCode: 403, code: 'REASONING_MODE_OVERRIDE_FORBIDDEN' },
+  );
+}
+
+function resolveReasoningForLlmRequest(params: {
+  requestedMode: ReasoningMode | undefined;
+  messages: LLMMessage[];
+  maxTokens: number;
+  requiresStructuredOutput?: boolean;
+}): ResolvedReasoningRequest {
+  const lastUserMessage = [...params.messages].reverse()
+    .find((message) => message.role === 'user')
+    ?.content;
+  return resolveReasoningRequest({
+    requestedMode: params.requestedMode,
+    userMessage: lastUserMessage,
+    messageCount: params.messages.length,
+    maxTokens: params.maxTokens,
+    requiresStructuredOutput: params.requiresStructuredOutput === true,
+  });
+}
+
 function parseEnvFloat(value: string | undefined, defaultValue: number, name: string): number {
   const raw = (value ?? String(defaultValue)).trim().replace(',', '.');
   const parsed = Number(raw);
@@ -6264,7 +6310,7 @@ async function analyzeImageWithOpenAI(params: {
 /** Chama LLM Gateway (complete) quando configurado - Plano Enterprise */
 async function callGatewayComplete(
   messages: LLMMessage[],
-  config: { temperature: number; maxTokens: number; model: string; reasoningMode: ReasoningMode },
+  config: { temperature: number; maxTokens: number; model: string; reasoning: ResolvedReasoningRequest },
   context: LlmGatewayContext
 ): Promise<globalThis.Response> {
   const url = `${LLM_GATEWAY_URL}/api/llm/complete`;
@@ -6279,7 +6325,9 @@ async function callGatewayComplete(
       config: { temperature: config.temperature, maxTokens: config.maxTokens, model: config.model },
       context,
       extraBody: {
-        alice_reasoning_mode: config.reasoningMode,
+        alice_reasoning_mode: config.reasoning.requestedReasoningMode,
+        ...config.reasoning.gatewayMetadataExtraBody,
+        ...config.reasoning.runtimeExtraBody,
       },
     }),
     signal: AbortSignal.timeout(LLM_SYNC_TIMEOUT),
@@ -6310,15 +6358,29 @@ async function callLlamaAPIInternal(request: LLMRequest): Promise<globalThis.Res
   const temperature = config.temperature ?? DEFAULT_LLM_CONFIG.temperature;
   const maxTokens = config.maxTokens ?? DEFAULT_LLM_CONFIG.maxTokens;
   const model = config.model || DEFAULT_LLM_CONFIG.model;
-  const reasoningMode = resolveReasoningMode(config.reasoningMode);
+  const reasoning = resolveReasoningForLlmRequest({
+    requestedMode: config.reasoningMode,
+    messages: request.messages,
+    maxTokens,
+  });
   const priority = request.priority ?? GpuRequestPriority.CRITICAL;
+  logger.info(
+    {
+      requestedReasoningMode: reasoning.requestedReasoningMode,
+      resolvedReasoningMode: reasoning.resolvedReasoningMode,
+      reasonResolution: reasoning.reasonResolution,
+      reasoningSource: reasoning.source,
+      reasoningHeuristicScore: reasoning.heuristicScore,
+    },
+    'Reasoning mode resolvido para requisição LLM síncrona'
+  );
   
   // Plano Enterprise: usar LLM Gateway quando configurado e contexto disponível
   if (LLM_GATEWAY_URL && request.context?.route && request.context?.tenantId) {
     try {
       return await callGatewayComplete(
         request.messages,
-        { temperature, maxTokens, model, reasoningMode },
+        { temperature, maxTokens, model, reasoning },
         request.context
       );
     } catch (error) {
@@ -6345,6 +6407,7 @@ async function callLlamaAPIInternal(request: LLMRequest): Promise<globalThis.Res
           messages: request.messages,
           max_tokens: maxTokens,
           temperature,
+          ...reasoning.runtimeExtraBody,
           stream: false,
         },
       });
@@ -6467,7 +6530,7 @@ async function callLlamaAPI(
  */
 async function callGatewayStream(
   messages: LLMMessage[],
-  config: { temperature: number; maxTokens: number; model: string; reasoningMode: ReasoningMode },
+  config: { temperature: number; maxTokens: number; model: string; reasoning: ResolvedReasoningRequest },
   context: LlmGatewayContext
 ): Promise<globalThis.Response> {
   const url = `${LLM_GATEWAY_URL}/api/llm/stream`;
@@ -6482,7 +6545,9 @@ async function callGatewayStream(
       config: { temperature: config.temperature, maxTokens: config.maxTokens, model: config.model },
       context,
       extraBody: {
-        alice_reasoning_mode: config.reasoningMode,
+        alice_reasoning_mode: config.reasoning.requestedReasoningMode,
+        ...config.reasoning.gatewayMetadataExtraBody,
+        ...config.reasoning.runtimeExtraBody,
       },
     }),
     signal: AbortSignal.timeout(60000),
@@ -6526,7 +6591,21 @@ async function proxyStreamFromGpuManager(
   const temperature = config?.temperature ?? DEFAULT_LLM_CONFIG.temperature;
   const maxTokens = config?.maxTokens ?? DEFAULT_LLM_CONFIG.maxTokens;
   const model = config?.model || DEFAULT_LLM_CONFIG.model;
-  const reasoningMode = resolveReasoningMode(config?.reasoningMode);
+  const reasoning = resolveReasoningForLlmRequest({
+    requestedMode: config?.reasoningMode,
+    messages: llmMessages,
+    maxTokens,
+  });
+  logger.info(
+    {
+      requestedReasoningMode: reasoning.requestedReasoningMode,
+      resolvedReasoningMode: reasoning.resolvedReasoningMode,
+      reasonResolution: reasoning.reasonResolution,
+      reasoningSource: reasoning.source,
+      reasoningHeuristicScore: reasoning.heuristicScore,
+    },
+    'Reasoning mode resolvido para requisição LLM em streaming'
+  );
 
   // ============================================================================
   // MÉTRICAS LLM (enterprise, modelo-agnóstico)
@@ -6547,7 +6626,7 @@ async function proxyStreamFromGpuManager(
     if (useGateway && llmContext) {
       gpuResponse = await callGatewayStream(
         llmMessages,
-        { temperature, maxTokens, model, reasoningMode },
+        { temperature, maxTokens, model, reasoning },
         llmContext
       );
     } else {
@@ -6561,6 +6640,7 @@ async function proxyStreamFromGpuManager(
         messages: llmMessages,
         max_tokens: maxTokens,
         temperature,
+        ...reasoning.runtimeExtraBody,
         stream: true,
       },
       timeout: 60000,
@@ -9439,6 +9519,7 @@ const sendMessageSchema = z.object({
   // O database schema (messageTypeEnum) mantém 'document' para compatibilidade com mensagens existentes,
   // mas a API não aceita mais este valor para novas mensagens.
   tipo: z.enum(['text', 'image', 'audio', 'mixed']).default('text'),
+  reasoningMode: reasoningModeSchema.optional(),
 });
 
 const collectConversationTrainingSchema = z.object({
@@ -9494,6 +9575,7 @@ const streamMessageSchema = z.object({
   }).optional(),
   streamDiagnostics: z.boolean().optional().default(false),
   mediaAttachments: z.array(streamMediaAttachmentSchema).min(1).max(5).optional(),
+  reasoningMode: reasoningModeSchema.optional(),
 }).refine((data) => Boolean(data.message) || Boolean(data.messages?.length) || Boolean(data.mediaAttachments?.length), {
   message: 'Mensagem do usuário obrigatória',
 });
@@ -9535,6 +9617,10 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
 
   try {
     const body = sendMessageSchema.parse(req.body);
+    assertReasoningModeAuthorization({
+      requestedMode: body.reasoningMode,
+      role: userRole,
+    });
 
     const conversation = await db.query.conversations.findFirst({
       where: eq(schema.conversations.id, id),
@@ -9769,6 +9855,7 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
       llmMessages,
       { conversationId: id, source: 'sync', profile: resolveContextProfile(body.conteudo), knobs: syncRuntimeProfile.config }
     );
+    llmConfig.reasoningMode = body.reasoningMode ?? DEFAULT_REASONING_MODE;
     const scopedLlmConfig = await applyScopedAdapterToConfig(llmConfig, {
       tenantId,
       namespaceId: activeNamespaceId ?? undefined,
@@ -9944,8 +10031,10 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     route: clientRoute,
     approvalPolicy: requestApprovalPolicy,
     streamDiagnostics,
+    reasoningMode: requestedReasoningMode,
   } = parseResult.data;
   const userId = req.user?.userId;
+  const userRole = req.user?.role as Role | undefined;
   const tenantId = req.tenantId;
 
   if (!userId || !tenantId) {
@@ -9953,6 +10042,10 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
   }
 
   try {
+    assertReasoningModeAuthorization({
+      requestedMode: requestedReasoningMode,
+      role: userRole,
+    });
     const userProfile = await db.query.users.findFirst({
       where: eq(schema.users.id, userId),
       columns: {
@@ -10838,6 +10931,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           mediaMessages,
           { conversationId, source: 'stream', profile: mediaProfile, knobs: mediaRuntimeProfile.config }
         );
+        llmConfig.reasoningMode = requestedReasoningMode ?? DEFAULT_REASONING_MODE;
         const scopedLlmConfig = await applyScopedAdapterToConfig(llmConfig, {
           tenantId,
           namespaceId: namespaceIdForMedia ?? undefined,
@@ -13857,6 +13951,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         llmMessages,
         { conversationId, source: 'stream', profile: streamProfile, knobs: streamRuntimeProfile.config }
       );
+      llmConfig.reasoningMode = requestedReasoningMode ?? DEFAULT_REASONING_MODE;
       const scopedLlmConfig = await applyScopedAdapterToConfig(llmConfig, {
         tenantId,
         namespaceId: activeNamespaceId || namespaceId || undefined,

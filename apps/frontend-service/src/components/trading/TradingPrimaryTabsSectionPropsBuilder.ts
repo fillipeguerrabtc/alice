@@ -26,6 +26,7 @@ type BuildTradingPrimaryTabsSectionPropsOptions = {
   bestAskPrice: OverviewTabProps['bestAskPrice'];
   bestBidPrice: OverviewTabProps['bestBidPrice'];
   canCreatePreset: SignalsTabProps['canCreatePreset'];
+  canOverrideReasoningMode: SignalsTabProps['canOverrideReasoningMode'];
   canUpdatePreset: SignalsTabProps['canUpdatePreset'];
   defaultArbitrageMaxIntervalMinutes: SignalsTabProps['defaultArbitrageMaxIntervalMinutes'];
   defaultEnsembleTopN: SignalsTabProps['defaultEnsembleTopN'];
@@ -103,6 +104,7 @@ type BuildTradingPrimaryTabsSectionPropsOptions = {
   onRunPipeline: PortfolioAutoTabProps['onRunPipeline'];
   onSaveProfile: SignalsTabProps['onSaveProfile'];
   onSaveScheduler: SignalsTabProps['onSaveScheduler'];
+  onReasoningModeChange: SignalsTabProps['onReasoningModeChange'];
   onSelectAutoRun: SignalsAutoTabProps['onSelectAutoRun'];
   onSelectPresetId: SignalsTabProps['onSelectPresetId'];
   onSelectSignal: SignalsTabProps['onSelectSignal'];
@@ -117,6 +119,8 @@ type BuildTradingPrimaryTabsSectionPropsOptions = {
   orders: OrdersTabProps['orders'];
   positionLiveQuotes: PositionsTabProps['positionLiveQuotes'];
   presets: SignalsTabProps['presets'];
+  reasoningMode: SignalsTabProps['reasoningMode'];
+  reasoningModeOptions: SignalsTabProps['reasoningModeOptions'];
   renderOrderStatusBadge: OrdersTabProps['renderOrderStatusBadge'];
   renderSignalTypeBadge: OverviewTabProps['renderSignalTypeBadge'];
   schedulerConfig: SignalsTabProps['schedulerConfig'];
@@ -169,6 +173,7 @@ export function buildTradingPrimaryTabsSectionProps({
   bestAskPrice,
   bestBidPrice,
   canCreatePreset,
+  canOverrideReasoningMode,
   canUpdatePreset,
   defaultArbitrageMaxIntervalMinutes,
   defaultEnsembleTopN,
@@ -246,6 +251,7 @@ export function buildTradingPrimaryTabsSectionProps({
   onRunPipeline,
   onSaveProfile,
   onSaveScheduler,
+  onReasoningModeChange,
   onSelectAutoRun,
   onSelectPresetId,
   onSelectSignal,
@@ -260,6 +266,8 @@ export function buildTradingPrimaryTabsSectionProps({
   orders,
   positionLiveQuotes,
   presets,
+  reasoningMode,
+  reasoningModeOptions,
   renderOrderStatusBadge,
   renderSignalTypeBadge,
   schedulerConfig,
@@ -397,6 +405,7 @@ export function buildTradingPrimaryTabsSectionProps({
     autoSelectedAssetKeys,
     autoSignalAssetOptions,
     autoUniverseScope,
+    canOverrideReasoningMode,
     formatDecisionSummary,
     hasAutoSignalAssetsError,
     isLoadingAutoSignalAssets,
@@ -406,13 +415,17 @@ export function buildTradingPrimaryTabsSectionProps({
     onAutoSelectAllAssetsChange,
     onAutoSelectedAssetKeysChange,
     onAutoUniverseScopeChange,
+    onReasoningModeChange,
     onOpenGeneratedSignal,
     onOpenSignalsPanel,
     onRunAutoNow,
     onSelectAutoRun,
+    reasoningMode,
+    reasoningModeOptions,
     signalAutoRunPending,
     signalAutoRuns,
     signals,
+    t,
     timeZone,
     topTradingCandidates,
   };
@@ -420,6 +433,7 @@ export function buildTradingPrimaryTabsSectionProps({
     availableSignalArbitrageAssets,
     availableSignalArbitrageExchanges,
     canCreatePreset,
+    canOverrideReasoningMode,
     canUpdatePreset,
     defaultArbitrageMaxIntervalMinutes,
     defaultEnsembleTopN,
@@ -441,6 +455,8 @@ export function buildTradingPrimaryTabsSectionProps({
     newsConfig,
     newsPresetDescription,
     newsPresetName,
+    reasoningMode,
+    reasoningModeOptions,
     onApplyPreset,
     onArbitrageAssetsChange,
     onArbitrageConfigChange,
@@ -452,6 +468,7 @@ export function buildTradingPrimaryTabsSectionProps({
     onEnabledChange,
     onEnsembleTopNChange,
     onGenerateNow,
+    onReasoningModeChange,
     onIndicatorsChange,
     onIntervalMinutesChange,
     onMaxSignalsPerRunChange,
@@ -500,4 +517,3 @@ export function buildTradingPrimaryTabsSectionProps({
     },
   };
 }
-

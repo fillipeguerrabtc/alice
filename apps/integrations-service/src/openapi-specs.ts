@@ -869,6 +869,79 @@ export const integrationsServicePaths = {
       },
     },
   },
+  '/api/integrations/trading/signals/generate': {
+    post: {
+      summary: 'Gerar sinal IA de trading',
+      tags: ['Trading'],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              properties: {
+                symbol: { type: 'string' },
+                interval: { type: 'string' },
+                marketType: { type: 'string', enum: ['futures', 'spot', 'margin'] },
+                marginMode: { type: 'string', enum: ['cross', 'isolated'] },
+                timeframes: { type: 'array', items: { type: 'string' } },
+                indicators: { type: 'array', items: { type: 'string' } },
+                techniques: { type: 'array', items: { type: 'string' } },
+                scanUniverse: { type: 'boolean' },
+                maxAssets: { type: 'integer', minimum: 1, maximum: 200 },
+                reasoningMode: { type: 'string', enum: ['auto', 'thinking', 'non_thinking'], default: 'auto' },
+                modelConfig: {
+                  type: 'object',
+                  properties: {
+                    temperature: { type: 'number', minimum: 0, maximum: 2 },
+                    maxTokens: { type: 'integer', minimum: 256, maximum: 4096 },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        201: { description: 'Sinal gerado com sucesso' },
+        400: { description: 'Payload inválido' },
+        401: { description: 'Não autenticado' },
+        403: { description: 'Override manual de reasoning requer admin/superadmin' },
+      },
+    },
+  },
+  '/api/trading/auto/signal/run': {
+    post: {
+      summary: 'Iniciar signal auto run',
+      tags: ['Trading'],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              properties: {
+                symbol: { type: 'string' },
+                universeScope: { type: 'string', enum: ['spot', 'futures', 'margin', 'all'] },
+                marketType: { type: 'string', enum: ['spot', 'futures', 'margin'] },
+                allowedModes: { type: 'array', items: { type: 'string' } },
+                autoMix: { type: 'boolean', default: true },
+                selectAllAssets: { type: 'boolean', default: false },
+                namespaceId: { type: 'string', format: 'uuid' },
+                reasoningMode: { type: 'string', enum: ['auto', 'thinking', 'non_thinking'], default: 'auto' },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        202: { description: 'Signal auto run enfileirado' },
+        400: { description: 'Payload inválido' },
+        401: { description: 'Não autenticado' },
+        403: { description: 'Override manual de reasoning requer admin/superadmin' },
+      },
+    },
+  },
   '/api/integrations/trading/signals/history': {
     get: {
       summary: 'Histórico de sinais (paginado)',

@@ -1,4 +1,5 @@
 import { apiRequest } from '@/lib/queryClient';
+import type { ReasoningMode } from '@/lib/reasoning-mode';
 
 export interface TradingPortfolio {
   id: string;
@@ -174,6 +175,7 @@ export async function startSignalAutoRun(payload: {
   marketType?: 'spot' | 'futures' | 'margin';
   allowedModes?: string[];
   autoMix?: boolean;
+  reasoningMode?: ReasoningMode;
   selectedAssets?: Array<{
     venue: string;
     symbol: string;

@@ -47,6 +47,7 @@ type UseChatSectionPropsOptions = {
   onNewChat: ConversationsListProps['onNewChat'];
   onOpenConversationTrainingDialog: ChatActionsMenuProps['onOpenConversationTrainingDialog'];
   onOpenMessageTrainingDialog: ChatActionsMenuProps['onOpenMessageTrainingDialog'];
+  onReasoningModeChange: ChatGovernanceControlsProps['onReasoningModeChange'];
   onRoutingAgentIdsChange: ChatGovernanceControlsProps['onRoutingAgentIdsChange'];
   onRoutingModeChange: ChatGovernanceControlsProps['onRoutingModeChange'];
   onSelectConversation: ConversationsListProps['onSelectConversation'];
@@ -59,10 +60,12 @@ type UseChatSectionPropsOptions = {
   routingAgentIds: ChatGovernanceControlsProps['routingAgentIds'];
   routingDebug: ChatGovernanceControlsProps['routingDebug'];
   routingLabel: ChatGovernanceControlsProps['routingLabel'];
+  reasoningMode: ChatGovernanceControlsProps['reasoningMode'];
   routingMode: ChatGovernanceControlsProps['routingMode'];
   routingSourceLabel: ChatGovernanceControlsProps['routingSourceLabel'];
   selectedConversationIds: ConversationsListProps['selectedIds'];
   selectedMessageCount: ChatActionsMenuProps['selectedMessageCount'];
+  canOverrideReasoningMode: ChatGovernanceControlsProps['canOverrideReasoningMode'];
   showDesktopActionMenu: boolean;
   showDiagnosticsControls: ChatActionsMenuProps['showDiagnosticsControls'];
   showGovernanceControls: ChatGovernanceControlsProps['showGovernanceControls'];
@@ -112,6 +115,7 @@ export function useChatSectionProps({
   onNewChat,
   onOpenConversationTrainingDialog,
   onOpenMessageTrainingDialog,
+  onReasoningModeChange,
   onRoutingAgentIdsChange,
   onRoutingModeChange,
   onSelectConversation,
@@ -124,10 +128,12 @@ export function useChatSectionProps({
   routingAgentIds,
   routingDebug,
   routingLabel,
+  reasoningMode,
   routingMode,
   routingSourceLabel,
   selectedConversationIds,
   selectedMessageCount,
+  canOverrideReasoningMode,
   showDesktopActionMenu,
   showDiagnosticsControls,
   showGovernanceControls,
@@ -211,9 +217,12 @@ export function useChatSectionProps({
     approvalPolicyOptions,
     conversationId,
     onApprovalPolicyChange,
+    onReasoningModeChange,
     onRoutingAgentIdsChange,
     onRoutingModeChange,
+    reasoningMode,
     routingAgentIds,
+    canOverrideReasoningMode,
     routingDebug,
     routingLabel,
     routingMode,
@@ -226,9 +235,12 @@ export function useChatSectionProps({
     approvalPolicyOptions,
     conversationId,
     onApprovalPolicyChange,
+    onReasoningModeChange,
     onRoutingAgentIdsChange,
     onRoutingModeChange,
+    reasoningMode,
     routingAgentIds,
+    canOverrideReasoningMode,
     routingDebug,
     routingLabel,
     routingMode,

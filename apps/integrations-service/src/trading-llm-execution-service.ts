@@ -1,9 +1,12 @@
 import {
   callGatewayComplete,
+  type EffectiveReasoningMode,
   GpuRequestPriority,
   GpuServiceType,
   isGatewayConfigured,
+  type ReasoningMode,
   requestGpu,
+  resolveReasoningRequest,
   TRADING_LLM_SIGNAL_JSON_SCHEMA,
 } from '@alice/shared-utils';
 import type { createLogger } from '@alice/logger';
@@ -23,6 +26,7 @@ type TradingSignalLlmCompletionParams = {
   temperature: number;
   maxCompletionTokens: number;
   hasArbitrageTechnique: boolean;
+  reasoningMode?: ReasoningMode;
 };
 
 export function createTradingLlmExecutionService(deps: {
@@ -35,6 +39,9 @@ export function createTradingLlmExecutionService(deps: {
     llmContent: string;
     resolvedModel: string;
     gpuLatencyMs: number;
+    requestedReasoningMode: ReasoningMode;
+    resolvedReasoningMode: EffectiveReasoningMode;
+    reasonResolution: string;
   }> {
     const llmTimeoutMs = params.hasArbitrageTechnique
       ? deps.llmSignalTimeoutArbitrageMs
@@ -43,6 +50,16 @@ export function createTradingLlmExecutionService(deps: {
     const gpuRequestStartMs = Date.now();
     let gpuResponse: Awaited<ReturnType<typeof requestGpu>> | null = null;
     let lastGpuError: Error | null = null;
+    const lastUserMessage = [...params.messages].reverse()
+      .find((message) => message.role === 'user')
+      ?.content;
+    const resolvedReasoning = resolveReasoningRequest({
+      requestedMode: params.reasoningMode,
+      userMessage: lastUserMessage,
+      messageCount: params.messages.length,
+      maxTokens: params.maxCompletionTokens,
+      requiresStructuredOutput: true,
+    });
 
     const resolvedModel = await resolveModelWithAdapter(params.baseModel, {
       tenantId: params.tenantId,
@@ -64,6 +81,9 @@ export function createTradingLlmExecutionService(deps: {
           usingLoraAdapter: resolvedModel !== params.baseModel,
           promptTokens: params.messages.reduce((acc, message) => acc + message.content.length, 0),
           maxCompletionTokens: params.maxCompletionTokens,
+          requestedReasoningMode: resolvedReasoning.requestedReasoningMode,
+          resolvedReasoningMode: resolvedReasoning.resolvedReasoningMode,
+          reasonResolution: resolvedReasoning.reasonResolution,
           attempt,
           maxRetries: maxGpuRetries,
           viaGateway: isGatewayConfigured(),
@@ -85,6 +105,9 @@ export function createTradingLlmExecutionService(deps: {
               agentId: params.agentId,
             },
             extraBody: {
+              alice_reasoning_mode: resolvedReasoning.requestedReasoningMode,
+              ...resolvedReasoning.gatewayMetadataExtraBody,
+              ...resolvedReasoning.runtimeExtraBody,
               response_format: {
                 type: 'json_schema',
                 json_schema: TRADING_LLM_SIGNAL_JSON_SCHEMA,
@@ -107,6 +130,7 @@ export function createTradingLlmExecutionService(deps: {
                 type: 'json_schema',
                 json_schema: TRADING_LLM_SIGNAL_JSON_SCHEMA,
               },
+              ...resolvedReasoning.runtimeExtraBody,
               max_tokens: params.maxCompletionTokens,
               temperature: params.temperature,
               stream: false,
@@ -155,6 +179,9 @@ export function createTradingLlmExecutionService(deps: {
       llmContent,
       resolvedModel,
       gpuLatencyMs,
+      requestedReasoningMode: resolvedReasoning.requestedReasoningMode,
+      resolvedReasoningMode: resolvedReasoning.resolvedReasoningMode,
+      reasonResolution: resolvedReasoning.reasonResolution,
     };
   }
 

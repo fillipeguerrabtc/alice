@@ -8,6 +8,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { MultiSelectDropdown } from '@/components/trading';
+import type { ReasoningMode } from '@/lib/reasoning-mode';
 
 type ChatApprovalPolicyOption = {
   value: string;
@@ -32,12 +33,15 @@ type ChatGovernanceControlsProps = {
   approvalPolicyForSelect: string;
   approvalPolicyOptions: readonly ChatApprovalPolicyOption[];
   routingMode: 'auto' | 'manual';
+  reasoningMode: ReasoningMode;
+  canOverrideReasoningMode: boolean;
   routingLabel: string;
   routingSourceLabel: string;
   routingDebug: ChatRoutingDebug;
   routingAgentIds: string[];
   agentOptions: readonly ChatAgentOption[];
   onApprovalPolicyChange: (value: string) => void;
+  onReasoningModeChange: (value: ReasoningMode) => void;
   onRoutingModeChange: (value: 'auto' | 'manual') => void;
   onRoutingAgentIdsChange: (values: string[]) => void;
   t: (key: string) => string;
@@ -50,12 +54,15 @@ export function ChatGovernanceControls({
   approvalPolicyForSelect,
   approvalPolicyOptions,
   routingMode,
+  reasoningMode,
+  canOverrideReasoningMode,
   routingLabel,
   routingSourceLabel,
   routingDebug,
   routingAgentIds,
   agentOptions,
   onApprovalPolicyChange,
+  onReasoningModeChange,
   onRoutingModeChange,
   onRoutingAgentIdsChange,
   t,
@@ -88,6 +95,20 @@ export function ChatGovernanceControls({
           <SelectContent>
             <SelectItem value="auto">{t('chat.routing.auto')}</SelectItem>
             <SelectItem value="manual">{t('chat.routing.manual')}</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={reasoningMode} onValueChange={(value) => onReasoningModeChange(value as ReasoningMode)}>
+          <SelectTrigger className="h-6 w-[128px] text-[10px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="auto">{t('chat.reasoning.auto')}</SelectItem>
+            {canOverrideReasoningMode && (
+              <>
+                <SelectItem value="thinking">{t('chat.reasoning.thinking')}</SelectItem>
+                <SelectItem value="non_thinking">{t('chat.reasoning.nonThinking')}</SelectItem>
+              </>
+            )}
           </SelectContent>
         </Select>
         <Badge
@@ -149,6 +170,23 @@ export function ChatGovernanceControls({
         <SelectContent>
           <SelectItem value="auto">{t('chat.routing.auto')}</SelectItem>
           <SelectItem value="manual">{t('chat.routing.manual')}</SelectItem>
+        </SelectContent>
+      </Select>
+      <Label className="text-xs text-muted-foreground">
+        {t('chat.reasoning.label')}
+      </Label>
+      <Select value={reasoningMode} onValueChange={(value) => onReasoningModeChange(value as ReasoningMode)}>
+        <SelectTrigger className="h-8 w-[172px]">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="auto">{t('chat.reasoning.auto')}</SelectItem>
+          {canOverrideReasoningMode && (
+            <>
+              <SelectItem value="thinking">{t('chat.reasoning.thinking')}</SelectItem>
+              <SelectItem value="non_thinking">{t('chat.reasoning.nonThinking')}</SelectItem>
+            </>
+          )}
         </SelectContent>
       </Select>
       <Badge

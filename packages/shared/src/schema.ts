@@ -3034,6 +3034,9 @@ export const TradingSignalMetadataSchema = z.object({
   schedulerId: z.string().uuid().optional(),          // Scheduler responsável
   autoEngine: z.boolean().optional(),
   modelsUsed: z.array(z.string()).optional(),
+  requestedReasoningMode: z.enum(['auto', 'thinking', 'non_thinking']).optional(),
+  resolvedReasoningMode: z.enum(['auto', 'thinking', 'non_thinking']).optional(),
+  reasonResolution: z.string().optional(),
   ragEvidenceIds: z.array(z.string()).optional(),
   timeframes: z.array(z.string()).optional(),         // Timeframes usados na geração
   enabledIndicators: z.array(z.string()).optional(),  // Indicadores habilitados no perfil

@@ -4,6 +4,7 @@ import { createLogger } from '@alice/logger';
 import { and, asc, desc, eq, inArray } from '@alice/database';
 import { getDatabase, schema } from '@alice/database';
 import {
+  REASONING_MODE_VALUES,
   TRADING_STREAMS,
   buildTradingIdempotencyKey,
   extractAuthContext,
@@ -15,6 +16,7 @@ import {
   tradingRebalanceEnqueueSchema,
   tradingUniverseEnqueueSchema,
 } from '@alice/shared-utils';
+import type { Role } from '@alice/shared-utils';
 import { z } from 'zod';
 import { listTenantPortfolios } from '../trading/core/portfolio-api.js';
 
@@ -25,6 +27,7 @@ type TradingAutoAssetMarginMode = 'cross' | 'isolated';
 interface TradingAuthContext {
   tenantId: string;
   userId: string;
+  role: Role;
 }
 
 interface TradingAutoSignalAssetSelection {
@@ -56,10 +59,16 @@ interface RegisterTradingAutomationRoutesDeps {
 
 function getTradingAuthContext(req: Request): TradingAuthContext | null {
   const authContext = extractAuthContext(req);
-  if (!authContext?.tenantId || !authContext?.userId) {
+  if (!authContext?.tenantId || !authContext?.userId || !authContext.role) {
     return null;
   }
-  return { tenantId: authContext.tenantId, userId: authContext.userId };
+  return { tenantId: authContext.tenantId, userId: authContext.userId, role: authContext.role };
+}
+
+const REASONING_OVERRIDE_ALLOWED_ROLES = new Set<Role>(['admin', 'super_admin']);
+
+function canOverrideReasoningMode(role: Role): boolean {
+  return REASONING_OVERRIDE_ALLOWED_ROLES.has(role);
 }
 
 function buildTradingAutoAssetKey(input: {
@@ -129,6 +138,7 @@ export function registerTradingAutomationRoutes(
 ): void {
   const logger = deps.logger ?? createLogger('integrations-service');
   const tradingTechniqueZod = z.enum(deps.tradingTechniqueKeys);
+  const reasoningModeZod = z.enum(REASONING_MODE_VALUES);
 
   const candidatesQuerySchema = z.object({
     marketType: z.enum(['futures', 'spot', 'margin']).optional(),
@@ -161,6 +171,7 @@ export function registerTradingAutomationRoutes(
     })).max(2_000).optional(),
     selectAllAssets: z.boolean().optional().default(false),
     namespaceId: z.string().uuid().optional(),
+    reasoningMode: reasoningModeZod.optional(),
   }).superRefine((data, ctx) => {
     for (const [index, asset] of (data.selectedAssets ?? []).entries()) {
       if (asset.marginMode && asset.marketType !== 'margin') {
@@ -358,7 +369,11 @@ export function registerTradingAutomationRoutes(
         return;
       }
 
-      const tradingAuth = { tenantId: authContext.tenantId, userId: authContext.userId };
+      const tradingAuth = {
+        tenantId: authContext.tenantId,
+        userId: authContext.userId,
+        role: authContext.role,
+      };
       const venues = await deps.resolveConnectedTradingVenues(authContext.tenantId);
       if (venues.length === 0) {
         res.json({
@@ -504,6 +519,14 @@ export function registerTradingAutomationRoutes(
       const parsed = tradingAutoSignalRunSchema.safeParse(req.body);
       if (!parsed.success) {
         res.status(400).json({ error: 'Payload inválido', details: parsed.error.flatten() });
+        return;
+      }
+      if (
+        parsed.data.reasoningMode
+        && parsed.data.reasoningMode !== 'auto'
+        && !canOverrideReasoningMode(authContext.role)
+      ) {
+        res.status(403).json({ error: 'Apenas admin/superadmin podem definir reasoningMode manual.' });
         return;
       }
       const normalizedPayload = parsed.data.autoMix

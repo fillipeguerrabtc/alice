@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { DEFAULT_REASONING_MODE, type ReasoningMode } from '@/lib/reasoning-mode';
 import type { TradingControlMode } from './HandoverPanel';
 import type { TradingOrder } from './TradingDomainTypes';
 import {
@@ -35,6 +36,7 @@ export function useTradingLocalState() {
   const [selectedSignalNewsPresetId, setSelectedSignalNewsPresetId] = useState<string | null>(null);
   const [selectedPostmortemForTraining, setSelectedPostmortemForTraining] = useState<string | null>(null);
   const [selectedTrainingNamespaceId, setSelectedTrainingNamespaceId] = useState<string>('');
+  const [signalReasoningMode, setSignalReasoningMode] = useState<ReasoningMode>(DEFAULT_REASONING_MODE);
   const [signalNewsPresetName, setSignalNewsPresetName] = useState('');
   const [signalNewsPresetDescription, setSignalNewsPresetDescription] = useState('');
   const [reviewOrderTarget, setReviewOrderTarget] = useState<TradingOrder | null>(null);
@@ -76,6 +78,7 @@ export function useTradingLocalState() {
     selectedMarketType,
     selectedPortfolioAutoId,
     selectedPostmortemForTraining,
+    signalReasoningMode,
     selectedSignalId,
     selectedSignalNewsPresetId,
     selectedSymbol,
@@ -100,6 +103,7 @@ export function useTradingLocalState() {
     setSelectedMarketType,
     setSelectedPortfolioAutoId,
     setSelectedPostmortemForTraining,
+    setSignalReasoningMode,
     setSelectedSignalId,
     setSelectedSignalNewsPresetId,
     setSelectedSymbol,

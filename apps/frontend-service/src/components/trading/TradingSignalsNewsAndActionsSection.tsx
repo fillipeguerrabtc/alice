@@ -1,7 +1,16 @@
 import type { TFunction } from 'i18next';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
+import type { ReasoningMode } from '@/lib/reasoning-mode';
 import { NewsConfigEditor, type TradingNewsConfigForm, type TradingNewsPresetOption } from './NewsConfigEditor';
 
 type TradingSignalsNewsAndActionsSectionProps = {
@@ -14,11 +23,15 @@ type TradingSignalsNewsAndActionsSectionProps = {
   newsConfig: TradingNewsConfigForm;
   newsPresetDescription: string;
   newsPresetName: string;
+  reasoningMode: ReasoningMode;
+  reasoningModeOptions: Array<{ label: string; value: ReasoningMode }>;
+  canOverrideReasoningMode: boolean;
   onApplyPreset: (preset: TradingNewsPresetOption) => void;
   onChangeNewsConfig: (next: TradingNewsConfigForm) => void;
   onCreatePreset: () => void;
   onDeletePreset: (presetId: string) => void;
   onGenerateNow: () => void;
+  onReasoningModeChange: (value: ReasoningMode) => void;
   onNewsPresetDescriptionChange: (value: string) => void;
   onNewsPresetNameChange: (value: string) => void;
   onSaveProfile: () => void;
@@ -42,11 +55,15 @@ export function TradingSignalsNewsAndActionsSection({
   newsConfig,
   newsPresetDescription,
   newsPresetName,
+  reasoningMode,
+  reasoningModeOptions,
+  canOverrideReasoningMode,
   onApplyPreset,
   onChangeNewsConfig,
   onCreatePreset,
   onDeletePreset,
   onGenerateNow,
+  onReasoningModeChange,
   onNewsPresetDescriptionChange,
   onNewsPresetNameChange,
   onSaveProfile,
@@ -76,6 +93,26 @@ export function TradingSignalsNewsAndActionsSection({
         onPresetDescriptionChange={onNewsPresetDescriptionChange}
         onDeletePreset={onDeletePreset}
       />
+
+      <div className="space-y-2 max-w-sm">
+        <Label className="text-xs text-muted-foreground">{t('trading.signals.reasoning.label')}</Label>
+        <Select value={reasoningMode} onValueChange={(value) => onReasoningModeChange(value as ReasoningMode)}>
+          <SelectTrigger className="h-8">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {reasoningModeOptions.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">{t('trading.signals.reasoning.description')}</p>
+        {!canOverrideReasoningMode && (
+          <p className="text-xs text-muted-foreground">{t('trading.signals.reasoning.adminOnlyHint')}</p>
+        )}
+      </div>
 
       <div className="flex flex-wrap gap-2">
         <Button

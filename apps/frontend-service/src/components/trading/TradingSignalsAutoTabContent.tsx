@@ -1,3 +1,4 @@
+import type { TFunction } from 'i18next';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,6 +13,7 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { formatDateTime, formatNumber } from '@/lib/utils';
+import type { ReasoningMode } from '@/lib/reasoning-mode';
 import type {
   TradingAutoRun,
   TradingAutoRunDetail,
@@ -38,6 +40,7 @@ type TradingSignalsAutoTabContentProps = {
   autoSelectedAssetKeys: string[];
   autoSignalAssetOptions: Array<{ label: string; value: string }>;
   autoUniverseScope: 'futures' | 'spot' | 'margin' | 'all';
+  canOverrideReasoningMode: boolean;
   formatDecisionSummary: (payload?: Record<string, unknown> | null) => string | null;
   hasAutoSignalAssetsError: boolean;
   isLoadingAutoSignalAssets: boolean;
@@ -47,13 +50,17 @@ type TradingSignalsAutoTabContentProps = {
   onAutoSelectAllAssetsChange: (value: boolean) => void;
   onAutoSelectedAssetKeysChange: (values: string[]) => void;
   onAutoUniverseScopeChange: (value: 'futures' | 'spot' | 'margin' | 'all') => void;
+  onReasoningModeChange: (value: ReasoningMode) => void;
   onOpenGeneratedSignal: (signalId: string | null) => void;
   onOpenSignalsPanel: () => void;
   onRunAutoNow: () => void;
   onSelectAutoRun: (runId: string) => void;
+  reasoningMode: ReasoningMode;
+  reasoningModeOptions: Array<{ label: string; value: ReasoningMode }>;
   signalAutoRunPending: boolean;
   signalAutoRuns: TradingAutoRun[];
   signals: TradingSignalForValidation[];
+  t: TFunction;
   timeZone: string;
   topTradingCandidates: TradingCandidate[];
 };
@@ -68,6 +75,7 @@ export function TradingSignalsAutoTabContent({
   autoSelectedAssetKeys,
   autoSignalAssetOptions,
   autoUniverseScope,
+  canOverrideReasoningMode,
   formatDecisionSummary,
   hasAutoSignalAssetsError,
   isLoadingAutoSignalAssets,
@@ -77,13 +85,17 @@ export function TradingSignalsAutoTabContent({
   onAutoSelectAllAssetsChange,
   onAutoSelectedAssetKeysChange,
   onAutoUniverseScopeChange,
+  onReasoningModeChange,
   onOpenGeneratedSignal,
   onOpenSignalsPanel,
   onRunAutoNow,
   onSelectAutoRun,
+  reasoningMode,
+  reasoningModeOptions,
   signalAutoRunPending,
   signalAutoRuns,
   signals,
+  t,
   timeZone,
   topTradingCandidates,
 }: TradingSignalsAutoTabContentProps) {
@@ -168,6 +180,24 @@ export function TradingSignalsAutoTabContent({
               {hasAutoSignalAssetsError ? (
                 <p className="text-xs text-destructive">Falha ao carregar catalogo de ativos do Auto Engine.</p>
               ) : null}
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">{t('trading.signals.reasoning.label')}</Label>
+              <Select value={reasoningMode} onValueChange={(value) => onReasoningModeChange(value as ReasoningMode)}>
+                <SelectTrigger className="h-8 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {reasoningModeOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {!canOverrideReasoningMode && (
+                <p className="text-xs text-muted-foreground">{t('trading.signals.reasoning.adminOnlyHint')}</p>
+              )}
             </div>
           </div>
           <div className="space-y-2">

@@ -205,6 +205,7 @@ export const chatServicePaths = {
               properties: {
                 content: { type: 'string' },
                 attachments: { type: 'array', items: { type: 'string', format: 'uri' } },
+                reasoningMode: { type: 'string', enum: ['auto', 'thinking', 'non_thinking'], default: 'auto' },
               },
             },
           },
@@ -254,6 +255,7 @@ export const chatServicePaths = {
               properties: {
                 content: { type: 'string' },
                 useRag: { type: 'boolean', default: true },
+                reasoningMode: { type: 'string', enum: ['auto', 'thinking', 'non_thinking'], default: 'auto' },
               },
             },
           },
@@ -403,6 +405,35 @@ export const chatServicePaths = {
               },
             },
           },
+        },
+      },
+    },
+  },
+  '/api/chat/stream': {
+    post: {
+      summary: 'Enviar mensagem com streaming SSE',
+      description: 'Endpoint canônico de streaming do chat com suporte a reasoning mode.',
+      tags: ['LLM'],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              properties: {
+                conversationId: { type: 'string', format: 'uuid' },
+                message: { type: 'string' },
+                route: { type: 'string' },
+                reasoningMode: { type: 'string', enum: ['auto', 'thinking', 'non_thinking'], default: 'auto' },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        200: {
+          description: 'Stream SSE de resposta',
+          content: { 'text/event-stream': { schema: { type: 'string' } } },
         },
       },
     },

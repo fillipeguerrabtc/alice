@@ -2,6 +2,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import type { TFunction } from 'i18next';
 import { apiRequest } from '@/lib/queryClient';
+import type { ReasoningMode } from '@/lib/reasoning-mode';
 import { startSignalAutoRun, type TradingAutoSignalAsset } from '@/services/api/trading';
 import { createDefaultSignalForm, type TradingSchedulerForm, type TradingSignalForm } from './TradingFormDefaults';
 import type { NamespaceOption, TradingProfileForm } from './TradingDomainTypes';
@@ -29,6 +30,7 @@ type UseTradingSignalMutationsOptions = {
   refetchScheduler: RefetchFn;
   refetchSignalAutoRuns: RefetchFn;
   refetchSignals: RefetchFn;
+  reasoningMode: ReasoningMode;
   schedulerForm: TradingSchedulerForm;
   selectedInterval: string;
   selectedMarginMode: 'cross' | 'isolated';
@@ -57,6 +59,7 @@ export function useTradingSignalMutations(options: UseTradingSignalMutationsOpti
     refetchScheduler,
     refetchSignalAutoRuns,
     refetchSignals,
+    reasoningMode,
     schedulerForm,
     selectedInterval,
     selectedMarginMode,
@@ -117,6 +120,7 @@ export function useTradingSignalMutations(options: UseTradingSignalMutationsOpti
         consensus: signalProfileForm.consensus,
         marketType: selectedMarketType,
         marginMode: selectedMarketType === 'margin' ? selectedMarginMode : undefined,
+        reasoningMode,
       });
       return response.json();
     },
@@ -177,6 +181,7 @@ export function useTradingSignalMutations(options: UseTradingSignalMutationsOpti
           : undefined,
         selectAllAssets: effectiveSelectAllAssets,
         namespaceId: tradingNamespace?.id,
+        reasoningMode,
       });
     },
     onSuccess: (data) => {

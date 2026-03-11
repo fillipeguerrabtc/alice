@@ -375,6 +375,24 @@ export const llmGatewaySchemas = {
       },
       extraBody: {
         type: 'object',
+        properties: {
+          alice_reasoning_mode: {
+            type: 'string',
+            enum: ['auto', 'thinking', 'non_thinking'],
+            default: 'auto',
+          },
+          alice_requested_reasoning_mode: {
+            type: 'string',
+            enum: ['auto', 'thinking', 'non_thinking'],
+          },
+          chat_template_kwargs: {
+            type: 'object',
+            properties: {
+              enable_thinking: { type: 'boolean' },
+            },
+            additionalProperties: true,
+          },
+        },
         additionalProperties: true,
       },
     },

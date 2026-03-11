@@ -62,7 +62,8 @@ import {
   TRADING_LLM_SIGNAL_JSON_SCHEMA,
   TRADING_LLM_SIGNAL_PARTIAL_SCHEMA,
   GPU_MANAGER_CONFIG,
-  resolveReasoningMode,
+  REASONING_MODE_VALUES,
+  resolveReasoningRequest,
   resolveServingModelIdFromConfig,
   RedisStreamQueue,
   TRADING_STREAMS,
@@ -1428,6 +1429,7 @@ const tradingAutoPortfolioPayloadSchema = z.object({
   namespaceId: z.string().uuid().optional(),
   correlationId: z.string(),
 });
+const reasoningModeSchema = z.enum(REASONING_MODE_VALUES);
 
 const tradingAutoSignalAssetSchema = z.object({
   venue: z.string().min(1).max(32).transform((value) => value.trim().toLowerCase()),
@@ -1454,6 +1456,7 @@ const tradingAutoSignalPayloadSchema = z.object({
   selectedAssets: z.array(tradingAutoSignalAssetSchema).max(2_000).optional(),
   selectAllAssets: z.boolean().optional().default(false),
   namespaceId: z.string().uuid().optional(),
+  reasoningMode: reasoningModeSchema.optional(),
   correlationId: z.string(),
 });
 
@@ -2375,7 +2378,16 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
     ];
 
     const configuredModel = resolveServingModelIdFromConfig(readOptionalStringEnv('TRADING_LLM_MODEL'));
-    const configuredReasoningMode = resolveReasoningMode(readOptionalStringEnv('TRADING_REASONING_MODE'));
+    const configuredReasoningMode = reasoningModeSchema.parse(
+      (readOptionalStringEnv('TRADING_REASONING_MODE') ?? 'auto').toLowerCase()
+    );
+    const resolvedReasoning = resolveReasoningRequest({
+      requestedMode: payload.reasoningMode ?? configuredReasoningMode,
+      userMessage: llmPrompt,
+      messageCount: messages.length,
+      maxTokens: 1200,
+      requiresStructuredOutput: true,
+    });
     const loraModel = activeAdapter.adapterPath ? `${configuredModel}::${activeAdapter.adapterPath}` : configuredModel;
     let llmRawContent = '';
     if (isGatewayConfigured()) {
@@ -2393,7 +2405,9 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
           namespaceId: trainingNamespaceId,
         },
         extraBody: {
-          alice_reasoning_mode: configuredReasoningMode,
+          alice_reasoning_mode: resolvedReasoning.requestedReasoningMode,
+          ...resolvedReasoning.gatewayMetadataExtraBody,
+          ...resolvedReasoning.runtimeExtraBody,
           response_format: {
             type: 'json_schema',
             json_schema: TRADING_LLM_SIGNAL_JSON_SCHEMA,
@@ -2407,7 +2421,16 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
       }
       const gatewayData = gatewayResult.data as { choices?: Array<{ message?: { content?: string } }> };
       llmRawContent = String(gatewayData.choices?.[0]?.message?.content ?? '');
-      logger.info({ runId, decisionId: decision.id, model: loraModel, via: 'gateway', correlationId }, 'Signal Auto LLM executado');
+      logger.info({
+        runId,
+        decisionId: decision.id,
+        model: loraModel,
+        via: 'gateway',
+        correlationId,
+        requestedReasoningMode: resolvedReasoning.requestedReasoningMode,
+        resolvedReasoningMode: resolvedReasoning.resolvedReasoningMode,
+        reasonResolution: resolvedReasoning.reasonResolution,
+      }, 'Signal Auto LLM executado');
     } else {
       const gpuResult = await requestGpu({
         serviceType: GpuServiceType.LLM,
@@ -2419,6 +2442,7 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
           model: loraModel,
           messages,
           response_format: { type: 'json_schema', json_schema: TRADING_LLM_SIGNAL_JSON_SCHEMA },
+          ...resolvedReasoning.runtimeExtraBody,
           max_tokens: 1200,
           temperature: 0.2,
           stream: false,
@@ -2430,7 +2454,16 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
       }
       const gpuData = gpuResult.data as { choices?: Array<{ message?: { content?: string } }> };
       llmRawContent = String(gpuData.choices?.[0]?.message?.content ?? '');
-      logger.info({ runId, decisionId: decision.id, model: loraModel, via: 'gpu-direct', correlationId }, 'Signal Auto LLM executado');
+      logger.info({
+        runId,
+        decisionId: decision.id,
+        model: loraModel,
+        via: 'gpu-direct',
+        correlationId,
+        requestedReasoningMode: resolvedReasoning.requestedReasoningMode,
+        resolvedReasoningMode: resolvedReasoning.resolvedReasoningMode,
+        reasonResolution: resolvedReasoning.reasonResolution,
+      }, 'Signal Auto LLM executado');
     }
 
     const llmPayload = TRADING_LLM_SIGNAL_PARTIAL_SCHEMA.parse(parseStructuredJsonFromContent(llmRawContent));
@@ -2441,6 +2474,9 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
         signalType: autoSignalDraft.signalType,
         confidence: autoSignalDraft.confidence,
         model: loraModel,
+        requestedReasoningMode: resolvedReasoning.requestedReasoningMode,
+        resolvedReasoningMode: resolvedReasoning.resolvedReasoningMode,
+        reasonResolution: resolvedReasoning.reasonResolution,
       },
     });
 
@@ -2470,6 +2506,9 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
         autoDecisionId: decision.id,
         autoEngine: true,
         modelsUsed: ['trading-guardrails', loraModel],
+        requestedReasoningMode: resolvedReasoning.requestedReasoningMode,
+        resolvedReasoningMode: resolvedReasoning.resolvedReasoningMode,
+        reasonResolution: resolvedReasoning.reasonResolution,
         ragEvidenceIds,
         createdByUserId: run.userId,
       };

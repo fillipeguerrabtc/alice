@@ -11,6 +11,7 @@ import type {
   TradingTechnique,
   TradingTechniqueScore,
 } from '@alice/shared';
+import type { EffectiveReasoningMode, ReasoningMode } from '@alice/shared-utils';
 import type { LlmSignalParseResult } from './trading-llm-signal-parser.js';
 import type {
   TradingLlmSignalNormalized,
@@ -220,7 +221,13 @@ export function createTradingLlmSignalGenerationService<
     temperature: number;
     maxCompletionTokens: number;
     hasArbitrageTechnique: boolean;
-  }) => Promise<{ llmContent: string }>;
+    reasoningMode?: ReasoningMode;
+  }) => Promise<{
+    llmContent: string;
+    requestedReasoningMode: ReasoningMode;
+    resolvedReasoningMode: EffectiveReasoningMode;
+    reasonResolution: string;
+  }>;
   parseLlmSignalResponse: (content: string) => LlmSignalParseResult;
   buildLlmSignalFromPartial: (params: {
     partial: LlmSignalParseResult['data'];
@@ -273,6 +280,9 @@ export function createTradingLlmSignalGenerationService<
     deterministicOverride: TradingSignalDeterministicOverride | null;
     analysisMatrix: Array<{ interval: string; analysis: TechnicalAnalysisResult }>;
     durationLabel: string;
+    requestedReasoningMode: ReasoningMode;
+    resolvedReasoningMode: EffectiveReasoningMode;
+    reasonResolution: string;
   }) => Promise<schema.TradingSignal>;
   finalizeTradingSignalValidation: (params: {
     tenantId: string;
@@ -305,6 +315,7 @@ export function createTradingLlmSignalGenerationService<
     techniques?: TradingTechnique[];
     ensembleConfig?: TradingEnsembleConfig;
     arbitrageConfig?: TradingArbitrageConfig;
+    reasoningMode?: ReasoningMode;
   }): Promise<TradingSignalResponse> {
     const agenticSettings = await deps.getAgenticSettingsOrDefault(params.tenantId);
     if (!agenticSettings.tradingEnabled) {
@@ -457,7 +468,12 @@ export function createTradingLlmSignalGenerationService<
       { role: 'system', content: systemPrompt },
       { role: 'user', content: promptBudget.analysisPrompt },
     ];
-    const { llmContent } = await deps.requestTradingSignalCompletion({
+    const {
+      llmContent,
+      requestedReasoningMode,
+      resolvedReasoningMode,
+      reasonResolution,
+    } = await deps.requestTradingSignalCompletion({
       messages,
       tenantId: params.tenantId,
       userId: params.userId,
@@ -469,6 +485,7 @@ export function createTradingLlmSignalGenerationService<
       temperature: params.modelConfig?.temperature ?? agentContext.llmConfig.temperature ?? 0.7,
       maxCompletionTokens: promptBudget.maxCompletionTokens,
       hasArbitrageTechnique: techniques.includes('arbitrage_triangular'),
+      reasoningMode: params.reasoningMode,
     });
 
     const llmSignalPartialResult = deps.parseLlmSignalResponse(llmContent);
@@ -532,6 +549,9 @@ export function createTradingLlmSignalGenerationService<
         analysis: entry.analysis,
       })),
       durationLabel,
+      requestedReasoningMode,
+      resolvedReasoningMode,
+      reasonResolution,
     });
 
     return deps.finalizeTradingSignalValidation({

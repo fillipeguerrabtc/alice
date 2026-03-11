@@ -460,6 +460,12 @@
       "noAgents": "Nenhum agente disponível",
       "missingAgents": "Selecione ao menos um agente para o modo manual."
     },
+    "reasoning": {
+      "label": "Reasoning",
+      "auto": "Auto",
+      "thinking": "Thinking",
+      "nonThinking": "Non-thinking"
+    },
     "training": {
       "send": "Enviar p/ Treino",
       "title": "Enviar conversa para treinamento",
@@ -2742,6 +2748,14 @@
       "subtitle": "Sinais gerados pelo LLM (Qwen2.5 7B) para trading autônomo",
       "new": "Novo Sinal",
       "generateNow": "Gerar sinal agora",
+      "reasoning": {
+        "label": "Reasoning Mode",
+        "description": "Define como a IA aplica raciocínio para gerar sinais e execuções automáticas.",
+        "adminOnlyHint": "Override manual disponível apenas para perfis admin/superadmin.",
+        "auto": "Auto",
+        "thinking": "Thinking",
+        "nonThinking": "Non-thinking"
+      },
       "profile": {
         "title": "Perfil de Sinais IA",
         "subtitle": "Timeframes, indicadores e fontes usados na geração de sinais.",

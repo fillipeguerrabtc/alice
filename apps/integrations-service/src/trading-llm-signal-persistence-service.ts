@@ -11,6 +11,7 @@ import type {
 import type { TradingLlmSignalNormalized, TradingSignalDeterministicOverride } from './trading-llm-signal-post-processing-service.js';
 import type { TriangularArbitrageResult } from './trading-arbitrage-service.js';
 import type { TechnicalAnalysisResult } from './technical-indicators.js';
+import type { EffectiveReasoningMode, ReasoningMode } from '@alice/shared-utils';
 
 export function createTradingLlmSignalPersistenceService(deps: {
   createSignal: (
@@ -65,6 +66,9 @@ export function createTradingLlmSignalPersistenceService(deps: {
     deterministicOverride: TradingSignalDeterministicOverride | null;
     analysisMatrix: Array<{ interval: string; analysis: TechnicalAnalysisResult }>;
     durationLabel: string;
+    requestedReasoningMode: ReasoningMode;
+    resolvedReasoningMode: EffectiveReasoningMode;
+    reasonResolution: string;
   }): Promise<schema.TradingSignal> {
     const createResult = await deps.createSignal(
       params.authContext,
@@ -121,6 +125,9 @@ export function createTradingLlmSignalPersistenceService(deps: {
             misalignedTimeframes: params.consensus.misalignedTimeframes,
             isMajorityReached: params.consensus.isMajorityReached,
           },
+          requestedReasoningMode: params.requestedReasoningMode,
+          resolvedReasoningMode: params.resolvedReasoningMode,
+          reasonResolution: params.reasonResolution,
           deterministicOverride: params.deterministicOverride,
           analysisMatrix: params.analysisMatrix,
         },

@@ -38,6 +38,7 @@ import { useChatContainerBindings } from './useChatContainerBindings';
 import { useChatSendMessageMutation } from './useChatSendMessageMutation';
 import { buildChatPageLayoutProps } from './chat-page-layout-props-builder';
 import { useAuth } from '@/hooks/use-auth';
+import { isManualReasoningMode } from '@/lib/reasoning-mode';
 
 const CHAT_ACCEPTED_MEDIA_TYPES = [...ACCEPTED_TYPES.image, ...ACCEPTED_TYPES.audio].join(',');
 
@@ -51,6 +52,8 @@ export function useChatPageLayoutController() {
   const isMobile = useIsMobileViewport();
   const appVersion = __APP_VERSION__;
   const showLoginBanner = !authLoading && !isAuthenticated;
+  const userRoles = currentUser?.roles ?? (currentUser?.role ? [currentUser.role] : []);
+  const canOverrideReasoningMode = userRoles.some((role) => role === 'admin' || role === 'super_admin');
   const {
     activeWorkspace,
     deleteAllOpen,
@@ -76,6 +79,7 @@ export function useChatPageLayoutController() {
     recordingStartingRef,
     recordingStreamRef,
     recordingUnmountedRef,
+    reasoningMode,
     runtimeNotice,
     setActiveWorkspace,
     setDeleteAllOpen,
@@ -90,6 +94,7 @@ export function useChatPageLayoutController() {
     setMessages,
     setMobileDrawerOpen,
     setPendingMedia,
+    setReasoningMode,
     setRuntimeNotice,
     setShowStreamDiagnostics,
     setShowTrainingDialog,
@@ -314,6 +319,7 @@ export function useChatPageLayoutController() {
     routingAgentIds,
     routingKey,
     routingMode,
+    reasoningMode,
     setIsStreaming,
     setLastResponseUsedFallback,
     setMessages,
@@ -500,6 +506,12 @@ export function useChatPageLayoutController() {
     onNewChat: handleNewChatWithClose,
     onOpenConversationTrainingDialog: openConversationTrainingDialog,
     onOpenMessageTrainingDialog: openMessageTrainingDialog,
+    onReasoningModeChange: (nextMode) => {
+      if (!canOverrideReasoningMode && isManualReasoningMode(nextMode)) {
+        return;
+      }
+      setReasoningMode(nextMode);
+    },
     onRoutingAgentIdsChange: setRoutingAgentIds,
     onRoutingModeChange: setRoutingMode,
     onSelectConversation: handleSelectConversation,
@@ -514,8 +526,10 @@ export function useChatPageLayoutController() {
     routingLabel,
     routingMode,
     routingSourceLabel,
+    reasoningMode,
     selectedConversationIds,
     selectedMessageCount: selectedMessageIds.size,
+    canOverrideReasoningMode,
     showDesktopActionMenu,
     showDiagnosticsControls,
     showGovernanceControls,
