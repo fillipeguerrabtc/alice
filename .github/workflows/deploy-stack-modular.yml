@@ -4896,9 +4896,15 @@ jobs:
               -w /app \
               -e DATABASE_URL="$DATABASE_URL" \
               node:22-alpine sh -c "
-                npm install -g pnpm
+                set -euo pipefail
+                PNPM_VERSION=\$(node -p \"const pm=require('./package.json').packageManager || ''; pm.startsWith('pnpm@') ? pm.slice(5) : ''\")
+                if [ -z \"\$PNPM_VERSION\" ]; then
+                  echo 'ERRO: packageManager pnpm não definido em package.json'
+                  exit 1
+                fi
+                npm install -g pnpm@\$PNPM_VERSION
                 export NPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS=true
-                pnpm install --no-frozen-lockfile
+                pnpm install --frozen-lockfile
                 pnpm drizzle-kit push --verbose
               " 2>&1 | tee "$DRIZZLE_LOG"; then
               echo "❌ ERRO CRÍTICO: Drizzle push falhou!"

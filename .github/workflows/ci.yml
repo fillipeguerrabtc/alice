@@ -108,22 +108,23 @@ jobs:
       # Limpar artefatos de build antigos para evitar conflitos de tipos
       - name: Clean stale build artifacts
         run: |
+          set -euo pipefail
           echo "Limpando artefatos de build antigos..."
-          rm -rf packages/*/dist apps/*/dist
-          rm -f packages/*/*.tsbuildinfo apps/*/*.tsbuildinfo
+          find packages apps -type d -name dist -prune -exec rm -rf {} +
+          find packages apps -type f -name '*.tsbuildinfo' -delete
 
       # Build packages na ordem correta de dependências
       # CPX32: 8GB RAM → 6GB para Node.js (deixa 2GB para SO/Docker)
       - name: Build shared packages (ordem de dependências)
         run: |
-          set -e
+          set -euo pipefail
           export NODE_OPTIONS="--max-old-space-size=6144"
           
           PACKAGES=("shared" "shared-utils" "config" "logger" "database")
           for pkg in "${PACKAGES[@]}"; do
             echo "--- Building @alice/$pkg ---"
             pushd "packages/$pkg" > /dev/null
-            npx tsc -b --force
+            pnpm exec tsc -b --force
             popd > /dev/null
             test -f "packages/$pkg/dist/index.js" || (echo "ERRO: index.js não gerado" && exit 1)
           done

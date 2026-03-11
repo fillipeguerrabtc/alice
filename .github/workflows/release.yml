@@ -333,6 +333,10 @@ jobs:
 
           # Funções compartilhadas: should_build, image_exists, retag_image, decide_build_or_retag
           # CHANGED_FILES calculado automaticamente pelo script (CLAUDE.md Regra 2)
+          if [ ! -f scripts/release-functions.sh ]; then
+            echo "❌ ERRO: scripts/release-functions.sh não encontrado no checkout"
+            exit 1
+          fi
           source scripts/release-functions.sh
 
           # Guard de integridade: se release anterior sem manifesto, forçar rebuild completo
@@ -730,6 +734,10 @@ jobs:
           
           # Funções compartilhadas: should_build, image_exists, retag_image, decide_build_or_retag
           # CHANGED_FILES calculado automaticamente pelo script (CLAUDE.md Regra 2)
+          if [ ! -f scripts/release-functions.sh ]; then
+            echo "❌ ERRO: scripts/release-functions.sh não encontrado no checkout"
+            exit 1
+          fi
           source scripts/release-functions.sh
 
           # Guard de integridade: se release anterior sem manifesto, forçar rebuild completo

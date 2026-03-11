@@ -36,14 +36,14 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - `P1-BIOMETRICS-11`: Concluído
 - `P1-DOCS-12`: Concluído
 - `P2-HYGIENE-01`: Concluído
-- `P2-CI-02`: Não iniciado
+- `P2-CI-02`: Concluído
 - `P2-INFRA-03`: Não iniciado
 - `P2-OTEL-04`: Não iniciado
 - `P2-TSCONFIG-05`: Não iniciado
 - `P2-DOCS-06`: Não iniciado
 
 ## Bloco atual
-`P2-HYGIENE-01` (Concluído)
+`P2-CI-02` (Concluído)
 
 ## Histórico de rodadas
 
@@ -685,6 +685,34 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
   - Risco residual controlado: arquivos gerados em build local podem reaparecer no workspace, porém estão cobertos por regra de ignore para evitar novo versionamento indevido.
 - Próximo bloco recomendado: `P2-CI-02`.
 
+### Rodada 21
+- Data: 2026-03-11
+- Bloco executado: `P2-CI-02`
+- Objetivo: Harden de internals de CI/release/deploy sem alterar triggers, reforçando installs congelados, robustez de execução, serialização previsível e ergonomia de falha.
+- Diagnóstico: Foram identificados pontos de fragilidade em internals dos workflows: `pnpm install` sem retry no setup compartilhado de CI, validação de artefatos de build com limpeza incompleta, dependência de `npx tsc` no CI, ausência de guarda explícita para `scripts/release-functions.sh` no release e install não determinístico (`npm install -g pnpm` + `--no-frozen-lockfile`) no step de `drizzle-push` via deploy.
+- Arquivos lidos: `CLAUDE.md` (1-120), `.github/workflows/ci.yml` (1-401 em chunks), `.github/workflows/release.yml` (1-1154 em chunks), `.github/workflows/deploy-stack-modular.yml` (seções relevantes em chunks de 200-300 linhas), `.github/actions/setup-node-pnpm/action.yml`, `scripts/release-functions.sh`, `infra/scripts/preflight-secrets.sh`, `infra/scripts/generate-env-prod.sh` (1-520 em chunks), `infra/scripts/prepare-production-server.sh` (1-260), `package.json`, `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Arquivos alterados: `.github/actions/setup-node-pnpm/action.yml`, `.github/workflows/ci.yml`, `.github/workflows/release.yml`, `.github/workflows/deploy-stack-modular.yml`, `scripts/release-functions.sh`, `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Validações executadas:
+  - `for f in ...; do npx -y js-yaml \"$f\"; done` (tentativa inicial de validação sintática; falhou por indisponibilidade do binário `js-yaml` no ambiente)
+  - `python3` com `yaml.safe_load` para `.github/workflows/ci.yml`, `.github/workflows/release.yml`, `.github/workflows/deploy-stack-modular.yml` (validação sintática dos workflows alterados)
+  - `pnpm lint` (falha por binário global `pnpm` quebrado no ambiente)
+  - `npx -y pnpm@10.26.2 lint`
+  - `pnpm build` (falha por binário global `pnpm` quebrado no ambiente)
+  - `npx -y pnpm@10.26.2 build`
+- Resultado das validações:
+  - Todas as validações obrigatórias do bloco foram aprovadas ao final.
+  - Validação sintática dos workflows alterados aprovada com parser YAML (`PyYAML`) após falha inicial da tentativa via `npx js-yaml`.
+  - Verificado que o campo `on:` permaneceu inalterado em todos os workflows modificados.
+  - Observação de ambiente: binário global `pnpm` permanece quebrado; os comandos lógicos exigidos foram executados via `npx -y pnpm@10.26.2`.
+- Documentação atualizada: tracking canônico atualizado com evidências factuais da Rodada 21.
+- Commit realizado: `ci: harden workflow internals without changing triggers`
+- Pendências:
+  - Validar posteriormente no ambiente do usuário a correção do binário global `pnpm`.
+- Riscos ou bloqueios:
+  - Sem bloqueio ativo para continuação.
+  - Risco residual controlado: `deploy-stack-modular.yml` segue extenso e com muitos blocos inline por legado operacional; o hardening desta rodada foi cirúrgico e restrito aos pontos de robustez mapeados.
+- Próximo bloco recomendado: `P2-INFRA-03`.
+
 ## Pendências abertas
 - Correção do binário global `pnpm` no ambiente local (fora do escopo deste bloco).
 - Reduzir leituras diretas de `process.env` remanescentes fora do escopo autorizado, seguindo próximos blocos.
@@ -697,4 +725,4 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - Risco residual controlado: documentação histórica volumosa pode conter contexto de planos anteriores; status atual de execução do backlog governado deve sempre ser consultado no tracking canônico.
 
 ## Próximos blocos permitidos
-- `P2-CI-02`
+- `P2-INFRA-03`

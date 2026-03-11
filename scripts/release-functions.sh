@@ -63,7 +63,36 @@ should_build() {
 # ═══════════════════════════════════════════════════════════════════════
 image_exists() {
   local img="$1"
-  docker manifest inspect "$img" > /dev/null 2>&1
+  local max_attempts="${2:-3}"
+  local delay=5
+  local attempt=1
+  local inspect_output=""
+
+  while [ "$attempt" -le "$max_attempts" ]; do
+    inspect_output="$(timeout 30 docker manifest inspect "$img" 2>&1)" && return 0
+
+    # Erro determinístico de inexistência: não adianta retry
+    if echo "$inspect_output" | grep -Eqi "manifest unknown|name unknown|repository does not exist|no such manifest|not found"; then
+      return 1
+    fi
+
+    # Erro determinístico de auth/permissão: falha explícita para troubleshooting
+    if echo "$inspect_output" | grep -Eqi "unauthorized|authentication required|insufficient_scope|denied|forbidden|no basic auth credentials"; then
+      echo "❌ ERRO de autenticação ao verificar imagem no registry: $img" >&2
+      echo "   Detalhe: ${inspect_output:0:240}" >&2
+      return 1
+    fi
+
+    if [ "$attempt" -lt "$max_attempts" ]; then
+      echo "⚠️ Falha transitória ao verificar imagem '$img' (tentativa ${attempt}/${max_attempts}). Retry em ${delay}s..." >&2
+      sleep "$delay"
+      delay=$((delay * 2))
+    fi
+    attempt=$((attempt + 1))
+  done
+
+  echo "⚠️ Não foi possível confirmar existência da imagem '$img' após ${max_attempts} tentativas." >&2
+  return 1
 }
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -78,12 +107,38 @@ retag_image() {
   local to_tag="$3"
   local full_from="${IMAGE_PREFIX}-${image_name}:${from_tag}"
   local full_to="${IMAGE_PREFIX}-${image_name}:${to_tag}"
+  local max_attempts=3
+  local delay=10
+  local attempt=1
+  local retag_output=""
 
   echo "Retagging $image_name: $from_tag -> $to_tag"
-  docker buildx imagetools create \
-    -t "$full_to" \
-    -t "${IMAGE_PREFIX}-${image_name}:latest" \
-    "$full_from"
+  while [ "$attempt" -le "$max_attempts" ]; do
+    retag_output="$(docker buildx imagetools create \
+      -t "$full_to" \
+      -t "${IMAGE_PREFIX}-${image_name}:latest" \
+      "$full_from" 2>&1)" && {
+      echo "$retag_output"
+      return 0
+    }
+
+    # Erro determinístico de auth/permissão: abortar imediatamente
+    if echo "$retag_output" | grep -Eqi "unauthorized|authentication required|insufficient_scope|denied|forbidden|no basic auth credentials"; then
+      echo "❌ ERRO de autenticação ao retaggear $image_name (${from_tag} -> ${to_tag})" >&2
+      echo "   Detalhe: ${retag_output:0:240}" >&2
+      return 1
+    fi
+
+    if [ "$attempt" -lt "$max_attempts" ]; then
+      echo "⚠️ Falha transitória ao retaggear $image_name (tentativa ${attempt}/${max_attempts}). Retry em ${delay}s..." >&2
+      sleep "$delay"
+      delay=$((delay * 2))
+    fi
+    attempt=$((attempt + 1))
+  done
+
+  echo "❌ Falha ao retaggear $image_name após ${max_attempts} tentativas" >&2
+  return 1
 }
 
 # ═══════════════════════════════════════════════════════════════════════

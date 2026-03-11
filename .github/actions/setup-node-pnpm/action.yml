@@ -112,7 +112,24 @@ runs:
     - name: Install dependencies
       if: ${{ inputs.install-dependencies == 'true' }}
       shell: bash
-      run: pnpm install --frozen-lockfile
+      run: |
+        set -euo pipefail
+        ATTEMPTS=3
+        BACKOFF=10
+        for attempt in $(seq 1 "${ATTEMPTS}"); do
+          echo "📦 pnpm install tentativa ${attempt}/${ATTEMPTS}..."
+          if pnpm install --frozen-lockfile --prefer-offline; then
+            echo "✅ Dependências instaladas com lockfile congelado"
+            exit 0
+          fi
+          if [ "${attempt}" -lt "${ATTEMPTS}" ]; then
+            echo "⚠️ Falha transitória no install. Retry em ${BACKOFF}s..."
+            sleep "${BACKOFF}"
+            BACKOFF=$((BACKOFF * 2))
+          fi
+        done
+        echo "❌ Falha ao instalar dependências após ${ATTEMPTS} tentativas"
+        exit 1
       env:
         NPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS: 'true'
 
