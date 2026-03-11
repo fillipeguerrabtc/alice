@@ -2,8 +2,15 @@
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "./dist",
-    "rootDir": "./src"
+    "rootDir": "./src",
+    "baseUrl": ".",
+    "paths": {
+      "@alice/logger": ["../logger/src/index.ts"]
+    }
   },
   "include": ["src/**/*"],
+  "references": [
+    { "path": "../logger" }
+  ],
   "exclude": ["node_modules", "dist"]
 }

@@ -5,6 +5,7 @@ import { setupAuth, isAuthenticated } from "./replitAuth";
 import { z } from "zod";
 import { llmClient } from "./services/llm-client";
 import { createLogger } from "@alice/shared-utils";
+import { MessageAnexosSchema } from "@alice/shared/schema";
 
 // Logger singleton (Regra 8 CLAUDE.md - Pino obrigatório)
 const logger = createLogger("server-routes");
@@ -30,7 +31,7 @@ const createMessageSchema = z.object({
   conversationId: z.string().uuid(),
   conteudo: z.string(),
   tipo: z.enum(["text", "image", "audio", "mixed"]).optional(),
-  anexos: z.array(z.record(z.unknown())).optional(),
+  anexos: MessageAnexosSchema.optional(),
 });
 
 const createDocumentSchema = z.object({

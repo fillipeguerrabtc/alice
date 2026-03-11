@@ -120,7 +120,7 @@ jobs:
           set -euo pipefail
           export NODE_OPTIONS="--max-old-space-size=6144"
           
-          PACKAGES=("shared" "shared-utils" "config" "logger" "database")
+          PACKAGES=("shared" "logger" "config" "database" "shared-utils")
           for pkg in "${PACKAGES[@]}"; do
             echo "--- Building @alice/$pkg ---"
             pushd "packages/$pkg" > /dev/null
@@ -266,28 +266,28 @@ jobs:
           # Array unificado de todos os microsserviços Node.js (CLAUDE.md Regra 2)
           # Inclui: auth, chat, rag, training, integrations, api-gateway, observability, gpu-manager, llm-gateway
           # biometrics-service é Python (FastAPI) — não usa Express hardening
-          SERVICES=(
-            "apps/auth-service/src/index.ts"
-            "apps/chat-service/src/index.ts"
-            "apps/llm-gateway-service/src/index.ts"
-            "apps/rag-service/src/index.ts"
-            "apps/training-service/src/index.ts"
-            "apps/integrations-service/src/index.ts"
-            "apps/api-gateway/src/index.ts"
-            "apps/observability-service/src/index.ts"
-            "apps/gpu-manager-service/src/index.ts"
+          SERVICE_SRC_DIRS=(
+            "apps/auth-service/src"
+            "apps/chat-service/src"
+            "apps/llm-gateway-service/src"
+            "apps/rag-service/src"
+            "apps/training-service/src"
+            "apps/integrations-service/src"
+            "apps/api-gateway/src"
+            "apps/observability-service/src"
+            "apps/gpu-manager-service/src"
           )
-          
-          for service in "${SERVICES[@]}"; do
-            if [ -f "$service" ]; then
+
+          for service_dir in "${SERVICE_SRC_DIRS[@]}"; do
+            if [ -d "$service_dir" ]; then
               # Verificar express hardening
-              if ! grep -q "@alice/shared-utils" "$service" || ! grep -q "createSecurityMiddleware\|createRateLimiter" "$service"; then
-                echo "ERRO: $service sem express-hardening!"
+              if ! grep -R -q --include='*.ts' "@alice/shared-utils" "$service_dir" || ! grep -R -E -q --include='*.ts' "createSecurityMiddleware|createRateLimiter" "$service_dir"; then
+                echo "ERRO: $service_dir sem express-hardening!"
                 exit 1
               fi
               # Verificar server timeouts
-              if ! grep -q "server.timeout" "$service" || ! grep -q "keepAliveTimeout" "$service" || ! grep -q "headersTimeout" "$service"; then
-                echo "ERRO: $service sem timeouts!"
+              if ! grep -R -q --include='*.ts' "server\\.timeout" "$service_dir" || ! grep -R -q --include='*.ts' "keepAliveTimeout" "$service_dir" || ! grep -R -q --include='*.ts' "headersTimeout" "$service_dir"; then
+                echo "ERRO: $service_dir sem timeouts!"
                 exit 1
               fi
             fi

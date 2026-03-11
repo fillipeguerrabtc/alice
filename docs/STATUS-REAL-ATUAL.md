@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 11 de Março de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 15.18 - Correção de deploy (ordem do find com -ignore_readdir_race) + hardening pós-plano
+**Versão:** 15.20 - Correção de CI + alinhamento de tipagem de anexos no backend (`server/routes.ts`)
 **Fonte canônica de status de execução por rodada:** `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`
 
 ---
@@ -13,6 +13,9 @@
 - O detalhamento completo de execuções, validações e commits por rodada está no tracking canônico: `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
 - Este documento mantém o snapshot operacional consolidado da plataforma, sem replicar changelog extensivo por rodada.
 - Em caso de divergência entre relato histórico e estado de execução governado, prevalece o tracking canônico.
+- CI Build & Typecheck: ordem de build dos packages ajustada para dependências reais (`shared -> logger -> config -> database -> shared-utils`), eliminando falha TS2307 de `@alice/logger` durante build limpo.
+- Security & Compliance: verificação de Express hardening/timeouts alterada para varrer `apps/*/src` por serviço (arquitetura modular com `bootstrap`/`middleware`), removendo falso negativo quando a lógica não está em `src/index.ts`.
+- Backend legado (`server/routes.ts`): schema `createMessageSchema` passou a reutilizar `MessageAnexosSchema` canônico de `@alice/shared/schema`, removendo incompatibilidade de tipos de `anexos` no typecheck estrito.
 
 ## Resumo executivo
 
