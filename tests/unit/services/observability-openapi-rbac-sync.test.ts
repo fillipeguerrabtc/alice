@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
 import { observabilityServicePaths } from '../../../apps/observability-service/src/openapi-specs';
+import { loadObservabilitySource } from './helpers/observability-source';
 
 type HttpMethod = 'get' | 'post';
 
@@ -75,11 +74,6 @@ function escapeRegex(input: string): string {
   return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function loadObservabilitySource(): string {
-  const sourcePath = path.join(process.cwd(), 'apps', 'observability-service', 'src', 'index.ts');
-  return readFileSync(sourcePath, 'utf-8');
-}
-
 describe('Observability OpenAPI RBAC contract sync', () => {
   it('declares required permission in OpenAPI for critical routes', () => {
     for (const contract of CRITICAL_OBSERVABILITY_RBAC_CONTRACTS) {
@@ -102,7 +96,7 @@ describe('Observability OpenAPI RBAC contract sync', () => {
     for (const contract of CRITICAL_OBSERVABILITY_RBAC_CONTRACTS) {
       const expressPath = openApiPathToExpressPath(contract.openapiPath);
       const pattern = new RegExp(
-        `app\\.${contract.method}\\('${escapeRegex(expressPath)}',\\s*${contract.middlewareName},`
+        `app\\.${contract.method}\\(\\s*'${escapeRegex(expressPath)}',\\s*${contract.middlewareName},`
       );
       expect(
         pattern.test(source),

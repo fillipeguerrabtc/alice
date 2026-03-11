@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
 import { ragServicePaths } from '../../../apps/rag-service/src/openapi-specs';
+import { loadRagRouteSignatures } from './helpers/rag-source';
 
 type HttpMethod = 'get' | 'post' | 'patch' | 'delete';
 
@@ -25,21 +24,6 @@ function openApiPathToExpressPath(pathname: string): string {
   return pathname.replace(/\{([^}]+)\}/g, ':$1');
 }
 
-function loadExpressRouteSignatures(): Set<string> {
-  const indexPath = path.join(process.cwd(), 'apps', 'rag-service', 'src', 'index.ts');
-  const source = readFileSync(indexPath, 'utf-8');
-  const routeRegex = /app\.(get|post|patch|delete)\('([^']+)'/g;
-
-  const signatures = new Set<string>();
-  let match = routeRegex.exec(source);
-  while (match) {
-    const [, method, pathname] = match;
-    signatures.add(`${method.toUpperCase()} ${pathname}`);
-    match = routeRegex.exec(source);
-  }
-  return signatures;
-}
-
 describe('RAG OpenAPI - critical route sync', () => {
   it('documents all critical enterprise routes', () => {
     for (const route of CRITICAL_RAG_OPENAPI_ROUTES) {
@@ -55,7 +39,7 @@ describe('RAG OpenAPI - critical route sync', () => {
   });
 
   it('keeps OpenAPI critical routes aligned with Express route handlers', () => {
-    const expressRoutes = loadExpressRouteSignatures();
+    const expressRoutes = loadRagRouteSignatures();
 
     for (const route of CRITICAL_RAG_OPENAPI_ROUTES) {
       const expressPath = openApiPathToExpressPath(route.path);

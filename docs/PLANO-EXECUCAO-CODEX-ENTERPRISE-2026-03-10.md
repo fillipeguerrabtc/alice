@@ -43,7 +43,7 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - `P2-DOCS-06`: Concluído
 
 ## Bloco atual
-`P2-DOCS-06` (Concluído)
+`Pós-backlog CI hardening` (Concluído)
 
 ## Histórico de rodadas
 
@@ -834,6 +834,41 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
   - Sem bloqueio ativo.
   - Risco residual controlado: documentação histórica arquivada permanece acessível por caminho dedicado (`docs/archive/relatorios/`) e não deve ser usada como fonte normativa de estado atual.
 - Próximo bloco recomendado: Nenhum. Backlog P0/P1/P2 concluído.
+
+### Rodada 26
+- Data: 2026-03-11
+- Bloco executado: Pós-backlog CI hardening (correções cirúrgicas em testes/checks para restabelecer pipeline de deploy)
+- Objetivo: Eliminar falhas remanescentes de CI após modularização dos serviços, garantindo zero erros em typecheck, testes, lint e build dos packages compartilhados.
+- Diagnóstico: Havia falhas em testes de guardas que assumiam leitura exclusiva de `src/index.ts`, enquanto partes críticas migraram para módulos dedicados (`*-routes`, `*-runtime`, `*-lifecycle`). Isso gerava falso negativo em validações de OpenAPI/RBAC/security apesar do código de produção estar correto.
+- Arquivos lidos: `CLAUDE.md` (1-120), `package.json`, `.github/workflows/ci.yml` (trecho do check de hardening/timeouts), arquivos de teste e helpers em `tests/unit/services/**` e documentação canônica em `docs/STATUS-REAL-ATUAL.md` e `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Arquivos alterados: `tests/unit/services/biometrics-liveness-guards.test.ts`, `tests/unit/services/chat-ws-agent-handshake-guards.test.ts`, `tests/unit/services/chat-ws-token-security-guards.test.ts`, `tests/unit/services/helpers/chat-source.ts` (novo), `tests/unit/services/helpers/integrations-source.ts`, `tests/unit/services/helpers/training-source.ts`, `tests/unit/services/helpers/observability-source.ts` (novo), `tests/unit/services/helpers/rag-source.ts` (novo), `tests/unit/services/observability-auth-guards.test.ts`, `tests/unit/services/observability-openapi-rbac-sync.test.ts`, `tests/unit/services/observability-openapi-sync.test.ts`, `tests/unit/services/rag-openapi-rbac-sync.test.ts`, `tests/unit/services/rag-openapi-sync.test.ts`, `docs/STATUS-REAL-ATUAL.md`, `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Validações executadas (serial, sem paralelização):
+  - `./node_modules/.bin/tsc --noEmit`
+  - `./node_modules/.bin/vitest run`
+  - `./node_modules/.bin/eslint .`
+  - Build dos packages impactados por ordem de dependência:
+    - `cd packages/shared && ../../node_modules/.bin/tsc -b --force`
+    - `cd packages/logger && ../../node_modules/.bin/tsc -b --force`
+    - `cd packages/config && ../../node_modules/.bin/tsc -b --force`
+    - `cd packages/database && ../../node_modules/.bin/tsc -b --force`
+    - `cd packages/shared-utils && ../../node_modules/.bin/tsc -b --force`
+  - Revalidação local do check de compliance que falhava no CI:
+    - execução do script de varredura de `Express hardening` e `server timeouts` para todos os diretórios `apps/*/src` definidos no workflow.
+- Resultado das validações:
+  - `typecheck` aprovado sem erros.
+  - `vitest` aprovado com `120` arquivos e `1352` testes passando.
+  - `eslint` aprovado sem warnings/erros.
+  - Build dos packages compartilhados aprovado sem erros.
+  - Verificação de hardening/timeouts aprovada para todos os serviços Node alvo.
+  - Observação de ambiente: binário global `pnpm` segue quebrado nesta máquina; validações foram executadas com binários locais (`./node_modules/.bin/*`) mantendo equivalência técnica dos checks.
+- Documentação atualizada: `docs/STATUS-REAL-ATUAL.md` (versão 15.21 + registro da rodada) e tracking canônico atualizado com esta execução.
+- Commit realizado: `test: align guard suites with modular service sources and restore ci checks`
+- Pendências:
+  - Validar posteriormente no ambiente do usuário a correção do binário global `pnpm`.
+- Riscos ou bloqueios:
+  - Sem bloqueio ativo.
+  - Risco residual controlado: testes de guardas continuam sensíveis a futuras refatorações de estrutura de arquivos; os novos helpers centralizam essa descoberta para reduzir regressão.
+- Próximo bloco recomendado: Nenhum obrigatório. Backlog permanece concluído; seguir apenas com manutenção/correções sob demanda.
 
 ## Pendências abertas
 - Correção do binário global `pnpm` no ambiente local (fora do escopo deste bloco).

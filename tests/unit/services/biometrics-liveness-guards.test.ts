@@ -9,8 +9,9 @@ function loadBiometricsSource(): string {
 
 function loadAuthSource(): string {
   const indexSourcePath = path.join(process.cwd(), 'apps', 'auth-service', 'src', 'index.ts');
+  const authRoutesSourcePath = path.join(process.cwd(), 'apps', 'auth-service', 'src', 'auth-routes.ts');
   const biometricsRoutesSourcePath = path.join(process.cwd(), 'apps', 'auth-service', 'src', 'routes', 'auth-biometrics-routes.ts');
-  return [indexSourcePath, biometricsRoutesSourcePath]
+  return [indexSourcePath, authRoutesSourcePath, biometricsRoutesSourcePath]
     .map((sourcePath) => readFileSync(sourcePath, 'utf-8'))
     .join('\n');
 }

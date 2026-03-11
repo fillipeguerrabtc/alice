@@ -13,6 +13,14 @@ function getIntegrationsSourceFiles(): string[] {
     }
   }
 
+  const extraFiles = [
+    'integrations-lifecycle.ts',
+    'integrations-immutable-audit-runtime-service.ts',
+  ];
+  for (const extraFile of extraFiles) {
+    files.push(path.join(integrationsSrcDir, extraFile));
+  }
+
   return files;
 }
 

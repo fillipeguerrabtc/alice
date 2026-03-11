@@ -16,6 +16,8 @@ function getTrainingSourceFiles(): string[] {
   const extraFiles = [
     'training-governance-audit.ts',
     'training-run-start-idempotency.ts',
+    'training-bootstrap.ts',
+    'training-data-lifecycle.ts',
   ];
   for (const extraFile of extraFiles) {
     files.push(path.join(trainingSrcDir, extraFile));

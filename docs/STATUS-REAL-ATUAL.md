@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 11 de Março de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 15.20 - Correção de CI + alinhamento de tipagem de anexos no backend (`server/routes.ts`)
+**Versão:** 15.21 - Correção de CI + alinhamento de testes de guardas com arquitetura modular de serviços
 **Fonte canônica de status de execução por rodada:** `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`
 
 ---
@@ -16,6 +16,7 @@
 - CI Build & Typecheck: ordem de build dos packages ajustada para dependências reais (`shared -> logger -> config -> database -> shared-utils`), eliminando falha TS2307 de `@alice/logger` durante build limpo.
 - Security & Compliance: verificação de Express hardening/timeouts alterada para varrer `apps/*/src` por serviço (arquitetura modular com `bootstrap`/`middleware`), removendo falso negativo quando a lógica não está em `src/index.ts`.
 - Backend legado (`server/routes.ts`): schema `createMessageSchema` passou a reutilizar `MessageAnexosSchema` canônico de `@alice/shared/schema`, removendo incompatibilidade de tipos de `anexos` no typecheck estrito.
+- Testes de guardas (OpenAPI/RBAC/security): loaders de código-fonte dos testes foram ajustados para ler módulos reais além de `src/index.ts` (chat, observability, rag, integrations, training e auth), eliminando falsos negativos após modularização e restaurando consistência do pipeline de validação (`vitest`, `eslint`, `typecheck` e build de packages).
 
 ## Resumo executivo
 

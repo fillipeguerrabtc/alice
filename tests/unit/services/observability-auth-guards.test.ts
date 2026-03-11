@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
-
-function loadObservabilitySource(): string {
-  const sourcePath = path.join(process.cwd(), 'apps', 'observability-service', 'src', 'index.ts');
-  return readFileSync(sourcePath, 'utf-8');
-}
+import { loadObservabilitySource } from './helpers/observability-source';
 
 describe('observability-service auth guards', () => {
   it('keeps only probe routes in session publicPaths', () => {

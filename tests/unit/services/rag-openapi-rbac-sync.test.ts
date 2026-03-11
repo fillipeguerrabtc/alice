@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
 import { ragServicePaths } from '../../../apps/rag-service/src/openapi-specs';
+import { loadRagSource } from './helpers/rag-source';
 
 type HttpMethod = 'get' | 'post' | 'patch' | 'delete';
 
@@ -39,11 +38,6 @@ function openApiPathToExpressPath(pathname: string): string {
 
 function escapeRegex(input: string): string {
   return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function loadRagSource(): string {
-  const sourcePath = path.join(process.cwd(), 'apps', 'rag-service', 'src', 'index.ts');
-  return readFileSync(sourcePath, 'utf-8');
 }
 
 describe('RAG OpenAPI RBAC contract sync', () => {
