@@ -30,25 +30,15 @@ import type { Request, Response, NextFunction } from 'express';
 import { createServer } from 'http';
 import cors from 'cors';
 import compression from 'compression';
-import { Counter, Gauge, Histogram } from 'prom-client';
 import {
   getNodeEnv,
   readNumberEnv,
   readOptionalStringEnv,
 } from '@alice/config';
 import { 
-  CIRCUIT_BREAKER_PRESETS,
-  createProtectedFetch,
   getRedisClient,
   isRedisAvailable,
-  // CORREÇÃO 28/12/2025: Adicionar initializeRedisCache e closeRedisCacheClient
-  // BUG: Serviço usava isRedisAvailable() sem chamar initializeRedisCache() primeiro
-  // Resultado: redisClient sempre null → erro "Redis não disponível" → container crashava
-  initializeRedisCache,
-  closeRedisCacheClient,
   createAlicePrometheus,
-  registerShutdownCallback,
-  ShutdownPriority,
   getCorsConfig,
   requireInternalHmacAuth,
 } from '@alice/shared-utils';
@@ -74,6 +64,24 @@ import {
   shutdownOrchestrator,
   GPU_ORCHESTRATION_MODE,
 } from './gpu-orchestrator.js';
+import {
+  GpuRequestPriority,
+  GpuServiceType,
+  type GpuRequest,
+  type GpuResponse,
+  type VramStatus,
+} from './gpu-contracts.js';
+import {
+  admissionControlReason,
+  capabilityForServiceType,
+  type GpuRejectionReason,
+  hasEnoughVram,
+} from './gpu-admission.js';
+import { createGpuServiceClients, applyStructuredOutputs } from './gpu-service-clients.js';
+import { createGpuManagerMetrics } from './gpu-metrics.js';
+import { startGpuManagerBootstrap } from './gpu-bootstrap.js';
+
+export { GpuRequestPriority, GpuServiceType } from './gpu-contracts.js';
 
 const execAsync = promisify(exec);
 const logger = createLogger('gpu-manager');
@@ -152,61 +160,7 @@ function requireInternalAuth(req: Request, res: Response, next: NextFunction): v
 // CONFIGURAÇÃO
 // ============================================================================
 
-/** Prioridades de requisições GPU (maior = mais prioritário) */
-export enum GpuRequestPriority {
-  CRITICAL = 10,  // Chat em tempo real
-  HIGH = 8,       // Trading (time-sensitive)
-  MEDIUM = 5,     // Embeddings (RAG)
-  LOW = 2,        // Treinamento e tarefas auxiliares
-}
-
-/** Tipos de serviços GPU */
-export enum GpuServiceType {
-  LLM = 'llm',                   // LLM (texto)
-  EMBEDDINGS = 'embeddings',     // Embeddings (texto + imagem)
-  TRAINING = 'training',         // Fine-tuning (sob demanda)
-}
-
-/**
- * Labels model-agnósticos (WS3-ready) para métricas/observabilidade.
- * IMPORTANTE: Estes labels representam o "tipo/capacidade" do serviço GPU,
- * não o nome do modelo atual. A migração de modelos no WS3 não deve exigir
- * mudanças em dashboards/alertas.
- */
-type GpuCapability = 'llm' | 'embeddings' | 'training';
-
-function capabilityForServiceType(serviceType: GpuServiceType): GpuCapability {
-  switch (serviceType) {
-    case GpuServiceType.LLM:
-      return 'llm';
-    case GpuServiceType.EMBEDDINGS:
-      return 'embeddings';
-    case GpuServiceType.TRAINING:
-      return 'training';
-  }
-}
-
-function resolveGpuServiceUrl(envKey: string, fallbackUrl: string): string {
-  const rawUrl = readOptionalStringEnv(envKey) ?? fallbackUrl;
-  try {
-    const parsed = new URL(rawUrl);
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      throw new Error(`Protocolo inválido para ${envKey}: ${parsed.protocol}`);
-    }
-    return rawUrl.replace(/\/+$/, '');
-  } catch (error) {
-    logger.error({ envKey, rawUrl, error }, 'URL de serviço GPU inválida');
-    process.exit(1);
-  }
-}
-
-/** URLs dos serviços GPU (container names na rede Docker) */
-// Gate 2: LLM separado (capabilities)
-const GPU_SERVICE_URLS = {
-  [GpuServiceType.LLM]: resolveGpuServiceUrl('LLM_GPU_URL', 'http://gpu-llm:8000'),
-  [GpuServiceType.EMBEDDINGS]: resolveGpuServiceUrl('EMBEDDINGS_GPU_URL', 'http://gpu-embeddings:8000'),
-  [GpuServiceType.TRAINING]: resolveGpuServiceUrl('TRAINING_GPU_URL', 'http://gpu-trainer:8000'),
-};
+const { gpuServiceUrls: GPU_SERVICE_URLS, protectedFetchByServiceType } = createGpuServiceClients(logger);
 
 async function isTrainingServiceReachable(): Promise<boolean> {
   const trainingUrl = GPU_SERVICE_URLS[GpuServiceType.TRAINING];
@@ -296,105 +250,6 @@ type GpuLockValue = {
   serviceType: GpuServiceType;
   acquiredAt: number;
 };
-
-// ============================================================================
-// TIPOS E INTERFACES
-// ============================================================================
-
-interface GpuRequest {
-  id: string;
-  serviceType: GpuServiceType;
-  priority: GpuRequestPriority;
-  endpoint: string;
-  method: 'GET' | 'POST' | 'PUT' | 'DELETE';
-  body?: unknown;
-  headers?: Record<string, string>;
-  timeout?: number;
-  tenantId?: string;
-  userId?: string;
-  metadata?: Record<string, unknown>;
-  createdAt: number;
-  retries: number;
-  maxRetries: number;
-}
-
-interface GpuResponse {
-  success: boolean;
-  data?: unknown;
-  error?: string;
-  latencyMs: number;
-  vramUsedGB?: number;
-}
-
-interface VramStatus {
-  totalGB: number;
-  usedGB: number;
-  freeGB: number;
-  utilizationPercent: number;
-  activeServices: GpuServiceType[];
-}
-
-// ============================================================================
-// CIRCUIT BREAKERS
-// ============================================================================
-
-/**
- * Circuit breakers DEVEM proteger as CHAMADAS REAIS aos serviços GPU (não apenas /health).
- * Gate 2: LLM (texto), Embeddings e Training locais
- */
-const gpuServiceClients = {
-  [GpuServiceType.LLM]: createProtectedFetch({
-    name: 'gpu-llm',
-    ...CIRCUIT_BREAKER_PRESETS.gpuLLM,
-  }),
-  [GpuServiceType.EMBEDDINGS]: createProtectedFetch({
-    name: 'gpu-embeddings',
-    ...CIRCUIT_BREAKER_PRESETS.embeddingsGPU,
-  }),
-  [GpuServiceType.TRAINING]: createProtectedFetch({
-    name: 'gpu-trainer',
-    ...CIRCUIT_BREAKER_PRESETS.gpuManager, // timeout alto para treinamento
-  }),
-} as const;
-
-const protectedFetchByServiceType = {
-  [GpuServiceType.LLM]: gpuServiceClients[GpuServiceType.LLM].fetch,
-  [GpuServiceType.EMBEDDINGS]: gpuServiceClients[GpuServiceType.EMBEDDINGS].fetch,
-  [GpuServiceType.TRAINING]: gpuServiceClients[GpuServiceType.TRAINING].fetch,
-} as const;
-
-// Sanitiza payload LLM antes de enviar ao vLLM 0.12.0.
-// MANTÉM response_format intacto (formato OpenAI-compatible suportado nativamente pelo vLLM).
-// A conversão anterior para structured_outputs (top-level) podia desabilitar
-// constrained decoding silenciosamente se vLLM não reconhecesse o campo.
-// Ref: https://docs.vllm.ai/en/v0.12.0/features/structured_outputs/
-function applyStructuredOutputs(params: {
-  serviceType: GpuServiceType;
-  endpoint: string;
-  body?: unknown;
-}): unknown {
-  if (params.serviceType !== GpuServiceType.LLM) return params.body;
-  if (!params.endpoint.includes('/v1/chat/completions')) return params.body;
-  if (!params.body || typeof params.body !== 'object' || Array.isArray(params.body)) return params.body;
-
-  const payload = { ...(params.body as Record<string, unknown>) };
-
-  // Remover extra_body se existir (campo do SDK Python, inválido para API HTTP REST do vLLM)
-  if (payload.extra_body) {
-    delete payload.extra_body;
-  }
-
-  // Remover structured_outputs se existir (pode conflitar com response_format)
-  if (payload.structured_outputs) {
-    delete payload.structured_outputs;
-  }
-
-  // response_format é MANTIDO intacto - vLLM 0.12.0 suporta nativamente
-  // o formato OpenAI: { type: "json_schema", json_schema: { name, schema, strict } }
-  // Isso garante constrained decoding via xgrammar/outlines no vLLM
-
-  return payload;
-}
 
 async function tryAcquireGpuLock(serviceType: GpuServiceType, requestId: string, ttlMs: number): Promise<boolean> {
   const redis = getRedisClient();
@@ -583,63 +438,12 @@ async function getVramFallback(): Promise<VramStatus> {
   return vramStatus;
 }
 
-/**
- * Verifica se há VRAM suficiente para um serviço
- */
-function hasEnoughVram(serviceType: GpuServiceType, currentVram: VramStatus): boolean {
-  // Importante: o gate é para coexistência/concor­rência.
-  // Se o serviço já está marcado como ativo, não exigimos "VRAM extra" para aceitar requisições.
-  if (currentVram.activeServices.includes(serviceType)) {
-    return true;
-  }
-
-  const required = VRAM_REQUIREMENTS[serviceType];
-  const available = currentVram.freeGB;
-  return available >= (required + VRAM_SAFETY_MARGIN_GB);
-}
-
-type GpuRejectionReason = 'insufficient_vram' | 'low_vram_low_priority' | 'gpu_busy' | 'simultaneous_policy';
-
 function observeVramFreeMetric(vramStatus: VramStatus): void {
   gpuManagerVramFreeBytes.set({ gpu_id: GPU_ID }, vramStatus.freeGB * 1024 * 1024 * 1024);
 }
 
 function trackGpuRejection(serviceType: GpuServiceType, reason: GpuRejectionReason): void {
   gpuManagerRejectionsTotal.inc({ service: capabilityForServiceType(serviceType), reason });
-}
-
-function isLowPriority(priority: GpuRequestPriority): boolean {
-  return priority <= GpuRequestPriority.MEDIUM;
-}
-
-function admissionControlReason(
-  serviceType: GpuServiceType,
-  priority: GpuRequestPriority,
-  vramStatus: VramStatus,
-): GpuRejectionReason | null {
-  const reason = (() => {
-    if (!hasEnoughVram(serviceType, vramStatus)) {
-      return 'insufficient_vram' as const;
-    }
-    if (isLowPriority(priority) && vramStatus.freeGB < ADMISSION_MIN_FREE_GB[serviceType]) {
-      return 'low_vram_low_priority' as const;
-    }
-    return null;
-  })();
-
-  // Log estruturado de cada decisão de admission (observabilidade)
-  logger.info({
-    serviceType,
-    priority,
-    freeGB: vramStatus.freeGB,
-    usedGB: vramStatus.usedGB,
-    threshold: ADMISSION_MIN_FREE_GB[serviceType],
-    required: VRAM_REQUIREMENTS[serviceType],
-    activeServices: vramStatus.activeServices,
-    decision: reason ?? 'admitted',
-  }, reason ? `Admission control: ${reason}` : 'Admission control: requisição admitida');
-
-  return reason;
 }
 
 // ============================================================================
@@ -931,7 +735,12 @@ async function startQueueWorker(): Promise<void> {
         try {
           // Verificar VRAM disponível (evita iniciar serviço que não cabe no momento)
           const vramStatus = await getVramStatus();
-          if (!hasEnoughVram(serviceType, vramStatus)) {
+          if (!hasEnoughVram({
+            serviceType,
+            currentVram: vramStatus,
+            vramRequirements: VRAM_REQUIREMENTS,
+            vramSafetyMarginGb: VRAM_SAFETY_MARGIN_GB,
+          })) {
             logger.warn({
               requestId: request.id,
               serviceType,
@@ -1138,7 +947,15 @@ app.post('/api/gpu/queue', requireInternalAuth, asyncHandler(async (req: Request
   };
 
   const vramStatus = await getVramStatus();
-  const rejectionReason = admissionControlReason(request.serviceType, request.priority, vramStatus);
+  const rejectionReason = admissionControlReason({
+    serviceType: request.serviceType,
+    priority: request.priority,
+    vramStatus,
+    vramRequirements: VRAM_REQUIREMENTS,
+    vramSafetyMarginGb: VRAM_SAFETY_MARGIN_GB,
+    admissionMinFreeGb: ADMISSION_MIN_FREE_GB,
+    logger,
+  });
   if (rejectionReason) {
     trackGpuRejection(request.serviceType, rejectionReason);
     const statusCode = rejectionReason === 'insufficient_vram' ? 503 : 429;
@@ -1231,7 +1048,15 @@ app.post('/api/gpu/stream', requireInternalAuth, asyncHandler(async (req: Reques
   
   // Verificar VRAM disponível
   const vramStatus = await getVramStatus();
-  const admissionReason = admissionControlReason(serviceType, GpuRequestPriority.CRITICAL, vramStatus);
+  const admissionReason = admissionControlReason({
+    serviceType,
+    priority: GpuRequestPriority.CRITICAL,
+    vramStatus,
+    vramRequirements: VRAM_REQUIREMENTS,
+    vramSafetyMarginGb: VRAM_SAFETY_MARGIN_GB,
+    admissionMinFreeGb: ADMISSION_MIN_FREE_GB,
+    logger,
+  });
   if (admissionReason) {
     trackGpuRejection(serviceType, admissionReason);
     const statusCode = admissionReason === 'insufficient_vram' ? 503 : 429;
@@ -1449,67 +1274,18 @@ app.get('/api/gpu/services', requireInternalAuth, asyncHandler(async (req: Reque
 // Métricas Prometheus
 const prometheus = createAlicePrometheus({ serviceName: 'gpu-manager' });
 
-// ============================================================================
-// PROMETHEUS: Métricas específicas do GPU Manager (modelo-agnóstico)
-// ============================================================================
-// Total de VRAM (bytes) - valor real quando nvidia-smi está disponível
-const gpuVramTotalBytes = new Gauge({
-  name: 'alice_gpu_vram_total_bytes',
-  help: 'VRAM total da GPU em bytes (fonte: nvidia-smi quando disponível)',
-  labelNames: ['gpu_id'] as const,
-  registers: [prometheus.registry],
-});
-
-// VRAM usada (bytes) - valor real agregado (nvidia-smi)
-const gpuVramUsedBytes = new Gauge({
-  name: 'alice_gpu_vram_used_bytes',
-  help: 'VRAM usada total da GPU em bytes (fonte: nvidia-smi quando disponível)',
-  labelNames: ['gpu_id'] as const,
-  registers: [prometheus.registry],
-});
-
-const gpuManagerVramFreeBytes = new Gauge({
-  name: 'gpu_manager_vram_free_bytes',
-  help: 'VRAM livre observada pelo GPU Manager em bytes',
-  labelNames: ['gpu_id'] as const,
-  registers: [prometheus.registry],
-});
-
-// VRAM "reservada" por capacidade (bytes) - derivada de requisitos declarados
-// (transparente: não tenta inferir uso real por processo/container)
-const gpuVramReservedBytes = new Gauge({
-  name: 'alice_gpu_vram_reserved_bytes',
-  help: 'VRAM reservada estimada por capacidade (bytes) baseada em serviços ativos e requisitos declarados',
-  labelNames: ['gpu_id', 'service'] as const,
-  registers: [prometheus.registry],
-});
-
-// Depth da fila por capacidade (zset Redis)
-const gpuManagerQueueDepth = new Gauge({
-  name: 'alice_gpu_manager_queue_depth',
-  help: 'Tamanho atual da fila Redis por capacidade (LLM/embeddings/training)',
-  labelNames: ['queue'] as const,
-  registers: [prometheus.registry],
-});
-
-// Tempo de espera na fila (segundos) por capacidade
-const gpuManagerQueueWaitDuration = new Histogram({
-  name: 'alice_gpu_manager_queue_wait_duration_seconds',
-  help: 'Tempo de espera na fila Redis (segundos) por capacidade',
-  labelNames: ['queue'] as const,
-  buckets: [0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60, 120],
-  registers: [prometheus.registry],
-});
-
-const gpuManagerRejectionsTotal = new Counter({
-  name: 'gpu_manager_rejections_total',
-  help: 'Total de rejeições do admission control/política do GPU Manager',
-  labelNames: ['service', 'reason'] as const,
-  registers: [prometheus.registry],
-});
-
 // Helper: GPU única no GEX44 (RTX 4000 Ada). Mantemos configurável para suportar expansão futura.
 const GPU_ID = readOptionalStringEnv('NVIDIA_GPU_ID') ?? '0';
+const {
+  gpuVramTotalBytes,
+  gpuVramUsedBytes,
+  gpuManagerVramFreeBytes,
+  gpuVramReservedBytes,
+  gpuManagerQueueDepth,
+  gpuManagerQueueWaitDuration,
+  gpuManagerRejectionsTotal,
+} = createGpuManagerMetrics(prometheus.registry);
+
 // CORREÇÃO 26/12/2025: Usar contentType correto do registry (application/openmetrics-text)
 // Padrão consistente com packages/shared-utils/src/prometheus.ts linha 702
 app.get('/metrics', async (_req: Request, res: Response) => {
@@ -1530,80 +1306,21 @@ app.use(createNotFoundHandler());
 // INICIALIZAÇÃO
 // ============================================================================
 
-async function start(): Promise<void> {
-  try {
-    // CORREÇÃO 28/12/2025: Inicializar Redis ANTES de verificar disponibilidade
-    // BUG CRÍTICO: isRedisAvailable() retornava false porque initializeRedisCache() nunca era chamado
-    // Resultado: redisClient era sempre null → erro "Redis não disponível" → container crashava
-    // Serviços que dependem de gpu-manager (chat, rag, training) falhavam em cascata
-    logger.info('Inicializando conexão Redis...');
-    await initializeRedisCache();
-    
-    // Verificar Redis
-    if (!isRedisAvailable()) {
-      throw new Error('Redis não disponível após inicialização');
-    }
-    logger.info('Redis inicializado com sucesso');
-
-    // Gate 2: LLM (texto), Embeddings e Training locais. Containers GPU são gerenciados pelo Docker Compose.
-    // Observação: VRAM real deve vir de nvidia-smi (quando disponível). Os "budgets" abaixo são apenas estimativa/fallback.
-    const alwaysOnBudgetGB = Object.entries(VRAM_REQUIREMENTS)
-      .filter(([key]) => key !== GpuServiceType.TRAINING)
-      .reduce((sum, [, vram]) => sum + vram, 0);
-    logger.info(
-      { totalVramGB: TOTAL_VRAM_GB, alwaysOnBudgetGB },
-      'Arquitetura GPU (Gate 2) - serviços always-on com budgets estimados'
-    );
-    
-    // Verificar disponibilidade do orquestrador (uma vez no startup)
-    orchestratorAvailable = await isOrchestratorAvailable();
-    if (orchestratorAvailable) {
-      logger.info(
-        { orchestrationMode: GPU_ORCHESTRATION_MODE },
-        'Orquestrador GPU disponivel para ciclo de treino sob demanda'
-      );
-    } else {
-      logger.warn(
-        { orchestrationMode: GPU_ORCHESTRATION_MODE },
-        'Orquestrador GPU indisponivel; treino requer gpu-trainer ja ativo ou correcao de acesso ao docker.sock'
-      );
-    }
-
-    // Iniciar worker de fila
-    await startQueueWorker();
-    
-    // Iniciar servidor
-    server.listen(PORT, () => {
-      logger.info({
-        port: PORT,
-        totalVramGB: TOTAL_VRAM_GB,
-        safetyMarginGB: VRAM_SAFETY_MARGIN_GB,
-        budgets: VRAM_REQUIREMENTS,
-        admissionThresholds: ADMISSION_MIN_FREE_GB,
-        nvidiaSmiStatus: nvidiaSmiAvailable === null ? 'unknown' : nvidiaSmiAvailable ? 'available' : 'unavailable',
-      }, 'GPU Manager Service iniciado - coexistência habilitada (LLM+Embeddings+Training)');
-    });
-
-    // SEGURANÇA: Timeouts para prevenir conexões pendentes (Node.js 20 LTS Best Practices)
-    server.timeout = 30000; // 30s timeout para requisições
-    server.keepAliveTimeout = 65000; // 65s (maior que ALB/Caddy timeout padrão de 60s)
-    server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
-    
-    // Graceful shutdown
-    registerShutdownCallback('gpu-manager-server', async () => {
-      logger.info('Encerrando GPU Manager Service...');
-      shutdownOrchestrator();
-      stopQueueWorker();
-      server.close();
-      // CORREÇÃO 28/12/2025: Fechar conexão Redis no shutdown
-      await closeRedisCacheClient();
-      logger.info('Conexão Redis encerrada');
-    }, { priority: ShutdownPriority.HTTP_SERVER });
-    
-  } catch (error) {
-    logger.error({ error }, 'Erro ao iniciar GPU Manager Service');
-    process.exit(1);
-  }
-}
-
-start();
+void startGpuManagerBootstrap({
+  logger,
+  server,
+  port: PORT,
+  totalVramGb: TOTAL_VRAM_GB,
+  vramSafetyMarginGb: VRAM_SAFETY_MARGIN_GB,
+  vramRequirements: VRAM_REQUIREMENTS,
+  admissionThresholds: ADMISSION_MIN_FREE_GB,
+  getNvidiaSmiStatus: () => (nvidiaSmiAvailable === null ? 'unknown' : nvidiaSmiAvailable ? 'available' : 'unavailable'),
+  resolveOrchestratorAvailability: isOrchestratorAvailable,
+  orchestrationMode: GPU_ORCHESTRATION_MODE,
+  setOrchestratorAvailable: (value) => {
+    orchestratorAvailable = value;
+  },
+  startQueueWorker,
+  stopQueueWorker,
+  shutdownOrchestrator,
+});

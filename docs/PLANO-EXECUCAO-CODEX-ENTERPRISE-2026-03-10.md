@@ -29,7 +29,7 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - `P1-RAG-04`: Concluído
 - `P1-TRAINING-05`: Concluído
 - `P1-INTEGRATIONS-06`: Concluído
-- `P1-GPU-LLM-07`: Não iniciado
+- `P1-GPU-LLM-07`: Concluído
 - `P1-OBS-08`: Não iniciado
 - `P1-FRONT-09`: Não iniciado
 - `P1-CONTRACTS-10`: Não iniciado
@@ -43,7 +43,7 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - `P2-DOCS-06`: Não iniciado
 
 ## Bloco atual
-`P1-INTEGRATIONS-06` (Concluído)
+`P1-GPU-LLM-07` (Concluído)
 
 ## Histórico de rodadas
 
@@ -467,6 +467,39 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
   - Risco residual controlado: a decomposição foi restrita a composição e boundary modules para não alterar estratégia de trading nem contratos já existentes.
 - Próximo bloco recomendado: `P1-GPU-LLM-07`.
 
+### Rodada 14
+- Data: 2026-03-10
+- Bloco executado: `P1-GPU-LLM-07`
+- Objetivo: Quebrar `gpu-manager-service` e `llm-gateway-service`, separando bootstrap, admission control, governança, health, métricas, clients e wiring, preservando políticas e comportamento funcional.
+- Diagnóstico: `apps/gpu-manager-service/src/index.ts` (1609 linhas) e `apps/llm-gateway-service/src/index.ts` (1426 linhas) concentravam composição root e responsabilidades de bootstrap/rotas/governança/métricas no mesmo arquivo, reduzindo legibilidade e isolação por domínio.
+- Arquivos lidos: `CLAUDE.md` (1-120), `package.json`, `apps/gpu-manager-service/src/index.ts` (lido em chunks sequenciais), `apps/llm-gateway-service/src/index.ts` (lido em chunks sequenciais), `apps/llm-gateway-service/src/governance.ts` (lido em chunks sequenciais), `apps/llm-gateway-service/src/governance-auth.ts`, `apps/gpu-manager-service/src/gpu-client.ts`, `apps/gpu-manager-service/src/gpu-orchestrator.ts`, `apps/gpu-manager-service/package.json`, `apps/llm-gateway-service/package.json`, `apps/gpu-manager-service/tsconfig.json`, `apps/llm-gateway-service/tsconfig.json`, `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Arquivos alterados: `apps/llm-gateway-service/src/index.ts`, `apps/llm-gateway-service/src/llm-bootstrap.ts`, `apps/llm-gateway-service/src/llm-governance-routes.ts`, `apps/llm-gateway-service/src/llm-health-routes.ts`, `apps/llm-gateway-service/src/llm-inference-routes.ts`, `apps/llm-gateway-service/src/llm-metrics.ts`, `apps/gpu-manager-service/src/index.ts`, `apps/gpu-manager-service/src/gpu-contracts.ts`, `apps/gpu-manager-service/src/gpu-admission.ts`, `apps/gpu-manager-service/src/gpu-service-clients.ts`, `apps/gpu-manager-service/src/gpu-metrics.ts`, `apps/gpu-manager-service/src/gpu-bootstrap.ts`, `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Validações executadas:
+  - `pnpm --filter @alice/gpu-manager-service typecheck` (falha por binário global `pnpm` quebrado no ambiente)
+  - `pnpm --filter @alice/gpu-manager-service typecheck` (executado via `npx -y pnpm@10.26.2 --filter @alice/gpu-manager-service typecheck`)
+  - `pnpm --filter @alice/gpu-manager-service lint` (executado via `npx -y pnpm@10.26.2 --filter @alice/gpu-manager-service lint`)
+  - `pnpm --filter @alice/gpu-manager-service build` (executado via `npx -y pnpm@10.26.2 --filter @alice/gpu-manager-service build`)
+  - `pnpm --filter @alice/llm-gateway-service typecheck` (executado via `npx -y pnpm@10.26.2 --filter @alice/llm-gateway-service typecheck`)
+  - `pnpm --filter @alice/llm-gateway-service lint` (executado via `npx -y pnpm@10.26.2 --filter @alice/llm-gateway-service lint`)
+  - `pnpm --filter @alice/llm-gateway-service build` (executado via `npx -y pnpm@10.26.2 --filter @alice/llm-gateway-service build`)
+  - `pnpm lint` (executado via `npx -y pnpm@10.26.2 lint`)
+  - `pnpm build` (executado via `npx -y pnpm@10.26.2 build`)
+  - Revalidação final após ajuste textual residual em `apps/gpu-manager-service/src/index.ts`: repetição serial de todas as validações obrigatórias acima com `npx -y pnpm@10.26.2 ...`
+- Resultado das validações:
+  - Todas as validações obrigatórias da rodada foram aprovadas ao final.
+  - `apps/llm-gateway-service/src/index.ts` foi reduzido de 1426 para 129 linhas com extração de bootstrap, métricas, health, governança e rotas de inferência.
+  - `apps/gpu-manager-service/src/index.ts` foi reduzido de 1609 para 1326 linhas, com extração de contratos, admission control, service clients, métricas e bootstrap.
+  - Observação de ambiente: binário global `pnpm` permanece quebrado; comandos executados via `npx -y pnpm@10.26.2`, preservando os comandos lógicos exigidos.
+- Documentação atualizada: tracking canônico atualizado com evidências factuais da Rodada 14.
+- Commit realizado: `refactor: split gpu manager and llm gateway composition roots`
+- Pendências:
+  - Validar posteriormente no ambiente do usuário a correção do binário global `pnpm`.
+  - `apps/gpu-manager-service/src/index.ts` ainda mantém grande volume de lógica de fila/processamento interno, mesmo com separação de domínios de composição.
+- Riscos ou bloqueios:
+  - Sem bloqueio ativo para continuação.
+  - Risco residual controlado: modularização preservou contratos e políticas atuais sem introduzir novas regras de governance/admission.
+- Próximo bloco recomendado: `P1-OBS-08`.
+
 ## Pendências abertas
 - Correção do binário global `pnpm` no ambiente local (fora do escopo deste bloco).
 - Reduzir leituras diretas de `process.env` remanescentes fora do escopo autorizado, seguindo próximos blocos.
@@ -479,4 +512,4 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - Risco residual controlado: documentação histórica volumosa pode conter contexto de planos anteriores; status atual de execução do backlog governado deve sempre ser consultado no tracking canônico.
 
 ## Próximos blocos permitidos
-- `P1-GPU-LLM-07`
+- `P1-OBS-08`
