@@ -4,8 +4,88 @@
 **Data:** 11 de Marco de 2026
 
 ## Rodada Atual
-- Rodada: 6
+- Rodada: 7
 - Status: Concluída
+
+## Rodada 7 - Início
+
+### Objetivo
+Transformar a página de Training em cockpit operacional com controle manual de runtime GPU, com RBAC estrito para `admin/superadmin` em ações críticas de treino e orquestração.
+
+### Premissas
+- A FSM canônica de runtime GPU e os endpoints de orquestração já estão disponíveis e persistidos de forma durável.
+- A UI deve ser orientada ao estado de backend, sem suposições sobre transições internas.
+- Em GPU única, preempção de inferência durante treino continua sendo o comportamento operacional oficial.
+- Controles críticos de treinamento/orquestração devem ficar restritos a perfis `admin/superadmin`.
+
+### Escopo
+- Refatorar `apps/frontend-service/src/pages/Training.tsx` com extração de componentes de cockpit.
+- Adicionar card de runtime com:
+  - modo atual;
+  - estado de transição;
+  - motivo;
+  - run vinculado;
+  - disponibilidade de inferência.
+- Adicionar controles manuais:
+  - preparar GPU para treinamento;
+  - restaurar inferência (interrompendo treino corrente).
+- Incluir preflight explícito no modal on-demand sobre preempção de inferência.
+- Restringir ações críticas de treino e orquestração para `admin/superadmin`.
+- Atualizar i18n `pt-BR/en` e registrar inventário de acoplamentos legados Qwen2.5.
+
+## Rodada 7 - Conclusão
+
+### Alterações
+- `apps/frontend-service/src/pages/Training.tsx`:
+  - Integração de query canônica de estado do orquestrador via `GET /api/training/gpu-orchestrator/state` com validação Zod do payload.
+  - Cockpit de runtime integrado no topo da página com:
+    - card de estado operacional;
+    - card de controles manuais (`prepare-training` e `restore-serving`);
+    - banner orientado ao estado de inferência/transição.
+  - RBAC de UI reforçado para ações críticas:
+    - run on-demand;
+    - criação de job avançado;
+    - controle manual de runtime;
+    - persistência de schedule (save).
+  - Fluxo pós-treino ajustado para endpoint canônico `POST /api/training/gpu-orchestrator/restore-serving`.
+- `apps/frontend-service/src/pages/training/components/training-runtime-card.tsx` (novo):
+  - Card de runtime com modo atual, estado de transição, motivo, run vinculado e disponibilidade de inferência.
+- `apps/frontend-service/src/pages/training/components/training-orchestrator-controls-card.tsx` (novo):
+  - Card de operação manual com botões:
+    - Preparar GPU para treinamento;
+    - Restaurar inferência.
+  - Estado de bloqueio por transição e restrição por RBAC.
+- `apps/frontend-service/src/pages/training/components/training-runtime-banner.tsx` (novo):
+  - Banner contextual para interrupção temporária de inferência e transições de runtime.
+- `apps/frontend-service/src/pages/training/components/training-on-demand-run-dialog.tsx`:
+  - Preflight explícito de preempção de inferência com confirmação obrigatória antes de iniciar run on-demand.
+- `apps/frontend-service/src/pages/training/components/training-auto-learning-tab-content.tsx`:
+  - Controles de schedule desabilitados para perfis sem privilégio (`admin/superadmin`), mantendo leitura.
+- `apps/frontend-service/src/locales/pt-BR.json` e `apps/frontend-service/src/locales/en.json`:
+  - Novas chaves i18n para:
+    - cockpit de runtime;
+    - controles manuais;
+    - banners de interrupção/transição;
+    - preflight de preempção no on-demand.
+
+### Inventário de Acoplamentos Qwen2.5
+- Referências históricas textuais a Qwen2.5 permanecem em mensagens descritivas legadas da UI de Training (sem impacto funcional).
+- Nenhum novo acoplamento funcional a Qwen2.5 foi introduzido nesta rodada.
+- Compatibilidade histórica com registros legados Qwen2.5 permanece preservada.
+
+### Validações
+Executadas em sequência, sem paralelização:
+1. `typecheck` (`cmd.exe /c pnpm typecheck`) -> OK
+2. `testes` (`cmd.exe /c pnpm test`) -> OK (125 arquivos, 1371 testes)
+3. `eslint` (`cmd.exe /c pnpm lint`) -> OK
+4. `build` (`cmd.exe /c pnpm build`) -> OK
+
+### Riscos
+- A restrição `admin/superadmin` aplicada nesta rodada está na camada de frontend; endurecimento complementar no backend para rotas de training schedule/run pode ser feito em rodada dedicada sem quebrar compatibilidade.
+- Em falha temporária de leitura do estado do orquestrador, o cockpit mantém fallback seguro, mas pode mostrar estado parcial até o próximo polling.
+
+### Próximo Passo
+Aguardar prompt da próxima rodada para continuidade da migração.
 
 ## Rodada 6 - Início
 

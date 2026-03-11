@@ -60,9 +60,12 @@ import { TrainingJobCard } from './training/components/training-job-card';
 import { TrainingJobsTabContent } from './training/components/training-jobs-tab-content';
 import { TrainingMultimodalTabContent } from './training/components/training-multimodal-tab-content';
 import { TrainingOnDemandRunDialog } from './training/components/training-on-demand-run-dialog';
+import { TrainingOrchestratorControlsCard } from './training/components/training-orchestrator-controls-card';
 import { TrainingPostTrainingDialog } from './training/components/training-post-training-dialog';
 import { TrainingPromoteDialog } from './training/components/training-promote-dialog';
 import { TrainingResolveScopeDialog } from './training/components/training-resolve-scope-dialog';
+import { TrainingRuntimeBanner } from './training/components/training-runtime-banner';
+import { TrainingRuntimeCard } from './training/components/training-runtime-card';
 import { TrainingRollbackDialog } from './training/components/training-rollback-dialog';
 import { TrainingReviewDialog } from './training/components/training-review-dialog';
 import {
@@ -289,6 +292,63 @@ type TrainingSystemConfigRuntime = {
   presets: Record<TrainingHyperparamsPreset, TrainingHyperparamsForm>;
 };
 
+const TRAINING_OPERATOR_ROLES = new Set(['admin', 'super_admin', 'superadmin']);
+const ORCHESTRATOR_TRANSITION_STATES = new Set([
+  'serving_draining',
+  'training_starting',
+  'training_finishing',
+  'serving_restoring',
+]);
+
+const ORCHESTRATOR_STABLE_STATES = new Set([
+  'serving_ready',
+  'training_active',
+]);
+
+const orchestratorStateSchema = z.enum([
+  'serving_ready',
+  'serving_draining',
+  'training_starting',
+  'training_active',
+  'training_finishing',
+  'serving_restoring',
+  'error',
+]);
+
+const runtimeModeSchema = z.enum([
+  'serving',
+  'switching_to_training',
+  'training',
+  'switching_to_serving',
+]);
+
+type OrchestratorFsmState = z.infer<typeof orchestratorStateSchema>;
+
+const gpuOrchestratorStateResponseSchema = z.object({
+  state: orchestratorStateSchema.optional(),
+  fsmState: orchestratorStateSchema.optional(),
+  orchestratorAvailable: z.boolean().optional(),
+  orchestrationMode: z.enum(['preemptive', 'simultaneous']).optional(),
+  durableState: z.object({
+    runtimeMode: runtimeModeSchema,
+    orchestratorState: orchestratorStateSchema,
+    lastReason: z.string().nullable().optional(),
+    updatedAt: z.string().optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
+  }).nullable().optional(),
+  recentEvents: z.array(
+    z.object({
+      eventType: z.string(),
+      reason: z.string().nullable().optional(),
+      createdAt: z.string().optional(),
+      requestId: z.string().nullable().optional(),
+      metadata: z.record(z.string(), z.unknown()).optional(),
+    })
+  ).optional(),
+});
+
+type GpuOrchestratorStateResponse = z.infer<typeof gpuOrchestratorStateResponseSchema>;
+
 const trainingSystemConfigSchema = z.object({
   MIN_ONDEMAND_DATASET_SIZE: z.coerce.number().int().min(1),
   MIN_SCHEDULED_DATASET_SIZE_INCREMENTAL: z.coerce.number().int().min(1),
@@ -333,6 +393,68 @@ function getScheduleScopeLabel(
   });
 }
 
+function normalizeUserRole(role: string | null | undefined): string | null {
+  if (!role) {
+    return null;
+  }
+  const normalized = role.trim().toLowerCase();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function inferRuntimeModeFromFsmState(state: OrchestratorFsmState | null): z.infer<typeof runtimeModeSchema> | null {
+  if (!state) {
+    return null;
+  }
+  if (state === 'serving_ready' || state === 'serving_draining' || state === 'serving_restoring') {
+    return 'serving';
+  }
+  if (state === 'training_active' || state === 'training_starting' || state === 'training_finishing') {
+    return 'training';
+  }
+  return null;
+}
+
+function extractStringFromMetadata(
+  metadata: Record<string, unknown> | undefined,
+  candidates: string[],
+): string | null {
+  if (!metadata) {
+    return null;
+  }
+
+  for (const key of candidates) {
+    const value = metadata[key];
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value;
+    }
+  }
+
+  return null;
+}
+
+function resolveLinkedRunFromRecentEvents(
+  runtimeState: GpuOrchestratorStateResponse | undefined,
+): { linkedRunId: string | null; linkedRunName: string | null } {
+  if (!runtimeState?.recentEvents?.length) {
+    return { linkedRunId: null, linkedRunName: null };
+  }
+
+  const runIdKeys = ['runId', 'trainingRunId', 'fineTuningRunId', 'fineTuningJobId', 'jobId'];
+  const runNameKeys = ['runName', 'jobName'];
+  for (const event of runtimeState.recentEvents) {
+    const linkedRunId = extractStringFromMetadata(event.metadata, runIdKeys);
+    if (!linkedRunId) {
+      continue;
+    }
+    return {
+      linkedRunId,
+      linkedRunName: extractStringFromMetadata(event.metadata, runNameKeys),
+    };
+  }
+
+  return { linkedRunId: null, linkedRunName: null };
+}
+
 const itemVariants = {
   hidden: { opacity: 0, y: 20 },
   visible: { 
@@ -349,6 +471,24 @@ export default function Training() {
   const timeZone = user?.timezone ?? TIMEZONE;
   const queryClient = useQueryClient();
   const tenantId = user?.tenantId;
+  const normalizedUserRoles = useMemo(() => {
+    const roleSet = new Set<string>();
+    const primaryRole = normalizeUserRole(user?.role);
+    if (primaryRole) {
+      roleSet.add(primaryRole);
+    }
+    for (const role of user?.roles ?? []) {
+      const normalizedRole = normalizeUserRole(role);
+      if (normalizedRole) {
+        roleSet.add(normalizedRole);
+      }
+    }
+    return Array.from(roleSet);
+  }, [user?.role, user?.roles]);
+  const isTrainingOperatorRole = useMemo(
+    () => normalizedUserRoles.some((role) => TRAINING_OPERATOR_ROLES.has(role)),
+    [normalizedUserRoles],
+  );
   
   const [activeTab, setActiveTab] = useState<TrainingTabKey>('data');
   const [activeWorkspace, setActiveWorkspace] = useState<TrainingWorkspaceKey>('all');
@@ -517,6 +657,83 @@ export default function Training() {
     refetchInterval: 1000 * 15,
   });
 
+  const orchestratorStateQueryKey = ['training', 'gpu-orchestrator', 'state'] as const;
+  const {
+    data: orchestratorState,
+    isLoading: orchestratorStateLoading,
+  } = useQuery<GpuOrchestratorStateResponse | undefined>({
+    queryKey: orchestratorStateQueryKey,
+    queryFn: async () => {
+      const response = await apiRequest('GET', '/api/training/gpu-orchestrator/state');
+      const payload = (await response.json()) as unknown;
+      const parsed = gpuOrchestratorStateResponseSchema.safeParse(payload);
+      if (!parsed.success) {
+        frontendLogger.warn('Payload invalido em /api/training/gpu-orchestrator/state', {
+          issues: parsed.error.issues,
+        });
+        return undefined;
+      }
+      return parsed.data;
+    },
+    staleTime: 1000 * 5,
+    refetchInterval: (query) => {
+      const payload = query.state.data;
+      const fsmState = payload?.fsmState ?? payload?.state ?? payload?.durableState?.orchestratorState;
+      if (fsmState && ORCHESTRATOR_TRANSITION_STATES.has(fsmState)) {
+        return 2000;
+      }
+      return 10000;
+    },
+  });
+
+  const runtimeFsmState = useMemo<OrchestratorFsmState | null>(() => {
+    return orchestratorState?.fsmState
+      ?? orchestratorState?.state
+      ?? orchestratorState?.durableState?.orchestratorState
+      ?? null;
+  }, [orchestratorState]);
+
+  const runtimeMode = useMemo(() => {
+    return orchestratorState?.durableState?.runtimeMode
+      ?? inferRuntimeModeFromFsmState(runtimeFsmState);
+  }, [orchestratorState?.durableState?.runtimeMode, runtimeFsmState]);
+
+  const runtimeTransitionState = useMemo(() => {
+    if (!runtimeFsmState) {
+      return null;
+    }
+    if (ORCHESTRATOR_STABLE_STATES.has(runtimeFsmState)) {
+      return null;
+    }
+    return runtimeFsmState;
+  }, [runtimeFsmState]);
+
+  const runtimeReason = useMemo(() => {
+    return orchestratorState?.durableState?.lastReason
+      ?? orchestratorState?.recentEvents?.[0]?.reason
+      ?? null;
+  }, [orchestratorState?.durableState?.lastReason, orchestratorState?.recentEvents]);
+
+  const linkedRunFromEvents = useMemo(
+    () => resolveLinkedRunFromRecentEvents(orchestratorState),
+    [orchestratorState],
+  );
+
+  const linkedRuntimeRun = useMemo(() => {
+    if (runStatus?.hasRunningTraining) {
+      return {
+        linkedRunId: runStatus.currentJob.id,
+        linkedRunName: runStatus.currentJob.name,
+      };
+    }
+    return linkedRunFromEvents;
+  }, [linkedRunFromEvents, runStatus]);
+
+  const inferenceAvailable = useMemo(() => {
+    const orchestratorAvailable = orchestratorState?.orchestratorAvailable ?? true;
+    return runtimeFsmState === 'serving_ready' && orchestratorAvailable;
+  }, [orchestratorState?.orchestratorAvailable, runtimeFsmState]);
+
   const queueStatusQueryKey = ['training', 'queue', 'status', tenantId ?? null] as const;
   const { data: queueStatus, isLoading: queueStatusLoading } = useQuery<TrainingQueueStatusResponse>({
     queryKey: queueStatusQueryKey,
@@ -601,6 +818,10 @@ export default function Training() {
 
   const configureSchedule = useMutation({
     mutationFn: async () => {
+      if (!isTrainingOperatorRole) {
+        throw new Error(t('training.runtime.controls.restrictedDescription'));
+      }
+
       const parsed = scheduleFormSchema.parse({
         scheduleType,
         enabled: scheduleEnabled,
@@ -649,6 +870,52 @@ export default function Training() {
     },
   });
 
+  const prepareTrainingRuntimeMutation = useMutation({
+    mutationFn: async () => {
+      if (!isTrainingOperatorRole) {
+        throw new Error(t('training.runtime.controls.restrictedDescription'));
+      }
+      return apiRequest('POST', '/api/training/gpu-orchestrator/prepare-training');
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: orchestratorStateQueryKey });
+      queryClient.invalidateQueries({ queryKey: runStatusQueryKey });
+      queryClient.invalidateQueries({ queryKey: ['/api/training/jobs'] });
+      toast({ title: t('training.runtime.controls.prepareSuccess') });
+    },
+    onError: (error) => {
+      const errorMessage = error instanceof ApiError ? error.message : t('training.runtime.controls.prepareError');
+      toast({
+        title: t('training.runtime.controls.prepareError'),
+        description: errorMessage,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const restoreServingRuntimeMutation = useMutation({
+    mutationFn: async () => {
+      if (!isTrainingOperatorRole) {
+        throw new Error(t('training.runtime.controls.restrictedDescription'));
+      }
+      return apiRequest('POST', '/api/training/gpu-orchestrator/restore-serving');
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: orchestratorStateQueryKey });
+      queryClient.invalidateQueries({ queryKey: runStatusQueryKey });
+      queryClient.invalidateQueries({ queryKey: ['/api/training/jobs'] });
+      toast({ title: t('training.runtime.controls.restoreSuccess') });
+    },
+    onError: (error) => {
+      const errorMessage = error instanceof ApiError ? error.message : t('training.runtime.controls.restoreError');
+      toast({
+        title: t('training.runtime.controls.restoreError'),
+        description: errorMessage,
+        variant: 'destructive',
+      });
+    },
+  });
+
   const onDemandSchema = z.object({
     trainingType: z.enum(['incremental', 'full']),
     includeImages: z.boolean(),
@@ -686,6 +953,10 @@ export default function Training() {
 
   const startOnDemand = useMutation({
     mutationFn: async () => {
+      if (!isTrainingOperatorRole) {
+        throw new Error(t('training.runtime.controls.restrictedDescription'));
+      }
+
       const parsed = onDemandSchema.parse({
         trainingType: onDemandTrainingType,
         includeImages: onDemandIncludeImages,
@@ -968,8 +1239,9 @@ export default function Training() {
   }, [allJobs]);
 
   const returnOrchestrator = useMutation({
-    mutationFn: async () => apiRequest('POST', '/api/training/gpu-orchestrator/return'),
+    mutationFn: async () => apiRequest('POST', '/api/training/gpu-orchestrator/restore-serving'),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: orchestratorStateQueryKey });
       setPostTrainingDialog((d) => ({ ...d, open: false }));
       navigate('/chat');
     },
@@ -1289,6 +1561,45 @@ export default function Training() {
 
   const resolveScopeNeedsHumanReview = Boolean(resolveScopeEntry?.needsHumanReview);
   const requireEvalPassedForPromotion = queueStatus?.governance?.requireEvalPassedForPromotion ?? true;
+  const handleOpenOnDemandDialog = useCallback(() => {
+    if (!isTrainingOperatorRole) {
+      toast({ title: t('training.runtime.controls.restrictedDescription'), variant: 'destructive' });
+      return;
+    }
+    setShowOnDemandRun(true);
+  }, [isTrainingOperatorRole, t]);
+
+  const handleOpenCreateJobDialog = useCallback(() => {
+    if (!isTrainingOperatorRole) {
+      toast({ title: t('training.runtime.controls.restrictedDescription'), variant: 'destructive' });
+      return;
+    }
+    setShowCreateJob(true);
+  }, [isTrainingOperatorRole, t]);
+
+  const handleStartOnDemand = useCallback(() => {
+    if (!isTrainingOperatorRole) {
+      toast({ title: t('training.runtime.controls.restrictedDescription'), variant: 'destructive' });
+      return;
+    }
+    startOnDemand.mutate();
+  }, [isTrainingOperatorRole, startOnDemand, t]);
+
+  const handlePrepareTrainingRuntime = useCallback(() => {
+    if (!isTrainingOperatorRole) {
+      toast({ title: t('training.runtime.controls.restrictedDescription'), variant: 'destructive' });
+      return;
+    }
+    prepareTrainingRuntimeMutation.mutate();
+  }, [isTrainingOperatorRole, prepareTrainingRuntimeMutation, t]);
+
+  const handleRestoreServingRuntime = useCallback(() => {
+    if (!isTrainingOperatorRole) {
+      toast({ title: t('training.runtime.controls.restrictedDescription'), variant: 'destructive' });
+      return;
+    }
+    restoreServingRuntimeMutation.mutate();
+  }, [isTrainingOperatorRole, restoreServingRuntimeMutation, t]);
 
   return (
     <div className="flex flex-col h-full">
@@ -1310,16 +1621,16 @@ export default function Training() {
           <div className="flex items-center gap-2 flex-wrap">
             <Button
               variant="outline"
-              onClick={() => setShowOnDemandRun(true)}
-              disabled={runStatusLoading || runStatus?.hasRunningTraining === true || !tenantId}
+              onClick={handleOpenOnDemandDialog}
+              disabled={runStatusLoading || runStatus?.hasRunningTraining === true || !tenantId || !isTrainingOperatorRole}
               data-testid="button-on-demand-run"
             >
               <Play className="h-4 w-4 mr-2" />
               {t('training.autoLearning.onDemand')}
             </Button>
             <Button
-              onClick={() => setShowCreateJob(true)}
-              disabled={!tenantId || stats.approved < minCustomJobDatasetSize}
+              onClick={handleOpenCreateJobDialog}
+              disabled={!tenantId || stats.approved < minCustomJobDatasetSize || !isTrainingOperatorRole}
               data-testid="button-new-job"
             >
               <Brain className="h-4 w-4 mr-2" />
@@ -1347,6 +1658,45 @@ export default function Training() {
             <AlertDescription>{t('training.autoLearning.tenantMissingDesc')}</AlertDescription>
           </Alert>
         )}
+
+        {!isTrainingOperatorRole && (
+          <Alert className="mb-4">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>{t('training.runtime.controls.restrictedTitle')}</AlertTitle>
+            <AlertDescription>{t('training.runtime.controls.restrictedDescription')}</AlertDescription>
+          </Alert>
+        )}
+
+        <TrainingRuntimeBanner
+          inferenceAvailable={inferenceAvailable}
+          isLoading={orchestratorStateLoading}
+          reason={runtimeReason}
+          runtimeState={runtimeFsmState}
+          t={t}
+        />
+
+        <div className="grid gap-3 lg:grid-cols-2 mb-4">
+          <TrainingRuntimeCard
+            inferenceAvailable={inferenceAvailable}
+            isLoading={orchestratorStateLoading}
+            linkedRunId={linkedRuntimeRun.linkedRunId}
+            linkedRunName={linkedRuntimeRun.linkedRunName}
+            mode={runtimeMode}
+            reason={runtimeReason}
+            transitionState={runtimeTransitionState}
+            t={t}
+          />
+          <TrainingOrchestratorControlsCard
+            canControl={isTrainingOperatorRole}
+            controlsDisabled={orchestratorStateLoading}
+            currentState={runtimeFsmState}
+            isPreparePending={prepareTrainingRuntimeMutation.isPending}
+            isRestorePending={restoreServingRuntimeMutation.isPending}
+            onPrepareTraining={handlePrepareTrainingRuntime}
+            onRestoreServing={handleRestoreServingRuntime}
+            t={t}
+          />
+        </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <Card>
@@ -1486,6 +1836,7 @@ export default function Training() {
         <TrainingAutoLearningTabContent
           autoLearning={autoLearning}
           autoLearningLoading={autoLearningLoading}
+          canManageSchedule={isTrainingOperatorRole}
           configureSchedulePending={configureSchedule.isPending}
           formatScheduleDate={(value) => formatDateTime(value, { locale, timeZone })}
           minScheduledDatasetSizeFull={trainingSystemConfig.minScheduledDatasetSizeFull}
@@ -1514,9 +1865,9 @@ export default function Training() {
         <TrainingJobsTabContent
           activeJobsByScope={activeJobsByScope}
           allJobs={allJobs}
-          createFirstJobDisabled={!tenantId || stats.approved < minCustomJobDatasetSize}
+          createFirstJobDisabled={!tenantId || stats.approved < minCustomJobDatasetSize || !isTrainingOperatorRole}
           jobsLoading={jobsLoading}
-          onCreateFirstJob={() => setShowCreateJob(true)}
+          onCreateFirstJob={handleOpenCreateJobDialog}
           renderHistoryJobCard={(job) => (
             <TrainingJobCard
               job={job}
@@ -1600,7 +1951,7 @@ export default function Training() {
         namespaces={namespaces || []}
         namespaceId={createJobNamespaceId}
         onNamespaceIdChange={setCreateJobNamespaceId}
-        tenantId={tenantId}
+        tenantId={isTrainingOperatorRole ? tenantId : undefined}
         t={t}
       />
 
@@ -1671,12 +2022,12 @@ export default function Training() {
         onNamespaceIdChange={setOnDemandNamespaceId}
         onOpenChange={setShowOnDemandRun}
         onPriorityChange={setOnDemandPriority}
-        onStart={() => startOnDemand.mutate()}
+        onStart={handleStartOnDemand}
         onTrainingTypeChange={setOnDemandTrainingType}
         open={showOnDemandRun}
         priority={onDemandPriority}
         t={t}
-        tenantId={tenantId}
+        tenantId={isTrainingOperatorRole ? tenantId : undefined}
         trainingType={onDemandTrainingType}
       />
 

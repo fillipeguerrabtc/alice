@@ -88,6 +88,7 @@ type QueueStatus = {
 type TrainingAutoLearningTabContentProps = {
   autoLearning?: AutoLearningStatus;
   autoLearningLoading: boolean;
+  canManageSchedule: boolean;
   configureSchedulePending: boolean;
   formatScheduleDate: (value: string) => string;
   minScheduledDatasetSizeFull: number;
@@ -116,6 +117,7 @@ type TrainingAutoLearningTabContentProps = {
 export function TrainingAutoLearningTabContent({
   autoLearning,
   autoLearningLoading,
+  canManageSchedule,
   configureSchedulePending,
   formatScheduleDate,
   minScheduledDatasetSizeFull,
@@ -140,6 +142,8 @@ export function TrainingAutoLearningTabContent({
   t,
   tenantId,
 }: TrainingAutoLearningTabContentProps) {
+  const scheduleControlsDisabled = !tenantId || configureSchedulePending || !canManageSchedule;
+
   return (
     <TabsContent value="auto-learning" className="flex-1 m-0">
       <ScrollArea className="flex-1 p-4">
@@ -201,7 +205,7 @@ export function TrainingAutoLearningTabContent({
               <div className="grid gap-3">
                 <div className="grid gap-2">
                   <Label>{t('training.autoLearning.scheduleType')}</Label>
-                  <Select value={scheduleType} onValueChange={setScheduleType}>
+                  <Select value={scheduleType} onValueChange={setScheduleType} disabled={scheduleControlsDisabled}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -214,7 +218,7 @@ export function TrainingAutoLearningTabContent({
 
                 <div className="grid gap-2">
                   <Label>{t('training.autoLearning.scheduleScope')}</Label>
-                  <Select value={scheduleNamespaceId} onValueChange={setScheduleNamespaceId}>
+                  <Select value={scheduleNamespaceId} onValueChange={setScheduleNamespaceId} disabled={scheduleControlsDisabled}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -233,7 +237,7 @@ export function TrainingAutoLearningTabContent({
                     <div className="text-sm font-medium">{t('training.autoLearning.enabled')}</div>
                     <div className="text-xs text-muted-foreground">{t('training.autoLearning.enabledDesc')}</div>
                   </div>
-                  <Switch checked={scheduleEnabled} onCheckedChange={setScheduleEnabled} />
+                  <Switch checked={scheduleEnabled} onCheckedChange={setScheduleEnabled} disabled={scheduleControlsDisabled} />
                 </div>
 
                 <div className="grid gap-2">
@@ -242,6 +246,7 @@ export function TrainingAutoLearningTabContent({
                     value={scheduleCronPattern}
                     onChange={(event) => setScheduleCronPattern(event.target.value)}
                     placeholder="0 3 * * 0"
+                    disabled={scheduleControlsDisabled}
                   />
                   <p className="text-xs text-muted-foreground">{t('training.autoLearning.cronHelp')}</p>
                 </div>
@@ -257,10 +262,11 @@ export function TrainingAutoLearningTabContent({
                         ? minScheduledDatasetSizeIncremental
                         : minScheduledDatasetSizeFull
                     }
+                    disabled={scheduleControlsDisabled}
                   />
                 </div>
 
-                <Button onClick={onConfigureSchedule} disabled={!tenantId || configureSchedulePending}>
+                <Button onClick={onConfigureSchedule} disabled={scheduleControlsDisabled}>
                   {configureSchedulePending ? (
                     <>
                       <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -273,6 +279,11 @@ export function TrainingAutoLearningTabContent({
                     </>
                   )}
                 </Button>
+                {!canManageSchedule && (
+                  <p className="text-xs text-amber-600">
+                    {t('training.runtime.controls.restrictedDescription')}
+                  </p>
+                )}
               </div>
 
               <div className="rounded-md border p-3">

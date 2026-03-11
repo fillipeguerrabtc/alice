@@ -1,5 +1,7 @@
-import { Loader2, Play } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { AlertTriangle, Loader2, Play } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -63,6 +65,16 @@ export function TrainingOnDemandRunDialog({
   tenantId,
   trainingType,
 }: TrainingOnDemandRunDialogProps) {
+  const [preemptionConfirmed, setPreemptionConfirmed] = useState(false);
+
+  useEffect(() => {
+    if (!open) {
+      setPreemptionConfirmed(false);
+    }
+  }, [open]);
+
+  const isStartDisabled = !tenantId || isStartPending || !preemptionConfirmed;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
@@ -128,13 +140,37 @@ export function TrainingOnDemandRunDialog({
             <Label>{t('training.autoLearning.description')}</Label>
             <Input value={description} onChange={(event) => onDescriptionChange(event.target.value)} />
           </div>
+
+          <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 mt-0.5 text-amber-600" />
+              <div className="space-y-2">
+                <p className="text-sm font-medium">
+                  {t('training.autoLearning.preflight.title')}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {t('training.autoLearning.preflight.description')}
+                </p>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="training-preemption-preflight"
+                    checked={preemptionConfirmed}
+                    onCheckedChange={(checked) => setPreemptionConfirmed(Boolean(checked))}
+                  />
+                  <Label htmlFor="training-preemption-preflight" className="text-xs font-normal">
+                    {t('training.autoLearning.preflight.confirm')}
+                  </Label>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <DialogFooter className="gap-2">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             {t('training.createJob.cancel')}
           </Button>
-          <Button onClick={onStart} disabled={!tenantId || isStartPending}>
+          <Button onClick={onStart} disabled={isStartDisabled}>
             {isStartPending ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />

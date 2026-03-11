@@ -1788,6 +1788,11 @@
       "priorityNormal": "Normal",
       "priorityHigh": "Alta",
       "description": "Descrição (opcional)",
+      "preflight": {
+        "title": "Preempção de inferência",
+        "description": "Este run pode interromper temporariamente as inferências ativas enquanto a GPU é preparada para treinamento.",
+        "confirm": "Confirmo que entendo a preempção temporária da inferência."
+      },
       "starting": "Iniciando...",
       "startOnDemand": "Iniciar agora",
       "onDemandStarted": "Treinamento on-demand iniciado",
@@ -1903,6 +1908,59 @@
       "autoScheduleDesc": "Configure runs recorrentes e acompanhe a próxima execução em um único fluxo.",
       "nextRunAt": "Próximo run: {{date}}",
       "openSchedule": "Gerenciar schedule"
+    },
+    "runtime": {
+      "card": {
+        "title": "Cockpit de runtime GPU",
+        "description": "Estado operacional atual do runtime em GPU única.",
+        "loading": "Carregando estado de runtime...",
+        "currentMode": "Modo atual",
+        "transitionState": "Estado da transição",
+        "noTransition": "Sem transição em andamento",
+        "reason": "Motivo",
+        "reasonUnavailable": "Sem motivo registrado",
+        "linkedRun": "Run vinculado",
+        "noLinkedRun": "Nenhum run vinculado",
+        "inferenceAvailability": "Disponibilidade de inferência",
+        "inferenceAvailable": "Disponível",
+        "inferenceUnavailable": "Interrompida"
+      },
+      "controls": {
+        "title": "Controles manuais de runtime",
+        "description": "Prepare a GPU para treinamento ou restaure a inferência manualmente.",
+        "prepareTraining": "Preparar GPU para treinamento",
+        "restoreServing": "Restaurar inferência",
+        "hint": "Durante o treinamento, inferência e embeddings permanecem indisponíveis até a conclusão do run ou restore manual.",
+        "prepareSuccess": "GPU preparada para treinamento.",
+        "prepareError": "Falha ao preparar GPU para treinamento.",
+        "restoreSuccess": "Inferência restaurada com sucesso.",
+        "restoreError": "Falha ao restaurar inferência.",
+        "restrictedTitle": "Acesso restrito",
+        "restrictedDescription": "Somente perfis admin/superadmin podem executar treinamento e controlar o runtime GPU."
+      },
+      "banner": {
+        "interruptedTitle": "Inferência temporariamente interrompida",
+        "interruptedDescription": "Inferência interrompida momentaneamente por causa de um treinamento em andamento. O serviço retornará automaticamente assim que o treinamento terminar.",
+        "transitionTitle": "Transição de runtime em andamento",
+        "transitionDescription": "O runtime GPU está em transição (estado: {{state}})."
+      },
+      "mode": {
+        "serving": "Serving (LLM + Embeddings)",
+        "switching_to_training": "Transição para training",
+        "training": "Training (gpu-trainer)",
+        "switching_to_serving": "Transição para serving",
+        "unknown": "Desconhecido"
+      },
+      "state": {
+        "serving_ready": "Serving pronto",
+        "serving_draining": "Drenando serving",
+        "training_starting": "Iniciando treinamento",
+        "training_active": "Treinamento ativo",
+        "training_finishing": "Finalizando treinamento",
+        "serving_restoring": "Restaurando serving",
+        "error": "Erro",
+        "unknown": "Desconhecido"
+      }
     },
     "activeConfig": {
       "title": "Resumo da configuracao ativa",
