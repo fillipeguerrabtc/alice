@@ -1,8 +1,8 @@
 # =============================================================================
 # ALICE PLATFORM - ALICE STACK (Microserviços + GPU)
 # =============================================================================
-# Versão: 6.2 (GPU: Texto+Embeddings+Training; Vision/ASR via OpenAI)
-# Data: 22 de Janeiro de 2026
+# Versão: 6.3 (GPU: Qwen3 serving/training preemptivo em 20GB)
+# Data: 11 de Marco de 2026
 # Autor: Fillipe Guerra
 #
 # PROPÓSITO: Serviços core da plataforma Alice + GPU Manager + GPU containers
@@ -21,7 +21,7 @@
 #   - gpu-manager - Gerenciamento centralizado de GPU
 #
 #   GPU (SEMPRE ATIVOS):
-#   - gpu-llm - Qwen2.5 7B Instruct AWQ (LLM texto, contexto 6k)
+#   - gpu-llm - Qwen3 8B AWQ (LLM texto)
 #   - gpu-embeddings - Qwen3-Embedding-0.6B INT8 (1024 dim)
 #
 #   GPU (SOB DEMANDA):
@@ -293,7 +293,7 @@ services:
       INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
       TRAINING_SERVICE_URL: http://alice-training:3004
       GPU_MANAGER_URL: ${GPU_MANAGER_URL:-http://alice-gpu-manager:3010}
-      DEFAULT_LLM_MODEL: ${DEFAULT_LLM_MODEL:-Qwen2.5-7B-Instruct-AWQ}
+      DEFAULT_LLM_MODEL: ${DEFAULT_LLM_MODEL:-Qwen/Qwen3-8B-AWQ}
     depends_on:
       gpu-manager:
         condition: service_healthy
@@ -615,7 +615,8 @@ services:
       - LLM_GPU_URL=${LLM_GPU_URL:-http://gpu-llm:8000}
       - EMBEDDINGS_GPU_URL=${EMBEDDINGS_GPU_URL:-http://gpu-embeddings:8000}
       - TRAINING_GPU_URL=${TRAINING_GPU_URL:-http://gpu-trainer:8000}
-      - GPU_CONCURRENCY_MODE=${GPU_CONCURRENCY_MODE:-${GPU_ORCHESTRATION_MODE:-simultaneous}}
+      # Default operacional para GPU única 20GB: modo preemptivo (serving <-> training).
+      - GPU_CONCURRENCY_MODE=${GPU_CONCURRENCY_MODE:-${GPU_ORCHESTRATION_MODE:-preemptive}}
       - GPU_RETRY_AFTER_SECONDS=${GPU_RETRY_AFTER_SECONDS:-5}
       - GPU_ADMISSION_MIN_FREE_GB_LLM=${GPU_ADMISSION_MIN_FREE_GB_LLM:-2}
       - GPU_ADMISSION_MIN_FREE_GB_EMBEDDINGS=${GPU_ADMISSION_MIN_FREE_GB_EMBEDDINGS:-1.5}
@@ -667,7 +668,7 @@ services:
   # ===========================================================================
 
   # ===========================================================================
-  # LLM (texto) - Qwen2.5 7B Instruct (AWQ)
+  # LLM (texto) - Qwen3 8B (AWQ)
   # ===========================================================================
   gpu-llm:
     image: ${IMAGE_PREFIX}-llm-qwen25:${IMAGE_TAG:?IMAGE_TAG obrigatório}
@@ -680,9 +681,9 @@ services:
     environment:
       - NVIDIA_VISIBLE_DEVICES=0
       - CUDA_VISIBLE_DEVICES=0
-      - MODEL_NAME=${LLM_MODEL_NAME:-Qwen/Qwen2.5-7B-Instruct-AWQ}
+      - MODEL_NAME=${LLM_MODEL_NAME:-Qwen/Qwen3-8B-AWQ}
       - QUANTIZATION=awq
-      # Redução de KV cache para coexistência simultânea LLM + Embeddings + Trainer em 20GB.
+      # Ajuste conservador de KV cache para operação segura em GPU única de 20GB.
       - LLM_MAX_MODEL_LEN=${LLM_MAX_MODEL_LEN:-4096}
       - LLM_GPU_MEMORY_UTILIZATION=${LLM_GPU_MEMORY_UTILIZATION:-0.36}
       - LLM_MAX_NUM_BATCHED_TOKENS=${LLM_MAX_NUM_BATCHED_TOKENS:-1024}
@@ -731,6 +732,8 @@ services:
 
   # Embeddings GPU - Qwen3-Embedding-0.6B INT8
   # Gate 2: Quantizado para INT8 (budget ~2-3GB VRAM, dependendo do backend)
+  # Em modo preemptivo, este container é desligado automaticamente durante training
+  # pelo gpu-manager (single GPU 20GB).
   gpu-embeddings:
     image: ${IMAGE_PREFIX}-embeddings-gpu:${IMAGE_TAG:?IMAGE_TAG obrigatório}
     platform: linux/amd64
@@ -794,9 +797,9 @@ services:
       - PORT=8000
       - HF_TOKEN=${HF_TOKEN}
       - STORAGE_DIR=/opt/alice/uploads/training
-      # Gate 2 (SSOT): Treinamento deve usar o MESMO modelo base do LLM (texto),
-      # evitando divergência entre inference e fine-tuning.
-      - BASE_MODEL=${LLM_MODEL_NAME:-Qwen/Qwen2.5-7B-Instruct-AWQ}
+      # SSOT Qwen3: base de treinamento é desacoplada do serving AWQ.
+      # Serving usa LLM_MODEL_NAME (AWQ); training usa TRAINER_BASE_MODEL (base densa).
+      - BASE_MODEL=${TRAINER_BASE_MODEL:-Qwen/Qwen3-8B}
       - TRAINING_METHOD=qlora
     volumes:
       - /opt/alice/uploads:/opt/alice/uploads:rw

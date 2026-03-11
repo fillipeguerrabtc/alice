@@ -29,7 +29,8 @@ services:
       - PORT=8000
       - HF_TOKEN=${HF_TOKEN}
       - STORAGE_DIR=/opt/alice/uploads/training
-      - BASE_MODEL=${LLM_MODEL_NAME:-Qwen/Qwen2.5-7B-Instruct-AWQ}
+      # SSOT Qwen3: base de treinamento dedicada, desacoplada do modelo serving AWQ.
+      - BASE_MODEL=${TRAINER_BASE_MODEL:-Qwen/Qwen3-8B}
       - TRAINING_METHOD=qlora
     volumes:
       - /opt/alice/uploads:/opt/alice/uploads:rw

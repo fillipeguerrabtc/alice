@@ -4,8 +4,70 @@
 **Data:** 11 de Marco de 2026
 
 ## Rodada Atual
-- Rodada: 8
+- Rodada: 9
 - Status: Concluída
+
+## Rodada 9 - Início
+
+### Objetivo
+Trocar o runtime de produção para Qwen3 com separação correta entre serving e training em GPU única de 20GB, mantendo rollout seguro e compatibilidade operacional existente.
+
+### Premissas
+- A FSM canônica do `gpu-manager` já opera em modo preemptivo com estado durável e endpoints canônicos.
+- O contrato de reasoning mode já está implementado em backend/frontend e precisa ser suportado pelo runtime LLM com Qwen3.
+- A estrutura de deploy e nomes de serviços/imagens deve ser preservada sempre que possível para reduzir risco de rollout.
+- Embeddings deve permanecer desligado durante training por orquestração, sem lógica paralela no compose.
+
+### Escopo
+- Atualizar `infra/docker/stacks/docker-compose.alice.yml` para defaults de Qwen3:
+  - serving: `Qwen/Qwen3-8B-AWQ`;
+  - training base: `Qwen/Qwen3-8B`;
+  - embeddings: `Qwen/Qwen3-Embedding-0.6B`.
+- Remover acoplamento indevido entre env de serving e env de trainer.
+- Ajustar default de concorrência para o modo exclusivo/preemptivo.
+- Ajustar entrypoint/Dockerfile do LLM para operação com Qwen3 e controle de reasoning.
+- Atualizar comentários/docs técnicos defasados no escopo de infra desta rodada.
+
+## Rodada 9 - Conclusão
+
+### Alterações
+- `infra/docker/stacks/docker-compose.alice.yml`:
+  - defaults de modelo atualizados para Qwen3 no serving (`Qwen/Qwen3-8B-AWQ`) e no gateway (`DEFAULT_LLM_MODEL`);
+  - default de concorrência ajustado para preemptivo em GPU única:
+    - `GPU_CONCURRENCY_MODE=${GPU_CONCURRENCY_MODE:-${GPU_ORCHESTRATION_MODE:-preemptive}}`;
+  - base de treinamento desacoplada do serving:
+    - `BASE_MODEL=${TRAINER_BASE_MODEL:-Qwen/Qwen3-8B}`;
+  - comentários técnicos atualizados para refletir preempção e desligamento de embeddings durante training por orquestração.
+- `infra/docker/stacks/docker-compose.gpu-training.yml`:
+  - fallback do orquestrador alinhado ao desacoplamento:
+    - `BASE_MODEL=${TRAINER_BASE_MODEL:-Qwen/Qwen3-8B}`.
+- `infra/docker/.env.prod.example`:
+  - defaults de produção alinhados ao modo preemptivo em single GPU 20GB;
+  - inclusão de variáveis SSOT de modelo:
+    - `DEFAULT_LLM_MODEL=Qwen/Qwen3-8B-AWQ`
+    - `LLM_MODEL_NAME=Qwen/Qwen3-8B-AWQ`
+    - `TRAINER_BASE_MODEL=Qwen/Qwen3-8B`
+    - `TEXT_MODEL_NAME=Qwen/Qwen3-Embedding-0.6B`.
+- `docker/gpu/llm-qwen25/entrypoint.sh`:
+  - atualização para contexto Qwen3;
+  - adição de controle validado para `LLM_TRUST_REMOTE_CODE/TRUST_REMOTE_CODE` (booleano) com aplicação condicional de `--trust-remote-code`;
+  - logs de startup ampliados para auditoria do modo ativo e compatibilidade de reasoning por `chat_template_kwargs.enable_thinking`.
+- `docker/gpu/llm-qwen25/Dockerfile`:
+  - defaults e metadados atualizados para Qwen3 (`MODEL_NAME=Qwen/Qwen3-8B-AWQ`) sem renomear artefatos de imagem, preservando estratégia de rollout.
+
+### Validações
+Executadas em sequência, sem paralelização:
+1. `typecheck` (`cmd.exe /c pnpm typecheck`) -> OK
+2. `testes` (`cmd.exe /c pnpm test`) -> OK (125 arquivos, 1371 testes)
+3. `eslint` (`cmd.exe /c pnpm lint`) -> OK
+4. `build` (`cmd.exe /c pnpm build`) -> OK
+
+### Riscos
+- O nome da imagem do serving (`-llm-qwen25`) foi preservado por segurança de rollout, mesmo com runtime Qwen3; a nomenclatura pode gerar ambiguidade operacional até uma janela dedicada de rename controlado.
+- `--trust-remote-code` passou a ser default no entrypoint para suportar melhor comportamento de template/tokenizer do Qwen3; recomenda-se manter origem de modelo restrita a repositórios confiáveis.
+
+### Próximo Passo
+Aguardar prompt da próxima rodada para continuidade da migração.
 
 ## Rodada 8 - Início
 

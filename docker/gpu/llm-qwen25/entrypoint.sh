@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# Qwen2.5 7B (AWQ) - vLLM Entrypoint (LLM texto + LoRA adapters)
+# Qwen3 8B (AWQ) - vLLM Entrypoint (LLM texto + LoRA adapters)
 # =============================================================================
 # GPU local dedicada: Texto + Embeddings + ASR
 # Vision/Geração de imagens: OpenAI API (somente OPENAI_API_KEY) - fora deste container.
@@ -13,7 +13,7 @@
 # - Impacto VRAM: ~50-100MB por adapter rank-16 (negligível no budget 20GB)
 #
 # Autor: Fillipe Guerra
-# Data: 09 de Fevereiro de 2026
+# Data: 11 de Marco de 2026
 # =============================================================================
 
 set -e
@@ -110,6 +110,10 @@ PREFIX_CACHING_RESOLVED="$(resolve_env_value "true" "LLM_ENABLE_PREFIX_CACHING" 
 PREFIX_CACHING_VALUE="${PREFIX_CACHING_RESOLVED%%|*}"
 PREFIX_CACHING_SOURCE="${PREFIX_CACHING_RESOLVED#*|}"
 
+TRUST_REMOTE_CODE_RESOLVED="$(resolve_env_value "true" "LLM_TRUST_REMOTE_CODE" "TRUST_REMOTE_CODE")"
+TRUST_REMOTE_CODE_VALUE="${TRUST_REMOTE_CODE_RESOLVED%%|*}"
+TRUST_REMOTE_CODE_SOURCE="${TRUST_REMOTE_CODE_RESOLVED#*|}"
+
 validate_integer_env "MAX_MODEL_LEN/LLM_MAX_MODEL_LEN" "${MAX_MODEL_LEN_VALUE}" "1"
 validate_integer_env "MAX_NUM_SEQS/LLM_MAX_NUM_SEQS" "${MAX_NUM_SEQS_VALUE}" "1"
 validate_integer_env "MAX_NUM_BATCHED_TOKENS/LLM_MAX_NUM_BATCHED_TOKENS" "${MAX_BATCHED_TOKENS_VALUE}" "1"
@@ -131,6 +135,11 @@ if [ "${PREFIX_CACHING_VALUE}" != "true" ] && [ "${PREFIX_CACHING_VALUE}" != "fa
   exit 1
 fi
 
+if [ "${TRUST_REMOTE_CODE_VALUE}" != "true" ] && [ "${TRUST_REMOTE_CODE_VALUE}" != "false" ]; then
+  echo "ERROR: TRUST_REMOTE_CODE/LLM_TRUST_REMOTE_CODE deve ser true ou false (valor atual: ${TRUST_REMOTE_CODE_VALUE})"
+  exit 1
+fi
+
 warn_if_legacy_source "${MAX_MODEL_LEN_SOURCE}" "LLM_MAX_MODEL_LEN" "MAX_MODEL_LEN"
 warn_if_legacy_source "${MAX_NUM_SEQS_SOURCE}" "LLM_MAX_NUM_SEQS" "MAX_NUM_SEQS"
 warn_if_legacy_source "${MAX_BATCHED_TOKENS_SOURCE}" "LLM_MAX_NUM_BATCHED_TOKENS" "MAX_NUM_BATCHED_TOKENS"
@@ -139,6 +148,7 @@ warn_if_legacy_source "${KV_CACHE_DTYPE_SOURCE}" "LLM_KV_CACHE_DTYPE" "KV_CACHE_
 warn_if_legacy_source "${KV_OFFLOADING_SIZE_GB_SOURCE}" "LLM_KV_OFFLOADING_SIZE_GB" "KV_OFFLOADING_SIZE_GB"
 warn_if_legacy_source "${KV_OFFLOADING_BACKEND_SOURCE}" "LLM_KV_OFFLOADING_BACKEND" "KV_OFFLOADING_BACKEND"
 warn_if_legacy_source "${PREFIX_CACHING_SOURCE}" "LLM_ENABLE_PREFIX_CACHING" "ENABLE_PREFIX_CACHING"
+warn_if_legacy_source "${TRUST_REMOTE_CODE_SOURCE}" "LLM_TRUST_REMOTE_CODE" "TRUST_REMOTE_CODE"
 
 KV_OFFLOADING_ARGS=""
 if awk "BEGIN { exit !(${KV_OFFLOADING_SIZE_GB_VALUE} > 0) }"; then
@@ -150,7 +160,14 @@ if [ "${PREFIX_CACHING_VALUE}" = "true" ]; then
   PREFIX_CACHING_ARGS="--enable-prefix-caching"
 fi
 
-echo "=== Alice LLM (Qwen2.5 7B Instruct AWQ + LoRA) ==="
+TRUST_REMOTE_CODE_ARGS=""
+if [ "${TRUST_REMOTE_CODE_VALUE}" = "true" ]; then
+  # Qwen3 usa chat template/metadata do modelo para controlar reasoning por request
+  # (chat_template_kwargs.enable_thinking). Este flag mantém compatibilidade.
+  TRUST_REMOTE_CODE_ARGS="--trust-remote-code"
+fi
+
+echo "=== Alice LLM (Qwen3 8B AWQ + LoRA) ==="
 echo "Model: ${MODEL_NAME}"
 echo "Quantization: ${QUANTIZATION}"
 echo "Max Model Length: ${MAX_MODEL_LEN_VALUE} (source=${MAX_MODEL_LEN_SOURCE})"
@@ -161,6 +178,7 @@ echo "KV Cache DType: ${KV_CACHE_DTYPE_VALUE} (source=${KV_CACHE_DTYPE_SOURCE})"
 echo "KV Offloading Size (GB): ${KV_OFFLOADING_SIZE_GB_VALUE} (source=${KV_OFFLOADING_SIZE_GB_SOURCE})"
 echo "KV Offloading Backend: ${KV_OFFLOADING_BACKEND_VALUE} (source=${KV_OFFLOADING_BACKEND_SOURCE})"
 echo "Prefix Caching: ${PREFIX_CACHING_VALUE} (source=${PREFIX_CACHING_SOURCE})"
+echo "Trust Remote Code: ${TRUST_REMOTE_CODE_VALUE} (source=${TRUST_REMOTE_CODE_SOURCE})"
 echo "LoRA Enabled: ${ENABLE_LORA:-true}"
 echo "Max LoRA Rank: ${MAX_LORA_RANK:-16}"
 echo "Max LoRAs: ${MAX_LORAS:-2}"
@@ -212,6 +230,7 @@ exec python3 -m vllm.entrypoints.openai.api_server \
   --kv-cache-dtype "${KV_CACHE_DTYPE_VALUE}" \
   --tensor-parallel-size "${TENSOR_PARALLEL_SIZE}" \
   --structured-outputs-config '{"backend":"outlines"}' \
+  ${TRUST_REMOTE_CODE_ARGS} \
   ${PREFIX_CACHING_ARGS} \
   ${LORA_ARGS} \
   ${KV_OFFLOADING_ARGS} \

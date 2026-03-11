@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.4
 # =============================================================================
-# Alice Enterprise Platform - LLM (Texto + LoRA) - Qwen2.5 7B Instruct (AWQ)
+# Alice Enterprise Platform - LLM (Texto + LoRA) - Qwen3 8B (AWQ)
 # =============================================================================
 # Objetivo:
 # - Servir LLM **texto-only** para Chat/Trading via OpenAI-compatible API (vLLM)
@@ -11,7 +11,7 @@
 # - vllm/vllm-openai:v0.12.0 (imagem oficial pública)
 #
 # Modelo:
-# - Qwen/Qwen2.5-7B-Instruct-AWQ (AWQ 4-bit)
+# - Qwen/Qwen3-8B-AWQ (AWQ 4-bit)
 # - LoRA adapters: carregados em runtime via filesystem resolver (~50-100MB extra)
 #
 # LoRA Architecture:
@@ -21,14 +21,14 @@
 # - Impacto VRAM: ~50-100MB por adapter rank-16 (negligível no budget 20GB)
 #
 # Autor: Fillipe Guerra
-# Data: 09 de Fevereiro de 2026
+# Data: 11 de Marco de 2026
 # =============================================================================
 
 FROM vllm/vllm-openai:v0.12.0
 
 LABEL maintainer="Fillipe Guerra"
-LABEL description="Qwen2.5 7B Instruct (AWQ + LoRA) - LLM vLLM inference server"
-LABEL version="1.1.0"
+LABEL description="Qwen3 8B (AWQ + LoRA) - LLM vLLM inference server"
+LABEL version="1.2.0"
 LABEL architecture="gpu-text-only-openai-vision-lora"
 
 WORKDIR /app
@@ -38,7 +38,7 @@ COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
 # Configuração do modelo (valores podem ser sobrescritos por env no docker-compose)
-ENV MODEL_NAME="Qwen/Qwen2.5-7B-Instruct-AWQ"
+ENV MODEL_NAME="Qwen/Qwen3-8B-AWQ"
 # awq_marlin usa kernels Marlin otimizados para AWQ no vLLM 0.12.0+
 # Benchmark: awq ~6-7 tok/s → awq_marlin ~20-50+ tok/s (2-4x melhoria)
 ENV QUANTIZATION="awq_marlin"
@@ -69,4 +69,3 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
     CMD python3 /app/healthcheck.py || exit 1
 
 ENTRYPOINT ["/app/entrypoint.sh"]
-
