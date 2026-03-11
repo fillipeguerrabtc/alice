@@ -7,6 +7,7 @@
 > **Idioma:** Português Brasileiro (termos técnicos em inglês)
 > 
 > **Notas de atualização:** detalhes de CI/CD, Smart Deploy e troubleshooting ficam em `docs/DEPLOYMENT.md` (SSOT). Hardening de DR/restore (offsite criptografado + readiness checks) fica em `docs/DR-RUNBOOK.md` e `apps/observability-service/src/backup-orchestrator.ts`.
+> **Fonte canônica de execução do backlog:** `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
 
 ### Atualizações incrementais recentes (10/03/2026)
 
@@ -22,7 +23,6 @@
 - Frontend Wise: consolidação de composição em `apps/frontend-service/src/pages/wise-payments/use-wise-page-composition.ts` com remoção de wrappers redundantes (`use-wise-tab-props.ts`, `build-wise-profile-scoped-tab-props.ts`, `build-wise-operational-tabs-props.ts`, `build-wise-tab-profile-props.ts`, `build-wise-tab-operational-props.ts` e `wise-tab-props-types.ts`), reduzindo fragmentação local sem alterar contratos.
 - Governança de execução: novo guardrail `scripts/verify-enterprise-focus.sh` para monitorar churn documental, concentração de foco por domínio e densidade/fragmentação de containers frontend.
 - Frontend Trading/Chat: redução incremental de densidade em `apps/frontend-service/src/pages/TradingContent.tsx` (1387 -> 1331 linhas) e `apps/frontend-service/src/pages/Chat/useChatPageLayoutController.ts` (612 -> 597 linhas), mantendo comportamento e contratos.
-- Plano por blocos (`docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`) encerrado formalmente com status 100% concluído após fechamento de residuais críticos de frontend e consolidação documental SSOT.
 - Frontend Trading: `apps/frontend-service/src/pages/TradingContent.tsx` recebeu cleanup final de composição de `section-props` por domínio (`primaryTabsOptions`, `operationalTabsOptions`, `dialogsOptions`, `layoutOptions`) mantendo semântica de contratos e comportamento.
 - Frontend Chat: `apps/frontend-service/src/pages/Chat/useChatPageLayoutController.ts` recebeu cleanup final de layout controller com normalização de handlers, flags derivadas e remoção de wrappers inline residuais.
 - Frontend Trading: `apps/frontend-service/src/pages/TradingContent.tsx` recebeu redução de densidade na composição de `section-props/options` com contextos compartilhados de i18n/mercado, preservando contratos de UI/API e mantendo o composition root sem novos micro-módulos.
@@ -2170,7 +2170,7 @@ A plataforma possui uma **suite de testes unitários completa** usando **Vitest*
 
 *Autor: Fillipe Guerra*  
 *Data: 10 de Março de 2026*
-*Versão: 3.9.313 - Plano enterprise 100% concluído com fechamento residual de frontend*
+*Versão: 3.9.316 - Hardening P0 consolidado com status oficial no tracking canônico*
 *Stack: Express 5.2, Vite 7.3, Tailwind CSS 4.1, HTTP/3 via Caddy*
 *LLM: Qwen2.5 7B Instruct (AWQ) via GPU Manager Service (Hetzner GEX44) - Gate 2*
 *Embeddings: Qwen3-Embedding-0.6B INT8 (1024 dim) + OpenAI Vision (descrição textual, sem embeddings de imagem)*

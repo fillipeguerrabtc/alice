@@ -4,6 +4,7 @@
 **Data:** 10 de Março de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
 **Versão:** 15.18 - Correção de deploy (ordem do find com -ignore_readdir_race) + hardening pós-plano
+**Fonte canônica de status de execução por rodada:** `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`
 
 ---
 
@@ -24,7 +25,6 @@
 - **Correção objetiva dos 4 itens finais de review (10/03/2026):** consolidado em `apps/frontend-service/src/pages/wise-payments/use-wise-page-composition.ts` com remoção de 6 wrappers redundantes (`use-wise-tab-props.ts`, `build-wise-profile-scoped-tab-props.ts`, `build-wise-operational-tabs-props.ts`, `build-wise-tab-profile-props.ts`, `build-wise-tab-operational-props.ts` e `wise-tab-props-types.ts`), reduzindo o domínio Wise de 193 para 187 arquivos TS/TSX e de 14.245 para 14.155 linhas.
 - **Governança anti-churn e anti-desbalanceamento (10/03/2026):** novo guardrail operacional `scripts/verify-enterprise-focus.sh` adiciona checagens de churn documental, concentração de foco por domínio e densidade/fragmentação de frontend para evitar regressão em próximas rodadas.
 - **Densidade de containers reduzida (10/03/2026):** `apps/frontend-service/src/pages/TradingContent.tsx` foi reduzido de 1387 para 1331 linhas e `apps/frontend-service/src/pages/Chat/useChatPageLayoutController.ts` de 612 para 597 linhas sem alteração de comportamento, contratos de API ou RBAC.
-- **Fechamento formal do plano enterprise em 100% (10/03/2026):** status dos blocos P0/P1/P2 consolidado como concluído em `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md` após fechamento dos residuais críticos de frontend e varredura final cruzada.
 - **Cleanup final de residual em Trading/Chat (10/03/2026):** `apps/frontend-service/src/pages/TradingContent.tsx` recebeu composição explícita por domínio para `section-props` (`primaryTabsOptions`, `operationalTabsOptions`, `dialogsOptions`, `layoutOptions`) e `apps/frontend-service/src/pages/Chat/useChatPageLayoutController.ts` recebeu normalização final de handlers/flags com remoção de wrappers inline residuais, sem alteração de API/RBAC.
 - **Cleanup residual de composição em Trading/Chat (10/03/2026):** `apps/frontend-service/src/pages/TradingContent.tsx` recebeu redução de densidade da composição de `section-props/options` via contextos compartilhados (i18n + seleção de mercado/símbolo), e `apps/frontend-service/src/pages/Chat/useChatPageLayoutController.ts` recebeu cleanup de orquestração (callbacks nomeados e remoção de wrappers inline redundantes), sem alteração de API/RBAC.
 - **Auditoria anti-fragmentação dos últimos 400 commits (10/03/2026):** análise objetiva de churn confirmou hotspot em `apps/frontend-service/src/pages/wise-payments` com 193 arquivos TS/TSX e 14.245 linhas; execução ajustada para não abrir novos micro-boundaries fora de necessidade crítica até fechamento do P2.

@@ -65,10 +65,12 @@
 - Observabilidade: `docs/OBSERVABILITY.md`
 - Status real atual: `docs/STATUS-REAL-ATUAL.md`
 - Secrets e permissões: `docs/SECRETS.md`, `docs/PERMISSIONS.md`
+- Tracking canônico de execução do backlog: `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`
 
 ## Atualização incremental mais recente (10/03/2026)
 
 - Correção de deploy em permissões ClickHouse: `infra/scripts/fix-production-permissions.sh` foi ajustado para montar `find` com path antes da opção `-ignore_readdir_race`, eliminando o erro fatal `find: paths must precede expression` durante `--create` no servidor.
+- Backlog P0 governado por rounds: fonte canônica de status consolidada em `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md` (status real do escopo P0 e histórico de validações por rodada).
 - Hardening de dependências produtivas aplicado no SSOT (`package.json` + `pnpm-lock.yaml`) com `pnpm.overrides` para `minimatch`, `underscore`, `lodash`, `qs` e `undici`; validação de segurança concluída com `pnpm audit --prod --audit-level high` em status **No known vulnerabilities found**.
 - Training com idempotência mandatory por default: `TRAINING_RUN_START_REQUIRE_IDEMPOTENCY_KEY` atualizado para `true` em `apps/training-service/src/index.ts`, reforçando fail-closed em criação/start de run sem `x-idempotency-key`.
 - Redução incremental dos monólitos críticos sem alteração funcional:
@@ -80,7 +82,6 @@
 - Consolidação técnica adicional no frontend: `wise-payments` reduzido para 176 arquivos TS/TSX e 13.976 linhas (arquivos `<40` linhas reduzidos para 16), `TradingContent.tsx` reduzido para 1321 linhas e `useChatPageLayoutController.ts` para 591 linhas.
 - Correção dos 4 itens finais de review: WisePayments teve consolidação de wrappers redundantes em `apps/frontend-service/src/pages/wise-payments/use-wise-page-composition.ts` com redução de 193 para 187 arquivos TS/TSX (14.245 -> 14.155 linhas); `TradingContent.tsx` e `useChatPageLayoutController.ts` tiveram redução incremental de densidade.
 - Governança operacional: novo script `scripts/verify-enterprise-focus.sh` para monitorar churn documental, concentração de foco por domínio e densidade/fragmentação de frontend em janelas de commits.
-- Plano enterprise por blocos: fechamento formal com conclusão dos blocos remanescentes (P0/P1/P2) e consolidação do status em 100% no SSOT `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`.
 - Frontend Trading: `apps/frontend-service/src/pages/TradingContent.tsx` recebeu cleanup final da orquestração de `section-props` com montagem explícita por domínio (`primaryTabsOptions`, `operationalTabsOptions`, `dialogsOptions`, `layoutOptions`) sem alteração funcional.
 - Frontend Chat: `apps/frontend-service/src/pages/Chat/useChatPageLayoutController.ts` recebeu cleanup final do layout controller (remoção de wrappers inline residuais e normalização de handlers/flags de composição) sem alteração funcional.
 - Frontend Trading: `apps/frontend-service/src/pages/TradingContent.tsx` recebeu redução de densidade na composição de `section-props/options` com contextos compartilhados (`locale/t/timezone` e `selected market context`), preservando contratos de UI/API.

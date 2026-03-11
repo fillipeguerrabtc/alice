@@ -15,6 +15,7 @@
 | `docs/ARQUITETURA-GPU-MANAGER.md` | Arquitetura GPU (Gate 2) | Sim | VRAM budget, serviços GPU, OpenAI Vision/Images |
 | `docs/DEPLOYMENT.md` | Deploy e CI/CD | Sim | Workflow, ordem de deploy, checklist e troubleshooting |
 | `docs/STATUS-REAL-ATUAL.md` | Estado atual (snapshot factual) | Sim | Referência operacional consolidada |
+| `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md` | Tracking canônico do backlog por rodada | Sim | Fonte de verdade de status/validações/commits do backlog governado |
 | `docs/OBSERVABILITY.md` | Observabilidade (métricas/dashboards/alertas) | Sim | Inclui auditoria consolidada |
 | `docs/SISTEMA-APRENDIZADO.md` | Aprendizado contínuo (auto-learning) | Sim | Fluxos e status do sistema de aprendizado |
 | `docs/TRAINING.md` | Treinamento/QLoRA | Sim | API, schedule, requisitos e fluxo |
@@ -24,6 +25,13 @@
 | `docs/PERMISSIONS.md` | SSOT de permissões | Sim | UIDs/GIDs + RBAC de aplicação |
 | `docs/GUIA-CONFIGURACAO-INICIAL.md` | Configuração inicial (passo a passo) | Sim | Manual completo de onboarding |
 | `docs/ROADMAP.md` | Funcionalidades futuras (Trading, integrações) | Sim | Itens de expansão, não pendências |
+
+---
+
+## Fonte canônica de execução
+
+- O status oficial do backlog governado por rounds está em `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Em caso de divergência entre relatórios históricos e status de execução, prevalece o tracking canônico acima.
 
 ---
 
@@ -37,7 +45,6 @@
 - **Consolidação histórica e governança contínua (10/03/2026):** rebase/squash não-interativo concluído em base `origin/main` (backup em `backup/pre-squash-20260310-1`), com enforcement contínuo de guardrails via `package.json` (`verify:enterprise-focus`, `verify:enterprise-focus:full`, `validate:enterprise`) e baseline pós-consolidação em status OK para janelas de 50 e 418 commits.
 - **Consolidação técnica adicional em Wise/Trading/Chat (10/03/2026):** `wise-payments` reduzido para 176 arquivos TS/TSX e 13.976 linhas, arquivos `<40` linhas reduzidos para 16, `TradingContent.tsx` reduzido para 1321 linhas e `useChatPageLayoutController.ts` para 591 linhas.
 - **Correção dos 4 itens finais de review (10/03/2026):** WisePayments teve consolidação de wrappers redundantes em `apps/frontend-service/src/pages/wise-payments/use-wise-page-composition.ts` com redução de 193 para 187 arquivos TS/TSX; `TradingContent.tsx` e `useChatPageLayoutController.ts` tiveram redução incremental de densidade; e foi adicionado o guardrail operacional `scripts/verify-enterprise-focus.sh` para controlar churn documental, foco por domínio e fragmentação/densidade de frontend.
-- **Fechamento formal do plano enterprise em 100% (10/03/2026):** status de execução consolidado como concluído em `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md` após fechamento de residuais críticos de frontend e validação sequencial final por componente alterado.
 - **Cleanup final de residual em Trading/Chat (10/03/2026):** `apps/frontend-service/src/pages/TradingContent.tsx` recebeu composição explícita por domínio para `section-props` e `apps/frontend-service/src/pages/Chat/useChatPageLayoutController.ts` recebeu normalização final de handlers/flags com remoção de wrappers inline residuais, sem alteração de API/RBAC.
 - **Cleanup residual de composição em Trading/Chat (10/03/2026):** `apps/frontend-service/src/pages/TradingContent.tsx` recebeu redução de densidade da composição de `section-props/options` via contextos compartilhados de i18n e mercado/símbolo, e `apps/frontend-service/src/pages/Chat/useChatPageLayoutController.ts` recebeu cleanup de orquestração com callbacks nomeados e remoção de wrappers inline redundantes, sem alteração de API/RBAC.
 - **Auditoria anti-fragmentação (400 commits) (10/03/2026):** análise de churn confirmou hotspot em `apps/frontend-service/src/pages/wise-payments` (193 arquivos TS/TSX, 14.245 linhas); baseline de execução atualizado para evitar nova micro-fragmentação e priorizar fechamento dos residuais críticos de `TradingContent` e `Chat`.

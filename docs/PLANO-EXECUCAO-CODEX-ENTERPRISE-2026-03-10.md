@@ -22,7 +22,7 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - `P0-GATEWAY-AUTH-04`: Concluído
 - `P0-CORE-SERVICES-05`: Concluído
 - `P0-EXT-GPU-06`: Concluído
-- `P0-DOCS-07`: Não iniciado
+- `P0-DOCS-07`: Concluído
 - `P1-API-01`: Não iniciado
 - `P1-AUTH-02`: Não iniciado
 - `P1-CHAT-03`: Não iniciado
@@ -43,7 +43,7 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - `P2-DOCS-06`: Não iniciado
 
 ## Bloco atual
-`P0-EXT-GPU-06` (Concluído)
+`P0-DOCS-07` (Concluído)
 
 ## Histórico de rodadas
 
@@ -276,15 +276,40 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
   - Novos parâmetros tipados com defaults operacionais (`WISE_API_TIMEOUT_MS`, `EXTERNAL_API_TIMEOUT_MS`) exigem alinhamento explícito no ambiente caso valores customizados sejam necessários.
 - Próximo bloco recomendado: `P0-DOCS-07`.
 
+### Rodada 7
+- Data: 2026-03-10
+- Bloco executado: `P0-DOCS-07`
+- Objetivo: Atualizar documentação canônica após execução do P0, consolidando arquitetura, status real, fontes de verdade e alinhamento factual entre docs principais e tracking.
+- Diagnóstico: Os docs canônicos tinham divergência de fonte de verdade para status de execução (incluindo referências históricas de conclusão global) e não destacavam explicitamente o tracking de rounds como autoridade para estado do backlog atual.
+- Arquivos lidos: `CLAUDE.md` (1-120), `README.md` (chunks), `docs/INDEX.md` (completo em chunks), `docs/ARQUITETURA.md` (regiões relevantes em chunks), `docs/STATUS-REAL-ATUAL.md` (completo em chunks), `docs/SECRETS.md`, `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Arquivos alterados: `README.md`, `docs/INDEX.md`, `docs/ARQUITETURA.md`, `docs/STATUS-REAL-ATUAL.md`, `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Validações executadas:
+  - `pnpm lint` (executado via `npx -y pnpm@10.26.2 lint`)
+  - `pnpm build` (executado via `npx -y pnpm@10.26.2 build`)
+  - Reexecução final após ajuste de consistência no rodapé de `docs/ARQUITETURA.md`: `pnpm lint` e `pnpm build` (executados via `npx -y pnpm@10.26.2 ...`).
+- Resultado das validações:
+  - Todas as validações obrigatórias da rodada foram aprovadas.
+  - As validações foram aprovadas em duas passagens consecutivas (validação inicial e revalidação final pós-ajuste documental).
+  - Observação de ambiente: binário global `pnpm` permanece quebrado; os comandos foram executados com `npx -y pnpm@10.26.2`, preservando os comandos lógicos exigidos.
+- Documentação atualizada: `README.md`, `docs/INDEX.md`, `docs/ARQUITETURA.md`, `docs/STATUS-REAL-ATUAL.md` e tracking canônico com fechamento factual do P0.
+- Commit realizado: `docs: update canonical architecture and status after p0 hardening`.
+- Pendências:
+  - Validar posteriormente no ambiente do usuário a correção do binário global `pnpm`.
+- Riscos ou bloqueios:
+  - Sem bloqueio ativo para continuação.
+  - Risco residual controlado: documentação histórica extensa permanece por rastreabilidade temporal; para status de execução do backlog prevalece o tracking canônico.
+- Próximo bloco recomendado: `P1-API-01`.
+
 ## Pendências abertas
 - Correção do binário global `pnpm` no ambiente local (fora do escopo deste bloco).
-- Reduzir leituras diretas de `process.env` remanescentes fora do escopo autorizado desta rodada, seguindo próximos blocos.
+- Reduzir leituras diretas de `process.env` remanescentes fora do escopo autorizado, seguindo próximos blocos.
 
 ## Riscos e bloqueios
 - Sem bloqueio ativo para continuação do backlog.
 - Risco residual controlado: existência de bridge compatível em `shared/schema.ts` para proteger integrações legadas não mapeadas em tempo de descoberta.
 - Risco residual controlado: parte das leituras de `process.env` permanece em áreas não tratadas neste bloco para evitar refatoração ampla fora do escopo autorizado.
 - Risco residual controlado: módulos de suporte multimodal do RAG dependem de fail-fast no entrypoint/execução para bloquear operação sem `OPENAI_API_KEY` em produção.
+- Risco residual controlado: documentação histórica volumosa pode conter contexto de planos anteriores; status atual de execução do backlog governado deve sempre ser consultado no tracking canônico.
 
 ## Próximos blocos permitidos
-- `P0-DOCS-07`
+- `P1-API-01`
