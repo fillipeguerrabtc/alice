@@ -11,7 +11,7 @@
 import express from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { createServer } from 'http';
-import { WebSocketServer, WebSocket } from 'ws';
+import { WebSocket } from 'ws';
 import cors from 'cors';
 import compression from 'compression';
 // CORREÇÃO PR#107 (10/01/2026): Usar prefixo 'node:' para módulos Node.js built-in
@@ -59,15 +59,11 @@ import {
   createAlicePrometheus,
   initRbacPrometheusMetrics,
   instrumentCircuitBreaker,
-  registerShutdownCallback,
-  ShutdownPriority,
   permissionCache,
   setPermissionResolver,
   requestGpuStream,
   validateAgentTenantConsistency,
   validateConversationTenantConsistency,
-  TRADING_CHANNEL_PREFIX,
-  TRADING_CHANNELS,
   PERMISSION_MAP,
   type AgentEvent,
   redactSensitivePayload,
@@ -83,7 +79,6 @@ import type { AuthContext } from '@alice/shared-utils';
 import type { Role } from '@alice/shared-utils';
 import { eq, desc, inArray, and, or, lt, gte, lte, sql, not, asc, isNull } from '@alice/database';
 import { z } from 'zod';
-import { createClient } from 'redis';
 import type { AgenticDetectors } from '@alice/shared';
 import {
   NamespaceProfileConfigSchema,
@@ -136,10 +131,26 @@ import { initTradingOrchestrator } from './trading-orchestrator.js';
 import { checkResponseCache, isGreeting as isGreetingMessage } from './response-cache.js';
 import {
   loadWsAgentAuthGovernancePolicyFromEnv,
-  resolveWsAgentAuthDecision,
-  resolveWsAgentCloseFrame,
 } from './ws-agent-auth-governance.js';
 import { createChatEnvParsers, loadChatRuntimeConfig } from './runtime-config.js';
+import {
+  createMainWebSocketServer,
+  createPendingAuthStore,
+  createTradingBroadcastRuntime,
+  buildTradingSubscriptionKey,
+  type TradingBroadcastMessageType,
+  type ExtendedWebSocket,
+} from './chat-websocket-runtime.js';
+import {
+  registerChatShutdownCallbacks,
+  startChatService,
+} from './chat-bootstrap.js';
+import {
+  initializeAgentWebSocketRuntime,
+} from './chat-agent-websocket.js';
+import {
+  registerChatImageRoutes,
+} from './chat-image-routes.js';
 
 // Logger centralizado: JSON em produção, pino-pretty em desenvolvimento
 const logger = createLogger('chat-service');
@@ -777,351 +788,26 @@ function verifyWebSocketOrigin(origin: string | undefined): boolean {
   return isAllowed;
 }
 
-// Mapa para armazenar auth result durante handshake (entre verifyClient e connection)
-const pendingAuthResults = new Map<string, WebSocketAuthResult>();
+const { pendingAuthResults, authCleanupInterval } = createPendingAuthStore({ logger });
 
-// SEGURANÇA: TTL para entradas pendentes (evita memory leak/DoS)
-// Entradas são removidas após 5 segundos ou quando usadas
-const PENDING_AUTH_TTL = 5000;
-
-// Cleanup periódico de entradas expiradas (a cada 30 segundos)
-setInterval(() => {
-  const now = Date.now();
-  let cleaned = 0;
-  for (const [key] of pendingAuthResults) {
-    // Chave contém timestamp: "ip:timestamp"
-    const timestamp = parseInt(key.split(':').pop() || '0', 10);
-    if (now - timestamp > PENDING_AUTH_TTL) {
-      pendingAuthResults.delete(key);
-      cleaned++;
-    }
-  }
-  if (cleaned > 0) {
-    logger.debug({ cleaned, remaining: pendingAuthResults.size }, 'Limpeza de auth results pendentes');
-  }
-}, 30000);
-
-// SEGURANÇA: maxPayload e ping/pong heartbeat (ws v8.18.3)
-// Autenticação via token efêmero (preferencial) ou sessão cookie (OWASP API2 2023)
-const wss = new WebSocketServer({ 
-  noServer: true,
-  maxPayload: 10 * 1024 * 1024, // 10MB max payload (OWASP WebSocket Security)
-  verifyClient: async (info, callback) => {
-    const origin = info.origin || info.req.headers.origin;
-    const cookies = info.req.headers.cookie;
-    
-    // Tentar autenticação via token efêmero (query param ?token=)
-    const url = new URL(info.req.url ?? '/', `http://${info.req.headers.host ?? 'localhost'}`);
-    const wsToken = url.searchParams.get('token');
-    
-    if (wsToken) {
-      const tokenPayload = verifyWsToken(wsToken, 'ws');
-      if (tokenPayload) {
-        const nonceValidation = await consumeWsTokenNonce(tokenPayload);
-        wsTokenNonceValidationTotal.inc({ result: nonceValidation.result });
-        if (!nonceValidation.accepted) {
-          logger.warn(
-            {
-              ip: info.req.socket?.remoteAddress,
-              result: nonceValidation.result,
-              aud: tokenPayload.aud,
-              tenantId: tokenPayload.tenantId,
-            },
-            'WebSocket: token efemero rejeitado por one-time-use'
-          );
-          callback(false, 401, 'Unauthorized');
-          return;
-        }
-
-        const authResult: WebSocketAuthResult = {
-          authenticated: true,
-          userId: tokenPayload.userId,
-          tenantId: tokenPayload.tenantId,
-          role: tokenPayload.role as Role,
-        };
-        const tempKey = `${info.req.socket?.remoteAddress}:${Date.now()}`;
-        pendingAuthResults.set(tempKey, authResult);
-        (info.req as unknown as { __authKey: string }).__authKey = tempKey;
-        callback(true);
-        return;
-      }
-      logger.warn({ ip: info.req.socket?.remoteAddress }, 'WebSocket: token efemero invalido ou expirado');
-      callback(false, 401, 'Unauthorized');
-      return;
-    }
-    
-    // Fallback: autenticação via cookie de sessão
-    const authResult = await authenticateWebSocketConnection(cookies, origin);
-    
-    if (!authResult.authenticated) {
-      logger.warn({ 
-        origin, 
-        error: authResult.error,
-        ip: info.req.socket?.remoteAddress,
-        hadToken: !!wsToken,
-      }, 'WebSocket: Conexão rejeitada - autenticação falhou');
-      callback(false, 401, authResult.error || 'Unauthorized');
-      return;
-    }
-    
-    // Armazenar resultado de auth para uso no connection handler
-    const tempKey = `${info.req.socket?.remoteAddress}:${Date.now()}`;
-    pendingAuthResults.set(tempKey, authResult);
-    (info.req as unknown as { __authKey: string }).__authKey = tempKey;
-    
-    callback(true);
-  },
+const { wss, heartbeatInterval } = createMainWebSocketServer({
+  logger,
+  pendingAuthResults,
+  authenticateWebSocketConnection,
+  verifyWsToken,
+  consumeWsTokenNonce,
+  wsTokenNonceValidationTotal,
 });
 
-// SEGURANÇA: Ping/Pong heartbeat para detectar conexões mortas (ws v8.18.3)
-const HEARTBEAT_INTERVAL = 30000; // 30 segundos
-const _CONNECTION_TIMEOUT = 35000; // 35 segundos (reservado para timeout de conexão)
-
-interface ExtendedWebSocket extends WebSocket {
-  isAlive?: boolean;
-  userId?: string;
-  tenantId?: string;
-  role?: Role;
-  clientKey?: string;
-  customRoleId?: string;
-  // Trading subscriptions (17/12/2025)
-  tradingSubscriptions?: Set<string>;
-  // Observability: evitar double-decrement de gauges
-  __activeSessionCounted?: boolean;
-}
-
-// Heartbeat para detectar conexões mortas
-const heartbeatInterval = setInterval(() => {
-  wss.clients.forEach((ws) => {
-    const extWs = ws as ExtendedWebSocket;
-    if (extWs.isAlive === false) {
-      logger.info({ userId: extWs.userId, tenantId: extWs.tenantId }, 'Terminando conexão WebSocket inativa (heartbeat timeout)');
-      return extWs.terminate();
-    }
-    extWs.isAlive = false;
-    extWs.ping();
-  });
-}, HEARTBEAT_INTERVAL);
-
-wss.on('close', () => {
-  clearInterval(heartbeatInterval);
+const {
+  initializeTradingBroadcastSubscriber,
+  closeTradingBroadcastSubscriber,
+} = createTradingBroadcastRuntime({
+  logger,
+  wss,
+  nodeEnv: process.env.NODE_ENV,
+  redisUrl: process.env.REDIS_URL,
 });
-
-// ============================================================================
-// TRADING BROADCAST (Redis Pub/Sub) - KuCoin real-time
-// ============================================================================
-
-type TradingBroadcastMessageType =
-  | 'ticker'
-  | 'orderbook'
-  | 'klines'
-  | 'trades'
-  | 'orders'
-  | 'positions'
-  | 'balance'
-  | 'control';
-
-interface TradingBroadcastMessage {
-  type: TradingBroadcastMessageType;
-  symbol?: string;
-  marketType?: 'futures' | 'spot' | 'margin';
-  marginMode?: 'cross' | 'isolated';
-  tenantId?: string;
-  data: unknown;
-  timestamp: number;
-}
-
-let tradingSubscriber: ReturnType<typeof createClient> | null = null;
-
-function extractTradingSymbol(message: TradingBroadcastMessage): string | null {
-  if (message.symbol) return message.symbol.toUpperCase();
-  if (message.data && typeof message.data === 'object' && 'symbol' in message.data) {
-    const value = (message.data as { symbol?: unknown }).symbol;
-    if (typeof value === 'string' && value.trim()) {
-      return value.trim().toUpperCase();
-    }
-  }
-  return null;
-}
-
-function extractTradingInterval(message: TradingBroadcastMessage): string | null {
-  if (message.data && typeof message.data === 'object' && 'interval' in message.data) {
-    const value = (message.data as { interval?: unknown }).interval;
-    if (typeof value === 'string' && value.trim()) {
-      return value.trim();
-    }
-  }
-  return null;
-}
-
-function extractTradingMarketType(message: TradingBroadcastMessage): 'futures' | 'spot' | 'margin' | null {
-  if (message.marketType) return message.marketType;
-  if (message.data && typeof message.data === 'object' && 'marketType' in message.data) {
-    const value = (message.data as { marketType?: unknown }).marketType;
-    if (value === 'futures' || value === 'spot' || value === 'margin') {
-      return value;
-    }
-  }
-  return null;
-}
-
-function extractTradingMarginMode(message: TradingBroadcastMessage): 'cross' | 'isolated' | null {
-  if (message.marginMode) return message.marginMode;
-  if (message.data && typeof message.data === 'object' && 'marginMode' in message.data) {
-    const value = (message.data as { marginMode?: unknown }).marginMode;
-    if (value === 'cross' || value === 'isolated') {
-      return value;
-    }
-  }
-  return null;
-}
-
-function buildTradingSubscriptionKey(params: {
-  channel: TradingBroadcastMessageType;
-  symbol: string;
-  interval?: string | null;
-  marketType?: 'futures' | 'spot' | 'margin' | null;
-  marginMode?: 'cross' | 'isolated' | null;
-}): string {
-  const normalizedSymbol = params.symbol.toUpperCase();
-  const marketType = params.marketType ?? 'futures';
-  // Futures não diferencia marginMode no broadcast público de market data.
-  // Normalizamos para "cross" para evitar mismatch de chave (isolated vs cross).
-  const marginMode = marketType === 'futures' ? 'cross' : (params.marginMode ?? 'cross');
-  if (params.channel === 'klines') {
-    const interval = params.interval ?? '';
-    return `${params.channel}:${marketType}:${marginMode}:${normalizedSymbol}:${interval}`;
-  }
-  return `${params.channel}:${marketType}:${marginMode}:${normalizedSymbol}`;
-}
-
-function shouldDeliverTradingMessage(
-  extWs: ExtendedWebSocket,
-  message: TradingBroadcastMessage,
-  symbol: string | null
-): boolean {
-  if (message.tenantId && extWs.tenantId && message.tenantId !== extWs.tenantId) {
-    return false;
-  }
-  if (message.type === 'control') {
-    return true;
-  }
-  if (!symbol || !extWs.tradingSubscriptions || extWs.tradingSubscriptions.size === 0) {
-    return false;
-  }
-  const marketType = extractTradingMarketType(message) ?? 'futures';
-  const marginMode = extractTradingMarginMode(message) ?? 'cross';
-  if (message.type === 'klines') {
-    const interval = extractTradingInterval(message);
-    if (!interval) return false;
-    return extWs.tradingSubscriptions.has(
-      buildTradingSubscriptionKey({ channel: message.type, symbol, interval, marketType, marginMode })
-    );
-  }
-  return extWs.tradingSubscriptions.has(
-    buildTradingSubscriptionKey({ channel: message.type, symbol, marketType, marginMode })
-  );
-}
-
-let tradingBroadcastMessageCounter = 0;
-function broadcastTradingMessage(message: TradingBroadcastMessage): void {
-  const symbol = extractTradingSymbol(message);
-  const marketType = extractTradingMarketType(message);
-  const marginMode = extractTradingMarginMode(message);
-  const payload = {
-    type: `trading:${message.type}`,
-    symbol: symbol ?? message.symbol,
-    marketType,
-    marginMode,
-    data: message.data,
-    timestamp: message.timestamp,
-  };
-
-  let openClients = 0;
-  let clientsWithSubscriptions = 0;
-  let deliveredClients = 0;
-
-  wss.clients.forEach((client) => {
-    const wsClient = client as ExtendedWebSocket;
-    if (client.readyState !== WebSocket.OPEN) return;
-    openClients++;
-    if (wsClient.tradingSubscriptions && wsClient.tradingSubscriptions.size > 0) {
-      clientsWithSubscriptions++;
-    }
-    if (!shouldDeliverTradingMessage(wsClient, message, symbol)) return;
-    client.send(JSON.stringify(payload));
-    deliveredClients++;
-  });
-
-  tradingBroadcastMessageCounter++;
-  // Log periódico para troubleshooting em produção sem poluir logs
-  if (tradingBroadcastMessageCounter === 1 || tradingBroadcastMessageCounter % 100 === 0) {
-    logger.info(
-      {
-        messageType: message.type,
-        symbol,
-        marketType: marketType ?? null,
-        marginMode: marginMode ?? null,
-        openClients,
-        clientsWithSubscriptions,
-        deliveredClients,
-        totalMessagesProcessed: tradingBroadcastMessageCounter,
-      },
-      'Broadcast de trading processado'
-    );
-  }
-}
-
-async function initializeTradingBroadcastSubscriber(): Promise<void> {
-  const redisUrl = process.env.REDIS_URL;
-  if (!redisUrl) {
-    if (process.env.NODE_ENV === 'production') {
-      throw new Error('REDIS_URL é obrigatório em produção para broadcast de trading');
-    }
-    logger.warn('REDIS_URL não configurado - broadcast de trading desabilitado (dev/test)');
-    return;
-  }
-
-  tradingSubscriber = createClient({
-    url: redisUrl,
-    socket: {
-      connectTimeout: 10000,
-      reconnectStrategy: (retries) => {
-        if (retries > 10) {
-          if (process.env.NODE_ENV === 'production') {
-            throw new Error('Redis obrigatório em produção para broadcast de trading - max retries reached');
-          }
-          return new Error('Max retries reached');
-        }
-        return Math.min(retries * 500, 10000);
-      },
-    },
-  });
-
-  tradingSubscriber.on('error', (error) => {
-    logger.error({ error }, 'Erro no Redis subscriber de trading');
-  });
-
-  await tradingSubscriber.connect();
-
-  await tradingSubscriber.pSubscribe(`${TRADING_CHANNEL_PREFIX}:*`, (message) => {
-    try {
-      const parsed = JSON.parse(message) as TradingBroadcastMessage;
-      if (!parsed.type || !parsed.timestamp) {
-        logger.warn({ message }, 'Mensagem de trading inválida recebida via Redis');
-        return;
-      }
-      broadcastTradingMessage(parsed);
-    } catch (error) {
-      logger.error({ error, message }, 'Falha ao processar mensagem de trading');
-    }
-  });
-
-  logger.info(
-    { channels: Object.values(TRADING_CHANNELS).length },
-    'Redis subscriber de trading inicializado'
-  );
-}
 
 async function ensureCambioResources(): Promise<void> {
   try {
@@ -9750,14 +9436,6 @@ const takeoverMessageSchema = z.object({
   content: z.string().min(1).max(4000),
 });
 
-const imageScoreSchema = z.object({
-  score: z.number().int().min(1).max(5),
-});
-
-const imageApproveSchema = z.object({
-  approved: z.boolean(),
-});
-
 // Schema para rating de mensagens de texto (GAP CRÍTICO #1 - Sistema de Aprendizado)
 const messageRatingSchema = z.object({
   rating: z.number().int().min(1).max(5),
@@ -14607,104 +14285,22 @@ const rateLimitCleanupInterval = setInterval(() => {
 const wsClients = new Map<string, WebSocket>();
 const getClientKey = (tenantId: string, userId: string) => `${tenantId}:${userId}`;
 
-// ============================================================================
-// MAPA DE AGENTES CONECTADOS (HANDOVER/TAKEOVER REAL-TIME)
-// Permite notificações em tempo real para agentes humanos
-// ============================================================================
-interface AgentConnection {
-  ws: WebSocket;
-  userId: string;
-  tenantId: string;
-  subscribedConversations: Set<string>;
-}
-const wsAgentClients = new Map<string, AgentConnection>();
-
-/**
- * Notifica agentes conectados sobre eventos de handover
- * Respeita isolamento de tenant e inscrições de conversas específicas
- * Usado para atualizar TakeoverPanel em tempo real
- * 
- * SEGURANÇA (OWASP + Regra 16):
- * - Filtra por tenantId para isolamento multi-tenant
- * - Respeita subscribedConversations quando agente se inscreve em conversas específicas
- * - Para eventos 'new_handoff', notifica TODOS os agentes do tenant (para pickup)
- * - Para eventos 'new_message', notifica apenas agentes inscritos na conversa
- */
-function notifyAgentsAboutEvent(
-  eventType: 'new_handoff' | 'new_message' | 'sla_warning' | 'handback',
-  data: {
-    conversationId: string;
-    tenantId?: string;
-    message?: string;
-    from?: string;
-    trigger?: string;
-    priority?: string;
-    reason?: string;
-  }
-) {
-  // CRÍTICO: tenantId é obrigatório para isolamento multi-tenant
-  if (!data.tenantId) {
-    logger.warn({
-      eventType,
-      conversationId: data.conversationId,
-    }, 'Notificação ignorada - tenantId ausente (violaria isolamento multi-tenant)');
-    return;
-  }
-  
-  let notifiedCount = 0;
-  
-  for (const [key, agent] of wsAgentClients.entries()) {
-    // SEGURANÇA: Filtrar por tenant (isolamento obrigatório)
-    if (agent.tenantId !== data.tenantId) {
-      continue;
-    }
-    
-    // Para 'new_message', verificar se agente está inscrito na conversa
-    // Isso evita spam de notificações para agentes não interessados
-    if (eventType === 'new_message') {
-      // Se agente tem inscrições específicas, verificar se esta conversa está incluída
-      if (agent.subscribedConversations.size > 0 && 
-          !agent.subscribedConversations.has(data.conversationId)) {
-        continue;
-      }
-    }
-    
-    try {
-      agent.ws.send(JSON.stringify({
-        type: 'agent_notification',
-        event: eventType,
-        data: {
-          conversationId: data.conversationId,
-          message: data.message,
-          from: data.from,
-          trigger: data.trigger,
-          priority: data.priority,
-          // Não incluir tenantId na resposta (já está implícito na conexão)
-        },
-        timestamp: new Date().toISOString(),
-      }));
-      
-      notifiedCount++;
-      
-      logger.debug({ 
-        agentKey: key, 
-        eventType, 
-        conversationId: data.conversationId,
-      }, 'Agente notificado sobre evento');
-    } catch (error) {
-      logger.warn({ error, agentKey: key }, 'Falha ao notificar agente');
-      wsAgentClients.delete(key);
-    }
-  }
-  
-  if (notifiedCount === 0 && eventType === 'new_handoff') {
-    logger.warn({
-      eventType,
-      conversationId: data.conversationId,
-      tenantId: data.tenantId,
-    }, 'Nenhum agente online para receber handoff - SLA pode ser impactado');
-  }
-}
+const {
+  agentWss,
+  wsAgentClients,
+  notifyAgentsAboutEvent,
+} = initializeAgentWebSocketRuntime({
+  logger,
+  server,
+  chatWebSocketServer: wss,
+  verifyWebSocketOrigin,
+  verifyWsToken,
+  consumeWsTokenNonce,
+  wsTokenNonceValidationTotal,
+  wsAgentAuthFailTotal,
+  wsAgentConnectionTotal,
+  wsAgentAuthGovernance: WS_AGENT_AUTH_GOVERNANCE,
+});
 
 wss.on('connection', (ws, req) => {
   // Cast para ExtendedWebSocket para suportar heartbeat
@@ -16760,255 +16356,6 @@ wss.on('connection', (ws, req) => {
 });
 
 // ============================================================================
-// WEBSOCKET PARA AGENTES (TAKEOVER/HANDOVER REAL-TIME)
-// Permite que agentes recebam notificações em tempo real sobre:
-// - Novas escalações (new_handoff)
-// - Mensagens de usuários em conversas humanas (new_message)
-// - Alertas de SLA (sla_warning)
-// - Handbacks (handback)
-// ============================================================================
-const agentWss = new WebSocketServer({ noServer: true });
-
-// Atualizar upgrade handler para suportar dois WebSocket servers
-server.on('upgrade', (request, socket, head) => {
-  const pathname = new URL(request.url || '', 'ws://localhost').pathname;
-  
-  if (pathname === '/ws/agent') {
-    // Conexão de agente para TakeoverPanel
-    agentWss.handleUpgrade(request, socket, head, (ws) => {
-      agentWss.emit('connection', ws, request);
-    });
-  } else if (pathname === '/ws/chat') {
-    // Conexão de cliente normal (chat)
-    wss.handleUpgrade(request, socket, head, (ws) => {
-      wss.emit('connection', ws, request);
-    });
-  } else {
-    socket.destroy();
-  }
-});
-
-agentWss.on('connection', async (ws, req) => {
-  if (!verifyWebSocketOrigin(req.headers.origin)) {
-    wsAgentConnectionTotal.inc({ status: 'rejected' });
-    ws.close(4000, 'Origin nao permitido');
-    return;
-  }
-
-  const urlParams = new URL(req.url || '', 'ws://localhost').searchParams;
-  const wsToken = urlParams.get('token');
-  const normalizedWsToken = wsToken?.trim() ?? '';
-  const hasWsToken = normalizedWsToken.length > 0;
-  let tokenPayload = hasWsToken ? verifyWsToken(normalizedWsToken, 'ws-agent') : null;
-  let authRejectedReason: 'missing_token' | 'invalid_token' | null = null;
-  const authDecision = resolveWsAgentAuthDecision({
-    hasWsToken,
-    tokenPayloadValid: Boolean(tokenPayload),
-    policy: WS_AGENT_AUTH_GOVERNANCE,
-  });
-
-  if (authDecision.rejectReason) {
-    authRejectedReason = authDecision.rejectReason;
-  }
-
-  if (hasWsToken && tokenPayload) {
-    const nonceValidation = await consumeWsTokenNonce(tokenPayload);
-    wsTokenNonceValidationTotal.inc({ result: nonceValidation.result });
-    if (!nonceValidation.accepted) {
-      logger.warn(
-        {
-          result: nonceValidation.result,
-          tenantId: tokenPayload.tenantId,
-          aud: tokenPayload.aud,
-        },
-        'Conexao /ws/agent rejeitada por replay/invalidacao de ws-token'
-      );
-      authRejectedReason = 'invalid_token';
-      tokenPayload = null;
-    }
-  }
-
-  if (!tokenPayload) {
-    wsAgentAuthFailTotal.inc({ reason: authRejectedReason ?? 'unknown' });
-    wsAgentConnectionTotal.inc({ status: 'rejected' });
-    logger.warn(
-      {
-        reason: authRejectedReason ?? 'unknown',
-        hasWsToken,
-        requireWsAgentToken: WS_AGENT_AUTH_GOVERNANCE.requireWsAgentToken,
-        allowLegacySessionFallback: WS_AGENT_AUTH_GOVERNANCE.allowLegacySessionFallback,
-      },
-      'Conexao /ws/agent rejeitada por autenticacao'
-    );
-    const closeFrame = resolveWsAgentCloseFrame(authRejectedReason ?? 'unknown');
-    ws.close(closeFrame.code, closeFrame.reason);
-    return;
-  }
-
-  const queryAgentId = urlParams.get('agentId');
-  const queryTenantId = urlParams.get('tenantId');
-  if (queryAgentId && queryAgentId !== tokenPayload.userId) {
-    wsAgentConnectionTotal.inc({ status: 'rejected' });
-    ws.close(4002, 'agentId divergente do token');
-    return;
-  }
-  if (queryTenantId && queryTenantId !== tokenPayload.tenantId) {
-    wsAgentConnectionTotal.inc({ status: 'rejected' });
-    ws.close(4003, 'tenantId divergente do token');
-    return;
-  }
-
-  const agentId = tokenPayload.userId;
-  const claimedTenantId = tokenPayload.tenantId;
-  
-  // ========================================================================
-  // SEGURANÇA: Validar que o agente pertence ao tenant especificado
-  // OWASP API Security - Não confiar em tenantId passado via URL
-  // Derivar tenantId do agente no banco de dados
-  // ========================================================================
-  try {
-    const user = await db.query.users.findFirst({
-      where: eq(schema.users.id, agentId),
-    });
-    
-    if (!user) {
-      logger.warn({ agentId, claimedTenantId }, 'Agente não encontrado no banco de dados');
-      wsAgentConnectionTotal.inc({ status: 'rejected' });
-      ws.close(4003, 'Agente não encontrado');
-      return;
-    }
-    
-    // Derivar tenantId do agente (verificação de segurança)
-    const safeTenantId = user.tenantId;
-    
-    if (!safeTenantId) {
-      logger.warn({ agentId }, 'Agente sem tenant associado');
-      wsAgentConnectionTotal.inc({ status: 'rejected' });
-      ws.close(4004, 'Agente sem tenant associado');
-      return;
-    }
-    
-    // Verificar se o tenant reivindicado corresponde ao tenant real do agente
-    if (claimedTenantId !== safeTenantId) {
-      logger.warn({ 
-        agentId, 
-        claimedTenantId, 
-        actualTenantId: safeTenantId,
-      }, 'Tentativa de conexão WebSocket com tenant incorreto - possível ataque');
-      wsAgentConnectionTotal.inc({ status: 'rejected' });
-      ws.close(4005, 'Tenant inválido para este agente');
-      return;
-    }
-    
-    // Verificar permissão de takeover via RBAC centralizado (Regra 2 - NÃO DUPLICAR)
-    // Usa checkPermission do @alice/shared-utils com cache de permissões
-    const userRole = user.role as Role;
-    
-    if (!userRole) {
-      logger.warn({ agentId, safeTenantId }, 'Agente sem role definida');
-      wsAgentConnectionTotal.inc({ status: 'rejected' });
-      ws.close(4006, 'Sem permissão para takeover');
-      return;
-    }
-    
-    // C5 Code Review: checkPermission agora é async (Redis cache distribuído)
-    const permissionCheck = await checkPermission(
-      { userId: agentId, tenantId: safeTenantId, role: userRole },
-      'chat:takeover:write'
-    );
-    
-    if (!permissionCheck.allowed) {
-      logger.warn({ 
-        agentId, 
-        safeTenantId, 
-        role: userRole,
-        reason: permissionCheck.reason,
-      }, 'Agente sem permissão de takeover');
-      wsAgentConnectionTotal.inc({ status: 'rejected' });
-      ws.close(4006, 'Sem permissão para takeover');
-      return;
-    }
-    
-    const agentKey = `${safeTenantId}:${agentId}`;
-    
-    // Registrar agente conectado (usando tenantId derivado do banco)
-    wsAgentClients.set(agentKey, {
-      ws,
-      userId: agentId,
-      tenantId: safeTenantId, // Usar tenantId derivado, não o reivindicado
-      subscribedConversations: new Set(),
-    });
-    
-    logger.info({ agentId, tenantId: safeTenantId, agentKey }, 'Agente conectado ao WebSocket de takeover');
-    wsAgentConnectionTotal.inc({ status: 'accepted' });
-    
-    // Enviar confirmação de conexão
-    ws.send(JSON.stringify({
-      type: 'connected',
-      agentId,
-      tenantId: safeTenantId, // Usar tenantId derivado
-      timestamp: new Date().toISOString(),
-    }));
-    // Handlers de eventos ficam dentro do try pois precisam do agentKey e safeTenantId
-    ws.on('message', async (data) => {
-      try {
-        const message = JSON.parse(data.toString()) as {
-          type: string;
-          conversationId?: string;
-        };
-        
-        // Agente pode se inscrever para receber notificações de conversas específicas
-        if (message.type === 'subscribe' && message.conversationId) {
-          const agent = wsAgentClients.get(agentKey);
-          if (agent) {
-            agent.subscribedConversations.add(message.conversationId);
-            ws.send(JSON.stringify({
-              type: 'subscribed',
-              conversationId: message.conversationId,
-            }));
-            logger.debug({ agentKey, conversationId: message.conversationId }, 'Agente inscrito em conversa');
-          }
-        }
-        
-        // Agente pode se desinscrever de conversas
-        if (message.type === 'unsubscribe' && message.conversationId) {
-          const agent = wsAgentClients.get(agentKey);
-          if (agent) {
-            agent.subscribedConversations.delete(message.conversationId);
-            ws.send(JSON.stringify({
-              type: 'unsubscribed',
-              conversationId: message.conversationId,
-            }));
-          }
-        }
-        
-        // Ping/pong para manter conexão viva
-        if (message.type === 'ping') {
-          ws.send(JSON.stringify({ type: 'pong', timestamp: new Date().toISOString() }));
-        }
-      } catch (error) {
-        logger.error({ error }, 'Erro ao processar mensagem de agente WebSocket');
-      }
-    });
-    
-    ws.on('close', () => {
-      wsAgentClients.delete(agentKey);
-      logger.info({ agentId, tenantId: safeTenantId, agentKey }, 'Agente desconectado do WebSocket de takeover');
-    });
-    
-    ws.on('error', (error) => {
-      logger.error({ error, agentKey }, 'Erro no WebSocket do agente');
-      wsAgentClients.delete(agentKey);
-    });
-  } catch (error) {
-    logger.error({ error, agentId }, 'Erro ao validar agente para WebSocket');
-    wsAgentConnectionTotal.inc({ status: 'rejected' });
-    ws.close(4000, 'Erro interno de autenticação');
-    return;
-  }
-});
-
-// ============================================================================
 // TAKEOVER/HANDOVER ROUTES (FASE 6.5)
 // ============================================================================
 
@@ -17541,184 +16888,6 @@ function calculateSuccessRate(stats: {
   const total = successes + failures + timeouts + rejects;
   if (total === 0) return 100;
   return Math.round((successes / total) * 100);
-}
-
-// OWASP API3: Schema para listagem de imagens geradas
-const generatedImagesQuerySchema = z.object({
-  status: z.enum(['pending', 'generating', 'completed', 'failed', 'all'])
-    .optional()
-    .default('all'),
-  approved: z.enum(['true', 'false', 'pending', 'all'])
-    .optional(),
-  limit: z.string()
-    .regex(/^\d+$/, 'limit deve ser numérico')
-    .optional()
-    .default('20')
-    .transform(Number)
-    .refine(n => n >= 1 && n <= 100, 'limit deve ser entre 1 e 100'),
-  offset: z.string()
-    .regex(/^\d+$/, 'offset deve ser numérico')
-    .optional()
-    .default('0')
-    .transform(Number)
-    .refine(n => n >= 0, 'offset deve ser >= 0'),
-});
-
-type GalleryImageSource = 'generated' | 'upload';
-
-type GalleryImage = {
-  id: string;
-  source: GalleryImageSource;
-  tenantId: string | null;
-  conversationId: string | null;
-  messageId: string | null;
-  createdBy: string | null;
-  prompt: string;
-  negativePrompt: string | null;
-  model: string | null;
-  mimeType: string | null;
-  steps: number | null;
-  seed: number | null;
-  width: number | null;
-  height: number | null;
-  guidanceScale: number | null;
-  status: 'pending' | 'generating' | 'completed' | 'failed';
-  imagePath: string | null;
-  thumbnailPath: string | null;
-  imageUrl: string | null;
-  feedbackScore: number | null;
-  approvedForTraining: boolean | null;
-  usedInFineTuning: boolean | null;
-  generationTimeMs: number | null;
-  errorMessage: string | null;
-  metadata: Record<string, unknown> | null;
-  criadoEm: Date | string | null;
-};
-
-function mapUploadStatus(status: string | null | undefined): GalleryImage['status'] {
-  switch (status) {
-    case 'processing':
-      return 'generating';
-    case 'completed':
-      return 'completed';
-    case 'failed':
-      return 'failed';
-    case 'pending':
-    default:
-      return 'pending';
-  }
-}
-
-function resolveUploadMetadata(upload: typeof schema.mediaUploads.$inferSelect) {
-  return (upload.extractedMetadata as Record<string, unknown> | null) ?? null;
-}
-
-function resolveUploadPrompt(upload: typeof schema.mediaUploads.$inferSelect): string {
-  const metadata = resolveUploadMetadata(upload);
-  const description = metadata?.description;
-  if (typeof description === 'string' && description.trim().length > 0) {
-    return description.trim();
-  }
-  if (upload.llmDescription && upload.llmDescription.trim().length > 0) {
-    return upload.llmDescription.trim();
-  }
-  return upload.originalFilename;
-}
-
-function resolveUploadThumbnail(upload: typeof schema.mediaUploads.$inferSelect): string | null {
-  const metadata = resolveUploadMetadata(upload);
-  const thumbnailUrl = metadata?.thumbnailUrl;
-  if (typeof thumbnailUrl === 'string' && thumbnailUrl.trim().length > 0) {
-    return thumbnailUrl;
-  }
-  const thumbnailPath = metadata?.thumbnailPath;
-  if (typeof thumbnailPath === 'string' && thumbnailPath.trim().length > 0) {
-    return thumbnailPath;
-  }
-  return upload.thumbnailPath ?? null;
-}
-
-function normalizeGeneratedImage(image: typeof schema.generatedImages.$inferSelect): GalleryImage {
-  const metadata = (image.metadata as Record<string, unknown> | null) ?? null;
-  const metadataMimeType = metadata?.mimeType;
-  return {
-    id: image.id,
-    source: 'generated',
-    tenantId: image.tenantId ?? null,
-    conversationId: image.conversationId ?? null,
-    messageId: image.messageId ?? null,
-    createdBy: image.createdBy ?? null,
-    prompt: image.prompt,
-    negativePrompt: image.negativePrompt ?? null,
-    model: image.model ?? null,
-    mimeType: typeof metadataMimeType === 'string' && metadataMimeType.trim().length > 0
-      ? metadataMimeType.trim()
-      : null,
-    steps: image.steps ?? null,
-    seed: image.seed ?? null,
-    width: image.width ?? null,
-    height: image.height ?? null,
-    guidanceScale: image.guidanceScale ?? null,
-    status: image.status ?? 'pending',
-    imagePath: image.imagePath ?? null,
-    thumbnailPath: image.thumbnailPath ?? null,
-    imageUrl: image.imageUrl ?? null,
-    feedbackScore: image.feedbackScore ?? null,
-    approvedForTraining: image.approvedForTraining ?? null,
-    usedInFineTuning: image.usedInFineTuning ?? null,
-    generationTimeMs: image.generationTimeMs ?? null,
-    errorMessage: image.errorMessage ?? null,
-    metadata,
-    criadoEm: image.criadoEm ?? null,
-  };
-}
-
-function normalizeUploadImage(upload: typeof schema.mediaUploads.$inferSelect): GalleryImage {
-  const metadata = resolveUploadMetadata(upload);
-  const model = metadata?.visionModel;
-  return {
-    id: upload.id,
-    source: 'upload',
-    tenantId: upload.tenantId ?? null,
-    conversationId: upload.conversationId ?? null,
-    messageId: upload.messageId ?? null,
-    createdBy: upload.userId ?? null,
-    prompt: resolveUploadPrompt(upload),
-    negativePrompt: null,
-    model: typeof model === 'string' && model.trim().length > 0 ? model.trim() : null,
-    mimeType: upload.mimeType ?? null,
-    steps: null,
-    seed: null,
-    width: upload.width ?? null,
-    height: upload.height ?? null,
-    guidanceScale: null,
-    status: mapUploadStatus(upload.processingStatus ?? null),
-    imagePath: upload.filePath ?? null,
-    thumbnailPath: resolveUploadThumbnail(upload),
-    imageUrl: upload.fileUrl ?? null,
-    feedbackScore: null,
-    approvedForTraining: null,
-    usedInFineTuning: upload.usedInFineTuning ?? null,
-    generationTimeMs: upload.processingTimeMs ?? null,
-    errorMessage: upload.processingError ?? null,
-    metadata,
-    criadoEm: upload.criadoEm ?? null,
-  };
-}
-
-function applyGalleryFilters(images: GalleryImage[], query: z.infer<typeof generatedImagesQuerySchema>) {
-  let filtered = images;
-  if (query.status && query.status !== 'all') {
-    filtered = filtered.filter((image) => image.status === query.status);
-  }
-  if (query.approved === 'true') {
-    filtered = filtered.filter((image) => image.approvedForTraining === true);
-  } else if (query.approved === 'false') {
-    filtered = filtered.filter((image) => image.approvedForTraining === false);
-  } else if (query.approved === 'pending') {
-    filtered = filtered.filter((image) => image.approvedForTraining === null);
-  }
-  return filtered;
 }
 
 // OWASP API3: Schema para validação de parâmetros de rota (req.params)
@@ -20357,328 +19526,16 @@ app.post('/api/chat/notify-agent', requireInternalHmacAuth(), asyncHandler(async
   }
 }));
 
-// ============================================================================
-// IMAGE ROUTES - OpenAI (Vision + geração) - Arquitetura 16/01/2026+
-// ============================================================================
-
-const imageGenerationSchema = z.object({
-  prompt: z.string().min(1).max(2000),
-  negativePrompt: z.string().max(1000).optional(),
-  width: z.number().int().min(1024).max(1536).default(1024),
-  height: z.number().int().min(1024).max(1536).default(1024),
-}).superRefine((value, ctx) => {
-  const size = `${value.width}x${value.height}`;
-  const allowed = new Set(['1024x1024', '1536x1024', '1024x1536']);
-  if (!allowed.has(size)) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'Tamanho inválido. Use 1024x1024, 1536x1024 ou 1024x1536.',
-      path: ['width'],
-    });
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'Tamanho inválido. Use 1024x1024, 1536x1024 ou 1024x1536.',
-      path: ['height'],
-    });
-  }
-});
-
-app.post('/api/chat/images/generate', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('images:generate:write'), async (req: Request, res: Response) => {
-  const tenantId = req.tenantId;
-  const userId = req.user?.userId;
-
-  if (!tenantId || !userId) {
-    return res.status(401).json({ error: 'Autenticação necessária' });
-  }
-
-  const parseResult = imageGenerationSchema.safeParse(req.body);
-  if (!parseResult.success) {
-    logger.warn({ errors: parseResult.error.flatten() }, 'Input inválido em /api/chat/images/generate');
-    return res.status(400).json({ error: 'Input inválido' });
-  }
-
-  if (!OPENAI_API_KEY) {
-    return res.status(503).json({ error: 'OpenAI não configurado', code: 'OPENAI_NOT_CONFIGURED' });
-  }
-
-  const { prompt, negativePrompt, width, height } = parseResult.data;
-  const internalHeaders = buildInternalServiceHeaders({
-    userId,
-    tenantId,
-    role: req.user?.role ?? 'guest',
-  });
-
-  try {
-    const image = await generateImageFromPrompt({
-      tenantId,
-      userId,
-      prompt,
-      negativePrompt,
-      width,
-      height,
-      internalHeaders,
-    });
-    res.json({ image });
-  } catch (error) {
-    logger.error({ error }, 'Erro ao gerar imagem via OpenAI');
-    res.status(502).json({ error: 'Falha ao gerar imagem', details: error instanceof Error ? error.message : 'Erro desconhecido' });
-  }
-});
-
-app.post('/api/chat/images/:id/rate', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('images:generate:write'), async (req: Request, res: Response) => {
-  // OWASP API3: Validação Zod obrigatória de parâmetros de rota
-  const paramsResult = uuidParamSchema.safeParse(req.params);
-  if (!paramsResult.success) {
-    return res.status(400).json({ error: 'ID de imagem inválido', details: paramsResult.error.format() });
-  }
-  const { id } = paramsResult.data;
-  
-  // SEGURANÇA: Usar req.tenantId populado pelo middleware
-  const tenantId = req.tenantId;
-  
-  // OWASP API3 - Validação Zod obrigatória
-  const parseResult = imageScoreSchema.safeParse(req.body);
-  if (!parseResult.success) {
-    return res.status(400).json({ error: 'Input inválido' });
-  }
-  const { score } = parseResult.data;
-  
-  if (!tenantId) {
-    return res.status(401).json({ error: 'Autenticação necessária' });
-  }
-  
-  try {
-    const image = await db.query.generatedImages.findFirst({
-      where: eq(schema.generatedImages.id, id),
-    });
-    
-    if (!image || image.tenantId !== tenantId) {
-      return res.status(404).json({ error: 'Imagem não encontrada' });
-    }
-    
-    // ARQUITETURA v4.0.0: Usar db diretamente (image-generation-client removido)
-    await db.update(schema.generatedImages)
-      .set({ feedbackScore: score })
-      .where(eq(schema.generatedImages.id, id));
-    
-    logger.info({ imageId: id, score }, 'Feedback de imagem registrado');
-    res.json({ message: 'Feedback registrado com sucesso' });
-  } catch (error) {
-    logger.error({ error, imageId: id }, 'Erro ao registrar feedback');
-    res.status(500).json({ error: 'Erro ao registrar feedback' });
-  }
-});
-
-app.post('/api/chat/images/:id/approve', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('images:approve:write'), async (req: Request, res: Response) => {
-  // OWASP API3: Validação Zod obrigatória de parâmetros de rota
-  const paramsResult = uuidParamSchema.safeParse(req.params);
-  if (!paramsResult.success) {
-    return res.status(400).json({ error: 'ID de imagem inválido', details: paramsResult.error.format() });
-  }
-  const { id } = paramsResult.data;
-  
-  // SEGURANÇA: Usar req.tenantId populado pelo middleware
-  const tenantId = req.tenantId;
-  
-  // OWASP API3 - Validação Zod obrigatória
-  const parseResult = imageApproveSchema.safeParse(req.body);
-  if (!parseResult.success) {
-    return res.status(400).json({ error: 'Input inválido' });
-  }
-  const { approved } = parseResult.data;
-  
-  if (!tenantId) {
-    return res.status(401).json({ error: 'Autenticação necessária' });
-  }
-  
-  try {
-    const image = await db.query.generatedImages.findFirst({
-      where: eq(schema.generatedImages.id, id),
-    });
-    
-    if (!image || image.tenantId !== tenantId) {
-      return res.status(404).json({ error: 'Imagem não encontrada' });
-    }
-    
-    // ARQUITETURA v4.0.0: Usar db diretamente (image-generation-client removido)
-    await db.update(schema.generatedImages)
-      .set({ approvedForTraining: approved })
-      .where(eq(schema.generatedImages.id, id));
-    
-    logger.info({ imageId: id, approved }, 'Status de aprovação para treinamento atualizado');
-    res.json({ message: `Imagem ${approved ? 'aprovada' : 'reprovada'} para treinamento` });
-  } catch (error) {
-    logger.error({ error, imageId: id }, 'Erro ao aprovar imagem');
-    res.status(500).json({ error: 'Erro ao aprovar imagem' });
-  }
-});
-
-// ARQUITETURA v4.0.0: Stats simplificado (image-generation-client removido)
-app.get('/api/chat/images/stats', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('images:generate:read'), async (req: Request, res: Response) => {
-  try {
-    const tenantId = req.tenantId;
-    if (!tenantId) {
-      return res.status(401).json({ error: 'Autenticação necessária' });
-    }
-    const [generatedImages, mediaUploads] = await Promise.all([
-      db.query.generatedImages.findMany({
-        where: eq(schema.generatedImages.tenantId, tenantId),
-      }),
-      db.query.mediaUploads.findMany({
-        where: and(
-          eq(schema.mediaUploads.tenantId, tenantId),
-          eq(schema.mediaUploads.mediaType, 'image')
-        ),
-      }),
-    ]);
-
-    const galleryImages = [
-      ...generatedImages.map(normalizeGeneratedImage),
-      ...mediaUploads.map(normalizeUploadImage),
-    ];
-
-    const completed = galleryImages.filter((img) => img.status === 'completed');
-    const pending = galleryImages.filter((img) => img.status === 'pending' || img.status === 'generating');
-    const failed = galleryImages.filter((img) => img.status === 'failed');
-    const approvedCount = galleryImages.filter((img) => img.approvedForTraining === true).length;
-    const usedInFineTuning = galleryImages.filter((img) => img.usedInFineTuning === true).length;
-
-    const ratedImages = galleryImages.filter(
-      (img) => typeof img.feedbackScore === 'number' && (img.feedbackScore ?? 0) > 0
-    );
-    const avgRating = ratedImages.length > 0
-      ? ratedImages.reduce((sum, img) => sum + (img.feedbackScore ?? 0), 0) / ratedImages.length
-      : 0;
-
-    const durationSamples = completed
-      .map((img) => img.generationTimeMs)
-      .filter((value): value is number => typeof value === 'number' && value > 0);
-    const avgGenerationTime = durationSamples.length > 0
-      ? durationSamples.reduce((sum, value) => sum + value, 0) / durationSamples.length
-      : 0;
-
-    res.json({
-      totalGenerated: generatedImages.length,
-      approved: approvedCount,
-      pending: pending.length,
-      inTraining: usedInFineTuning,
-      avgRating: Number(avgRating.toFixed(1)),
-      total: galleryImages.length,
-      completed: completed.length,
-      failed: failed.length,
-      approvedForTraining: approvedCount,
-      usedInFineTuning,
-      averageGenerationTimeMs: Math.round(avgGenerationTime),
-      note: 'Geração via OpenAI (gpt-image-1) e uploads multimodais com Vision',
-    });
-  } catch (error) {
-    logger.error({ error }, 'Erro ao buscar estatísticas de imagens');
-    res.status(500).json({ error: 'Erro interno do servidor' });
-  }
-});
-
-app.get('/api/chat/images', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('images:generate:read'), async (req: Request, res: Response) => {
-  // SEGURANÇA: Usar req.tenantId populado pelo middleware
-  const tenantId = req.tenantId;
-  
-  if (!tenantId) {
-    return res.status(401).json({ error: 'Autenticação necessária' });
-  }
-  
-  // OWASP API3: Validação Zod obrigatória de query params
-  const queryResult = generatedImagesQuerySchema.safeParse(req.query);
-  if (!queryResult.success) {
-    logger.warn({ errors: queryResult.error.flatten() }, 'Input inválido em /api/chat/images');
-    return res.status(400).json({ error: 'Parâmetros inválidos', details: queryResult.error.format() });
-  }
-  
-  const { limit: pageLimit, offset: pageOffset } = queryResult.data;
-  
-  try {
-    const [generatedImages, mediaUploads] = await Promise.all([
-      db.query.generatedImages.findMany({
-        where: eq(schema.generatedImages.tenantId, tenantId),
-        orderBy: [desc(schema.generatedImages.criadoEm)],
-        with: {
-          conversation: true,
-        },
-      }),
-      db.query.mediaUploads.findMany({
-        where: and(
-          eq(schema.mediaUploads.tenantId, tenantId),
-          eq(schema.mediaUploads.mediaType, 'image')
-        ),
-        orderBy: [desc(schema.mediaUploads.criadoEm)],
-      }),
-    ]);
-
-    const normalizedGenerated = generatedImages.map(normalizeGeneratedImage);
-    const normalizedUploads = mediaUploads.map(normalizeUploadImage);
-
-    const filteredImages = applyGalleryFilters(
-      [...normalizedGenerated, ...normalizedUploads],
-      queryResult.data
-    );
-
-    const sorted = filteredImages.sort((a, b) => {
-      const aTime = a.criadoEm ? new Date(a.criadoEm).getTime() : 0;
-      const bTime = b.criadoEm ? new Date(b.criadoEm).getTime() : 0;
-      return bTime - aTime;
-    });
-
-    const total = sorted.length;
-    const images = sorted.slice(pageOffset, pageOffset + pageLimit);
-
-    res.json({
-      images,
-      total,
-      offset: pageOffset,
-      limit: pageLimit,
-    });
-  } catch (error) {
-    logger.error({ error }, 'Erro ao listar imagens');
-    res.status(500).json({ error: 'Erro interno do servidor' });
-  }
-});
-
-app.get('/api/chat/images/:id', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('images:generate:read'), async (req: Request, res: Response) => {
-  // OWASP API3: Validação Zod obrigatória de parâmetros de rota
-  const paramsResult = uuidParamSchema.safeParse(req.params);
-  if (!paramsResult.success) {
-    logger.warn({ errors: paramsResult.error.flatten() }, 'ID inválido em /api/chat/images/:id');
-    return res.status(400).json({ error: 'ID inválido', details: paramsResult.error.format() });
-  }
-  const { id } = paramsResult.data;
-  
-  // SEGURANÇA: Usar req.tenantId populado pelo middleware
-  const tenantId = req.tenantId;
-  
-  if (!tenantId) {
-    return res.status(401).json({ error: 'Autenticação necessária' });
-  }
-  
-  try {
-    const image = await db.query.generatedImages.findFirst({
-      where: eq(schema.generatedImages.id, id),
-      with: {
-        conversation: true,
-      },
-    });
-    
-    if (!image) {
-      return res.status(404).json({ error: 'Imagem não encontrada' });
-    }
-    
-    if (image.tenantId !== tenantId) {
-      logger.warn({ imageId: id, requestedBy: tenantId, ownedBy: image.tenantId }, 'Tentativa de acesso a imagem de outro tenant');
-      return res.status(404).json({ error: 'Imagem não encontrada' });
-    }
-    
-    res.json({ image });
-  } catch (error) {
-    logger.error({ error, imageId: id }, 'Erro ao buscar imagem');
-    res.status(500).json({ error: 'Erro interno do servidor' });
-  }
+registerChatImageRoutes({
+  app,
+  logger,
+  openAiApiKey: OPENAI_API_KEY ?? undefined,
+  getTenantIdFromRequest,
+  requireAuth,
+  requireSameTenant,
+  requirePermission,
+  buildInternalServiceHeaders,
+  generateImageFromPrompt,
 });
 
 // ============================================================================
@@ -20902,33 +19759,24 @@ app.use(createErrorHandler({
 
 // C4/C5 Code Review: Inicializar todos os caches (Redis em produção, in-memory em dev)
 // Regra 6: fail-fast em produção se Redis indisponível
-(async () => {
-  try {
-    await initializeAllCaches();
-    await initializeTradingBroadcastSubscriber();
-    await ensureCambioResources();
-    server.listen(PORT, () => {
-      logger.info({ 
-        port: PORT, 
-        llmConfigured: true, // GPU Manager Service gerencia LLM
-        circuitBreaker: 'enabled',
-        sessionCacheDistributed: sessionCacheAdapter?.isDistributed() ?? false,
-        rbacCacheDistributed: permissionCache.getStats().distributed,
-      }, 'Chat service iniciado com Circuit Breaker e caches distribuídos');
-    });
-    refreshSlaMetricsForAllTenants().catch((error) => {
-      logger.warn({ error }, 'Falha ao atualizar métricas SLA no startup');
-    });
-    slaMetricsInterval = setInterval(() => {
-      refreshSlaMetricsForAllTenants().catch((error) => {
-        logger.warn({ error }, 'Falha ao atualizar métricas SLA');
-      });
-    }, SLA_METRICS_REFRESH_MS);
-  } catch (error) {
-    logger.fatal({ error: (error as Error).message }, 'Falha ao iniciar chat-service');
-    process.exit(1);
-  }
-})();
+void startChatService({
+  logger,
+  server,
+  port: Number(PORT),
+  initializeAllCaches,
+  initializeTradingBroadcastSubscriber,
+  ensureCambioResources,
+  refreshSlaMetricsForAllTenants,
+  slaMetricsRefreshMs: SLA_METRICS_REFRESH_MS,
+  onSlaIntervalRegistered: (interval) => {
+    slaMetricsInterval = interval;
+  },
+  getSessionCacheDistributed: () => sessionCacheAdapter?.isDistributed() ?? false,
+  getRbacCacheDistributed: () => permissionCache.getStats().distributed,
+}).catch((error) => {
+  logger.error({ error: error instanceof Error ? error.message : String(error) }, 'Encerrando processo após falha de startup do chat-service');
+  process.exit(1);
+});
 
 // SEGURANÇA: Timeouts para prevenir conexões pendentes (Node.js 20 LTS Best Practices)
 server.timeout = 120000; // 120s para LLM streaming (respostas longas)
@@ -20941,95 +19789,34 @@ server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
 // Ordem: Intervals → WebSocket → HTTP server → Database pool
 // ============================================================================
 
-registerShutdownCallback(
-  'chat-background-intervals',
-  async () => {
-    logger.info('Limpando background intervals...');
-    clearInterval(heartbeatInterval);
-    clearInterval(rateLimitCleanupInterval);
+registerChatShutdownCallbacks({
+  logger,
+  server,
+  clearHeartbeatInterval: () => clearInterval(heartbeatInterval),
+  clearRateLimitCleanupInterval: () => clearInterval(rateLimitCleanupInterval),
+  clearAuthCleanupInterval: () => clearInterval(authCleanupInterval),
+  clearSlaMetricsInterval: () => {
     if (slaMetricsInterval) {
       clearInterval(slaMetricsInterval);
       slaMetricsInterval = null;
     }
-    logger.info('Background intervals limpos');
   },
-  { priority: ShutdownPriority.BACKGROUND_JOBS }
-);
-
-registerShutdownCallback(
-  'chat-websocket-server',
-  async () => {
-    logger.info('Encerrando WebSocket server...');
-    await new Promise<void>((resolve) => {
+  closeMainWebSocketServer: () =>
+    new Promise<void>((resolve) => {
       wss.close(() => {
-        logger.info('WebSocket server fechado');
         resolve();
       });
-    });
-  },
-  { priority: ShutdownPriority.WEBSOCKET }
-);
-
-registerShutdownCallback(
-  'chat-http-server',
-  async () => {
-    logger.info('Encerrando HTTP server...');
-    await new Promise<void>((resolve, reject) => {
-      server.close((err) => {
-        if (err) {
-          logger.error({ error: err }, 'Erro ao fechar HTTP server');
-          reject(err);
-        } else {
-          logger.info('HTTP server encerrado com sucesso');
-          resolve();
-        }
+    }),
+  closeAgentWebSocketServer: () =>
+    new Promise<void>((resolve) => {
+      agentWss.close(() => {
+        resolve();
       });
-    });
-  },
-  { priority: ShutdownPriority.HTTP_SERVER }
-);
-
-// C4/C5 Code Review: Encerrar caches Redis antes do database
-registerShutdownCallback(
-  'chat-permission-cache',
-  async () => {
-    logger.info('Encerrando cache de permissões RBAC...');
-    await permissionCache.destroy();
-    logger.info('Cache de permissões encerrado');
-  },
-  { priority: ShutdownPriority.BACKGROUND_JOBS - 5 } // Antes do Redis client
-);
-
-registerShutdownCallback(
-  'chat-trading-broadcast',
-  async () => {
-    if (!tradingSubscriber) return;
-    logger.info('Encerrando Redis subscriber de trading...');
-    await tradingSubscriber.quit();
-    tradingSubscriber = null;
-    logger.info('Redis subscriber de trading encerrado');
-  },
-  { priority: ShutdownPriority.BACKGROUND_JOBS - 8 } // Antes do Redis cache
-);
-
-registerShutdownCallback(
-  'chat-redis-cache',
-  async () => {
-    logger.info('Encerrando cliente Redis cache...');
-    await closeRedisCacheClient();
-    logger.info('Cliente Redis cache encerrado');
-  },
-  { priority: ShutdownPriority.BACKGROUND_JOBS - 10 } // Antes do database, após permission cache
-);
-
-registerShutdownCallback(
-  'chat-database-pool',
-  async () => {
-    logger.info('Encerrando pool de conexões database...');
-    await closeDatabasePool();
-    logger.info('Pool de conexões encerrado com sucesso');
-  },
-  { priority: ShutdownPriority.DATABASE }
-);
+    }),
+  closePermissionCache: () => permissionCache.destroy(),
+  closeTradingBroadcastSubscriber,
+  closeRedisCacheClient,
+  closeDatabasePool,
+});
 
 

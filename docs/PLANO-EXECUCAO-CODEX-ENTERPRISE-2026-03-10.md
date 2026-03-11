@@ -25,7 +25,7 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - `P0-DOCS-07`: Concluído
 - `P1-API-01`: Concluído
 - `P1-AUTH-02`: Concluído
-- `P1-CHAT-03`: Não iniciado
+- `P1-CHAT-03`: Concluído
 - `P1-RAG-04`: Não iniciado
 - `P1-TRAINING-05`: Não iniciado
 - `P1-INTEGRATIONS-06`: Não iniciado
@@ -43,7 +43,7 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - `P2-DOCS-06`: Não iniciado
 
 ## Bloco atual
-`P1-AUTH-02` (Concluído)
+`P1-CHAT-03` (Concluído)
 
 ## Histórico de rodadas
 
@@ -351,8 +351,36 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
   - Validar posteriormente no ambiente do usuário a correção do binário global `pnpm`.
 - Riscos ou bloqueios:
   - Sem bloqueio ativo para continuação.
-  - Risco residual controlado: `auth-providers.ts` permaneceu volumoso para preservar lógica de negócio e contratos existentes sem refatoração estrutural ampla além do escopo cirúrgico autorizado.
+- Risco residual controlado: `auth-providers.ts` permaneceu volumoso para preservar lógica de negócio e contratos existentes sem refatoração estrutural ampla além do escopo cirúrgico autorizado.
 - Próximo bloco recomendado: `P1-CHAT-03`.
+
+### Rodada 10
+- Data: 2026-03-10
+- Bloco executado: `P1-CHAT-03`
+- Objetivo: Decompor `apps/chat-service/src/index.ts`, extraindo bootstrap, registro de rotas por domínio e runtime de WebSocket/handlers sem alterar contratos ou comportamento funcional.
+- Diagnóstico: O `index.ts` do `chat-service` concentrava bootstrap, WebSocket principal e de agentes, notificações de takeover e rotas de imagens no mesmo arquivo; mesmo após extrações iniciais, o arquivo ainda estava acima de 20 mil linhas e com responsabilidades acopladas.
+- Arquivos lidos: `CLAUDE.md` (1-120), `package.json`, `apps/chat-service/src/index.ts` (lido em múltiplos chunks ao longo de todo o arquivo), `apps/chat-service/src/openapi-specs.ts`, `apps/chat-service/src/trading-command-parser.ts`, `apps/chat-service/src/lora-adapter-resolver.ts`, `apps/chat-service/src/user-name-utils.ts`, `apps/chat-service/src/stream-corruption-heuristics.ts`, `apps/chat-service/src/training-utils.ts`, `apps/chat-service/src/chat-websocket-runtime.ts`, `apps/chat-service/src/chat-bootstrap.ts`, `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Arquivos alterados: `apps/chat-service/src/index.ts`, `apps/chat-service/src/chat-websocket-runtime.ts`, `apps/chat-service/src/chat-bootstrap.ts`, `apps/chat-service/src/chat-agent-websocket.ts`, `apps/chat-service/src/chat-image-routes.ts`, `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Validações executadas:
+  - `pnpm --filter @alice/chat-service typecheck` (executado via `npx -y pnpm@10.26.2 --filter @alice/chat-service typecheck`)
+  - `pnpm --filter @alice/chat-service lint` (executado via `npx -y pnpm@10.26.2 --filter @alice/chat-service lint`)
+  - `pnpm --filter @alice/chat-service build` (executado via `npx -y pnpm@10.26.2 --filter @alice/chat-service build`)
+  - `pnpm lint` (executado via `npx -y pnpm@10.26.2 lint`)
+  - `pnpm build` (executado via `npx -y pnpm@10.26.2 build`)
+- Resultado das validações:
+  - Todas as validações obrigatórias da rodada foram aprovadas ao final.
+  - Houve 1 warning inicial em `@alice/chat-service lint` por import não utilizado (`WebSocketServer`) após extração de runtime de agentes; o warning foi corrigido no escopo e o lint foi reexecutado com sucesso.
+  - `apps/chat-service/src/index.ts` foi reduzido de 20644 para 19822 linhas, com extração de runtime de `ws/agent` e domínio de rotas de imagens para módulos dedicados.
+  - Observação de ambiente: binário global `pnpm` permanece quebrado; os comandos foram executados com `npx -y pnpm@10.26.2`, preservando os comandos lógicos exigidos.
+- Documentação atualizada: tracking canônico atualizado com evidências factuais da Rodada 10.
+- Commit realizado: `refactor: decompose chat service composition root`.
+- Pendências:
+  - Validar posteriormente no ambiente do usuário a correção do binário global `pnpm`.
+  - Decomposição adicional de outros domínios internos do `chat-service` permanece para blocos futuros de modularização (`P1-*`) sem expandir escopo desta rodada.
+- Riscos ou bloqueios:
+  - Sem bloqueio ativo para continuação.
+  - Risco residual controlado: `index.ts` permanece volumoso em função de múltiplos domínios ainda concentrados, porém com redução de acoplamento nas áreas extraídas (bootstrap/ws-agent/imagens) sem alteração de contratos.
+- Próximo bloco recomendado: `P1-RAG-04`.
 
 ## Pendências abertas
 - Correção do binário global `pnpm` no ambiente local (fora do escopo deste bloco).
@@ -366,4 +394,4 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - Risco residual controlado: documentação histórica volumosa pode conter contexto de planos anteriores; status atual de execução do backlog governado deve sempre ser consultado no tracking canônico.
 
 ## Próximos blocos permitidos
-- `P1-CHAT-03`
+- `P1-RAG-04`
