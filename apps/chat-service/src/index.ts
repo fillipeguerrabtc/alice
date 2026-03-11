@@ -35,7 +35,11 @@ import {
   GpuServiceType,
   GpuRequestPriority,
   ALLOWED_AGENT_LLM_MODEL_NAMES,
+  DEFAULT_LLM_SERVING_MODEL_ID,
+  DEFAULT_PUBLIC_LLM_MODEL_NAME,
+  DEFAULT_REASONING_MODE,
   resolveAgentLlmModel,
+  resolveReasoningMode,
 } from '@alice/shared-utils';
 import { chatServicePaths, chatServiceSchemas } from './openapi-specs.js';
 import { createLogger } from '@alice/logger';
@@ -77,6 +81,7 @@ import {
 } from '@alice/shared-utils';
 import type { AuthContext } from '@alice/shared-utils';
 import type { Role } from '@alice/shared-utils';
+import type { ReasoningMode } from '@alice/shared-utils';
 import { eq, desc, inArray, and, or, lt, gte, lte, sql, not, asc, isNull } from '@alice/database';
 import { z } from 'zod';
 import type { AgenticDetectors } from '@alice/shared';
@@ -3257,8 +3262,10 @@ interface LLMConfig {
   temperature?: number;
   /** Limite máximo de tokens na resposta (saída). Default: 2048 */
   maxTokens?: number;
-  /** Modelo a ser usado. Default: Qwen/Qwen2.5-7B-Instruct-AWQ */
+  /** Modelo a ser usado. Default: Qwen/Qwen3-8B-AWQ */
   model?: string;
+  /** Contrato de reasoning mode compartilhado (Qwen3). */
+  reasoningMode?: ReasoningMode;
 }
 
 interface LlmAdapterContext {
@@ -3292,7 +3299,8 @@ const DEFAULT_LLM_CONFIG: Required<LLMConfig> = {
   temperature: 0.7,
   // Default de saída (max_tokens). Observação: `MAX_MODEL_LEN` do vLLM pode ser maior (ex.: 8192).
   maxTokens: 2048,
-  model: 'Qwen/Qwen2.5-7B-Instruct-AWQ',
+  model: DEFAULT_LLM_SERVING_MODEL_ID,
+  reasoningMode: DEFAULT_REASONING_MODE,
 };
 
 function parseEnvFloat(value: string | undefined, defaultValue: number, name: string): number {
@@ -6045,9 +6053,9 @@ function getAgentLLMConfig(agent?: AgentConfig | null): LLMConfig {
 
 /**
  * Mapeia nome amigável do modelo para o nome usado pelo runtime GPU (vLLM/OpenAI).
- * Gate 2: LLM (texto) usa Qwen2.5 7B AWQ; Vision via OpenAI.
+ * Gate 3: LLM (texto) usa Qwen3-8B AWQ; Vision via OpenAI.
  * 
- * @param modelName - Nome do modelo no banco (ex: "Qwen2.5-7B-Instruct-AWQ")
+ * @param modelName - Nome do modelo no banco (ex: "Qwen3-8B")
  * @returns Nome do modelo para o runtime (ex: repo Hugging Face)
  */
 function mapModelNameToGpuModel(modelName: string): string {
@@ -6057,13 +6065,13 @@ function mapModelNameToGpuModel(modelName: string): string {
 
   // Não é permitido aceitar modelos legados e fazer "swap" silencioso.
   const isLegacy = resolved.isLegacy;
-  logger.warn({ modelName: normalized }, 'modeloBase inválido para LLM (Gate 2)');
+  logger.warn({ modelName: normalized }, 'modeloBase inválido para LLM (Gate 3)');
   throw new ClientInputError(
     isLegacy
-      ? `modeloBase '${normalized}' é legado e não é suportado para LLM (texto) no Gate 2. ` +
-          `Aplique a migração '0016_gate2_migrate_legacy_agent_models.sql' e/ou atualize o agente para 'Qwen2.5-7B-Instruct-AWQ'.`
-      : `modeloBase '${normalized}' não é suportado para LLM (texto) no Gate 2. ` +
-          `Atualize o agente para 'Qwen2.5-7B-Instruct-AWQ'.`,
+      ? `modeloBase '${normalized}' é legado e não é suportado para LLM (texto) no Gate 3. ` +
+          `Atualize o agente para '${DEFAULT_PUBLIC_LLM_MODEL_NAME}'.`
+      : `modeloBase '${normalized}' não é suportado para LLM (texto) no Gate 3. ` +
+          `Atualize o agente para '${DEFAULT_PUBLIC_LLM_MODEL_NAME}'.`,
     { code: isLegacy ? 'LEGACY_AGENT_LLM_MODEL' : 'INVALID_AGENT_LLM_MODEL' },
   );
 }
@@ -6198,7 +6206,7 @@ async function analyzeImageWithOpenAI(params: {
 /** Chama LLM Gateway (complete) quando configurado - Plano Enterprise */
 async function callGatewayComplete(
   messages: LLMMessage[],
-  config: { temperature: number; maxTokens: number; model: string },
+  config: { temperature: number; maxTokens: number; model: string; reasoningMode: ReasoningMode },
   context: LlmGatewayContext
 ): Promise<globalThis.Response> {
   const url = `${LLM_GATEWAY_URL}/api/llm/complete`;
@@ -6212,6 +6220,9 @@ async function callGatewayComplete(
       messages,
       config: { temperature: config.temperature, maxTokens: config.maxTokens, model: config.model },
       context,
+      extraBody: {
+        alice_reasoning_mode: config.reasoningMode,
+      },
     }),
     signal: AbortSignal.timeout(LLM_SYNC_TIMEOUT),
   });
@@ -6241,6 +6252,7 @@ async function callLlamaAPIInternal(request: LLMRequest): Promise<globalThis.Res
   const temperature = config.temperature ?? DEFAULT_LLM_CONFIG.temperature;
   const maxTokens = config.maxTokens ?? DEFAULT_LLM_CONFIG.maxTokens;
   const model = config.model || DEFAULT_LLM_CONFIG.model;
+  const reasoningMode = resolveReasoningMode(config.reasoningMode);
   const priority = request.priority ?? GpuRequestPriority.CRITICAL;
   
   // Plano Enterprise: usar LLM Gateway quando configurado e contexto disponível
@@ -6248,7 +6260,7 @@ async function callLlamaAPIInternal(request: LLMRequest): Promise<globalThis.Res
     try {
       return await callGatewayComplete(
         request.messages,
-        { temperature, maxTokens, model },
+        { temperature, maxTokens, model, reasoningMode },
         request.context
       );
     } catch (error) {
@@ -6397,7 +6409,7 @@ async function callLlamaAPI(
  */
 async function callGatewayStream(
   messages: LLMMessage[],
-  config: { temperature: number; maxTokens: number; model: string },
+  config: { temperature: number; maxTokens: number; model: string; reasoningMode: ReasoningMode },
   context: LlmGatewayContext
 ): Promise<globalThis.Response> {
   const url = `${LLM_GATEWAY_URL}/api/llm/stream`;
@@ -6411,6 +6423,9 @@ async function callGatewayStream(
       messages,
       config: { temperature: config.temperature, maxTokens: config.maxTokens, model: config.model },
       context,
+      extraBody: {
+        alice_reasoning_mode: config.reasoningMode,
+      },
     }),
     signal: AbortSignal.timeout(60000),
   });
@@ -6453,6 +6468,7 @@ async function proxyStreamFromGpuManager(
   const temperature = config?.temperature ?? DEFAULT_LLM_CONFIG.temperature;
   const maxTokens = config?.maxTokens ?? DEFAULT_LLM_CONFIG.maxTokens;
   const model = config?.model || DEFAULT_LLM_CONFIG.model;
+  const reasoningMode = resolveReasoningMode(config?.reasoningMode);
 
   // ============================================================================
   // MÉTRICAS LLM (enterprise, modelo-agnóstico)
@@ -6473,7 +6489,7 @@ async function proxyStreamFromGpuManager(
     if (useGateway && llmContext) {
       gpuResponse = await callGatewayStream(
         llmMessages,
-        { temperature, maxTokens, model },
+        { temperature, maxTokens, model, reasoningMode },
         llmContext
       );
     } else {
@@ -8274,8 +8290,8 @@ app.get('/ready', async (_req: Request, res: Response) => {
         warnings: invalidAgentsCount > 0 ? [{
           code: 'LEGACY_AGENT_LLM_MODEL',
           message:
-            `Detectados ${invalidAgentsCount} agentes com modeloBase não suportado para LLM (texto) no Gate 2. ` +
-            `Aplique a migração '0016_gate2_migrate_legacy_agent_models.sql'.`,
+            `Detectados ${invalidAgentsCount} agentes com modeloBase não suportado para LLM (texto) no Gate 3. ` +
+            `Atualize os agentes para '${DEFAULT_PUBLIC_LLM_MODEL_NAME}'.`,
         }] : [],
       });
     } else {
@@ -18342,10 +18358,7 @@ app.delete('/api/namespaces/:id', requireAuth(), requireSameTenant(getTenantIdFr
 // ============================================================================
 
 // Schema de validação para criação/atualização de agentes
-const agentModelNameSchema = z.enum([
-  // Gate 2 (LLM texto)
-  'Qwen2.5-7B-Instruct-AWQ',
-] as const);
+const agentModelNameSchema = z.enum(ALLOWED_AGENT_LLM_MODEL_NAMES);
 
 const createAgentSchema = z.object({
   nome: z.string().min(2, 'Nome deve ter no mínimo 2 caracteres').max(255),
@@ -18356,7 +18369,7 @@ const createAgentSchema = z.object({
   instrucoes: z.string().max(10000).optional().nullable(),
   avatar: z.string().url().optional().nullable(),
   capacidades: z.array(z.string()).optional().nullable(),
-  modeloBase: agentModelNameSchema.optional().default('Qwen2.5-7B-Instruct-AWQ'),
+  modeloBase: agentModelNameSchema.optional().default(DEFAULT_PUBLIC_LLM_MODEL_NAME),
   temperaturaModelo: z.number().min(0).max(2).optional().default(0.7),
   // Gate 2: max_tokens deve respeitar max-model-len do stack (2048)
   maxTokens: z.number().int().min(100).max(2048).optional().default(2048),
@@ -18382,11 +18395,18 @@ function buildAgentModelOptionsResponse(opts: {
   constraints: { maxTokensMin: number; maxTokensMax: number };
 } {
   const models: AgentModelOption[] = opts.allowedModels.map((value) => {
+    if (value === DEFAULT_PUBLIC_LLM_MODEL_NAME) {
+      return {
+        value,
+        label: 'Qwen3 8B (AWQ)',
+        description: 'LLM principal de produção (texto) - vLLM (AWQ)',
+      };
+    }
     if (value === 'Qwen2.5-7B-Instruct-AWQ') {
       return {
         value,
         label: 'Qwen2.5 7B Instruct (AWQ)',
-        description: 'Gate 2 LLM (texto) - vLLM (AWQ 4-bit)',
+        description: 'Compatibilidade legada para registros históricos',
       };
     }
     return { value, label: value, description: '' };
@@ -18414,7 +18434,7 @@ app.get('/api/agents/model-options', requireAuth(), requireSameTenant(getTenantI
     buildAgentModelOptionsResponse({
       allowedModels: agentModelNameSchema.options,
       defaults: {
-        modeloBase: 'Qwen2.5-7B-Instruct-AWQ',
+        modeloBase: DEFAULT_PUBLIC_LLM_MODEL_NAME,
         temperaturaModelo: DEFAULT_LLM_CONFIG.temperature,
         maxTokens: DEFAULT_LLM_CONFIG.maxTokens,
       },

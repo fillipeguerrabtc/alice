@@ -27,6 +27,7 @@ import {
   createNotFoundHandler,
   getCorsConfig,
   requireInternalHmacAuth,
+  resolveServingModelIdFromConfig,
   setupSwaggerUI,
 } from '@alice/shared-utils';
 import { registerLlmMetrics } from './llm-metrics.js';
@@ -41,7 +42,7 @@ const logger = createLogger('llm-gateway');
 const PORT = readNumberEnv('PORT', { defaultValue: 3011, integer: true, min: 1, max: 65535 });
 const INTERNAL_API_SECRET = readOptionalStringEnv('INTERNAL_API_SECRET') ?? '';
 const IS_PRODUCTION = getNodeEnv() === 'production';
-const DEFAULT_MODEL = readOptionalStringEnv('DEFAULT_LLM_MODEL') ?? 'Qwen2.5-7B-Instruct-AWQ';
+const DEFAULT_MODEL = resolveServingModelIdFromConfig(readOptionalStringEnv('DEFAULT_LLM_MODEL'));
 const GPU_REQUEST_TIMEOUT_MS = readNumberEnv('GPU_REQUEST_TIMEOUT_MS', {
   defaultValue: 60000,
   integer: true,

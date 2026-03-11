@@ -62,6 +62,8 @@ import {
   TRADING_LLM_SIGNAL_JSON_SCHEMA,
   TRADING_LLM_SIGNAL_PARTIAL_SCHEMA,
   GPU_MANAGER_CONFIG,
+  resolveReasoningMode,
+  resolveServingModelIdFromConfig,
   RedisStreamQueue,
   TRADING_STREAMS,
   buildTradingIdempotencyKey,
@@ -2366,7 +2368,8 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
       { role: 'user' as const, content: llmPrompt },
     ];
 
-    const configuredModel = readOptionalStringEnv('TRADING_LLM_MODEL') ?? 'Qwen2.5-7B-Instruct-AWQ';
+    const configuredModel = resolveServingModelIdFromConfig(readOptionalStringEnv('TRADING_LLM_MODEL'));
+    const configuredReasoningMode = resolveReasoningMode(readOptionalStringEnv('TRADING_REASONING_MODE'));
     const loraModel = activeAdapter.adapterPath ? `${configuredModel}::${activeAdapter.adapterPath}` : configuredModel;
     let llmRawContent = '';
     if (isGatewayConfigured()) {
@@ -2384,6 +2387,7 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
           namespaceId: trainingNamespaceId,
         },
         extraBody: {
+          alice_reasoning_mode: configuredReasoningMode,
           response_format: {
             type: 'json_schema',
             json_schema: TRADING_LLM_SIGNAL_JSON_SCHEMA,

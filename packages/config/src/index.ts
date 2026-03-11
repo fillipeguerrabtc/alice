@@ -3,6 +3,15 @@ import { createLogger } from '@alice/logger';
 
 const configLogger = createLogger('config');
 
+export const LLM_PUBLIC_MODEL_DEFAULT = 'Qwen3-8B';
+export const LLM_SERVING_MODEL_ID_DEFAULT = 'Qwen/Qwen3-8B-AWQ';
+export const LLM_TRAINING_BASE_MODEL_ID_DEFAULT = 'Qwen/Qwen3-8B';
+export const EMBEDDINGS_MODEL_ID_DEFAULT = 'Qwen/Qwen3-Embedding-0.6B';
+
+export const REASONING_MODE_VALUES = ['auto', 'thinking', 'non_thinking'] as const;
+export type ReasoningMode = (typeof REASONING_MODE_VALUES)[number];
+const reasoningModeSchema = z.enum(REASONING_MODE_VALUES);
+
 const nodeEnvSchema = z.enum(['development', 'production', 'test']).default('development');
 const httpUrlSchema = z.string().url().refine(
   (value) => value.startsWith('http://') || value.startsWith('https://'),
@@ -43,7 +52,8 @@ const authConfigSchema = z.object({
 const llmConfigSchema = z.object({
   // GPU Manager Service (Hetzner GEX44) - GPU dedicada 24/7
   // Gate 2: LLM (texto) separado de Vision (OpenAI). Este schema reflete o LLM default (texto).
-  LLM_MODEL: z.string().default('Qwen2.5-7B-Instruct-AWQ'),
+  LLM_MODEL: z.string().default(LLM_PUBLIC_MODEL_DEFAULT),
+  LLM_REASONING_MODE: reasoningModeSchema.default('auto'),
   // Gate 2: coerente com max-model-len padrão do stack (2048)
   LLM_MAX_TOKENS: z.coerce.number().default(2048),
   LLM_TEMPERATURE: z.coerce.number().default(0.7),

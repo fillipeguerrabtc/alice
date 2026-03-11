@@ -607,8 +607,8 @@ describe('Config - Timeouts Padrão', () => {
       expect(DEFAULT_TIMEOUTS.http).toBe(30000);
     });
 
-    // ARQUITETURA 16/01/2026+: LLM texto Qwen2.5 7B
-    it('deve ter timeout LLM de 60 segundos (inferência Qwen2.5 7B)', () => {
+    // ARQUITETURA 11/03/2026+: LLM texto Qwen3-8B
+    it('deve ter timeout LLM de 60 segundos (inferência Qwen3-8B)', () => {
       expect(DEFAULT_TIMEOUTS.llm).toBe(60000);
     });
 
@@ -706,8 +706,8 @@ describe('Config - GPU Manager Service Configuration', () => {
       expect(GPU_MANAGER_CONFIG.url).toBe('http://alice-gpu-manager:3010');
     });
 
-    it('deve ter modelo LLM configurado (Qwen2.5 7B AWQ)', () => {
-      expect(GPU_MANAGER_CONFIG.models.llm).toBe('Qwen/Qwen2.5-7B-Instruct-AWQ');
+    it('deve ter modelo LLM configurado (Qwen3-8B AWQ)', () => {
+      expect(GPU_MANAGER_CONFIG.models.llm).toBe('Qwen/Qwen3-8B-AWQ');
       // Arquitetura atual: Vision via OpenAI (sem serviço local de visão)
       expect('vlm' in GPU_MANAGER_CONFIG.models).toBe(false);
     });

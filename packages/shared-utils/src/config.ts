@@ -17,6 +17,11 @@ import {
   readOptionalStringEnv,
   resolveCorsOrigins,
 } from '@alice/config';
+import {
+  DEFAULT_EMBEDDINGS_MODEL_ID,
+  DEFAULT_LLM_SERVING_MODEL_ID,
+  resolveServingModelIdFromConfig,
+} from './llm-models.js';
 
 /**
  * Regex para validação de URL de serviço
@@ -386,8 +391,8 @@ export const GPU_MANAGER_CONFIG = {
   url: getOptionalServiceUrl('gpuManager') ?? 'http://alice-gpu-manager:3010',
   models: {
     // LLM (texto) - SSOT do stack (`LLM_MODEL_NAME` em produção)
-    llm: readOptionalStringEnv('LLM_MODEL_NAME') ?? 'Qwen/Qwen2.5-7B-Instruct-AWQ',
-    embeddings: 'Qwen/Qwen3-Embedding-0.6B',
+    llm: resolveServingModelIdFromConfig(readOptionalStringEnv('LLM_MODEL_NAME') ?? DEFAULT_LLM_SERVING_MODEL_ID),
+    embeddings: DEFAULT_EMBEDDINGS_MODEL_ID,
   },
   defaults: {
     // Default de saída (max_tokens). Observação: `MAX_MODEL_LEN` do vLLM pode ser maior (ex.: 8192).
