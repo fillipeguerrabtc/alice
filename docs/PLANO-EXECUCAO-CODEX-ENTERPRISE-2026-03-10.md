@@ -1,7 +1,7 @@
 # Plano de Execução Codex Enterprise
 Author: Fillipe Guerra
 Data de criação: 2026-03-10
-Última atualização: 2026-03-10
+Última atualização: 2026-03-11
 
 ## Objetivo
 Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade canônica, validação real e aderência integral ao `CLAUDE.md` e às regras operacionais desta governança.
@@ -31,7 +31,7 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - `P1-INTEGRATIONS-06`: Concluído
 - `P1-GPU-LLM-07`: Concluído
 - `P1-OBS-08`: Concluído
-- `P1-FRONT-09`: Não iniciado
+- `P1-FRONT-09`: Concluído
 - `P1-CONTRACTS-10`: Não iniciado
 - `P1-BIOMETRICS-11`: Não iniciado
 - `P1-DOCS-12`: Não iniciado
@@ -43,7 +43,7 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - `P2-DOCS-06`: Não iniciado
 
 ## Bloco atual
-`P1-OBS-08` (Concluído)
+`P1-FRONT-09` (Concluído)
 
 ## Histórico de rodadas
 
@@ -531,8 +531,41 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
   - Validar posteriormente no ambiente do usuário a correção do binário global `pnpm`.
 - Riscos ou bloqueios:
   - Sem bloqueio ativo para continuação.
-  - Risco residual controlado: `apps/observability-service/src/backup-orchestrator.ts` permanece monolítico (2543 linhas) por estar fora do escopo de decomposição autorizado desta rodada.
+- Risco residual controlado: `apps/observability-service/src/backup-orchestrator.ts` permanece monolítico (2543 linhas) por estar fora do escopo de decomposição autorizado desta rodada.
 - Próximo bloco recomendado: `P1-FRONT-09`.
+
+### Rodada 16
+- Data: 2026-03-11
+- Bloco executado: `P1-FRONT-09`
+- Objetivo: Modularizar telas e componentes gigantes do frontend, separando builders, config de treinamento e navegação sem alterar comportamento visível nem mover lógica sensível para o cliente.
+- Diagnóstico: `apps/frontend-service/src/components/trading/TradingSectionPropsBuilders.ts` (1191 linhas) e `apps/frontend-service/src/pages/Training.tsx` (1879 linhas) concentravam responsabilidades de composição de props, presets/config de hyperparams e configuração de navegação, elevando acoplamento e dificultando manutenção.
+- Arquivos lidos: `CLAUDE.md` (1-120), `package.json`, `apps/frontend-service/src/components/trading/TechnicalAnalysisPanel.tsx`, `apps/frontend-service/src/components/trading/SignalApprovalPanel.tsx`, `apps/frontend-service/src/components/trading/TradingSectionPropsBuilders.ts` (arquivo completo em chunks), `apps/frontend-service/src/components/trading/index.ts`, `apps/frontend-service/src/pages/DemoTrading.tsx`, `apps/frontend-service/src/pages/Training.tsx` (arquivo completo em chunks), `apps/frontend-service/src/pages/Agents.tsx`, `apps/frontend-service/src/pages/Namespaces.tsx`, `apps/frontend-service/src/pages/TradingContent.tsx`, `apps/frontend-service/src/pages/BackupAdmin.tsx`, `apps/frontend-service/src/pages/training/components/training-multimodal-tab-content.tsx`, `apps/frontend-service/package.json`, `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Arquivos alterados: `apps/frontend-service/src/components/trading/TradingSectionPropsBuilders.ts`, `apps/frontend-service/src/components/trading/TradingSectionPropsBuilderTypes.ts`, `apps/frontend-service/src/components/trading/TradingLayoutSectionPropsBuilder.ts`, `apps/frontend-service/src/components/trading/TradingPrimaryTabsSectionPropsBuilder.ts`, `apps/frontend-service/src/components/trading/TradingOperationalTabsSectionPropsBuilder.ts`, `apps/frontend-service/src/components/trading/TradingDialogsSectionPropsBuilder.ts`, `apps/frontend-service/src/pages/Training.tsx`, `apps/frontend-service/src/pages/training/training-hyperparams-config.ts`, `apps/frontend-service/src/pages/training/training-navigation-config.ts`, `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Validações executadas:
+  - `pnpm --filter @alice/frontend-service typecheck` (falha por binário global `pnpm` quebrado no ambiente)
+  - `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck` (falha inicial por imports não utilizados em `Training.tsx`)
+  - `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck` (reexecução após correção de imports não utilizados)
+  - `pnpm --filter @alice/frontend-service lint` (falha por binário global `pnpm` quebrado no ambiente)
+  - `npx -y pnpm@10.26.2 --filter @alice/frontend-service lint`
+  - `pnpm --filter @alice/frontend-service build` (falha por binário global `pnpm` quebrado no ambiente)
+  - `npx -y pnpm@10.26.2 --filter @alice/frontend-service build`
+  - `pnpm lint` (falha por binário global `pnpm` quebrado no ambiente)
+  - `npx -y pnpm@10.26.2 lint`
+  - `pnpm build` (falha por binário global `pnpm` quebrado no ambiente)
+  - `npx -y pnpm@10.26.2 build`
+- Resultado das validações:
+  - Todas as validações obrigatórias da rodada foram aprovadas ao final.
+  - `apps/frontend-service/src/components/trading/TradingSectionPropsBuilders.ts` foi reduzido de 1191 para 14 linhas, com extração de builders por domínio (layout, abas primárias, abas operacionais e diálogos) e tipagem compartilhada.
+  - `apps/frontend-service/src/pages/Training.tsx` foi reduzido de 1879 para 1757 linhas, com extração de configuração de hyperparams/runtime e configuração de navegação por abas/workspaces para módulos dedicados.
+  - Observação de ambiente: binário global `pnpm` permanece quebrado; comandos executados via `npx -y pnpm@10.26.2`, preservando os comandos lógicos exigidos.
+- Documentação atualizada: tracking canônico atualizado com evidências factuais da Rodada 16.
+- Commit realizado: `refactor: split large frontend trading and training screens`
+- Pendências:
+  - Validar posteriormente no ambiente do usuário a correção do binário global `pnpm`.
+- Riscos ou bloqueios:
+  - Sem bloqueio ativo para continuação.
+  - Risco residual controlado: `apps/frontend-service/src/pages/Training.tsx` e componentes do domínio de trading ainda permanecem volumosos em áreas não extraídas nesta rodada; decomposição adicional depende de próximos blocos autorizados.
+- Próximo bloco recomendado: `P1-CONTRACTS-10`.
 
 ## Pendências abertas
 - Correção do binário global `pnpm` no ambiente local (fora do escopo deste bloco).
@@ -546,4 +579,4 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - Risco residual controlado: documentação histórica volumosa pode conter contexto de planos anteriores; status atual de execução do backlog governado deve sempre ser consultado no tracking canônico.
 
 ## Próximos blocos permitidos
-- `P1-FRONT-09`
+- `P1-CONTRACTS-10`

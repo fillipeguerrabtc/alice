@@ -36,12 +36,9 @@ import {
   CheckCircle2,
   Clock,
   RefreshCw,
-  Database,
   Zap,
   TrendingUp,
-  Upload,
   AlertTriangle,
-  Image,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { WorkspaceFilterBar } from '@/components/ui/workspace-filter-bar';
@@ -69,9 +66,20 @@ import { TrainingResolveScopeDialog } from './training/components/training-resol
 import { TrainingRollbackDialog } from './training/components/training-rollback-dialog';
 import { TrainingReviewDialog } from './training/components/training-review-dialog';
 import {
-  parseTrainingHyperparamsJson as parseSharedTrainingHyperparamsJson,
   type TrainingHyperparams,
 } from '../../../../packages/shared-utils/src/training-config';
+import {
+  parseTrainingHyperparamsConfig,
+  TRAINING_SYSTEM_CONFIG_DEFAULTS,
+  type TrainingHyperparamsPreset,
+} from './training/training-hyperparams-config';
+import {
+  TRAINING_TAB_DESCRIPTORS,
+  TRAINING_WORKSPACE_LABELS,
+  TRAINING_WORKSPACE_TABS,
+  type TrainingTabKey,
+  type TrainingWorkspaceKey,
+} from './training/training-navigation-config';
 import {
   buildTrainingIdempotencyFingerprint,
   generateTrainingIdempotencyKey,
@@ -262,8 +270,6 @@ type TrainingExecutionModesResponse = {
   };
 };
 
-type TrainingHyperparamsPreset = 'safe' | 'standard' | 'large';
-
 type TrainingHyperparamsForm = TrainingHyperparams;
 
 type TrainingSystemConfigRuntime = {
@@ -283,61 +289,6 @@ type TrainingSystemConfigRuntime = {
   presets: Record<TrainingHyperparamsPreset, TrainingHyperparamsForm>;
 };
 
-const TRAINING_HYPERPARAMS_SAFE_FALLBACK: TrainingHyperparamsForm = {
-  epochs: 2,
-  learningRate: 0.0001,
-  batchSize: 2,
-  maxSeqLen: 1536,
-  gradientAccumulationSteps: 4,
-  warmupSteps: 100,
-  loraRank: 16,
-  loraAlpha: 32,
-  loraDropout: 0.05,
-};
-
-const TRAINING_HYPERPARAMS_STANDARD_FALLBACK: TrainingHyperparamsForm = {
-  epochs: 3,
-  learningRate: 0.0002,
-  batchSize: 2,
-  maxSeqLen: 1536,
-  gradientAccumulationSteps: 4,
-  warmupSteps: 100,
-  loraRank: 16,
-  loraAlpha: 32,
-  loraDropout: 0.05,
-};
-
-const TRAINING_HYPERPARAMS_LARGE_FALLBACK: TrainingHyperparamsForm = {
-  epochs: 1,
-  learningRate: 0.0001,
-  batchSize: 2,
-  maxSeqLen: 1536,
-  gradientAccumulationSteps: 8,
-  warmupSteps: 100,
-  loraRank: 16,
-  loraAlpha: 32,
-  loraDropout: 0.05,
-};
-
-const TRAINING_SYSTEM_CONFIG_DEFAULTS = {
-  MIN_ONDEMAND_DATASET_SIZE: '20',
-  MIN_SCHEDULED_DATASET_SIZE_INCREMENTAL: '50',
-  MIN_SCHEDULED_DATASET_SIZE_FULL: '200',
-  TRAINING_QUALITY_MIN_RATIO: '0.60',
-  TRAINING_DATASET_MAX_ROWS: '5000',
-  TRAINING_TRAIN_EVAL_SPLIT_RATIO: '0.90',
-  TRAINING_SLICE_STEPS: '10',
-  TRAINING_GPU_TIMEOUT_MS: '120000',
-  maxSeqLen: '1536',
-  AUTO_LEARNING_CRON_INCREMENTAL: '0 3 * * 0',
-  AUTO_LEARNING_CRON_FULL: '0 1 1,15 * *',
-  AUTO_LEARNING_INCLUDE_IMAGES: 'true',
-  TRAINING_DEFAULT_HYPERPARAMS_JSON: JSON.stringify(TRAINING_HYPERPARAMS_SAFE_FALLBACK),
-  TRAINING_PRESET_SAFE_JSON: JSON.stringify(TRAINING_HYPERPARAMS_SAFE_FALLBACK),
-  TRAINING_PRESET_STANDARD_JSON: JSON.stringify(TRAINING_HYPERPARAMS_STANDARD_FALLBACK),
-  TRAINING_PRESET_LARGE_JSON: JSON.stringify(TRAINING_HYPERPARAMS_LARGE_FALLBACK),
-} as const;
-
 const trainingSystemConfigSchema = z.object({
   MIN_ONDEMAND_DATASET_SIZE: z.coerce.number().int().min(1),
   MIN_SCHEDULED_DATASET_SIZE_INCREMENTAL: z.coerce.number().int().min(1),
@@ -356,24 +307,6 @@ const trainingSystemConfigSchema = z.object({
   TRAINING_PRESET_STANDARD_JSON: z.string().min(2).optional(),
   TRAINING_PRESET_LARGE_JSON: z.string().min(2).optional(),
 });
-
-function parseTrainingHyperparamsConfig(raw: string, key: string): TrainingHyperparamsForm {
-  try {
-    return parseSharedTrainingHyperparamsJson(raw);
-  } catch (error) {
-    frontendLogger.warn('Configuracao de hyperparams invalida no system_config; aplicando fallback seguro', {
-      key,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    if (key === 'TRAINING_PRESET_STANDARD_JSON') {
-      return { ...TRAINING_HYPERPARAMS_STANDARD_FALLBACK };
-    }
-    if (key === 'TRAINING_PRESET_LARGE_JSON') {
-      return { ...TRAINING_HYPERPARAMS_LARGE_FALLBACK };
-    }
-    return { ...TRAINING_HYPERPARAMS_SAFE_FALLBACK };
-  }
-}
 
 function getScopeLabel(job: FineTuningJob, namespacesById: Map<string, string>, t: (key: string, options?: Record<string, unknown>) => string): string {
   if (job.scopeAgentId) {
@@ -408,61 +341,6 @@ const itemVariants = {
     transition: { type: 'spring' as const, stiffness: 100, damping: 15 },
   },
 } as const;
-
-type TrainingTabKey = 'data' | 'auto-learning' | 'jobs' | 'bulk-import' | 'multimodal';
-type TrainingWorkspaceKey = 'all' | 'operations' | 'automation' | 'ingestion';
-
-const TRAINING_WORKSPACE_TABS: Record<TrainingWorkspaceKey, TrainingTabKey[]> = {
-  all: ['data', 'auto-learning', 'jobs', 'bulk-import', 'multimodal'],
-  operations: ['data', 'jobs'],
-  automation: ['auto-learning', 'jobs'],
-  ingestion: ['bulk-import', 'multimodal', 'data'],
-};
-
-const TRAINING_WORKSPACE_LABELS: Array<{ value: TrainingWorkspaceKey; label: string }> = [
-  { value: 'all', label: 'Todos' },
-  { value: 'operations', label: 'Operações' },
-  { value: 'automation', label: 'Automação' },
-  { value: 'ingestion', label: 'Ingestão' },
-];
-
-const TRAINING_TAB_DESCRIPTORS: Array<{
-  value: TrainingTabKey;
-  testId: string;
-  icon: typeof Database;
-  label: (params: { t: ReturnType<typeof useTranslation>['t']; statsTotal: number; jobsTotal: number }) => string;
-}> = [
-  {
-    value: 'data',
-    testId: 'tab-training-data',
-    icon: Database,
-    label: ({ t, statsTotal }) => t('training.tabs.data', { count: statsTotal }),
-  },
-  {
-    value: 'auto-learning',
-    testId: 'tab-auto-learning',
-    icon: RefreshCw,
-    label: ({ t }) => t('training.tabs.autoLearning'),
-  },
-  {
-    value: 'jobs',
-    testId: 'tab-jobs',
-    icon: Brain,
-    label: ({ t, jobsTotal }) => t('training.tabs.jobs', { count: jobsTotal }),
-  },
-  {
-    value: 'bulk-import',
-    testId: 'tab-bulk-import',
-    icon: Upload,
-    label: ({ t }) => t('training.bulkImport.title'),
-  },
-  {
-    value: 'multimodal',
-    testId: 'tab-multimodal',
-    icon: Image,
-    label: ({ t }) => t('training.multimodal.tabTitle'),
-  },
-];
 
 export default function Training() {
   const { t } = useTranslation();
