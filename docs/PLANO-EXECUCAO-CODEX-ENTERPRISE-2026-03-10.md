@@ -33,7 +33,7 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - `P1-OBS-08`: Concluído
 - `P1-FRONT-09`: Concluído
 - `P1-CONTRACTS-10`: Concluído
-- `P1-BIOMETRICS-11`: Não iniciado
+- `P1-BIOMETRICS-11`: Concluído
 - `P1-DOCS-12`: Não iniciado
 - `P2-HYGIENE-01`: Não iniciado
 - `P2-CI-02`: Não iniciado
@@ -43,7 +43,7 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - `P2-DOCS-06`: Não iniciado
 
 ## Bloco atual
-`P1-CONTRACTS-10` (Concluído)
+`P1-BIOMETRICS-11` (Concluído)
 
 ## Histórico de rodadas
 
@@ -601,6 +601,33 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
   - Risco residual controlado: no `api-gateway`, a documentação de proxy foi mantida em nível de pontos de entrada do gateway (pass-through), enquanto os contratos de domínio permanecem canônicos nos microsserviços de destino.
 - Próximo bloco recomendado: `P1-BIOMETRICS-11`.
 
+### Rodada 18
+- Data: 2026-03-11
+- Bloco executado: `P1-BIOMETRICS-11`
+- Objetivo: Alinhar `biometrics-service` ao padrão de governança da plataforma, endurecendo contrato, autenticação, observabilidade e integração de configuração sem forçar padronização incompatível com a stack Python/FastAPI.
+- Diagnóstico: `apps/biometrics-service/main.py` usava autenticação interna apenas por `X-Internal-Api-Secret`, aceitava payload com validação de borda permissiva (`extra` não bloqueado e `userId/tenantId` como string genérica) e não possuía métrica específica para falhas de autenticação interna; também havia oportunidade de melhorar rastreabilidade de request com correlação estruturada.
+- Arquivos lidos: `CLAUDE.md` (1-120), `package.json`, `apps/biometrics-service/main.py` (1-860 em chunks de 200-300 linhas), `apps/biometrics-service/requirements.txt`, `apps/biometrics-service/Dockerfile`, `apps/auth-service/src/routes/auth-biometrics-routes.ts`, `apps/auth-service/src/auth-routes.ts`, `packages/shared-utils/src/rbac/middleware.ts`, `docs/STATUS-REAL-ATUAL.md`, `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Arquivos alterados: `apps/biometrics-service/main.py`, `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Validações executadas:
+  - `python3 -m compileall -q apps/biometrics-service/main.py` (equivalente de lint sintático para stack real do serviço)
+  - `python3 -m py_compile apps/biometrics-service/main.py` (equivalente de typecheck/syntax check para stack real)
+  - `find apps/biometrics-service -type f \( -name 'test_*.py' -o -name '*_test.py' \) | sort` (sem testes no serviço nesta rodada)
+  - `python3 -m compileall -q apps/biometrics-service` (equivalente de build/check de compilação Python bytecode)
+  - `npx -y pnpm@10.26.2 lint`
+  - `npx -y pnpm@10.26.2 build`
+- Resultado das validações:
+  - Todas as validações obrigatórias aplicáveis da rodada foram aprovadas.
+  - Não foram encontrados arquivos de teste no `biometrics-service` para execução de suíte automática nesta rodada.
+  - Observação de ambiente: binário global `pnpm` permanece quebrado; comandos de validação global foram executados via `npx -y pnpm@10.26.2`, preservando os comandos lógicos exigidos.
+- Documentação atualizada: tracking canônico atualizado com evidências factuais da Rodada 18.
+- Commit realizado: `refactor: align biometrics service with platform governance`
+- Pendências:
+  - Validar posteriormente no ambiente do usuário a correção do binário global `pnpm`.
+- Riscos ou bloqueios:
+  - Sem bloqueio ativo para continuação.
+  - Risco residual controlado: `biometrics-service` ainda não possui pipeline de testes automatizados/linter Python dedicado versionado no monorepo; a rodada validou sintaxe/compilação e build global sem expandir escopo para criar nova esteira.
+- Próximo bloco recomendado: `P1-DOCS-12`.
+
 ## Pendências abertas
 - Correção do binário global `pnpm` no ambiente local (fora do escopo deste bloco).
 - Reduzir leituras diretas de `process.env` remanescentes fora do escopo autorizado, seguindo próximos blocos.
@@ -613,4 +640,4 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - Risco residual controlado: documentação histórica volumosa pode conter contexto de planos anteriores; status atual de execução do backlog governado deve sempre ser consultado no tracking canônico.
 
 ## Próximos blocos permitidos
-- `P1-BIOMETRICS-11`
+- `P1-DOCS-12`

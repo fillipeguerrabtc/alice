@@ -12,13 +12,16 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hmac
 import hashlib
 import io
+import json
+import logging
 import os
 import time
 import uuid
-from datetime import datetime, timedelta
-from typing import Any, Optional
+from datetime import datetime, timedelta, timezone
+from typing import Any, Literal, Optional
 
 import asyncpg
 import face_recognition
@@ -26,7 +29,7 @@ import numpy as np
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from pgvector.asyncpg import register_vector
 from prometheus_client import (
     CONTENT_TYPE_LATEST,
@@ -44,6 +47,7 @@ BIOMETRICS_VERIFY_RATE_LIMIT = os.getenv("BIOMETRICS_VERIFY_RATE_LIMIT", "").str
 BIOMETRICS_ENROLL_RATE_LIMIT = os.getenv("BIOMETRICS_ENROLL_RATE_LIMIT", "").strip()
 BIOMETRICS_LIVENESS_THRESHOLD = os.getenv("BIOMETRICS_LIVENESS_THRESHOLD", "").strip()
 BIOMETRICS_ENFORCE_LIVENESS = os.getenv("BIOMETRICS_ENFORCE_LIVENESS", "").strip()
+INTERNAL_AUTH_MAX_DRIFT_SECONDS = os.getenv("INTERNAL_AUTH_MAX_DRIFT_SECONDS", "").strip()
 
 if not INTERNAL_API_SECRET:
   raise RuntimeError("INTERNAL_API_SECRET é obrigatório para biometria.")
@@ -83,7 +87,10 @@ VERIFY_RATE_LIMIT = parse_rate_limit(BIOMETRICS_VERIFY_RATE_LIMIT, 5)
 ENROLL_RATE_LIMIT = parse_rate_limit(BIOMETRICS_ENROLL_RATE_LIMIT, 3)
 LIVENESS_THRESHOLD = parse_threshold(BIOMETRICS_LIVENESS_THRESHOLD) if BIOMETRICS_LIVENESS_THRESHOLD else 0.45
 ENFORCE_LIVENESS = parse_env_boolean(BIOMETRICS_ENFORCE_LIVENESS, True)
+MAX_AUTH_DRIFT_SECONDS = parse_rate_limit(INTERNAL_AUTH_MAX_DRIFT_SECONDS, 300)
 MAX_ACTIVE_EMBEDDINGS = 3
+SERVICE_NAME = "biometrics-service"
+SERVICE_VERSION = "1.0.0"
 
 def decode_encryption_key(raw: str) -> bytes:
   cleaned = raw.strip()
@@ -96,6 +103,24 @@ if len(ENCRYPTION_KEY) != 32:
   raise RuntimeError("BIOMETRICS_ENCRYPTION_KEY deve ter 32 bytes (hex 64 ou base64).")
 
 aesgcm = AESGCM(ENCRYPTION_KEY)
+
+logger = logging.getLogger(SERVICE_NAME)
+if not logger.handlers:
+  stream_handler = logging.StreamHandler()
+  stream_handler.setFormatter(logging.Formatter("%(message)s"))
+  logger.addHandler(stream_handler)
+logger.setLevel(logging.INFO)
+logger.propagate = False
+
+def log_event(level: str, message: str, **context: Any) -> None:
+  payload = {
+    "timestamp": datetime.now(timezone.utc).isoformat(),
+    "level": level,
+    "service": SERVICE_NAME,
+    "message": message,
+    **context,
+  }
+  logger.log(getattr(logging, level.upper(), logging.INFO), json.dumps(payload, ensure_ascii=False))
 
 # Métricas Prometheus (padrão alice_* - observabilidade enterprise)
 _BIOMETRICS_REQUEST_DURATION = Histogram(
@@ -118,6 +143,12 @@ _BIOMETRICS_LIVENESS_REJECTIONS_TOTAL = Counter(
     ["action_type", "reason"],
     registry=REGISTRY,
 )
+_BIOMETRICS_AUTH_FAILURES_TOTAL = Counter(
+    "alice_biometrics_auth_failures_total",
+    "Total de falhas de autenticacao interna no Biometrics Service",
+    ["auth_mode", "reason"],
+    registry=REGISTRY,
+)
 
 def _normalize_route(path: str) -> str:
     """Normaliza path para evitar cardinalidade alta em métricas."""
@@ -131,44 +162,144 @@ def _normalize_route(path: str) -> str:
         return "/api/auth/biometrics/verify"
     return path
 
-app = FastAPI(title="Alice Biometrics Service", version="1.0.0")
+app = FastAPI(
+  title="Alice Biometrics Service",
+  version=SERVICE_VERSION,
+  description="Serviço de biometria facial com persistência em PostgreSQL/pgvector, autenticação interna e observabilidade Prometheus.",
+)
 pool: Optional[asyncpg.Pool] = None
 pool_lock = asyncio.Lock()
 
 @app.middleware("http")
 async def metrics_middleware(request: Request, call_next):
     """Registra duração e contagem de requisições para Prometheus."""
+    correlation_id = request.headers.get("x-correlation-id", "").strip() or str(uuid.uuid4())
+    request_id = request.headers.get("x-request-id", "").strip() or str(uuid.uuid4())
     start = time.perf_counter()
-    response = await call_next(request)
-    duration = time.perf_counter() - start
     route = _normalize_route(request.scope.get("path", request.url.path))
     method = request.method
-    status = str(response.status_code)
-    _BIOMETRICS_REQUEST_DURATION.labels(method=method, route=route).observe(duration)
-    _BIOMETRICS_REQUESTS_TOTAL.labels(method=method, route=route, status_code=status).inc()
-    return response
+    try:
+      response = await call_next(request)
+      status = str(response.status_code)
+      duration = time.perf_counter() - start
+      _BIOMETRICS_REQUEST_DURATION.labels(method=method, route=route).observe(duration)
+      _BIOMETRICS_REQUESTS_TOTAL.labels(method=method, route=route, status_code=status).inc()
+      response.headers["x-correlation-id"] = correlation_id
+      response.headers["x-request-id"] = request_id
+      log_event(
+        "info",
+        "Requisição processada no biometrics-service",
+        correlationId=correlation_id,
+        requestId=request_id,
+        method=method,
+        route=route,
+        statusCode=response.status_code,
+        durationMs=round(duration * 1000, 3),
+      )
+      return response
+    except Exception as exc:  # noqa: BLE001
+      duration = time.perf_counter() - start
+      _BIOMETRICS_REQUEST_DURATION.labels(method=method, route=route).observe(duration)
+      _BIOMETRICS_REQUESTS_TOTAL.labels(method=method, route=route, status_code="500").inc()
+      log_event(
+        "error",
+        "Erro nao tratado no biometrics-service",
+        correlationId=correlation_id,
+        requestId=request_id,
+        method=method,
+        route=route,
+        durationMs=round(duration * 1000, 3),
+        error=str(exc),
+      )
+      raise
 
-class EnrollRequest(BaseModel):
-  userId: str = Field(..., min_length=36)
-  tenantId: str = Field(..., min_length=36)
-  imageBase64: str
-  captureMode: Optional[str] = None
+class StrictApiModel(BaseModel):
+  model_config = ConfigDict(extra="forbid")
+
+class EnrollRequest(StrictApiModel):
+  userId: uuid.UUID
+  tenantId: uuid.UUID
+  imageBase64: str = Field(..., min_length=100, max_length=20_000_000)
+  captureMode: Optional[Literal["replace", "append"]] = None
   metadata: Optional[dict[str, Any]] = None
 
-class VerifyRequest(BaseModel):
-  userId: str = Field(..., min_length=36)
-  tenantId: str = Field(..., min_length=36)
-  imageBase64: str
-  actionType: str = Field(..., min_length=2)
+class VerifyRequest(StrictApiModel):
+  userId: uuid.UUID
+  tenantId: uuid.UUID
+  imageBase64: str = Field(..., min_length=100, max_length=20_000_000)
+  actionType: Literal["login", "approval"]
   actionContext: Optional[dict[str, Any]] = None
 
-class StatusRequest(BaseModel):
-  userId: str = Field(..., min_length=36)
-  tenantId: str = Field(..., min_length=36)
+class StatusRequest(StrictApiModel):
+  userId: uuid.UUID
+  tenantId: uuid.UUID
 
-def ensure_internal_auth(internal_secret: Optional[str]) -> None:
-  if not internal_secret or internal_secret.strip() != INTERNAL_API_SECRET:
+def _is_legacy_secret_valid(internal_secret: Optional[str]) -> bool:
+  if not internal_secret:
+    return False
+  normalized = internal_secret.strip()
+  if not normalized:
+    return False
+  return hmac.compare_digest(normalized, INTERNAL_API_SECRET)
+
+def _validate_hmac_auth(
+  request: Request,
+  expected_user_id: str,
+  expected_tenant_id: str,
+) -> None:
+  internal_signature = request.headers.get("x-internal-signature", "").strip()
+  internal_timestamp = request.headers.get("x-internal-timestamp", "").strip()
+  internal_user_id = request.headers.get("x-internal-user-id", "").strip()
+  internal_tenant_id = request.headers.get("x-internal-tenant-id", "").strip()
+  internal_role = request.headers.get("x-internal-role", "").strip()
+  internal_custom_role_id = request.headers.get("x-internal-custom-role-id", "").strip()
+
+  if not internal_signature or not internal_timestamp or not internal_user_id or not internal_role:
+    _BIOMETRICS_AUTH_FAILURES_TOTAL.labels(auth_mode="hmac", reason="missing_headers").inc()
     raise HTTPException(status_code=401, detail="Unauthorized")
+  if len(internal_signature) != 64:
+    _BIOMETRICS_AUTH_FAILURES_TOTAL.labels(auth_mode="hmac", reason="invalid_signature_length").inc()
+    raise HTTPException(status_code=401, detail="Unauthorized")
+
+  try:
+    timestamp = int(internal_timestamp)
+  except ValueError as exc:
+    _BIOMETRICS_AUTH_FAILURES_TOTAL.labels(auth_mode="hmac", reason="invalid_timestamp").inc()
+    raise HTTPException(status_code=401, detail="Unauthorized") from exc
+
+  now = int(time.time())
+  if abs(now - timestamp) > MAX_AUTH_DRIFT_SECONDS:
+    _BIOMETRICS_AUTH_FAILURES_TOTAL.labels(auth_mode="hmac", reason="timestamp_expired").inc()
+    raise HTTPException(status_code=401, detail="Unauthorized")
+
+  payload = f"{internal_user_id}:{internal_tenant_id}:{internal_role}:{internal_custom_role_id}:{internal_timestamp}"
+  expected_signature = hmac.new(
+    INTERNAL_API_SECRET.encode("utf-8"),
+    payload.encode("utf-8"),
+    hashlib.sha256,
+  ).hexdigest()
+
+  if not hmac.compare_digest(internal_signature.lower(), expected_signature.lower()):
+    _BIOMETRICS_AUTH_FAILURES_TOTAL.labels(auth_mode="hmac", reason="signature_mismatch").inc()
+    raise HTTPException(status_code=401, detail="Unauthorized")
+
+  if internal_user_id != expected_user_id:
+    _BIOMETRICS_AUTH_FAILURES_TOTAL.labels(auth_mode="hmac", reason="user_mismatch").inc()
+    raise HTTPException(status_code=401, detail="Unauthorized")
+  if internal_tenant_id and internal_tenant_id != expected_tenant_id:
+    _BIOMETRICS_AUTH_FAILURES_TOTAL.labels(auth_mode="hmac", reason="tenant_mismatch").inc()
+    raise HTTPException(status_code=401, detail="Unauthorized")
+
+def ensure_internal_auth(
+  request: Request,
+  internal_secret: Optional[str],
+  expected_user_id: str,
+  expected_tenant_id: str,
+) -> None:
+  if _is_legacy_secret_valid(internal_secret):
+    return
+  _BIOMETRICS_AUTH_FAILURES_TOTAL.labels(auth_mode="legacy_secret", reason="invalid_or_missing").inc()
+  _validate_hmac_auth(request, expected_user_id, expected_tenant_id)
 
 def decode_image(base64_str: str) -> np.ndarray:
   try:
@@ -346,7 +477,7 @@ async def with_rate_limit_lock(
 
 @app.get("/health")
 async def health() -> dict[str, str]:
-  return {"status": "ok"}
+  return {"status": "ok", "service": SERVICE_NAME, "version": SERVICE_VERSION}
 
 @app.get("/metrics")
 def metrics() -> Response:
@@ -362,16 +493,17 @@ async def ready() -> dict[str, str]:
     conn = await init_pool()
     async with conn.acquire() as db:
       await db.execute("SELECT 1")
-    return {"status": "ready"}
+    return {"status": "ready", "service": SERVICE_NAME}
   except Exception:  # noqa: BLE001
     raise HTTPException(status_code=500, detail="Database not ready")
 
 @app.post("/status")
 async def status(
   payload: StatusRequest,
+  request: Request,
   x_internal_api_secret: Optional[str] = Header(None),
 ) -> dict[str, Any]:
-  ensure_internal_auth(x_internal_api_secret)
+  ensure_internal_auth(request, x_internal_api_secret, str(payload.userId), str(payload.tenantId))
   conn = await init_pool()
   async with conn.acquire() as db:
     row = await db.fetchrow(
@@ -392,9 +524,10 @@ async def status(
 @app.post("/enroll")
 async def enroll(
   payload: EnrollRequest,
+  request: Request,
   x_internal_api_secret: Optional[str] = Header(None),
 ) -> dict[str, Any]:
-  ensure_internal_auth(x_internal_api_secret)
+  ensure_internal_auth(request, x_internal_api_secret, str(payload.userId), str(payload.tenantId))
   conn = await init_pool()
   async with conn.acquire() as db:
     async def handle_enroll():
@@ -562,11 +695,12 @@ async def enroll(
 @app.post("/verify")
 async def verify(
   payload: VerifyRequest,
+  request: Request,
   x_internal_api_secret: Optional[str] = Header(None),
   x_forwarded_for: Optional[str] = Header(None),
   user_agent: Optional[str] = Header(None),
 ) -> dict[str, Any]:
-  ensure_internal_auth(x_internal_api_secret)
+  ensure_internal_auth(request, x_internal_api_secret, str(payload.userId), str(payload.tenantId))
   conn = await init_pool()
   async with conn.acquire() as db:
     async def handle_verify():
