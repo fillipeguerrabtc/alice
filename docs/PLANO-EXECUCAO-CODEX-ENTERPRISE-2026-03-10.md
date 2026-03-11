@@ -24,7 +24,7 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - `P0-EXT-GPU-06`: Concluído
 - `P0-DOCS-07`: Concluído
 - `P1-API-01`: Concluído
-- `P1-AUTH-02`: Não iniciado
+- `P1-AUTH-02`: Concluído
 - `P1-CHAT-03`: Não iniciado
 - `P1-RAG-04`: Não iniciado
 - `P1-TRAINING-05`: Não iniciado
@@ -43,7 +43,7 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - `P2-DOCS-06`: Não iniciado
 
 ## Bloco atual
-`P1-API-01` (Concluído)
+`P1-AUTH-02` (Concluído)
 
 ## Histórico de rodadas
 
@@ -327,6 +327,33 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
   - Risco residual controlado: a modularização foi restrita ao gateway sem alteração de responsabilidades de auth nem mudança de contratos públicos.
 - Próximo bloco recomendado: `P1-AUTH-02`.
 
+### Rodada 9
+- Data: 2026-03-10
+- Bloco executado: `P1-AUTH-02`
+- Objetivo: Quebrar o monólito de `apps/auth-service/src/index.ts`, separando bootstrap, middlewares, registro de rotas, providers de auth, wiring de RBAC e health checks sem alterar contratos.
+- Diagnóstico: O `index.ts` do `auth-service` concentrava bootstrap, middlewares, providers OAuth/SAML/local, wiring de health/system routes, RBAC/admin routes, registro de rotas e shutdown em um único arquivo com 1895 linhas, reduzindo legibilidade e testabilidade.
+- Arquivos lidos: `CLAUDE.md` (1-120), `package.json`, `apps/auth-service/src/index.ts` (1-1895 em chunks), `apps/auth-service/src/openapi-specs.ts` (chunks), `apps/auth-service/src/oidc/index.ts` (chunks), `apps/auth-service/src/identity-provisioning/index.ts`, `apps/auth-service/src/rbac/permission-catalog.ts`, `apps/auth-service/src/rbac/role-assignments.ts`, `apps/auth-service/src/routes/auth-provider-routes.ts`, `apps/auth-service/src/routes/auth-password-routes.ts`, `apps/auth-service/src/routes/auth-biometrics-routes.ts`, `apps/auth-service/src/routes/auth-registration-routes.ts`, `apps/auth-service/src/routes/auth-system-routes.ts`, `apps/auth-service/src/routes/rbac-admin-routes.ts` (chunks), `apps/auth-service/src/routes/user-management-routes.ts` (chunks), `apps/auth-service/package.json`, `apps/auth-service/tsconfig.json`, `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Arquivos alterados: `apps/auth-service/src/index.ts`, `apps/auth-service/src/auth-middlewares.ts`, `apps/auth-service/src/auth-providers.ts`, `apps/auth-service/src/auth-routes.ts`, `apps/auth-service/src/bootstrap.ts`, `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Validações executadas:
+  - `pnpm --filter @alice/auth-service typecheck` (executado via `npx -y pnpm@10.26.2 --filter @alice/auth-service typecheck`)
+  - `pnpm --filter @alice/auth-service lint` (executado via `npx -y pnpm@10.26.2 --filter @alice/auth-service lint`)
+  - `pnpm --filter @alice/auth-service build` (executado via `npx -y pnpm@10.26.2 --filter @alice/auth-service build`)
+  - `pnpm lint` (executado via `npx -y pnpm@10.26.2 lint`)
+  - `pnpm build` (executado via `npx -y pnpm@10.26.2 build`)
+- Resultado das validações:
+  - Todas as validações obrigatórias da rodada foram aprovadas ao final.
+  - Houve 1 falha inicial em `pnpm --filter @alice/auth-service typecheck` por incompatibilidade de tipagem `Application` vs `Express` e assinatura de lifecycle de `stopIdentityProvisioning`; ajustes cirúrgicos aplicados nos novos módulos e revalidação completa aprovada.
+  - `apps/auth-service/src/index.ts` foi reduzido de 1895 para 662 linhas com preservação dos contratos e do comportamento funcional.
+  - Observação de ambiente: binário global `pnpm` permanece quebrado; os comandos foram executados com `npx -y pnpm@10.26.2`, preservando os comandos lógicos exigidos.
+- Documentação atualizada: tracking canônico atualizado com evidências factuais da Rodada 9.
+- Commit realizado: `refactor: split auth service composition root`.
+- Pendências:
+  - Validar posteriormente no ambiente do usuário a correção do binário global `pnpm`.
+- Riscos ou bloqueios:
+  - Sem bloqueio ativo para continuação.
+  - Risco residual controlado: `auth-providers.ts` permaneceu volumoso para preservar lógica de negócio e contratos existentes sem refatoração estrutural ampla além do escopo cirúrgico autorizado.
+- Próximo bloco recomendado: `P1-CHAT-03`.
+
 ## Pendências abertas
 - Correção do binário global `pnpm` no ambiente local (fora do escopo deste bloco).
 - Reduzir leituras diretas de `process.env` remanescentes fora do escopo autorizado, seguindo próximos blocos.
@@ -339,4 +366,4 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - Risco residual controlado: documentação histórica volumosa pode conter contexto de planos anteriores; status atual de execução do backlog governado deve sempre ser consultado no tracking canônico.
 
 ## Próximos blocos permitidos
-- `P1-AUTH-02`
+- `P1-CHAT-03`
