@@ -154,6 +154,16 @@ export interface AgentEvent {
   parentId?: string;
 }
 
+export type RuntimeNoticeCode =
+  | 'serving_interrupted_for_training'
+  | 'training_in_progress'
+  | 'serving_restored';
+
+export interface RuntimeNotice {
+  code: RuntimeNoticeCode;
+  occurredAt: string;
+}
+
 export interface ConversationsResponse {
   conversations: Conversation[];
   nextCursor?: {

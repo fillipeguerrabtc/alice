@@ -14,6 +14,7 @@ interface StartChatServiceParams {
   port: number;
   initializeAllCaches: () => Promise<void>;
   initializeTradingBroadcastSubscriber: () => Promise<void>;
+  initializeRuntimeAnnouncementSubscriber: () => Promise<void>;
   ensureCambioResources: () => Promise<void>;
   refreshSlaMetricsForAllTenants: () => Promise<void>;
   slaMetricsRefreshMs: number;
@@ -33,6 +34,7 @@ interface RegisterChatShutdownCallbacksParams {
   closeAgentWebSocketServer: () => Promise<void>;
   closePermissionCache: () => Promise<void>;
   closeTradingBroadcastSubscriber: () => Promise<void>;
+  closeRuntimeAnnouncementSubscriber: () => Promise<void>;
   closeRedisCacheClient: () => Promise<void>;
   closeDatabasePool: () => Promise<void>;
 }
@@ -44,6 +46,7 @@ export async function startChatService(params: StartChatServiceParams): Promise<
     port,
     initializeAllCaches,
     initializeTradingBroadcastSubscriber,
+    initializeRuntimeAnnouncementSubscriber,
     ensureCambioResources,
     refreshSlaMetricsForAllTenants,
     slaMetricsRefreshMs,
@@ -55,6 +58,7 @@ export async function startChatService(params: StartChatServiceParams): Promise<
   try {
     await initializeAllCaches();
     await initializeTradingBroadcastSubscriber();
+    await initializeRuntimeAnnouncementSubscriber();
     await ensureCambioResources();
 
     await new Promise<void>((resolve) => {
@@ -103,6 +107,7 @@ export function registerChatShutdownCallbacks(params: RegisterChatShutdownCallba
     closeAgentWebSocketServer,
     closePermissionCache,
     closeTradingBroadcastSubscriber,
+    closeRuntimeAnnouncementSubscriber,
     closeRedisCacheClient,
     closeDatabasePool,
   } = params;
@@ -166,6 +171,14 @@ export function registerChatShutdownCallbacks(params: RegisterChatShutdownCallba
       await closeTradingBroadcastSubscriber();
     },
     { priority: ShutdownPriority.BACKGROUND_JOBS - 8 },
+  );
+
+  registerShutdownCallback(
+    'chat-runtime-announcements',
+    async () => {
+      await closeRuntimeAnnouncementSubscriber();
+    },
+    { priority: ShutdownPriority.BACKGROUND_JOBS - 9 },
   );
 
   registerShutdownCallback(

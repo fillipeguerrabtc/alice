@@ -35,13 +35,17 @@ import {
   readNumberEnv,
   readOptionalStringEnv,
 } from '@alice/config';
-import { 
+import {
   getRedisClient,
   isRedisAvailable,
   createAlicePrometheus,
   getCorsConfig,
   requireInternalHmacAuth,
   setupSwaggerUI,
+  RUNTIME_ANNOUNCEMENTS_CHANNEL,
+  runtimeAnnouncementSchema,
+  type RuntimeAnnouncement,
+  type RuntimeNoticeCode,
 } from '@alice/shared-utils';
 import { createLogger } from '@alice/logger';
 import { 
@@ -258,6 +262,71 @@ function resolveRuntimeTriggerSource(trigger: OrchestratorTransitionTrigger): Ru
   return 'system';
 }
 
+function resolveRuntimeAnnouncementCode(transition: OrchestratorTransition): RuntimeNoticeCode | null {
+  if (transition.toState === 'serving_draining') {
+    return 'serving_interrupted_for_training';
+  }
+  if (transition.toState === 'training_active') {
+    return 'training_in_progress';
+  }
+  if (transition.toState === 'serving_ready') {
+    return 'serving_restored';
+  }
+  return null;
+}
+
+async function publishRuntimeAnnouncement(transition: OrchestratorTransition): Promise<void> {
+  const code = resolveRuntimeAnnouncementCode(transition);
+  if (!code) {
+    return;
+  }
+
+  const redis = getRedisClient();
+  if (!redis) {
+    logger.warn(
+      {
+        fromState: transition.fromState,
+        toState: transition.toState,
+        channel: RUNTIME_ANNOUNCEMENTS_CHANNEL,
+      },
+      'Redis indisponível para publicação de aviso de runtime',
+    );
+    return;
+  }
+
+  try {
+    const announcement: RuntimeAnnouncement = runtimeAnnouncementSchema.parse({
+      type: 'runtime_notice',
+      version: 1,
+      source: 'gpu_manager',
+      code,
+      occurredAt: transition.at,
+    });
+    const payload = JSON.stringify(announcement);
+    const receivers = await redis.publish(RUNTIME_ANNOUNCEMENTS_CHANNEL, payload);
+    logger.info(
+      {
+        channel: RUNTIME_ANNOUNCEMENTS_CHANNEL,
+        code: announcement.code,
+        fromState: transition.fromState,
+        toState: transition.toState,
+        receivers,
+      },
+      'Aviso de runtime publicado para chats ativos',
+    );
+  } catch (error) {
+    logger.error(
+      {
+        error,
+        channel: RUNTIME_ANNOUNCEMENTS_CHANNEL,
+        fromState: transition.fromState,
+        toState: transition.toState,
+      },
+      'Falha ao publicar aviso de runtime',
+    );
+  }
+}
+
 function trackOrchestratorStateGauge(state: OrchestratorState): void {
   for (const candidate of ORCHESTRATOR_STATES) {
     gpuOrchestratorState.set({ state: candidate }, candidate === state ? 1 : 0);
@@ -288,6 +357,8 @@ async function recordOrchestratorTransition(transition: OrchestratorTransition):
       },
     },
   });
+
+  await publishRuntimeAnnouncement(transition);
 }
 
 async function runOrchestratorAction(params: {

@@ -45,7 +45,7 @@ import { chatServicePaths, chatServiceSchemas } from './openapi-specs.js';
 import { createLogger } from '@alice/logger';
 import { getDatabase, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, getPool } from '@alice/database';
 import { getSystemConfig } from '@alice/database/system-config';
-import { 
+import {
   createCorrelationMiddleware, 
   createSecurityMiddleware,
   createRateLimiter,
@@ -78,6 +78,7 @@ import {
   deterministicSample,
   buildDailyCapKey,
   incrementWithDailyCap,
+  type RuntimeAnnouncement,
 } from '@alice/shared-utils';
 import type { AuthContext } from '@alice/shared-utils';
 import type { Role } from '@alice/shared-utils';
@@ -142,6 +143,7 @@ import {
   createMainWebSocketServer,
   createPendingAuthStore,
   createTradingBroadcastRuntime,
+  createRuntimeAnnouncementRuntime,
   buildTradingSubscriptionKey,
   type TradingBroadcastMessageType,
   type ExtendedWebSocket,
@@ -812,6 +814,62 @@ const {
   wss,
   nodeEnv: process.env.NODE_ENV,
   redisUrl: process.env.REDIS_URL,
+});
+
+type RuntimeNoticeSseWriter = (announcement: RuntimeAnnouncement) => void;
+
+const runtimeNoticeSseWriters = new Map<string, RuntimeNoticeSseWriter>();
+let latestRuntimeAnnouncement: RuntimeAnnouncement | null = null;
+
+function registerRuntimeNoticeSseWriter(writer: RuntimeNoticeSseWriter): () => void {
+  const writerId = crypto.randomUUID();
+  runtimeNoticeSseWriters.set(writerId, writer);
+
+  if (latestRuntimeAnnouncement) {
+    try {
+      writer(latestRuntimeAnnouncement);
+    } catch (error) {
+      logger.warn(
+        { error, writerId },
+        'Falha ao reemitir último aviso de runtime para stream recém-registrado',
+      );
+      runtimeNoticeSseWriters.delete(writerId);
+    }
+  }
+
+  return () => {
+    runtimeNoticeSseWriters.delete(writerId);
+  };
+}
+
+function fanOutRuntimeAnnouncementToSse(announcement: RuntimeAnnouncement): void {
+  latestRuntimeAnnouncement = announcement;
+  if (runtimeNoticeSseWriters.size === 0) {
+    return;
+  }
+
+  for (const [writerId, writer] of runtimeNoticeSseWriters.entries()) {
+    try {
+      writer(announcement);
+    } catch (error) {
+      logger.warn(
+        { error, writerId, code: announcement.code },
+        'Falha ao propagar aviso de runtime para stream SSE ativo',
+      );
+      runtimeNoticeSseWriters.delete(writerId);
+    }
+  }
+}
+
+const {
+  initializeRuntimeAnnouncementSubscriber,
+  closeRuntimeAnnouncementSubscriber,
+} = createRuntimeAnnouncementRuntime({
+  logger,
+  wss,
+  nodeEnv: process.env.NODE_ENV,
+  redisUrl: process.env.REDIS_URL,
+  onAnnouncement: fanOutRuntimeAnnouncementToSse,
 });
 
 async function ensureCambioResources(): Promise<void> {
@@ -10207,10 +10265,17 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     };
 
     let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+    let unregisterRuntimeNoticeWriter: (() => void) | null = null;
     const clearHeartbeat = () => {
       if (heartbeatInterval) {
         clearInterval(heartbeatInterval);
         heartbeatInterval = null;
+      }
+    };
+    const clearRuntimeNoticeWriter = () => {
+      if (unregisterRuntimeNoticeWriter) {
+        unregisterRuntimeNoticeWriter();
+        unregisterRuntimeNoticeWriter = null;
       }
     };
     const writeSseComment = (comment: string) => {
@@ -10235,6 +10300,9 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     res.on('close', clearHeartbeat);
     res.on('finish', clearHeartbeat);
     res.on('error', clearHeartbeat);
+    res.on('close', clearRuntimeNoticeWriter);
+    res.on('finish', clearRuntimeNoticeWriter);
+    res.on('error', clearRuntimeNoticeWriter);
 
     const writeContentChunk = (content: string) => {
       if (res.writableEnded) return;
@@ -10252,6 +10320,17 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         logger.warn({ error: writeError, conversationId: req.params.id }, 'Erro ao escrever evento SSE - cliente pode ter desconectado');
       }
     };
+
+    const writeRuntimeNoticeSseEvent = (announcement: RuntimeAnnouncement): void => {
+      safeWriteSseEvent({
+        type: 'runtime_notice',
+        notice: {
+          code: announcement.code,
+          occurredAt: announcement.occurredAt,
+        },
+      });
+    };
+    unregisterRuntimeNoticeWriter = registerRuntimeNoticeSseWriter(writeRuntimeNoticeSseEvent);
 
     if (agentPayload) {
       res.write(`data: ${JSON.stringify({ type: 'agent_route', agent: agentPayload, mode: routingDecision.mode, source: routingDecision.source })}\n\n`);
@@ -19785,6 +19864,7 @@ void startChatService({
   port: Number(PORT),
   initializeAllCaches,
   initializeTradingBroadcastSubscriber,
+  initializeRuntimeAnnouncementSubscriber,
   ensureCambioResources,
   refreshSlaMetricsForAllTenants,
   slaMetricsRefreshMs: SLA_METRICS_REFRESH_MS,
@@ -19835,6 +19915,7 @@ registerChatShutdownCallbacks({
     }),
   closePermissionCache: () => permissionCache.destroy(),
   closeTradingBroadcastSubscriber,
+  closeRuntimeAnnouncementSubscriber,
   closeRedisCacheClient,
   closeDatabasePool,
 });

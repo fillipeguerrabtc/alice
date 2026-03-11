@@ -6,7 +6,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { MessageBubble } from './MessageBubble';
 import { WelcomeScreen } from './WelcomeScreen';
-import type { AgentEvent, Message } from './types';
+import type { AgentEvent, Message, RuntimeNotice } from './types';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -40,6 +40,7 @@ type ChatMessagesViewportProps = {
   showStreamDiagnostics: boolean;
   streamEvents: AgentEvent[];
   streamStatusLabel: string | null;
+  runtimeNotice: RuntimeNotice | null;
   typingSpeedMs?: number;
   workspaceHint: WorkspaceHint | null;
 };
@@ -63,14 +64,36 @@ export function ChatMessagesViewport({
   showStreamDiagnostics,
   streamEvents,
   streamStatusLabel,
+  runtimeNotice,
   typingSpeedMs,
   workspaceHint,
 }: ChatMessagesViewportProps) {
   const { t } = useTranslation();
+  const isRuntimeRestored = runtimeNotice?.code === 'serving_restored';
+  const runtimeNoticeTitleKey = isRuntimeRestored
+    ? 'chat.runtimeNotice.restored.title'
+    : 'chat.runtimeNotice.interruption.title';
+  const runtimeNoticeDescriptionKey = isRuntimeRestored
+    ? 'chat.runtimeNotice.restored.description'
+    : 'chat.runtimeNotice.interruption.description';
 
   return (
     <ScrollArea ref={scrollAreaRef} className="flex-1 p-2 md:p-4">
       <div ref={messagesContainerRef} className="min-h-full">
+        {runtimeNotice && (
+          <Alert
+            variant="default"
+            className={`mb-3 ${isRuntimeRestored ? 'border-emerald-500/50 bg-emerald-500/10' : 'border-amber-500/50 bg-amber-500/10'}`}
+          >
+            {isRuntimeRestored ? (
+              <Info className="h-4 w-4 text-emerald-700" />
+            ) : (
+              <AlertTriangle className="h-4 w-4 text-amber-600" />
+            )}
+            <AlertTitle>{t(runtimeNoticeTitleKey)}</AlertTitle>
+            <AlertDescription>{t(runtimeNoticeDescriptionKey)}</AlertDescription>
+          </Alert>
+        )}
         {showConversationWorkspaceHint && workspaceHint && (
           <Alert className="mb-3">
             <Info className="h-4 w-4" />

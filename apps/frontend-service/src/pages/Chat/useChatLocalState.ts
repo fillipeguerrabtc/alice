@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import type { AgentEvent, MediaAttachment, Message } from './components/types';
+import type { AgentEvent, MediaAttachment, Message, RuntimeNotice } from './components/types';
 import type { ChatWorkspaceKey } from './chat-page-routing';
 
 type TrainingDialogMode = 'conversation' | 'messages' | null;
@@ -25,6 +25,7 @@ export function useChatLocalState(isMobile: boolean) {
   const [isRecordingStarting, setIsRecordingStarting] = useState(false);
   const [isTranscribingRecording, setIsTranscribingRecording] = useState(false);
   const [lastResponseUsedFallback, setLastResponseUsedFallback] = useState(false);
+  const [runtimeNotice, setRuntimeNotice] = useState<RuntimeNotice | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingStreamRef = useRef<MediaStream | null>(null);
@@ -65,6 +66,7 @@ export function useChatLocalState(isMobile: boolean) {
     recordingStartingRef,
     recordingStreamRef,
     recordingUnmountedRef,
+    runtimeNotice,
     setActiveWorkspace,
     setDeleteAllOpen,
     setDeleteSelectedOpen,
@@ -78,6 +80,7 @@ export function useChatLocalState(isMobile: boolean) {
     setMessages,
     setMobileDrawerOpen,
     setPendingMedia,
+    setRuntimeNotice,
     setShowStreamDiagnostics,
     setShowTrainingDialog,
     setSidebarOpen,

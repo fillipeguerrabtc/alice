@@ -48,6 +48,7 @@ export * from './privacy.js';
 export * from './trading-microstructure.js';
 export * from './trading/llm-signal-schema.js';
 export * from './immutable-audit-ledger.js';
+export * from './runtime-announcements.js';
 
 export * as rbac from './rbac/index.js';
 export { 

@@ -4,6 +4,9 @@ import {
   TRADING_CHANNEL_PREFIX,
   TRADING_CHANNELS,
   type Role,
+  RUNTIME_ANNOUNCEMENTS_CHANNEL,
+  runtimeAnnouncementSchema,
+  type RuntimeAnnouncement,
 } from '@alice/shared-utils';
 
 export interface WebSocketAuthResult {
@@ -91,6 +94,19 @@ interface CreateTradingBroadcastRuntimeParams {
 interface TradingBroadcastRuntime {
   initializeTradingBroadcastSubscriber: () => Promise<void>;
   closeTradingBroadcastSubscriber: () => Promise<void>;
+}
+
+interface CreateRuntimeAnnouncementRuntimeParams {
+  logger: ChatWebSocketLogger;
+  wss: WebSocketServer;
+  nodeEnv: string | undefined;
+  redisUrl: string | undefined;
+  onAnnouncement?: (announcement: RuntimeAnnouncement) => void;
+}
+
+interface RuntimeAnnouncementRuntime {
+  initializeRuntimeAnnouncementSubscriber: () => Promise<void>;
+  closeRuntimeAnnouncementSubscriber: () => Promise<void>;
 }
 
 const PENDING_AUTH_TTL = 5000;
@@ -435,5 +451,128 @@ export function createTradingBroadcastRuntime(
   return {
     initializeTradingBroadcastSubscriber,
     closeTradingBroadcastSubscriber,
+  };
+}
+
+export function createRuntimeAnnouncementRuntime(
+  params: CreateRuntimeAnnouncementRuntimeParams,
+): RuntimeAnnouncementRuntime {
+  const {
+    logger,
+    wss,
+    nodeEnv,
+    redisUrl,
+    onAnnouncement,
+  } = params;
+
+  let runtimeAnnouncementSubscriber: ReturnType<typeof createClient> | null = null;
+  let runtimeAnnouncementCounter = 0;
+
+  function broadcastRuntimeNotice(announcement: RuntimeAnnouncement): void {
+    const payload = JSON.stringify({
+      type: 'runtime_notice',
+      notice: {
+        code: announcement.code,
+        occurredAt: announcement.occurredAt,
+      },
+    });
+
+    let openClients = 0;
+    let deliveredClients = 0;
+
+    wss.clients.forEach((client) => {
+      if (client.readyState !== WebSocket.OPEN) return;
+      openClients += 1;
+      client.send(payload);
+      deliveredClients += 1;
+    });
+
+    runtimeAnnouncementCounter += 1;
+    if (runtimeAnnouncementCounter === 1 || runtimeAnnouncementCounter % 25 === 0) {
+      logger.info(
+        {
+          code: announcement.code,
+          openClients,
+          deliveredClients,
+          totalAnnouncementsProcessed: runtimeAnnouncementCounter,
+        },
+        'Broadcast de aviso de runtime processado',
+      );
+    }
+  }
+
+  async function initializeRuntimeAnnouncementSubscriber(): Promise<void> {
+    if (!redisUrl) {
+      if (nodeEnv === 'production') {
+        throw new Error('REDIS_URL é obrigatório em produção para anúncios de runtime');
+      }
+      logger.warn('REDIS_URL não configurado - anúncios de runtime desabilitados (dev/test)');
+      return;
+    }
+
+    runtimeAnnouncementSubscriber = createClient({
+      url: redisUrl,
+      socket: {
+        connectTimeout: 10000,
+        reconnectStrategy: (retries) => {
+          if (retries > 10) {
+            if (nodeEnv === 'production') {
+              throw new Error('Redis obrigatório em produção para anúncios de runtime - max retries reached');
+            }
+            return new Error('Max retries reached');
+          }
+          return Math.min(retries * 500, 10000);
+        },
+      },
+    });
+
+    runtimeAnnouncementSubscriber.on('error', (error) => {
+      logger.error({ error }, 'Erro no Redis subscriber de anúncios de runtime');
+    });
+
+    await runtimeAnnouncementSubscriber.connect();
+
+    await runtimeAnnouncementSubscriber.subscribe(RUNTIME_ANNOUNCEMENTS_CHANNEL, (message) => {
+      try {
+        const rawParsed = JSON.parse(message) as unknown;
+        const parsed = runtimeAnnouncementSchema.safeParse(rawParsed);
+        if (!parsed.success) {
+          logger.warn(
+            {
+              issues: parsed.error.issues,
+              message,
+            },
+            'Mensagem de anúncio de runtime inválida recebida via Redis',
+          );
+          return;
+        }
+
+        broadcastRuntimeNotice(parsed.data);
+
+        if (onAnnouncement) {
+          onAnnouncement(parsed.data);
+        }
+      } catch (error) {
+        logger.error({ error, message }, 'Falha ao processar anúncio de runtime');
+      }
+    });
+
+    logger.info(
+      { channel: RUNTIME_ANNOUNCEMENTS_CHANNEL },
+      'Redis subscriber de anúncios de runtime inicializado',
+    );
+  }
+
+  async function closeRuntimeAnnouncementSubscriber(): Promise<void> {
+    if (!runtimeAnnouncementSubscriber) return;
+    logger.info('Encerrando Redis subscriber de anúncios de runtime...');
+    await runtimeAnnouncementSubscriber.quit();
+    runtimeAnnouncementSubscriber = null;
+    logger.info('Redis subscriber de anúncios de runtime encerrado');
+  }
+
+  return {
+    initializeRuntimeAnnouncementSubscriber,
+    closeRuntimeAnnouncementSubscriber,
   };
 }

@@ -6,7 +6,7 @@ import { ChatWorkspaceSection } from './ChatWorkspaceSection';
 import { ChatMessagesViewport } from './ChatMessagesViewport';
 import { ChatComposerSection } from './ChatComposerSection';
 import { ChatDialogsSection } from './ChatDialogsSection';
-import type { AgentEvent, MediaAttachment, Message } from './types';
+import type { AgentEvent, MediaAttachment, Message, RuntimeNotice } from './types';
 
 type ChatActionsMenuProps = ComponentProps<typeof ChatHeaderSection>['chatActionsMenuProps'];
 type ChatGovernanceControlsProps = ComponentProps<typeof ChatHeaderSection>['chatGovernanceControlsProps'];
@@ -56,6 +56,7 @@ type ChatPageLayoutProps = {
   onToggleSidebar: () => void;
   onWorkspaceChange: (workspace: ChatWorkspaceKey) => void;
   pendingMedia: MediaAttachment[];
+  runtimeNotice: RuntimeNotice | null;
   scrollAreaRef: RefObject<HTMLDivElement | null>;
   selectedMessageIds: Set<string>;
   showConversationWorkspaceHint: boolean;
@@ -111,6 +112,7 @@ export function ChatPageLayout({
   onToggleSidebar,
   onWorkspaceChange,
   pendingMedia,
+  runtimeNotice,
   scrollAreaRef,
   selectedMessageIds,
   showConversationWorkspaceHint,
@@ -173,6 +175,7 @@ export function ChatPageLayout({
             showStreamDiagnostics={showStreamDiagnostics}
             streamEvents={streamEvents}
             streamStatusLabel={streamStatusLabel}
+            runtimeNotice={runtimeNotice}
             typingSpeedMs={typingSpeedMs}
             workspaceHint={workspaceHint}
           />

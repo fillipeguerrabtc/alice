@@ -5,7 +5,7 @@ import { parseMessageSources } from './chat-message-sources';
 import { mediaAttachmentToBase64 } from './chat-media-attachments';
 import { normalizeRouteForContext } from './chat-page-routing';
 import { normalizeServerMessage, type ServerMessagePayload } from './chat-message-normalization';
-import type { AgentEvent, MediaAttachment, Message } from './components/types';
+import type { AgentEvent, MediaAttachment, Message, RuntimeNotice, RuntimeNoticeCode } from './components/types';
 import type { RoutingDebugData, RoutingMode } from './useChatRoutingState';
 
 type NotifyFn = (params: {
@@ -60,6 +60,7 @@ export type ChatStreamMutationOptions = {
   setIsStreaming: Dispatch<SetStateAction<boolean>>;
   setLastResponseUsedFallback: Dispatch<SetStateAction<boolean>>;
   setMessages: Dispatch<SetStateAction<Message[]>>;
+  setRuntimeNotice: Dispatch<SetStateAction<RuntimeNotice | null>>;
   setRoutedAgentByConversation: Dispatch<SetStateAction<Record<string, Message['agent'] | null>>>;
   setRoutingAgentIdsByConversation: Dispatch<SetStateAction<Record<string, string[]>>>;
   setRoutingDebugByConversation: Dispatch<SetStateAction<Record<string, RoutingDebugData>>>;
@@ -79,6 +80,15 @@ export type SendMessagePayload = {
 };
 
 const STREAM_NO_CHUNK_TIMEOUT_MS = 60000;
+const RUNTIME_NOTICE_CODES: RuntimeNoticeCode[] = [
+  'serving_interrupted_for_training',
+  'training_in_progress',
+  'serving_restored',
+];
+
+function isRuntimeNoticeCode(value: unknown): value is RuntimeNoticeCode {
+  return typeof value === 'string' && RUNTIME_NOTICE_CODES.includes(value as RuntimeNoticeCode);
+}
 
 export function createChatStreamMutationConfig(options: ChatStreamMutationOptions) {
   const mutationFn = async ({ content, mediaAttachments }: SendMessagePayload) => {
@@ -105,6 +115,7 @@ export function createChatStreamMutationConfig(options: ChatStreamMutationOption
       setIsStreaming,
       setLastResponseUsedFallback,
       setMessages,
+      setRuntimeNotice,
       setRoutedAgentByConversation,
       setRoutingAgentIdsByConversation,
       setRoutingDebugByConversation,
@@ -285,6 +296,7 @@ export function createChatStreamMutationConfig(options: ChatStreamMutationOption
     let pendingContent = '';
     let contentFlushTimerId: number | null = null;
     let buffer = '';
+    let lastRuntimeNoticeCode: RuntimeNoticeCode | null = null;
     resetTimeout();
 
     const applyAssistantContent = (nextContent: string) => {
@@ -377,6 +389,10 @@ export function createChatStreamMutationConfig(options: ChatStreamMutationOption
               threshold?: number;
               usedFallback?: boolean;
               agent?: Message['agent'];
+              notice?: {
+                code?: unknown;
+                occurredAt?: unknown;
+              };
             };
             const routingConversationKey = activeConversationId ?? conversationId ?? 'new';
             if (parsed.type === 'conversation' && parsed.conversationId && !conversationId) {
@@ -473,6 +489,39 @@ export function createChatStreamMutationConfig(options: ChatStreamMutationOption
             }
 
             if (parsed.type === 'message_saved') {
+              resetTimeout();
+            }
+
+            if (parsed.type === 'runtime_notice') {
+              const noticeCode = parsed.notice?.code;
+              if (isRuntimeNoticeCode(noticeCode)) {
+                const occurredAt = typeof parsed.notice?.occurredAt === 'string'
+                  ? parsed.notice.occurredAt
+                  : new Date().toISOString();
+                const runtimeNotice: RuntimeNotice = {
+                  code: noticeCode,
+                  occurredAt,
+                };
+                setRuntimeNotice(runtimeNotice);
+
+                if (lastRuntimeNoticeCode !== noticeCode) {
+                  const isRestoredNotice = noticeCode === 'serving_restored';
+                  notify({
+                    title: t(
+                      isRestoredNotice
+                        ? 'chat.runtimeNotice.restored.title'
+                        : 'chat.runtimeNotice.interruption.title',
+                    ),
+                    description: t(
+                      isRestoredNotice
+                        ? 'chat.runtimeNotice.restored.description'
+                        : 'chat.runtimeNotice.interruption.description',
+                    ),
+                    variant: isRestoredNotice ? 'default' : 'destructive',
+                  });
+                  lastRuntimeNoticeCode = noticeCode;
+                }
+              }
               resetTimeout();
             }
 

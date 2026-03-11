@@ -352,6 +352,16 @@
       "title": "Default context",
       "desc": "This response used the default context because the current route is not mapped to a specific namespace."
     },
+    "runtimeNotice": {
+      "interruption": {
+        "title": "Training in progress",
+        "description": "Inference has been temporarily interrupted because a training run is in progress. The service will return automatically as soon as training ends."
+      },
+      "restored": {
+        "title": "Inference restored",
+        "description": "Training has completed and the inference service is now available again."
+      }
+    },
     "streaming": {
       "thinking": "Alice is thinking",
       "steps": "Steps:",

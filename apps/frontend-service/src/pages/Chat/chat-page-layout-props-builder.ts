@@ -30,6 +30,7 @@ type ChatPageLayoutState = Pick<
   | 'mobileDrawerOpen'
   | 'modelBadgeLabel'
   | 'pendingMedia'
+  | 'runtimeNotice'
   | 'showConversationWorkspaceHint'
   | 'showDesktopActionMenu'
   | 'showLoginBanner'

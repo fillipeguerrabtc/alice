@@ -377,6 +377,16 @@
       "title": "Contexto padrão",
       "desc": "Esta resposta usou o contexto padrão pois a rota atual não está mapeada para um namespace específico."
     },
+    "runtimeNotice": {
+      "interruption": {
+        "title": "Treinamento em andamento",
+        "description": "Inferência interrompida momentaneamente por causa de um treinamento em andamento. O serviço retornará automaticamente assim que o treinamento terminar."
+      },
+      "restored": {
+        "title": "Inferência restaurada",
+        "description": "O treinamento foi concluído e o serviço de inferência já está disponível novamente."
+      }
+    },
     "streaming": {
       "thinking": "Alice está pensando",
       "steps": "Etapas:",

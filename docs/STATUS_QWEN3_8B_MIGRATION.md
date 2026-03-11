@@ -4,8 +4,102 @@
 **Data:** 11 de Marco de 2026
 
 ## Rodada Atual
-- Rodada: 5
+- Rodada: 6
 - Status: Concluída
+
+## Rodada 6 - Início
+
+### Objetivo
+Implementar aviso de interrupção e restauração para chats ativos, com propagação por Redis para WebSocket e SSE (`/api/chat/stream`), sem expor detalhes internos de infraestrutura.
+
+### Premissas
+- A FSM canônica de orquestração já publica transições de estado no `gpu-manager-service`.
+- A preempção real de serving já está operacional (rodadas anteriores), portanto os avisos devem refletir eventos reais de runtime.
+- O payload de aviso deve ser tipado, validado e compatível com os parsers existentes de SSE/WebSocket.
+- A experiência de chat deve manter compatibilidade com eventos já emitidos no stream atual.
+
+### Escopo
+- Criar canal de anúncios de runtime via Redis (`alice:runtime:announcements`).
+- Publicar eventos no `gpu-manager-service` em:
+  - início de `serving_draining`;
+  - entrada em `training_active`;
+  - retorno para `serving_ready`.
+- Assinar no `chat-service` e propagar para:
+  - WebSocket;
+  - SSE `/api/chat/stream` com evento tipado `runtime_notice`.
+- Atualizar frontend do chat para interpretar `runtime_notice`, mostrar aviso amigável e incluir i18n `pt-BR`/`en`.
+- Atualizar este status.
+
+## Rodada 6 - Conclusão
+
+### Alterações
+- `packages/shared-utils/src/runtime-announcements.ts` (novo):
+  - Contrato SSOT de anúncios de runtime:
+    - canal Redis `alice:runtime:announcements`;
+    - schema Zod tipado para evento `runtime_notice` com códigos canônicos:
+      - `serving_interrupted_for_training`
+      - `training_in_progress`
+      - `serving_restored`.
+- `packages/shared-utils/src/index.ts`:
+  - Export do contrato compartilhado de anúncios de runtime.
+- `apps/gpu-manager-service/src/index.ts`:
+  - Publicação de anúncios de runtime no Redis a cada transição relevante da FSM:
+    - `serving_draining` -> interrupção por treinamento;
+    - `training_active` -> treinamento em progresso;
+    - `serving_ready` -> serving restaurado.
+  - Logs estruturados de publicação e fallback seguro quando Redis estiver indisponível.
+- `apps/chat-service/src/chat-websocket-runtime.ts`:
+  - Novo runtime subscriber `createRuntimeAnnouncementRuntime()`:
+    - assinatura do canal `alice:runtime:announcements`;
+    - validação Zod do payload;
+    - broadcast para clientes WebSocket com evento `runtime_notice`.
+- `apps/chat-service/src/chat-bootstrap.ts`:
+  - Startup/shutdown atualizados para inicializar e encerrar subscriber de anúncios de runtime.
+- `apps/chat-service/src/index.ts`:
+  - Registro de streams SSE ativos para fan-out de `runtime_notice` em `/api/chat/stream`.
+  - Reemissão do último aviso para streams novos (melhora de continuidade operacional).
+  - Integração do runtime subscriber de anúncios de runtime no ciclo de vida do serviço.
+- Frontend Chat:
+  - `apps/frontend-service/src/pages/Chat/chat-stream-mutation.ts`:
+    - parser SSE atualizado para evento `runtime_notice` tipado;
+    - atualização de estado local;
+    - toast amigável no recebimento de interrupção/restauração.
+  - `apps/frontend-service/src/pages/Chat/components/types.ts`:
+    - tipos `RuntimeNoticeCode` e `RuntimeNotice`.
+  - `apps/frontend-service/src/pages/Chat/useChatLocalState.ts`:
+    - estado `runtimeNotice` adicionado.
+  - `apps/frontend-service/src/pages/Chat/components/ChatMessagesViewport.tsx`:
+    - banner visual para interrupção/restauração.
+  - `apps/frontend-service/src/pages/Chat/components/ChatPageLayout.tsx`
+  - `apps/frontend-service/src/pages/Chat/chat-page-layout-props-builder.ts`
+  - `apps/frontend-service/src/pages/Chat/useChatPageLayoutController.ts`
+    - propagação do estado `runtimeNotice` no layout do chat.
+- i18n:
+  - `apps/frontend-service/src/locales/pt-BR.json`
+  - `apps/frontend-service/src/locales/en.json`
+    - chaves `chat.runtimeNotice.*` adicionadas.
+    - Mensagem PT-BR canônica aplicada:
+      - “Inferência interrompida momentaneamente por causa de um treinamento em andamento. O serviço retornará automaticamente assim que o treinamento terminar.”
+- Testes:
+  - `tests/unit/runtime-announcements.test.ts` (novo) validando contrato e schema do anúncio.
+
+### Inventário de Acoplamentos Qwen2.5
+- Sem novos acoplamentos Qwen2.5 introduzidos na Rodada 6.
+- Compatibilidade histórica de registros legados Qwen2.5 permanece preservada.
+
+### Validações
+Executadas em sequência, sem paralelização:
+1. `typecheck` (`cmd.exe /c pnpm typecheck`) -> OK
+2. `testes` (`cmd.exe /c pnpm test`) -> OK (125 arquivos, 1371 testes)
+3. `eslint` (`cmd.exe /c pnpm lint`) -> OK
+4. `build` (`cmd.exe /c pnpm build`) -> OK
+
+### Riscos
+- A entrega de `runtime_notice` via SSE depende de stream ativo em `/api/chat/stream`; o canal WebSocket cobre clientes conectados em tempo real, mas clientes sem stream/WS ativo verão o aviso apenas no próximo fluxo ativo.
+- Em indisponibilidade de Redis, os serviços fazem fail-safe (sem crash em dev e com logs estruturados), porém sem distribuição de aviso em tempo real.
+
+### Próximo Passo
+Aguardar prompt da próxima rodada para evolução de UX operacional adicional e integrações complementares da migração.
 
 ## Rodada 5 - Início
 
