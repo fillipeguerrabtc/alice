@@ -59,12 +59,12 @@ import { randomUUID } from 'crypto';
 import {
   isOrchestratorAvailable,
   getOrchestratorState,
-  isTrainingRuntimeState,
   onOrchestratorTransition,
   prepareTrainingRuntime,
   restoreServingRuntime,
   shutdownOrchestrator,
   type OrchestratorState,
+  type ServingDrainResult,
   type OrchestratorTransition,
   type OrchestratorTransitionTrigger,
   GPU_ORCHESTRATION_MODE,
@@ -301,6 +301,7 @@ async function runOrchestratorAction(params: {
       await prepareTrainingRuntime({
         trigger: params.trigger,
         reason: params.reason,
+        waitForServingDrain: waitForServingDrainCompletion,
       });
     } else {
       await restoreServingRuntime({
@@ -426,6 +427,24 @@ const GPU_RETRY_AFTER_SECONDS = readNumberEnv('GPU_RETRY_AFTER_SECONDS', {
   integer: true,
   min: 1,
 });
+const SERVING_DRAIN_MAX_WAIT_MS = readNumberEnv('GPU_SERVING_DRAIN_MAX_WAIT_MS', {
+  defaultValue: 30000,
+  integer: true,
+  min: 1000,
+  max: 600000,
+});
+const SERVING_DRAIN_POLL_INTERVAL_MS = readNumberEnv('GPU_SERVING_DRAIN_POLL_INTERVAL_MS', {
+  defaultValue: 200,
+  integer: true,
+  min: 50,
+  max: 5000,
+});
+const SERVING_DRAIN_FORCE_SETTLE_MS = readNumberEnv('GPU_SERVING_DRAIN_FORCE_SETTLE_MS', {
+  defaultValue: 5000,
+  integer: true,
+  min: 0,
+  max: 60000,
+});
 
 const ADMISSION_MIN_FREE_GB: Record<GpuServiceType, number> = {
   [GpuServiceType.LLM]: readNumberEnv('GPU_ADMISSION_MIN_FREE_GB_LLM', { defaultValue: 2, min: 0 }),
@@ -450,6 +469,15 @@ const REDIS_GPU_LOCK_KEY = 'alice:gpu:lock';
 
 /** Score composto: prioridade (dominante) + FIFO dentro da prioridade (mais antigo primeiro via -createdAt) */
 const PRIORITY_SCORE_MULTIPLIER = 10_000_000_000_000; // 1e13 (seguro dentro de Number.MAX_SAFE_INTEGER)
+
+type ActiveStreamContext = {
+  streamId: string;
+  abortController: AbortController;
+  close: () => void;
+};
+
+let inflightInferenceRequests = 0;
+const activeStreamContexts = new Map<string, ActiveStreamContext>();
 
 type GpuLockValue = {
   requestId: string;
@@ -652,6 +680,180 @@ function trackGpuRejection(serviceType: GpuServiceType, reason: GpuRejectionReas
   gpuManagerRejectionsTotal.inc({ service: capabilityForServiceType(serviceType), reason });
 }
 
+function isTransitionInProgressState(state: OrchestratorState): boolean {
+  return (
+    state === 'serving_draining'
+    || state === 'training_starting'
+    || state === 'training_finishing'
+    || state === 'serving_restoring'
+  );
+}
+
+function isServingPreemptedForTrainingState(state: OrchestratorState): boolean {
+  return state === 'serving_draining' || state === 'training_starting' || state === 'training_active';
+}
+
+function isRuntimeServingInferenceReady(state: OrchestratorState): boolean {
+  return state === 'serving_ready';
+}
+
+function beginInferenceInflight(): void {
+  inflightInferenceRequests += 1;
+}
+
+function endInferenceInflight(): void {
+  inflightInferenceRequests = Math.max(0, inflightInferenceRequests - 1);
+}
+
+function syncActiveStreamsMetric(): void {
+  gpuManagerActiveStreams.set(activeStreamContexts.size);
+}
+
+function registerActiveStream(streamId: string, context: {
+  abortController: AbortController;
+  close: () => void;
+}): () => void {
+  activeStreamContexts.set(streamId, {
+    streamId,
+    abortController: context.abortController,
+    close: context.close,
+  });
+  syncActiveStreamsMetric();
+
+  return () => {
+    activeStreamContexts.delete(streamId);
+    syncActiveStreamsMetric();
+  };
+}
+
+function getServingInflightOperationsCount(): number {
+  return inflightInferenceRequests + activeStreamContexts.size;
+}
+
+function forceInterruptActiveStreams(reason: string): number {
+  if (activeStreamContexts.size === 0) {
+    return 0;
+  }
+
+  let interruptedCount = 0;
+  for (const streamContext of activeStreamContexts.values()) {
+    interruptedCount += 1;
+    try {
+      streamContext.abortController.abort(new Error(reason));
+    } catch {
+      // noop
+    }
+    try {
+      streamContext.close();
+    } catch {
+      // noop
+    }
+  }
+
+  if (interruptedCount > 0) {
+    gpuManagerForcedInterruptionsTotal.inc(
+      { reason: 'serving_preempted_for_training' },
+      interruptedCount,
+    );
+  }
+
+  return interruptedCount;
+}
+
+function buildAdmissionRuntimeFlags(serviceType: GpuServiceType): {
+  isTransitionInProgress: boolean;
+  isServingPreemptedForTraining: boolean;
+} {
+  if (!orchestratorAvailable || serviceType === GpuServiceType.TRAINING) {
+    return { isTransitionInProgress: false, isServingPreemptedForTraining: false };
+  }
+
+  const orchestratorState = getOrchestratorState();
+  return {
+    isTransitionInProgress: isTransitionInProgressState(orchestratorState),
+    isServingPreemptedForTraining: isServingPreemptedForTrainingState(orchestratorState),
+  };
+}
+
+async function waitForServingDrainCompletion(): Promise<ServingDrainResult> {
+  const startedAt = Date.now();
+  const inflightAtStart = getServingInflightOperationsCount();
+  let forcedInterruptions = 0;
+  let timedOut = false;
+
+  while (Date.now() - startedAt < SERVING_DRAIN_MAX_WAIT_MS) {
+    if (getServingInflightOperationsCount() === 0) {
+      const durationMs = Date.now() - startedAt;
+      gpuOrchestratorDrainDurationSeconds.observe({ outcome: 'graceful' }, durationMs / 1000);
+      return {
+        durationMs,
+        inflightAtStart,
+        inflightAtFinish: 0,
+        forcedInterruptions,
+        timedOut: false,
+      };
+    }
+    await new Promise((resolve) => setTimeout(resolve, SERVING_DRAIN_POLL_INTERVAL_MS));
+  }
+
+  timedOut = true;
+  forcedInterruptions = forceInterruptActiveStreams('serving_preempted_for_training');
+
+  if (SERVING_DRAIN_FORCE_SETTLE_MS > 0) {
+    const settleStart = Date.now();
+    while (Date.now() - settleStart < SERVING_DRAIN_FORCE_SETTLE_MS) {
+      if (getServingInflightOperationsCount() === 0) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, SERVING_DRAIN_POLL_INTERVAL_MS));
+    }
+  }
+
+  const inflightAtFinish = getServingInflightOperationsCount();
+  const durationMs = Date.now() - startedAt;
+  gpuOrchestratorDrainDurationSeconds.observe(
+    { outcome: inflightAtFinish === 0 ? 'forced' : 'timeout' },
+    durationMs / 1000,
+  );
+
+  await persistRuntimeSnapshot({
+    eventType: 'state_snapshot',
+    triggerSource: 'system',
+    outcome: inflightAtFinish === 0 ? 'success' : 'error',
+    reason: inflightAtFinish === 0
+      ? 'Drain de serving concluído com política de corte aplicada'
+      : 'Drain de serving excedeu tempo máximo com operações em andamento',
+    metadata: {
+      drain: {
+        inflightAtStart,
+        inflightAtFinish,
+        forcedInterruptions,
+        durationMs,
+        timedOut,
+      },
+    },
+  });
+
+  logger.warn(
+    {
+      inflightAtStart,
+      inflightAtFinish,
+      forcedInterruptions,
+      durationMs,
+      timedOut,
+    },
+    'Drain de serving finalizado por política de corte',
+  );
+
+  return {
+    durationMs,
+    inflightAtStart,
+    inflightAtFinish,
+    forcedInterruptions,
+    timedOut,
+  };
+}
+
 // ============================================================================
 // FILA REDIS
 // ============================================================================
@@ -789,6 +991,10 @@ async function processGpuRequest(request: GpuRequest): Promise<GpuResponse> {
   const serviceType = request.serviceType;
   const url = GPU_SERVICE_URLS[serviceType];
   const protectedFetch = protectedFetchByServiceType[serviceType];
+  const trackServingInflight = serviceType !== GpuServiceType.TRAINING;
+  if (trackServingInflight) {
+    beginInferenceInflight();
+  }
   
   try {
     // Orquestração (se disponível): TRAINING/EMBEDDINGS trocam containers conforme demanda
@@ -835,10 +1041,18 @@ async function processGpuRequest(request: GpuRequest): Promise<GpuResponse> {
           });
           throw error;
         }
-      } else if (isTrainingRuntimeState(getOrchestratorState())) {
-        throw new Error(
-          `GPU_RUNTIME_TRAINING_ACTIVE: inferencia indisponivel durante treinamento (serviceType=${serviceType})`,
-        );
+      } else {
+        const runtimeFlags = buildAdmissionRuntimeFlags(serviceType);
+        if (runtimeFlags.isServingPreemptedForTraining) {
+          throw new Error(
+            `SERVING_PREEMPTED_FOR_TRAINING: inferencia temporariamente indisponivel (serviceType=${serviceType})`,
+          );
+        }
+        if (runtimeFlags.isTransitionInProgress || !isRuntimeServingInferenceReady(getOrchestratorState())) {
+          throw new Error(
+            `GPU_RUNTIME_TRANSITION_IN_PROGRESS: inferencia indisponivel durante transição de runtime (serviceType=${serviceType})`,
+          );
+        }
       }
     } else if (serviceType === GpuServiceType.TRAINING) {
       const trainerReachable = await isTrainingServiceReachable();
@@ -911,6 +1125,10 @@ async function processGpuRequest(request: GpuRequest): Promise<GpuResponse> {
       error: error instanceof Error ? error.message : String(error),
       latencyMs,
     };
+  } finally {
+    if (trackServingInflight) {
+      endInferenceInflight();
+    }
   }
 }
 
@@ -951,11 +1169,22 @@ async function startQueueWorker(): Promise<void> {
       if (!redis) {
         throw new Error('Redis não disponível - worker GPU exige Redis');
       }
-      const lockExists = await redis.exists(REDIS_GPU_LOCK_KEY);
-      if (lockExists) return;
+      const lockExists = (await redis.exists(REDIS_GPU_LOCK_KEY)) === 1;
 
       // Buscar a próxima requisição respeitando ordem global de prioridade
       for (const serviceType of servicePriorityOrder) {
+        if (lockExists && serviceType !== GpuServiceType.TRAINING) {
+          continue;
+        }
+
+        if (
+          orchestratorAvailable
+          && serviceType !== GpuServiceType.TRAINING
+          && !isRuntimeServingInferenceReady(getOrchestratorState())
+        ) {
+          continue;
+        }
+
         const request = await dequeueRequest(serviceType);
         if (!request) continue;
 
@@ -972,12 +1201,15 @@ async function startQueueWorker(): Promise<void> {
 
         // Tentar adquirir lock (TTL = timeout + margem)
         const timeoutMs = request.timeout || GPU_SERVICE_TIMEOUT;
-        const lockTtlMs = Math.min(timeoutMs + 30000, 5 * 60 * 1000); // max 5 min
-        const acquired = await tryAcquireGpuLock(serviceType, request.id, lockTtlMs);
-        if (!acquired) {
-          // Outra execução ganhou o lock; reenfileirar e sair
-          await enqueueRequest(request);
-          return;
+        let lockAcquired = false;
+        if (serviceType !== GpuServiceType.TRAINING) {
+          const lockTtlMs = Math.min(timeoutMs + 30000, 5 * 60 * 1000); // max 5 min
+          lockAcquired = await tryAcquireGpuLock(serviceType, request.id, lockTtlMs);
+          if (!lockAcquired) {
+            // Outra execução ganhou o lock; reenfileirar e sair
+            await enqueueRequest(request);
+            return;
+          }
         }
 
         try {
@@ -1070,7 +1302,9 @@ async function startQueueWorker(): Promise<void> {
           return;
         } finally {
           await markServiceInactive(serviceType);
-          await releaseGpuLockIfOwned(request.id);
+          if (lockAcquired) {
+            await releaseGpuLockIfOwned(request.id);
+          }
         }
       }
     } catch (error) {
@@ -1261,6 +1495,7 @@ app.post('/api/gpu/queue', requireInternalAuth, asyncHandler(async (req: Request
   };
 
   const vramStatus = await getVramStatus();
+  const admissionRuntimeFlags = buildAdmissionRuntimeFlags(request.serviceType);
   const rejectionReason = admissionControlReason({
     serviceType: request.serviceType,
     priority: request.priority,
@@ -1268,11 +1503,13 @@ app.post('/api/gpu/queue', requireInternalAuth, asyncHandler(async (req: Request
     vramRequirements: VRAM_REQUIREMENTS,
     vramSafetyMarginGb: VRAM_SAFETY_MARGIN_GB,
     admissionMinFreeGb: ADMISSION_MIN_FREE_GB,
+    isTransitionInProgress: admissionRuntimeFlags.isTransitionInProgress,
+    isServingPreemptedForTraining: admissionRuntimeFlags.isServingPreemptedForTraining,
     logger,
   });
   if (rejectionReason) {
     trackGpuRejection(request.serviceType, rejectionReason);
-    const statusCode = rejectionReason === 'insufficient_vram' ? 503 : 429;
+    const statusCode = (rejectionReason === 'low_vram_low_priority') ? 429 : 503;
     res.setHeader('Retry-After', String(GPU_RETRY_AFTER_SECONDS));
     return res.status(statusCode).json({
       error: 'Requisição rejeitada pelo admission control',
@@ -1535,6 +1772,7 @@ app.post('/api/gpu/stream', requireInternalAuth, asyncHandler(async (req: Reques
   
   // Verificar VRAM disponível
   const vramStatus = await getVramStatus();
+  const admissionRuntimeFlags = buildAdmissionRuntimeFlags(serviceType);
   const admissionReason = admissionControlReason({
     serviceType,
     priority: GpuRequestPriority.CRITICAL,
@@ -1542,14 +1780,16 @@ app.post('/api/gpu/stream', requireInternalAuth, asyncHandler(async (req: Reques
     vramRequirements: VRAM_REQUIREMENTS,
     vramSafetyMarginGb: VRAM_SAFETY_MARGIN_GB,
     admissionMinFreeGb: ADMISSION_MIN_FREE_GB,
+    isTransitionInProgress: admissionRuntimeFlags.isTransitionInProgress,
+    isServingPreemptedForTraining: admissionRuntimeFlags.isServingPreemptedForTraining,
     logger,
   });
   if (admissionReason) {
     trackGpuRejection(serviceType, admissionReason);
-    const statusCode = admissionReason === 'insufficient_vram' ? 503 : 429;
+    const statusCode = (admissionReason === 'low_vram_low_priority') ? 429 : 503;
     res.setHeader('Retry-After', String(GPU_RETRY_AFTER_SECONDS));
     return res.status(statusCode).json({
-      error: 'VRAM insuficiente',
+      error: 'Requisição rejeitada pelo admission control',
       reason: admissionReason,
       requiredGB: VRAM_REQUIREMENTS[serviceType] + VRAM_SAFETY_MARGIN_GB,
       availableGB: vramStatus.freeGB,
@@ -1560,6 +1800,7 @@ app.post('/api/gpu/stream', requireInternalAuth, asyncHandler(async (req: Reques
   try {
     const streamingRequestId = `stream-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
     const timeoutMs = body.timeout || GPU_SERVICE_TIMEOUT;
+    const streamAbortController = new AbortController();
 
     // Streaming também precisa de lock global (GPU única) para garantir prioridade e VRAM
     const lockTtlMs = Math.min(timeoutMs + 30000, 5 * 60 * 1000);
@@ -1571,6 +1812,14 @@ app.post('/api/gpu/stream', requireInternalAuth, asyncHandler(async (req: Reques
     }
 
     await markServiceActive(serviceType, streamingRequestId);
+    const unregisterActiveStream = registerActiveStream(streamingRequestId, {
+      abortController: streamAbortController,
+      close: () => {
+        if (!res.writableEnded) {
+          res.end();
+        }
+      },
+    });
 
     try {
       const requestBody = applyStructuredOutputs({
@@ -1585,6 +1834,7 @@ app.post('/api/gpu/stream', requireInternalAuth, asyncHandler(async (req: Reques
           ...body.headers,
         },
         body: body.method !== 'GET' && requestBody ? JSON.stringify(requestBody) : undefined,
+        signal: streamAbortController.signal,
         timeoutMs,
       });
 
@@ -1676,10 +1926,21 @@ app.post('/api/gpu/stream', requireInternalAuth, asyncHandler(async (req: Reques
         reader.releaseLock();
       }
     } finally {
+      unregisterActiveStream();
       await markServiceInactive(serviceType);
       await releaseGpuLockIfOwned(streamingRequestId);
     }
   } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      logger.warn({ reason: 'serving_preempted_for_training' }, 'Streaming interrompido por preempção de serving');
+      if (!res.headersSent) {
+        res.status(503).json({
+          error: 'Streaming interrompido por preempção de serving',
+          reason: 'serving_preempted_for_training',
+        });
+      }
+      return;
+    }
     logger.error({ 
       error: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined 
@@ -1774,10 +2035,14 @@ const {
   gpuOrchestratorTransitionsTotal,
   gpuOrchestratorTransitionDurationSeconds,
   gpuOrchestratorState,
+  gpuManagerActiveStreams,
+  gpuManagerForcedInterruptionsTotal,
+  gpuOrchestratorDrainDurationSeconds,
 } = createGpuManagerMetrics(prometheus.registry);
 
 trackOrchestratorStateGauge(getOrchestratorState());
 onOrchestratorTransition((transition) => recordOrchestratorTransition(transition));
+syncActiveStreamsMetric();
 
 // CORREÇÃO 26/12/2025: Usar contentType correto do registry (application/openmetrics-text)
 // Padrão consistente com packages/shared-utils/src/prometheus.ts linha 702

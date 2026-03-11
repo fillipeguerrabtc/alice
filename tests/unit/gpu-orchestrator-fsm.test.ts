@@ -105,12 +105,20 @@ describe('gpu-orchestrator FSM transitions', () => {
     execQueue.push({ stdout: 'training started' });
     execQueue.push({ stdout: 'training stopped' });
     execQueue.push({ stdout: 'serving restored' });
+    const waitForServingDrain = vi.fn(async () => ({
+      durationMs: 12,
+      inflightAtStart: 1,
+      inflightAtFinish: 0,
+      forcedInterruptions: 0,
+      timedOut: false,
+    }));
 
     const mod = await import('../../apps/gpu-manager-service/src/gpu-orchestrator');
 
     expect(mod.getOrchestratorState()).toBe('serving_ready');
-    await mod.prepareTrainingRuntime({ trigger: 'manual_api', reason: 'teste' });
+    await mod.prepareTrainingRuntime({ trigger: 'manual_api', reason: 'teste', waitForServingDrain });
     expect(mod.getOrchestratorState()).toBe('training_active');
+    expect(waitForServingDrain).toHaveBeenCalledTimes(1);
 
     await mod.restoreServingRuntime({ trigger: 'manual_api', reason: 'teste' });
     expect(mod.getOrchestratorState()).toBe('serving_ready');
@@ -121,6 +129,48 @@ describe('gpu-orchestrator FSM transitions', () => {
     expect(commands[1]).toContain('--profile gpu-training up -d gpu-trainer');
     expect(commands[2]).toContain('--profile gpu-training stop gpu-trainer');
     expect(commands[3]).toContain('up -d gpu-llm gpu-embeddings');
+  });
+
+  it('aplica preempção mesmo quando drain retorna timeout com corte forçado', async () => {
+    process.env.GPU_CONCURRENCY_MODE = 'preemptive';
+
+    execQueue.push({ stdout: 'serving drained' });
+    execQueue.push({ stdout: 'training started' });
+
+    const mod = await import('../../apps/gpu-manager-service/src/gpu-orchestrator');
+    await mod.prepareTrainingRuntime({
+      trigger: 'queue_request',
+      reason: 'drain com corte',
+      waitForServingDrain: async () => ({
+        durationMs: 30000,
+        inflightAtStart: 3,
+        inflightAtFinish: 1,
+        forcedInterruptions: 2,
+        timedOut: true,
+      }),
+    });
+
+    expect(mod.getOrchestratorState()).toBe('training_active');
+    expect(execMock).toHaveBeenCalledTimes(2);
+    const commands = execMock.mock.calls.map((call) => String(call[0]));
+    expect(commands[0]).toContain('stop gpu-llm gpu-embeddings');
+    expect(commands[1]).toContain('--profile gpu-training up -d gpu-trainer');
+  });
+
+  it('move FSM para error quando callback de drain falha', async () => {
+    process.env.GPU_CONCURRENCY_MODE = 'preemptive';
+
+    const mod = await import('../../apps/gpu-manager-service/src/gpu-orchestrator');
+    await expect(
+      mod.prepareTrainingRuntime({
+        trigger: 'queue_request',
+        reason: 'teste falha drain',
+        waitForServingDrain: async () => {
+          throw new Error('drain callback failed');
+        },
+      }),
+    ).rejects.toThrow('drain callback failed');
+    expect(mod.getOrchestratorState()).toBe('error');
   });
 
   it('move FSM para error quando falha no prepare-training', async () => {

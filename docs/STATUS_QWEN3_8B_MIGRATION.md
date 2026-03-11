@@ -4,8 +4,84 @@
 **Data:** 11 de Marco de 2026
 
 ## Rodada Atual
-- Rodada: 3
+- Rodada: 4
 - Status: Concluída
+
+## Rodada 4 - Início
+
+### Objetivo
+Implementar drain gracioso e preempção real de serving para training no `gpu-manager-service`, com bloqueio de novas inferências/streams durante `serving_draining`.
+
+### Premissas
+- Runtime GPU permanece mutuamente exclusivo em GPU única (20GB):
+  - serving = `gpu-llm` + `gpu-embeddings`
+  - training = `gpu-trainer`
+- Preempção deve ser previsível, com fase de drain observável e política de corte controlada.
+- Não implementar nesta rodada UX de aviso no chat.
+- Não expor detalhes sensíveis de infraestrutura nas respostas HTTP.
+
+### Escopo
+- Bloqueio de novas inferências/streams ao entrar em `serving_draining`.
+- Rastreamento de inflight requests/streams e conclusão de drain por esvaziamento ou corte.
+- Garantia de ordem operacional canônica:
+  - `prepare-training`: parar serving, depois subir trainer.
+  - `restore-serving`: parar trainer, depois subir serving.
+- Expansão dos motivos de rejeição em `gpu-admission.ts`:
+  - `transition_in_progress`
+  - `serving_preempted_for_training`
+- Persistência de eventos de transição/falha no ledger durável.
+- Novas métricas:
+  - `active_streams`
+  - `forced_interruptions`
+  - `drain_duration`
+
+## Rodada 4 - Conclusão
+
+### Alterações
+- `apps/gpu-manager-service/src/gpu-orchestrator.ts`:
+  - `prepareTrainingRuntime()` passou a suportar callback de drain (`waitForServingDrain`) antes do stop de serving.
+  - Registro explícito do resultado do drain (duração, inflight inicial/final, interrupções forçadas e timeout).
+- `apps/gpu-manager-service/src/index.ts`:
+  - Implementado controle de drain gracioso com política de corte:
+    - rastreamento de inflight de inferência;
+    - rastreamento de streams ativos;
+    - interrupção forçada de streams quando drain excede timeout;
+    - persistência de snapshot de drain no ledger durável.
+  - Bloqueio de novas inferências/streams durante preempção/transição via admission control.
+  - Worker ajustado para permitir preempção de treinamento mesmo com lock ativo de serving.
+  - Fluxo de lock mantido obrigatório para inferência regular, sem expor detalhes sensíveis na API.
+- `apps/gpu-manager-service/src/gpu-admission.ts`:
+  - Novos motivos de rejeição:
+    - `transition_in_progress`
+    - `serving_preempted_for_training`
+  - Regras aplicadas apenas para inferência (LLM/embeddings), sem bloquear `training`.
+- `apps/gpu-manager-service/src/gpu-metrics.ts`:
+  - Novas métricas operacionais:
+    - `gpu_manager_active_streams`
+    - `gpu_manager_forced_interruptions_total`
+    - `gpu_orchestrator_drain_duration_seconds`
+- `tests/unit/gpu-orchestrator-fsm.test.ts`:
+  - Cobertura de drain com sucesso, drain com timeout/corte forçado e falha no callback de drain.
+- `tests/unit/gpu-admission.test.ts`:
+  - Cobertura dos novos motivos de rejeição e garantia de exceção para requests de training.
+
+### Inventário de Acoplamentos Qwen2.5
+- Sem novos acoplamentos introduzidos na Rodada 4.
+- Compatibilidade histórica de registros legados Qwen2.5 permanece preservada.
+
+### Validações
+Executadas em sequência, sem paralelização:
+1. `typecheck` (`cmd.exe /c pnpm typecheck`) -> OK
+2. `testes` (`cmd.exe /c pnpm test`) -> OK (123 arquivos, 1364 testes)
+3. `eslint` (`cmd.exe /c pnpm lint`) -> OK
+4. `build` (`cmd.exe /c pnpm build`) -> OK
+
+### Riscos
+- Preempção por treinamento em cenário de lock ativo privilegia avanço operacional do treinamento; em ambiente com múltiplas instâncias do `gpu-manager`, recomenda-se validação adicional de coordenação distribuída.
+- UX de notificação para chats ativos durante preempção/restauração segue pendente para rodada futura.
+
+### Próximo Passo
+Aguardar prompt da próxima rodada para integrar aviso de indisponibilidade/restauração no chat e concluir o fluxo end-to-end de experiência do usuário.
 
 ## Rodada 3 - Início
 

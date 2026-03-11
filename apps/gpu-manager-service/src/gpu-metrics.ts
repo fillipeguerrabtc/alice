@@ -73,6 +73,27 @@ export function createGpuManagerMetrics(registry: Registry) {
     registers: [registry],
   });
 
+  const gpuManagerActiveStreams = new Gauge({
+    name: 'gpu_manager_active_streams',
+    help: 'Quantidade de streams ativos no GPU Manager',
+    registers: [registry],
+  });
+
+  const gpuManagerForcedInterruptionsTotal = new Counter({
+    name: 'gpu_manager_forced_interruptions_total',
+    help: 'Total de interrupções forçadas aplicadas durante preempção/drain',
+    labelNames: ['reason'] as const,
+    registers: [registry],
+  });
+
+  const gpuOrchestratorDrainDurationSeconds = new Histogram({
+    name: 'gpu_orchestrator_drain_duration_seconds',
+    help: 'Duração do drain de serving antes da preempção para treinamento',
+    labelNames: ['outcome'] as const,
+    buckets: [0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 30, 60, 120],
+    registers: [registry],
+  });
+
   return {
     gpuVramTotalBytes,
     gpuVramUsedBytes,
@@ -84,5 +105,8 @@ export function createGpuManagerMetrics(registry: Registry) {
     gpuOrchestratorTransitionsTotal,
     gpuOrchestratorTransitionDurationSeconds,
     gpuOrchestratorState,
+    gpuManagerActiveStreams,
+    gpuManagerForcedInterruptionsTotal,
+    gpuOrchestratorDrainDurationSeconds,
   };
 }

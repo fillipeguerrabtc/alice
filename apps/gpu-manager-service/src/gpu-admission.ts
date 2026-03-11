@@ -6,7 +6,13 @@ import {
   type VramStatus,
 } from './gpu-contracts.js';
 
-export type GpuRejectionReason = 'insufficient_vram' | 'low_vram_low_priority' | 'gpu_busy' | 'simultaneous_policy';
+export type GpuRejectionReason =
+  | 'insufficient_vram'
+  | 'low_vram_low_priority'
+  | 'gpu_busy'
+  | 'simultaneous_policy'
+  | 'transition_in_progress'
+  | 'serving_preempted_for_training';
 
 export function capabilityForServiceType(serviceType: GpuServiceType): GpuCapability {
   switch (serviceType) {
@@ -47,6 +53,8 @@ export function admissionControlReason(params: {
   vramRequirements: Record<GpuServiceType, number>;
   vramSafetyMarginGb: number;
   admissionMinFreeGb: Record<GpuServiceType, number>;
+  isTransitionInProgress?: boolean;
+  isServingPreemptedForTraining?: boolean;
   logger: Logger;
 }): GpuRejectionReason | null {
   const {
@@ -56,10 +64,18 @@ export function admissionControlReason(params: {
     vramRequirements,
     vramSafetyMarginGb,
     admissionMinFreeGb,
+    isTransitionInProgress,
+    isServingPreemptedForTraining,
     logger,
   } = params;
 
   const reason = (() => {
+    if (serviceType !== GpuServiceType.TRAINING && isServingPreemptedForTraining) {
+      return 'serving_preempted_for_training' as const;
+    }
+    if (serviceType !== GpuServiceType.TRAINING && isTransitionInProgress) {
+      return 'transition_in_progress' as const;
+    }
     if (!hasEnoughVram({
       serviceType,
       currentVram: vramStatus,

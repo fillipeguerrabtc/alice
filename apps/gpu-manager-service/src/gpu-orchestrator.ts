@@ -52,6 +52,14 @@ export interface OrchestratorTransition {
   at: string;
 }
 
+export interface ServingDrainResult {
+  durationMs: number;
+  inflightAtStart: number;
+  inflightAtFinish: number;
+  forcedInterruptions: number;
+  timedOut: boolean;
+}
+
 type TransitionListener = (transition: OrchestratorTransition) => Promise<void> | void;
 
 /** Configuração do orquestrador (env vars) */
@@ -264,6 +272,7 @@ export function onOrchestratorTransition(listener: TransitionListener): () => vo
 export async function prepareTrainingRuntime(options?: {
   trigger?: OrchestratorTransitionTrigger;
   reason?: string;
+  waitForServingDrain?: () => Promise<ServingDrainResult>;
 }): Promise<void> {
   const trigger = options?.trigger ?? 'system';
   const reason = options?.reason ?? 'Preparar runtime GPU para treinamento';
@@ -278,6 +287,20 @@ export async function prepareTrainingRuntime(options?: {
   await transitionTo('serving_draining', { trigger, reason: `${reason} - drenando serving` });
 
   try {
+    if (options?.waitForServingDrain) {
+      const drainResult = await options.waitForServingDrain();
+      logger.info(
+        {
+          durationMs: drainResult.durationMs,
+          inflightAtStart: drainResult.inflightAtStart,
+          inflightAtFinish: drainResult.inflightAtFinish,
+          forcedInterruptions: drainResult.forcedInterruptions,
+          timedOut: drainResult.timedOut,
+        },
+        'Drain de serving concluído antes da preempção para treinamento',
+      );
+    }
+
     // Runtime mutuamente exclusivo: desliga serving antes de iniciar trainer.
     await runCompose(['stop', 'gpu-llm', 'gpu-embeddings'], 90000);
 
