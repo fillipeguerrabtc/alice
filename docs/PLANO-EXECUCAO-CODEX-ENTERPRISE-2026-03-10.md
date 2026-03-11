@@ -32,7 +32,7 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - `P1-GPU-LLM-07`: Concluído
 - `P1-OBS-08`: Concluído
 - `P1-FRONT-09`: Concluído
-- `P1-CONTRACTS-10`: Não iniciado
+- `P1-CONTRACTS-10`: Concluído
 - `P1-BIOMETRICS-11`: Não iniciado
 - `P1-DOCS-12`: Não iniciado
 - `P2-HYGIENE-01`: Não iniciado
@@ -43,7 +43,7 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - `P2-DOCS-06`: Não iniciado
 
 ## Bloco atual
-`P1-FRONT-09` (Concluído)
+`P1-CONTRACTS-10` (Concluído)
 
 ## Histórico de rodadas
 
@@ -564,8 +564,42 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
   - Validar posteriormente no ambiente do usuário a correção do binário global `pnpm`.
 - Riscos ou bloqueios:
   - Sem bloqueio ativo para continuação.
-  - Risco residual controlado: `apps/frontend-service/src/pages/Training.tsx` e componentes do domínio de trading ainda permanecem volumosos em áreas não extraídas nesta rodada; decomposição adicional depende de próximos blocos autorizados.
+- Risco residual controlado: `apps/frontend-service/src/pages/Training.tsx` e componentes do domínio de trading ainda permanecem volumosos em áreas não extraídas nesta rodada; decomposição adicional depende de próximos blocos autorizados.
 - Próximo bloco recomendado: `P1-CONTRACTS-10`.
+
+### Rodada 17
+- Data: 2026-03-11
+- Bloco executado: `P1-CONTRACTS-10`
+- Objetivo: Uniformizar cobertura OpenAPI dos serviços HTTP restantes do escopo (`api-gateway`, `gpu-manager-service` e `llm-gateway-service`) sem inventar endpoints, alinhando os contratos ao comportamento real de runtime.
+- Diagnóstico: `api-gateway`, `gpu-manager-service` e `llm-gateway-service` possuíam endpoints HTTP reais sem arquivo canônico `openapi-specs.ts` e sem wiring de `setupSwaggerUI`; `biometrics-service` já expõe contrato OpenAPI nativo via FastAPI (`/openapi.json` e `/docs`) com os endpoints reais mapeados no código.
+- Arquivos lidos: `CLAUDE.md` (1-120), `package.json`, `apps/api-gateway/src/index.ts`, `apps/api-gateway/src/health.ts`, `apps/api-gateway/src/proxy.ts`, `apps/api-gateway/src/services.ts`, `apps/gpu-manager-service/src/index.ts` (1-1326 em chunks), `apps/llm-gateway-service/src/index.ts`, `apps/llm-gateway-service/src/llm-health-routes.ts`, `apps/llm-gateway-service/src/llm-governance-routes.ts` (1-443 em chunks), `apps/llm-gateway-service/src/llm-inference-routes.ts` (1-882 em chunks), `apps/llm-gateway-service/src/llm-metrics.ts`, `apps/biometrics-service/main.py` (1-745 em chunks), `apps/auth-service/src/openapi-specs.ts`, `apps/chat-service/src/openapi-specs.ts`, `apps/rag-service/src/openapi-specs.ts`, `apps/training-service/src/openapi-specs.ts`, `packages/shared-utils/src/openapi.ts`, `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Arquivos alterados: `apps/api-gateway/src/index.ts`, `apps/api-gateway/src/openapi-specs.ts`, `apps/gpu-manager-service/src/index.ts`, `apps/gpu-manager-service/src/openapi-specs.ts`, `apps/llm-gateway-service/src/index.ts`, `apps/llm-gateway-service/src/openapi-specs.ts`, `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Validações executadas:
+  - `npx -y pnpm@10.26.2 exec tsc -p apps/api-gateway/tsconfig.json --noEmit` (falha inicial por tipagem `Application` vs `Express` após wiring de Swagger)
+  - `npx -y pnpm@10.26.2 exec tsc -p apps/api-gateway/tsconfig.json --noEmit` (reexecução após ajuste de tipagem)
+  - `npx -y pnpm@10.26.2 exec eslint apps/api-gateway/src/`
+  - `npx -y pnpm@10.26.2 --filter @alice/api-gateway build`
+  - `npx -y pnpm@10.26.2 --filter @alice/gpu-manager-service typecheck`
+  - `npx -y pnpm@10.26.2 --filter @alice/gpu-manager-service lint`
+  - `npx -y pnpm@10.26.2 --filter @alice/gpu-manager-service build`
+  - `npx -y pnpm@10.26.2 --filter @alice/llm-gateway-service typecheck`
+  - `npx -y pnpm@10.26.2 --filter @alice/llm-gateway-service lint`
+  - `npx -y pnpm@10.26.2 --filter @alice/llm-gateway-service build`
+  - `npx -y pnpm@10.26.2 lint`
+  - `npx -y pnpm@10.26.2 build`
+- Resultado das validações:
+  - Todas as validações obrigatórias da rodada foram aprovadas ao final.
+  - `api-gateway`, `gpu-manager-service` e `llm-gateway-service` passaram a expor `/api/docs` e `/api/docs/openapi.json` com contratos alinhados aos endpoints reais identificados em código.
+  - `biometrics-service` foi mantido sem alteração porque já possui contrato OpenAPI gerado pelo FastAPI para os endpoints reais existentes.
+  - Observação de ambiente: binário global `pnpm` permanece quebrado; comandos executados via `npx -y pnpm@10.26.2`, preservando os comandos lógicos exigidos.
+- Documentação atualizada: tracking canônico atualizado com evidências factuais da Rodada 17.
+- Commit realizado: `feat: standardize openapi coverage for remaining http services`
+- Pendências:
+  - Validar posteriormente no ambiente do usuário a correção do binário global `pnpm`.
+- Riscos ou bloqueios:
+  - Sem bloqueio ativo para continuação.
+  - Risco residual controlado: no `api-gateway`, a documentação de proxy foi mantida em nível de pontos de entrada do gateway (pass-through), enquanto os contratos de domínio permanecem canônicos nos microsserviços de destino.
+- Próximo bloco recomendado: `P1-BIOMETRICS-11`.
 
 ## Pendências abertas
 - Correção do binário global `pnpm` no ambiente local (fora do escopo deste bloco).
@@ -579,4 +613,4 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - Risco residual controlado: documentação histórica volumosa pode conter contexto de planos anteriores; status atual de execução do backlog governado deve sempre ser consultado no tracking canônico.
 
 ## Próximos blocos permitidos
-- `P1-CONTRACTS-10`
+- `P1-BIOMETRICS-11`

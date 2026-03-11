@@ -41,6 +41,7 @@ import {
   createAlicePrometheus,
   getCorsConfig,
   requireInternalHmacAuth,
+  setupSwaggerUI,
 } from '@alice/shared-utils';
 import { createLogger } from '@alice/logger';
 import { 
@@ -80,6 +81,7 @@ import {
 import { createGpuServiceClients, applyStructuredOutputs } from './gpu-service-clients.js';
 import { createGpuManagerMetrics } from './gpu-metrics.js';
 import { startGpuManagerBootstrap } from './gpu-bootstrap.js';
+import { gpuManagerServicePaths, gpuManagerServiceSchemas } from './openapi-specs.js';
 
 export { GpuRequestPriority, GpuServiceType } from './gpu-contracts.js';
 
@@ -813,6 +815,25 @@ function stopQueueWorker(): void {
 
 const app = express();
 const server = createServer(app);
+
+setupSwaggerUI(app, {
+  serviceName: 'gpu-manager-service',
+  version: '1.0.0',
+  description: 'Serviço central de fila, admission control e roteamento para workloads GPU.',
+  port: PORT,
+  tags: [
+    { name: 'Health', description: 'Health checks, readiness e métricas' },
+    { name: 'Queue', description: 'Fila e resultados de requisições GPU' },
+    { name: 'Inference', description: 'Proxy de inferência e streaming SSE' },
+    { name: 'VRAM', description: 'Status e orçamento de VRAM' },
+    { name: 'Orchestrator', description: 'Estado e comandos de orquestração GPU' },
+    { name: 'Embeddings', description: 'Health proxy para embeddings' },
+    { name: 'Services', description: 'Estado operacional dos serviços GPU' },
+  ],
+  paths: gpuManagerServicePaths,
+  schemas: gpuManagerServiceSchemas,
+});
+logger.info('Swagger UI configurado em /api/docs');
 
 const defaultCompressionFilter: (req: Request, res: Response) => boolean =
   typeof (compression as unknown as { filter?: (req: Request, res: Response) => boolean }).filter === 'function'

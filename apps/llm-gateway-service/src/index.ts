@@ -27,12 +27,14 @@ import {
   createNotFoundHandler,
   getCorsConfig,
   requireInternalHmacAuth,
+  setupSwaggerUI,
 } from '@alice/shared-utils';
 import { registerLlmMetrics } from './llm-metrics.js';
 import { registerLlmHealthRoutes } from './llm-health-routes.js';
 import { registerLlmGovernanceRoutes } from './llm-governance-routes.js';
 import { registerLlmInferenceRoutes } from './llm-inference-routes.js';
 import { startLlmGatewayBootstrap } from './llm-bootstrap.js';
+import { llmGatewayPaths, llmGatewaySchemas } from './openapi-specs.js';
 
 const logger = createLogger('llm-gateway');
 
@@ -76,6 +78,21 @@ app.use(compression({
 app.use(express.json({ limit: '1mb' }));
 
 const metrics = registerLlmMetrics(app);
+
+setupSwaggerUI(app, {
+  serviceName: 'llm-gateway-service',
+  version: '1.0.0',
+  description: 'Gateway LLM com inferência, streaming e governança de prompt/templates/policies.',
+  port: PORT,
+  tags: [
+    { name: 'Health', description: 'Health checks e métricas do serviço' },
+    { name: 'Inference', description: 'Operações de inferência e streaming LLM' },
+    { name: 'Governance', description: 'Governança de prompt templates e tool policies' },
+  ],
+  paths: llmGatewayPaths,
+  schemas: llmGatewaySchemas,
+});
+logger.info('Swagger UI configurado em /api/docs');
 
 function requireInternalAuth(req: Request, res: Response, next: () => void): void {
   if (req.path === '/health' || req.path === '/live' || req.path === '/ready' || req.path === '/metrics') {
