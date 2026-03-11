@@ -1,7 +1,7 @@
 # Plano de Implementação Enterprise por Blocos
 
 **Autor:** Fillipe Guerra  
-**Data:** 10 de Março de 2026
+**Data:** 11 de Março de 2026
 
 ## Regras de execução
 - Cada bloco termina com validação sequencial individual: `typecheck` -> `test` -> `eslint` -> `build`.
@@ -280,7 +280,7 @@
   - `docs/ARQUITETURA.md`
   - `docs/STATUS-REAL-ATUAL.md`
   - `docs/SISTEMA-APRENDIZADO.md`
-  - `docs/RELATORIO-CODE-REVIEW-ENTERPRISE.md` (nota de snapshot histórico)
+  - `docs/archive/relatorios/RELATORIO-CODE-REVIEW-ENTERPRISE.md` (nota de snapshot histórico)
 - Atualização dos guardrails de contrato do integrations para suportar modularização de rotas sem enfraquecer cobertura:
   - `tests/unit/services/helpers/integrations-source.ts`
   - `tests/unit/services/integrations-openapi-sync.test.ts`

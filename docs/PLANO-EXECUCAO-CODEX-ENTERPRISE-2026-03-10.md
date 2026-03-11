@@ -40,10 +40,10 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - `P2-INFRA-03`: Concluído
 - `P2-OTEL-04`: Concluído
 - `P2-TSCONFIG-05`: Concluído
-- `P2-DOCS-06`: Não iniciado
+- `P2-DOCS-06`: Concluído
 
 ## Bloco atual
-`P2-TSCONFIG-05` (Concluído)
+`P2-DOCS-06` (Concluído)
 
 ## Histórico de rodadas
 
@@ -809,12 +809,34 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
   - Validar posteriormente no ambiente do usuário a correção do binário global `pnpm`.
 - Riscos ou bloqueios:
   - Sem bloqueio ativo para continuação.
-  - Risco residual controlado: serviços em `apps/*` que não herdam `packages/tsconfig.base.json` permanecem fora deste endurecimento nesta rodada para evitar quebra ampla fora de escopo.
+- Risco residual controlado: serviços em `apps/*` que não herdam `packages/tsconfig.base.json` permanecem fora deste endurecimento nesta rodada para evitar quebra ampla fora de escopo.
 - Próximo bloco recomendado: `P2-DOCS-06`.
+
+### Rodada 25
+- Data: 2026-03-11
+- Bloco executado: `P2-DOCS-06`
+- Objetivo: Arquivar histórico documental, manter índice principal enxuto e separar claramente documentação canônica de histórico sem perda de rastreabilidade.
+- Diagnóstico: O diretório `docs/` tinha 24 relatórios históricos `RELATORIO-*.md` no mesmo nível de documentos canônicos, poluindo o índice principal e aumentando fragmentação de navegação.
+- Arquivos lidos: `CLAUDE.md` (1-120), `docs/INDEX.md`, `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`, `README.md`, listagem completa de `docs/` e `docs/archive/`, `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Arquivos alterados: `docs/INDEX.md`, `docs/archive/INDEX.md` (novo), `docs/archive/relatorios/RELATORIO-*.md` (24 arquivos movidos de `docs/` para `docs/archive/relatorios/`), `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`, `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Validações executadas:
+  - `npx -y pnpm@10.26.2 lint`
+  - `npx -y pnpm@10.26.2 build`
+- Resultado das validações:
+  - Todas as validações obrigatórias da rodada foram aprovadas.
+  - Índice principal ficou orientado a SSOT e o histórico passou a ficar concentrado em `docs/archive/INDEX.md`.
+  - Observação de ambiente: binário global `pnpm` permanece quebrado; comandos lógicos exigidos foram executados via `npx -y pnpm@10.26.2`.
+- Documentação atualizada: `docs/INDEX.md` (SSOT enxuto + seção de histórico arquivado), `docs/archive/INDEX.md` (índice canônico do archive), ajuste de referência histórica em `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md` e tracking canônico.
+- Commit realizado: `docs: streamline documentation index and archive historical reports`
+- Pendências:
+  - Validar posteriormente no ambiente do usuário a correção do binário global `pnpm`.
+- Riscos ou bloqueios:
+  - Sem bloqueio ativo.
+  - Risco residual controlado: documentação histórica arquivada permanece acessível por caminho dedicado (`docs/archive/relatorios/`) e não deve ser usada como fonte normativa de estado atual.
+- Próximo bloco recomendado: Nenhum. Backlog P0/P1/P2 concluído.
 
 ## Pendências abertas
 - Correção do binário global `pnpm` no ambiente local (fora do escopo deste bloco).
-- Reduzir leituras diretas de `process.env` remanescentes fora do escopo autorizado, seguindo próximos blocos.
 
 ## Riscos e bloqueios
 - Sem bloqueio ativo para continuação do backlog.
@@ -824,4 +846,4 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - Risco residual controlado: documentação histórica volumosa pode conter contexto de planos anteriores; status atual de execução do backlog governado deve sempre ser consultado no tracking canônico.
 
 ## Próximos blocos permitidos
-- `P2-DOCS-06`
+- Nenhum. Backlog P0/P1/P2 concluído.

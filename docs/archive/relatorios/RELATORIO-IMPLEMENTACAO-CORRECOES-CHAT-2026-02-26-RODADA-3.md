@@ -51,7 +51,7 @@ Resultado: sucesso
 ## Arquivos alterados
 - `apps/chat-service/src/index.ts`
 - `apps/frontend-service/src/pages/Chat/index.tsx`
-- `docs/RELATORIO-IMPLEMENTACAO-CORRECOES-CHAT-2026-02-26-RODADA-3.md`
+- `docs/archive/relatorios/RELATORIO-IMPLEMENTACAO-CORRECOES-CHAT-2026-02-26-RODADA-3.md`
 
 ## Resultado
 As correcoes removem a causa estrutural do erro de nome nao confirmado, alinham o titulo do historico ao contexto da ultima mensagem do usuario e exibem em tempo real as etapas de composicao da resposta no chat, com padrao enterprise e validacao completa.
