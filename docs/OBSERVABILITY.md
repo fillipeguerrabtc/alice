@@ -1,7 +1,7 @@
 # Guia de Observabilidade - Alice Enterprise Platform
 
-**Versão:** 2.8.1  
-**Data:** 07 de Março de 2026  
+**Versão:** 2.8.2  
+**Data:** 11 de Março de 2026  
 **Autor:** Fillipe Guerra
 
 ---
@@ -43,6 +43,7 @@
 | **Sync deploy** | Workflow `deploy-stack-modular.yml` (job deploy-observability) copia **Agentic**, **Biometria** e **Demo Trading** do SSOT para as pastas de provisionamento; pasta Demo Trading adicionada em `alice-dashboards.yml`. |
 | **Testes** | Limites de treinamento: `tests/unit/training-limits.test.ts`. Observability (health, backup, métricas): `tests/unit/services/observability-service.test.ts`. **Smoke dashboards**: `tests/unit/observability-dashboards-smoke.test.ts` (JSON válido, panels, uid, dashboards obrigatórios 00-home, alice-demo-trading, alice-llm-gateway, alice-biometrics). Checklist pós-deploy continua para targets/dashboards em produção. |
 | **DR Offsite criptografado** | `apps/observability-service/src/backup-orchestrator.ts` passou a persistir artefatos por `backupId`, sincronizar cópia offsite criptografada (`BACKUP_OFFSITE_DIR`) e validar prontidão de restore em `POST /api/backup/verify/:id` com checks locais/offsite + `pgbackrest verify`. |
+| **P2-OTEL-04 (11/03/2026)** | `observability-service` passou a usar instrumentação HTTP padronizada do `createAlicePrometheus` (métricas `alice_http_*` + default metrics de aplicação) sem duplicar endpoint, com agregação no mesmo `/metrics`. Correlação de contexto foi alinhada para incluir `traceId` e `traceparent` em logs estruturados via `AsyncLocalStorage`. |
 
 ---
 
@@ -690,5 +691,5 @@ docker logs loki
 
 ---
 
-**Última atualização:** 16 de Janeiro de 2026  
+**Última atualização:** 11 de Março de 2026  
 **Autor:** Fillipe Guerra

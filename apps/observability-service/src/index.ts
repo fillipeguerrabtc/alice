@@ -21,6 +21,7 @@ import {
   createRateLimiter,
   createErrorHandler,
   createNotFoundHandler,
+  createAlicePrometheus,
   requirePermission,
   setupSwaggerUI,
   OBSERVABILITY_SERVICE_TAGS,
@@ -157,6 +158,10 @@ const serviceTargets: ServiceHealthTarget[] = [
 ];
 
 const app = express();
+const { registry: metricsRegistry, httpMetricsMiddleware } = createAlicePrometheus({
+  serviceName: 'observability-service',
+  collectDefaultMetrics: true,
+});
 
 setupSwaggerUI(app, {
   serviceName: 'observability-service',
@@ -181,6 +186,7 @@ app.use(
 );
 
 app.use(createCorrelationMiddleware({ serviceName: 'observability-service' }));
+app.use(httpMetricsMiddleware);
 
 const corsOriginsEnv = process.env.CORS_ORIGINS;
 if (!corsOriginsEnv && isProduction) {
@@ -233,6 +239,7 @@ registerObservabilityMetricsRoutes({
   prometheusUrl: PROMETHEUS_URL,
   serviceTargets,
   backupMetricsWindowDays: BACKUP_METRICS_WINDOW_DAYS,
+  metricsRegistry,
 });
 
 registerObservabilityAdminRoutes({

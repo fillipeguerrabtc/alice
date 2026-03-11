@@ -34,6 +34,10 @@ interface RegisterObservabilityMetricsRoutesParams {
   prometheusUrl: string;
   serviceTargets: ServiceHealthTarget[];
   backupMetricsWindowDays: number;
+  metricsRegistry?: {
+    contentType: string;
+    metrics: () => Promise<string>;
+  };
 }
 
 async function queryPrometheus(prometheusUrl: string, query: string): Promise<PrometheusVectorResult[]> {
@@ -99,6 +103,7 @@ export function registerObservabilityMetricsRoutes(params: RegisterObservability
     prometheusUrl,
     serviceTargets,
     backupMetricsWindowDays,
+    metricsRegistry,
   } = params;
 
   app.get('/api/observability/metrics/services', requireObservabilityRead, async (_req: Request, res: Response) => {
@@ -364,14 +369,26 @@ export function registerObservabilityMetricsRoutes(params: RegisterObservability
 
       try {
         const { completed, failed } = await loadBackupJobCounts(backupMetricsWindowDays);
-        metrics += `alice_backup_jobs_total{status="completed",window="7d"} ${completed}\n`;
-        metrics += `alice_backup_jobs_total{status="failed",window="7d"} ${failed}\n`;
+        metrics += `alice_backup_jobs_total{status="completed",window="${backupMetricsWindowDays}d"} ${completed}\n`;
+        metrics += `alice_backup_jobs_total{status="failed",window="${backupMetricsWindowDays}d"} ${failed}\n`;
       } catch (error) {
         logger.error({ error }, 'Erro ao carregar metricas de backup');
         metrics += '# backup metrics unavailable\n';
       }
 
-      res.set('Content-Type', 'text/plain');
+      if (metricsRegistry) {
+        try {
+          const appMetrics = await metricsRegistry.metrics();
+          if (appMetrics.trim().length > 0) {
+            metrics += `\n${appMetrics}`;
+          }
+        } catch (error) {
+          logger.error({ error }, 'Erro ao carregar metricas HTTP/default do registry compartilhado');
+          metrics += '# shared app metrics unavailable\n';
+        }
+      }
+
+      res.set('Content-Type', metricsRegistry?.contentType ?? 'text/plain');
       res.send(metrics);
     } catch {
       res.status(500).send('# Error generating metrics\n');

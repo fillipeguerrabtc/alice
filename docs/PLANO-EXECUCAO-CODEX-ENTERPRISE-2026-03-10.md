@@ -38,12 +38,12 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - `P2-HYGIENE-01`: Concluído
 - `P2-CI-02`: Concluído
 - `P2-INFRA-03`: Concluído
-- `P2-OTEL-04`: Não iniciado
+- `P2-OTEL-04`: Concluído
 - `P2-TSCONFIG-05`: Não iniciado
 - `P2-DOCS-06`: Não iniciado
 
 ## Bloco atual
-`P2-INFRA-03` (Concluído)
+`P2-OTEL-04` (Concluído)
 
 ## Histórico de rodadas
 
@@ -739,8 +739,41 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
   - Validar posteriormente no ambiente do usuário a correção do binário global `pnpm`.
 - Riscos ou bloqueios:
   - Sem bloqueio ativo para continuação.
-  - Risco residual controlado: alguns defaults não mutáveis (ex.: versões estáveis explícitas de observability em compose) permanecem por compatibilidade operacional e não introduzem drift de tag mutável.
+- Risco residual controlado: alguns defaults não mutáveis (ex.: versões estáveis explícitas de observability em compose) permanecem por compatibilidade operacional e não introduzem drift de tag mutável.
 - Próximo bloco recomendado: `P2-OTEL-04`.
+
+### Rodada 23
+- Data: 2026-03-11
+- Bloco executado: `P2-OTEL-04`
+- Objetivo: Levar observabilidade para o nível de aplicação, padronizando traces/métricas e reforçando correlação de contexto onde havia lacuna real.
+- Diagnóstico: Foi identificada lacuna de instrumentação HTTP padronizada no `observability-service` (ausência de `httpMetricsMiddleware` compartilhado no request path) e lacuna de correlação entre contexto de requisição (`AsyncLocalStorage` de `shared-utils`) e `mixin` do `@alice/logger` para `traceId`/`traceparent`.
+- Arquivos lidos: `CLAUDE.md` (1-120), `package.json`, `apps/observability-service/src/index.ts` (1-286), `apps/observability-service/src/observability-metrics-routes.ts` (1-380), `apps/observability-service/src/observability-health-monitor.ts` (chunks), `apps/observability-service/src/observability-bootstrap.ts`, `apps/observability-service/src/observability-health-routes.ts`, `apps/observability-service/src/observability-admin-routes.ts`, `packages/shared-utils/src/async-context.ts` (1-222), `packages/shared-utils/src/prometheus.ts` (chunks), `packages/shared-utils/src/logger.ts`, `packages/logger/src/index.ts` (1-251), `docs/OBSERVABILITY.md` (chunks), `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Arquivos alterados: `packages/logger/src/index.ts`, `packages/shared-utils/src/async-context.ts`, `apps/observability-service/src/index.ts`, `apps/observability-service/src/observability-metrics-routes.ts`, `docs/OBSERVABILITY.md`, `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Validações executadas:
+  - `npx -y pnpm@10.26.2 --filter @alice/logger typecheck`
+  - `npx -y pnpm@10.26.2 --filter @alice/logger lint`
+  - `npx -y pnpm@10.26.2 --filter @alice/logger build`
+  - `npx -y pnpm@10.26.2 --filter @alice/shared-utils typecheck`
+  - `npx -y pnpm@10.26.2 --filter @alice/shared-utils lint`
+  - `npx -y pnpm@10.26.2 --filter @alice/shared-utils build`
+  - `npx -y pnpm@10.26.2 exec tsc -p apps/observability-service/tsconfig.json --noEmit`
+  - `npx -y pnpm@10.26.2 exec eslint apps/observability-service/src/`
+  - `npx -y pnpm@10.26.2 --filter @alice/observability-service build`
+  - `npx -y pnpm@10.26.2 lint`
+  - `npx -y pnpm@10.26.2 build`
+- Resultado das validações:
+  - Todas as validações obrigatórias do bloco foram aprovadas.
+  - `observability-service` passou a expor no mesmo `/metrics` tanto métricas customizadas do serviço quanto métricas HTTP/default do registry compartilhado, sem duplicação de endpoint.
+  - Correlação de logs ficou consistente com contexto de trace (`traceId` e `traceparent`) no `mixin` central de logger.
+  - Observação de ambiente: binário global `pnpm` permanece quebrado; comandos executados via `npx -y pnpm@10.26.2`, preservando os comandos lógicos exigidos.
+- Documentação atualizada: `docs/OBSERVABILITY.md` (versão/data e atualização da rodada `P2-OTEL-04`) e tracking canônico.
+- Commit realizado: `feat: expand application-level telemetry and tracing coverage`
+- Pendências:
+  - Validar posteriormente no ambiente do usuário a correção do binário global `pnpm`.
+- Riscos ou bloqueios:
+  - Sem bloqueio ativo para continuação.
+  - Risco residual controlado: o endpoint `/metrics` permanece textual e compatível com Prometheus, agora com volume maior por agregar métricas HTTP/default e métricas customizadas no mesmo payload.
+- Próximo bloco recomendado: `P2-TSCONFIG-05`.
 
 ## Pendências abertas
 - Correção do binário global `pnpm` no ambiente local (fora do escopo deste bloco).
@@ -754,4 +787,5 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - Risco residual controlado: documentação histórica volumosa pode conter contexto de planos anteriores; status atual de execução do backlog governado deve sempre ser consultado no tracking canônico.
 
 ## Próximos blocos permitidos
-- `P2-OTEL-04`
+- `P2-TSCONFIG-05`
+- `P2-DOCS-06`

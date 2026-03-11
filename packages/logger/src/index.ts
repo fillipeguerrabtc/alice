@@ -20,6 +20,8 @@ function resolveLogLevel(): string {
 export interface LogContext {
   correlationId?: string;
   requestId?: string;
+  traceId?: string;
+  traceparent?: string;
   tenantId?: string;
   userId?: string;
 }
@@ -113,6 +115,8 @@ function buildBaseOptions(): LoggerOptions {
         return {
           correlationId: context.correlationId,
           requestId: context.requestId,
+          traceId: context.traceId,
+          traceparent: context.traceparent,
           tenantId: context.tenantId,
           userId: context.userId,
         };

@@ -16,6 +16,7 @@ import {
   createChildTraceparent,
   parseTraceparent,
 } from './tracing.js';
+import { runWithLogContext } from './logger.js';
 
 // ============================================================================
 // TIPOS DE CONTEXTO
@@ -83,7 +84,7 @@ export function getTenantId(): string | undefined {
  * Usado para criar contextos manuais (jobs, workers, etc.)
  */
 export function runWithContext<T>(context: RequestContext, fn: () => T): T {
-  return asyncLocalStorage.run(context, fn);
+  return runWithLogContext(buildLogContext(context), () => asyncLocalStorage.run(context, fn));
 }
 
 /**
@@ -93,7 +94,7 @@ export async function runWithContextAsync<T>(
   context: RequestContext, 
   fn: () => Promise<T>
 ): Promise<T> {
-  return asyncLocalStorage.run(context, fn);
+  return runWithLogContext(buildLogContext(context), () => asyncLocalStorage.run(context, fn));
 }
 
 // ============================================================================
@@ -102,6 +103,17 @@ export async function runWithContextAsync<T>(
 
 const CORRELATION_ID_HEADER = 'x-correlation-id';
 const REQUEST_ID_HEADER = 'x-request-id';
+
+function buildLogContext(context: RequestContext) {
+  return {
+    correlationId: context.correlationId,
+    requestId: context.requestId,
+    traceId: context.traceId,
+    traceparent: context.traceparent,
+    tenantId: context.tenantId,
+    userId: context.userId,
+  };
+}
 
 export interface CorrelationMiddlewareOptions {
   serviceName: string;
@@ -154,9 +166,11 @@ export function createCorrelationMiddleware(options: CorrelationMiddlewareOption
     res.setHeader(REQUEST_ID_HEADER, requestId);
     res.setHeader(TRACEPARENT_HEADER, traceparent);
 
-    // Executar próximo middleware dentro do contexto
-    asyncLocalStorage.run(context, () => {
-      next();
+    // Garantir correlação consistente entre contexto HTTP e logger estruturado.
+    runWithLogContext(buildLogContext(context), () => {
+      asyncLocalStorage.run(context, () => {
+        next();
+      });
     });
   };
 }
