@@ -1,7 +1,7 @@
 # Roadmap — Funcionalidades Futuras
 
 **Autor:** Fillipe Guerra  
-**Data:** 10 de Fevereiro de 2026
+**Data:** 11 de Março de 2026
 
 ---
 
@@ -28,3 +28,4 @@
 - Todos os gaps e bugs identificados na auditoria de Trading KuCoin (P0, P1, P2) foram corrigidos.
 - A plataforma cobre Futures + Spot + Margin com WebSocket unificado (`kucoinUnifiedWebSocket.ts`) e REST multi-mercado.
 - Os itens acima são funcionalidades de **expansão futura**, não correções pendentes.
+- Este documento é prospectivo e não substitui o tracking canônico de execução por rodada.

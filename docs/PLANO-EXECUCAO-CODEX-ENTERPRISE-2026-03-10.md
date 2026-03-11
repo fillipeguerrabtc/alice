@@ -34,7 +34,7 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - `P1-FRONT-09`: Concluído
 - `P1-CONTRACTS-10`: Concluído
 - `P1-BIOMETRICS-11`: Concluído
-- `P1-DOCS-12`: Não iniciado
+- `P1-DOCS-12`: Concluído
 - `P2-HYGIENE-01`: Não iniciado
 - `P2-CI-02`: Não iniciado
 - `P2-INFRA-03`: Não iniciado
@@ -43,7 +43,7 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - `P2-DOCS-06`: Não iniciado
 
 ## Bloco atual
-`P1-BIOMETRICS-11` (Concluído)
+`P1-DOCS-12` (Concluído)
 
 ## Histórico de rodadas
 
@@ -628,6 +628,35 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
   - Risco residual controlado: `biometrics-service` ainda não possui pipeline de testes automatizados/linter Python dedicado versionado no monorepo; a rodada validou sintaxe/compilação e build global sem expandir escopo para criar nova esteira.
 - Próximo bloco recomendado: `P1-DOCS-12`.
 
+### Rodada 19
+- Data: 2026-03-11
+- Bloco executado: `P1-DOCS-12`
+- Objetivo: Consolidar documentação canônica, reduzir fragmentação e distinguir documentos normativos de histórico, mantendo rastreabilidade factual alinhada ao código e ao tracking.
+- Diagnóstico: `README.md`, `docs/INDEX.md`, `docs/ARQUITETURA.md` e `docs/STATUS-REAL-ATUAL.md` continham blocos extensos de histórico incremental, com sobreposição de conteúdo e redução de clareza dos SSOT normativos; havia também nota imprecisa sobre OpenAPI na arquitetura em relação ao `biometrics-service` (FastAPI nativo).
+- Arquivos lidos: `CLAUDE.md` (1-120), `README.md` (leitura em chunks), `docs/INDEX.md` (leitura em chunks), `docs/ARQUITETURA.md` (leitura em chunks), `docs/STATUS-REAL-ATUAL.md` (leitura em chunks), `docs/ROADMAP.md`, `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`, além de buscas objetivas por termos canônicos/status/arquitetura/roadmap/histórico e conferência de consistência OpenAPI.
+- Arquivos alterados: `README.md`, `docs/INDEX.md`, `docs/ARQUITETURA.md`, `docs/STATUS-REAL-ATUAL.md`, `docs/ROADMAP.md`, `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- Validações executadas:
+  - `pnpm lint` (executado via `npx -y pnpm@10.26.2 lint`)
+  - `pnpm build` (executado via `npx -y pnpm@10.26.2 build`)
+- Resultado das validações:
+  - Todas as validações obrigatórias da rodada foram aprovadas.
+  - `lint` e `build` globais concluíram sem erro.
+  - Observação de ambiente: binário global `pnpm` permanece quebrado; execução feita via `npx -y pnpm@10.26.2`, preservando os comandos lógicos exigidos.
+- Documentação atualizada:
+  - `README.md`: seção de atualização incremental extensa substituída por ponteiros canônicos para histórico/tracking.
+  - `docs/INDEX.md`: classificação explícita entre documentos normativos e históricos, com regra de precedência canônica.
+  - `docs/ARQUITETURA.md`: remoção de bloco histórico incremental extenso no topo, reforço de precedência documental e correção da nota de OpenAPI para contemplar FastAPI no `biometrics-service`.
+  - `docs/STATUS-REAL-ATUAL.md`: remoção de duplicidade de changelog extenso em favor de referência canônica ao tracking.
+  - `docs/ROADMAP.md`: reforço de natureza prospectiva (não canônica para status de execução).
+  - Tracking canônico atualizado com evidências da rodada.
+- Commit realizado: `docs: consolidate canonical architecture and status documentation`
+- Pendências:
+  - Validar posteriormente no ambiente do usuário a correção do binário global `pnpm`.
+- Riscos ou bloqueios:
+  - Sem bloqueio ativo para continuação.
+  - Risco residual controlado: ainda existem seções históricas em documentos operacionais para contexto legado, porém com precedência canônica agora explícita e sem duplicidade crítica no topo dos SSOT principais.
+- Próximo bloco recomendado: `P2-HYGIENE-01`.
+
 ## Pendências abertas
 - Correção do binário global `pnpm` no ambiente local (fora do escopo deste bloco).
 - Reduzir leituras diretas de `process.env` remanescentes fora do escopo autorizado, seguindo próximos blocos.
@@ -640,4 +669,4 @@ Executar o backlog técnico enterprise do monorepo Alice com rastreabilidade can
 - Risco residual controlado: documentação histórica volumosa pode conter contexto de planos anteriores; status atual de execução do backlog governado deve sempre ser consultado no tracking canônico.
 
 ## Próximos blocos permitidos
-- `P1-DOCS-12`
+- `P2-HYGIENE-01`
