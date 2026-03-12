@@ -133,7 +133,7 @@ import {
   ESCALATION_CONFIG,
 } from './conversation-orchestrator.js';
 // Arquitetura atual (08/02/2026):
-// - GPU local: LLM Texto (Qwen2.5 7B AWQ) + Embeddings (Qwen3-Embedding-0.6B)
+// - GPU local: LLM Texto (Qwen3 8B AWQ) + Embeddings (Qwen3-Embedding-0.6B)
 // - OpenAI API: Vision (gpt-4.1), ASR (gpt-4o-transcribe), Geração de imagens (gpt-image-1)
 import { initTradingOrchestrator } from './trading-orchestrator.js';
 import { checkResponseCache, isGreeting as isGreetingMessage } from './response-cache.js';
@@ -8236,6 +8236,8 @@ app.get('/api/chat/health', async (_req: Request, res: Response) => {
 app.get('/api/chat/version', (_req: Request, res: Response) => {
   res.json({
     version: APP_VERSION,
+    publicModelName: DEFAULT_PUBLIC_LLM_MODEL_NAME,
+    servingModelId: DEFAULT_LLM_CONFIG.model,
     service: 'chat-service',
     timestamp: new Date().toISOString(),
   });
@@ -16088,7 +16090,7 @@ wss.on('connection', (ws, req) => {
       
       // ========================================================================
       // HANDLER MULTIMODAL (FASE 9 - Upload de mídia via WebSocket)
-      // IMPORTANTE: LLM texto (Qwen2.5 7B) é SOMENTE TEXTO - não processa imagens diretamente
+      // IMPORTANTE: LLM texto (Qwen3 8B) é SOMENTE TEXTO - não processa imagens diretamente
       // Para imagens: usa RAG com descrição OpenAI Vision + embeddings de texto (Qwen3)
       // Para áudio/vídeo: usa transcrição (texto) + RAG
       // ========================================================================
@@ -16314,7 +16316,7 @@ wss.on('connection', (ws, req) => {
           processingStatus: uploadResult.processingStatus,
         }));
 
-        // Preparar prompt para LLM texto (Qwen2.5 7B é SOMENTE TEXTO)
+        // Preparar prompt para LLM texto (Qwen3 8B é SOMENTE TEXTO)
         // Não processa imagens diretamente - usar RAG + OpenAI Vision
         const agent = conversation.agent as AgentConfig | null;
         const assistantSettings = await getAssistantSettingsForTenant(tenantId);
@@ -16408,7 +16410,7 @@ wss.on('connection', (ws, req) => {
           namespaceContext: conversation.agent?.namespace ?? null,
         });
         
-        // LLM texto (Qwen2.5 7B) é SOMENTE TEXTO
+        // LLM texto (Qwen3 8B) é SOMENTE TEXTO
         // Não envia imagens diretamente - usa contexto RAG via OpenAI Vision + embeddings de texto
         const llmMessages = buildPromptMessages({
           systemPrompt,

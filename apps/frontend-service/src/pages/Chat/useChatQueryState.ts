@@ -17,6 +17,11 @@ export type ChatNamespace = {
 };
 
 export type ChatApprovalPolicy = 'always_confirm' | 'confirm_risky' | 'never_confirm';
+export type ChatVersionPayload = {
+  version: string | null;
+  publicModelName?: string | null;
+  servingModelId?: string | null;
+};
 
 type AssistantSettingsPreview = {
   settings?: {
@@ -68,7 +73,7 @@ export function useChatQueryState({
     enabled: Boolean(conversationId),
   });
 
-  const { data: versionData } = useQuery<{ version: string | null }>({
+  const { data: versionData } = useQuery<ChatVersionPayload>({
     queryKey: ['/api/chat/version'],
     staleTime: 1000 * 60 * 5,
   });

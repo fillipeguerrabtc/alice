@@ -22,11 +22,11 @@ import { chatServicePaths } from '../../../apps/chat-service/src/openapi-specs';
 // TESTES DE CONFIGURAÇÃO LLM
 // ============================================================================
 
-// Gate 2: LLM (texto) separado de Vision (OpenAI)
+// Gate 3: LLM (texto) separado de Vision (OpenAI)
 describe('Chat Service - Configuração LLM', () => {
   const LLM_CONFIG = {
     provider: 'gpu-manager-service',
-    model: 'Qwen/Qwen2.5-7B-Instruct-AWQ', // Gate 2 (LLM texto)
+    model: 'Qwen/Qwen3-8B-AWQ', // Gate 3 (LLM texto)
     maxTokens: 2048,
     temperature: 0.7,
     topP: 0.9,
@@ -36,8 +36,8 @@ describe('Chat Service - Configuração LLM', () => {
     expect(LLM_CONFIG.provider).toBe('gpu-manager-service');
   });
 
-  it('deve usar modelo Qwen2.5 7B (Gate 2 - LLM texto)', () => {
-    expect(LLM_CONFIG.model).toBe('Qwen/Qwen2.5-7B-Instruct-AWQ');
+  it('deve usar modelo Qwen3 8B (Gate 3 - LLM texto)', () => {
+    expect(LLM_CONFIG.model).toBe('Qwen/Qwen3-8B-AWQ');
   });
 
   it('deve ter maxTokens de 2048', () => {

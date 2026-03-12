@@ -17,6 +17,7 @@ import { createLogger } from '@alice/logger';
 import { getDatabase, schema } from '@alice/database';
 import { eq, and, desc } from '@alice/database';
 import {
+  DEFAULT_LLM_SERVING_MODEL_ID,
   requestGpu,
   GpuServiceType,
   GpuRequestPriority,
@@ -500,7 +501,7 @@ export async function executePhase2(params: {
   try {
     // Resolver modelo com adapter LoRA ativo (se disponível)
     // Post-mortem usa adapter treinado para gerar motivadores mais precisos
-    const baseModel = 'Qwen/Qwen2.5-7B-Instruct-AWQ';
+    const baseModel = DEFAULT_LLM_SERVING_MODEL_ID;
     if (!params.namespaceId || !params.agentId) {
       throw new Error('trading_scope_required: namespace/agente trading obrigatório para post-mortem');
     }

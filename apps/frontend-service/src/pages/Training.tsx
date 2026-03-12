@@ -3,7 +3,7 @@
  * 
  * Gate 2 (16/01/2026):
  * Página para gerenciar dados de treinamento e jobs de fine-tuning (QLoRA)
- * usando o MESMO modelo base do LLM (texto) em produção (Qwen2.5 7B),
+ * usando o MESMO modelo base do LLM (texto) em produção (Qwen3 8B),
  * com execução via Training Service + gpu-trainer (sob demanda).
  * 
  * Funcionalidades:

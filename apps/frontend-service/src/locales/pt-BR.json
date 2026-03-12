@@ -135,7 +135,7 @@
       "noData": "Sem dados para exibir"
     },
     "system": {
-      "llm": "Qwen2.5 7B (LLM) + OpenAI Vision",
+      "llm": "Qwen3 8B (LLM) + OpenAI Vision",
       "llmParams": "Gate 2: LLM (texto) separado de Vision (OpenAI)",
       "database": "PostgreSQL + pgvector",
       "databaseFeature": "Busca vetorial",
@@ -166,7 +166,7 @@
       "operational": "Operacional",
       "synced": "Sincronizada",
       "connected": "Conectadas",
-      "llmModel": "Qwen2.5 7B (LLM)",
+      "llmModel": "Qwen3 8B (LLM)",
       "knowledgeBase": "Base de Conhecimento",
       "integrationsLabel": "Integrações"
     },
@@ -551,7 +551,7 @@
       "personality": "Traços de Personalidade",
       "personalityDesc": "Características de personalidade que influenciam o tom das respostas (ex: amigável, profissional, empático)",
       "baseModel": "Modelo Base",
-      "baseModelDesc": "Modelo LLM usado para geração de respostas (Gate 2: LLM texto = Qwen2.5 7B; Vision = OpenAI)",
+      "baseModelDesc": "Modelo LLM usado para geração de respostas (Gate 3: LLM texto = Qwen3 8B; Vision = OpenAI)",
       "temperature": "Temperatura",
       "temperatureDesc": "Controla a aleatoriedade das respostas. Valores menores = mais determinístico, valores maiores = mais criativo.",
       "maxTokens": "Tokens Máximos",
@@ -1899,7 +1899,7 @@
     },
     "optionsHelp": {
       "title": "Diferença entre as opções de treinamento",
-      "onDemand": "Treino on-demand: executa imediatamente um treinamento incremental ou completo usando dados do chat (Dados tab). Usa o mesmo modelo base do LLM (Qwen2.5 7B).",
+      "onDemand": "Treino on-demand: executa imediatamente um treinamento incremental ou completo usando dados do chat (Dados tab). Usa o mesmo modelo base do LLM (Qwen3 8B).",
       "pipelineTrading": "Pipeline Trading: cria um job de fine-tuning usando apenas dados aprovados de trading (Datasets Trading tab). Requer namespace de trading selecionado. Ideal para post-mortems e sinais de trading.",
       "newJob": "Novo Job: configura um job customizado com presets e override de hyperparams. Usa dados do chat (Dados tab). Mínimo de {{minData}} dados aprovados."
     },
@@ -2110,7 +2110,7 @@
     },
     "createJob": {
       "title": "Novo Job de Fine-tuning",
-      "description": "Configure um novo job de fine-tuning para o LLM (Qwen2.5 7B).",
+      "description": "Configure um novo job de fine-tuning para o LLM (Qwen3 8B).",
       "minDataWarning": "Você tem apenas {{count}} dados aprovados. Mínimo necessário: {{min}}.",
       "namespaceLabel": "Namespace",
       "namespacePlaceholder": "Selecione o namespace para treinar",
@@ -2750,7 +2750,7 @@
     },
     "signals": {
       "recent": "Sinais Recentes",
-      "subtitle": "Sinais gerados pelo LLM (Qwen2.5 7B) para trading autônomo",
+      "subtitle": "Sinais gerados pelo LLM (Qwen3 8B) para trading autônomo",
       "new": "Novo Sinal",
       "generateNow": "Gerar sinal agora",
       "reasoning": {

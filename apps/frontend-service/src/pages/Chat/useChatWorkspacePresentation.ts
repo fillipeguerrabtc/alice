@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import type { ChatWorkspaceKey } from './chat-page-routing';
+import type { ChatVersionPayload } from './useChatQueryState';
 
 type AgentSummary = {
   id: string;
@@ -22,7 +23,7 @@ type UseChatWorkspacePresentationOptions = {
   approvalPolicy: ApprovalPolicy;
   conversationId?: string;
   t: (key: string) => string;
-  versionData?: { version: string | null };
+  versionData?: ChatVersionPayload;
 };
 
 export function useChatWorkspacePresentation({
@@ -35,7 +36,9 @@ export function useChatWorkspacePresentation({
   versionData,
 }: UseChatWorkspacePresentationOptions) {
   const resolvedVersion = versionData?.version || appVersion;
-  const modelBadgeLabel = resolvedVersion ? `Alice ${resolvedVersion} 7B` : 'Alice 7B';
+  const modelBadgeLabel = versionData?.publicModelName?.trim().length
+    ? `Alice ${versionData.publicModelName.trim()}`
+    : 'Alice Qwen3-8B';
   const approvalPolicyForSelect: ApprovalPolicy =
     approvalPolicy === 'confirm_risky' ? 'always_confirm' : approvalPolicy;
   const approvalPolicyOptions = [

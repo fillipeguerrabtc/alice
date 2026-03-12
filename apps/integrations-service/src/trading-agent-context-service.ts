@@ -1,5 +1,5 @@
 import { getDatabase, schema, eq, and, desc } from '@alice/database';
-import { resolveAgentLlmModel } from '@alice/shared-utils';
+import { DEFAULT_PUBLIC_LLM_MODEL_NAME, resolveAgentLlmModel } from '@alice/shared-utils';
 
 type TradingMarketType = 'futures' | 'spot' | 'margin';
 type TradingMarginMode = 'cross' | 'isolated';
@@ -90,7 +90,7 @@ export function createTradingAgentContextService(deps: {
       throw new deps.TradingConfigErrorCtor('TRADING_SCOPE_REQUIRED: Namespace Trading obrigatório e ativo para operações de Trading.');
     }
 
-    const modelResolution = resolveAgentLlmModel(resolvedAgent.modeloBase || 'Qwen2.5-7B-Instruct-AWQ');
+    const modelResolution = resolveAgentLlmModel(resolvedAgent.modeloBase || DEFAULT_PUBLIC_LLM_MODEL_NAME);
     if (!modelResolution.model) {
       throw new Error(`modeloBase '${resolvedAgent.modeloBase}' não suportado para LLM (Gate 2).`);
     }

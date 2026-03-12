@@ -1257,9 +1257,9 @@ export const agents = pgTable(
     personalidade: text("personalidade"),
     instrucoes: text("instrucoes"),
     capacidades: text("capacidades").array(),
-    // Gate 2: modelo base do agente (LLM texto) deve refletir o runtime padrão (Qwen2.5)
+    // Gate 3: modelo base do agente (LLM texto) deve refletir o runtime padrão (Qwen3)
     // (mantemos compatibilidade com modelos legados via mapping no chat-service).
-    modeloBase: varchar("modelo_base", { length: 100 }).default("Qwen2.5-7B-Instruct-AWQ"),
+    modeloBase: varchar("modelo_base", { length: 100 }).default("Qwen3-8B"),
     temperaturaModelo: real("temperatura_modelo").default(0.7),
     // Gate 2: coerente com max-model-len padrão do stack (2048)
     maxTokens: integer("max_tokens").default(2048),
@@ -2242,15 +2242,15 @@ export const wiseWebhookEvents = pgTable(
 );
 
 // ============================================================================
-// CONFIGURAÇÕES DO MODELO LLM (Gate 2 - LLM texto + Vision via OpenAI)
-// - LLM (texto): Qwen2.5 7B Instruct (AWQ) via GPU Manager Service
+// CONFIGURAÇÕES DO MODELO LLM (Gate 3 - LLM texto + Vision via OpenAI)
+// - LLM (texto): Qwen3-8B (AWQ) via GPU Manager Service
 // - Vision (análise de imagens): OpenAI Responses API (gpt-4.1)
 // ============================================================================
 
 export const llmConfig = pgTable("llm_config", {
   id: uuid("id").primaryKey().defaultRandom(),
   tenantId: uuid("tenant_id").references(() => tenants.id),
-  modelo: varchar("modelo", { length: 100 }).notNull().default("Qwen2.5-7B-Instruct-AWQ"),
+  modelo: varchar("modelo", { length: 100 }).notNull().default("Qwen3-8B"),
   endpoint: text("endpoint").notNull(),
   apiKey: text("api_key"),
   maxTokens: integer("max_tokens").default(2048),
@@ -3122,7 +3122,7 @@ export const TradingPositionMetadataSchema = z.object({
 export type TradingPositionMetadata = z.infer<typeof TradingPositionMetadataSchema>;
 
 // SINAIS DE TRADING (Gate 2)
-// - Sinais de texto: gerados pelo LLM (Qwen2.5 7B) com RAG
+// - Sinais de texto: gerados pelo LLM (Qwen3 8B) com RAG
 // - Análise de imagens/gráficos (quando aplicável): via OpenAI Vision em fluxo separado
 // Cada sinal é uma recomendação do LLM baseada em análise de mercado
 export const tradingSignals = pgTable(
@@ -4493,7 +4493,7 @@ export const tradingMarketData = pgTable(
 );
 
 // DATASET DE TREINAMENTO (Pares prompt/response para LoRA)
-// Estrutura de conversação para fine-tuning do Qwen2.5
+// Estrutura de conversação para fine-tuning do Qwen3
 export const tradingDataset = pgTable(
   "trading_dataset",
   {
@@ -4586,8 +4586,8 @@ export const loraJobs = pgTable(
     name: varchar("name", { length: 255 }).notNull(),
     description: text("description"),
 
-    // Modelo base e configuração (Gate 2 - LLM texto)
-    baseModel: varchar("base_model", { length: 255 }).notNull().default("Qwen/Qwen2.5-7B-Instruct-AWQ"),
+    // Modelo base e configuração (Gate 3 - LLM texto)
+    baseModel: varchar("base_model", { length: 255 }).notNull().default("Qwen/Qwen3-8B-AWQ"),
     // NOTA: Valores default devem corresponder ao TradingLoraHyperparamsSchema
     hyperparameters: jsonb("hyperparameters").$type<TradingLoraHyperparams>().default({
       loraRank: 16,
@@ -5038,8 +5038,8 @@ export const modelVersions = pgTable(
     agentId: uuid("agent_id").references(() => agents.id),
     name: varchar("name", { length: 255 }).notNull(),
     version: integer("version").notNull().default(1),
-    // Gate 2: modelo base do LLM (texto) para versionamento/LoRA
-    baseModel: varchar("base_model", { length: 100 }).notNull().default("Qwen2.5-7B-Instruct-AWQ"),
+    // Gate 3: modelo base do LLM (texto) para versionamento/LoRA
+    baseModel: varchar("base_model", { length: 100 }).notNull().default("Qwen3-8B"),
     loraPath: text("lora_path"),
     status: modelVersionStatusEnum("status").default("training"),
     fineTuningJobId: uuid("fine_tuning_job_id").references(() => fineTuningJobs.id),

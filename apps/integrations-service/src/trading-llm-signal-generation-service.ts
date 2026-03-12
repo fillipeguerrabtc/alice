@@ -11,6 +11,7 @@ import type {
   TradingTechnique,
   TradingTechniqueScore,
 } from '@alice/shared';
+import { DEFAULT_PUBLIC_LLM_MODEL_NAME } from '@alice/shared-utils';
 import type { EffectiveReasoningMode, ReasoningMode } from '@alice/shared-utils';
 import type { LlmSignalParseResult } from './trading-llm-signal-parser.js';
 import type {
@@ -518,7 +519,7 @@ export function createTradingLlmSignalGenerationService<
       resolvedSymbol: primaryAnalysis.resolvedSymbol,
       marketType: params.marketType,
       marginMode: params.marginMode,
-      sourceModel: agentContext.agent.modeloBase ?? 'Qwen2.5-7B-Instruct-AWQ',
+      sourceModel: agentContext.agent.modeloBase ?? DEFAULT_PUBLIC_LLM_MODEL_NAME,
       modelVersion: agentContext.llmConfig.model,
       techniques,
       ensembleConfig,

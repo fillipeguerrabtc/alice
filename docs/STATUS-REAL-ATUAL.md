@@ -1,18 +1,22 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 **Autor:** Fillipe Guerra  
-**Data:** 11 de Março de 2026  
+**Data:** 12 de Março de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
 **Versão:** 15.22 - Hardening final Qwen3 (SSOT hyperparams + cobertura de testes + operação)
 **Fonte canônica de status de execução por rodada:** `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`
 
 ---
 
-## Atualizações executadas e precedência (11/03/2026)
+## Atualizações executadas e precedência (11-12/03/2026)
 
 - O detalhamento completo de execuções, validações e commits por rodada está no tracking canônico: `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
 - Este documento mantém o snapshot operacional consolidado da plataforma, sem replicar changelog extensivo por rodada.
 - Em caso de divergência entre relato histórico e estado de execução governado, prevalece o tracking canônico.
+- Rodada 11 (12/03/2026): migração Qwen3 consolidada em runtime/UI:
+  - Badge do chat deixou de mostrar `versão + 7B` e passou a exibir modelo canônico (`Qwen3-8B`) vindo da API.
+  - Endpoints/configs de suporte passaram a expor defaults Qwen3 para novos registros (`agents`, `llm_config`, `trading_lora_jobs`, `model_versions`), com migração SQL dedicada.
+  - Fallbacks funcionais em integrações (post-mortem e geração de sinais) migrados de `Qwen2.5` para constantes SSOT Qwen3.
 - Rodada 10 (hardening final): SSOT de hyperparams alinhado ao trainer real (`lrSchedulerType`, `maxGradNorm`, `targetModules`, limites de `loraDropout`), com compatibilidade de leitura para payloads legados.
 - Training runtime: criação de job passou a usar default explícito de base model de treino (`Qwen/Qwen3-8B`) em vez de reutilizar modelo de serving.
 - Cobertura de testes expandida para cenários canônicos de preempção (on-demand/scheduled + restore), switch manual de runtime, guardas de notices no chat, RBAC admin/superadmin e compatibilidade legada Qwen2.5.
