@@ -28,4 +28,12 @@ describe('frontend permission gates guards', () => {
     expect(source.includes('if (!canReadObservability)')).toBe(true);
     expect(source.includes('card-observability-forbidden')).toBe(true);
   });
+
+  it('keeps Training runtime controls restricted to admin/superadmin', () => {
+    const trainingPageSource = read('apps/frontend-service/src/pages/Training.tsx');
+    const controlsCardSource = read('apps/frontend-service/src/pages/training/components/training-orchestrator-controls-card.tsx');
+    expect(trainingPageSource.includes("const TRAINING_OPERATOR_ROLES = new Set(['admin', 'super_admin', 'superadmin'])")).toBe(true);
+    expect(controlsCardSource.includes('button-prepare-training-runtime')).toBe(true);
+    expect(controlsCardSource.includes('button-restore-serving-runtime')).toBe(true);
+  });
 });

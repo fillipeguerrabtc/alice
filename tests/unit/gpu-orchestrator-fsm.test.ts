@@ -157,6 +157,29 @@ describe('gpu-orchestrator FSM transitions', () => {
     expect(commands[1]).toContain('--profile gpu-training up -d gpu-trainer');
   });
 
+  it('permite switch manual para restaurar inferência interrompendo treino ativo', async () => {
+    process.env.GPU_CONCURRENCY_MODE = 'preemptive';
+
+    execQueue.push({ stdout: 'serving drained' });
+    execQueue.push({ stdout: 'training started' });
+    execQueue.push({ stdout: 'training stopped by operator' });
+    execQueue.push({ stdout: 'serving restored' });
+
+    const mod = await import('../../apps/gpu-manager-service/src/gpu-orchestrator');
+    await mod.prepareTrainingRuntime({ trigger: 'queue_request', reason: 'treino em andamento' });
+    expect(mod.getOrchestratorState()).toBe('training_active');
+
+    await mod.restoreServingRuntime({
+      trigger: 'manual_api',
+      reason: 'operador acionou restaurar inferência',
+    });
+
+    expect(mod.getOrchestratorState()).toBe('serving_ready');
+    const commands = execMock.mock.calls.map((call) => String(call[0]));
+    expect(commands[2]).toContain('--profile gpu-training stop gpu-trainer');
+    expect(commands[3]).toContain('up -d gpu-llm gpu-embeddings');
+  });
+
   it('move FSM para error quando callback de drain falha', async () => {
     process.env.GPU_CONCURRENCY_MODE = 'preemptive';
 

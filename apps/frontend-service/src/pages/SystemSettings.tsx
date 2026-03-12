@@ -61,13 +61,13 @@ const TRAINING_RECOMMENDED_DEFAULTS: Record<string, string> = {
   TRAINING_SLICE_STEPS: '10',
   TRAINING_GPU_TIMEOUT_MS: '120000',
   TRAINING_DEFAULT_HYPERPARAMS_JSON:
-    '{"epochs":2,"learningRate":0.0001,"batchSize":2,"maxSeqLen":1536,"gradientAccumulationSteps":4,"warmupSteps":100,"loraRank":16,"loraAlpha":32,"loraDropout":0.05}',
+    '{"epochs":2,"learningRate":0.0001,"batchSize":2,"maxSeqLen":1536,"gradientAccumulationSteps":4,"warmupSteps":100,"loraRank":16,"loraAlpha":32,"loraDropout":0.05,"lrSchedulerType":"linear","maxGradNorm":1,"targetModules":["q_proj","v_proj"]}',
   TRAINING_PRESET_SAFE_JSON:
-    '{"epochs":2,"learningRate":0.0001,"batchSize":2,"maxSeqLen":1536,"gradientAccumulationSteps":4,"warmupSteps":100,"loraRank":16,"loraAlpha":32,"loraDropout":0.05}',
+    '{"epochs":2,"learningRate":0.0001,"batchSize":2,"maxSeqLen":1536,"gradientAccumulationSteps":4,"warmupSteps":100,"loraRank":16,"loraAlpha":32,"loraDropout":0.05,"lrSchedulerType":"linear","maxGradNorm":1,"targetModules":["q_proj","v_proj"]}',
   TRAINING_PRESET_STANDARD_JSON:
-    '{"epochs":3,"learningRate":0.0002,"batchSize":2,"maxSeqLen":1536,"gradientAccumulationSteps":4,"warmupSteps":100,"loraRank":16,"loraAlpha":32,"loraDropout":0.05}',
+    '{"epochs":3,"learningRate":0.0002,"batchSize":2,"maxSeqLen":1536,"gradientAccumulationSteps":4,"warmupSteps":100,"loraRank":16,"loraAlpha":32,"loraDropout":0.05,"lrSchedulerType":"linear","maxGradNorm":1,"targetModules":["q_proj","v_proj"]}',
   TRAINING_PRESET_LARGE_JSON:
-    '{"epochs":1,"learningRate":0.0001,"batchSize":2,"maxSeqLen":1536,"gradientAccumulationSteps":8,"warmupSteps":100,"loraRank":16,"loraAlpha":32,"loraDropout":0.05}',
+    '{"epochs":1,"learningRate":0.0001,"batchSize":2,"maxSeqLen":1536,"gradientAccumulationSteps":8,"warmupSteps":100,"loraRank":16,"loraAlpha":32,"loraDropout":0.05,"lrSchedulerType":"linear","maxGradNorm":1,"targetModules":["q_proj","v_proj"]}',
 };
 
 const RAG_ITEMS: ConfigItem[] = [

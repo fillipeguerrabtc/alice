@@ -22,7 +22,12 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { toast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
-import { trainingHyperparamsSchema as sharedTrainingHyperparamsSchema, type TrainingHyperparams } from '../../../../../../packages/shared-utils/src/training-config';
+import {
+  TRAINING_LR_SCHEDULER_VALUES,
+  trainingHyperparamsSchema as sharedTrainingHyperparamsSchema,
+  type TrainingHyperparams,
+  type TrainingLrSchedulerType,
+} from '../../../../../../packages/shared-utils/src/training-config';
 import {
   buildTrainingIdempotencyFingerprint,
   generateTrainingIdempotencyKey,
@@ -77,6 +82,9 @@ export function TrainingCreateJobDialog({
   const [loraRank, setLoraRank] = useState(defaultHyperparams.loraRank);
   const [loraAlpha, setLoraAlpha] = useState(defaultHyperparams.loraAlpha);
   const [loraDropout, setLoraDropout] = useState(defaultHyperparams.loraDropout);
+  const [lrSchedulerType, setLrSchedulerType] = useState<TrainingLrSchedulerType>(defaultHyperparams.lrSchedulerType);
+  const [maxGradNorm, setMaxGradNorm] = useState(defaultHyperparams.maxGradNorm);
+  const [targetModulesInput, setTargetModulesInput] = useState(defaultHyperparams.targetModules.join(','));
   const createJobIdempotencyRef = useRef<{ fingerprint: string; key: string } | null>(null);
 
   useEffect(() => {
@@ -91,6 +99,9 @@ export function TrainingCreateJobDialog({
     setLoraRank(presetValues.loraRank);
     setLoraAlpha(presetValues.loraAlpha);
     setLoraDropout(presetValues.loraDropout);
+    setLrSchedulerType(presetValues.lrSchedulerType);
+    setMaxGradNorm(presetValues.maxGradNorm);
+    setTargetModulesInput(presetValues.targetModules.join(','));
   }, [defaultHyperparams, open, preset, presetHyperparams]);
 
   useEffect(() => {
@@ -119,6 +130,12 @@ export function TrainingCreateJobDialog({
             loraRank,
             loraAlpha,
             loraDropout,
+            lrSchedulerType,
+            maxGradNorm,
+            targetModules: targetModulesInput
+              .split(',')
+              .map((moduleName) => moduleName.trim())
+              .filter((moduleName) => moduleName.length > 0),
           }
           : {}),
       });
@@ -344,6 +361,46 @@ export function TrainingCreateJobDialog({
                   value={loraDropout}
                   onChange={(event: React.ChangeEvent<HTMLInputElement>) => setLoraDropout(Number(event.target.value))}
                 />
+              </div>
+              <div className="space-y-2">
+                <Label>{t('training.createJob.lrSchedulerType')}</Label>
+                <Select
+                  value={lrSchedulerType}
+                  onValueChange={(value) => setLrSchedulerType(value as TrainingLrSchedulerType)}
+                >
+                  <SelectTrigger data-testid="select-lr-scheduler-type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TRAINING_LR_SCHEDULER_VALUES.map((schedulerType) => (
+                      <SelectItem key={schedulerType} value={schedulerType}>
+                        {schedulerType}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="maxGradNorm">{t('training.createJob.maxGradNorm')}</Label>
+                <Input
+                  id="maxGradNorm"
+                  type="number"
+                  min={0.01}
+                  max={100}
+                  step={0.01}
+                  value={maxGradNorm}
+                  onChange={(event: React.ChangeEvent<HTMLInputElement>) => setMaxGradNorm(Number(event.target.value))}
+                />
+              </div>
+              <div className="col-span-2 space-y-2">
+                <Label htmlFor="targetModules">{t('training.createJob.targetModules')}</Label>
+                <Input
+                  id="targetModules"
+                  value={targetModulesInput}
+                  onChange={(event: React.ChangeEvent<HTMLInputElement>) => setTargetModulesInput(event.target.value)}
+                  placeholder="q_proj,v_proj"
+                />
+                <p className="text-xs text-muted-foreground">{t('training.createJob.targetModulesDesc')}</p>
               </div>
             </div>
           )}

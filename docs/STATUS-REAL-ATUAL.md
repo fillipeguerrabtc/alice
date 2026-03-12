@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 11 de Março de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 15.21 - Correção de CI + alinhamento de testes de guardas com arquitetura modular de serviços
+**Versão:** 15.22 - Hardening final Qwen3 (SSOT hyperparams + cobertura de testes + operação)
 **Fonte canônica de status de execução por rodada:** `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`
 
 ---
@@ -13,6 +13,9 @@
 - O detalhamento completo de execuções, validações e commits por rodada está no tracking canônico: `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
 - Este documento mantém o snapshot operacional consolidado da plataforma, sem replicar changelog extensivo por rodada.
 - Em caso de divergência entre relato histórico e estado de execução governado, prevalece o tracking canônico.
+- Rodada 10 (hardening final): SSOT de hyperparams alinhado ao trainer real (`lrSchedulerType`, `maxGradNorm`, `targetModules`, limites de `loraDropout`), com compatibilidade de leitura para payloads legados.
+- Training runtime: criação de job passou a usar default explícito de base model de treino (`Qwen/Qwen3-8B`) em vez de reutilizar modelo de serving.
+- Cobertura de testes expandida para cenários canônicos de preempção (on-demand/scheduled + restore), switch manual de runtime, guardas de notices no chat, RBAC admin/superadmin e compatibilidade legada Qwen2.5.
 - CI Build & Typecheck: ordem de build dos packages ajustada para dependências reais (`shared -> logger -> config -> database -> shared-utils`), eliminando falha TS2307 de `@alice/logger` durante build limpo.
 - Security & Compliance: verificação de Express hardening/timeouts alterada para varrer `apps/*/src` por serviço (arquitetura modular com `bootstrap`/`middleware`), removendo falso negativo quando a lógica não está em `src/index.ts`.
 - Backend legado (`server/routes.ts`): schema `createMessageSchema` passou a reutilizar `MessageAnexosSchema` canônico de `@alice/shared/schema`, removendo incompatibilidade de tipos de `anexos` no typecheck estrito.
@@ -158,7 +161,7 @@
 - Docker: 29.1.3 + Compose v5.0.0.
 - Domínio: yesyoudeserve.duckdns.org.
 - IP produção: 178.63.41.108.
-- LLM (texto): Qwen2.5 7B Instruct (AWQ) via GPU Manager.
+- LLM (texto): Qwen3-8B AWQ via GPU Manager.
 - Vision (análise de imagens): OpenAI Responses API (`gpt-4.1`).
 - Geração de imagens: OpenAI Images API (`gpt-image-1`).
 - Storage: Volume local Hetzner (sem S3 externo).
@@ -201,7 +204,7 @@
 
 ### Stack GPU (local)
 
-- `gpu-llm`: Qwen2.5 7B (vLLM).
+- `gpu-llm`: Qwen3-8B AWQ (vLLM).
 - `gpu-embeddings`: Qwen3-Embedding-0.6B INT8 (texto).
 - `gpu-trainer`: QLoRA sob demanda (profile).
 
@@ -309,7 +312,7 @@
   - vLLM v0.12.0+ com suporte AWQ + LoRA (`--enable-lora`, `--max-lora-rank 16`).
   - Adapter armazenado em `/opt/alice/data/lora-adapters/trading-global` (volume Docker read-only).
   - Cache Redis com TTL 60s para resolver modelo com/sem adapter ativo.
-  - Fallback para modelo base (`Qwen/Qwen2.5-7B-Instruct-AWQ`) quando adapter não disponível.
+  - Fallback para modelo base canônico (`Qwen/Qwen3-8B-AWQ`) quando adapter não disponível.
 - **RAG Contextual para Trading**: Busca semântica em documentos de estratégia e learnings anteriores.
   - Enriquece geração de sinais IA com contexto de namespace do agente trading.
   - Enriquece post-mortem Phase 2 com learnings de trades similares.
@@ -425,7 +428,7 @@
 
 ## Capacidades de IA
 
-- Chat e trading via LLM local (Qwen2.5 7B AWQ).
+- Chat e trading via LLM local (Qwen3-8B AWQ).
 - Vision e geração de imagens via OpenAI (gpt-4.1 / gpt-image-1).
 - Embeddings texto: Qwen3-Embedding-0.6B INT8 (1024 dim) → Qdrant.
 - Imagem: OpenAI Vision (descrição textual, sem embeddings de imagem).

@@ -1,8 +1,55 @@
 # Arquitetura GPU Manager Service
 
 **Autor:** Fillipe Guerra  
-**Data:** 09 de Fevereiro de 2026  
-**Versão:** 4.4.0 - Gate 2 + LoRA Adapters Dinâmicos
+**Data:** 11 de Março de 2026  
+**Versão:** 5.0.0 - Qwen3-8B + Preempção Canônica em GPU Única (20GB)
+
+> **ATUALIZAÇÃO CANÔNICA (11/03/2026):**
+> - Serving: `gpu-llm` + `gpu-embeddings` (Qwen3)
+> - Training: `gpu-trainer` (Qwen3 base) em modo mutuamente exclusivo
+> - Preempção automática para treino on-demand e agendado
+> - Sem retorno por timeout: inferência só retorna ao fim do treino ou via restore manual
+> - Embeddings desligado durante treino (single GPU 20GB)
+
+## Estado Canônico Atual
+
+### Modelos SSOT
+
+| Papel | Modelo |
+|-------|--------|
+| Serving LLM | `Qwen/Qwen3-8B-AWQ` |
+| Training base | `Qwen/Qwen3-8B` |
+| Embeddings | `Qwen/Qwen3-Embedding-0.6B` |
+
+### Orquestração GPU (FSM)
+
+- Estados: `serving_ready`, `serving_draining`, `training_starting`, `training_active`, `training_finishing`, `serving_restoring`, `error`.
+- Endpoints canônicos:
+  - `GET /api/gpu/orchestrator/state`
+  - `POST /api/gpu/orchestrator/prepare-training`
+  - `POST /api/gpu/orchestrator/restore-serving`
+- Alias compatível: `POST /api/gpu/orchestrator/return` (legado).
+
+### Rollout Canário (Operacional)
+
+1. Aplicar release em 1 tenant/pipeline interno com baixa criticidade.
+2. Confirmar transições FSM completas (`serving_ready -> training_active -> serving_ready`) com auditoria em `gpu_runtime_events`.
+3. Validar chat notices (`runtime_notice`) em WebSocket e SSE.
+4. Expandir gradualmente por lote de tenants após 24h sem regressão.
+
+### Rollback (Passo a Passo)
+
+1. Bloquear novos inícios de treino no Training Service.
+2. Acionar `POST /api/gpu/orchestrator/restore-serving` para garantir retorno de inferência.
+3. Reaplicar stack anterior com env/versionamento previamente congelados.
+4. Validar health checks, métricas de fila e latência de chat/trading.
+5. Reabrir execução de treinos somente após estabilização.
+
+### Riscos Remanescentes
+
+- Conteúdo histórico abaixo deste ponto pode citar Qwen2.5/Gate 2 em contexto legado.
+- Mudança de nomenclatura de imagens/serviços foi minimizada por segurança de rollout.
+- Falhas de restore exigem intervenção operacional (mantido fail-closed para proteger coerência de runtime).
 
 > **OTIMIZAÇÃO CRÍTICA v4.0.4 (12/01/2026):** Migração de imagens GPU de `pytorch-devel` para `pytorch-runtime`:
 > - **embeddings-gpu**: 17.6GB → ~11GB (-6GB, -35%)

@@ -4,8 +4,113 @@
 **Data:** 11 de Marco de 2026
 
 ## Rodada Atual
-- Rodada: 9
+- Rodada: 10
 - Status: Concluída
+
+## Rodada 10 - Início
+
+### Objetivo
+Fechar a migração Qwen3-8B com hardening enterprise, alinhamento definitivo de SSOT de hyperparams com capacidades reais do trainer, ampliação de cobertura de testes e consolidação documental/operacional de rollout e rollback.
+
+### Premissas
+- A arquitetura preemptiva de GPU única 20GB já está operacional com FSM canônica, persistência durável e integração entre training/gpu-manager/chat/frontend.
+- O runtime serving já foi migrado para defaults Qwen3 e o desacoplamento serving/training já está aplicado em compose/env.
+- O contrato de reasoning mode (`auto|thinking|non_thinking`) já foi implantado ponta a ponta e deve permanecer auditável sem regressão.
+- Compatibilidade histórica com dados legados Qwen2.5 deve ser preservada.
+
+### Escopo
+- Alinhar SSOT de hyperparams compartilhados com capacidades efetivas do trainer (`lrSchedulerType`, `maxGradNorm`, `targetModules` e campos suportados).
+- Expandir testes para cobrir:
+  - preempção automática on-demand;
+  - preempção scheduled com restore automático;
+  - switch manual interrompendo treino e restaurando inferência;
+  - avisos de runtime no chat;
+  - RBAC admin/superadmin;
+  - compatibilidade legada Qwen2.5.
+- Atualizar documentação PT-BR com Author e data atual:
+  - `docs/ARQUITETURA-GPU-MANAGER.md`
+  - `docs/TRAINING.md`
+  - `docs/SISTEMA-APRENDIZADO.md`
+  - `docs/STATUS-REAL-ATUAL.md`
+  - `docs/STATUS_QWEN3_8B_MIGRATION.md`
+- Consolidar notas operacionais de rollout canário, rollback passo a passo e riscos remanescentes.
+
+## Rodada 10 - Conclusão
+
+### Alterações
+- SSOT de hyperparams alinhado ao trainer real:
+  - `packages/shared-utils/src/training-config.ts`
+    - adicionados `lrSchedulerType`, `maxGradNorm`, `targetModules`;
+    - adicionada enumeração canônica de schedulers suportados;
+    - mantida compatibilidade legada com defaults automáticos para payloads antigos.
+  - `packages/shared/src/schema.ts`
+    - `FineTuningHyperparametersSchema` e `TradingLoraHyperparamsSchema` alinhados aos limites reais do trainer;
+    - `loraDropout` limitado a `<= 0.5`;
+    - defaults de hyperparams de LoRA (`lora_jobs.hyperparameters`) ajustados para baseline operacional atual.
+  - `apps/training-service/src/training-runner.ts`
+    - validação de override de hyperparams alinhada ao contrato novo (incluindo enum de scheduler e limites).
+  - Defaults sincronizados em runtime/configuração:
+    - `apps/training-service/src/training-config.ts`
+    - `packages/database/src/system-config.ts`
+    - `apps/frontend-service/src/pages/SystemSettings.tsx`
+    - `apps/frontend-service/src/pages/training/training-hyperparams-config.ts`
+- Training Service hardening de modelo base:
+  - `apps/training-service/src/routes/training-job-create-routes.ts` usa default explícito de treino `Qwen/Qwen3-8B` (SSOT de training base), desacoplando de serving AWQ.
+- Frontend de criação de job:
+  - `apps/frontend-service/src/pages/training/components/training-create-job-dialog.tsx` passou a permitir override explícito de:
+    - `lrSchedulerType`
+    - `maxGradNorm`
+    - `targetModules`.
+
+### Expansão de Testes
+- Preempção automática on-demand e scheduled + restore automático:
+  - `tests/unit/training-runner-orchestration.test.ts`
+  - `tests/unit/training-gpu-orchestration.test.ts`
+- Switch manual interrompendo treino e restaurando inferência:
+  - `tests/unit/gpu-orchestrator-fsm.test.ts`
+- Avisos de runtime no chat (WS/SSE guardrails):
+  - `tests/unit/services/chat-runtime-announcements-sync.test.ts`
+- RBAC admin/superadmin (controles críticos de Training):
+  - `tests/e2e/frontend-permission-gates.test.ts`
+- Compatibilidade com dados legados Qwen2.5:
+  - `tests/unit/shared-utils/llm-models-compatibility.test.ts`
+- Contrato de hyperparams com compatibilidade legada:
+  - `tests/unit/shared-utils/training-config.test.ts`
+
+### Inventário de Acoplamentos Qwen2.5 (pós-hardening)
+- Compatibilidade legada preservada no resolvedor de modelos (`Qwen2.5` -> família `Qwen3`).
+- Permanecem referências históricas textuais a Qwen2.5 em partes de documentação e comentários antigos sem impacto no runtime canônico.
+- Nenhum novo acoplamento funcional com Qwen2.5 foi introduzido na rodada.
+
+### Notas Operacionais Consolidadas
+
+#### Rollout canário
+1. Publicar release para tenant/pipeline piloto.
+2. Validar ciclo completo de runtime: `serving_ready -> training_active -> serving_ready`.
+3. Validar propagação de `runtime_notice` no chat (SSE/WS).
+4. Expandir por lotes após janela estável (logs/métricas sem regressão).
+
+#### Rollback passo a passo
+1. Pausar criação/início de novos treinos.
+2. Acionar `restore-serving` no orquestrador.
+3. Reverter stack para release anterior estável.
+4. Reconciliar estado em `gpu_runtime_state` e `gpu_runtime_events`.
+5. Reabrir execução de treinos gradualmente.
+
+### Validações
+Executadas em sequência, sem paralelização:
+1. `typecheck` (`cmd.exe /c pnpm typecheck`) -> OK
+2. `testes` (`cmd.exe /c pnpm test`) -> OK (129 arquivos, 1385 testes)
+3. `eslint` (`cmd.exe /c pnpm lint`) -> OK
+4. `build` (`cmd.exe /c pnpm build`) -> OK
+
+### Riscos Remanescentes
+- Conteúdo documental histórico ainda contém menções legadas (Qwen2.5/Gate 2) fora do trecho canônico atualizado.
+- Mudanças de nomenclatura de imagens/serviços continuam minimizadas por segurança de rollout.
+- Em falha de restore automático, operação exige ação administrativa manual para restaurar inferência.
+
+### Próximo Passo
+Aguardar prompt da próxima rodada para continuidade da migração.
 
 ## Rodada 9 - Início
 

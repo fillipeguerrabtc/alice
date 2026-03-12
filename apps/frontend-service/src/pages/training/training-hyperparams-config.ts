@@ -16,6 +16,9 @@ export const TRAINING_HYPERPARAMS_SAFE_FALLBACK: TrainingHyperparams = {
   loraRank: 16,
   loraAlpha: 32,
   loraDropout: 0.05,
+  lrSchedulerType: 'linear',
+  maxGradNorm: 1,
+  targetModules: ['q_proj', 'v_proj'],
 };
 
 export const TRAINING_HYPERPARAMS_STANDARD_FALLBACK: TrainingHyperparams = {
@@ -28,6 +31,9 @@ export const TRAINING_HYPERPARAMS_STANDARD_FALLBACK: TrainingHyperparams = {
   loraRank: 16,
   loraAlpha: 32,
   loraDropout: 0.05,
+  lrSchedulerType: 'linear',
+  maxGradNorm: 1,
+  targetModules: ['q_proj', 'v_proj'],
 };
 
 export const TRAINING_HYPERPARAMS_LARGE_FALLBACK: TrainingHyperparams = {
@@ -40,6 +46,9 @@ export const TRAINING_HYPERPARAMS_LARGE_FALLBACK: TrainingHyperparams = {
   loraRank: 16,
   loraAlpha: 32,
   loraDropout: 0.05,
+  lrSchedulerType: 'linear',
+  maxGradNorm: 1,
+  targetModules: ['q_proj', 'v_proj'],
 };
 
 export const TRAINING_SYSTEM_CONFIG_DEFAULTS = {

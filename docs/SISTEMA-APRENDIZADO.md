@@ -1,8 +1,15 @@
 # Sistema de Aprendizado da Alice
 
 **Autor:** Fillipe Guerra  
-**Versão:** 5.7 - Ecossistema LLM + modularização de rotas Twilio no integrations-service  
-**Data:** 06 de Março de 2026
+**Versão:** 6.0 - Qwen3-8B + Orquestração GPU preemptiva + hardening final  
+**Data:** 11 de Março de 2026
+
+> **ATUALIZAÇÃO 11/03/2026 (canônica):**
+> - Serving: `Qwen/Qwen3-8B-AWQ`
+> - Training base: `Qwen/Qwen3-8B`
+> - Embeddings: `Qwen/Qwen3-Embedding-0.6B`
+> - Runtime GPU mutuamente exclusivo (serving vs training) com preempção automática
+> - Reasoning mode auditável (`auto|thinking|non_thinking`) em chat e sinais IA de trading
 
 > **ATUALIZAÇÃO 06/03/2026:** Webhooks do WhatsApp/Twilio foram modularizados para `apps/integrations-service/src/routes/twilio-webhook-routes.ts` e os helpers de canal para `apps/integrations-service/src/twilio-channel-service.ts`, mantendo `apps/integrations-service/src/index.ts` como composition root.
 
@@ -15,6 +22,27 @@
 ## Visão Geral
 
 A Alice Enterprise Platform possui um sistema de aprendizado contínuo e agressivo que permite que o modelo evolua constantemente com base nas interações e dados fornecidos.
+
+## Operação: Rollout e Rollback
+
+### Rollout canário
+
+1. Habilitar release para tenant piloto com baixa criticidade.
+2. Validar preempção automática de treino on-demand e agendado.
+3. Validar restore automático pós-treino e notices de runtime no chat.
+4. Expandir rollout em lotes após 24h sem incidentes.
+
+### Rollback passo a passo
+
+1. Pausar novos jobs de treino.
+2. Forçar restauração de serving no orquestrador (`restore-serving`).
+3. Reverter stack para release anterior validada.
+4. Reconciliar estados duráveis (`gpu_runtime_state`/`gpu_runtime_events`) e reabrir execução gradualmente.
+
+### Riscos remanescentes
+
+- Registros históricos com modelo Qwen2.5 permanecem no banco por compatibilidade.
+- Partes históricas deste documento citam arquitetura anterior e devem ser lidas como contexto legado.
 
 ---
 

@@ -102,4 +102,27 @@ describe('training GPU orchestration client', () => {
     expect(result.statusCode).toBeNull();
     expect(result.error).toContain('network down');
   });
+
+  it('preserva runSource on_demand no intento de preempção automática', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ state: 'training_active', message: 'ok' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    const client = createTrainingGpuOrchestrationClient({
+      gpuManagerUrl: 'http://alice-gpu-manager:3010',
+      internalApiSecret: 'secret-value',
+      fetchFn: fetchMock,
+    });
+
+    const result = await client.prepareTrainingRuntime({
+      ...baseContext,
+      runSource: 'on_demand',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.runSource).toBe('on_demand');
+    expect(result.action).toBe('prepare_training');
+  });
 });

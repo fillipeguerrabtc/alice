@@ -9,6 +9,7 @@ import {
 } from '@alice/shared';
 import {
   getRedisClient,
+  TRAINING_LR_SCHEDULER_VALUES,
   type TrainingFineTuningQueuePayload,
 } from '@alice/shared-utils';
 import { z } from 'zod';
@@ -67,9 +68,9 @@ export const TrainingHyperparamsOverrideSchema = z.object({
   maxSeqLen: z.number().int().min(256).max(32768).optional(),
   loraRank: z.number().int().positive().optional(),
   loraAlpha: z.number().positive().optional(),
-  loraDropout: z.number().min(0).max(1).optional(),
-  lrSchedulerType: z.string().min(1).optional(),
-  maxGradNorm: z.number().positive().optional(),
+  loraDropout: z.number().min(0).max(0.5).optional(),
+  lrSchedulerType: z.enum(TRAINING_LR_SCHEDULER_VALUES).optional(),
+  maxGradNorm: z.number().gt(0).max(100).optional(),
   targetModules: z.array(z.string().min(1)).min(1).optional(),
 }).passthrough();
 

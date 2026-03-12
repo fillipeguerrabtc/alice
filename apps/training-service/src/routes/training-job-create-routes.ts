@@ -1,7 +1,11 @@
 import type { Express, Request, Response } from 'express';
 import { createLogger } from '@alice/logger';
 import { and, eq, getDatabase, isNull, schema } from '@alice/database';
-import { getRedisClient, GPU_MANAGER_CONFIG, requirePermission } from '@alice/shared-utils';
+import {
+  DEFAULT_LLM_TRAINING_BASE_MODEL_ID,
+  getRedisClient,
+  requirePermission,
+} from '@alice/shared-utils';
 import { z } from 'zod';
 import { TrainingHyperparamsOverrideSchema, loadTrainingSystemRuntimeConfig } from '../training-runner.js';
 import { loadTrainingEnterpriseConfig } from '../training-config.js';
@@ -110,7 +114,7 @@ const createJobSchema = z.object({
   agentId: z.string().uuid().optional(),
   domain: z.string().min(1).max(120).optional(),
   name: z.string().min(1),
-  baseModel: z.string().default(GPU_MANAGER_CONFIG.models.llm),
+  baseModel: z.string().default(DEFAULT_LLM_TRAINING_BASE_MODEL_ID),
   hyperparameters: TrainingHyperparamsOverrideSchema.optional(),
   hyperparametersPreset: z.enum(['safe', 'standard', 'large']).optional(),
   forceMinSize: z.boolean().optional(),

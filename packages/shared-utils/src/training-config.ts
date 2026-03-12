@@ -1,5 +1,19 @@
 import { z } from 'zod';
 
+export const TRAINING_LR_SCHEDULER_VALUES = [
+  'constant',
+  'constant_with_warmup',
+  'linear',
+  'cosine',
+  'cosine_with_restarts',
+  'polynomial',
+  'inverse_sqrt',
+  'reduce_lr_on_plateau',
+] as const;
+
+export const trainingLrSchedulerTypeSchema = z.enum(TRAINING_LR_SCHEDULER_VALUES);
+export type TrainingLrSchedulerType = z.infer<typeof trainingLrSchedulerTypeSchema>;
+
 export const trainingHyperparamsSchema = z.object({
   epochs: z.number().int().min(1).max(50),
   learningRate: z.number().gt(0).lt(1),
@@ -10,6 +24,9 @@ export const trainingHyperparamsSchema = z.object({
   loraRank: z.number().int().min(4).max(128),
   loraAlpha: z.number().int().min(8).max(256),
   loraDropout: z.number().min(0).max(0.5),
+  lrSchedulerType: trainingLrSchedulerTypeSchema.default('linear'),
+  maxGradNorm: z.number().gt(0).max(100).default(1),
+  targetModules: z.array(z.string().min(1)).min(1).default(['q_proj', 'v_proj']),
 });
 
 export type TrainingHyperparams = z.infer<typeof trainingHyperparamsSchema>;
@@ -67,4 +84,3 @@ export function stringifyTrainingHyperparams(obj: TrainingHyperparams): string {
   const validated = trainingHyperparamsSchema.parse(obj);
   return JSON.stringify(validated);
 }
-

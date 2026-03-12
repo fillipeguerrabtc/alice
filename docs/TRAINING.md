@@ -1,8 +1,8 @@
 # Sistema de Treinamento - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra  
-**Data:** 06 de Marco de 2026  
-**Versão:** 4.5.0 - Pipeline canônico de dataset + lifecycle reservation/used + split enterprise
+**Data:** 11 de Março de 2026  
+**Versão:** 5.0.0 - Qwen3-8B + Orquestração Preemptiva + Hardening Final
 
 ---
 
@@ -46,7 +46,51 @@ Ver `docs/TREINAMENTO-LIMITES-E-BOAS-PRATICAS.md` para detalhes técnicos e `doc
 
 ## Visão Geral
 
-O sistema de treinamento da Alice permite fine-tuning incremental do **LLM (texto)** usando **QLoRA (4-bit)**. No **Gate 2**, o LLM de produção é o **Qwen2.5 7B Instruct (AWQ)** e o treinamento deve usar o **mesmo modelo base do LLM** para evitar divergência entre inference e fine-tuning. O sistema suporta treinamento agendado (semanal) e on-demand via dashboard admin.
+O sistema de treinamento da Alice permite fine-tuning incremental do **LLM (texto)** usando **QLoRA (4-bit)**. No estado atual, o serving usa **Qwen3-8B-AWQ** e o treinamento usa **Qwen3-8B** como base, com compatibilidade de leitura para registros legados Qwen2.5. O sistema suporta treinamento agendado e on-demand via dashboard admin.
+
+## SSOT Atual de Modelos e Hyperparams (11/03/2026)
+
+### Modelos
+
+- Serving: `Qwen/Qwen3-8B-AWQ`
+- Training base: `Qwen/Qwen3-8B`
+- Embeddings: `Qwen/Qwen3-Embedding-0.6B`
+
+### Hyperparams suportados pelo trainer
+
+- `epochs`
+- `learningRate`
+- `batchSize`
+- `maxSeqLen`
+- `gradientAccumulationSteps`
+- `warmupSteps`
+- `loraRank`
+- `loraAlpha`
+- `loraDropout` (`<= 0.5`)
+- `lrSchedulerType` (`constant`, `constant_with_warmup`, `linear`, `cosine`, `cosine_with_restarts`, `polynomial`, `inverse_sqrt`, `reduce_lr_on_plateau`)
+- `maxGradNorm` (`> 0` e `<= 100`)
+- `targetModules` (array não-vazio)
+
+### Compatibilidade legada
+
+- Payloads antigos sem `lrSchedulerType`, `maxGradNorm` e `targetModules` continuam válidos.
+- Defaults de compatibilidade são preenchidos automaticamente sem quebrar jobs legados.
+
+## Notas Operacionais (Rollout/Rollback)
+
+### Rollout canário
+
+1. Validar treino on-demand com preempção automática em tenant piloto.
+2. Validar treino agendado com restore automático ao concluir.
+3. Confirmar auditoria (`requestedReasoningMode`, `resolvedReasoningMode`, `reasonResolution`) em requests LLM relacionados.
+4. Expandir rollout por lotes após estabilidade de métricas e logs estruturados.
+
+### Rollback
+
+1. Congelar novos jobs (`run/start` e criação de jobs).
+2. Forçar `restore-serving` no orquestrador.
+3. Reverter versão de stack para release estável anterior.
+4. Verificar jobs em andamento e reconciliar estado durável (`gpu_runtime_state` + `gpu_runtime_events`).
 
 ---
 
