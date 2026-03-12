@@ -13,13 +13,17 @@
 - O detalhamento completo de execuções, validações e commits por rodada está no tracking canônico: `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
 - Este documento mantém o snapshot operacional consolidado da plataforma, sem replicar changelog extensivo por rodada.
 - Em caso de divergência entre relato histórico e estado de execução governado, prevalece o tracking canônico.
+- Rodada 13 (12/03/2026): hardening da migration `0108_qwen3_model_defaults.sql` no deploy:
+  - Evidência operacional: job `Apply Database Schema (Drizzle)` falhou em produção com `ERROR: relation "trading_lora_jobs" does not exist`.
+  - Causa raiz: migration usava nome legado `trading_lora_jobs` após unificação enterprise para `lora_jobs` na migration `0060_lora_jobs_unified_table.sql`.
+  - Correção cirúrgica: `0108` passou a aplicar `ALTER COLUMN base_model` na tabela canônica `lora_jobs` com fallback explícito para `trading_lora_jobs` (compatibilidade legada), mantendo idempotência.
 - Rodada 12 (12/03/2026): hardening de disponibilidade do Trading em produção (`/trading`):
   - Evidência operacional: `alice-integrations` em estado `unhealthy` com `502` no Caddy para `/api/integrations/trading/status` e `/api/trading/auto/runs`.
   - Causa raiz: `unhandledRejection` no ciclo do demo scheduler (`processOpenOrdersAndPositions`) encerrava o HTTP server do `integrations-service`.
   - Correção cirúrgica: tratamento explícito de rejeições assíncronas no `setInterval` do scheduler com log estruturado, evitando shutdown do servidor por falha isolada de ciclo.
 - Rodada 11 (12/03/2026): migração Qwen3 consolidada em runtime/UI:
   - Badge do chat deixou de mostrar `versão + 7B` e passou a exibir modelo canônico (`Qwen3-8B`) vindo da API.
-  - Endpoints/configs de suporte passaram a expor defaults Qwen3 para novos registros (`agents`, `llm_config`, `trading_lora_jobs`, `model_versions`), com migração SQL dedicada.
+  - Endpoints/configs de suporte passaram a expor defaults Qwen3 para novos registros (`agents`, `llm_config`, `lora_jobs` com compatibilidade `trading_lora_jobs`, `model_versions`), com migração SQL dedicada.
   - Fallbacks funcionais em integrações (post-mortem e geração de sinais) migrados de `Qwen2.5` para constantes SSOT Qwen3.
 - Rodada 10 (hardening final): SSOT de hyperparams alinhado ao trainer real (`lrSchedulerType`, `maxGradNorm`, `targetModules`, limites de `loraDropout`), com compatibilidade de leitura para payloads legados.
 - Training runtime: criação de job passou a usar default explícito de base model de treino (`Qwen/Qwen3-8B`) em vez de reutilizar modelo de serving.

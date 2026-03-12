@@ -8,8 +8,20 @@ ALTER TABLE agents
 ALTER TABLE llm_config
   ALTER COLUMN modelo SET DEFAULT 'Qwen3-8B';
 
-ALTER TABLE trading_lora_jobs
-  ALTER COLUMN base_model SET DEFAULT 'Qwen/Qwen3-8B-AWQ';
+DO $$
+BEGIN
+  -- Compatibilidade entre tabela canônica atual e nome legado.
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'lora_jobs') THEN
+    ALTER TABLE lora_jobs
+      ALTER COLUMN base_model SET DEFAULT 'Qwen/Qwen3-8B-AWQ';
+  ELSIF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'trading_lora_jobs') THEN
+    ALTER TABLE trading_lora_jobs
+      ALTER COLUMN base_model SET DEFAULT 'Qwen/Qwen3-8B-AWQ';
+  ELSE
+    RAISE NOTICE 'Tabela LoRA não encontrada (lora_jobs/trading_lora_jobs) - pulando default de base_model';
+  END IF;
+END
+$$;
 
 ALTER TABLE model_versions
   ALTER COLUMN base_model SET DEFAULT 'Qwen3-8B';
