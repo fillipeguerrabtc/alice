@@ -9681,7 +9681,11 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
     });
 
     const conversation = await db.query.conversations.findFirst({
-      where: eq(schema.conversations.id, id),
+      where: and(
+        eq(schema.conversations.id, id),
+        eq(schema.conversations.tenantId, tenantId),
+        eq(schema.conversations.userId, userId)
+      ),
       with: { agent: true },
     });
 
@@ -10194,11 +10198,15 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
 
     if (conversationId) {
       const existingConversation = await db.query.conversations.findFirst({
-        where: eq(schema.conversations.id, conversationId),
+        where: and(
+          eq(schema.conversations.id, conversationId),
+          eq(schema.conversations.tenantId, tenantId),
+          eq(schema.conversations.userId, userId)
+        ),
         with: { agent: true },
       });
 
-      if (!existingConversation || existingConversation.userId !== userId) {
+      if (!existingConversation) {
         return res.status(404).json({ error: 'Conversa não encontrada' });
       }
       conversation = existingConversation;

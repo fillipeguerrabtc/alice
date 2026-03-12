@@ -12,7 +12,7 @@
  * @module tests/unit/security-fixes
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
 import { z } from 'zod';
 
 // ============================================================================
@@ -434,12 +434,17 @@ describe('FIX 4 - HMAC Service-to-Service Auth', () => {
 
   describe('Middleware requireInternalHmacAuth', () => {
     const baseEnv = process.env.INTERNAL_API_SECRET;
+    let generateInternalAuthHeadersFn: typeof import('../../packages/shared-utils/src/rbac/middleware').generateInternalAuthHeaders;
+    let requireInternalHmacAuthFn: typeof import('../../packages/shared-utils/src/rbac/middleware').requireInternalHmacAuth;
 
-    beforeEach(() => {
+    beforeAll(async () => {
       process.env.INTERNAL_API_SECRET = 'test-secret';
-    });
+      const rbacModule = await import('../../packages/shared-utils/src/rbac/middleware');
+      generateInternalAuthHeadersFn = rbacModule.generateInternalAuthHeaders;
+      requireInternalHmacAuthFn = rbacModule.requireInternalHmacAuth;
+    }, 120000);
 
-    afterEach(() => {
+    afterAll(() => {
       if (baseEnv) {
         process.env.INTERNAL_API_SECRET = baseEnv;
       } else {
@@ -447,10 +452,8 @@ describe('FIX 4 - HMAC Service-to-Service Auth', () => {
       }
     });
 
-    it('deve aceitar headers HMAC válidos e preencher req.user', async () => {
-      vi.resetModules();
-      const { generateInternalAuthHeaders, requireInternalHmacAuth } = await import('@alice/shared-utils');
-      const headers = generateInternalAuthHeaders({
+    it('deve aceitar headers HMAC válidos e preencher req.user', () => {
+      const headers = generateInternalAuthHeadersFn({
         userId: 'user-123',
         tenantId: 'tenant-456',
         role: 'admin',
@@ -465,16 +468,14 @@ describe('FIX 4 - HMAC Service-to-Service Auth', () => {
       const res = { status, json: vi.fn() } as unknown as import('express').Response;
       const next = vi.fn();
 
-      requireInternalHmacAuth()(req, res, next);
+      requireInternalHmacAuthFn()(req, res, next);
 
       expect(next).toHaveBeenCalled();
       expect(req.user?.userId).toBe('user-123');
       expect(req.user?.tenantId).toBe('tenant-456');
     });
 
-    it('deve rejeitar quando headers não são enviados', async () => {
-      vi.resetModules();
-      const { requireInternalHmacAuth } = await import('@alice/shared-utils');
+    it('deve rejeitar quando headers não são enviados', () => {
       const req = {
         headers: {},
         path: '/internal/test',
@@ -486,7 +487,7 @@ describe('FIX 4 - HMAC Service-to-Service Auth', () => {
       const res = { status, json } as unknown as import('express').Response;
       const next = vi.fn();
 
-      requireInternalHmacAuth()(req, res, next);
+      requireInternalHmacAuthFn()(req, res, next);
 
       expect(next).not.toHaveBeenCalled();
       expect(status).toHaveBeenCalledWith(401);

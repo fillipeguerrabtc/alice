@@ -53,21 +53,18 @@ Evidencias:
 Resumo tecnico:
 - Sanitizacao remove blocos `<think>` completos e incompletos antes de persistir resposta final em SSE e WebSocket.
 
-## 3. Validacoes Executadas (rodada atual)
+## 3. Validacoes Executadas (rodada atualizada)
 Executado de forma sequencial para os componentes alterados:
 1. `pnpm --filter @alice/chat-service typecheck` -> OK
 2. `pnpm --filter @alice/frontend-service typecheck` -> OK
-3. `pnpm test` -> **Falha pre-existente/intermitente** em `tests/unit/security-fixes.test.ts` (timeout em cenarios HMAC)
-4. `pnpm --filter @alice/chat-service lint` -> OK
-5. `pnpm --filter @alice/frontend-service lint` -> OK
+3. `pnpm vitest run tests/unit/security-fixes.test.ts` -> OK (`47 passed`)
+4. `pnpm test` -> OK (`129 passed`, `1385 passed`)
+5. `pnpm exec eslint apps/chat-service/src/index.ts apps/frontend-service/src/pages/Chat/chat-stream-mutation.ts tests/unit/security-fixes.test.ts` -> OK
 6. `pnpm --filter @alice/chat-service build` -> OK
 7. `pnpm --filter @alice/frontend-service build` -> OK
 
 Observacao:
-- Suite de testes apresentou timeout em:
-  - `tests/unit/security-fixes.test.ts:450`
-  - `tests/unit/security-fixes.test.ts:475`
-- O problema e no teste de middleware HMAC e nao foi introduzido pelas mudancas desta rodada.
+- A intermitencia de timeout no bloco HMAC de `tests/unit/security-fixes.test.ts` foi tratada com carregamento direto do modulo fonte e timeout explicito do hook `beforeAll`.
 
 ## 4. Benchmark 2026 (Melhores Praticas)
 
@@ -95,16 +92,19 @@ Observacao:
 ## Critico
 
 ### GAP-C1: Isolamento de conversa sem filtro explicito por tenant em rotas HTTP de chat
+Status atualizado: **Parcialmente mitigado**.
+
 Evidencia:
 - `apps/chat-service/src/index.ts:9683`
 - `apps/chat-service/src/index.ts:10196`
+- `apps/chat-service/src/index.ts:10201`
 
 Risco:
-- Consulta de conversa por `id` sem `tenantId` no `where` aumenta superficie de risco de acesso indevido em cenarios edge/multi-tenant complexos.
+- Rotas de escrita e stream ja usam filtro por `tenantId` + `userId`, mas o `GET /api/chat/conversations/:id/messages` ainda inicia lookup por `id` antes da validacao de tenant.
 
 Melhoria recomendada:
-- Sempre consultar conversa com `and(eq(conversations.id, id), eq(conversations.tenantId, req.tenantId))`.
-- Adicionar teste de autorizacao cross-tenant para `/api/chat/conversations/:id/messages` e `/api/chat/stream`.
+- Padronizar tambem o `GET /api/chat/conversations/:id/messages` com filtro SQL tenant-scoped desde a consulta inicial.
+- Manter/expandir testes de autorizacao cross-tenant para `/api/chat/conversations/:id/messages` e `/api/chat/stream`.
 
 ## Alto
 
@@ -121,14 +121,19 @@ Melhoria recomendada:
 - Permitir fallback apenas com feature flag de emergencia, com auditoria obrigatoria.
 
 ### GAP-A2: Erros de parse SSE ignorados silenciosamente no frontend
+Status atualizado: **Implementado**.
+
 Evidencia:
 - `apps/frontend-service/src/pages/Chat/chat-stream-mutation.ts:677`
+- `apps/frontend-service/src/pages/Chat/chat-stream-mutation.ts:680`
+- `apps/frontend-service/src/pages/Chat/chat-stream-mutation.ts:685`
+- `apps/frontend-service/src/pages/Chat/chat-stream-mutation.ts:697`
 
 Risco:
-- Perda de observabilidade e depuracao de corrupcao de stream/eventos.
+- Mitigado no frontend com log estruturado e contador local de parse errors.
 
 Melhoria recomendada:
-- Registrar metricas e logs estruturados (ex.: contador `chat_sse_parse_error_total`, `conversationId`, `tenantId`, `eventType`).
+- Evoluir para metrica backend/Prometheus (`chat_sse_parse_error_total`) com labels de tenant/agente/eventType.
 
 ### GAP-A3: Politica de idioma baseada em heuristica simples (PT/EN)
 Evidencia:
@@ -210,4 +215,5 @@ Melhoria recomendada:
 
 ## 9. Conclusao Executiva
 As solicitacoes de UX/idioma foram implementadas com sucesso (Thinking em 3 linhas ciclicas, labels PT-BR, hardening de idioma e sanitizacao de `<think>` na persistencia).  
-Para atingir patamar **100% enterprise 2026**, o principal foco imediato deve ser endurecer isolamento multi-tenant nas queries de conversa HTTP e elevar observabilidade/telemetria de stream e GenAI para padrao auditavel.
+Na rodada de continuacao, a estabilizacao de testes foi concluida (suite completa verde) e o GAP-A2 foi mitigado com observabilidade de parse SSE no frontend.  
+Para atingir patamar **100% enterprise 2026**, o foco imediato restante e fechar o hardening tenant-scoped no `GET /api/chat/conversations/:id/messages` e consolidar metricas GenAI/stream no backend.

@@ -5,6 +5,7 @@ import { parseMessageSources } from './chat-message-sources';
 import { mediaAttachmentToBase64 } from './chat-media-attachments';
 import { normalizeRouteForContext } from './chat-page-routing';
 import { normalizeServerMessage, type ServerMessagePayload } from './chat-message-normalization';
+import { frontendLogger } from '@/lib/logger';
 import type { AgentEvent, MediaAttachment, Message, RuntimeNotice, RuntimeNoticeCode } from './components/types';
 import type { RoutingDebugData, RoutingMode } from './useChatRoutingState';
 import type { ReasoningMode } from '@/lib/reasoning-mode';
@@ -301,6 +302,7 @@ export function createChatStreamMutationConfig(options: ChatStreamMutationOption
     let contentFlushTimerId: number | null = null;
     let buffer = '';
     let lastRuntimeNoticeCode: RuntimeNoticeCode | null = null;
+    let sseParseErrorCount = 0;
     resetTimeout();
 
     const applyAssistantContent = (nextContent: string) => {
@@ -674,8 +676,33 @@ export function createChatStreamMutationConfig(options: ChatStreamMutationOption
               });
               resetTimeout();
             }
-          } catch {
-            // Ignorar erros de parse
+          } catch (parseError) {
+            sseParseErrorCount += 1;
+            const parseErrorMessage = parseError instanceof Error
+              ? parseError.message
+              : 'Erro desconhecido ao interpretar evento SSE';
+
+            frontendLogger.warn('Falha ao interpretar evento SSE do chat', {
+              parseErrorMessage,
+              sseParseErrorCount,
+              activeConversationId: activeConversationId ?? null,
+              eventPreview: data.slice(0, 300),
+            });
+
+            if (showStreamDiagnostics) {
+              pushStreamEvent({
+                id: crypto.randomUUID(),
+                ts: new Date().toISOString(),
+                phase: 'system',
+                action: 'sse_parse_error',
+                status: 'error',
+                message: `Falha ao interpretar evento SSE (#${sseParseErrorCount})`,
+                payload: {
+                  activeConversationId: activeConversationId ?? null,
+                  parseErrorMessage,
+                },
+              });
+            }
           }
         }
         buffer = normalizedBuffer;
