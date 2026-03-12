@@ -2925,9 +2925,15 @@ function applyUserNameToGreeting(response: string, context: UserNameContext): st
 // Usa CIRCUIT_BREAKER_PRESETS centralizado (Regra 2 - Não Duplicar)
 // ============================================================================
 
-// Timeout para chamadas LLM (30 segundos para não-streaming)
-// BUG FIX 26/12/2025: LLM_STREAM_TIMEOUT removido - streaming usa timeout do GPU Manager Service
+// Timeout para chamadas LLM
+// - sync: requisições não-streaming (curtas)
+// - stream: streaming pode levar mais tempo, especialmente com reasoning habilitado
 const LLM_SYNC_TIMEOUT = 30000;
+const LLM_STREAM_TIMEOUT = parseEnvInt(
+  process.env.LLM_STREAM_TIMEOUT_MS,
+  120000,
+  'LLM_STREAM_TIMEOUT_MS'
+);
 
 interface LLMMessage {
   role: 'system' | 'user' | 'assistant';
@@ -3277,7 +3283,71 @@ function buildGuardrailRegenerationConfig(config: LLMConfig): LLMConfig {
   return {
     ...config,
     temperature: Math.min(config.temperature ?? 0.7, 0.2),
+    // Recuperação deve priorizar resposta final útil ao usuário.
+    reasoningMode: 'non_thinking',
   };
+}
+
+function isTemporaryUnavailableFallback(content: string): boolean {
+  const normalized = content.toLowerCase();
+  return normalized.includes('temporariamente indispon') && normalized.includes('contato com o suporte');
+}
+
+async function recoverResponseFromEmptyStream(params: {
+  llmMessages: LLMMessage[];
+  llmConfig: LLMConfig;
+  preferredName: string | null;
+  profile?: LlmContextProfile;
+  priority: GpuRequestPriority;
+  correlationId?: string;
+}): Promise<string | null> {
+  logger.warn(
+    { correlationId: params.correlationId },
+    'Stream finalizou sem conteúdo útil; iniciando recuperação síncrona controlada'
+  );
+
+  let regeneratedRaw = '';
+  try {
+    regeneratedRaw = await callLlamaAPI(
+      buildGuardrailRegenerationMessages(params.llmMessages),
+      false,
+      buildGuardrailRegenerationConfig(params.llmConfig),
+      params.priority
+    ) as string;
+  } catch (recoveryError) {
+    logger.warn(
+      { error: recoveryError, correlationId: params.correlationId },
+      'Falha na recuperação síncrona após stream vazio'
+    );
+    return null;
+  }
+
+  const regenerated = finalizeGuardrailResponse(regeneratedRaw, params.preferredName);
+  if (!regenerated || regenerated.trim().length === 0) {
+    logger.warn(
+      { correlationId: params.correlationId },
+      'Recuperação síncrona retornou conteúdo vazio'
+    );
+    return null;
+  }
+
+  if (isTemporaryUnavailableFallback(regenerated)) {
+    logger.warn(
+      { correlationId: params.correlationId },
+      'Recuperação síncrona retornou fallback de indisponibilidade'
+    );
+    return null;
+  }
+
+  if (isCorruptedAssistantResponse(regenerated, params.profile)) {
+    logger.warn(
+      { correlationId: params.correlationId },
+      'Recuperação síncrona retornou conteúdo potencialmente corrompido'
+    );
+    return null;
+  }
+
+  return regenerated;
 }
 
 async function enforceResponseGuardrails(params: {
@@ -6606,7 +6676,7 @@ async function callGatewayStream(
         ...config.reasoning.runtimeExtraBody,
       },
     }),
-    signal: AbortSignal.timeout(60000),
+    signal: AbortSignal.timeout(LLM_STREAM_TIMEOUT),
   });
   if (!res.ok || !res.body) {
     const errText = await res.text();
@@ -6699,7 +6769,7 @@ async function proxyStreamFromGpuManager(
         ...reasoning.runtimeExtraBody,
         stream: true,
       },
-      timeout: 60000,
+      timeout: LLM_STREAM_TIMEOUT,
     });
     }
     recordLlmTokenUsage({ model, promptTokens });
@@ -11096,9 +11166,10 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             });
             if (!assistantPersisted && conversationId && userMessage) {
               assistantPersisted = true;
-              if (assistantResponse.trim().length > 0) {
+              const sanitizedAssistantResponse = sanitizeAssistantResponse(assistantResponse);
+              if (sanitizedAssistantResponse.trim().length > 0) {
                 const guardedResponse = await enforceResponseGuardrails({
-                  responseText: assistantResponse,
+                  responseText: sanitizedAssistantResponse,
                   userMessage: userContent,
                   preferredName: nameContext.preferredName,
                   agentName: conversation?.agent?.preferredName?.trim() || conversation?.agent?.nome?.trim() || null,
@@ -11110,7 +11181,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                     getAdaptiveGpuPriority('sync', mediaRuntimeProfile.config)
                   ) as Promise<string>,
                 });
-                if (guardedResponse !== assistantResponse.trim()) {
+                if (guardedResponse !== sanitizedAssistantResponse.trim()) {
                   safeWriteSseEvent({ type: 'final_message', content: guardedResponse });
                 }
                 const persistStartedAt = Date.now();
@@ -11203,13 +11274,33 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                   },
                 });
               } else {
-                logger.warn({ conversationId }, 'Stream de mídia finalizou sem conteúdo útil; persistindo fallback seguro');
+                const recoveredResponse = await recoverResponseFromEmptyStream({
+                  llmMessages: mediaMessages,
+                  llmConfig: scopedLlmConfig,
+                  preferredName: nameContext.preferredName,
+                  profile: mediaProfile,
+                  priority: getAdaptiveGpuPriority('sync', mediaRuntimeProfile.config),
+                  correlationId: conversationId ?? undefined,
+                });
                 const fallbackMessage = fixPreferredNameInDirectAddress(LLM_FALLBACK_MESSAGE, nameContext.preferredName);
+                const finalResponse = recoveredResponse ?? fallbackMessage;
+                if (recoveredResponse) {
+                  logger.info(
+                    { conversationId },
+                    'Resposta de mídia recuperada com sucesso após stream sem conteúdo útil'
+                  );
+                } else {
+                  logger.warn(
+                    { conversationId },
+                    'Stream de mídia finalizou sem conteúdo útil; persistindo fallback seguro'
+                  );
+                }
+
                 assistantPersisted = true;
                 const [assistantMessage] = await db.insert(schema.messages).values({
                   conversationId,
                   agentId: conversation?.agentId ?? undefined,
-                  conteudo: fallbackMessage,
+                  conteudo: finalResponse,
                   tipo: 'text',
                   isFromUser: false,
                 }).returning();
@@ -11222,7 +11313,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                   })
                   .where(eq(schema.conversations.id, conversationId));
 
-                safeWriteSseEvent({ type: 'final_message', content: fallbackMessage });
+                safeWriteSseEvent({ type: 'final_message', content: finalResponse });
                 safeWriteSseEvent({ type: 'message_saved', messageId: assistantMessage?.id });
               }
             }
@@ -14239,13 +14330,33 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                 },
               });
             } else {
-              logger.warn({ conversationId }, 'Stream de texto finalizou sem conteúdo útil; persistindo fallback seguro');
+              const recoveredResponse = await recoverResponseFromEmptyStream({
+                llmMessages,
+                llmConfig: scopedLlmConfig,
+                preferredName: nameContext.preferredName,
+                profile: streamProfile,
+                priority: getAdaptiveGpuPriority('sync', streamRuntimeProfile.config),
+                correlationId: conversationId ?? undefined,
+              });
               const fallbackMessage = fixPreferredNameInDirectAddress(LLM_FALLBACK_MESSAGE, nameContext.preferredName);
+              const finalResponse = recoveredResponse ?? fallbackMessage;
+              if (recoveredResponse) {
+                logger.info(
+                  { conversationId },
+                  'Resposta recuperada com sucesso após stream sem conteúdo útil'
+                );
+              } else {
+                logger.warn(
+                  { conversationId },
+                  'Stream de texto finalizou sem conteúdo útil; persistindo fallback seguro'
+                );
+              }
+
               assistantPersisted = true;
               const [assistantMessage] = await db.insert(schema.messages).values({
                 conversationId,
                 agentId: conversation?.agentId ?? undefined,
-                conteudo: fallbackMessage,
+                conteudo: finalResponse,
                 tipo: 'text',
                 isFromUser: false,
               }).returning();
@@ -14262,13 +14373,13 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                 await ensureConversationTitle({
                   conversationId,
                   userMessage: userMessageContent,
-                  assistantResponse: fallbackMessage,
+                  assistantResponse: finalResponse,
                 });
               } catch (titleError) {
                 logger.warn({ error: titleError, conversationId }, 'Falha ao aplicar título automático (stream fallback por resposta vazia)');
               }
 
-              safeWriteSseEvent({ type: 'final_message', content: fallbackMessage });
+              safeWriteSseEvent({ type: 'final_message', content: finalResponse });
               safeWriteSseEvent({ type: 'message_saved', messageId: assistantMessage?.id });
             }
           }

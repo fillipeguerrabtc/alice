@@ -136,10 +136,13 @@ function Router() {
       {/* - returnTo é validado contra open redirect attacks */}
       <Route path="/login" component={LoginRedirect} />
       <Route path="/" component={Dashboard} />
-      <Route path="/chat" component={Chat} />
-      {/* Redireciona /chat/ (trailing slash) para /chat - evita cair no NotFound */}
+      {/* Redireciona /chat/ (trailing slash) para /chat canônico */}
       <Route path="/chat/">{() => <Redirect to="/chat" />}</Route>
-      <Route path="/chat/:conversationId" component={Chat} />
+      {/*
+       * Rota única para preservar a mesma instância do Chat entre /chat e /chat/:conversationId.
+       * Evita remount durante criação da conversa e previne sumiço temporário de mensagens em streaming.
+       */}
+      <Route path="/chat/:conversationId?" component={Chat} />
       <Route path="/conversations" component={Conversations} />
       <Route path="/agents" component={Agents} />
       <Route path="/takeover" component={TakeoverPanel} />

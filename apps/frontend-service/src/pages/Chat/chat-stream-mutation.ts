@@ -82,7 +82,7 @@ export type SendMessagePayload = {
   mediaAttachments?: MediaAttachment[];
 };
 
-const STREAM_NO_CHUNK_TIMEOUT_MS = 60000;
+const STREAM_NO_CHUNK_TIMEOUT_MS = 120000;
 const RUNTIME_NOTICE_CODES: RuntimeNoticeCode[] = [
   'serving_interrupted_for_training',
   'training_in_progress',
