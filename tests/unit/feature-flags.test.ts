@@ -64,6 +64,7 @@ const FEATURE_FLAGS = {
   HANDOVER_ENABLED: 'handover_enabled',
   AUTO_ESCALATION_ENABLED: 'auto_escalation_enabled',
   WEBSOCKET_ENABLED: 'websocket_enabled',
+  TRADING_WORKSPACE_V2_ENABLED: 'trading_workspace_v2_enabled',
   
   // Observability
   LANGFUSE_ENABLED: 'langfuse_enabled',
@@ -98,6 +99,7 @@ const DEFAULT_FLAGS: Record<FeatureFlagKey, boolean> = {
   [FEATURE_FLAGS.HANDOVER_ENABLED]: true,
   [FEATURE_FLAGS.AUTO_ESCALATION_ENABLED]: true,
   [FEATURE_FLAGS.WEBSOCKET_ENABLED]: true,
+  [FEATURE_FLAGS.TRADING_WORKSPACE_V2_ENABLED]: false,
   
   // Observability - HABILITADAS
   [FEATURE_FLAGS.LANGFUSE_ENABLED]: true,
@@ -111,8 +113,8 @@ const DEFAULT_FLAGS: Record<FeatureFlagKey, boolean> = {
 
 describe('Feature Flags - Keys e Constantes', () => {
   describe('FEATURE_FLAGS constantes', () => {
-    it('deve ter todas as 16 feature flags definidas', () => {
-      expect(Object.keys(FEATURE_FLAGS)).toHaveLength(16);
+    it('deve ter todas as 17 feature flags definidas', () => {
+      expect(Object.keys(FEATURE_FLAGS)).toHaveLength(17);
     });
 
     it('todas as keys devem seguir padrão lowercase_underscore', () => {
@@ -145,6 +147,7 @@ describe('Feature Flags - Keys e Constantes', () => {
       expect(FEATURE_FLAGS.HANDOVER_ENABLED).toBe('handover_enabled');
       expect(FEATURE_FLAGS.AUTO_ESCALATION_ENABLED).toBe('auto_escalation_enabled');
       expect(FEATURE_FLAGS.WEBSOCKET_ENABLED).toBe('websocket_enabled');
+      expect(FEATURE_FLAGS.TRADING_WORKSPACE_V2_ENABLED).toBe('trading_workspace_v2_enabled');
     });
 
     it('deve ter flags de observability', () => {
@@ -174,10 +177,11 @@ describe('Feature Flags - Keys e Constantes', () => {
       expect(DEFAULT_FLAGS[FEATURE_FLAGS.GITHUB_OAUTH_ENABLED]).toBe(false);
     });
 
-    it('funcionalidades core devem estar HABILITADAS por padrão', () => {
+    it('funcionalidades core e rollout controlado devem ter defaults seguros', () => {
       expect(DEFAULT_FLAGS[FEATURE_FLAGS.HANDOVER_ENABLED]).toBe(true);
       expect(DEFAULT_FLAGS[FEATURE_FLAGS.AUTO_ESCALATION_ENABLED]).toBe(true);
       expect(DEFAULT_FLAGS[FEATURE_FLAGS.WEBSOCKET_ENABLED]).toBe(true);
+      expect(DEFAULT_FLAGS[FEATURE_FLAGS.TRADING_WORKSPACE_V2_ENABLED]).toBe(false);
     });
 
     it('observability deve estar HABILITADA por padrão', () => {

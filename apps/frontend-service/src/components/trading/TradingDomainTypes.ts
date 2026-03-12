@@ -14,6 +14,10 @@ export interface TradingStatus {
   pendingOrders: number;
   requiresTenant?: boolean;
   defaultSymbol?: string;
+  featureFlags?: {
+    tradingWorkspaceV2Enabled?: boolean;
+    [key: string]: unknown;
+  };
 }
 
 export interface KucoinWsStatus {

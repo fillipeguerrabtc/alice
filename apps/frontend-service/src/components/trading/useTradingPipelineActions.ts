@@ -2,6 +2,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import { useCallback } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import type { TFunction } from 'i18next';
+import { emitTradingTelemetry } from '@/lib/tradingTelemetry';
 import {
   enqueueTradingJob,
   startPortfolioAutoRun,
@@ -162,10 +163,23 @@ export function useTradingPipelineActions(options: UseTradingPipelineActionsOpti
       portfolioId: selectedPortfolioAutoId,
       marketType: selectedMarketType !== 'futures' ? selectedMarketType : undefined,
     }).then((result) => {
+      emitTradingTelemetry('trading.autorun.started', {
+        runType: 'portfolio_auto',
+        runId: result.runId,
+        marketType: selectedMarketType,
+      });
       setActiveAutoRunId(result.runId);
       setTradingJobStatus(`Pipeline enfileirado (run: ${result.runId.slice(0, 8)}…). Acompanhe o status abaixo.`);
     }).catch((error: unknown) => {
       const message = error instanceof Error ? error.message : 'Erro desconhecido';
+      emitTradingTelemetry('trading.autorun.terminal', {
+        runType: 'portfolio_auto',
+        outcome: 'failed',
+        stage: 'enqueue',
+        marketType: selectedMarketType,
+        portfolioId: selectedPortfolioAutoId,
+        error: message,
+      }, 'error');
       setTradingJobStatus(`Falha ao iniciar pipeline: ${message}`);
     });
   }, [selectedPortfolioAutoId, selectedMarketType, setActiveAutoRunId, setTradingJobStatus]);

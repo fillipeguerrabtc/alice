@@ -17,7 +17,7 @@
  * @updated 10/02/2026
  */
 
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import {
   TrendingUp,
@@ -52,6 +52,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { apiRequest, queryClient } from '@/lib/queryClient';
+import { emitTradingTelemetry } from '@/lib/tradingTelemetry';
 import { useKucoinWebSocket } from '@/hooks/useKucoinWebSocket';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
@@ -168,6 +169,10 @@ interface TradingSymbolsResponse {
 interface TradingStatus {
   isConfigured: boolean;
   requiresTenant?: boolean;
+  featureFlags?: {
+    tradingWorkspaceV2Enabled?: boolean;
+    [key: string]: unknown;
+  };
 }
 
 /** Resposta da API de dados de mercado (mesmo padrão Trading Real) */
@@ -284,6 +289,7 @@ function DemoTradingContent() {
   const [selectedPostmortemForTraining, setSelectedPostmortemForTraining] = useState<string | null>(null);
   const [selectedTrainingNamespaceId, setSelectedTrainingNamespaceId] = useState<string>('');
   const [selectedClosedPosition, setSelectedClosedPosition] = useState<DemoPosition | null>(null);
+  const workspaceUsageRef = useRef<{ tab: DemoTradingTabKey; workspace: DemoTradingWorkspaceKey } | null>(null);
 
   const visibleTabs = useMemo(() => {
     const allowed = DEMO_TRADING_WORKSPACE_TABS[activeWorkspace];
@@ -347,6 +353,24 @@ function DemoTradingContent() {
   });
 
   const isConfigured = isStatusSuccess && (statusData?.data?.isConfigured ?? false);
+  const tradingWorkspaceV2Enabled = Boolean(statusData?.data?.featureFlags?.tradingWorkspaceV2Enabled);
+
+  useEffect(() => {
+    const previous = workspaceUsageRef.current;
+    if (previous?.tab === activeTab && previous.workspace === activeWorkspace) {
+      return;
+    }
+    emitTradingTelemetry('trading.workspace.usage', {
+      source: 'demo_trading',
+      workspace: activeWorkspace,
+      tab: activeTab,
+      tradingWorkspaceV2Enabled,
+      reason: previous
+        ? (previous.workspace !== activeWorkspace ? 'workspace_change' : 'tab_change')
+        : 'initial_mount',
+    });
+    workspaceUsageRef.current = { tab: activeTab, workspace: activeWorkspace };
+  }, [activeTab, activeWorkspace, tradingWorkspaceV2Enabled]);
 
   /** Lista de símbolos disponíveis na KuCoin (mesma query key da Trading Real para reusar cache) */
   const { data: symbolsData, isLoading: isLoadingSymbols } = useQuery<{ success: boolean; data: TradingSymbolsResponse }>({

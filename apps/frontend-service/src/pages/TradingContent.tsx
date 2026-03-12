@@ -6,11 +6,16 @@
  * Data: 10 de Março de 2026
  */
 
+import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/hooks/use-auth';
 import { TIMEZONE } from '@/lib/i18n';
 import { isManualReasoningMode, type ReasoningMode } from '@/lib/reasoning-mode';
+import {
+  classifySignalGenerationFailure,
+  emitTradingTelemetry,
+} from '@/lib/tradingTelemetry';
 import { ErrorBoundary } from '@/components/error-boundary'; // ✅ CORREÇÃO: Import ErrorBoundary para graceful degradation
 import { useToast } from '@/hooks/use-toast';
 import { useKucoinWebSocket } from '@/hooks/useKucoinWebSocket';
@@ -110,6 +115,7 @@ export function TradingContent() {
   const userRoles = user?.roles ?? (user?.role ? [user.role] : []);
   const isAdminRole = userRoles.includes('admin') || userRoles.includes('super_admin');
   const { toast } = useToast();
+  const emittedTerminalAutoRunsRef = useRef<Set<string>>(new Set());
   const {
     activeTab,
     activeWorkspace,
@@ -930,6 +936,89 @@ export function TradingContent() {
   // `wsStatusData` já é o payload `{ success, data: KucoinWsStatus }`.
   // O accessor extra `.data` fazia `wsStatus` ficar sempre undefined e o badge nunca renderizar.
   const wsStatus = wsStatusData?.data;
+  useEffect(() => {
+    if (!activeAutoRunDetail?.run) {
+      return;
+    }
+    const run = activeAutoRunDetail.run;
+    const isTerminal = run.status === 'succeeded' || run.status === 'failed' || run.status === 'cancelled';
+    if (!isTerminal) {
+      return;
+    }
+    const eventKey = `${run.id}:${run.status}`;
+    if (emittedTerminalAutoRunsRef.current.has(eventKey)) {
+      return;
+    }
+
+    const payloadRecord = run.payload && typeof run.payload === 'object' && !Array.isArray(run.payload)
+      ? run.payload as Record<string, unknown>
+      : {};
+    const decision = Array.isArray(activeAutoRunDetail.decisions) ? activeAutoRunDetail.decisions[0] : undefined;
+    const entryPayload = decision?.entryPayload && typeof decision.entryPayload === 'object' && !Array.isArray(decision.entryPayload)
+      ? decision.entryPayload as Record<string, unknown>
+      : null;
+    const noTradeReasonCode = entryPayload && typeof entryPayload.noTradeReasonCode === 'string'
+      ? entryPayload.noTradeReasonCode
+      : null;
+    const payloadMarketType = typeof payloadRecord.marketType === 'string' ? payloadRecord.marketType : null;
+    const payloadUniverseScope = typeof payloadRecord.universeScope === 'string' ? payloadRecord.universeScope : null;
+    const payloadSymbol = typeof payloadRecord.symbol === 'string' ? payloadRecord.symbol : null;
+
+    const outcome = run.status === 'succeeded'
+      ? (run.runType === 'signal_auto' && (decision?.approved === false || Boolean(noTradeReasonCode)) ? 'no_trade' : 'succeeded')
+      : run.status;
+
+    emitTradingTelemetry(
+      run.status === 'succeeded' ? 'trading.autorun.completed' : 'trading.autorun.terminal',
+      {
+        runType: run.runType,
+        runId: run.id,
+        outcome,
+        status: run.status,
+        marketType: payloadMarketType,
+        universeScope: payloadUniverseScope,
+        symbol: payloadSymbol,
+        noTradeReasonCode,
+        error: run.error,
+      },
+      run.status === 'failed' ? 'error' : run.status === 'cancelled' ? 'warn' : 'info',
+    );
+
+    if (run.runType === 'signal_auto') {
+      if (run.status === 'succeeded') {
+        emitTradingTelemetry(
+          outcome === 'no_trade'
+            ? 'trading.signal.generation.no_trade'
+            : 'trading.signal.generation.succeeded',
+          {
+            source: 'auto_run',
+            runId: run.id,
+            marketType: payloadMarketType,
+            symbol: payloadSymbol,
+            noTradeReasonCode,
+          },
+        );
+      } else if (run.status === 'failed') {
+        const failureClass = classifySignalGenerationFailure(new Error(run.error ?? 'Signal auto run falhou'));
+        emitTradingTelemetry(
+          failureClass === 'blocked'
+            ? 'trading.signal.generation.blocked'
+            : 'trading.signal.generation.failed',
+          {
+            source: 'auto_run',
+            runId: run.id,
+            marketType: payloadMarketType,
+            symbol: payloadSymbol,
+            error: run.error,
+          },
+          failureClass === 'blocked' ? 'warn' : 'error',
+        );
+      }
+    }
+
+    emittedTerminalAutoRunsRef.current.add(eventKey);
+  }, [activeAutoRunDetail]);
+
   const {
     criticalApiError,
     renderOrderStatusBadge,

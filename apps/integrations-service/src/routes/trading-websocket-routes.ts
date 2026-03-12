@@ -1,6 +1,11 @@
 import type { Express, Request, Response } from 'express';
 import { createLogger } from '@alice/logger';
-import { extractAuthContext, requirePermission } from '@alice/shared-utils';
+import {
+  FEATURE_FLAGS,
+  extractAuthContext,
+  isFeatureEnabled,
+  requirePermission,
+} from '@alice/shared-utils';
 import { z } from 'zod';
 
 type TradingMarketType = 'futures' | 'spot' | 'margin';
@@ -101,6 +106,10 @@ export function registerTradingWebsocketRoutes(
       const authContext = extractAuthContext(req);
       const configStatus = deps.getKucoinConfigStatus();
       const circuitBreakerStatus = deps.getKucoinCircuitBreakerStatus();
+      const tradingWorkspaceV2Enabled = await isFeatureEnabled(
+        FEATURE_FLAGS.TRADING_WORKSPACE_V2_ENABLED,
+        authContext?.tenantId,
+      );
 
       if (!authContext?.tenantId || !authContext?.userId) {
         res.json({
@@ -113,6 +122,9 @@ export function registerTradingWebsocketRoutes(
             activeSignals: 0,
             pendingOrders: 0,
             requiresTenant: true,
+            featureFlags: {
+              tradingWorkspaceV2Enabled,
+            },
           },
         });
         return;
@@ -123,9 +135,22 @@ export function registerTradingWebsocketRoutes(
         userId: authContext.userId,
       });
 
+      const statusRecord = (status && typeof status === 'object' && !Array.isArray(status))
+        ? (status as Record<string, unknown>)
+        : {};
+      const featureFlagsRecord = (statusRecord.featureFlags && typeof statusRecord.featureFlags === 'object' && !Array.isArray(statusRecord.featureFlags))
+        ? (statusRecord.featureFlags as Record<string, unknown>)
+        : {};
+
       res.json({
         success: true,
-        data: status,
+        data: {
+          ...statusRecord,
+          featureFlags: {
+            ...featureFlagsRecord,
+            tradingWorkspaceV2Enabled,
+          },
+        },
       });
     } catch (error) {
       if (deps.sendKucoinErrorResponse(res, error)) return;

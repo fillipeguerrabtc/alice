@@ -81,6 +81,7 @@ export const FEATURE_FLAGS = {
   HANDOVER_ENABLED: 'handover_enabled',
   AUTO_ESCALATION_ENABLED: 'auto_escalation_enabled',
   WEBSOCKET_ENABLED: 'websocket_enabled',
+  TRADING_WORKSPACE_V2_ENABLED: 'trading_workspace_v2_enabled',
   
   // Observability
   LANGFUSE_ENABLED: 'langfuse_enabled',
@@ -242,6 +243,7 @@ const DEFAULT_FLAGS: Record<FeatureFlagKey, boolean> = {
   [FEATURE_FLAGS.HANDOVER_ENABLED]: true,
   [FEATURE_FLAGS.AUTO_ESCALATION_ENABLED]: true,
   [FEATURE_FLAGS.WEBSOCKET_ENABLED]: true,
+  [FEATURE_FLAGS.TRADING_WORKSPACE_V2_ENABLED]: false,
   
   // Observability - HABILITADAS
   [FEATURE_FLAGS.LANGFUSE_ENABLED]: true,

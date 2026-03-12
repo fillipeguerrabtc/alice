@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
+import { emitTradingTelemetry } from '@/lib/tradingTelemetry';
 import {
   TRADING_TAB_DESCRIPTORS,
   TRADING_WORKSPACE_TABS,
@@ -19,6 +20,7 @@ type UseTradingWorkspaceNavigationResult = {
 export function useTradingWorkspaceNavigation(): UseTradingWorkspaceNavigationResult {
   const [activeTab, setActiveTab] = useState<TradingTabKey>('portfolio-auto');
   const [activeWorkspace, setActiveWorkspace] = useState<TradingWorkspaceKey>('all');
+  const usageRef = useRef<{ tab: TradingTabKey; workspace: TradingWorkspaceKey } | null>(null);
 
   const handleWorkspaceChange = useCallback((workspace: TradingWorkspaceKey) => {
     setActiveWorkspace(workspace);
@@ -41,6 +43,22 @@ export function useTradingWorkspaceNavigation(): UseTradingWorkspaceNavigationRe
     if (!TRADING_WORKSPACE_TABS[activeWorkspace].includes(activeTab)) {
       setActiveWorkspace(findWorkspaceForTradingTab(activeTab));
     }
+  }, [activeTab, activeWorkspace]);
+
+  useEffect(() => {
+    const previous = usageRef.current;
+    if (previous?.tab === activeTab && previous.workspace === activeWorkspace) {
+      return;
+    }
+    emitTradingTelemetry('trading.workspace.usage', {
+      source: 'trading',
+      workspace: activeWorkspace,
+      tab: activeTab,
+      reason: previous
+        ? (previous.workspace !== activeWorkspace ? 'workspace_change' : 'tab_change')
+        : 'initial_mount',
+    });
+    usageRef.current = { tab: activeTab, workspace: activeWorkspace };
   }, [activeTab, activeWorkspace]);
 
   return {

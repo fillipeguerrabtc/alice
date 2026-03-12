@@ -3,6 +3,11 @@ import { useMutation } from '@tanstack/react-query';
 import type { TFunction } from 'i18next';
 import { apiRequest } from '@/lib/queryClient';
 import type { ReasoningMode } from '@/lib/reasoning-mode';
+import {
+  classifySignalGenerationFailure,
+  classifySignalGenerationResult,
+  emitTradingTelemetry,
+} from '@/lib/tradingTelemetry';
 import { startSignalAutoRun, type TradingAutoSignalAsset } from '@/services/api/trading';
 import { createDefaultSignalForm, type TradingSchedulerForm, type TradingSignalForm } from './TradingFormDefaults';
 import type { NamespaceOption, TradingProfileForm } from './TradingDomainTypes';
@@ -128,6 +133,18 @@ export function useTradingSignalMutations(options: UseTradingSignalMutationsOpti
       if (!data?.success) {
         throw new Error(data?.error || t('trading.errors.signalGenerateFailed'));
       }
+      const resultClass = classifySignalGenerationResult(data);
+      emitTradingTelemetry(
+        resultClass === 'no_trade'
+          ? 'trading.signal.generation.no_trade'
+          : 'trading.signal.generation.succeeded',
+        {
+          source: 'on_demand',
+          marketType: selectedMarketType,
+          symbol: requestSymbol || selectedSymbol || null,
+          resultClass,
+        },
+      );
       notify({
         title: t('trading.success.signalGenerated'),
         description: t('trading.success.signalGeneratedDesc'),
@@ -136,6 +153,20 @@ export function useTradingSignalMutations(options: UseTradingSignalMutationsOpti
       refetchScheduler();
     },
     onError: (error: Error) => {
+      const resultClass = classifySignalGenerationFailure(error);
+      emitTradingTelemetry(
+        resultClass === 'blocked'
+          ? 'trading.signal.generation.blocked'
+          : 'trading.signal.generation.failed',
+        {
+          source: 'on_demand',
+          marketType: selectedMarketType,
+          symbol: requestSymbol || selectedSymbol || null,
+          error: error.message,
+          resultClass,
+        },
+        resultClass === 'blocked' ? 'warn' : 'error',
+      );
       notify({
         title: t('trading.errors.signalGenerateFailed'),
         description: error.message,
@@ -185,6 +216,12 @@ export function useTradingSignalMutations(options: UseTradingSignalMutationsOpti
       });
     },
     onSuccess: (data) => {
+      emitTradingTelemetry('trading.autorun.started', {
+        runType: 'signal_auto',
+        runId: data.runId,
+        marketType: selectedMarketType,
+        symbol: requestSymbol || selectedSymbol || null,
+      });
       setActiveAutoRunId(data.runId);
       refetchSignalAutoRuns();
       notify({
@@ -193,6 +230,14 @@ export function useTradingSignalMutations(options: UseTradingSignalMutationsOpti
       });
     },
     onError: (error: Error) => {
+      emitTradingTelemetry('trading.autorun.terminal', {
+        runType: 'signal_auto',
+        outcome: 'failed',
+        stage: 'enqueue',
+        marketType: selectedMarketType,
+        symbol: requestSymbol || selectedSymbol || null,
+        error: error.message,
+      }, 'error');
       notify({
         title: 'Falha ao iniciar Signal Auto Run',
         description: error.message,

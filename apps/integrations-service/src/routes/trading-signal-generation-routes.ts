@@ -152,8 +152,9 @@ export function registerTradingSignalGenerationRoutes(
   });
 
   app.post('/api/integrations/trading/signals/generate', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+    let authContext: TradingAuthContext | null = null;
     try {
-      const authContext = getTradingAuthContext(req);
+      authContext = getTradingAuthContext(req);
       if (!authContext) {
         res.status(401).json({ error: 'Autenticação necessária' });
         return;
@@ -244,10 +245,29 @@ export function registerTradingSignalGenerationRoutes(
         consensus: consensusOverride,
         reasoningMode: parsed.data.reasoningMode,
       });
+      const mappedSignal = mapTradingSignalForApi(result.signal);
+      const metadata = (mappedSignal.metadata ?? {}) as Record<string, unknown>;
+      const noTradeReasonCode = typeof metadata.noTradeReasonCode === 'string' ? metadata.noTradeReasonCode : null;
+      const generationClassification = mappedSignal.signalType === 'hold'
+        || mappedSignal.signalType === 'neutral'
+        || Boolean(noTradeReasonCode)
+        ? 'no_trade'
+        : 'succeeded';
+      logger.info({
+        event: 'trading.signal.generation.result',
+        classification: generationClassification,
+        tenantId: authContext.tenantId,
+        userId: authContext.userId,
+        symbol: mappedSignal.symbol,
+        marketType: mappedSignal.marketType,
+        signalType: mappedSignal.signalType,
+        validationStatus: result.validationStatus,
+        noTradeReasonCode,
+      }, 'Geração de sinal classificada');
 
       res.status(201).json({
         success: true,
-        data: mapTradingSignalForApi(result.signal),
+        data: mappedSignal,
         validationId: result.validationId,
         validationStatus: result.validationStatus,
         universeSelection,
@@ -257,6 +277,14 @@ export function registerTradingSignalGenerationRoutes(
       if (deps.isTradingConfigError(error)) {
         const statusCode = error instanceof Error && error.message.includes('TRADING_SCOPE_REQUIRED') ? 412 : 400;
         const errorMessage = error instanceof Error ? error.message : 'Configuração de trading inválida';
+        logger.warn({
+          event: 'trading.signal.generation.result',
+          classification: 'blocked',
+          tenantId: authContext?.tenantId,
+          userId: authContext?.userId,
+          statusCode,
+          error: errorMessage,
+        }, 'Geração de sinal bloqueada por guardrail/configuração');
         res.status(statusCode).json({ error: errorMessage });
         return;
       }
@@ -264,6 +292,8 @@ export function registerTradingSignalGenerationRoutes(
       const errorStack = error instanceof Error ? error.stack : undefined;
       const errorCause = error instanceof Error && 'cause' in error ? (error.cause as { message?: string })?.message : undefined;
       logger.error({
+        event: 'trading.signal.generation.result',
+        classification: 'failed',
         error: errorMessage,
         cause: errorCause,
         stack: errorStack,
