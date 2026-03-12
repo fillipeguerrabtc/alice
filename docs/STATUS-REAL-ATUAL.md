@@ -13,6 +13,10 @@
 - O detalhamento completo de execuções, validações e commits por rodada está no tracking canônico: `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
 - Este documento mantém o snapshot operacional consolidado da plataforma, sem replicar changelog extensivo por rodada.
 - Em caso de divergência entre relato histórico e estado de execução governado, prevalece o tracking canônico.
+- Rodada 12 (12/03/2026): hardening de disponibilidade do Trading em produção (`/trading`):
+  - Evidência operacional: `alice-integrations` em estado `unhealthy` com `502` no Caddy para `/api/integrations/trading/status` e `/api/trading/auto/runs`.
+  - Causa raiz: `unhandledRejection` no ciclo do demo scheduler (`processOpenOrdersAndPositions`) encerrava o HTTP server do `integrations-service`.
+  - Correção cirúrgica: tratamento explícito de rejeições assíncronas no `setInterval` do scheduler com log estruturado, evitando shutdown do servidor por falha isolada de ciclo.
 - Rodada 11 (12/03/2026): migração Qwen3 consolidada em runtime/UI:
   - Badge do chat deixou de mostrar `versão + 7B` e passou a exibir modelo canônico (`Qwen3-8B`) vindo da API.
   - Endpoints/configs de suporte passaram a expor defaults Qwen3 para novos registros (`agents`, `llm_config`, `trading_lora_jobs`, `model_versions`), com migração SQL dedicada.

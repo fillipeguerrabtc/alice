@@ -2320,7 +2320,9 @@ export function startDemoScheduler(intervalMs = 5_000): void {
   }
 
   schedulerTimer = setInterval(() => {
-    void processOpenOrdersAndPositions();
+    void processOpenOrdersAndPositions().catch((error: unknown) => {
+      logger.error({ error }, 'Erro no ciclo do demo trading scheduler');
+    });
   }, intervalMs);
 
   logger.info({ intervalMs }, 'Demo trading scheduler iniciado');
