@@ -213,7 +213,7 @@ jobs:
       - name: Check server stacks health (Smart Deploy)
         id: server-health
         if: github.event.inputs.smart_deploy == 'true'
-        uses: appleboy/ssh-action@v1.2.0
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.HETZNER_VM_HOST }}
           username: ${{ secrets.HETZNER_VM_USER }}
@@ -546,7 +546,7 @@ jobs:
           echo "✅ Stacks determinados para deploy"
 
       - name: Checkout código
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: refs/tags/${{ steps.context.outputs.version }}
           fetch-depth: 0
@@ -611,7 +611,7 @@ jobs:
 
     steps:
       - name: Checkout código
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: refs/tags/${{ needs.validate.outputs.version }}
           fetch-depth: 0
@@ -733,14 +733,14 @@ jobs:
       # REF: https://docs.github.com/en/packages/working-with-a-github-packages-registry
       # =================================================================
       - name: Login to GHCR (GH_PAT - packages read/write)
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GH_PAT }}
 
       - name: Login Docker Hub (for runner + server transfer)
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -1767,7 +1767,7 @@ jobs:
       # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 11 (Docs oficiais)
       # =======================================================================
       - name: Atualizar daemon.json (idempotente)
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
@@ -1964,7 +1964,7 @@ jobs:
           rm -f ~/.ssh/deploy_key 2>/dev/null || true
 
       - name: Restringir permissões .env.prod no servidor
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
@@ -1976,7 +1976,7 @@ jobs:
             echo "✅ Permissões do .env.prod restringidas para 600 no servidor"
 
       - name: Validar servidor de produção (fail-fast)
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
@@ -2243,7 +2243,7 @@ jobs:
       # REF: https://docs.docker.com/reference/cli/docker/login/#credential-stores
       # =======================================================================
       - name: Validar config.json no servidor + diagnóstico conectividade
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
@@ -2375,7 +2375,7 @@ jobs:
             echo "✅ Validação config.json servidor concluída — credenciais prontas para docker pull"
 
       - name: Preparar infraestrutura base (networks, volumes, permissões)
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
@@ -2753,7 +2753,7 @@ jobs:
     
     steps:
       - name: Validar servidor de produção (OBRIGATÓRIO)
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
@@ -2874,7 +2874,7 @@ jobs:
             echo "✅ Validação do servidor de produção OK"
 
       - name: Criar estrutura de diretórios (ATÔMICA)
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
@@ -2913,7 +2913,7 @@ jobs:
             echo "✅ Estrutura de diretórios criada com sucesso"
 
       - name: Sincronizar configs do SearXNG (CRÍTICO)
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
@@ -2964,7 +2964,7 @@ jobs:
             echo "✅ Configurações do SearXNG sincronizadas"
 
       - name: Configurar permissões PostgreSQL (CRÍTICO)
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
@@ -3252,7 +3252,7 @@ jobs:
             echo ""
 
       - name: Validar estado final (fail-fast)
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
@@ -3393,7 +3393,7 @@ jobs:
     
     steps:
       - name: Limpar containers parciais do deploy anterior (se existirem)
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
@@ -3570,7 +3570,7 @@ jobs:
             fi
 
       - name: Limpar lock files e sockets do PostgreSQL (redundant safety check)
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
@@ -3655,7 +3655,7 @@ jobs:
       # =================================================================
 
       - name: Create PostgreSQL Docker volume (belt-and-suspenders)
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
@@ -3788,7 +3788,7 @@ jobs:
 
       - name: Deploy stack infra via SSH
         id: deploy
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
@@ -4180,7 +4180,7 @@ jobs:
 
       - name: Diagnóstico rápido INFRA (na tela)
         if: failure()
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
@@ -4201,7 +4201,7 @@ jobs:
             done
 
       - name: Clean init containers (post-deploy)
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
@@ -4264,7 +4264,7 @@ jobs:
 
       - name: Capturar logs de falha INFRA (servidor)
         if: failure()
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.5
         env:
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
@@ -4338,7 +4338,7 @@ jobs:
 
       - name: Upload logs de falha INFRA
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: infra-deploy-logs-${{ github.run_id }}-${{ github.run_attempt }}
           path: ./artifacts/infra/*.tar.gz
@@ -4355,7 +4355,7 @@ jobs:
     steps:
       - name: Check health with retry logic and diagnostics
         id: check
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
@@ -4468,7 +4468,7 @@ jobs:
       
       - name: Troubleshoot unhealthy containers (se falhou)
         if: failure()
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
@@ -4556,7 +4556,7 @@ jobs:
     
     steps:
       - name: Execute rollback cirúrgico (5 estágios)
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.5
         env:
           IS_ROLLBACK: ${{ needs.validate.outputs.is_rollback }}
           ROLLBACK_VERSION: ${{ needs.validate.outputs.rollback_version }}
@@ -4837,7 +4837,7 @@ jobs:
     
     steps:
       - name: Execute Drizzle Push via SSH
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
@@ -5017,7 +5017,7 @@ jobs:
     steps:
       - name: Deploy stack alice via SSH
         id: deploy
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
@@ -5275,7 +5275,7 @@ jobs:
 
       - name: Diagnóstico rápido ALICE (na tela)
         if: failure()
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
@@ -5297,7 +5297,7 @@ jobs:
 
       - name: Capturar logs de falha ALICE (servidor)
         if: failure()
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.5
         env:
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
@@ -5371,7 +5371,7 @@ jobs:
 
       - name: Upload logs de falha ALICE
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: alice-deploy-logs-${{ github.run_id }}-${{ github.run_attempt }}
           path: ./artifacts/alice/*.tar.gz
@@ -5388,7 +5388,7 @@ jobs:
     steps:
       - name: Check health with retry logic
         id: check
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
@@ -5522,7 +5522,7 @@ jobs:
     
     steps:
       - name: Execute rollback cirúrgico (5 estágios)
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.5
         env:
           IS_ROLLBACK: ${{ needs.validate.outputs.is_rollback }}
           ROLLBACK_VERSION: ${{ needs.validate.outputs.rollback_version }}
@@ -5728,7 +5728,7 @@ jobs:
     steps:
       - name: Deploy stack observability via SSH
         id: deploy
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
@@ -6004,7 +6004,7 @@ jobs:
 
       - name: Diagnóstico rápido OBSERVABILITY (na tela)
         if: failure()
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
@@ -6026,7 +6026,7 @@ jobs:
 
       - name: Capturar logs de falha OBSERVABILITY (servidor)
         if: failure()
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.5
         env:
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
@@ -6100,7 +6100,7 @@ jobs:
 
       - name: Upload logs de falha OBSERVABILITY
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: observability-deploy-logs-${{ github.run_id }}-${{ github.run_attempt }}
           path: ./artifacts/observability/*.tar.gz
@@ -6118,7 +6118,7 @@ jobs:
     steps:
       - name: Check health with retry logic
         id: check
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
@@ -6277,7 +6277,7 @@ jobs:
     
     steps:
       - name: Execute rollback cirúrgico (5 estágios)
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.5
         env:
           IS_ROLLBACK: ${{ needs.validate.outputs.is_rollback }}
           ROLLBACK_VERSION: ${{ needs.validate.outputs.rollback_version }}
@@ -6460,7 +6460,7 @@ jobs:
     steps:
       - name: Deploy stack backup via SSH
         id: deploy
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
@@ -6657,7 +6657,7 @@ jobs:
 
       - name: Diagnóstico rápido BACKUP (na tela)
         if: failure()
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
@@ -6677,7 +6677,7 @@ jobs:
 
       - name: Capturar logs de falha BACKUP (servidor)
         if: failure()
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.5
         env:
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
@@ -6751,7 +6751,7 @@ jobs:
 
       - name: Upload logs de falha BACKUP
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: backup-deploy-logs-${{ github.run_id }}-${{ github.run_attempt }}
           path: ./artifacts/backup/*.tar.gz
@@ -6769,7 +6769,7 @@ jobs:
     steps:
       - name: Check health with retry logic
         id: check
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
@@ -6871,7 +6871,7 @@ jobs:
     
     steps:
       - name: Execute rollback cirúrgico (5 estágios)
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.5
         env:
           IS_ROLLBACK: ${{ needs.validate.outputs.is_rollback }}
           ROLLBACK_VERSION: ${{ needs.validate.outputs.rollback_version }}
@@ -7143,7 +7143,7 @@ jobs:
       # REF: CLAUDE.md Regra 11 (Melhores práticas 2025)
       # =========================================================================
       - name: Cleanup Docker images (post-deploy)
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}

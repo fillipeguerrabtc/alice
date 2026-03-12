@@ -30,6 +30,24 @@ Este guia descreve o deploy enterprise da plataforma Alice em produção (Hetzne
 - **Release & Tag:** `.github/workflows/release.yml`
 - **Deploy Modular:** `.github/workflows/deploy-stack-modular.yml`
 
+### Atualização de dependências do workflow (Node 24)
+
+Para eliminar warnings de depreciação de runtime no GitHub Actions (Node 20), o workflow modular foi atualizado para versões atuais das actions:
+
+- `actions/checkout`: `v4` -> `v6`
+- `docker/login-action`: `v3` -> `v4`
+- `actions/upload-artifact`: `v4` -> `v6`
+- `appleboy/ssh-action`: padronizado em `v1.2.5`
+
+Impacto esperado:
+
+- Remove warnings de "Node.js 20 actions are deprecated" no deploy modular.
+- Mantém compatibilidade com runner self-hosted atualizado (`2.332.0`), acima do mínimo exigido (`2.327.1`).
+- Não altera gatilhos do workflow, apenas versões de dependências e padronização de action.
+
+**Author:** Codex (GPT-5)
+**Data:** 11 de Março de 2026
+
 ### Ordem de deploy (automática)
 
 ```text
