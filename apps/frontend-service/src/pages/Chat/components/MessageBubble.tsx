@@ -33,6 +33,71 @@ import { toast } from '@/hooks/use-toast';
 
 /** Número máximo de stream events exibidos simultaneamente no painel de progresso */
 const MAX_VISIBLE_STREAM_EVENTS = 8;
+const THINK_OPEN_TAG = '<think>';
+const THINK_CLOSE_TAG = '</think>';
+const THINKING_DISPLAY_LINES = 3;
+
+type ParsedThinkingContent = {
+  visibleContent: string;
+  thinkingLines: string[];
+};
+
+function parseThinkingContent(rawContent: string): ParsedThinkingContent {
+  if (!rawContent || rawContent.length === 0) {
+    return {
+      visibleContent: '',
+      thinkingLines: [],
+    };
+  }
+
+  let cursor = 0;
+  let visibleContent = '';
+  const thinkingParts: string[] = [];
+
+  while (cursor < rawContent.length) {
+    const openIndex = rawContent.indexOf(THINK_OPEN_TAG, cursor);
+    if (openIndex === -1) {
+      visibleContent += rawContent.slice(cursor);
+      break;
+    }
+
+    visibleContent += rawContent.slice(cursor, openIndex);
+    const thinkingStart = openIndex + THINK_OPEN_TAG.length;
+    const closeIndex = rawContent.indexOf(THINK_CLOSE_TAG, thinkingStart);
+    if (closeIndex === -1) {
+      thinkingParts.push(rawContent.slice(thinkingStart));
+      cursor = rawContent.length;
+      break;
+    }
+
+    thinkingParts.push(rawContent.slice(thinkingStart, closeIndex));
+    cursor = closeIndex + THINK_CLOSE_TAG.length;
+  }
+
+  const normalizedVisible = visibleContent
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  const normalizedThinkingLines = thinkingParts
+    .join('\n')
+    .split('\n')
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter((line) => line.length > 0);
+
+  return {
+    visibleContent: normalizedVisible,
+    thinkingLines: normalizedThinkingLines,
+  };
+}
+
+function buildThinkingCircularLines(lines: string[], slotCount: number): string[] {
+  if (slotCount <= 0) return [];
+  const slots = Array.from({ length: slotCount }, () => '');
+  lines.forEach((line, index) => {
+    slots[index % slotCount] = line;
+  });
+  return slots;
+}
 
 const messageVariants = {
   hidden: { opacity: 0, y: 20, scale: 0.95 },
@@ -276,11 +341,16 @@ export function MessageBubble({
   const requiresConfirmation = Boolean(message.metadata?.requiresConfirmation);
   const shouldShowActionCard = Boolean(message.metadata?.actionType || message.metadata?.actionStatus || message.metadata?.actionResult);
   const messageSources = (message.metadata?.sources as MessageSources | undefined) ?? undefined;
+  const parsedRenderedContent = parseThinkingContent(renderedText);
+  const parsedMessageContent = parseThinkingContent(message.content ?? '');
+  const thinkingCircularLines = buildThinkingCircularLines(parsedRenderedContent.thinkingLines, THINKING_DISPLAY_LINES);
+  const shouldShowThinkingBox = !isUser && isLast && isStreaming && parsedRenderedContent.thinkingLines.length > 0;
 
   // Se há actionResult no metadata, exibir apenas o resumo humano; suprimir JSON bruto no texto
   const sanitizedDisplayContent = (() => {
-    if (!shouldShowActionCard || !renderedText) return renderedText;
-    const trimmed = renderedText.trim();
+    const displayContent = parsedRenderedContent.visibleContent;
+    if (!shouldShowActionCard || !displayContent) return displayContent;
+    const trimmed = displayContent.trim();
     // Detectar JSON bruto via tentativa de parse; apenas suprimir objetos/arrays válidos
     if ((trimmed.startsWith('{') || trimmed.startsWith('[')) && trimmed.length > 2) {
       try {
@@ -292,7 +362,7 @@ export function MessageBubble({
         // Não é JSON válido — manter conteúdo original
       }
     }
-    return renderedText;
+    return displayContent;
   })();
   const shouldShowStreamingPlaceholder = shouldShowTypingCursor && sanitizedDisplayContent.trim().length === 0;
 
@@ -355,6 +425,21 @@ export function MessageBubble({
 
           {!isUser && isLast && isStreaming && streamStatusLabel && (
             <p className="mb-1 text-[11px] text-muted-foreground">{streamStatusLabel}</p>
+          )}
+
+          {shouldShowThinkingBox && (
+            <div className="mb-2 rounded-md border border-border/70 bg-background/50 p-2">
+              <p className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+                {t('chat.streaming.thinking')}
+              </p>
+              <div className="space-y-1 font-mono text-[11px] leading-4 text-muted-foreground">
+                {thinkingCircularLines.map((line, index) => (
+                  <p key={`${message.id}-thinking-${index}`} className="h-4 overflow-hidden whitespace-nowrap text-ellipsis">
+                    {line || ' '}
+                  </p>
+                ))}
+              </div>
+            </div>
           )}
 
           <div className="whitespace-pre-wrap text-sm leading-relaxed min-h-[1.25rem]">
@@ -495,7 +580,7 @@ export function MessageBubble({
           {!isUser ? (
             // Mensagens do assistente: usar MessageActions (inclui copiar, regenerar, feedback)
             <MessageActions
-              content={message.content}
+              content={parsedMessageContent.visibleContent}
               messageId={message.id}
               isAssistant={true}
               onFeedback={onFeedback}

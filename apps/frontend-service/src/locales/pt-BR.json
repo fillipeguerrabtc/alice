@@ -461,10 +461,10 @@
       "missingAgents": "Selecione ao menos um agente para o modo manual."
     },
     "reasoning": {
-      "label": "Reasoning",
+      "label": "Raciocínio",
       "auto": "Auto",
-      "thinking": "Thinking",
-      "nonThinking": "Non-thinking"
+      "thinking": "Com Thinking",
+      "nonThinking": "Sem Thinking"
     },
     "training": {
       "send": "Enviar p/ Treino",
@@ -2754,12 +2754,12 @@
       "new": "Novo Sinal",
       "generateNow": "Gerar sinal agora",
       "reasoning": {
-        "label": "Reasoning Mode",
+        "label": "Modo de Raciocínio",
         "description": "Define como a IA aplica raciocínio para gerar sinais e execuções automáticas.",
         "adminOnlyHint": "Override manual disponível apenas para perfis admin/superadmin.",
         "auto": "Auto",
-        "thinking": "Thinking",
-        "nonThinking": "Non-thinking"
+        "thinking": "Com Thinking",
+        "nonThinking": "Sem Thinking"
       },
       "profile": {
         "title": "Perfil de Sinais IA",

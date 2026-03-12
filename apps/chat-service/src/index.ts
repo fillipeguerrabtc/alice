@@ -2469,6 +2469,43 @@ type UserLocaleContext = {
 
 const DEFAULT_TIMEZONE = 'America/Sao_Paulo';
 const resolveLocale = (locale?: string | null) => locale?.trim() || 'pt-BR';
+type ResponseLanguageTag = 'pt-BR' | 'en-US';
+const normalizeLocaleTag = (locale?: string | null) => locale?.trim().toLowerCase() ?? '';
+
+const PORTUGUESE_HINT_PATTERN = /\b(que|qual|como|porque|por que|voce|você|nao|não|obrigado|obrigada|preciso|quero|pode|favor|cotacao|cotação|preco|preço|hoje|amanha|amanhã)\b/i;
+const ENGLISH_HINT_PATTERN = /\b(what|how|why|please|thanks|thank you|price|today|tomorrow|could|would|can you|i need|i want)\b/i;
+
+function inferLanguageFromMessage(message?: string): ResponseLanguageTag | null {
+  const normalized = (message ?? '').trim();
+  if (!normalized) return null;
+  if (PORTUGUESE_HINT_PATTERN.test(normalized)) return 'pt-BR';
+  if (ENGLISH_HINT_PATTERN.test(normalized)) return 'en-US';
+  return null;
+}
+
+function resolveResponseLanguageTag(params: {
+  userMessage?: string;
+  locale?: string | null;
+}): ResponseLanguageTag {
+  const inferredByMessage = inferLanguageFromMessage(params.userMessage);
+  if (inferredByMessage) {
+    return inferredByMessage;
+  }
+
+  const normalizedLocale = normalizeLocaleTag(params.locale);
+  if (normalizedLocale.startsWith('en')) {
+    return 'en-US';
+  }
+  return 'pt-BR';
+}
+
+function buildResponseLanguageInstruction(languageTag: ResponseLanguageTag): string {
+  if (languageTag === 'en-US') {
+    return 'RESPONSE LANGUAGE POLICY:\n- Respond only in English.\n- Keep the entire response in English, including intermediate explanations shown by the UI.\n- Switch language only when the user explicitly asks for a different language.';
+  }
+
+  return 'POLÍTICA DE IDIOMA DA RESPOSTA:\n- Responda somente em Português do Brasil.\n- Mantenha toda a resposta em Português do Brasil, incluindo explicações intermediárias exibidas pela interface.\n- Só mude de idioma quando o usuário pedir explicitamente.';
+}
 
 const resolveTimeZone = (timezone?: string | null) => {
   if (timezone) {
@@ -2579,6 +2616,10 @@ function buildSystemPrompt(
   }
 
   const resolvedLocale = resolveLocale(userContext?.locale);
+  const responseLanguageTag = resolveResponseLanguageTag({
+    userMessage,
+    locale: resolvedLocale,
+  });
   const resolvedTimeZone = resolveTimeZone(userContext?.timezone);
   const locationLabel = buildLocationLabel(userContext?.location);
 
@@ -2598,6 +2639,8 @@ function buildSystemPrompt(
       !prompt.toLowerCase().includes('língua')) {
     prompt += `\n\nIMPORTANTE: Responda sempre no mesmo idioma da mensagem do usuário, sem misturar idiomas.`;
   }
+
+  prompt += `\n\n${buildResponseLanguageInstruction(responseLanguageTag)}`;
 
   if (!prompt.toLowerCase().includes('não inclua urls no corpo')
       && !prompt.toLowerCase().includes('nao inclua urls no corpo')
@@ -2950,6 +2993,18 @@ function sanitizeConversationalLine(line: string): string {
     .trim();
 }
 
+function removeThinkingBlocks(raw: string): string {
+  if (!raw || raw.length === 0) return raw;
+
+  return raw
+    // Remove blocos completos <think> ... </think>
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    // Remove caudas incompletas iniciadas por <think> sem fechamento.
+    .replace(/<think>[\s\S]*$/gi, '')
+    // Remove marcações soltas remanescentes.
+    .replace(/<\/think>/gi, '');
+}
+
 /**
  * Sanitiza a resposta do assistente removendo ruído sem danificar JSON/codeblocks.
  * - Remove repetições exageradas de linha (mais de 3 ocorrências consecutivas da mesma linha)
@@ -2958,9 +3013,10 @@ function sanitizeConversationalLine(line: string): string {
  * - NÃO altera conteúdo dentro de blocos de código (``` ... ```) ou JSON
  */
 function sanitizeAssistantResponse(raw: string): string {
-  if (!raw || raw.trim().length === 0) return raw;
+  const withoutThinking = removeThinkingBlocks(raw);
+  if (!withoutThinking || withoutThinking.trim().length === 0) return withoutThinking;
 
-  const lines = raw.split('\n');
+  const lines = withoutThinking.split('\n');
   const result: string[] = [];
   let inCodeBlock = false;
   let consecutiveBlankLines = 0;
@@ -14063,14 +14119,15 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           // Mesmo se nenhum chunk for recebido, headers já foram enviados, então podemos fechar a resposta
           if (!assistantPersisted && conversationId && userMessage) {
             assistantPersisted = true;
-            if (assistantResponse.trim().length > 0) {
+            const sanitizedAssistantResponse = sanitizeAssistantResponse(assistantResponse);
+            if (sanitizedAssistantResponse.trim().length > 0) {
               const assistantAgentName = activeAgent?.preferredName?.trim()
                 || activeAgent?.nome?.trim()
                 || conversation?.agent?.preferredName?.trim()
                 || conversation?.agent?.nome?.trim()
                 || null;
               const guardedResponse = await enforceResponseGuardrails({
-                responseText: assistantResponse,
+                responseText: sanitizedAssistantResponse,
                 userMessage: userMessageContent,
                 preferredName: nameContext.preferredName,
                 agentName: assistantAgentName,
@@ -14082,7 +14139,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                   getAdaptiveGpuPriority('sync', streamRuntimeProfile.config)
                 ) as Promise<string>,
               });
-              if (guardedResponse !== assistantResponse.trim()) {
+              if (guardedResponse !== sanitizedAssistantResponse.trim()) {
                 safeWriteSseEvent({ type: 'final_message', content: guardedResponse });
               }
               const persistStartedAt = Date.now();
@@ -15926,12 +15983,19 @@ wss.on('connection', (ws, req) => {
               // Salvar resposta do assistente APÓS o stream completo
               const llmLatency = Date.now() - llmStartTime;
               const totalLatency = Date.now() - ragStartTime;
-              
-              const tokensUsed = calculateTokensUsed({ promptMessages: llmMessages, responseText });
+              const sanitizedResponseText = sanitizeAssistantResponse(responseText);
+              const responseForPersistence = sanitizedResponseText.trim().length > 0
+                ? sanitizedResponseText
+                : fixPreferredNameInDirectAddress(LLM_FALLBACK_MESSAGE, nameContext.preferredName);
+
+              const tokensUsed = calculateTokensUsed({
+                promptMessages: llmMessages,
+                responseText: responseForPersistence,
+              });
               const inserted = await db.insert(schema.messages).values({
                 conversationId,
                 agentId: conversation?.agentId,
-                conteudo: responseText,
+                conteudo: responseForPersistence,
                 tipo: 'text',
                 isFromUser: false,
                 latenciaMs: totalLatency,
@@ -15951,7 +16015,7 @@ wss.on('connection', (ws, req) => {
                 await ensureConversationTitle({
                   conversationId,
                   userMessage: messageContent,
-                  assistantResponse: responseText,
+                  assistantResponse: responseForPersistence,
                 });
               } catch (titleError) {
                 logger.warn({ error: titleError, conversationId }, 'Falha ao aplicar título automático (websocket)');
@@ -15964,7 +16028,7 @@ wss.on('connection', (ws, req) => {
                 conversationId,
                 userId,
                 userMessage: messageContent,
-                assistantResponse: responseText,
+                assistantResponse: responseForPersistence,
               });
               trainingAutoCollectAttemptTotal.inc({ reason: websocketAutoCollectDecision.reason });
               if (userRole && websocketAutoCollectDecision.allowed) {
@@ -15989,7 +16053,7 @@ wss.on('connection', (ws, req) => {
                   },
                   messages: [
                     { role: 'user', content: messageContent },
-                    { role: 'assistant', content: responseText },
+                    { role: 'assistant', content: responseForPersistence },
                   ],
                   userId,
                   role: userRole,
@@ -16034,7 +16098,7 @@ wss.on('connection', (ws, req) => {
               // ======================================================================
               const postResponseEscalation = await processLLMResponseForEscalation(
                 conversationId,
-                responseText
+                responseForPersistence
               );
               
               if (postResponseEscalation) {
@@ -16445,12 +16509,19 @@ wss.on('connection', (ws, req) => {
               // fullResponse do escopo externo está vazio quando callback executa
               // Salvar resposta do assistente APÓS o stream completo
               const llmLatency = Date.now() - llmStartTime;
-              
-              const tokensUsed = calculateTokensUsed({ promptMessages: llmMessages, responseText });
+              const sanitizedResponseText = sanitizeAssistantResponse(responseText);
+              const responseForPersistence = sanitizedResponseText.trim().length > 0
+                ? sanitizedResponseText
+                : fixPreferredNameInDirectAddress(LLM_FALLBACK_MESSAGE, nameContext.preferredName);
+
+              const tokensUsed = calculateTokensUsed({
+                promptMessages: llmMessages,
+                responseText: responseForPersistence,
+              });
               const inserted = await db.insert(schema.messages).values({
                 conversationId: mediaMessage.conversationId,
                 agentId: conversation.agentId,
-                conteudo: responseText,
+                conteudo: responseForPersistence,
                 tipo: 'text',
                 isFromUser: false,
                 latenciaMs: llmLatency,
@@ -16470,7 +16541,7 @@ wss.on('connection', (ws, req) => {
                 await ensureConversationTitle({
                   conversationId: mediaMessage.conversationId,
                   userMessage: mediaMessage.content || `[${validatedMediaType.toUpperCase()}] ${mediaMessage.media.filename}`,
-                  assistantResponse: responseText,
+                  assistantResponse: responseForPersistence,
                 });
               } catch (titleError) {
                 logger.warn({ error: titleError, conversationId: mediaMessage.conversationId }, 'Falha ao aplicar título automático (mídia)');
