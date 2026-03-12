@@ -69,7 +69,12 @@ Arquivo principal: `apps/integrations-service/src/routes/trading-automation-rout
 - `signal-decision`: filtra candidates e aplica guardrails
 - `signal-llm`: executa arbitration/explanation quando aplicável
 - `signal-persist`: persiste sinal ou no-trade explícito
-5. Atualiza `trading_auto_runs` para `succeeded` ou `failed` e grava `trading_auto_decisions`.
+5. Atualiza `trading_auto_runs` para estados terminais semânticos:
+- `succeeded` (trade aprovado e persistido)
+- `no_trade` (sem edge/candidate elegível)
+- `blocked` (bloqueio de segurança/configuração)
+- `failed` (falha técnica real)
+6. `terminal_reason_code` fica persistido para consulta rápida em estado terminal.
 
 ### Portfolio Auto
 1. Frontend chama `POST /api/trading/auto/portfolio/run`.
@@ -97,6 +102,7 @@ Arquivo principal: `apps/integrations-service/src/routes/trading-automation-rout
 - `trading_workspace_v2_enabled` no payload de status de Trading.
 - Camada de composição de UI (`TradingContent.tsx` + hooks) já separada por responsabilidades.
 - APIs de auto-run e detail (`/api/trading/auto/runs*`) já oferecem superfície para observability de ciclo de vida.
+- Contrato de auto-run agora expõe `terminalReasonCode` e estados terminais explícitos (`no_trade`, `blocked`).
 - Demo e Real já compartilham infra de market data, reduzindo custo de convergência de workspace.
 
 ## 8. Pontos de acoplamento críticos

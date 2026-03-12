@@ -914,6 +914,8 @@ function DemoTradingContent() {
       processing_cpu: { variant: 'outline', label: 'CPU...' },
       processing_llm: { variant: 'outline', label: 'LLM...' },
       queued: { variant: 'outline', label: 'Na fila' },
+      no_trade: { variant: 'outline', label: 'Sem trade' },
+      blocked: { variant: 'outline', label: 'Bloqueado' },
       failed: { variant: 'destructive', label: 'Falhou' },
     };
     const config = variants[status] ?? { variant: 'outline' as const, label: status };

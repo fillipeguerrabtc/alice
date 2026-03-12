@@ -43,7 +43,7 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 
 ## 6. Status de cada rodada
 - Rodada 1: Concluída
-- Rodada 2: Pendente
+- Rodada 2: Concluída
 - Rodada 3: Pendente
 - Rodada 4: Pendente
 - Rodada 5: Pendente
@@ -69,11 +69,30 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - `docs/trading/plano-refatoracao-trading.md` (novo)
 - `docs/trading/domain-map-trading.md` (novo)
 
+### Rodada 2
+- `packages/shared/src/schema.ts`
+- `migrations/0109_trading_auto_run_terminal_states.sql` (novo)
+- `apps/training-service/src/index.ts`
+- `apps/integrations-service/src/routes/trading-automation-routes.ts`
+- `apps/frontend-service/src/services/api/trading.ts`
+- `apps/frontend-service/src/components/trading/useTradingSetupQueries.ts`
+- `apps/frontend-service/src/pages/TradingContent.tsx`
+- `apps/frontend-service/src/pages/DemoTrading.tsx`
+- `docs/trading/domain-map-trading.md`
+- `docs/trading/auto-engine-state-model.md` (novo)
+- `docs/trading/auto-engine-contracts-observability.md` (novo)
+- `docs/trading/plano-refatoracao-trading.md`
+
 ## 8. Migrations criadas
 - Rodada 1: Nenhuma.
+- Rodada 2:
+- `0109_trading_auto_run_terminal_states.sql` (enum `trading_auto_run_status` com `no_trade` e `blocked`, coluna `terminal_reason_code`, índice parcial por reason code).
 
 ## 9. Testes executados
 - Rodada 1:
+- Comando: `pnpm test`
+- Resultado: `129` arquivos de teste aprovados, `1385` testes aprovados, `0` falhas.
+- Rodada 2:
 - Comando: `pnpm test`
 - Resultado: `129` arquivos de teste aprovados, `1385` testes aprovados, `0` falhas.
 
@@ -81,9 +100,15 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Rodada 1:
 - Comando: `pnpm typecheck`
 - Resultado: sucesso, sem erros.
+- Rodada 2:
+- Comando: `pnpm typecheck`
+- Resultado: sucesso, sem erros.
 
 ## 11. Resultados de ESLint
 - Rodada 1:
+- Comando: `pnpm lint`
+- Resultado: sucesso, sem warnings e sem errors.
+- Rodada 2:
 - Comando: `pnpm lint`
 - Resultado: sucesso, sem warnings e sem errors.
 
@@ -95,21 +120,33 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Resultado: sucesso.
 - Comando: `pnpm --filter @alice/frontend-service build`
 - Resultado: sucesso.
+- Rodada 2:
+- Comando: `pnpm --filter @alice/shared build`
+- Resultado: sucesso.
+- Comando: `pnpm --filter @alice/integrations-service build`
+- Resultado: sucesso.
+- Comando: `pnpm --filter @alice/training-service build`
+- Resultado: sucesso.
+- Comando: `pnpm --filter @alice/frontend-service build`
+- Resultado: sucesso.
 
 ## 13. Riscos conhecidos
 - Acoplamento alto em páginas grandes (`TradingContent.tsx`, `DemoTrading.tsx`) exige mudanças muito cirúrgicas por rodada.
 - Auto Engine depende de múltiplos serviços (`integrations-service`, `training-service`) e qualquer regressão de contract pode impactar filas.
 - Observability ainda distribuída entre camadas; sem taxonomia única consolidada para todos eventos do domínio.
+- Migração de enum em PostgreSQL é aditiva e sem rollback direto de valores; rollback deve ser por comportamento de aplicação.
 
 ## 14. Pendências
-- Receber prompt da Rodada 2 para iniciar próximas mudanças de domínio.
+- Receber prompt da Rodada 3 para iniciar a evolução da Workspace V2 compartilhada.
 
 ## 15. Decisões arquiteturais registradas
 - Feature flag `trading_workspace_v2_enabled` adicionada como baseline de rollout controlado.
 - Telemetria mínima da rodada implementada sem mudança funcional de UX/fluxo.
 - Evolução com trilha única de código, evitando convivência prolongada `legacy + v2` paralelos.
+- State model do Auto Engine atualizado para terminal states explícitos (`succeeded`, `no_trade`, `blocked`, `failed`).
+- `terminal_reason_code` adicionado em `trading_auto_runs` para classificação queryável e auditável de estado terminal.
 
 ## 16. Próximos passos
-1. Iniciar Rodada 2 focando state model e observability do Auto Engine.
+1. Iniciar Rodada 3 focando Shared Trading Workspace Shell V2.
 2. Manter evolução sem trilha paralela `legacy + v2`, com cleanup contínuo.
 3. Repetir checklist sequencial de validação e atualização documental ao fechamento da próxima rodada.

@@ -186,7 +186,7 @@ export function registerTradingAutomationRoutes(
 
   const tradingAutoRunsQuerySchema = z.object({
     type: z.enum(['signal_auto', 'portfolio_auto']).optional(),
-    status: z.enum(['queued', 'running', 'succeeded', 'failed', 'cancelled']).optional(),
+    status: z.enum(['queued', 'running', 'succeeded', 'no_trade', 'blocked', 'failed', 'cancelled']).optional(),
     limit: z.coerce.number().int().min(1).max(100).optional(),
   });
 

@@ -941,7 +941,11 @@ export function TradingContent() {
       return;
     }
     const run = activeAutoRunDetail.run;
-    const isTerminal = run.status === 'succeeded' || run.status === 'failed' || run.status === 'cancelled';
+    const isTerminal = run.status === 'succeeded'
+      || run.status === 'no_trade'
+      || run.status === 'blocked'
+      || run.status === 'failed'
+      || run.status === 'cancelled';
     if (!isTerminal) {
       return;
     }
@@ -960,6 +964,9 @@ export function TradingContent() {
     const noTradeReasonCode = entryPayload && typeof entryPayload.noTradeReasonCode === 'string'
       ? entryPayload.noTradeReasonCode
       : null;
+    const terminalReasonCode = typeof run.terminalReasonCode === 'string' && run.terminalReasonCode.length > 0
+      ? run.terminalReasonCode
+      : noTradeReasonCode;
     const payloadMarketType = typeof payloadRecord.marketType === 'string' ? payloadRecord.marketType : null;
     const payloadUniverseScope = typeof payloadRecord.universeScope === 'string' ? payloadRecord.universeScope : null;
     const payloadSymbol = typeof payloadRecord.symbol === 'string' ? payloadRecord.symbol : null;
@@ -975,13 +982,14 @@ export function TradingContent() {
         runId: run.id,
         outcome,
         status: run.status,
+        terminalReasonCode,
         marketType: payloadMarketType,
         universeScope: payloadUniverseScope,
         symbol: payloadSymbol,
         noTradeReasonCode,
         error: run.error,
       },
-      run.status === 'failed' ? 'error' : run.status === 'cancelled' ? 'warn' : 'info',
+      run.status === 'failed' ? 'error' : (run.status === 'cancelled' || run.status === 'blocked') ? 'warn' : 'info',
     );
 
     if (run.runType === 'signal_auto') {
@@ -997,6 +1005,30 @@ export function TradingContent() {
             symbol: payloadSymbol,
             noTradeReasonCode,
           },
+        );
+      } else if (run.status === 'no_trade') {
+        emitTradingTelemetry(
+          'trading.signal.generation.no_trade',
+          {
+            source: 'auto_run',
+            runId: run.id,
+            marketType: payloadMarketType,
+            symbol: payloadSymbol,
+            noTradeReasonCode: terminalReasonCode,
+          },
+        );
+      } else if (run.status === 'blocked') {
+        emitTradingTelemetry(
+          'trading.signal.generation.blocked',
+          {
+            source: 'auto_run',
+            runId: run.id,
+            marketType: payloadMarketType,
+            symbol: payloadSymbol,
+            reasonCode: terminalReasonCode,
+            error: run.error,
+          },
+          'warn',
         );
       } else if (run.status === 'failed') {
         const failureClass = classifySignalGenerationFailure(new Error(run.error ?? 'Signal auto run falhou'));

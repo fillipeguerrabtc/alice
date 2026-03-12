@@ -774,6 +774,12 @@ const tradingMetrics = {
     help: 'Total de falhas LLM no auto engine de sinais',
     registers: [metrics.registry],
   }),
+  signalAutoRunTerminalTotal: new PromCounter({
+    name: 'trading_signal_auto_run_terminal_total',
+    help: 'Total de signal auto runs por estado terminal e reason code',
+    labelNames: ['terminalState', 'reasonCode'] as const,
+    registers: [metrics.registry],
+  }),
 };
 
 const tradingQueueNames = {
@@ -1953,13 +1959,37 @@ async function generateAndTagAutoSignal(params: {
   }
 }
 
+type SignalAutoRunTerminalState = 'succeeded' | 'no_trade' | 'blocked' | 'failed';
+
+function normalizeSignalAutoRunReasonCode(reasonCode: string | null | undefined): string {
+  if (!reasonCode) return 'none';
+  const normalized = reasonCode.trim().toUpperCase().replace(/[^A-Z0-9_]+/g, '_').slice(0, 64);
+  return normalized.length > 0 ? normalized : 'none';
+}
+
+function classifySignalAutoRunFailure(errorMessage: string): { terminalState: 'blocked' | 'failed'; reasonCode: string } {
+  const prefixedReasonCode = errorMessage.match(/^([A-Z0-9_]+):/)?.[1] ?? null;
+  if (prefixedReasonCode === 'TRADING_SCOPE_REQUIRED') {
+    return { terminalState: 'blocked', reasonCode: prefixedReasonCode };
+  }
+
+  if (errorMessage.includes('TRADING_SCOPE_REQUIRED')) {
+    return { terminalState: 'blocked', reasonCode: 'TRADING_SCOPE_REQUIRED' };
+  }
+
+  return { terminalState: 'failed', reasonCode: 'UNEXPECTED_ERROR' };
+}
+
 /** Processa geraÃ§Ã£o automÃ¡tica de sinais */
 async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPayloadSchema>): Promise<void> {
   const { runId, correlationId } = payload;
   logger.info({ runId, correlationId }, 'Iniciando signal auto run');
+  const runStartedAtMs = Date.now();
+  let terminalCandidateCount = 0;
+  let terminalApprovedCandidateCount = 0;
 
   await db.update(schema.tradingAutoRuns)
-    .set({ status: 'running', startedAt: new Date() })
+    .set({ status: 'running', startedAt: new Date(), terminalReasonCode: null })
     .where(eq(schema.tradingAutoRuns.id, runId));
 
   try {
@@ -2129,6 +2159,8 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
       return true;
     });
     guardrailResults.approved = approvedCandidates.length;
+    terminalCandidateCount = candidates.length;
+    terminalApprovedCandidateCount = approvedCandidates.length;
 
     const candidateIds = approvedCandidates.map((c) => c.id);
     const bestCandidate = approvedCandidates[0];
@@ -2309,12 +2341,31 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
           reasonCode: noTradeReasonCode,
         },
       });
+      const finishedAt = new Date();
+      const terminalDurationMs = Date.now() - runStartedAtMs;
       await db.update(schema.tradingAutoRuns)
-        .set({ status: 'succeeded', error: null, finishedAt: new Date() })
+        .set({
+          status: 'no_trade',
+          terminalReasonCode: noTradeReasonCode,
+          error: null,
+          finishedAt,
+        })
         .where(eq(schema.tradingAutoRuns.id, runId));
+      tradingMetrics.signalAutoRunTerminalTotal.inc({
+        terminalState: 'no_trade',
+        reasonCode: normalizeSignalAutoRunReasonCode(noTradeReasonCode),
+      });
       logger.info(
-        { runId, correlationId, candidates: candidates.length, approved: approvedCandidates.length, noTradeReasonCode },
-        'Signal auto run concluido com no-trade (sucesso operacional)',
+        {
+          runId,
+          correlationId,
+          terminalState: 'no_trade' as SignalAutoRunTerminalState,
+          reasonCode: noTradeReasonCode,
+          candidateCount: candidates.length,
+          approvedCandidateCount: approvedCandidates.length,
+          runDurationMs: terminalDurationMs,
+        },
+        'Signal auto run concluído com estado terminal no_trade',
       );
       return;
     }
@@ -2542,13 +2593,33 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
       logger.info({ runId, decisionId: decision.id, signalId: createdSignal.id, correlationId }, 'Signal Auto persistido em trading_signals');
     }
 
+    const finishedAt = new Date();
+    const terminalDurationMs = Date.now() - runStartedAtMs;
     await db.update(schema.tradingAutoRuns)
-      .set({ status: 'succeeded', finishedAt: new Date() })
+      .set({ status: 'succeeded', terminalReasonCode: null, finishedAt })
       .where(eq(schema.tradingAutoRuns.id, runId));
+    tradingMetrics.signalAutoRunTerminalTotal.inc({
+      terminalState: 'succeeded',
+      reasonCode: 'none',
+    });
 
-    logger.info({ runId, correlationId, candidates: candidates.length, approved: approvedCandidates.length }, 'Signal auto run concluÃ­do');
+    logger.info(
+      {
+        runId,
+        correlationId,
+        terminalState: 'succeeded' as SignalAutoRunTerminalState,
+        reasonCode: null,
+        candidateCount: candidates.length,
+        approvedCandidateCount: approvedCandidates.length,
+        runDurationMs: terminalDurationMs,
+      },
+      'Signal auto run concluído com sucesso',
+    );
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    const failureClassification = classifySignalAutoRunFailure(errorMessage);
+    const finishedAt = new Date();
+    const terminalDurationMs = Date.now() - runStartedAtMs;
     const currentSteps = await db.query.tradingAutoRunSteps.findMany({
       where: eq(schema.tradingAutoRunSteps.runId, runId),
       columns: { stepName: true, status: true },
@@ -2558,13 +2629,46 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
     for (const stepName of ['signal-decision', 'signal-llm', 'signal-persist'] as const) {
       const currentStatus = statusByStep.get(stepName);
       if (!terminalStatuses.has(String(currentStatus))) {
+        if (failureClassification.terminalState === 'blocked') {
+          await updateAutoRunStep(runId, stepName, 'skipped', {
+            metrics: {
+              blocked: true,
+              terminalState: failureClassification.terminalState,
+              reasonCode: failureClassification.reasonCode,
+            },
+          });
+          continue;
+        }
         await updateAutoRunStep(runId, stepName, 'failed', { error: errorMessage });
       }
     }
     await db.update(schema.tradingAutoRuns)
-      .set({ status: 'failed', error: errorMessage, finishedAt: new Date() })
+      .set({
+        status: failureClassification.terminalState,
+        terminalReasonCode: failureClassification.reasonCode,
+        error: errorMessage,
+        finishedAt,
+      })
       .where(eq(schema.tradingAutoRuns.id, runId));
-    logger.error({ runId, correlationId, error: errorMessage }, 'Falha no signal auto run');
+    tradingMetrics.signalAutoRunTerminalTotal.inc({
+      terminalState: failureClassification.terminalState,
+      reasonCode: normalizeSignalAutoRunReasonCode(failureClassification.reasonCode),
+    });
+    const logPayload = {
+      runId,
+      correlationId,
+      terminalState: failureClassification.terminalState,
+      reasonCode: failureClassification.reasonCode,
+      candidateCount: terminalCandidateCount,
+      approvedCandidateCount: terminalApprovedCandidateCount,
+      runDurationMs: terminalDurationMs,
+      error: errorMessage,
+    };
+    if (failureClassification.terminalState === 'blocked') {
+      logger.warn(logPayload, 'Signal auto run concluído com estado terminal blocked');
+      return;
+    }
+    logger.error(logPayload, 'Falha no signal auto run');
   }
 }
 

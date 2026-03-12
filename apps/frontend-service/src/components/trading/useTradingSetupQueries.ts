@@ -83,7 +83,13 @@ export function useTradingSetupQueries({
     enabled: Boolean(activeAutoRunId) && Boolean(userId) && csrfReady,
     refetchInterval: (query) => {
       const status = query.state.data?.run?.status;
-      if (status === 'succeeded' || status === 'failed' || status === 'cancelled') return false;
+      if (
+        status === 'succeeded'
+        || status === 'no_trade'
+        || status === 'blocked'
+        || status === 'failed'
+        || status === 'cancelled'
+      ) return false;
       return 3000;
     },
     refetchIntervalInBackground: false,

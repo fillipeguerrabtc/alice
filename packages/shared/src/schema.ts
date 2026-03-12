@@ -4221,6 +4221,8 @@ export const tradingAutoRunStatusEnum = pgEnum('trading_auto_run_status', [
   'queued',
   'running',
   'succeeded',
+  'no_trade',
+  'blocked',
   'failed',
   'cancelled',
 ]);
@@ -4254,6 +4256,7 @@ export const tradingAutoRuns = pgTable('trading_auto_runs', {
   payload: jsonb('payload').$type<Record<string, unknown>>().notNull().default({}),
   correlationId: varchar('correlation_id', { length: 64 }),
   namespaceId: uuid('namespace_id'),
+  terminalReasonCode: varchar('terminal_reason_code', { length: 64 }),
   error: text('error'),
   startedAt: timestamp('started_at'),
   finishedAt: timestamp('finished_at'),

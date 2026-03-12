@@ -92,10 +92,11 @@ export interface TradingAutoRun {
   tenantId: string;
   userId: string;
   runType: 'signal_auto' | 'portfolio_auto';
-  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+  status: 'queued' | 'running' | 'succeeded' | 'no_trade' | 'blocked' | 'failed' | 'cancelled';
   payload: Record<string, unknown>;
   correlationId: string | null;
   namespaceId: string | null;
+  terminalReasonCode?: string | null;
   approved?: boolean | null;
   tradingSignalId?: string | null;
   error: string | null;
@@ -198,7 +199,7 @@ export async function getTradingAutoSignalAssetsCatalog(): Promise<TradingAutoSi
 
 export async function getTradingAutoRuns(params: {
   type?: 'signal_auto' | 'portfolio_auto';
-  status?: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+  status?: 'queued' | 'running' | 'succeeded' | 'no_trade' | 'blocked' | 'failed' | 'cancelled';
   limit?: number;
 } = {}): Promise<TradingAutoRun[]> {
   const search = new URLSearchParams();
