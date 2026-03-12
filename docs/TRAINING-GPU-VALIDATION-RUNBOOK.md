@@ -54,3 +54,15 @@ bash infra/scripts/validate-gpu-fine-tuning.sh \
   - tentativa 2: compose padrão sem `--env-file`;
   - tentativa 3 (somente se persistir erro de permissão no `.env.prod`): compose dedicado `docker-compose.gpu-training.yml` (apenas `gpu-trainer`, sem `env_file`), reutilizando variáveis já carregadas no processo.
   - para erros não relacionados à permissão, falha imediata (sem fallback indevido).
+
+## Incidente conhecido (12/03/2026)
+- **Autor:** Fillipe Guerra
+- **Sintoma observado:** cockpit de runtime em `/training` alternando carregamento/erro e banner crítico de inferência interrompida sem treinamento ativo.
+- **Causa raiz real:** serviço `alice-gpu-manager` sem `DATABASE_URL` no stack `docker-compose.alice.yml`, causando `500` em `GET /api/gpu/orchestrator/state`.
+- **Evidência operacional (produção):**
+  - `docker exec alice-training ... GET http://alice-gpu-manager:3010/api/gpu/orchestrator/state` retornando `status=500`.
+  - `docker logs alice-gpu-manager` com `Falha ao persistir snapshot/evento de runtime GPU` no startup.
+- **Correção aplicada no código:**
+  - stack ALICE: inclusão explícita de `DATABASE_URL` no serviço `gpu-manager` (mesmo padrão dos demais serviços backend).
+  - frontend training cockpit: estado de inferência tratado como `available | unavailable | unknown`, evitando banner de interrupção de treino quando o estado do orquestrador está indisponível.
+  - endpoint de estado no `gpu-manager`: hardening para não derrubar resposta operacional quando a leitura do estado durável falhar; retorno mantém FSM em memória e registra erro detalhado com stack.

@@ -1929,7 +1929,8 @@
         "noLinkedRun": "Nenhum run vinculado",
         "inferenceAvailability": "Disponibilidade de inferência",
         "inferenceAvailable": "Disponível",
-        "inferenceUnavailable": "Interrompida"
+        "inferenceUnavailable": "Interrompida",
+        "inferenceUnknown": "Desconhecida"
       },
       "controls": {
         "title": "Controles manuais de runtime",
@@ -1948,7 +1949,11 @@
         "interruptedTitle": "Inferência temporariamente interrompida",
         "interruptedDescription": "Inferência interrompida momentaneamente por causa de um treinamento em andamento. O serviço retornará automaticamente assim que o treinamento terminar.",
         "transitionTitle": "Transição de runtime em andamento",
-        "transitionDescription": "O runtime GPU está em transição (estado: {{state}})."
+        "transitionDescription": "O runtime GPU está em transição (estado: {{state}}).",
+        "unavailableTitle": "Inferência indisponível no momento",
+        "unavailableDescription": "O runtime GPU está indisponível e não há treinamento ativo confirmado. Verifique o estado do orquestrador.",
+        "unknownTitle": "Estado do runtime indisponível",
+        "unknownDescription": "Não foi possível determinar o estado atual do runtime GPU. Tente novamente em instantes."
       },
       "mode": {
         "serving": "Serving (LLM + Embeddings)",

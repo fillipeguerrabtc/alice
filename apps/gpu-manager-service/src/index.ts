@@ -144,6 +144,17 @@ type RuntimePersistenceOutcome = 'success' | 'error';
 
 const UUID_V4_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+function serializeError(error: unknown): Record<string, string | undefined> {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+    };
+  }
+  return { message: String(error) };
+}
+
 function normalizeUuidCandidate(value: string | undefined): string | undefined {
   if (!value) return undefined;
   const trimmed = value.trim();
@@ -187,7 +198,7 @@ async function persistRuntimeSnapshot(params: {
   } catch (error) {
     logger.error(
       {
-        error,
+        error: serializeError(error),
         eventType: params.eventType,
         triggerSource: params.triggerSource,
       },
@@ -1641,14 +1652,29 @@ function buildOrchestratorActorContext(req: Request): OrchestratorActorContext {
 
 // Orquestrador: estado e controles canônicos
 app.get('/api/gpu/orchestrator/state', requireInternalAuth, asyncHandler(async (_req: Request, res: Response) => {
-  const snapshot = await gpuRuntimeStateStore.getCurrentStateWithEvents(10);
-  if (!snapshot.state) {
-    await persistRuntimeSnapshot({
-      eventType: 'state_snapshot',
-      triggerSource: 'system',
-      reason: 'Inicialização de estado durável por leitura operacional',
-      metadata: { endpoint: '/api/gpu/orchestrator/state' },
-    });
+  let snapshot: Awaited<ReturnType<typeof gpuRuntimeStateStore.getCurrentStateWithEvents>> = {
+    state: null,
+    events: [],
+  };
+  try {
+    snapshot = await gpuRuntimeStateStore.getCurrentStateWithEvents(10);
+    if (!snapshot.state) {
+      await persistRuntimeSnapshot({
+        eventType: 'state_snapshot',
+        triggerSource: 'system',
+        reason: 'Inicialização de estado durável por leitura operacional',
+        metadata: { endpoint: '/api/gpu/orchestrator/state' },
+      });
+      snapshot = await gpuRuntimeStateStore.getCurrentStateWithEvents(10);
+    }
+  } catch (error) {
+    logger.error(
+      {
+        error: serializeError(error),
+        endpoint: '/api/gpu/orchestrator/state',
+      },
+      'Falha ao ler estado durável do runtime GPU; retornando estado em memória',
+    );
   }
 
   res.json({

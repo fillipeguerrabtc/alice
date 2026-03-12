@@ -3,7 +3,8 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import type { TrainingTranslationFn } from '../training-request-utils';
 
 type TrainingRuntimeBannerProps = {
-  inferenceAvailable: boolean;
+  hasRunningTraining: boolean;
+  inferenceAvailability: 'available' | 'unavailable' | 'unknown';
   isLoading: boolean;
   reason: string | null;
   runtimeState: string | null;
@@ -18,7 +19,8 @@ const TRANSITION_STATES = new Set([
 ]);
 
 export function TrainingRuntimeBanner({
-  inferenceAvailable,
+  hasRunningTraining,
+  inferenceAvailability,
   isLoading,
   reason,
   runtimeState,
@@ -29,11 +31,11 @@ export function TrainingRuntimeBanner({
   }
 
   const inTransition = runtimeState ? TRANSITION_STATES.has(runtimeState) : false;
-  if (inferenceAvailable && !inTransition) {
+  if (inferenceAvailability === 'available' && !inTransition) {
     return null;
   }
 
-  if (inferenceAvailable && inTransition) {
+  if (inTransition) {
     return (
       <Alert className="mb-4" data-testid="training-runtime-transition-banner">
         <ShieldCheck className="h-4 w-4" />
@@ -47,14 +49,39 @@ export function TrainingRuntimeBanner({
     );
   }
 
+  if (inferenceAvailability === 'unknown') {
+    return (
+      <Alert className="mb-4" data-testid="training-runtime-unknown-banner">
+        <AlertTriangle className="h-4 w-4" />
+        <AlertTitle>{t('training.runtime.banner.unknownTitle')}</AlertTitle>
+        <AlertDescription>{t('training.runtime.banner.unknownDescription')}</AlertDescription>
+      </Alert>
+    );
+  }
+
+  const isTrainingState = runtimeState === 'training_active';
+  if (hasRunningTraining || isTrainingState) {
+    return (
+      <Alert className="mb-4" variant="destructive" data-testid="training-runtime-interruption-banner">
+        <AlertTriangle className="h-4 w-4" />
+        <AlertTitle>{t('training.runtime.banner.interruptedTitle')}</AlertTitle>
+        <AlertDescription>
+          {reason?.trim().length
+            ? reason
+            : t('training.runtime.banner.interruptedDescription')}
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
   return (
-    <Alert className="mb-4" variant="destructive" data-testid="training-runtime-interruption-banner">
+    <Alert className="mb-4" data-testid="training-runtime-unavailable-banner">
       <AlertTriangle className="h-4 w-4" />
-      <AlertTitle>{t('training.runtime.banner.interruptedTitle')}</AlertTitle>
+      <AlertTitle>{t('training.runtime.banner.unavailableTitle')}</AlertTitle>
       <AlertDescription>
         {reason?.trim().length
           ? reason
-          : t('training.runtime.banner.interruptedDescription')}
+          : t('training.runtime.banner.unavailableDescription')}
       </AlertDescription>
     </Alert>
   );

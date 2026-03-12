@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import type { TrainingTranslationFn } from '../training-request-utils';
 
 type TrainingRuntimeCardProps = {
-  inferenceAvailable: boolean;
+  inferenceAvailability: 'available' | 'unavailable' | 'unknown';
   isLoading: boolean;
   linkedRunId: string | null;
   linkedRunName: string | null;
@@ -40,8 +40,32 @@ function resolveModeLabel(mode: string | null, t: TrainingTranslationFn): string
   return translated;
 }
 
+function resolveInferenceBadge(
+  inferenceAvailability: 'available' | 'unavailable' | 'unknown',
+  t: TrainingTranslationFn,
+): { label: string; variant: 'secondary' | 'destructive' | 'outline' } {
+  if (inferenceAvailability === 'available') {
+    return {
+      label: t('training.runtime.card.inferenceAvailable'),
+      variant: 'secondary',
+    };
+  }
+
+  if (inferenceAvailability === 'unavailable') {
+    return {
+      label: t('training.runtime.card.inferenceUnavailable'),
+      variant: 'destructive',
+    };
+  }
+
+  return {
+    label: t('training.runtime.card.inferenceUnknown'),
+    variant: 'outline',
+  };
+}
+
 export function TrainingRuntimeCard({
-  inferenceAvailable,
+  inferenceAvailability,
   isLoading,
   linkedRunId,
   linkedRunName,
@@ -50,6 +74,8 @@ export function TrainingRuntimeCard({
   transitionState,
   t,
 }: TrainingRuntimeCardProps) {
+  const inferenceBadge = resolveInferenceBadge(inferenceAvailability, t);
+
   return (
     <Card data-testid="training-runtime-card">
       <CardHeader className="pb-3">
@@ -100,10 +126,8 @@ export function TrainingRuntimeCard({
             <div className="flex items-center justify-between gap-4">
               <dt className="text-muted-foreground">{t('training.runtime.card.inferenceAvailability')}</dt>
               <dd>
-                <Badge variant={inferenceAvailable ? 'secondary' : 'destructive'}>
-                  {inferenceAvailable
-                    ? t('training.runtime.card.inferenceAvailable')
-                    : t('training.runtime.card.inferenceUnavailable')}
+                <Badge variant={inferenceBadge.variant}>
+                  {inferenceBadge.label}
                 </Badge>
               </dd>
             </div>

@@ -323,6 +323,7 @@ const runtimeModeSchema = z.enum([
 ]);
 
 type OrchestratorFsmState = z.infer<typeof orchestratorStateSchema>;
+type InferenceAvailability = 'available' | 'unavailable' | 'unknown';
 
 const gpuOrchestratorStateResponseSchema = z.object({
   state: orchestratorStateSchema.optional(),
@@ -661,6 +662,7 @@ export default function Training() {
   const {
     data: orchestratorState,
     isLoading: orchestratorStateLoading,
+    isError: orchestratorStateError,
   } = useQuery<GpuOrchestratorStateResponse | undefined>({
     queryKey: orchestratorStateQueryKey,
     queryFn: async () => {
@@ -729,10 +731,33 @@ export default function Training() {
     return linkedRunFromEvents;
   }, [linkedRunFromEvents, runStatus]);
 
-  const inferenceAvailable = useMemo(() => {
-    const orchestratorAvailable = orchestratorState?.orchestratorAvailable ?? true;
-    return runtimeFsmState === 'serving_ready' && orchestratorAvailable;
-  }, [orchestratorState?.orchestratorAvailable, runtimeFsmState]);
+  const hasRunningTraining = runStatus?.hasRunningTraining === true;
+
+  const inferenceAvailability = useMemo<InferenceAvailability>(() => {
+    const orchestratorAvailable = orchestratorState?.orchestratorAvailable;
+
+    if (runtimeFsmState === 'serving_ready' && orchestratorAvailable !== false) {
+      return 'available';
+    }
+
+    if (!runtimeFsmState) {
+      return hasRunningTraining ? 'unavailable' : 'unknown';
+    }
+
+    if (orchestratorAvailable === false) {
+      return 'unavailable';
+    }
+
+    if (runtimeFsmState === 'error') {
+      return 'unavailable';
+    }
+
+    if (runtimeFsmState === 'training_active' || ORCHESTRATOR_TRANSITION_STATES.has(runtimeFsmState)) {
+      return 'unavailable';
+    }
+
+    return orchestratorStateError ? 'unknown' : 'unavailable';
+  }, [hasRunningTraining, orchestratorState?.orchestratorAvailable, orchestratorStateError, runtimeFsmState]);
 
   const queueStatusQueryKey = ['training', 'queue', 'status', tenantId ?? null] as const;
   const { data: queueStatus, isLoading: queueStatusLoading } = useQuery<TrainingQueueStatusResponse>({
@@ -1668,7 +1693,8 @@ export default function Training() {
         )}
 
         <TrainingRuntimeBanner
-          inferenceAvailable={inferenceAvailable}
+          hasRunningTraining={hasRunningTraining}
+          inferenceAvailability={inferenceAvailability}
           isLoading={orchestratorStateLoading}
           reason={runtimeReason}
           runtimeState={runtimeFsmState}
@@ -1677,7 +1703,7 @@ export default function Training() {
 
         <div className="grid gap-3 lg:grid-cols-2 mb-4">
           <TrainingRuntimeCard
-            inferenceAvailable={inferenceAvailable}
+            inferenceAvailability={inferenceAvailability}
             isLoading={orchestratorStateLoading}
             linkedRunId={linkedRuntimeRun.linkedRunId}
             linkedRunName={linkedRuntimeRun.linkedRunName}

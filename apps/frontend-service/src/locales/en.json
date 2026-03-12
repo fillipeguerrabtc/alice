@@ -1882,7 +1882,8 @@
         "noLinkedRun": "No linked run",
         "inferenceAvailability": "Inference availability",
         "inferenceAvailable": "Available",
-        "inferenceUnavailable": "Interrupted"
+        "inferenceUnavailable": "Interrupted",
+        "inferenceUnknown": "Unknown"
       },
       "controls": {
         "title": "Manual runtime controls",
@@ -1901,7 +1902,11 @@
         "interruptedTitle": "Inference temporarily interrupted",
         "interruptedDescription": "Inference has been temporarily interrupted because a training run is in progress. The service will return automatically as soon as training ends.",
         "transitionTitle": "Runtime transition in progress",
-        "transitionDescription": "GPU runtime is transitioning (state: {{state}})."
+        "transitionDescription": "GPU runtime is transitioning (state: {{state}}).",
+        "unavailableTitle": "Inference currently unavailable",
+        "unavailableDescription": "GPU runtime is unavailable and there is no confirmed active training run. Check orchestrator state.",
+        "unknownTitle": "Runtime state unavailable",
+        "unknownDescription": "Could not determine the current GPU runtime state. Try again in a few moments."
       },
       "mode": {
         "serving": "Serving (LLM + Embeddings)",

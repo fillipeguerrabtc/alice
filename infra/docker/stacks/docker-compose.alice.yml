@@ -609,6 +609,7 @@ services:
       - ../.env.prod
     environment:
       - PORT=3010
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@alice-pgbouncer:6432/${POSTGRES_DB:-alice_prod}?sslmode=disable
       - REDIS_URL=${REDIS_URL:?REDIS_URL é obrigatório}
       - INTERNAL_API_SECRET=${INTERNAL_API_SECRET:?INTERNAL_API_SECRET é obrigatório}
       # URLs dos serviços GPU (capabilities)
