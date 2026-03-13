@@ -5184,6 +5184,82 @@ jobs:
             fi
             echo ""
 
+            # =================================================================
+            # CORREÇÃO CRÍTICA (13/03/2026): Limpeza cirúrgica de conflitos
+            # =================================================================
+            # PROBLEMA IDENTIFICADO EM PRODUÇÃO:
+            #   - docker compose up falhou com:
+            #     "The container name \"/alice-frontend\" is already in use"
+            #   - O deploy normal subia direto com `up -d --remove-orphans`
+            #   - O rollback limpava containers nomeados explicitamente, mas o
+            #     deploy normal não removia containers em estado conflitante
+            #
+            # CAUSA RAIZ:
+            #   - Container com nome fixo (`container_name`) fora do estado
+            #     esperado do projeto/service Alice bloqueava o recreate
+            #   - Isso podia ocorrer após intervenção manual, rollback parcial
+            #     ou container parado/stale preservando o nome reservado
+            #
+            # SOLUÇÃO:
+            #   - Antes do compose up, inspecionar apenas os nomes fixos do
+            #     stack ALICE e remover SOMENTE containers conflitantes:
+            #       1. Fora do projeto alice-alice
+            #       2. Com service label divergente
+            #       3. Em estado não-running
+            #   - Containers válidos e em execução são preservados
+            #
+            # BENEFÍCIO:
+            #   - Elimina recorrência do conflito sem derrubar a stack inteira
+            #   - Reutiliza o padrão de cleanup já adotado no rollback
+            #
+            # REF: CLAUDE.md Regra 7 (Mudanças cirúrgicas)
+            # REF: Incidente deploy ALICE v3.87.1 em 13/03/2026
+            # =================================================================
+            echo "🧹 Pré-checagem: reconciliando containers ALICE com nomes fixos..."
+            ALICE_CONTAINERS=(
+              "alice-frontend"
+              "alice-auth"
+              "alice-biometrics"
+              "alice-chat"
+              "alice-llm-gateway"
+              "alice-rag"
+              "alice-training"
+              "alice-integrations"
+              "alice-observability"
+              "alice-gpu-manager"
+              "gpu-llm"
+              "gpu-embeddings"
+              "gpu-trainer"
+            )
+
+            CONFLICTS_REMOVED=0
+            for container in "${ALICE_CONTAINERS[@]}"; do
+              if ! docker ps -a --format '{{.Names}}' | grep -q "^${container}$"; then
+                continue
+              fi
+
+              PROJECT_LABEL=$(docker inspect --format '{{ index .Config.Labels "com.docker.compose.project" }}' "$container" 2>/dev/null || true)
+              SERVICE_LABEL=$(docker inspect --format '{{ index .Config.Labels "com.docker.compose.service" }}' "$container" 2>/dev/null || true)
+              RUNNING_STATE=$(docker inspect --format '{{.State.Running}}' "$container" 2>/dev/null || echo "false")
+
+              if [ "$PROJECT_LABEL" = "alice-alice" ] && [ "$SERVICE_LABEL" = "$container" ] && [ "$RUNNING_STATE" = "true" ]; then
+                echo "   ✅ Container consistente: $container"
+                continue
+              fi
+
+              echo "   ⚠️  Container conflitante detectado: $container"
+              echo "      project=${PROJECT_LABEL:-<ausente>} service=${SERVICE_LABEL:-<ausente>} running=${RUNNING_STATE:-<desconhecido>}"
+              docker rm -f "$container" 2>/dev/null || true
+              CONFLICTS_REMOVED=$((CONFLICTS_REMOVED + 1))
+            done
+
+            if [ "$CONFLICTS_REMOVED" -gt 0 ]; then
+              echo "   ✅ Containers conflitantes removidos: $CONFLICTS_REMOVED"
+            else
+              echo "   ✅ Nenhum conflito de container_name detectado"
+            fi
+            echo ""
+
             if ! docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml up -d --remove-orphans 2>&1; then
               echo ""
               echo "❌ ERRO: Falha no docker compose up!"
