@@ -91,6 +91,14 @@ interface RegisterTradingSignalGenerationRoutesDeps {
   mapTradingErrorToUserMessage: (error: Error) => { message: string; code: string };
 }
 
+type SignalGenerationStateCategory = 'signal_generated' | 'no_trade' | 'blocked' | 'failed';
+
+type SignalGenerationClassification = {
+  stateCategory: SignalGenerationStateCategory;
+  reasonCode: string | null;
+  reasonHuman: string;
+};
+
 function mapTradingSignalForApi(signal: schema.TradingSignal) {
   const metadata = (signal.metadata ?? {}) as Record<string, unknown>;
   return {
@@ -98,6 +106,46 @@ function mapTradingSignalForApi(signal: schema.TradingSignal) {
     reasoning: typeof metadata.reasoning === 'string' ? metadata.reasoning : null,
     sourceModel: typeof metadata.modelVersion === 'string' ? metadata.modelVersion : null,
     metadata,
+  };
+}
+
+function resolveSignalGenerationReasonHuman(reasonCode: string | null): string {
+  if (!reasonCode) {
+    return 'Sinal gerado com critérios elegíveis para execução.';
+  }
+  const reasonTextByCode: Record<string, string> = {
+    UNVALIDATED: 'Candidato ainda sem validação estatística mínima (DSR/PBO).',
+    LIQUIDITY_CONSTRAINT: 'Sem liquidez mínima: spread alargado ou profundidade insuficiente.',
+    GUARDRAIL_BLOCKED: 'Guardrails bloquearam o trade por risco fora da política.',
+    NO_CANDIDATES: 'Nenhum candidato elegível foi encontrado para o escopo atual.',
+    NO_EDGE: 'Edge líquido insuficiente para execução segura.',
+    TRADING_SCOPE_REQUIRED: 'Escopo de Trading obrigatório não configurado para este fluxo.',
+    CONFIG_BLOCKED: 'Configuração obrigatória bloqueou a geração de sinal.',
+    UNEXPECTED_ERROR: 'Falha inesperada durante a geração de sinal.',
+  };
+  return reasonTextByCode[reasonCode] ?? 'Reason code sem descrição operacional cadastrada.';
+}
+
+function resolveSignalGenerationClassification(params: {
+  signalType: schema.TradingSignal['signalType'];
+  noTradeReasonCode: string | null;
+}): SignalGenerationClassification {
+  const noTradeLike = params.signalType === 'hold'
+    || params.signalType === 'neutral'
+    || Boolean(params.noTradeReasonCode);
+
+  if (noTradeLike) {
+    return {
+      stateCategory: 'no_trade',
+      reasonCode: params.noTradeReasonCode ?? 'NO_EDGE',
+      reasonHuman: resolveSignalGenerationReasonHuman(params.noTradeReasonCode ?? 'NO_EDGE'),
+    };
+  }
+
+  return {
+    stateCategory: 'signal_generated',
+    reasonCode: null,
+    reasonHuman: resolveSignalGenerationReasonHuman(null),
   };
 }
 
@@ -248,21 +296,21 @@ export function registerTradingSignalGenerationRoutes(
       const mappedSignal = mapTradingSignalForApi(result.signal);
       const metadata = (mappedSignal.metadata ?? {}) as Record<string, unknown>;
       const noTradeReasonCode = typeof metadata.noTradeReasonCode === 'string' ? metadata.noTradeReasonCode : null;
-      const generationClassification = mappedSignal.signalType === 'hold'
-        || mappedSignal.signalType === 'neutral'
-        || Boolean(noTradeReasonCode)
-        ? 'no_trade'
-        : 'succeeded';
+      const generationClassification = resolveSignalGenerationClassification({
+        signalType: mappedSignal.signalType,
+        noTradeReasonCode,
+      });
       logger.info({
         event: 'trading.signal.generation.result',
-        classification: generationClassification,
+        classification: generationClassification.stateCategory,
         tenantId: authContext.tenantId,
         userId: authContext.userId,
         symbol: mappedSignal.symbol,
         marketType: mappedSignal.marketType,
         signalType: mappedSignal.signalType,
         validationStatus: result.validationStatus,
-        noTradeReasonCode,
+        reasonCode: generationClassification.reasonCode,
+        reasonHuman: generationClassification.reasonHuman,
       }, 'Geração de sinal classificada');
 
       res.status(201).json({
@@ -271,21 +319,34 @@ export function registerTradingSignalGenerationRoutes(
         validationId: result.validationId,
         validationStatus: result.validationStatus,
         universeSelection,
+        signalGeneration: generationClassification,
       });
     } catch (error) {
       if (deps.sendKucoinErrorResponse(res, error)) return;
       if (deps.isTradingConfigError(error)) {
         const statusCode = error instanceof Error && error.message.includes('TRADING_SCOPE_REQUIRED') ? 412 : 400;
         const errorMessage = error instanceof Error ? error.message : 'Configuração de trading inválida';
+        const reasonCode = errorMessage.toUpperCase().includes('TRADING_SCOPE_REQUIRED')
+          ? 'TRADING_SCOPE_REQUIRED'
+          : 'CONFIG_BLOCKED';
         logger.warn({
           event: 'trading.signal.generation.result',
           classification: 'blocked',
           tenantId: authContext?.tenantId,
           userId: authContext?.userId,
           statusCode,
+          reasonCode,
+          reasonHuman: resolveSignalGenerationReasonHuman(reasonCode),
           error: errorMessage,
         }, 'Geração de sinal bloqueada por guardrail/configuração');
-        res.status(statusCode).json({ error: errorMessage });
+        res.status(statusCode).json({
+          error: errorMessage,
+          signalGeneration: {
+            stateCategory: 'blocked',
+            reasonCode,
+            reasonHuman: resolveSignalGenerationReasonHuman(reasonCode),
+          },
+        });
         return;
       }
       const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
@@ -294,12 +355,21 @@ export function registerTradingSignalGenerationRoutes(
       logger.error({
         event: 'trading.signal.generation.result',
         classification: 'failed',
+        reasonCode: 'UNEXPECTED_ERROR',
         error: errorMessage,
         cause: errorCause,
         stack: errorStack,
       }, 'Erro ao gerar sinal LLM');
       const userError = deps.mapTradingErrorToUserMessage(error instanceof Error ? error : new Error(errorMessage));
-      res.status(500).json({ error: userError.message, code: userError.code });
+      res.status(500).json({
+        error: userError.message,
+        code: userError.code,
+        signalGeneration: {
+          stateCategory: 'failed',
+          reasonCode: userError.code || 'UNEXPECTED_ERROR',
+          reasonHuman: userError.message || resolveSignalGenerationReasonHuman('UNEXPECTED_ERROR'),
+        },
+      });
     }
   });
 }

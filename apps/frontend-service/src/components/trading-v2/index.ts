@@ -1,4 +1,5 @@
 export { TradingWorkspaceBottomTray } from './TradingWorkspaceBottomTray';
+export { TradingWorkspaceAiSignalsCockpitMode } from './TradingWorkspaceAiSignalsCockpitMode';
 export { TradingWorkspaceCompactOrderTicket } from './TradingWorkspaceCompactOrderTicket';
 export { TradingWorkspaceOperateMode } from './TradingWorkspaceOperateMode';
 export { TradingWorkspaceOperateStatusCard } from './TradingWorkspaceOperateStatusCard';

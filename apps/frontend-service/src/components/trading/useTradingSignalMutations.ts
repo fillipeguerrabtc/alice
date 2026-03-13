@@ -133,16 +133,18 @@ export function useTradingSignalMutations(options: UseTradingSignalMutationsOpti
       if (!data?.success) {
         throw new Error(data?.error || t('trading.errors.signalGenerateFailed'));
       }
-      const resultClass = classifySignalGenerationResult(data);
+      const classification = classifySignalGenerationResult(data);
       emitTradingTelemetry(
-        resultClass === 'no_trade'
+        classification.resultClass === 'no_trade'
           ? 'trading.signal.generation.no_trade'
           : 'trading.signal.generation.succeeded',
         {
           source: 'on_demand',
           marketType: selectedMarketType,
           symbol: requestSymbol || selectedSymbol || null,
-          resultClass,
+          resultClass: classification.resultClass,
+          reasonCode: classification.reasonCode,
+          reasonHuman: classification.reasonHuman,
         },
       );
       notify({

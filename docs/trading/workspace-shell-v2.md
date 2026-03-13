@@ -1,7 +1,7 @@
-# Shared Trading Workspace Shell V2 (Rodadas 3 e 4)
+# Shared Trading Workspace Shell V2 (Rodadas 3, 4 e 5)
 
 Author: Fillipe Guerra  
-Data: 2026-03-12
+Data: 2026-03-13
 
 ## Objetivo
 Estabelecer uma shell compartilhada de workspace para Trading Real e Demo Trading, com quatro modos primários de operação, sem quebrar o fluxo legado e com rollout controlado por feature flag.
@@ -64,3 +64,18 @@ Estabelecer uma shell compartilhada de workspace para Trading Real e Demo Tradin
 - Sem scroll horizontal de tabs no caminho V2.
 - Navegação principal orientada por quatro modos explícitos.
 - Áreas secundárias movidas para disclosure progressivo, reduzindo poluição visual.
+
+## AI Signals Cockpit (Rodada 5)
+- O modo `ai-signals` da Shell V2 em Trading Real passa a renderizar um cockpit dedicado:
+- `Control Panel`
+- `Latest Run`
+- `Latest Signal`
+- `Blocked / No-trade Explanation`
+- `Evidence Summary`
+- `Lineage Summary`
+- `CTA Actions`
+- `Run History`
+- `Governança avançada` em painel colapsável
+- A classificação visual deixa explícito: `blocked`, `no_trade`, `signal_generated`, `executed`, `failed`.
+- `neutral` e `hold` são tratados como contexto não-direcional (não como directional signal útil).
+- Handoff para Demo/Training ocorre via fluxo real de aprovação em `SignalApprovalPanel`, sem bypass de guardrails.

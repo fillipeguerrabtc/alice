@@ -1,7 +1,7 @@
 # Contracts e Observability do Auto Engine (Rodada 2)
 
 Author: Fillipe Guerra  
-Data: 2026-03-12
+Data: 2026-03-13
 
 ## Objetivo
 Documentar contratos e sinais de observability após correção semântica do state model do Auto Engine.
@@ -49,3 +49,10 @@ Para `signal_auto`, logs terminais passam a incluir:
 ## Compatibilidade e transição
 - Runs antigos com `status=succeeded` e `noTradeReasonCode` continuam classificados no frontend por fallback.
 - Novos runs passam a receber estado terminal explícito e `terminal_reason_code` persistido.
+
+## Atualização da Rodada 5 (Signal Generation contract)
+- Rota `POST /api/integrations/trading/signals/generate` passa a responder também com:
+- `signalGeneration.stateCategory`
+- `signalGeneration.reasonCode`
+- `signalGeneration.reasonHuman`
+- Com isso, o frontend passa a classificar telemetria e UX do cockpit com semântica explícita entre `signal_generated` e `no_trade`, além de expor reason code em dois níveis (machine-readable e user-readable).

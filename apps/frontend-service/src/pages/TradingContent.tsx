@@ -22,6 +22,7 @@ import { ErrorBoundary } from '@/components/error-boundary'; // ✅ CORREÇÃO: 
 import { useToast } from '@/hooks/use-toast';
 import { useKucoinWebSocket } from '@/hooks/useKucoinWebSocket';
 import {
+  TradingWorkspaceAiSignalsCockpitMode,
   TradingWorkspaceCompactOrderTicket,
   TradingWorkspaceOperateMode,
   TradingWorkspaceOperateStatusCard,
@@ -1527,6 +1528,7 @@ export function TradingContent() {
   const tradingWorkspaceV2Enabled = Boolean(status.featureFlags?.tradingWorkspaceV2Enabled);
   const activePrimaryMode = resolveTradingV2PrimaryMode(activeTab);
   const isOperateMode = activePrimaryMode === 'operate';
+  const isAiSignalsMode = activePrimaryMode === 'ai-signals';
   const engineHealth: 'healthy' | 'degraded' | 'offline' = !isTradingEnabled
     ? 'offline'
     : (criticalApiError || status.circuitBreaker.state.toLowerCase() === 'open')
@@ -1715,6 +1717,45 @@ export function TradingContent() {
                       </div>
                     </div>
                   )}
+                />
+              ) : isAiSignalsMode ? (
+                <TradingWorkspaceAiSignalsCockpitMode
+                  activeAutoRunDetail={primaryTabsSectionProps.signalsAutoTabProps.activeAutoRunDetail}
+                  activeAutoRunId={primaryTabsSectionProps.signalsAutoTabProps.activeAutoRunId}
+                  allowedModes={primaryTabsSectionProps.signalsAutoTabProps.allowedModes}
+                  autoMix={primaryTabsSectionProps.signalsAutoTabProps.autoMix}
+                  autoModeOptions={primaryTabsSectionProps.signalsAutoTabProps.autoModeOptions}
+                  autoSelectAllAssets={primaryTabsSectionProps.signalsAutoTabProps.autoSelectAllAssets}
+                  autoSelectedAssetKeys={primaryTabsSectionProps.signalsAutoTabProps.autoSelectedAssetKeys}
+                  autoSignalAssetOptions={primaryTabsSectionProps.signalsAutoTabProps.autoSignalAssetOptions}
+                  autoUniverseScope={primaryTabsSectionProps.signalsAutoTabProps.autoUniverseScope}
+                  canOverrideReasoningMode={primaryTabsSectionProps.signalsAutoTabProps.canOverrideReasoningMode}
+                  environmentMode="real"
+                  hasAutoSignalAssetsError={primaryTabsSectionProps.signalsAutoTabProps.hasAutoSignalAssetsError}
+                  isLoadingAutoSignalAssets={primaryTabsSectionProps.signalsAutoTabProps.isLoadingAutoSignalAssets}
+                  isLoadingSignals={primaryTabsSectionProps.signalsTabProps.isLoadingSignals}
+                  locale={primaryTabsSectionProps.signalsAutoTabProps.locale}
+                  marketType={primaryTabsSectionProps.signalsTabProps.marketType}
+                  onAllowedModesChange={primaryTabsSectionProps.signalsAutoTabProps.onAllowedModesChange}
+                  onAutoMixChange={primaryTabsSectionProps.signalsAutoTabProps.onAutoMixChange}
+                  onAutoSelectAllAssetsChange={primaryTabsSectionProps.signalsAutoTabProps.onAutoSelectAllAssetsChange}
+                  onAutoSelectedAssetKeysChange={primaryTabsSectionProps.signalsAutoTabProps.onAutoSelectedAssetKeysChange}
+                  onAutoUniverseScopeChange={primaryTabsSectionProps.signalsAutoTabProps.onAutoUniverseScopeChange}
+                  onOpenGeneratedSignal={primaryTabsSectionProps.signalsAutoTabProps.onOpenGeneratedSignal}
+                  onOpenSignalsPanel={primaryTabsSectionProps.signalsAutoTabProps.onOpenSignalsPanel}
+                  onReasoningModeChange={primaryTabsSectionProps.signalsAutoTabProps.onReasoningModeChange}
+                  onRunAutoNow={primaryTabsSectionProps.signalsAutoTabProps.onRunAutoNow}
+                  onSelectAutoRun={primaryTabsSectionProps.signalsAutoTabProps.onSelectAutoRun}
+                  reasoningMode={primaryTabsSectionProps.signalsAutoTabProps.reasoningMode}
+                  reasoningModeOptions={primaryTabsSectionProps.signalsAutoTabProps.reasoningModeOptions}
+                  renderSignalTypeBadge={primaryTabsSectionProps.signalsTabProps.renderSignalTypeBadge}
+                  selectedSignal={primaryTabsSectionProps.signalsTabProps.selectedSignal}
+                  signalAutoRunPending={primaryTabsSectionProps.signalsAutoTabProps.signalAutoRunPending}
+                  signalAutoRuns={primaryTabsSectionProps.signalsAutoTabProps.signalAutoRuns}
+                  signals={primaryTabsSectionProps.signalsTabProps.signals}
+                  t={primaryTabsSectionProps.signalsAutoTabProps.t}
+                  timeZone={primaryTabsSectionProps.signalsAutoTabProps.timeZone}
+                  topTradingCandidates={primaryTabsSectionProps.signalsAutoTabProps.topTradingCandidates}
                 />
               ) : (
                 <>

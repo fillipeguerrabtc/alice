@@ -13,6 +13,14 @@ export type TradingTelemetryEvent =
 
 type TradingTelemetryLevel = 'info' | 'warn' | 'error';
 
+export type SignalGenerationResultClass = 'signal_generated' | 'no_trade';
+
+export type SignalGenerationClassification = {
+  reasonCode: string | null;
+  reasonHuman: string | null;
+  resultClass: SignalGenerationResultClass;
+};
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return null;
@@ -44,8 +52,34 @@ export function emitTradingTelemetry(
   frontendLogger.info('Trading telemetry event', context);
 }
 
-export function classifySignalGenerationResult(responsePayload: unknown): 'succeeded' | 'no_trade' {
+export function classifySignalGenerationResult(responsePayload: unknown): SignalGenerationClassification {
   const responseRecord = asRecord(responsePayload);
+  const signalGeneration = asRecord(responseRecord?.signalGeneration);
+  const stateCategory = typeof signalGeneration?.stateCategory === 'string'
+    ? signalGeneration.stateCategory
+    : null;
+  const reasonCodeFromClassification = typeof signalGeneration?.reasonCode === 'string'
+    ? signalGeneration.reasonCode
+    : null;
+  const reasonHumanFromClassification = typeof signalGeneration?.reasonHuman === 'string'
+    ? signalGeneration.reasonHuman
+    : null;
+
+  if (stateCategory === 'no_trade') {
+    return {
+      resultClass: 'no_trade',
+      reasonCode: reasonCodeFromClassification,
+      reasonHuman: reasonHumanFromClassification,
+    };
+  }
+  if (stateCategory === 'signal_generated') {
+    return {
+      resultClass: 'signal_generated',
+      reasonCode: reasonCodeFromClassification,
+      reasonHuman: reasonHumanFromClassification,
+    };
+  }
+
   const dataRecord = asRecord(responseRecord?.data);
   const signalType = typeof dataRecord?.signalType === 'string' ? dataRecord.signalType : null;
   const metadataRecord = asRecord(dataRecord?.metadata);
@@ -54,10 +88,18 @@ export function classifySignalGenerationResult(responsePayload: unknown): 'succe
     : null;
 
   if (signalType === 'hold' || signalType === 'neutral' || Boolean(noTradeReasonCode)) {
-    return 'no_trade';
+    return {
+      resultClass: 'no_trade',
+      reasonCode: noTradeReasonCode,
+      reasonHuman: null,
+    };
   }
 
-  return 'succeeded';
+  return {
+    resultClass: 'signal_generated',
+    reasonCode: null,
+    reasonHuman: null,
+  };
 }
 
 export function classifySignalGenerationFailure(error: unknown): 'blocked' | 'failed' {

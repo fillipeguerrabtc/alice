@@ -1,7 +1,7 @@
 # Domain Map do Trading (Baseline Rodada 1)
 
 Author: Fillipe Guerra  
-Data: 2026-03-12
+Data: 2026-03-13
 
 ## Objetivo
 Mapear o domínio Trading real do monorepo para orientar a refatoração com segurança, sem ruptura funcional e sem duplicação confusa entre stacks paralelas.
@@ -157,3 +157,17 @@ Arquivo principal: `apps/integrations-service/src/routes/trading-automation-rout
 - status card e painéis resumidos de posições/ordens abertas.
 - disclosure avançado para snapshot de conta demo e atalhos de pós-trade.
 - O caminho legacy permanece preservado por feature flag nesta fase para segurança de rollout.
+
+## 14. Atualização da Rodada 5
+- Novo entrypoint visual de Sinais IA na V2:
+- `apps/frontend-service/src/components/trading-v2/TradingWorkspaceAiSignalsCockpitMode.tsx`
+- `TradingContent.tsx` agora monta cockpit dedicado quando `activePrimaryMode === 'ai-signals'`.
+- O cockpit V2 expõe estados de produto explícitos:
+- `blocked`
+- `no_trade`
+- `signal_generated`
+- `executed`
+- `failed`
+- Contract update em geração de sinal (`POST /api/integrations/trading/signals/generate`):
+- novo bloco `signalGeneration` com `stateCategory`, `reasonCode`, `reasonHuman`.
+- `SignalApprovalPanel` permanece como trilha real de handoff para Demo/Training, acessado por painel colapsável no cockpit.

@@ -1,7 +1,7 @@
 # Plano Canônico de Refatoração do Domínio Trading
 
 Author: Fillipe Guerra  
-Data: 2026-03-12
+Data: 2026-03-13
 
 ## 1. Objetivo da refatoração
 Executar uma refatoração progressiva e production-grade do domínio Trading da Alice, cobrindo Frontend, Backend, UX, observability, state model, Signal Engine, integração com Training e Demo Trading, sem quebrar a arquitetura real do monorepo.
@@ -29,6 +29,7 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Signal Generation já expõe estados de sucesso e no-trade via `trading_signals` e metadata.
 - Baseline de feature flag e state model já foi concluída; a Shell V2 compartilhada já está montável em Real e Demo com fallback legacy por flag.
 - O modo `operate` da Workspace V2 já está ativo no caminho V2 para Real e Demo, com primeira dobra focada em execução e progressive disclosure para detalhes avançados.
+- O modo `ai-signals` da Workspace V2 já está ativo com cockpit dedicado, classificação explícita de estados e reason codes em dois níveis.
 
 ## 5. Plano por rodadas
 1. Baseline, Feature Flag, Domain Map e Plano Canônico.
@@ -47,7 +48,7 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Rodada 2: Concluída
 - Rodada 3: Concluída
 - Rodada 4: Concluída
-- Rodada 5: Pendente
+- Rodada 5: Concluída
 - Rodada 6: Pendente
 - Rodada 7: Pendente
 - Rodada 8: Pendente
@@ -108,12 +109,26 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - `docs/trading/domain-map-trading.md`
 - `docs/trading/plano-refatoracao-trading.md`
 
+### Rodada 5
+- `apps/frontend-service/src/components/trading-v2/TradingWorkspaceAiSignalsCockpitMode.tsx` (novo)
+- `apps/frontend-service/src/components/trading-v2/index.ts`
+- `apps/frontend-service/src/pages/TradingContent.tsx`
+- `apps/frontend-service/src/lib/tradingTelemetry.ts`
+- `apps/frontend-service/src/components/trading/useTradingSignalMutations.ts`
+- `apps/integrations-service/src/routes/trading-signal-generation-routes.ts`
+- `docs/trading/ai-signals-cockpit-v2.md` (novo)
+- `docs/trading/workspace-shell-v2.md`
+- `docs/trading/domain-map-trading.md`
+- `docs/trading/auto-engine-contracts-observability.md`
+- `docs/trading/plano-refatoracao-trading.md`
+
 ## 8. Migrations criadas
 - Rodada 1: Nenhuma.
 - Rodada 2:
 - `0109_trading_auto_run_terminal_states.sql` (enum `trading_auto_run_status` com `no_trade` e `blocked`, coluna `terminal_reason_code`, índice parcial por reason code).
 - Rodada 3: Nenhuma.
 - Rodada 4: Nenhuma.
+- Rodada 5: Nenhuma.
 
 ## 9. Testes executados
 - Rodada 1:
@@ -126,6 +141,9 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Comando: `pnpm test`
 - Resultado: `129` arquivos de teste aprovados, `1385` testes aprovados, `0` falhas.
 - Rodada 4:
+- Comando: `pnpm test`
+- Resultado: `129` arquivos de teste aprovados, `1385` testes aprovados, `0` falhas.
+- Rodada 5:
 - Comando: `pnpm test`
 - Resultado: `129` arquivos de teste aprovados, `1385` testes aprovados, `0` falhas.
 
@@ -142,6 +160,9 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Rodada 4:
 - Comando: `pnpm typecheck`
 - Resultado: sucesso, sem erros.
+- Rodada 5:
+- Comando: `pnpm typecheck`
+- Resultado: sucesso, sem erros.
 
 ## 11. Resultados de ESLint
 - Rodada 1:
@@ -154,6 +175,9 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Comando: `pnpm lint`
 - Resultado: sucesso, sem warnings e sem errors.
 - Rodada 4:
+- Comando: `pnpm lint`
+- Resultado: sucesso, sem warnings e sem errors.
+- Rodada 5:
 - Comando: `pnpm lint`
 - Resultado: sucesso, sem warnings e sem errors.
 
@@ -182,6 +206,13 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Resultado: sucesso.
 - Comando: `pnpm exec vite build` (em `apps/frontend-service`)
 - Resultado: sucesso.
+- Rodada 5:
+- Comando: `pnpm --filter @alice/integrations-service build`
+- Resultado: sucesso.
+- Comando: `pnpm exec tsc -b` (em `apps/frontend-service`)
+- Resultado: sucesso.
+- Comando: `pnpm exec vite build` (em `apps/frontend-service`)
+- Resultado: sucesso.
 
 ## 13. Riscos conhecidos
 - Acoplamento alto em páginas grandes (`TradingContent.tsx`, `DemoTrading.tsx`) exige mudanças muito cirúrgicas por rodada.
@@ -191,7 +222,7 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - A convergência final para remover o shell legacy exige rollout gradual por flag para evitar regressão de UX em produção.
 
 ## 14. Pendências
-- Iniciar Rodada 5 com AI Signals Cockpit V2 e reaproveitamento da base da Shell/Operate já consolidada.
+- Iniciar Rodada 6 com convergência de Demo Trading para Workspace V2.
 
 ## 15. Decisões arquiteturais registradas
 - Feature flag `trading_workspace_v2_enabled` adicionada como baseline de rollout controlado.
@@ -201,8 +232,10 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - `terminal_reason_code` adicionado em `trading_auto_runs` para classificação queryável e auditável de estado terminal.
 - Shell V2 compartilhada criada em `components/trading-v2` e integrada em Trading Real e Demo Trading com quatro modos primários e progressive disclosure para áreas avançadas.
 - Modo `operate` implementado na V2 com blocos de execução reutilizando data sources reais existentes e mantendo separação explícita entre execução Real e Demo.
+- AI Signals Cockpit V2 implementado como trilha dedicada no modo `ai-signals`, com estados de produto explícitos e reason codes em dois níveis (machine-readable e user-readable).
+- Contract de geração de sinal atualizado com bloco `signalGeneration` (`stateCategory`, `reasonCode`, `reasonHuman`) para consumo auditável no frontend.
 
 ## 16. Próximos passos
-1. Iniciar Rodada 5 focando AI Signals Cockpit V2 sobre a Shell compartilhada.
+1. Iniciar Rodada 6 focando convergência da Demo Trading para a mesma experiência V2.
 2. Manter evolução sem trilha paralela `legacy + v2`, com cleanup contínuo controlado por rollout.
 3. Repetir checklist sequencial de validação e atualização documental ao fechamento da próxima rodada.
