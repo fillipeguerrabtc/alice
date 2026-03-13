@@ -356,7 +356,7 @@ export const integrationsServicePaths = {
           'application/json': {
             schema: {
               type: 'object',
-              required: ['signalId', 'namespaceId'],
+              required: ['signalId'],
               properties: {
                 signalId: { type: 'string', format: 'uuid' },
                 namespaceId: { type: 'string', format: 'uuid' },
@@ -907,6 +907,53 @@ export const integrationsServicePaths = {
         400: { description: 'Payload inválido' },
         401: { description: 'Não autenticado' },
         403: { description: 'Override manual de reasoning requer admin/superadmin' },
+      },
+    },
+  },
+  '/api/integrations/trading/signals/{id}/promotion-path': {
+    'x-required-permission': 'integrations:trading:read',
+    get: {
+      summary: 'Consultar lifecycle de promotion path de um sinal',
+      tags: ['Trading'],
+      parameters: [
+        { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+      ],
+      responses: {
+        200: { description: 'Promotion path retornado' },
+        401: { description: 'Não autenticado' },
+        404: { description: 'Sinal não encontrado' },
+        422: { description: 'Sinal sem contexto elegível para promotion path' },
+      },
+    },
+  },
+  '/api/integrations/trading/signals/{id}/promote-real-eligibility': {
+    'x-required-permission': 'integrations:trading:write',
+    post: {
+      summary: 'Promover sinal para real eligibility com auditoria explícita',
+      tags: ['Trading'],
+      parameters: [
+        { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+      ],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['reason'],
+              properties: {
+                reason: { type: 'string', minLength: 10, maxLength: 2000 },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        200: { description: 'Sinal promovido para real eligibility' },
+        400: { description: 'Dados inválidos' },
+        401: { description: 'Não autenticado' },
+        404: { description: 'Sinal não encontrado' },
+        422: { description: 'Sinal ainda não elegível para promoção real' },
       },
     },
   },

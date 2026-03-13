@@ -216,3 +216,127 @@ export async function getTradingAutoRunDetail(runId: string): Promise<TradingAut
   const body = await response.json() as { success: boolean; data: TradingAutoRunDetail };
   return body.data;
 }
+
+export type TradingSignalPromotionStage =
+  | 'candidate_evidence_captured'
+  | 'dataset_candidate'
+  | 'approved_dataset_version'
+  | 'calibration_result'
+  | 'demo_eligible'
+  | 'real_eligible';
+
+export type TradingSignalEligibilityStatus = 'pending' | 'eligible' | 'blocked';
+export type TradingSignalPromotionValidationState = 'pending' | 'validated' | 'failed';
+
+export interface TradingSignalPromotionPathSummary {
+  path: {
+    id: string;
+    signalId: string;
+    lifecycleStage: TradingSignalPromotionStage;
+    validationState: TradingSignalPromotionValidationState;
+    datasetCandidateId: string | null;
+    datasetVersionId: string | null;
+    calibrationId: string | null;
+    demoEligibilityStatus: TradingSignalEligibilityStatus;
+    demoEligibilityReasonCode: string | null;
+    demoOrderId: string | null;
+    demoPromotedByUserId: string | null;
+    demoPromotedAt: string | null;
+    demoPromotionReason: string | null;
+    realEligibilityStatus: TradingSignalEligibilityStatus;
+    realEligibilityReasonCode: string | null;
+    realPromotedByUserId: string | null;
+    realPromotedAt: string | null;
+    realPromotionReason: string | null;
+    createdAt: string;
+    updatedAt: string;
+  };
+  signalId: string;
+  lifecycleStage: TradingSignalPromotionStage;
+  validationState: TradingSignalPromotionValidationState;
+  datasetCandidate: {
+    id: string | null;
+    status: 'pending' | 'approved' | 'rejected' | 'used' | null;
+  };
+  datasetVersionId: string | null;
+  calibration: {
+    id: string | null;
+    evalMetrics: Record<string, unknown> | null;
+  };
+  demo: {
+    status: TradingSignalEligibilityStatus;
+    reasonCode: string | null;
+    reasonHuman: string | null;
+    orderId: string | null;
+    promotedAt: string | null;
+    promotedByUserId: string | null;
+  };
+  real: {
+    status: TradingSignalEligibilityStatus;
+    reasonCode: string | null;
+    reasonHuman: string | null;
+    promotedAt: string | null;
+    promotedByUserId: string | null;
+  };
+  events: Array<{
+    id: string;
+    promotionPathId: string;
+    signalId: string;
+    lifecycleStage: TradingSignalPromotionStage;
+    actorUserId: string;
+    reason: string | null;
+    evidenceSourceType: string;
+    evidenceSourceId: string;
+    metadata: Record<string, unknown>;
+    createdAt: string;
+  }>;
+}
+
+export async function getTradingSignalPromotionPath(signalId: string): Promise<TradingSignalPromotionPathSummary> {
+  const response = await apiRequest('GET', `/api/integrations/trading/signals/${signalId}/promotion-path`);
+  const body = await response.json() as { success: boolean; data: TradingSignalPromotionPathSummary };
+  return body.data;
+}
+
+export async function sendTradingSignalToTrainingDataset(payload: {
+  signalId: string;
+  namespaceId?: string;
+  reviewNotes?: string;
+}): Promise<{
+  id: string;
+  status: 'pending' | 'approved' | 'rejected' | 'used';
+}> {
+  const response = await apiRequest('POST', '/api/integrations/trading/datasets/from-signal', payload);
+  const body = await response.json() as {
+    success: boolean;
+    data: {
+      id: string;
+      status: 'pending' | 'approved' | 'rejected' | 'used';
+    };
+  };
+  return body.data;
+}
+
+export async function promoteTradingSignalRealEligibility(params: {
+  signalId: string;
+  reason: string;
+}): Promise<{
+  id: string;
+  lifecycleStage: TradingSignalPromotionStage;
+  realEligibilityStatus: TradingSignalEligibilityStatus;
+}> {
+  const response = await apiRequest(
+    'POST',
+    `/api/integrations/trading/signals/${params.signalId}/promote-real-eligibility`,
+    { reason: params.reason },
+  );
+  const body = await response.json() as {
+    success: boolean;
+    data: {
+      id: string;
+      lifecycleStage: TradingSignalPromotionStage;
+      realEligibilityStatus: TradingSignalEligibilityStatus;
+    };
+  };
+  return body.data;
+}

@@ -168,6 +168,7 @@ import { createTradingDatasetCoreService } from './trading-dataset-core-service.
 import { createTradingDatasetSeedService } from './trading-dataset-seed-service.js';
 import { createTradingDatasetNamespaceService } from './trading-dataset-namespace-service.js';
 import { createTradingDatasetOrchestrationService } from './trading-dataset-orchestration-service.js';
+import { createTradingSignalPromotionService } from './trading-signal-promotion-service.js';
 import { createTradingLegacyInstitutionalSignalService } from './trading-legacy-institutional-signal-service.js';
 import { createTradingLlmExecutionService } from './trading-llm-execution-service.js';
 import { createTradingLlmSignalGenerationService } from './trading-llm-signal-generation-service.js';
@@ -230,6 +231,7 @@ import { registerTradingMarketDataRoutes } from './routes/trading-market-data-ro
 import { registerTradingSignalActionRoutes } from './routes/trading-signal-action-routes.js';
 import { registerTradingMarketRiskRoutes } from './routes/trading-market-risk-routes.js';
 import { registerTradingOrderGovernanceRoutes } from './routes/trading-order-governance-routes.js';
+import { registerTradingSignalPromotionRoutes } from './routes/trading-signal-promotion-routes.js';
 import { registerTradingSchedulerNewsRoutes } from './routes/trading-scheduler-news-routes.js';
 import { registerTradingSpotRoutes } from './routes/trading-spot-routes.js';
 import { registerTradingStopOrderRoutes } from './routes/trading-stop-order-routes.js';
@@ -547,6 +549,7 @@ const { resolveDatasetNamespace } = createTradingDatasetNamespaceService({
 });
 
 let tradingDatasetOrchestrationService: ReturnType<typeof createTradingDatasetOrchestrationService> | null = null;
+const tradingSignalPromotionService = createTradingSignalPromotionService();
 
 async function createTradingDatasetFromSignalSource(params: {
   authContext: { tenantId: string; userId: string };
@@ -557,7 +560,14 @@ async function createTradingDatasetFromSignalSource(params: {
   if (!tradingDatasetOrchestrationService) {
     throw new Error('Trading dataset orchestration service não inicializado.');
   }
-  return tradingDatasetOrchestrationService.createTradingDatasetFromSignalSource(params);
+  const result = await tradingDatasetOrchestrationService.createTradingDatasetFromSignalSource(params);
+  await tradingSignalPromotionService.registerDatasetCandidate({
+    authContext: params.authContext,
+    signal: params.signal,
+    datasetCandidateId: result.dataset.id,
+    reason: params.reviewNotes ?? 'signal routed to training dataset curation',
+  });
+  return result;
 }
 
 async function createTradingDatasetFromOrder(params: {
@@ -2146,6 +2156,14 @@ registerTradingDatasetRoutes(app, {
   createTradingDatasetFromSignalSource: (params) => createTradingDatasetFromSignalSource(params),
 });
 
+registerTradingSignalPromotionRoutes(app, {
+  logger,
+  sendKucoinErrorResponse,
+  getSignalPromotionPath: (params) => tradingSignalPromotionService.getSignalPromotionPath(params),
+  findSignalById: (params) => tradingSignalPromotionService.findSignalById(params),
+  promoteSignalRealEligibility: (params) => tradingSignalPromotionService.promoteSignalRealEligibility(params),
+});
+
 registerTradingSchedulerNewsRoutes(app, {
   logger,
   defaultTradingTechniques: DEFAULT_TRADING_TECHNIQUES,
@@ -2334,7 +2352,12 @@ registerTradingAccountManagementRoutes(app, {
 // DEMO TRADING - Rotas REST
 // ============================================================================
 
-registerDemoTradingRoutes(app, { logger });
+registerDemoTradingRoutes(app, {
+  logger,
+  findSignalById: (params) => tradingSignalPromotionService.findSignalById(params),
+  assertSignalDemoEligibility: (params) => tradingSignalPromotionService.assertSignalDemoEligibility(params),
+  registerSignalDemoHandoff: (params) => tradingSignalPromotionService.registerSignalDemoHandoff(params),
+});
 
 // ============================================================================
 // POST-MORTEM - Rotas REST

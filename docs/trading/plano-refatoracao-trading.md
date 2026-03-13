@@ -53,7 +53,7 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Rodada 6: Concluída
 - Rodada 7: Concluída
 - Rodada 8: Concluída
-- Rodada 9: Pendente
+- Rodada 9: Concluída
 - Rodada 10: Pendente
 
 ## 7. Arquivos impactados por rodada
@@ -170,6 +170,22 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - `docs/trading/signal-engine-pipeline.md`
 - `docs/trading/plano-refatoracao-trading.md`
 
+### Rodada 9
+- `packages/shared/src/schema.ts`
+- `migrations/0110_trading_signal_promotion_path.sql` (novo)
+- `apps/integrations-service/src/trading-signal-promotion-service.ts` (novo)
+- `apps/integrations-service/src/routes/trading-signal-promotion-routes.ts` (novo)
+- `apps/integrations-service/src/routes/demo-trading-routes.ts`
+- `apps/integrations-service/src/routes/trading-dataset-routes.ts`
+- `apps/integrations-service/src/openapi-specs.ts`
+- `apps/integrations-service/src/index.ts`
+- `apps/frontend-service/src/services/api/trading.ts`
+- `apps/frontend-service/src/components/trading-v2/TradingWorkspaceAiSignalsCockpitMode.tsx`
+- `docs/trading/training-calibration-promotion-path.md` (novo)
+- `docs/trading/ai-signals-cockpit-v2.md`
+- `docs/trading/domain-map-trading.md`
+- `docs/trading/plano-refatoracao-trading.md`
+
 ## 8. Migrations criadas
 - Rodada 1: Nenhuma.
 - Rodada 2:
@@ -180,6 +196,8 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Rodada 6: Nenhuma.
 - Rodada 7: Nenhuma.
 - Rodada 8: Nenhuma.
+- Rodada 9:
+- `0110_trading_signal_promotion_path.sql` (novos enums de promotion path + tabelas `trading_signal_promotions` e `trading_signal_promotion_events` + índices de consulta/auditoria).
 
 ## 9. Testes executados
 - Rodada 1:
@@ -204,6 +222,9 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Comando: `pnpm test`
 - Resultado: `130` arquivos de teste aprovados, `1388` testes aprovados, `0` falhas.
 - Rodada 8:
+- Comando: `pnpm test`
+- Resultado: `131` arquivos de teste aprovados, `1395` testes aprovados, `0` falhas.
+- Rodada 9:
 - Comando: `pnpm test`
 - Resultado: `131` arquivos de teste aprovados, `1395` testes aprovados, `0` falhas.
 
@@ -232,6 +253,9 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Rodada 8:
 - Comando: `pnpm typecheck`
 - Resultado: sucesso, sem erros.
+- Rodada 9:
+- Comando: `pnpm typecheck`
+- Resultado: sucesso, sem erros.
 
 ## 11. Resultados de ESLint
 - Rodada 1:
@@ -256,6 +280,9 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Comando: `pnpm lint`
 - Resultado: sucesso, sem warnings e sem errors.
 - Rodada 8:
+- Comando: `pnpm lint`
+- Resultado: sucesso, sem warnings e sem errors.
+- Rodada 9:
 - Comando: `pnpm lint`
 - Resultado: sucesso, sem warnings e sem errors.
 
@@ -304,6 +331,13 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Resultado: sucesso.
 - Comando: `pnpm --filter @alice/frontend-service build`
 - Resultado: sucesso (`tsc -b && vite build`).
+- Rodada 9:
+- Comando: `pnpm --filter @alice/shared build`
+- Resultado: sucesso.
+- Comando: `pnpm --filter @alice/integrations-service build`
+- Resultado: sucesso.
+- Comando: `pnpm --filter @alice/frontend-service build`
+- Resultado: sucesso (`tsc -b && vite build`).
 
 ## 13. Riscos conhecidos
 - Acoplamento alto em páginas grandes (`TradingContent.tsx`, `DemoTrading.tsx`) exige mudanças muito cirúrgicas por rodada.
@@ -311,9 +345,10 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Observability ainda distribuída entre camadas; sem taxonomia única consolidada para todos eventos do domínio.
 - Migração de enum em PostgreSQL é aditiva e sem rollback direto de valores; rollback deve ser por comportamento de aplicação.
 - A convergência final para remover o shell legacy exige rollout gradual por flag para evitar regressão de UX em produção.
+- O promotion path depende de sincronização periódica para refletir imediatamente mudanças externas de dataset/calibration em todos os consumers.
 
 ## 14. Pendências
-- Iniciar Rodada 9 com Training, Calibration e Promotion Path.
+- Iniciar Rodada 10 com cleanup final, compatibility layer e consolidação de testes/documentação.
 
 ## 15. Decisões arquiteturais registradas
 - Feature flag `trading_workspace_v2_enabled` adicionada como baseline de rollout controlado.
@@ -335,8 +370,12 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Técnicas subimplementadas deixaram de produzir inferência neutral fake e agora retornam `blocked`/`not_supported_for_current_context` com `reasonCode` e `reasonHuman`.
 - Contracts de `analysis-profile` e `analysis/:symbol` passam a expor `techniqueCapabilities[]` para elegibilidade real por technique em API e UI.
 - Metadata de sinais persiste `techniqueCapabilities` para auditabilidade de suporte no momento da geração.
+- Promotion path enterprise de sinais introduzido com lifecycle explícito (`candidate_evidence_captured` até `real_eligible`) e trilha auditável por evento.
+- Handoff para Demo agora valida elegibilidade (`assertSignalDemoEligibility`) antes da execução e registra lineage pós-ordem.
+- Handoff para Training via `datasets/from-signal` passou a operar como fluxo first-class do Cockpit V2, com atualização do snapshot de promotion em metadata.
+- Contract API atualizado com `GET /signals/:id/promotion-path` e `POST /signals/:id/promote-real-eligibility`, mantendo compatibilidade de rota legada.
 
 ## 16. Próximos passos
-1. Iniciar Rodada 9 focando Training, Calibration e Promotion Path.
-2. Manter evolução sem trilha paralela `legacy + v2`, com cleanup contínuo controlado por rollout.
+1. Iniciar Rodada 10 focando cleanup, compatibility layer, testes críticos adicionais e documentação final de rollout/migration/rollback.
+2. Manter evolução sem trilha paralela `legacy + v2`, preservando fallback por feature flag até a remoção segura do legado.
 3. Repetir checklist sequencial de validação e atualização documental ao fechamento da próxima rodada.

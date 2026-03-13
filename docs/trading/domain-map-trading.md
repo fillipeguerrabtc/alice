@@ -221,3 +221,22 @@ Arquivo principal: `apps/integrations-service/src/routes/trading-automation-rout
 - `minimumDataRequirements`
 - Técnicas subimplementadas (`cash_and_carry`, `basis_trade`, `funding_arbitrage`, `grid_trading`, `market_making`) deixaram de gerar inferência fake por indicadores genéricos.
 - A UI de Sinais IA passa a exibir suporte real por técnica e estados `blocked`/`not_supported_for_current_context`.
+
+## 18. Atualização da Rodada 9
+- Promotion path de sinais foi introduzido como trilha auditável de primeira classe:
+- `trading_signal_promotions`
+- `trading_signal_promotion_events`
+- Migration aplicada:
+- `migrations/0110_trading_signal_promotion_path.sql`
+- Novas rotas de promotion:
+- `GET /api/integrations/trading/signals/:id/promotion-path`
+- `POST /api/integrations/trading/signals/:id/promote-real-eligibility`
+- Fluxo `send to training` foi elevado a first-class no contract:
+- `POST /api/integrations/trading/datasets/from-signal` agora aceita `namespaceId` opcional.
+- Fluxo `send to demo` agora valida elegibilidade antes da execução:
+- `POST /api/integrations/demo-trading/orders/from-signal` verifica demo eligibility e registra handoff.
+- Eventos de lineage adicionados:
+- `trading_signal_dataset_candidate`
+- `trading_signal_demo_handoff`
+- `trading_signal_real_eligibility_promoted`
+- Cockpit V2 passa a consumir promotion path e executar handoffs diretos para Training/Demo com reason codes explícitos.

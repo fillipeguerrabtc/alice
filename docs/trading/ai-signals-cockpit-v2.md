@@ -57,10 +57,25 @@ Novo bloco no response:
 - Falha técnica: `stateCategory=failed`.
 
 ## Handoff para Demo e Training
-As CTAs de cockpit encaminham para o fluxo real de governança (`SignalApprovalPanel`) sem bypass:
-- `Enviar para Demo`
-- `Enviar para Training dataset`
-- `Re-run com ajustes de escopo`
+### Estado até Rodada 8
+- CTAs encaminhavam para o fluxo de governança (`SignalApprovalPanel`) sem bypass.
+
+### Estado após Rodada 9
+- CTAs passaram a executar handoff first-class no backend real:
+- `Enviar para Demo`: valida demo eligibility e registra lineage no promotion path.
+- `Enviar para Training dataset`: cria dataset candidate e atualiza lifecycle do sinal.
+- `Re-run com ajustes de escopo`: mantém trilha operacional existente.
+- Painel continua exibindo governança avançada (`SignalApprovalPanel`) via progressive disclosure para operações detalhadas.
+
+## Promotion path no Cockpit
+- O cockpit passa a consultar:
+- `GET /api/integrations/trading/signals/:id/promotion-path`
+- Exibe no `Lineage Summary`:
+- `lifecycleStage`
+- status de `datasetCandidate`
+- status de `demoEligibility` e `realEligibility`
+- total de eventos de lineage (`promotion events`)
+- `Enviar para Demo` respeita eligibility explícita e mostra reason code/reason human quando bloqueado.
 
 ## Observações operacionais
 - `neutral` e `hold` não são apresentados como directional signal útil.

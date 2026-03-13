@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { TFunction } from 'i18next';
 import { AlertTriangle, ArrowRightLeft, ChevronDown, ChevronUp, CircleCheck, CircleDashed, CircleX, FlaskConical, ShieldX } from 'lucide-react';
 import { MultiSelectDropdown } from '@/components/trading/MultiSelectDropdown';
@@ -7,7 +8,9 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { EmptyState } from '@/components/ui/empty-state';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -18,6 +21,7 @@ import {
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
+import { useToast } from '@/hooks/use-toast';
 import type { ReasoningMode } from '@/lib/reasoning-mode';
 import { formatDateTime, formatNumber } from '@/lib/utils';
 import type {
@@ -25,6 +29,12 @@ import type {
   TradingAutoRunDetail,
   TradingCandidate,
 } from '@/services/api/trading';
+import {
+  getTradingSignalPromotionPath,
+  sendTradingSignalToTrainingDataset,
+  type TradingSignalPromotionPathSummary,
+} from '@/services/api/trading';
+import { createDemoOrderFromSignal } from '@/services/api/tradingDemo';
 import type { TradingWorkspaceEnvironmentMode } from './types';
 
 type SignalsCockpitStateCategory = 'blocked' | 'no_trade' | 'signal_generated' | 'executed' | 'failed' | 'running';
@@ -32,6 +42,10 @@ type SignalsCockpitStateCategory = 'blocked' | 'no_trade' | 'signal_generated' |
 type TradingCockpitSignal = {
   confidence: number;
   id: string;
+  suggestedPrice?: number | null;
+  suggestedSize?: number | null;
+  suggestedStopLoss?: number | null;
+  suggestedTakeProfit?: number | null;
   metadata: {
     approvalStatus?: 'pending' | 'approved' | 'rejected';
     dataSources?: {
@@ -40,6 +54,7 @@ type TradingCockpitSignal = {
       trainingData?: boolean;
     };
     marketCondition?: string;
+    namespaceId?: string;
     techniques?: unknown;
     validationStatus?: 'pending' | 'validated' | 'failed';
     [key: string]: unknown;
@@ -95,6 +110,13 @@ const REASON_CODE_TEXT: Record<string, string> = {
   NO_CANDIDATES: 'Nenhum candidato elegível foi encontrado no escopo selecionado.',
   NO_EDGE: 'Edge líquido insuficiente para abrir operação com segurança.',
   UNEXPECTED_ERROR: 'Falha inesperada durante o processamento do run.',
+  NON_DIRECTIONAL_SIGNAL: 'Somente sinais direcionais podem seguir para execução.',
+  VALIDATION_NOT_VALIDATED: 'Validation state precisa estar em validated para elegibilidade de execução.',
+  DATASET_CANDIDATE_MISSING: 'Sinal ainda não foi enviado para dataset curation.',
+  DATASET_CANDIDATE_NOT_APPROVED: 'Dataset candidate ainda não foi aprovado no Training.',
+  DATASET_VERSION_MISSING: 'Ainda não existe dataset version aprovado com esta evidência.',
+  CALIBRATION_MISSING: 'Calibração estatística ainda não disponível para o signal.',
+  REAL_PROMOTION_REQUIRED: 'Promoção explícita para real eligibility ainda não foi realizada.',
 };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -110,6 +132,14 @@ function asString(value: unknown): string | null {
 
 function asNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function parsePositiveNumber(value: string): number | null {
+  const normalized = value.trim().replace(',', '.');
+  if (!normalized) return null;
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return parsed;
 }
 
 function resolveCockpitStateCategory(params: {
@@ -205,7 +235,14 @@ export function TradingWorkspaceAiSignalsCockpitMode({
   timeZone,
   topTradingCandidates,
 }: TradingWorkspaceAiSignalsCockpitModeProps) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [isGovernanceOpen, setIsGovernanceOpen] = useState(false);
+  const [isDemoHandoffDialogOpen, setIsDemoHandoffDialogOpen] = useState(false);
+  const [demoOrderSize, setDemoOrderSize] = useState('');
+  const [demoLeverage, setDemoLeverage] = useState('');
+  const [demoEntryType, setDemoEntryType] = useState<'market' | 'limit'>('market');
+  const [demoEntryPrice, setDemoEntryPrice] = useState('');
   const latestRun = activeAutoRunDetail?.run?.runType === 'signal_auto'
     ? activeAutoRunDetail.run
     : signalAutoRuns[0] ?? null;
@@ -248,12 +285,162 @@ export function TradingWorkspaceAiSignalsCockpitMode({
   const hasLinkedSignal = Boolean(linkedSignal?.id);
 
   const isNoTradeLikeSignal = linkedSignal?.signalType === 'neutral' || linkedSignal?.signalType === 'hold';
+  const linkedNamespaceId = hasLinkedSignal ? asString(linkedSignal?.metadata?.namespaceId) : null;
+
+  const promotionPathQuery = useQuery<TradingSignalPromotionPathSummary>({
+    queryKey: ['/api/integrations/trading/signals/promotion-path', linkedSignal?.id],
+    queryFn: () => getTradingSignalPromotionPath(linkedSignal!.id),
+    enabled: hasLinkedSignal,
+    refetchInterval: 20_000,
+    refetchIntervalInBackground: false,
+  });
+
+  const sendToTrainingMutation = useMutation({
+    mutationFn: async (signalId: string) => sendTradingSignalToTrainingDataset({
+      signalId,
+      namespaceId: linkedNamespaceId ?? undefined,
+      reviewNotes: 'handoff emitido pelo AI Signals Cockpit V2',
+    }),
+    onSuccess: (dataset) => {
+      toast({
+        title: 'Sinal enviado para Training',
+        description: `Dataset ${dataset.id} criado com status ${dataset.status}.`,
+      });
+      void queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/signals'] });
+      void queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/datasets'] });
+      void queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/datasets/stats'] });
+      void queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/signals/promotion-path', linkedSignal?.id] });
+      void promotionPathQuery.refetch();
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Falha ao enviar para Training',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const sendToDemoMutation = useMutation({
+    mutationFn: async (params: {
+      signalId: string;
+      symbol: string;
+      side: 'buy' | 'sell';
+      size: number;
+      leverage?: number;
+      entryType: 'market' | 'limit';
+      price?: number;
+      stopLoss?: number;
+      takeProfit?: number;
+    }) => createDemoOrderFromSignal({
+      signalId: params.signalId,
+      symbol: params.symbol,
+      marketType,
+      side: params.side,
+      size: params.size,
+      leverage: params.leverage,
+      entryType: params.entryType,
+      price: params.price,
+      stopLoss: params.stopLoss,
+      takeProfit: params.takeProfit,
+    }),
+    onSuccess: (result) => {
+      setIsDemoHandoffDialogOpen(false);
+      toast({
+        title: 'Sinal enviado para Demo',
+        description: `Handoff concluído. Ordem ${result.orderId} criada em paper execution.`,
+      });
+      void queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/signals'] });
+      void queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/orders'] });
+      void queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/positions', 'all'] });
+      void queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/signals/promotion-path', linkedSignal?.id] });
+      void promotionPathQuery.refetch();
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Falha no handoff para Demo',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
 
   const openGovernancePanel = (signalId: string | null) => {
     onOpenGeneratedSignal(signalId);
     onOpenSignalsPanel();
     setIsGovernanceOpen(true);
   };
+
+  const openDemoHandoffDialog = () => {
+    if (!linkedSignal || !isDirectionalSignal) {
+      toast({
+        title: 'Handoff para Demo indisponível',
+        description: 'Apenas sinais direcionais podem ser roteados para Demo.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    const suggestedSize = linkedSignal.suggestedSize;
+    const suggestedPrice = linkedSignal.suggestedPrice;
+    setDemoOrderSize(
+      typeof suggestedSize === 'number' && Number.isFinite(suggestedSize) && suggestedSize > 0
+        ? String(suggestedSize)
+        : '',
+    );
+    setDemoLeverage('');
+    setDemoEntryType(suggestedPrice ? 'limit' : 'market');
+    setDemoEntryPrice(
+      typeof suggestedPrice === 'number' && Number.isFinite(suggestedPrice) && suggestedPrice > 0
+        ? String(suggestedPrice)
+        : '',
+    );
+    setIsDemoHandoffDialogOpen(true);
+  };
+
+  const submitDemoHandoff = () => {
+    if (!linkedSignal || !isDirectionalSignal) {
+      return;
+    }
+    const parsedSize = parsePositiveNumber(demoOrderSize);
+    if (parsedSize == null) {
+      toast({
+        title: 'Size inválido',
+        description: 'Informe um size positivo para executar o handoff demo.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const parsedLeverage = parsePositiveNumber(demoLeverage);
+    const parsedPrice = parsePositiveNumber(demoEntryPrice);
+    if (demoEntryType === 'limit' && parsedPrice == null) {
+      toast({
+        title: 'Preço obrigatório',
+        description: 'Entrada limit exige preço positivo.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    sendToDemoMutation.mutate({
+      signalId: linkedSignal.id,
+      symbol: linkedSignal.symbol,
+      side: linkedSignal.signalType === 'entry_long' ? 'buy' : 'sell',
+      size: parsedSize,
+      leverage: parsedLeverage ?? undefined,
+      entryType: demoEntryType,
+      price: demoEntryType === 'limit' ? parsedPrice ?? undefined : undefined,
+      stopLoss: linkedSignal.suggestedStopLoss ?? undefined,
+      takeProfit: linkedSignal.suggestedTakeProfit ?? undefined,
+    });
+  };
+
+  const promotionPath = promotionPathQuery.data ?? null;
+  const isDemoEligibleForHandoff = promotionPath ? promotionPath.demo.status === 'eligible' : true;
+  const demoEligibilityReasonText = promotionPath?.demo.status === 'eligible'
+    ? 'Sem bloqueio ativo para handoff demo.'
+    : promotionPath?.demo.reasonHuman
+      ?? resolveReasonText(promotionPath?.demo.reasonCode ?? null, null);
 
   return (
     <div className="space-y-4">
@@ -373,7 +560,7 @@ export function TradingWorkspaceAiSignalsCockpitMode({
               <Button type="button" onClick={onRunAutoNow} disabled={signalAutoRunPending}>
                 Reexecutar run com escopo atual
               </Button>
-              <Button type="button" variant="outline" onClick={() => setIsGovernanceOpen(true)}>
+              <Button type="button" variant="outline" onClick={() => openGovernancePanel(linkedSignal?.id ?? null)}>
                 Abrir painel completo de sinais
               </Button>
             </div>
@@ -624,6 +811,29 @@ export function TradingWorkspaceAiSignalsCockpitMode({
               </div>
               <div>ragEvidenceIds: {latestDecision?.ragEvidenceIds?.length ?? 0}</div>
             </div>
+
+            {promotionPathQuery.isLoading ? (
+              <p className="text-xs text-muted-foreground">Carregando promotion path...</p>
+            ) : promotionPath ? (
+              <div className="rounded-md border p-3 text-xs space-y-1">
+                <div className="text-muted-foreground">Promotion lifecycle</div>
+                <div>lifecycleStage: {promotionPath.lifecycleStage}</div>
+                <div>datasetCandidate: {promotionPath.datasetCandidate.id ? promotionPath.datasetCandidate.status ?? 'pending' : 'none'}</div>
+                <div>
+                  demoEligibility: {promotionPath.demo.status}
+                  {promotionPath.demo.reasonCode ? ` (${promotionPath.demo.reasonCode})` : ''}
+                </div>
+                <div>
+                  realEligibility: {promotionPath.real.status}
+                  {promotionPath.real.reasonCode ? ` (${promotionPath.real.reasonCode})` : ''}
+                </div>
+                <div>lineageEvents: {promotionPath.events.length}</div>
+              </div>
+            ) : null}
+
+            {promotionPathQuery.isError ? (
+              <p className="text-xs text-destructive">Falha ao consultar promotion path do sinal selecionado.</p>
+            ) : null}
           </CardContent>
         </Card>
       </div>
@@ -638,16 +848,19 @@ export function TradingWorkspaceAiSignalsCockpitMode({
             <Button
               type="button"
               variant="outline"
-              disabled={!hasLinkedSignal || !isDirectionalSignal}
-              onClick={() => openGovernancePanel(linkedSignal?.id ?? null)}
+              disabled={!hasLinkedSignal || !isDirectionalSignal || sendToDemoMutation.isPending || !isDemoEligibleForHandoff}
+              onClick={openDemoHandoffDialog}
             >
               Enviar para Demo
             </Button>
             <Button
               type="button"
               variant="outline"
-              disabled={!hasLinkedSignal}
-              onClick={() => openGovernancePanel(linkedSignal?.id ?? null)}
+              disabled={!hasLinkedSignal || sendToTrainingMutation.isPending}
+              onClick={() => {
+                if (!linkedSignal?.id) return;
+                sendToTrainingMutation.mutate(linkedSignal.id);
+              }}
             >
               Enviar para Training dataset
             </Button>
@@ -657,8 +870,19 @@ export function TradingWorkspaceAiSignalsCockpitMode({
           </div>
 
           <p className="text-xs text-muted-foreground">
-            As ações de Demo/Training usam o fluxo real de aprovação do painel de sinais, sem bypass de guardrails.
+            Os handoffs executam contracts reais de backend, com checagem explícita de elegibilidade e trilha de lineage.
           </p>
+          {promotionPath ? (
+            <p className="text-xs text-muted-foreground">
+              Demo eligibility atual: <span className="font-medium">{promotionPath.demo.status}</span>
+              {promotionPath.demo.reasonCode ? ` (${promotionPath.demo.reasonCode})` : ''} - {demoEligibilityReasonText}
+            </p>
+          ) : null}
+          {!linkedNamespaceId ? (
+            <p className="text-xs text-muted-foreground">
+              O sinal não possui `namespaceId` explícito em metadata; o backend aplicará resolução de namespace por regras de domínio.
+            </p>
+          ) : null}
         </CardContent>
       </Card>
 
@@ -704,12 +928,83 @@ export function TradingWorkspaceAiSignalsCockpitMode({
           <p className="text-muted-foreground">
             Use o atalho abaixo para abrir a trilha completa de aprovação, envio para Demo e envio para Training dataset.
           </p>
-          <Button type="button" variant="outline" onClick={() => setIsGovernanceOpen(true)}>
+          <Button type="button" variant="outline" onClick={() => openGovernancePanel(linkedSignal?.id ?? null)}>
             <FlaskConical className="mr-2 h-4 w-4" />
             Abrir trilha completa de aprovação
           </Button>
         </CardContent>
       </Card>
+
+      <Dialog open={isDemoHandoffDialogOpen} onOpenChange={setIsDemoHandoffDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Enviar sinal para Demo</DialogTitle>
+            <DialogDescription>
+              Defina os parâmetros mínimos do handoff para paper execution com auditoria de promotion path.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid grid-cols-1 gap-3 text-sm md:grid-cols-2">
+            <div className="space-y-1">
+              <Label htmlFor="ai-cockpit-demo-size">Size</Label>
+              <Input
+                id="ai-cockpit-demo-size"
+                inputMode="decimal"
+                value={demoOrderSize}
+                onChange={(event) => setDemoOrderSize(event.target.value)}
+                placeholder="Ex.: 0.01"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="ai-cockpit-demo-leverage">Leverage (opcional)</Label>
+              <Input
+                id="ai-cockpit-demo-leverage"
+                inputMode="decimal"
+                value={demoLeverage}
+                onChange={(event) => setDemoLeverage(event.target.value)}
+                placeholder="Ex.: 3"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Entry Type</Label>
+              <Select value={demoEntryType} onValueChange={(value) => setDemoEntryType(value as 'market' | 'limit')}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="market">market</SelectItem>
+                  <SelectItem value="limit">limit</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="ai-cockpit-demo-price">Preço (limit)</Label>
+              <Input
+                id="ai-cockpit-demo-price"
+                inputMode="decimal"
+                value={demoEntryPrice}
+                onChange={(event) => setDemoEntryPrice(event.target.value)}
+                placeholder="Ex.: 92500"
+                disabled={demoEntryType !== 'limit'}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsDemoHandoffDialogOpen(false)}
+              disabled={sendToDemoMutation.isPending}
+            >
+              Cancelar
+            </Button>
+            <Button type="button" onClick={submitDemoHandoff} disabled={sendToDemoMutation.isPending}>
+              Confirmar handoff
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Collapsible open={isGovernanceOpen} onOpenChange={setIsGovernanceOpen}>
         <Card className="border-border/60 shadow-sm">

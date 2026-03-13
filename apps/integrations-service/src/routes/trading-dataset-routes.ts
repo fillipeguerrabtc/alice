@@ -80,7 +80,7 @@ const datasetsListQuerySchema = z.object({
 
 const datasetFromSignalBodySchema = z.object({
   signalId: z.string().uuid(),
-  namespaceId: z.string().uuid(),
+  namespaceId: z.string().uuid().optional(),
   reviewNotes: z.string().optional(),
 });
 
@@ -192,17 +192,21 @@ export function registerTradingDatasetRoutes(
       }
 
       const db = getDatabase();
-      const targetNamespace = await db.query.namespaces.findFirst({
-        where: and(
-          eq(schema.namespaces.id, parsed.data.namespaceId),
-          eq(schema.namespaces.tenantId, authContext.tenantId),
-          eq(schema.namespaces.ativo, true),
-        ),
-        columns: { id: true },
-      });
-      if (!targetNamespace) {
-        res.status(403).json({ error: 'Namespace de destino não pertence ao tenant ou está inativo' });
-        return;
+      let targetNamespaceId: string | undefined;
+      if (parsed.data.namespaceId) {
+        const targetNamespace = await db.query.namespaces.findFirst({
+          where: and(
+            eq(schema.namespaces.id, parsed.data.namespaceId),
+            eq(schema.namespaces.tenantId, authContext.tenantId),
+            eq(schema.namespaces.ativo, true),
+          ),
+          columns: { id: true },
+        });
+        if (!targetNamespace) {
+          res.status(403).json({ error: 'Namespace de destino não pertence ao tenant ou está inativo' });
+          return;
+        }
+        targetNamespaceId = targetNamespace.id;
       }
 
       const signal = await db.query.tradingSignals.findFirst({
@@ -219,7 +223,7 @@ export function registerTradingDatasetRoutes(
       const result = await deps.createTradingDatasetFromSignalSource({
         authContext,
         signal,
-        namespaceId: targetNamespace.id,
+        namespaceId: targetNamespaceId,
         reviewNotes: parsed.data.reviewNotes,
       });
 

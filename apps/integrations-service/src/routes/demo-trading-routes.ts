@@ -1,6 +1,7 @@
 import type { Express, Request, Response } from 'express';
 import { createLogger } from '@alice/logger';
-import { requirePermission } from '@alice/shared-utils';
+import { schema } from '@alice/database';
+import { extractAuthContext, requirePermission } from '@alice/shared-utils';
 import { Counter as PromCounter, Histogram as PromHistogram } from 'prom-client';
 import { z } from 'zod';
 import {
@@ -18,12 +19,37 @@ import {
   getOrders as getDemoOrders,
   updateDemoPositionRisk,
 } from '../demo-trading-engine.js';
+import { TradingSignalPromotionError } from '../trading-signal-promotion-service.js';
+
+interface TradingAuthContext {
+  tenantId: string;
+  userId: string;
+}
 
 interface RegisterDemoTradingRoutesDeps {
   logger?: ReturnType<typeof createLogger>;
+  findSignalById?: (params: { authContext: TradingAuthContext; signalId: string }) => Promise<schema.TradingSignal>;
+  assertSignalDemoEligibility?: (params: {
+    authContext: TradingAuthContext;
+    signal: schema.TradingSignal;
+  }) => Promise<unknown>;
+  registerSignalDemoHandoff?: (params: {
+    authContext: TradingAuthContext;
+    signal: schema.TradingSignal;
+    demoOrderId: string;
+    reason?: string;
+  }) => Promise<unknown>;
 }
 
 function mapDemoTradingError(error: unknown): { status: 400 | 404 | 422 | 500; error: string; code?: string } {
+  if (error instanceof TradingSignalPromotionError) {
+    return {
+      status: error.code === 'SIGNAL_NOT_FOUND' ? 404 : 422,
+      error: error.message,
+      code: error.code,
+    };
+  }
+
   if (error instanceof DemoTradingBusinessError) {
     return {
       status: error.statusCode,
@@ -71,6 +97,17 @@ function recordDemoTradingLatency(route: string, startedAt: number, status: numb
   const elapsedMs = Math.max(0, Date.now() - startedAt);
   const statusClass = status >= 500 ? '5xx' : status >= 400 ? '4xx' : '2xx';
   demoTradingRequestDurationMs.observe({ route, status_class: statusClass }, elapsedMs);
+}
+
+function getTradingAuthContext(req: Request): TradingAuthContext | null {
+  const authContext = extractAuthContext(req);
+  if (!authContext?.tenantId || !authContext?.userId) {
+    return null;
+  }
+  return {
+    tenantId: authContext.tenantId,
+    userId: authContext.userId,
+  };
 }
 
 export function registerDemoTradingRoutes(
@@ -217,6 +254,23 @@ export function registerDemoTradingRoutes(
       const tenantId = req.tenantId;
       if (!tenantId) { res.status(403).json({ error: 'Tenant não identificado' }); return; }
 
+      const authContext = getTradingAuthContext(req);
+      let promotionSignal: schema.TradingSignal | null = null;
+      if (deps.findSignalById && deps.assertSignalDemoEligibility && deps.registerSignalDemoHandoff) {
+        if (!authContext) {
+          res.status(401).json({ error: 'Autenticação necessária' });
+          return;
+        }
+        promotionSignal = await deps.findSignalById({
+          authContext,
+          signalId,
+        });
+        await deps.assertSignalDemoEligibility({
+          authContext,
+          signal: promotionSignal,
+        });
+      }
+
       const result = await createDemoOrder({
         tenantId,
         symbol,
@@ -230,6 +284,15 @@ export function registerDemoTradingRoutes(
         takeProfit,
         signalId,
       });
+
+      if (promotionSignal && authContext && deps.registerSignalDemoHandoff) {
+        await deps.registerSignalDemoHandoff({
+          authContext,
+          signal: promotionSignal,
+          demoOrderId: result.orderId,
+          reason: 'signal routed to demo execution from from-signal endpoint',
+        });
+      }
 
       logger.info({ signalId, orderId: result.orderId, positionId: result.positionId }, 'Ordem demo criada a partir de sinal IA');
 

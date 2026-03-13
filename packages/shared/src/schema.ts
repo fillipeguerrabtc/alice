@@ -2789,6 +2789,27 @@ export const tradingSignalTypeEnum = pgEnum("trading_signal_type", [
   "neutral",      // Sem sinal (esperar)
 ]);
 
+export const tradingSignalPromotionStageEnum = pgEnum('trading_signal_promotion_stage', [
+  'candidate_evidence_captured',
+  'dataset_candidate',
+  'approved_dataset_version',
+  'calibration_result',
+  'demo_eligible',
+  'real_eligible',
+]);
+
+export const tradingSignalEligibilityStatusEnum = pgEnum('trading_signal_eligibility_status', [
+  'pending',
+  'eligible',
+  'blocked',
+]);
+
+export const tradingSignalPromotionValidationStateEnum = pgEnum('trading_signal_promotion_validation_state', [
+  'pending',
+  'validated',
+  'failed',
+]);
+
 // Market type para Trading (Futures/Spot/Margin)
 export const tradingMarketTypeEnum = pgEnum("trading_market_type", [
   "futures",
@@ -3023,6 +3044,51 @@ export const TradingOverallSignalSchema = z.enum([
 ]);
 export type TradingOverallSignal = z.infer<typeof TradingOverallSignalSchema>;
 
+export const TradingSignalPromotionStageSchema = z.enum([
+  'candidate_evidence_captured',
+  'dataset_candidate',
+  'approved_dataset_version',
+  'calibration_result',
+  'demo_eligible',
+  'real_eligible',
+]);
+export type TradingSignalPromotionStage = z.infer<typeof TradingSignalPromotionStageSchema>;
+
+export const TradingSignalEligibilityStatusSchema = z.enum([
+  'pending',
+  'eligible',
+  'blocked',
+]);
+export type TradingSignalEligibilityStatus = z.infer<typeof TradingSignalEligibilityStatusSchema>;
+
+export const TradingSignalPromotionValidationStateSchema = z.enum([
+  'pending',
+  'validated',
+  'failed',
+]);
+export type TradingSignalPromotionValidationState = z.infer<typeof TradingSignalPromotionValidationStateSchema>;
+
+export const TradingSignalPromotionSnapshotSchema = z.object({
+  pathId: z.string().uuid().optional(),
+  lifecycleStage: TradingSignalPromotionStageSchema.optional(),
+  validationState: TradingSignalPromotionValidationStateSchema.optional(),
+  datasetCandidateId: z.string().uuid().optional(),
+  datasetVersionId: z.string().uuid().optional(),
+  calibrationId: z.string().uuid().optional(),
+  demoEligibilityStatus: TradingSignalEligibilityStatusSchema.optional(),
+  demoEligibilityReasonCode: z.string().optional(),
+  demoOrderId: z.string().uuid().optional(),
+  demoPromotedByUserId: z.string().uuid().optional(),
+  demoPromotedAt: z.string().datetime().optional(),
+  demoPromotionReason: z.string().optional(),
+  realEligibilityStatus: TradingSignalEligibilityStatusSchema.optional(),
+  realEligibilityReasonCode: z.string().optional(),
+  realPromotedByUserId: z.string().uuid().optional(),
+  realPromotedAt: z.string().datetime().optional(),
+  realPromotionReason: z.string().optional(),
+});
+export type TradingSignalPromotionSnapshot = z.infer<typeof TradingSignalPromotionSnapshotSchema>;
+
 export const TradingTechniqueScoreSchema = z.object({
   technique: TradingTechniqueSchema,
   family: TradingTechniqueFamilySchema.optional(),
@@ -3116,6 +3182,7 @@ export const TradingSignalMetadataSchema = z.object({
     interval: z.string(),
     analysis: z.record(z.unknown()),
   })).optional(),
+  promotion: TradingSignalPromotionSnapshotSchema.optional(),
   createdByUserId: z.string().uuid().optional(),
   isDeleted: z.boolean().optional(),
   deletedAt: z.string().optional(),
@@ -3197,6 +3264,66 @@ export const tradingSignals = pgTable(
     idxSignalsSymbol: index("idx_trading_signals_symbol").on(table.symbol),
   })
 );
+
+export const tradingSignalPromotions = pgTable('trading_signal_promotions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  signalId: uuid('signal_id').notNull().references(() => tradingSignals.id, { onDelete: 'cascade' }),
+  autoRunId: uuid('auto_run_id'),
+  autoDecisionId: uuid('auto_decision_id'),
+  evidenceSourceType: varchar('evidence_source_type', { length: 64 }).notNull().default('signal'),
+  evidenceSourceId: varchar('evidence_source_id', { length: 255 }).notNull(),
+  lifecycleStage: tradingSignalPromotionStageEnum('lifecycle_stage').notNull().default('candidate_evidence_captured'),
+  validationState: tradingSignalPromotionValidationStateEnum('validation_state').notNull().default('pending'),
+  datasetCandidateId: uuid('dataset_candidate_id').references(() => trainingData.id, { onDelete: 'set null' }),
+  datasetVersionId: uuid('dataset_version_id').references(() => trainingDatasetVersions.id, { onDelete: 'set null' }),
+  calibrationId: uuid('calibration_id').references(() => tradingSignalCalibration.id, { onDelete: 'set null' }),
+  demoEligibilityStatus: tradingSignalEligibilityStatusEnum('demo_eligibility_status').notNull().default('pending'),
+  demoEligibilityReasonCode: varchar('demo_eligibility_reason_code', { length: 64 }),
+  demoOrderId: uuid('demo_order_id'),
+  demoPromotedByUserId: uuid('demo_promoted_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+  demoPromotedAt: timestamp('demo_promoted_at'),
+  demoPromotionReason: text('demo_promotion_reason'),
+  realEligibilityStatus: tradingSignalEligibilityStatusEnum('real_eligibility_status').notNull().default('pending'),
+  realEligibilityReasonCode: varchar('real_eligibility_reason_code', { length: 64 }),
+  realPromotedByUserId: uuid('real_promoted_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+  realPromotedAt: timestamp('real_promoted_at'),
+  realPromotionReason: text('real_promotion_reason'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+}, (table) => ({
+  idxTradingSignalPromotionsTenant: index('idx_trading_signal_promotions_tenant').on(table.tenantId),
+  idxTradingSignalPromotionsStage: index('idx_trading_signal_promotions_stage').on(table.lifecycleStage),
+  idxTradingSignalPromotionsDemoEligibility: index('idx_trading_signal_promotions_demo_eligibility').on(table.demoEligibilityStatus),
+  idxTradingSignalPromotionsRealEligibility: index('idx_trading_signal_promotions_real_eligibility').on(table.realEligibilityStatus),
+  idxTradingSignalPromotionsDatasetCandidate: index('idx_trading_signal_promotions_dataset_candidate').on(table.datasetCandidateId),
+  uniqTradingSignalPromotionsTenantSignal: uniqueIndex('uniq_trading_signal_promotions_tenant_signal').on(table.tenantId, table.signalId),
+}));
+
+export const tradingSignalPromotionEvents = pgTable('trading_signal_promotion_events', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  promotionPathId: uuid('promotion_path_id').notNull().references(() => tradingSignalPromotions.id, { onDelete: 'cascade' }),
+  signalId: uuid('signal_id').notNull().references(() => tradingSignals.id, { onDelete: 'cascade' }),
+  lifecycleStage: tradingSignalPromotionStageEnum('lifecycle_stage').notNull(),
+  actorUserId: uuid('actor_user_id').notNull().references(() => users.id),
+  reason: text('reason'),
+  evidenceSourceType: varchar('evidence_source_type', { length: 64 }).notNull(),
+  evidenceSourceId: varchar('evidence_source_id', { length: 255 }).notNull(),
+  metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, (table) => ({
+  idxTradingSignalPromotionEventsTenant: index('idx_trading_signal_promotion_events_tenant').on(table.tenantId),
+  idxTradingSignalPromotionEventsSignal: index('idx_trading_signal_promotion_events_signal').on(table.signalId),
+  idxTradingSignalPromotionEventsPath: index('idx_trading_signal_promotion_events_path').on(table.promotionPathId),
+  idxTradingSignalPromotionEventsStage: index('idx_trading_signal_promotion_events_stage').on(table.lifecycleStage),
+  idxTradingSignalPromotionEventsCreatedAt: index('idx_trading_signal_promotion_events_created_at').on(table.createdAt),
+}));
+
+export type TradingSignalPromotion = typeof tradingSignalPromotions.$inferSelect;
+export type InsertTradingSignalPromotion = typeof tradingSignalPromotions.$inferInsert;
+export type TradingSignalPromotionEvent = typeof tradingSignalPromotionEvents.$inferSelect;
+export type InsertTradingSignalPromotionEvent = typeof tradingSignalPromotionEvents.$inferInsert;
 
 // ============================================================================
 // SCHEDULER DE SINAIS (LLM Runtime)
