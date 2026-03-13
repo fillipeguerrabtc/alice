@@ -51,7 +51,7 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Rodada 4: Concluída
 - Rodada 5: Concluída
 - Rodada 6: Concluída
-- Rodada 7: Pendente
+- Rodada 7: Concluída
 - Rodada 8: Pendente
 - Rodada 9: Pendente
 - Rodada 10: Pendente
@@ -137,6 +137,15 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - `docs/trading/domain-map-trading.md`
 - `docs/trading/plano-refatoracao-trading.md`
 
+### Rodada 7
+- `apps/integrations-service/src/trading-signal-engine-types.ts` (novo)
+- `apps/integrations-service/src/trading-signal-engine-pipeline-service.ts` (novo)
+- `apps/integrations-service/src/trading-llm-signal-generation-service.ts`
+- `tests/unit/services/trading-signal-engine-pipeline.test.ts` (novo)
+- `docs/trading/signal-engine-pipeline.md` (novo)
+- `docs/trading/domain-map-trading.md`
+- `docs/trading/plano-refatoracao-trading.md`
+
 ## 8. Migrations criadas
 - Rodada 1: Nenhuma.
 - Rodada 2:
@@ -145,6 +154,7 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Rodada 4: Nenhuma.
 - Rodada 5: Nenhuma.
 - Rodada 6: Nenhuma.
+- Rodada 7: Nenhuma.
 
 ## 9. Testes executados
 - Rodada 1:
@@ -165,6 +175,9 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Rodada 6:
 - Comando: `pnpm test`
 - Resultado: `129` arquivos de teste aprovados, `1385` testes aprovados, `0` falhas.
+- Rodada 7:
+- Comando: `pnpm test`
+- Resultado: `130` arquivos de teste aprovados, `1388` testes aprovados, `0` falhas.
 
 ## 10. Resultados de Typecheck
 - Rodada 1:
@@ -185,6 +198,9 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Rodada 6:
 - Comando: `pnpm typecheck`
 - Resultado: sucesso, sem erros.
+- Rodada 7:
+- Comando: `pnpm typecheck`
+- Resultado: sucesso, sem erros.
 
 ## 11. Resultados de ESLint
 - Rodada 1:
@@ -203,6 +219,9 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Comando: `pnpm lint`
 - Resultado: sucesso, sem warnings e sem errors.
 - Rodada 6:
+- Comando: `pnpm lint`
+- Resultado: sucesso, sem warnings e sem errors.
+- Rodada 7:
 - Comando: `pnpm lint`
 - Resultado: sucesso, sem warnings e sem errors.
 
@@ -241,6 +260,9 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Rodada 6:
 - Comando: `pnpm --filter frontend-service build`
 - Resultado: sucesso (`tsc -b && vite build`).
+- Rodada 7:
+- Comando: `pnpm --filter @alice/integrations-service build`
+- Resultado: sucesso.
 
 ## 13. Riscos conhecidos
 - Acoplamento alto em páginas grandes (`TradingContent.tsx`, `DemoTrading.tsx`) exige mudanças muito cirúrgicas por rodada.
@@ -250,7 +272,7 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - A convergência final para remover o shell legacy exige rollout gradual por flag para evitar regressão de UX em produção.
 
 ## 14. Pendências
-- Iniciar Rodada 7 com decomposição do Signal Engine.
+- Iniciar Rodada 8 com Strategy Specialists e Data Requirements.
 
 ## 15. Decisões arquiteturais registradas
 - Feature flag `trading_workspace_v2_enabled` adicionada como baseline de rollout controlado.
@@ -265,8 +287,11 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Convergência da Demo para a shell V2 concluída no caminho com flag ativa, removendo dependência operacional dos `TabsContent` legados para `ai-signals`, `portfolio-auto` e `post-trade`.
 - Handoff explícito de sinal IA para demo execution padronizado via `POST /api/integrations/demo-trading/orders/from-signal`.
 - Garantias de isolamento Demo vs Live documentadas com evidências de rota, persistência e scoping por tenant.
+- Signal Engine decomposto em pipeline interno com estágios explícitos (`feature_extraction`, `candidate_generation`, `llm_arbitration`, `risk_shaping`, `persistence`, `validation_finalize`).
+- Tipos compartilhados do pipeline centralizados em `trading-signal-engine-types.ts`, reduzindo acoplamento e duplicação no gerador principal.
+- Compatibilidade externa preservada no serviço/rota de geração de sinal, com observability estruturada por estágio (`trading.signal.pipeline.stage`, `trading.signal.pipeline.completed`).
 
 ## 16. Próximos passos
-1. Iniciar Rodada 7 focando decomposição do Signal Engine em pipeline mais robusto e modular.
+1. Iniciar Rodada 8 focando Strategy Specialists e Data Requirements.
 2. Manter evolução sem trilha paralela `legacy + v2`, com cleanup contínuo controlado por rollout.
 3. Repetir checklist sequencial de validação e atualização documental ao fechamento da próxima rodada.

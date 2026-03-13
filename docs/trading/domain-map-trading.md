@@ -186,3 +186,21 @@ Arquivo principal: `apps/integrations-service/src/routes/trading-automation-rout
 - persistência `demo_*`
 - `isDemo=true` no pipeline de post-mortem
 - scoping por tenant em todas as operações.
+
+## 16. Atualização da Rodada 7
+- A orquestração de Signal Generation foi decomposta em pipeline interno:
+- `apps/integrations-service/src/trading-signal-engine-types.ts`
+- `apps/integrations-service/src/trading-signal-engine-pipeline-service.ts`
+- O serviço público permanece estável:
+- `apps/integrations-service/src/trading-llm-signal-generation-service.ts` continua expondo `generateTradingSignalFromLlm(...)`.
+- Estágios explícitos mapeados:
+- `feature_extraction`
+- `candidate_generation`
+- `llm_arbitration`
+- `risk_shaping`
+- `persistence`
+- `validation_finalize`
+- Contrato externo da rota `POST /api/integrations/trading/signals/generate` preservado.
+- Novos hooks de observability por estágio:
+- `trading.signal.pipeline.stage`
+- `trading.signal.pipeline.completed`
