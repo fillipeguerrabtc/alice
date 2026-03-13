@@ -298,6 +298,9 @@ export async function getTradingSignalPromotionPath(signalId: string): Promise<T
   return body.data;
 }
 
+// Compatibilidade para consumers antigos que esperam nome sem sufixo "Path".
+export const getTradingSignalPromotion = getTradingSignalPromotionPath;
+
 export async function sendTradingSignalToTrainingDataset(payload: {
   signalId: string;
   namespaceId?: string;
@@ -316,6 +319,40 @@ export async function sendTradingSignalToTrainingDataset(payload: {
   };
   return body.data;
 }
+
+// Compatibilidade para consumers antigos do handoff de training.
+export const sendSignalToTrainingDataset = sendTradingSignalToTrainingDataset;
+
+export async function sendTradingSignalToDemoExecution(payload: {
+  signalId: string;
+  symbol: string;
+  marketType: 'futures' | 'spot' | 'margin';
+  side: 'buy' | 'sell';
+  size: number;
+  leverage?: number;
+  stopLoss?: number;
+  takeProfit?: number;
+  entryType?: 'market' | 'limit';
+  price?: number;
+}): Promise<{
+  orderId: string;
+  positionId?: string | null;
+  fromSignalId?: string;
+}> {
+  const response = await apiRequest('POST', '/api/integrations/demo-trading/orders/from-signal', payload);
+  const body = await response.json() as {
+    success: boolean;
+    data: {
+      orderId: string;
+      positionId?: string | null;
+      fromSignalId?: string;
+    };
+  };
+  return body.data;
+}
+
+// Compatibilidade para consumers antigos do handoff para demo.
+export const sendSignalToDemoExecution = sendTradingSignalToDemoExecution;
 
 export async function promoteTradingSignalRealEligibility(params: {
   signalId: string;

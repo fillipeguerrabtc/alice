@@ -31,13 +31,21 @@ import type {
 } from '@/services/api/trading';
 import {
   getTradingSignalPromotionPath,
+  sendTradingSignalToDemoExecution,
   sendTradingSignalToTrainingDataset,
   type TradingSignalPromotionPathSummary,
 } from '@/services/api/trading';
-import { createDemoOrderFromSignal } from '@/services/api/tradingDemo';
+import {
+  buildTradingDemoHandoffPayload,
+  isDirectionalSignalType,
+  resolveTradingDemoEligibility,
+} from './ai-signals-demo-handoff-adapter';
+import {
+  resolveSignalsCockpitReasonText,
+  resolveSignalsCockpitStateBadge,
+  resolveSignalsCockpitStateCategory,
+} from './ai-signals-cockpit-state-adapter';
 import type { TradingWorkspaceEnvironmentMode } from './types';
-
-type SignalsCockpitStateCategory = 'blocked' | 'no_trade' | 'signal_generated' | 'executed' | 'failed' | 'running';
 
 type TradingCockpitSignal = {
   confidence: number;
@@ -102,23 +110,6 @@ type TradingWorkspaceAiSignalsCockpitModeProps = {
   topTradingCandidates: TradingCandidate[];
 };
 
-const REASON_CODE_TEXT: Record<string, string> = {
-  TRADING_SCOPE_REQUIRED: 'Escopo de Trading obrigatório não configurado para executar o run.',
-  UNVALIDATED: 'Candidato ainda sem validação estatística mínima (DSR/PBO).',
-  LIQUIDITY_CONSTRAINT: 'Sem liquidez mínima: spread alargado ou profundidade insuficiente.',
-  GUARDRAIL_BLOCKED: 'Guardrails bloquearam a execução por risco fora da política.',
-  NO_CANDIDATES: 'Nenhum candidato elegível foi encontrado no escopo selecionado.',
-  NO_EDGE: 'Edge líquido insuficiente para abrir operação com segurança.',
-  UNEXPECTED_ERROR: 'Falha inesperada durante o processamento do run.',
-  NON_DIRECTIONAL_SIGNAL: 'Somente sinais direcionais podem seguir para execução.',
-  VALIDATION_NOT_VALIDATED: 'Validation state precisa estar em validated para elegibilidade de execução.',
-  DATASET_CANDIDATE_MISSING: 'Sinal ainda não foi enviado para dataset curation.',
-  DATASET_CANDIDATE_NOT_APPROVED: 'Dataset candidate ainda não foi aprovado no Training.',
-  DATASET_VERSION_MISSING: 'Ainda não existe dataset version aprovado com esta evidência.',
-  CALIBRATION_MISSING: 'Calibração estatística ainda não disponível para o signal.',
-  REAL_PROMOTION_REQUIRED: 'Promoção explícita para real eligibility ainda não foi realizada.',
-};
-
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return null;
@@ -134,67 +125,12 @@ function asNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
-function parsePositiveNumber(value: string): number | null {
-  const normalized = value.trim().replace(',', '.');
-  if (!normalized) return null;
-  const parsed = Number(normalized);
-  if (!Number.isFinite(parsed) || parsed <= 0) return null;
-  return parsed;
-}
-
-function resolveCockpitStateCategory(params: {
-  linkedSignal: TradingCockpitSignal | null;
-  latestRun: TradingAutoRun | null;
-}): SignalsCockpitStateCategory {
-  const { latestRun, linkedSignal } = params;
-
-  if (!latestRun) {
-    if (linkedSignal?.metadata?.approvalStatus === 'approved') return 'executed';
-    if (linkedSignal) return 'signal_generated';
-    return 'running';
-  }
-
-  if (latestRun.status === 'blocked') return 'blocked';
-  if (latestRun.status === 'no_trade') return 'no_trade';
-  if (latestRun.status === 'failed' || latestRun.status === 'cancelled') return 'failed';
-  if (latestRun.status === 'succeeded') {
-    return linkedSignal?.metadata?.approvalStatus === 'approved' ? 'executed' : 'signal_generated';
-  }
-
-  return 'running';
-}
-
-function resolveStateBadge(category: SignalsCockpitStateCategory): {
-  icon: typeof CircleDashed;
-  label: string;
-  variant: 'default' | 'secondary' | 'destructive' | 'outline';
-} {
-  if (category === 'blocked') {
-    return { icon: ShieldX, label: 'blocked', variant: 'secondary' };
-  }
-  if (category === 'no_trade') {
-    return { icon: CircleDashed, label: 'no_trade', variant: 'outline' };
-  }
-  if (category === 'signal_generated') {
-    return { icon: CircleCheck, label: 'signal_generated', variant: 'default' };
-  }
-  if (category === 'executed') {
-    return { icon: ArrowRightLeft, label: 'executed', variant: 'default' };
-  }
-  if (category === 'failed') {
-    return { icon: CircleX, label: 'failed', variant: 'destructive' };
-  }
-  return { icon: CircleDashed, label: 'running', variant: 'outline' };
-}
-
-function resolveReasonText(machineReasonCode: string | null, providedReason: string | null): string {
-  if (providedReason) {
-    return providedReason;
-  }
-  if (!machineReasonCode) {
-    return 'Sem reason code explícito para este run.';
-  }
-  return REASON_CODE_TEXT[machineReasonCode] ?? 'Reason code sem descrição cadastrada.';
+function resolveStateIcon(category: ReturnType<typeof resolveSignalsCockpitStateCategory>): typeof CircleDashed {
+  if (category === 'blocked') return ShieldX;
+  if (category === 'signal_generated') return CircleCheck;
+  if (category === 'executed') return ArrowRightLeft;
+  if (category === 'failed') return CircleX;
+  return CircleDashed;
 }
 
 export function TradingWorkspaceAiSignalsCockpitMode({
@@ -260,14 +196,18 @@ export function TradingWorkspaceAiSignalsCockpitMode({
     ?? signals[0]
     ?? null;
 
-  const stateCategory = resolveCockpitStateCategory({ linkedSignal, latestRun });
-  const stateBadge = resolveStateBadge(stateCategory);
-  const StateIcon = stateBadge.icon;
+  const stateCategory = resolveSignalsCockpitStateCategory({
+    hasLinkedSignal: Boolean(linkedSignal),
+    linkedSignalApprovalStatus: linkedSignal?.metadata?.approvalStatus ?? null,
+    latestRunStatus: latestRun?.status ?? null,
+  });
+  const stateBadge = resolveSignalsCockpitStateBadge(stateCategory);
+  const StateIcon = resolveStateIcon(stateCategory);
 
   const entryReasonCode = asString(entryPayload?.noTradeReasonCode);
   const entryReasonHuman = asString(entryPayload?.noTradeReasonHuman);
   const machineReasonCode = latestRun?.terminalReasonCode ?? entryReasonCode;
-  const userReasonText = resolveReasonText(machineReasonCode, entryReasonHuman);
+  const userReasonText = resolveSignalsCockpitReasonText(machineReasonCode, entryReasonHuman);
   const nextAction = asString(entryPayload?.nextAction);
   const candidateCount = latestDecision?.candidateIds?.length ?? 0;
   const approvedCandidateCount = latestDecision?.approved ? 1 : 0;
@@ -281,7 +221,7 @@ export function TradingWorkspaceAiSignalsCockpitMode({
     ?? asString(linkedSignal?.metadata?.marketCondition)
     ?? '-';
 
-  const isDirectionalSignal = linkedSignal?.signalType === 'entry_long' || linkedSignal?.signalType === 'entry_short';
+  const isDirectionalSignal = Boolean(linkedSignal?.signalType && isDirectionalSignalType(linkedSignal.signalType));
   const hasLinkedSignal = Boolean(linkedSignal?.id);
 
   const isNoTradeLikeSignal = linkedSignal?.signalType === 'neutral' || linkedSignal?.signalType === 'hold';
@@ -332,7 +272,7 @@ export function TradingWorkspaceAiSignalsCockpitMode({
       price?: number;
       stopLoss?: number;
       takeProfit?: number;
-    }) => createDemoOrderFromSignal({
+    }) => sendTradingSignalToDemoExecution({
       signalId: params.signalId,
       symbol: params.symbol,
       marketType,
@@ -372,7 +312,7 @@ export function TradingWorkspaceAiSignalsCockpitMode({
   };
 
   const openDemoHandoffDialog = () => {
-    if (!linkedSignal || !isDirectionalSignal) {
+    if (!linkedSignal || !isDirectionalSignalType(linkedSignal.signalType)) {
       toast({
         title: 'Handoff para Demo indisponível',
         description: 'Apenas sinais direcionais podem ser roteados para Demo.',
@@ -398,49 +338,40 @@ export function TradingWorkspaceAiSignalsCockpitMode({
   };
 
   const submitDemoHandoff = () => {
-    if (!linkedSignal || !isDirectionalSignal) {
+    if (!linkedSignal) {
       return;
     }
-    const parsedSize = parsePositiveNumber(demoOrderSize);
-    if (parsedSize == null) {
-      toast({
-        title: 'Size inválido',
-        description: 'Informe um size positivo para executar o handoff demo.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    const parsedLeverage = parsePositiveNumber(demoLeverage);
-    const parsedPrice = parsePositiveNumber(demoEntryPrice);
-    if (demoEntryType === 'limit' && parsedPrice == null) {
-      toast({
-        title: 'Preço obrigatório',
-        description: 'Entrada limit exige preço positivo.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    sendToDemoMutation.mutate({
-      signalId: linkedSignal.id,
-      symbol: linkedSignal.symbol,
-      side: linkedSignal.signalType === 'entry_long' ? 'buy' : 'sell',
-      size: parsedSize,
-      leverage: parsedLeverage ?? undefined,
+    const draft = {
+      sizeInput: demoOrderSize,
+      leverageInput: demoLeverage,
       entryType: demoEntryType,
-      price: demoEntryType === 'limit' ? parsedPrice ?? undefined : undefined,
-      stopLoss: linkedSignal.suggestedStopLoss ?? undefined,
-      takeProfit: linkedSignal.suggestedTakeProfit ?? undefined,
+      priceInput: demoEntryPrice,
+    };
+    const buildResult = buildTradingDemoHandoffPayload({
+      draft,
+      signal: linkedSignal,
     });
+    if (!buildResult.ok) {
+      const message = buildResult.code === 'INVALID_SIZE'
+        ? 'Informe um size positivo para executar o handoff demo.'
+        : buildResult.code === 'LIMIT_PRICE_REQUIRED'
+          ? 'Entrada limit exige preço positivo.'
+          : 'Apenas sinais direcionais podem ser roteados para Demo.';
+      toast({
+        title: buildResult.code === 'LIMIT_PRICE_REQUIRED' ? 'Preço obrigatório' : 'Handoff inválido',
+        description: message,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    sendToDemoMutation.mutate(buildResult.payload);
   };
 
   const promotionPath = promotionPathQuery.data ?? null;
-  const isDemoEligibleForHandoff = promotionPath ? promotionPath.demo.status === 'eligible' : true;
-  const demoEligibilityReasonText = promotionPath?.demo.status === 'eligible'
-    ? 'Sem bloqueio ativo para handoff demo.'
-    : promotionPath?.demo.reasonHuman
-      ?? resolveReasonText(promotionPath?.demo.reasonCode ?? null, null);
+  const demoEligibility = resolveTradingDemoEligibility({ promotionPath });
+  const isDemoEligibleForHandoff = demoEligibility.eligible;
+  const demoEligibilityReasonText = demoEligibility.reasonHuman;
 
   return (
     <div className="space-y-4">

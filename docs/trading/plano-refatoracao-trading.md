@@ -31,6 +31,7 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - O modo `operate` da Workspace V2 já está ativo no caminho V2 para Real e Demo, com primeira dobra focada em execução e progressive disclosure para detalhes avançados.
 - O modo `ai-signals` da Workspace V2 já está ativo com cockpit dedicado, classificação explícita de estados e reason codes em dois níveis.
 - A Demo Trading já converge para a shell V2 em todos os quatro modos no caminho com flag ativa, incluindo handoff explícito de sinal para paper execution.
+- A Rodada 10 foi concluída com cleanup controlado, adapters de compatibilidade, testes críticos adicionais e documentação final de rollout/migration/rollback.
 
 ## 5. Plano por rodadas
 1. Baseline, Feature Flag, Domain Map e Plano Canônico.
@@ -54,7 +55,7 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Rodada 7: Concluída
 - Rodada 8: Concluída
 - Rodada 9: Concluída
-- Rodada 10: Pendente
+- Rodada 10: Concluída
 
 ## 7. Arquivos impactados por rodada
 ### Rodada 1
@@ -186,6 +187,25 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - `docs/trading/domain-map-trading.md`
 - `docs/trading/plano-refatoracao-trading.md`
 
+### Rodada 10
+- `apps/frontend-service/src/components/trading-v2/workspace-rollout-adapter.ts` (novo)
+- `apps/frontend-service/src/components/trading-v2/ai-signals-cockpit-state-adapter.ts` (novo)
+- `apps/frontend-service/src/components/trading-v2/ai-signals-demo-handoff-adapter.ts` (novo)
+- `apps/frontend-service/src/components/trading-v2/TradingWorkspaceAiSignalsCockpitMode.tsx`
+- `apps/frontend-service/src/components/trading-v2/index.ts`
+- `apps/frontend-service/src/pages/TradingContent.tsx`
+- `apps/frontend-service/src/pages/DemoTrading.tsx`
+- `apps/frontend-service/src/services/api/trading.ts`
+- `apps/integrations-service/src/routes/trading-signal-promotion-routes.ts`
+- `tests/unit/frontend/trading-workspace-rollout-adapter.test.ts` (novo)
+- `tests/unit/frontend/trading-signals-cockpit-state-adapter.test.ts` (novo)
+- `tests/unit/frontend/trading-signal-demo-handoff-adapter.test.ts` (novo)
+- `tests/unit/services/trading-signal-promotion-service-helpers.test.ts` (novo)
+- `docs/trading/arquitetura-compatibilidade-trading-v2.md` (novo)
+- `docs/trading/rollout-migration-rollback-trading-v2.md` (novo)
+- `docs/trading/operacao-testes-trading-v2.md` (novo)
+- `docs/trading/plano-refatoracao-trading.md`
+
 ## 8. Migrations criadas
 - Rodada 1: Nenhuma.
 - Rodada 2:
@@ -198,6 +218,7 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Rodada 8: Nenhuma.
 - Rodada 9:
 - `0110_trading_signal_promotion_path.sql` (novos enums de promotion path + tabelas `trading_signal_promotions` e `trading_signal_promotion_events` + índices de consulta/auditoria).
+- Rodada 10: Nenhuma.
 
 ## 9. Testes executados
 - Rodada 1:
@@ -227,6 +248,9 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Rodada 9:
 - Comando: `pnpm test`
 - Resultado: `131` arquivos de teste aprovados, `1395` testes aprovados, `0` falhas.
+- Rodada 10:
+- Comando: `pnpm test -- --reporter=dot`
+- Resultado: `135` arquivos de teste aprovados, `1415` testes aprovados, `0` falhas.
 
 ## 10. Resultados de Typecheck
 - Rodada 1:
@@ -256,6 +280,9 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Rodada 9:
 - Comando: `pnpm typecheck`
 - Resultado: sucesso, sem erros.
+- Rodada 10:
+- Comando: `pnpm typecheck`
+- Resultado: sucesso, sem erros.
 
 ## 11. Resultados de ESLint
 - Rodada 1:
@@ -283,6 +310,9 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Comando: `pnpm lint`
 - Resultado: sucesso, sem warnings e sem errors.
 - Rodada 9:
+- Comando: `pnpm lint`
+- Resultado: sucesso, sem warnings e sem errors.
+- Rodada 10:
 - Comando: `pnpm lint`
 - Resultado: sucesso, sem warnings e sem errors.
 
@@ -338,6 +368,11 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Resultado: sucesso.
 - Comando: `pnpm --filter @alice/frontend-service build`
 - Resultado: sucesso (`tsc -b && vite build`).
+- Rodada 10:
+- Comando: `pnpm --filter @alice/integrations-service build`
+- Resultado: sucesso.
+- Comando: `pnpm --filter @alice/frontend-service build`
+- Resultado: sucesso (`tsc -b && vite build`).
 
 ## 13. Riscos conhecidos
 - Acoplamento alto em páginas grandes (`TradingContent.tsx`, `DemoTrading.tsx`) exige mudanças muito cirúrgicas por rodada.
@@ -346,9 +381,11 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Migração de enum em PostgreSQL é aditiva e sem rollback direto de valores; rollback deve ser por comportamento de aplicação.
 - A convergência final para remover o shell legacy exige rollout gradual por flag para evitar regressão de UX em produção.
 - O promotion path depende de sincronização periódica para refletir imediatamente mudanças externas de dataset/calibration em todos os consumers.
+- A camada de compatibilidade de contracts deve ser monitorada para remover aliases legados sem quebrar consumers externos.
 
 ## 14. Pendências
-- Iniciar Rodada 10 com cleanup final, compatibility layer e consolidação de testes/documentação.
+- Nenhuma pendência crítica aberta para conclusão da refatoração em 10 rodadas.
+- Pendência operacional contínua: monitorar rollout por flag e planejar remoção progressiva de aliases de compatibilidade após janela segura.
 
 ## 15. Decisões arquiteturais registradas
 - Feature flag `trading_workspace_v2_enabled` adicionada como baseline de rollout controlado.
@@ -374,8 +411,11 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Handoff para Demo agora valida elegibilidade (`assertSignalDemoEligibility`) antes da execução e registra lineage pós-ordem.
 - Handoff para Training via `datasets/from-signal` passou a operar como fluxo first-class do Cockpit V2, com atualização do snapshot de promotion em metadata.
 - Contract API atualizado com `GET /signals/:id/promotion-path` e `POST /signals/:id/promote-real-eligibility`, mantendo compatibilidade de rota legada.
+- Rodada 10 consolidou adapters explícitos de compatibilidade para rollout controlado (`workspace-rollout-adapter`, aliases de API frontend e aliases de rota backend) sem quebrar consumers legados.
+- A lógica de state mapping e handoff do Cockpit V2 foi extraída para adapters reutilizáveis, reduzindo acoplamento no componente principal e facilitando remoção segura do legado.
+- Testes críticos de rendering, terminal state mapping, blocked/no_trade UX, demo handoff e lineage helpers foram adicionados para sustentar cleanup com segurança.
 
 ## 16. Próximos passos
-1. Iniciar Rodada 10 focando cleanup, compatibility layer, testes críticos adicionais e documentação final de rollout/migration/rollback.
-2. Manter evolução sem trilha paralela `legacy + v2`, preservando fallback por feature flag até a remoção segura do legado.
-3. Repetir checklist sequencial de validação e atualização documental ao fechamento da próxima rodada.
+1. Executar rollout controlado da V2 em produção com monitoramento de erros, uso de aliases e regressões de UX.
+2. Após janela operacional estável, descontinuar aliases legados de API/feature flag com plano de comunicação e remoção faseada.
+3. Manter checklist sequencial de validação e documentação para qualquer mudança incremental pós-refatoração.

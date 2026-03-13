@@ -27,6 +27,7 @@ import {
   TradingWorkspaceOperateMode,
   TradingWorkspaceOperateStatusCard,
   TradingWorkspaceShell,
+  isTradingWorkspaceV2Enabled,
   type TradingWorkspacePrimaryMode,
   type TradingWorkspacePrimaryModeOption,
 } from '@/components/trading-v2';
@@ -1544,7 +1545,7 @@ export function TradingContent() {
     primaryTabsOptions,
   });
   const showOperationalAlerts = Boolean(criticalApiError || !riskConfig?.tradingEnabled);
-  const tradingWorkspaceV2Enabled = Boolean(status.featureFlags?.tradingWorkspaceV2Enabled);
+  const tradingWorkspaceV2Enabled = isTradingWorkspaceV2Enabled(status.featureFlags);
   const activePrimaryMode = resolveTradingV2PrimaryMode(activeTab);
   const isOperateMode = activePrimaryMode === 'operate';
   const isAiSignalsMode = activePrimaryMode === 'ai-signals';

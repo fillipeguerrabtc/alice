@@ -53,6 +53,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { ErrorBoundary } from '@/components/error-boundary';
 import {
+  isTradingWorkspaceV2Enabled,
   TradingWorkspaceDemoAiSignalsMode,
   TradingWorkspaceDemoPortfolioAutoMode,
   TradingWorkspaceDemoPostTradeMode,
@@ -424,7 +425,7 @@ function DemoTradingContent() {
   });
 
   const isConfigured = isStatusSuccess && (statusData?.data?.isConfigured ?? false);
-  const tradingWorkspaceV2Enabled = Boolean(statusData?.data?.featureFlags?.tradingWorkspaceV2Enabled);
+  const tradingWorkspaceV2Enabled = isTradingWorkspaceV2Enabled(statusData?.data?.featureFlags);
   const activePrimaryMode = resolveDemoTradingV2PrimaryMode(activeTab);
   const visibleTabValues = useMemo(
     () => new Set(visibleTabs.map((tab) => tab.value)),
