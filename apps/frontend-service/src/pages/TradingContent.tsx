@@ -6,12 +6,14 @@
  * Data: 10 de Março de 2026
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
+import { Activity, Brain, FileCheck2, Wallet } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/hooks/use-auth';
 import { TIMEZONE } from '@/lib/i18n';
 import { isManualReasoningMode, type ReasoningMode } from '@/lib/reasoning-mode';
+import { Tabs } from '@/components/ui/tabs';
 import {
   classifySignalGenerationFailure,
   emitTradingTelemetry,
@@ -19,6 +21,11 @@ import {
 import { ErrorBoundary } from '@/components/error-boundary'; // ✅ CORREÇÃO: Import ErrorBoundary para graceful degradation
 import { useToast } from '@/hooks/use-toast';
 import { useKucoinWebSocket } from '@/hooks/useKucoinWebSocket';
+import {
+  TradingWorkspaceShell,
+  type TradingWorkspacePrimaryMode,
+  type TradingWorkspacePrimaryModeOption,
+} from '@/components/trading-v2';
 import {
   SIGNAL_TYPES,
   formatDecisionSummary,
@@ -69,8 +76,17 @@ import {
   buildTradingOrderSummary,
   resolveTradingPriceChange,
   TradingPageSections,
+  TradingDialogsSection,
+  TradingHeaderSection,
+  TradingOperationalAlerts,
+  TradingOperationalTabsSection,
+  TradingPrimaryTabsSection,
+  TradingStatsPrimaryRow,
+  TradingStatsSecondaryRow,
   resolveTradingStatusGate,
   isFuturesPositionArray,
+  type TradingTabKey,
+  type TradingWorkspaceKey,
 } from '@/components/trading';
 
 /** Intervalo de atualização do status geral do trading (30s) */
@@ -98,6 +114,61 @@ const AUTO_RUNS_REFETCH_INTERVAL = 15_000;
 
 /** Intervalo padrão de candles */
 const DEFAULT_INTERVAL = '5m';
+
+const TRADING_V2_MODE_OPTIONS: TradingWorkspacePrimaryModeOption[] = [
+  {
+    value: 'operate',
+    label: 'Operar',
+    description: 'Execução manual, ordens e posições.',
+    icon: Activity,
+  },
+  {
+    value: 'ai-signals',
+    label: 'Sinais IA',
+    description: 'Geração de sinais, análise e validação.',
+    icon: Brain,
+  },
+  {
+    value: 'portfolio-auto',
+    label: 'Portfólio Auto',
+    description: 'Auto-run e coordenação de portfólios.',
+    icon: Wallet,
+  },
+  {
+    value: 'post-trade',
+    label: 'Pós-trade',
+    description: 'Histórico operacional e auditoria.',
+    icon: FileCheck2,
+  },
+];
+
+const TRADING_V2_MODE_TAB_TARGETS: Record<TradingWorkspacePrimaryMode, TradingTabKey[]> = {
+  operate: ['overview', 'orders', 'positions'],
+  'ai-signals': ['signals-auto', 'signals', 'analysis'],
+  'portfolio-auto': ['portfolio-auto'],
+  'post-trade': ['history'],
+};
+
+const TRADING_V2_TAB_TO_MODE: Partial<Record<TradingTabKey, TradingWorkspacePrimaryMode>> = {
+  overview: 'operate',
+  orders: 'operate',
+  positions: 'operate',
+  'signals-auto': 'ai-signals',
+  signals: 'ai-signals',
+  analysis: 'ai-signals',
+  'portfolio-auto': 'portfolio-auto',
+  history: 'post-trade',
+  chart: 'operate',
+  orderbook: 'operate',
+  postmortems: 'post-trade',
+  account: 'post-trade',
+  control: 'post-trade',
+  lab: 'ai-signals',
+};
+
+function resolveTradingV2PrimaryMode(tab: TradingTabKey): TradingWorkspacePrimaryMode {
+  return TRADING_V2_TAB_TO_MODE[tab] ?? 'operate';
+}
 
 /**
  * Núcleo de composição do Trading.
@@ -1443,6 +1514,110 @@ export function TradingContent() {
     operationalTabsOptions,
     primaryTabsOptions,
   });
+  const showOperationalAlerts = Boolean(criticalApiError || !riskConfig?.tradingEnabled);
+  const tradingWorkspaceV2Enabled = Boolean(status.featureFlags?.tradingWorkspaceV2Enabled);
+
+  const activePrimaryMode = resolveTradingV2PrimaryMode(activeTab);
+  const visibleTabValues = useMemo(
+    () => new Set(visibleTabOptions.map((tab) => tab.value as TradingTabKey)),
+    [visibleTabOptions],
+  );
+
+  const handlePrimaryModeChange = (mode: TradingWorkspacePrimaryMode) => {
+    const targetTab = TRADING_V2_MODE_TAB_TARGETS[mode].find((tab) => visibleTabValues.has(tab))
+      ?? TRADING_V2_MODE_TAB_TARGETS[mode][0]
+      ?? visibleTabOptions[0]?.value;
+    if (!targetTab) {
+      return;
+    }
+    handleTabChange(targetTab);
+  };
+
+  const handleWorkspaceChangeV2 = (workspace: string) => {
+    handleWorkspaceChange(workspace as TradingWorkspaceKey);
+  };
+
+  const v2SidebarSections = useMemo(
+    () => [
+      {
+        id: 'risk-account',
+        title: 'Risk & Account',
+        description: 'Controles de risco e governança de conta fora da navegação principal.',
+        actions: [
+          {
+            id: 'risk-account-open',
+            label: 'Conta e risco',
+            description: 'Acessar limites, saldos e regras operacionais.',
+            onSelect: () => handleTabChange('account'),
+          },
+        ],
+      },
+      {
+        id: 'research-governance',
+        title: 'Research & Governance',
+        description: 'Capacidades avançadas acessadas por progressive disclosure.',
+        actions: [
+          {
+            id: 'research-open',
+            label: 'Lab / Research',
+            description: 'Explorar hipóteses e validações de pesquisa.',
+            onSelect: () => handleTabChange('lab'),
+          },
+          {
+            id: 'governance-open',
+            label: 'Governança operacional',
+            description: 'Abrir histórico de controles e handoff.',
+            onSelect: () => handleTabChange('control'),
+          },
+        ],
+      },
+    ],
+    [handleTabChange],
+  );
+
+  const v2BottomTraySections = useMemo(
+    () => [
+      {
+        id: 'advanced-market',
+        title: 'Mercado avançado',
+        description: 'Ferramentas de profundidade e contexto de execução.',
+        actions: [
+          {
+            id: 'advanced-order-book',
+            label: 'Advanced order book',
+            description: 'Abrir profundidade detalhada de livro de ofertas.',
+            onSelect: () => handleTabChange('orderbook'),
+          },
+          {
+            id: 'chart-open',
+            label: 'Chart avançado',
+            description: 'Abrir chart operacional completo.',
+            onSelect: () => handleTabChange('chart'),
+          },
+        ],
+      },
+      {
+        id: 'post-trade',
+        title: 'Pós-trade avançado',
+        description: 'Auditoria detalhada sem poluir o fluxo principal.',
+        actions: [
+          {
+            id: 'postmortem-detail-open',
+            label: 'Postmortem detail',
+            description: 'Abrir post-mortems detalhados para revisão.',
+            onSelect: () => handleTabChange('postmortems'),
+          },
+          {
+            id: 'history-open',
+            label: 'Histórico completo',
+            description: 'Acessar histórico de ordens e decisões.',
+            onSelect: () => handleTabChange('history'),
+          },
+        ],
+      },
+    ],
+    [handleTabChange],
+  );
 
   return (
     <ErrorBoundary>
@@ -1452,17 +1627,47 @@ export function TradingContent() {
         animate="visible"
         className="p-3 md:p-6 space-y-4 md:space-y-6"
       >
-        <TradingPageSections
-          dialogsSectionProps={dialogsSectionProps}
-          headerSectionProps={headerSectionProps}
-          operationalAlertsSectionProps={operationalAlertsSectionProps}
-          operationalTabsSectionProps={operationalTabsSectionProps}
-          primaryTabsSectionProps={primaryTabsSectionProps}
-          showOperationalAlerts={Boolean(criticalApiError || !riskConfig?.tradingEnabled)}
-          statsPrimarySectionProps={statsPrimarySectionProps}
-          statsSecondarySectionProps={statsSecondarySectionProps}
-          tabsShellSectionProps={tabsShellSectionProps}
-        />
+        {tradingWorkspaceV2Enabled ? (
+          <>
+            {showOperationalAlerts ? (
+              <TradingOperationalAlerts {...operationalAlertsSectionProps} />
+            ) : null}
+            <TradingHeaderSection {...headerSectionProps} />
+            <TradingStatsPrimaryRow {...statsPrimarySectionProps} />
+            <TradingStatsSecondaryRow {...statsSecondarySectionProps} />
+
+            <Tabs value={activeTab} onValueChange={handleTabChange}>
+              <TradingWorkspaceShell
+                activeMode={activePrimaryMode}
+                activeWorkspace={activeWorkspace}
+                bottomTraySections={v2BottomTraySections}
+                environmentMode="real"
+                modeOptions={TRADING_V2_MODE_OPTIONS}
+                onModeChange={handlePrimaryModeChange}
+                onWorkspaceChange={handleWorkspaceChangeV2}
+                sidebarSections={v2SidebarSections}
+                workspaceOptions={tradingWorkspaceOptions}
+              >
+                <TradingPrimaryTabsSection {...primaryTabsSectionProps} />
+                <TradingOperationalTabsSection {...operationalTabsSectionProps} />
+              </TradingWorkspaceShell>
+            </Tabs>
+
+            <TradingDialogsSection {...dialogsSectionProps} />
+          </>
+        ) : (
+          <TradingPageSections
+            dialogsSectionProps={dialogsSectionProps}
+            headerSectionProps={headerSectionProps}
+            operationalAlertsSectionProps={operationalAlertsSectionProps}
+            operationalTabsSectionProps={operationalTabsSectionProps}
+            primaryTabsSectionProps={primaryTabsSectionProps}
+            showOperationalAlerts={showOperationalAlerts}
+            statsPrimarySectionProps={statsPrimarySectionProps}
+            statsSecondarySectionProps={statsSecondarySectionProps}
+            tabsShellSectionProps={tabsShellSectionProps}
+          />
+        )}
       </motion.div>
     </ErrorBoundary>
   );

@@ -11,10 +11,12 @@ Mapear o domínio Trading real do monorepo para orientar a refatoração com seg
 - `apps/frontend-service/src/pages/Trading.tsx`
 - `apps/frontend-service/src/pages/TradingContent.tsx`
 - `apps/frontend-service/src/components/trading/*`
+- `apps/frontend-service/src/components/trading-v2/*`
 - `apps/frontend-service/src/services/api/trading.ts`
 
 ### Demo Trading
 - `apps/frontend-service/src/pages/DemoTrading.tsx`
+- `apps/frontend-service/src/components/trading-v2/*`
 - `apps/frontend-service/src/services/api/tradingDemo.ts`
 
 ### Pontos de estado/navegação relevantes
@@ -104,6 +106,7 @@ Arquivo principal: `apps/integrations-service/src/routes/trading-automation-rout
 - APIs de auto-run e detail (`/api/trading/auto/runs*`) já oferecem superfície para observability de ciclo de vida.
 - Contrato de auto-run agora expõe `terminalReasonCode` e estados terminais explícitos (`no_trade`, `blocked`).
 - Demo e Real já compartilham infra de market data, reduzindo custo de convergência de workspace.
+- Shell V2 compartilhada (`components/trading-v2`) agora é montável em Real e Demo com fallback legacy controlado por feature flag.
 
 ## 8. Pontos de acoplamento críticos
 - `TradingContent.tsx` centraliza múltiplos fluxos (UI + estado + orchestration).
@@ -114,6 +117,7 @@ Arquivo principal: `apps/integrations-service/src/routes/trading-automation-rout
 ## 9. Arquivos de maior risco
 - `apps/frontend-service/src/pages/TradingContent.tsx`
 - `apps/frontend-service/src/pages/DemoTrading.tsx`
+- `apps/frontend-service/src/components/trading-v2/TradingWorkspaceShell.tsx`
 - `apps/integrations-service/src/routes/trading-automation-routes.ts`
 - `apps/training-service/src/index.ts` (trecho de `processSignalAutoRun` e `processPortfolioAutoRun`)
 - `apps/integrations-service/src/routes/trading-signal-generation-routes.ts`
@@ -129,3 +133,8 @@ Arquivo principal: `apps/integrations-service/src/routes/trading-automation-rout
 - Evitar convivência prolongada `legacy + v2` em paralelo.
 - Avançar por substituição progressiva com cleanup por rodada.
 - Documentação e mapa de domínio devem refletir apenas caminhos reais ativos e oficialmente suportados.
+
+## 12. Atualização da Rodada 3
+- Trading Real e Demo Trading já possuem branch de renderização V2 via `featureFlags.tradingWorkspaceV2Enabled`.
+- A shell V2 centraliza quatro modos primários (`operate`, `ai-signals`, `portfolio-auto`, `post-trade`) com navegação consistente entre ambientes.
+- Áreas avançadas foram deslocadas para sidebar e bottom tray no caminho V2, preservando integridade funcional do caminho legacy.

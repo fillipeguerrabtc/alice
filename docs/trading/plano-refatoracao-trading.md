@@ -27,7 +27,7 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Trading Real e Demo Trading já possuem base robusta com hooks especializados e integração com APIs reais.
 - Auto Engine já opera por filas e persistência em `trading_auto_runs`, `trading_auto_run_steps` e `trading_auto_decisions`.
 - Signal Generation já expõe estados de sucesso e no-trade via `trading_signals` e metadata.
-- Faltava baseline explícita de feature flag para Workspace V2 e telemetria mínima padronizada da rodada.
+- Baseline de feature flag e state model já foi concluída; a Shell V2 compartilhada já está montável em Real e Demo com fallback legacy por flag.
 
 ## 5. Plano por rodadas
 1. Baseline, Feature Flag, Domain Map e Plano Canônico.
@@ -44,7 +44,7 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 ## 6. Status de cada rodada
 - Rodada 1: Concluída
 - Rodada 2: Concluída
-- Rodada 3: Pendente
+- Rodada 3: Concluída
 - Rodada 4: Pendente
 - Rodada 5: Pendente
 - Rodada 6: Pendente
@@ -83,16 +83,33 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - `docs/trading/auto-engine-contracts-observability.md` (novo)
 - `docs/trading/plano-refatoracao-trading.md`
 
+### Rodada 3
+- `apps/frontend-service/src/components/trading-v2/types.ts` (novo)
+- `apps/frontend-service/src/components/trading-v2/TradingWorkspaceTopBar.tsx` (novo)
+- `apps/frontend-service/src/components/trading-v2/TradingWorkspaceSidebar.tsx` (novo)
+- `apps/frontend-service/src/components/trading-v2/TradingWorkspaceBottomTray.tsx` (novo)
+- `apps/frontend-service/src/components/trading-v2/TradingWorkspaceShell.tsx` (novo)
+- `apps/frontend-service/src/components/trading-v2/index.ts` (novo)
+- `apps/frontend-service/src/pages/TradingContent.tsx`
+- `apps/frontend-service/src/pages/DemoTrading.tsx`
+- `docs/trading/workspace-shell-v2.md` (novo)
+- `docs/trading/domain-map-trading.md`
+- `docs/trading/plano-refatoracao-trading.md`
+
 ## 8. Migrations criadas
 - Rodada 1: Nenhuma.
 - Rodada 2:
 - `0109_trading_auto_run_terminal_states.sql` (enum `trading_auto_run_status` com `no_trade` e `blocked`, coluna `terminal_reason_code`, índice parcial por reason code).
+- Rodada 3: Nenhuma.
 
 ## 9. Testes executados
 - Rodada 1:
 - Comando: `pnpm test`
 - Resultado: `129` arquivos de teste aprovados, `1385` testes aprovados, `0` falhas.
 - Rodada 2:
+- Comando: `pnpm test`
+- Resultado: `129` arquivos de teste aprovados, `1385` testes aprovados, `0` falhas.
+- Rodada 3:
 - Comando: `pnpm test`
 - Resultado: `129` arquivos de teste aprovados, `1385` testes aprovados, `0` falhas.
 
@@ -103,12 +120,18 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Rodada 2:
 - Comando: `pnpm typecheck`
 - Resultado: sucesso, sem erros.
+- Rodada 3:
+- Comando: `pnpm typecheck`
+- Resultado: sucesso, sem erros.
 
 ## 11. Resultados de ESLint
 - Rodada 1:
 - Comando: `pnpm lint`
 - Resultado: sucesso, sem warnings e sem errors.
 - Rodada 2:
+- Comando: `pnpm lint`
+- Resultado: sucesso, sem warnings e sem errors.
+- Rodada 3:
 - Comando: `pnpm lint`
 - Resultado: sucesso, sem warnings e sem errors.
 
@@ -129,15 +152,19 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Resultado: sucesso.
 - Comando: `pnpm --filter @alice/frontend-service build`
 - Resultado: sucesso.
+- Rodada 3:
+- Comando: `pnpm --filter @alice/frontend-service build`
+- Resultado: sucesso.
 
 ## 13. Riscos conhecidos
 - Acoplamento alto em páginas grandes (`TradingContent.tsx`, `DemoTrading.tsx`) exige mudanças muito cirúrgicas por rodada.
 - Auto Engine depende de múltiplos serviços (`integrations-service`, `training-service`) e qualquer regressão de contract pode impactar filas.
 - Observability ainda distribuída entre camadas; sem taxonomia única consolidada para todos eventos do domínio.
 - Migração de enum em PostgreSQL é aditiva e sem rollback direto de valores; rollback deve ser por comportamento de aplicação.
+- A convergência final para remover o shell legacy exige rollout gradual por flag para evitar regressão de UX em produção.
 
 ## 14. Pendências
-- Receber prompt da Rodada 3 para iniciar a evolução da Workspace V2 compartilhada.
+- Receber prompt da Rodada 4 para iniciar a implementação do modo Operar dentro da Workspace V2.
 
 ## 15. Decisões arquiteturais registradas
 - Feature flag `trading_workspace_v2_enabled` adicionada como baseline de rollout controlado.
@@ -145,8 +172,9 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Evolução com trilha única de código, evitando convivência prolongada `legacy + v2` paralelos.
 - State model do Auto Engine atualizado para terminal states explícitos (`succeeded`, `no_trade`, `blocked`, `failed`).
 - `terminal_reason_code` adicionado em `trading_auto_runs` para classificação queryável e auditável de estado terminal.
+- Shell V2 compartilhada criada em `components/trading-v2` e integrada em Trading Real e Demo Trading com quatro modos primários e progressive disclosure para áreas avançadas.
 
 ## 16. Próximos passos
-1. Iniciar Rodada 3 focando Shared Trading Workspace Shell V2.
+1. Iniciar Rodada 4 focando o modo `operate` dentro da Workspace V2.
 2. Manter evolução sem trilha paralela `legacy + v2`, com cleanup contínuo.
 3. Repetir checklist sequencial de validação e atualização documental ao fechamento da próxima rodada.

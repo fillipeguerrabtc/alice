@@ -17,11 +17,12 @@
  * @updated 10/02/2026
  */
 
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef, type ReactNode } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import {
   TrendingUp,
   TrendingDown,
+  Brain,
   DollarSign,
   Plus,
   X,
@@ -51,6 +52,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { ErrorBoundary } from '@/components/error-boundary';
+import {
+  TradingWorkspaceShell,
+  type TradingWorkspacePrimaryMode,
+  type TradingWorkspacePrimaryModeOption,
+} from '@/components/trading-v2';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { emitTradingTelemetry } from '@/lib/tradingTelemetry';
 import { useKucoinWebSocket } from '@/hooks/useKucoinWebSocket';
@@ -245,6 +251,52 @@ const DEMO_TRADING_WORKSPACES: Array<{ value: DemoTradingWorkspaceKey; label: st
   { value: 'analytics', label: 'Análises' },
 ];
 
+const DEMO_TRADING_V2_MODE_OPTIONS: TradingWorkspacePrimaryModeOption[] = [
+  {
+    value: 'operate',
+    label: 'Operar',
+    description: 'Execução demo, ordens e exposição aberta.',
+    icon: Activity,
+  },
+  {
+    value: 'ai-signals',
+    label: 'Sinais IA',
+    description: 'Post-mortems e leitura assistida por IA.',
+    icon: Brain,
+  },
+  {
+    value: 'portfolio-auto',
+    label: 'Portfólio Auto',
+    description: 'Gestão consolidada de posições demo.',
+    icon: Wallet,
+  },
+  {
+    value: 'post-trade',
+    label: 'Pós-trade',
+    description: 'Histórico operacional e revisão final.',
+    icon: FileCheck,
+  },
+];
+
+const DEMO_TRADING_V2_MODE_TAB_TARGETS: Record<TradingWorkspacePrimaryMode, DemoTradingTabKey[]> = {
+  operate: ['overview', 'orders'],
+  'ai-signals': ['postmortems'],
+  'portfolio-auto': ['positions'],
+  'post-trade': ['history'],
+};
+
+const DEMO_TRADING_V2_TAB_TO_MODE: Record<DemoTradingTabKey, TradingWorkspacePrimaryMode> = {
+  overview: 'operate',
+  positions: 'portfolio-auto',
+  orders: 'operate',
+  postmortems: 'ai-signals',
+  history: 'post-trade',
+};
+
+function resolveDemoTradingV2PrimaryMode(tab: DemoTradingTabKey): TradingWorkspacePrimaryMode {
+  return DEMO_TRADING_V2_TAB_TO_MODE[tab];
+}
+
 /**
  * ARQUITETURA REAL-TIME (10/02/2026):
  * - Dados de mercado (ticker) vêm 100% via WebSocket — REST apenas carga inicial.
@@ -354,6 +406,113 @@ function DemoTradingContent() {
 
   const isConfigured = isStatusSuccess && (statusData?.data?.isConfigured ?? false);
   const tradingWorkspaceV2Enabled = Boolean(statusData?.data?.featureFlags?.tradingWorkspaceV2Enabled);
+  const activePrimaryMode = resolveDemoTradingV2PrimaryMode(activeTab);
+  const visibleTabValues = useMemo(
+    () => new Set(visibleTabs.map((tab) => tab.value)),
+    [visibleTabs],
+  );
+
+  const handlePrimaryModeChange = useCallback((mode: TradingWorkspacePrimaryMode) => {
+    const nextTab = DEMO_TRADING_V2_MODE_TAB_TARGETS[mode].find((tab) => visibleTabValues.has(tab))
+      ?? DEMO_TRADING_V2_MODE_TAB_TARGETS[mode][0]
+      ?? visibleTabs[0]?.value;
+    if (!nextTab) return;
+    handleTabChange(nextTab);
+  }, [handleTabChange, visibleTabValues, visibleTabs]);
+
+  const handleWorkspaceChangeV2 = useCallback((workspace: string) => {
+    handleWorkspaceChange(workspace as DemoTradingWorkspaceKey);
+  }, [handleWorkspaceChange]);
+
+  const v2SidebarSections = useMemo(
+    () => [
+      {
+        id: 'demo-advanced',
+        title: 'Progressive Disclosure',
+        description: 'Acessos avançados para investigação operacional.',
+        actions: [
+          {
+            id: 'demo-postmortem',
+            label: 'Postmortem detail',
+            description: 'Abrir análise completa pós-operação.',
+            onSelect: () => handleTabChange('postmortems'),
+          },
+          {
+            id: 'demo-history',
+            label: 'Histórico detalhado',
+            description: 'Abrir trilha de operações e movimentações.',
+            onSelect: () => handleTabChange('history'),
+          },
+        ],
+      },
+      {
+        id: 'demo-shared-seams',
+        title: 'Seams compartilhados',
+        description: 'Áreas do Real que serão convergidas sem quebrar o Demo.',
+        actions: [
+          {
+            id: 'demo-risk-account',
+            label: 'Risk/account (Real)',
+            description: 'Indisponível no Demo nesta fase da convergência.',
+            disabled: true,
+            onSelect: () => undefined,
+          },
+          {
+            id: 'demo-research-governance',
+            label: 'Research/governance (Real)',
+            description: 'Indisponível no Demo nesta fase da convergência.',
+            disabled: true,
+            onSelect: () => undefined,
+          },
+        ],
+      },
+    ],
+    [handleTabChange],
+  );
+
+  const v2BottomTraySections = useMemo(
+    () => [
+      {
+        id: 'demo-post-trade',
+        title: 'Pós-trade',
+        description: 'Controles de revisão sem poluir navegação principal.',
+        actions: [
+          {
+            id: 'demo-bottom-history',
+            label: 'Histórico',
+            description: 'Abrir histórico consolidado de posições e fundos.',
+            onSelect: () => handleTabChange('history'),
+          },
+          {
+            id: 'demo-bottom-postmortems',
+            label: 'Post-mortems',
+            description: 'Abrir post-mortems para auditoria de execução.',
+            onSelect: () => handleTabChange('postmortems'),
+          },
+        ],
+      },
+      {
+        id: 'demo-execution',
+        title: 'Execução',
+        description: 'Atalhos para supervisão de ordens e posições.',
+        actions: [
+          {
+            id: 'demo-bottom-orders',
+            label: 'Ordens',
+            description: 'Acompanhar ordens abertas e executadas.',
+            onSelect: () => handleTabChange('orders'),
+          },
+          {
+            id: 'demo-bottom-positions',
+            label: 'Posições',
+            description: 'Acompanhar exposição e ajustes em aberto.',
+            onSelect: () => handleTabChange('positions'),
+          },
+        ],
+      },
+    ],
+    [handleTabChange],
+  );
 
   useEffect(() => {
     const previous = workspaceUsageRef.current;
@@ -920,6 +1079,35 @@ function DemoTradingContent() {
     };
     const config = variants[status] ?? { variant: 'outline' as const, label: status };
     return <Badge variant={config.variant}>{config.label}</Badge>;
+  };
+
+  const workspaceOptions = useMemo(
+    () => DEMO_TRADING_WORKSPACES.map((workspace) => ({
+      value: workspace.value,
+      label: workspace.label,
+    })),
+    [],
+  );
+
+  const wrapTabsWithShell = (children: ReactNode) => {
+    if (!tradingWorkspaceV2Enabled) {
+      return children;
+    }
+    return (
+      <TradingWorkspaceShell
+        activeMode={activePrimaryMode}
+        activeWorkspace={activeWorkspace}
+        bottomTraySections={v2BottomTraySections}
+        environmentMode="demo"
+        modeOptions={DEMO_TRADING_V2_MODE_OPTIONS}
+        onModeChange={handlePrimaryModeChange}
+        onWorkspaceChange={handleWorkspaceChangeV2}
+        sidebarSections={v2SidebarSections}
+        workspaceOptions={workspaceOptions}
+      >
+        {children}
+      </TradingWorkspaceShell>
+    );
   };
 
   // ============================================================================
@@ -1511,33 +1699,35 @@ function DemoTradingContent() {
       </Dialog>
 
       {/* Tabs */}
+      {wrapTabsWithShell(
       <Tabs value={activeTab} onValueChange={handleTabChange}>
-        <WorkspaceFilterBar
-          activeWorkspace={activeWorkspace}
-          options={DEMO_TRADING_WORKSPACES.map((workspace) => ({
-            value: workspace.value,
-            label: workspace.label,
-          }))}
-          onWorkspaceChange={handleWorkspaceChange}
-          getTestId={(workspace) => `demo-workspace-${workspace}`}
-        />
-        <div className="w-full min-w-0 overflow-x-auto pb-2 -mx-2 px-2 md:mx-0 md:px-0">
-          <TabsList className="inline-flex min-w-max flex-nowrap items-center gap-1 whitespace-nowrap">
-            {visibleTabs.map((tab) => {
-              const Icon = tab.icon;
-              return (
-                <TabsTrigger
-                  key={tab.value}
-                  value={tab.value}
-                  className="whitespace-nowrap shrink-0"
-                >
-                  <Icon className="h-4 w-4 md:mr-2" />
-                  <span className="hidden md:inline">{tab.label}</span>
-                </TabsTrigger>
-              );
-            })}
-          </TabsList>
-        </div>
+        {!tradingWorkspaceV2Enabled ? (
+          <>
+            <WorkspaceFilterBar
+              activeWorkspace={activeWorkspace}
+              options={workspaceOptions}
+              onWorkspaceChange={handleWorkspaceChange}
+              getTestId={(workspace) => `demo-workspace-${workspace}`}
+            />
+            <div className="w-full min-w-0 overflow-x-auto pb-2 -mx-2 px-2 md:mx-0 md:px-0">
+              <TabsList className="inline-flex min-w-max flex-nowrap items-center gap-1 whitespace-nowrap">
+                {visibleTabs.map((tab) => {
+                  const Icon = tab.icon;
+                  return (
+                    <TabsTrigger
+                      key={tab.value}
+                      value={tab.value}
+                      className="whitespace-nowrap shrink-0"
+                    >
+                      <Icon className="h-4 w-4 md:mr-2" />
+                      <span className="hidden md:inline">{tab.label}</span>
+                    </TabsTrigger>
+                  );
+                })}
+              </TabsList>
+            </div>
+          </>
+        ) : null}
 
         {/* Tab: Visão Geral */}
         <TabsContent value="overview" className="space-y-4">
@@ -2140,7 +2330,8 @@ function DemoTradingContent() {
             </Card>
           </div>
         </TabsContent>
-      </Tabs>
+      </Tabs>,
+      )}
 
       <Dialog
         open={postmortemTrainingDialogOpen}
