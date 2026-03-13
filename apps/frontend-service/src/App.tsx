@@ -98,7 +98,10 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
             </div>
           </header>
           <main className="flex-1 min-h-0 overflow-auto">
-            {children}
+            {/* Garante área definida para páginas full-height como Chat sem afetar o shell global. */}
+            <div className="h-full min-h-0 w-full">
+              {children}
+            </div>
           </main>
         </div>
       </div>
