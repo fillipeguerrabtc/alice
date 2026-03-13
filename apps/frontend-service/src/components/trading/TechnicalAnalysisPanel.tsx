@@ -686,6 +686,7 @@ export function TechnicalAnalysisPanel({
     queryFn: async () => {
       const params = new URLSearchParams();
       params.set('kind', 'analysis');
+      if (marketType) params.set('marketType', marketType);
       const response = await apiRequest('GET', `/api/integrations/trading/analysis-profile?${params.toString()}`);
       return response.json();
     },
@@ -2823,4 +2824,3 @@ export function TechnicalAnalysisPanel({
 }
 
 export default TechnicalAnalysisPanel;
-

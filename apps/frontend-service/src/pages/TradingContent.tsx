@@ -312,6 +312,25 @@ export function TradingContent() {
     t,
   });
 
+  const signalTechniqueOptionsWithSupport = useMemo(() => {
+    const capabilityByTechnique = new Map(
+      (signalProfileForm.techniqueCapabilities ?? []).map((capability) => [capability.technique, capability]),
+    );
+    return signalTechniqueOptions.map((option) => {
+      const capability = capabilityByTechnique.get(option.value);
+      if (!capability || capability.supportLevel === 'supported') {
+        return option;
+      }
+      const supportLabel = capability.supportLevel === 'blocked'
+        ? 'bloqueada'
+        : 'não suportada';
+      return {
+        ...option,
+        label: `${option.label} (${supportLabel})`,
+      };
+    });
+  }, [signalProfileForm.techniqueCapabilities, signalTechniqueOptions]);
+
   const {
     activeAutoRunDetail,
     intervalsData,
@@ -1319,7 +1338,7 @@ export function TradingContent() {
     sourceOptions: signalSourceOptions,
     spotPositions,
     spotSummary: spotAccountSummary,
-    techniqueOptions: signalTechniqueOptions,
+    techniqueOptions: signalTechniqueOptionsWithSupport,
     topTradingCandidates,
     tradingEnabled: isTradingEnabled,
     tradingExecutionReports,

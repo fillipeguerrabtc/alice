@@ -1,7 +1,7 @@
 # Arquitetura do Signal Engine Pipeline (Rodada 7)
 
 Author: Fillipe Guerra  
-Data: 2026-03-12
+Data: 2026-03-13
 
 ## Objetivo
 Decompor a geração de sinais de Trading em estágios explícitos, testáveis e sustentáveis, preservando compatibilidade externa com os handlers e consumers atuais.
@@ -11,6 +11,7 @@ A refatoração introduz uma camada interna de pipeline com separação por resp
 
 1. `feature_extraction`
 - Responsável por montar `analysisMatrix`, `primaryAnalysis`, `consensus`, `techniqueScores`, `ensembleResult` e snapshots de arbitragem.
+- A partir da Rodada 8 também monta `techniqueCapabilities` com specialist family + support level + minimum data requirements.
 - Baseado em `buildTradingSignalAnalysisContext`.
 
 2. `candidate_generation`
@@ -51,6 +52,7 @@ A refatoração introduz uma camada interna de pipeline com separação por resp
 - Dataset aprovado de Trading continua obrigatório.
 - Bloqueio de arbitragem triangular em `futures` preservado.
 - Fluxo legado institucional continua possível via gate já existente.
+- Techniques sem requisitos mínimos passam a `blocked`/`not_supported_for_current_context` com reason codes explícitos.
 
 ## Observability adicionada no pipeline
 Eventos estruturados por estágio:
@@ -67,3 +69,4 @@ Campos principais:
 ## Testabilidade
 - Cada estágio foi isolado em métodos do pipeline.
 - `candidate generation` possui função pura (`buildSignalCandidateSummary`) com testes unitários dedicados.
+- Capability matrix e suporte por technique possuem testes unitários dedicados.

@@ -2866,6 +2866,41 @@ export const TradingTechniqueSchema = z.enum([
 ]);
 export type TradingTechnique = z.infer<typeof TradingTechniqueSchema>;
 
+export const TradingTechniqueFamilySchema = z.enum([
+  "directional_technical",
+  "intraday_microstructure",
+  "basis_funding_carry",
+  "inventory_spread_capture",
+  "cross_venue_arbitrage",
+]);
+export type TradingTechniqueFamily = z.infer<typeof TradingTechniqueFamilySchema>;
+
+export const TradingTechniqueSupportLevelSchema = z.enum([
+  "supported",
+  "blocked",
+  "not_supported_for_current_context",
+]);
+export type TradingTechniqueSupportLevel = z.infer<typeof TradingTechniqueSupportLevelSchema>;
+
+export const TradingTechniqueDataRequirementSchema = z.object({
+  key: z.string().min(1),
+  label: z.string().min(1),
+  description: z.string().min(1),
+  required: z.boolean(),
+  available: z.boolean(),
+});
+export type TradingTechniqueDataRequirement = z.infer<typeof TradingTechniqueDataRequirementSchema>;
+
+export const TradingTechniqueCapabilitySchema = z.object({
+  technique: TradingTechniqueSchema,
+  family: TradingTechniqueFamilySchema,
+  supportLevel: TradingTechniqueSupportLevelSchema,
+  reasonCode: z.string().nullable().optional(),
+  reasonHuman: z.string().nullable().optional(),
+  minimumDataRequirements: z.array(TradingTechniqueDataRequirementSchema),
+});
+export type TradingTechniqueCapability = z.infer<typeof TradingTechniqueCapabilitySchema>;
+
 export const TradingEnsembleModeSchema = z.enum([
   "ensemble_top3",
 ]);
@@ -2990,6 +3025,11 @@ export type TradingOverallSignal = z.infer<typeof TradingOverallSignalSchema>;
 
 export const TradingTechniqueScoreSchema = z.object({
   technique: TradingTechniqueSchema,
+  family: TradingTechniqueFamilySchema.optional(),
+  supportLevel: TradingTechniqueSupportLevelSchema.optional(),
+  reasonCode: z.string().nullable().optional(),
+  reasonHuman: z.string().nullable().optional(),
+  minimumDataRequirements: z.array(TradingTechniqueDataRequirementSchema).optional(),
   signal: TradingOverallSignalSchema,
   confidence: z.number().min(0).max(1),
   rationale: z.string().optional(),
@@ -3067,6 +3107,7 @@ export const TradingSignalMetadataSchema = z.object({
     isMajorityReached: z.boolean().optional(),
   }).optional(),
   techniques: z.array(TradingTechniqueSchema).optional(),
+  techniqueCapabilities: z.array(TradingTechniqueCapabilitySchema).optional(),
   ensemble: TradingEnsembleConfigSchema.optional(),
   techniqueScores: z.array(TradingTechniqueScoreSchema).optional(),
   ensembleResult: TradingEnsembleResultSchema.optional(),

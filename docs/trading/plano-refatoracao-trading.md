@@ -1,7 +1,7 @@
 # Plano Canônico de Refatoração do Domínio Trading
 
 Author: Fillipe Guerra  
-Data: 2026-03-12
+Data: 2026-03-13
 
 ## 1. Objetivo da refatoração
 Executar uma refatoração progressiva e production-grade do domínio Trading da Alice, cobrindo Frontend, Backend, UX, observability, state model, Signal Engine, integração com Training e Demo Trading, sem quebrar a arquitetura real do monorepo.
@@ -52,7 +52,7 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Rodada 5: Concluída
 - Rodada 6: Concluída
 - Rodada 7: Concluída
-- Rodada 8: Pendente
+- Rodada 8: Concluída
 - Rodada 9: Pendente
 - Rodada 10: Pendente
 
@@ -146,6 +146,30 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - `docs/trading/domain-map-trading.md`
 - `docs/trading/plano-refatoracao-trading.md`
 
+### Rodada 8
+- `packages/shared/src/schema.ts`
+- `apps/integrations-service/src/trading-technique-capability-service.ts` (novo)
+- `apps/integrations-service/src/technical-indicators.ts`
+- `apps/integrations-service/src/trading-analysis-consensus-service.ts`
+- `apps/integrations-service/src/trading-technical-analysis-service.ts`
+- `apps/integrations-service/src/trading-signal-analysis-orchestration-service.ts`
+- `apps/integrations-service/src/trading-signal-engine-pipeline-service.ts`
+- `apps/integrations-service/src/trading-signal-engine-types.ts`
+- `apps/integrations-service/src/trading-llm-signal-persistence-service.ts`
+- `apps/integrations-service/src/routes/trading-analysis-routes.ts`
+- `apps/frontend-service/src/components/trading/TradingDomainTypes.ts`
+- `apps/frontend-service/src/components/trading/TradingSignalsProfileConfigurationSection.tsx`
+- `apps/frontend-service/src/components/trading/TradingSignalsTabContent.tsx`
+- `apps/frontend-service/src/components/trading/useTradingSetupQueries.ts`
+- `apps/frontend-service/src/components/trading/TechnicalAnalysisPanel.tsx`
+- `apps/frontend-service/src/pages/TradingContent.tsx`
+- `tests/unit/services/trading-technique-capability-service.test.ts` (novo)
+- `tests/unit/services/trading-signal-engine-pipeline.test.ts`
+- `docs/trading/strategy-specialists-data-requirements.md` (novo)
+- `docs/trading/domain-map-trading.md`
+- `docs/trading/signal-engine-pipeline.md`
+- `docs/trading/plano-refatoracao-trading.md`
+
 ## 8. Migrations criadas
 - Rodada 1: Nenhuma.
 - Rodada 2:
@@ -155,6 +179,7 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Rodada 5: Nenhuma.
 - Rodada 6: Nenhuma.
 - Rodada 7: Nenhuma.
+- Rodada 8: Nenhuma.
 
 ## 9. Testes executados
 - Rodada 1:
@@ -178,6 +203,9 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Rodada 7:
 - Comando: `pnpm test`
 - Resultado: `130` arquivos de teste aprovados, `1388` testes aprovados, `0` falhas.
+- Rodada 8:
+- Comando: `pnpm test`
+- Resultado: `131` arquivos de teste aprovados, `1395` testes aprovados, `0` falhas.
 
 ## 10. Resultados de Typecheck
 - Rodada 1:
@@ -201,6 +229,9 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Rodada 7:
 - Comando: `pnpm typecheck`
 - Resultado: sucesso, sem erros.
+- Rodada 8:
+- Comando: `pnpm typecheck`
+- Resultado: sucesso, sem erros.
 
 ## 11. Resultados de ESLint
 - Rodada 1:
@@ -222,6 +253,9 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Comando: `pnpm lint`
 - Resultado: sucesso, sem warnings e sem errors.
 - Rodada 7:
+- Comando: `pnpm lint`
+- Resultado: sucesso, sem warnings e sem errors.
+- Rodada 8:
 - Comando: `pnpm lint`
 - Resultado: sucesso, sem warnings e sem errors.
 
@@ -263,6 +297,13 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Rodada 7:
 - Comando: `pnpm --filter @alice/integrations-service build`
 - Resultado: sucesso.
+- Rodada 8:
+- Comando: `pnpm --filter @alice/shared build`
+- Resultado: sucesso.
+- Comando: `pnpm --filter @alice/integrations-service build`
+- Resultado: sucesso.
+- Comando: `pnpm --filter @alice/frontend-service build`
+- Resultado: sucesso (`tsc -b && vite build`).
 
 ## 13. Riscos conhecidos
 - Acoplamento alto em páginas grandes (`TradingContent.tsx`, `DemoTrading.tsx`) exige mudanças muito cirúrgicas por rodada.
@@ -272,7 +313,7 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - A convergência final para remover o shell legacy exige rollout gradual por flag para evitar regressão de UX em produção.
 
 ## 14. Pendências
-- Iniciar Rodada 8 com Strategy Specialists e Data Requirements.
+- Iniciar Rodada 9 com Training, Calibration e Promotion Path.
 
 ## 15. Decisões arquiteturais registradas
 - Feature flag `trading_workspace_v2_enabled` adicionada como baseline de rollout controlado.
@@ -290,8 +331,12 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Signal Engine decomposto em pipeline interno com estágios explícitos (`feature_extraction`, `candidate_generation`, `llm_arbitration`, `risk_shaping`, `persistence`, `validation_finalize`).
 - Tipos compartilhados do pipeline centralizados em `trading-signal-engine-types.ts`, reduzindo acoplamento e duplicação no gerador principal.
 - Compatibilidade externa preservada no serviço/rota de geração de sinal, com observability estruturada por estágio (`trading.signal.pipeline.stage`, `trading.signal.pipeline.completed`).
+- Capability matrix por `technique` introduzida com specialist families e minimum data requirements explícitos.
+- Técnicas subimplementadas deixaram de produzir inferência neutral fake e agora retornam `blocked`/`not_supported_for_current_context` com `reasonCode` e `reasonHuman`.
+- Contracts de `analysis-profile` e `analysis/:symbol` passam a expor `techniqueCapabilities[]` para elegibilidade real por technique em API e UI.
+- Metadata de sinais persiste `techniqueCapabilities` para auditabilidade de suporte no momento da geração.
 
 ## 16. Próximos passos
-1. Iniciar Rodada 8 focando Strategy Specialists e Data Requirements.
+1. Iniciar Rodada 9 focando Training, Calibration e Promotion Path.
 2. Manter evolução sem trilha paralela `legacy + v2`, com cleanup contínuo controlado por rollout.
 3. Repetir checklist sequencial de validação e atualização documental ao fechamento da próxima rodada.

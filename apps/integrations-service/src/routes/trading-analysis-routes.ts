@@ -24,6 +24,13 @@ import type {
 } from '@alice/shared';
 import { z } from 'zod';
 import type * as technicalIndicators from '../technical-indicators.js';
+import {
+  applyCapabilityToTechniqueScore,
+  buildUnsupportedTechniqueScores,
+  filterSupportedTradingTechniques,
+  mapTechniqueCapabilitiesByTechnique,
+  resolveTradingTechniqueCapabilities,
+} from '../trading-technique-capability-service.js';
 
 type TradingMarketType = 'futures' | 'spot' | 'margin';
 type TradingMarginMode = 'cross' | 'isolated';
@@ -239,6 +246,7 @@ export function registerTradingAnalysisRoutes(
 
       const querySchema = z.object({
         kind: z.enum(['analysis', 'signal']).optional().default('analysis'),
+        marketType: z.enum(['futures', 'spot', 'margin']).optional().default('futures'),
       });
       const parsedQuery = querySchema.safeParse(req.query);
       if (!parsedQuery.success) {
@@ -248,6 +256,12 @@ export function registerTradingAnalysisRoutes(
 
       const profileRow = await deps.getOrCreateTradingProfile(authContext.tenantId, parsedQuery.data.kind);
       const profile = deps.normalizeTradingProfile(profileRow);
+      const techniqueCapabilities = resolveTradingTechniqueCapabilities({
+        techniques: profile.techniques,
+        marketType: parsedQuery.data.marketType,
+        dataSources: profile.dataSources,
+        hasArbitrageConfig: Boolean(profile.arbitrageConfig),
+      });
 
       res.json({
         success: true,
@@ -259,6 +273,7 @@ export function registerTradingAnalysisRoutes(
           indicators: profile.indicators,
           dataSources: profile.dataSources,
           techniques: profile.techniques,
+          techniqueCapabilities,
           ensembleConfig: profile.ensembleConfig,
           arbitrageConfig: profile.arbitrageConfig,
           modelConfig: profile.modelConfig,
@@ -399,13 +414,15 @@ export function registerTradingAnalysisRoutes(
       }
 
       const profileRow = await deps.getOrCreateTradingProfile(authContext.tenantId, parsedBody.data.kind);
+      const profileBase = deps.normalizeTradingProfile(profileRow);
       const consensusUpdate = parsedBody.data.consensus
         ? { rule: 'majority' as const, minAgree: parsedBody.data.consensus.minAgree ?? undefined }
         : undefined;
-      const resolvedTimeframes = (parsedBody.data.timeframes ?? profileRow.timeframes) as TradingIntervalValue[];
-      const resolvedTechniques = deps.normalizeTradingTechniques(parsedBody.data.techniques ?? (profileRow.techniques as TradingTechnique[] | null));
-      const resolvedEnsemble = deps.normalizeTradingEnsembleConfig(parsedBody.data.ensembleConfig ?? (profileRow.ensembleConfig as TradingEnsembleConfig | null));
-      const resolvedArbitrage = deps.normalizeTradingArbitrageConfig(parsedBody.data.arbitrageConfig ?? (profileRow.arbitrageConfig as TradingArbitrageConfig | null));
+      const resolvedTimeframes = (parsedBody.data.timeframes ?? profileBase.timeframes) as TradingIntervalValue[];
+      const resolvedDataSources = parsedBody.data.dataSources ?? profileBase.dataSources;
+      const resolvedTechniques = deps.normalizeTradingTechniques(parsedBody.data.techniques ?? profileBase.techniques);
+      const resolvedEnsemble = deps.normalizeTradingEnsembleConfig(parsedBody.data.ensembleConfig ?? profileBase.ensembleConfig);
+      const resolvedArbitrage = deps.normalizeTradingArbitrageConfig(parsedBody.data.arbitrageConfig ?? profileBase.arbitrageConfig);
       const marketTypeForFees = parsedBody.data.marketType ?? 'spot';
 
       deps.assertArbitrageConfigForTechniques({
@@ -444,14 +461,14 @@ export function registerTradingAnalysisRoutes(
         .set({
           name: parsedBody.data.name ?? profileRow.name,
           timeframes: resolvedTimeframes,
-          indicators: parsedBody.data.indicators ?? profileRow.indicators,
-          dataSources: parsedBody.data.dataSources ?? profileRow.dataSources,
+          indicators: parsedBody.data.indicators ?? profileBase.indicators,
+          dataSources: resolvedDataSources,
           techniques: resolvedTechniques,
           ensembleConfig: resolvedEnsemble,
           arbitrageConfig: arbitrageConfigToPersist ?? null,
-          modelConfig: parsedBody.data.modelConfig ?? profileRow.modelConfig,
-          newsConfig: parsedBody.data.newsConfig ?? profileRow.newsConfig,
-          consensus: consensusUpdate ?? profileRow.consensus,
+          modelConfig: parsedBody.data.modelConfig ?? profileBase.modelConfig,
+          newsConfig: parsedBody.data.newsConfig ?? profileBase.newsConfig,
+          consensus: consensusUpdate ?? profileBase.consensus,
           atualizadoEm: new Date(),
         })
         .where(eq(schema.tradingAnalysisProfiles.id, profileRow.id))
@@ -459,6 +476,12 @@ export function registerTradingAnalysisRoutes(
 
       const updatedRow = updated[0] ?? profileRow;
       const profile = deps.normalizeTradingProfile(updatedRow);
+      const techniqueCapabilities = resolveTradingTechniqueCapabilities({
+        techniques: profile.techniques,
+        marketType: marketTypeForFees,
+        dataSources: profile.dataSources,
+        hasArbitrageConfig: Boolean(profile.arbitrageConfig),
+      });
 
       res.json({
         success: true,
@@ -470,6 +493,7 @@ export function registerTradingAnalysisRoutes(
           indicators: profile.indicators,
           dataSources: profile.dataSources,
           techniques: profile.techniques,
+          techniqueCapabilities,
           ensembleConfig: profile.ensembleConfig,
           arbitrageConfig: profile.arbitrageConfig,
           modelConfig: profile.modelConfig,
@@ -573,15 +597,24 @@ export function registerTradingAnalysisRoutes(
         }
       }
 
-      deps.assertArbitrageConfigForTechniques({
+      const techniqueCapabilities = resolveTradingTechniqueCapabilities({
         techniques,
-        arbitrageConfig,
-        timeframes,
-        context: 'análise determinística',
+        marketType: marketType ?? 'futures',
+        dataSources: effectiveDataSources,
+        hasArbitrageConfig: Boolean(arbitrageConfig),
       });
-      if (techniques.includes('arbitrage_triangular') && (marketType ?? 'futures') === 'futures') {
-        res.status(400).json({ error: 'Arbitragem triangular não é suportada em mercado futures.' });
-        return;
+      const capabilityByTechnique = mapTechniqueCapabilitiesByTechnique(techniqueCapabilities);
+      const supportedTechniques = filterSupportedTradingTechniques(techniqueCapabilities);
+      const deterministicTechniques = supportedTechniques.filter((technique) => technique !== 'arbitrage_triangular');
+      const unsupportedTechniqueScores = buildUnsupportedTechniqueScores(techniqueCapabilities);
+      const arbitrageCapability = capabilityByTechnique.get('arbitrage_triangular');
+      if (arbitrageCapability?.supportLevel === 'supported') {
+        deps.assertArbitrageConfigForTechniques({
+          techniques: ['arbitrage_triangular'],
+          arbitrageConfig,
+          timeframes,
+          context: 'análise determinística',
+        });
       }
 
       const analysisResults = await Promise.all(
@@ -594,7 +627,7 @@ export function registerTradingAnalysisRoutes(
             marketType,
             marginMode,
             enabledIndicators: indicators,
-            techniques,
+            techniques: deterministicTechniques,
             ensembleConfig,
           });
           return {
@@ -615,10 +648,12 @@ export function registerTradingAnalysisRoutes(
       }
 
       const consensus = deps.buildMajorityConsensus(analysisResults, profile.consensus);
-      let techniqueScores = deps.aggregateTechniqueScores(analysisResults, techniques);
+      let supportedTechniqueScores = deps
+        .aggregateTechniqueScores(analysisResults, deterministicTechniques)
+        .map((score) => applyCapabilityToTechniqueScore(score, capabilityByTechnique.get(score.technique)));
       let arbitrageSnapshot: TriangularArbitrageResult | null = null;
       let arbitrageSnapshots: TriangularArbitrageResult[] = [];
-      if (techniques.includes('arbitrage_triangular') && arbitrageConfig) {
+      if (supportedTechniques.includes('arbitrage_triangular') && arbitrageConfig) {
         const resolvedSymbol = primaryResult.resolvedSymbol ?? symbol;
         const { base, quote } = deps.splitSymbolPair(resolvedSymbol);
         const { feePctByExchange, effectiveFeePct } = await deps.resolveArbitrageFeePctForExchanges({
@@ -654,21 +689,35 @@ export function registerTradingAnalysisRoutes(
             : edgePct >= minEdge
               ? 'buy'
               : 'neutral';
-          techniqueScores = techniqueScores.concat([{
-            technique: 'arbitrage_triangular',
-            signal,
-            confidence: Math.round(confidence * 100) / 100,
-            rationale: `Edge ${edgePct.toFixed(2)}% (mín ${minEdge.toFixed(2)}%)`,
-          }]);
+          supportedTechniqueScores = supportedTechniqueScores.concat([
+            applyCapabilityToTechniqueScore({
+              technique: 'arbitrage_triangular',
+              signal,
+              confidence: Math.round(confidence * 100) / 100,
+              rationale: `Edge ${edgePct.toFixed(2)}% (mín ${minEdge.toFixed(2)}%)`,
+            }, capabilityByTechnique.get('arbitrage_triangular')),
+          ]);
         } else {
-          techniqueScores = techniqueScores.concat([{
-            technique: 'arbitrage_triangular',
-            signal: 'neutral',
-            confidence: 0,
-            rationale: 'Sem rota triangular válida com liquidez suficiente.',
-          }]);
+          supportedTechniqueScores = supportedTechniqueScores.concat([
+            applyCapabilityToTechniqueScore({
+              technique: 'arbitrage_triangular',
+              signal: 'neutral',
+              confidence: 0,
+              rationale: 'Sem rota triangular válida com liquidez suficiente.',
+            }, capabilityByTechnique.get('arbitrage_triangular')),
+          ]);
         }
       }
+
+      const supportedScoresByTechnique = new Map(
+        supportedTechniqueScores.map((score) => [score.technique, score]),
+      );
+      const unsupportedScoresByTechnique = new Map(
+        unsupportedTechniqueScores.map((score) => [score.technique, score]),
+      );
+      const techniqueScores = techniques
+        .map((technique) => supportedScoresByTechnique.get(technique) ?? unsupportedScoresByTechnique.get(technique))
+        .filter((score): score is TradingTechniqueScore => Boolean(score));
 
       const ensembleResult = deps.buildEnsembleResult(techniqueScores, ensembleConfig);
       const orderBook = effectiveDataSources.orderBook
@@ -715,6 +764,7 @@ export function registerTradingAnalysisRoutes(
           indicatorId: item.indicatorId,
         })),
         consensus,
+        techniqueCapabilities,
         techniqueScores,
         ensembleResult,
         arbitrageSnapshot,
@@ -726,6 +776,7 @@ export function registerTradingAnalysisRoutes(
           dataSources: effectiveDataSources,
           newsConfig: profile.newsConfig,
           techniques,
+          techniqueCapabilities,
           ensembleConfig,
           arbitrageConfig,
         },

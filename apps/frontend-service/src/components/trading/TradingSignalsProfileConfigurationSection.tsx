@@ -9,6 +9,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { MultiSelectDropdown } from './MultiSelectDropdown';
+import type { TradingTechniqueCapability } from './TradingDomainTypes';
 
 type TradingSignalsProfileArbitrageConfig = {
   exchanges: string[];
@@ -60,6 +61,7 @@ type TradingSignalsProfileConfigurationSectionProps = {
   signalProfileForm: TradingSignalsProfileForm;
   sourceOptions: TradingSignalsSourceOption[];
   t: TFunction;
+  techniqueCapabilities?: TradingTechniqueCapability[];
   techniqueOptions: TradingSignalsProfileOption[];
 };
 
@@ -85,8 +87,18 @@ export function TradingSignalsProfileConfigurationSection({
   signalProfileForm,
   sourceOptions,
   t,
+  techniqueCapabilities,
   techniqueOptions,
 }: TradingSignalsProfileConfigurationSectionProps) {
+  const blockedOrUnsupportedTechniques = (techniqueCapabilities ?? [])
+    .filter((capability) => capability.supportLevel !== 'supported');
+
+  const supportLevelLabelByKey: Record<NonNullable<TradingTechniqueCapability['supportLevel']>, string> = {
+    supported: 'Suportada',
+    blocked: 'Bloqueada',
+    not_supported_for_current_context: 'Não suportada neste contexto',
+  };
+
   return (
     <>
       <div className="space-y-3">
@@ -140,6 +152,22 @@ export function TradingSignalsProfileConfigurationSection({
           emptyLabel={t('trading.common.noOptions')}
         />
         <p className="text-xs text-muted-foreground">{t('trading.signals.profile.techniquesHint')}</p>
+        {blockedOrUnsupportedTechniques.length > 0 && (
+          <div className="space-y-1 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+            <p className="font-medium">Support level atual por technique</p>
+            {blockedOrUnsupportedTechniques.map((capability) => {
+              const option = techniqueOptions.find((item) => item.value === capability.technique);
+              const label = option?.label ?? capability.technique;
+              const supportLabel = supportLevelLabelByKey[capability.supportLevel];
+              const reason = capability.reasonHuman ?? 'Sem descrição adicional.';
+              return (
+                <p key={`${capability.technique}-${capability.supportLevel}`}>
+                  {label}: {supportLabel}. {reason}
+                </p>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       <div className="space-y-3">

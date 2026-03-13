@@ -284,11 +284,37 @@ export interface NamespaceOption {
   ativo?: boolean;
 }
 
+export type TradingTechniqueSupportLevel = 'supported' | 'blocked' | 'not_supported_for_current_context';
+export type TradingTechniqueFamily =
+  | 'directional_technical'
+  | 'intraday_microstructure'
+  | 'basis_funding_carry'
+  | 'inventory_spread_capture'
+  | 'cross_venue_arbitrage';
+
+export interface TradingTechniqueDataRequirement {
+  key: string;
+  label: string;
+  description: string;
+  required: boolean;
+  available: boolean;
+}
+
+export interface TradingTechniqueCapability {
+  technique: string;
+  family: TradingTechniqueFamily;
+  supportLevel: TradingTechniqueSupportLevel;
+  reasonCode?: string | null;
+  reasonHuman?: string | null;
+  minimumDataRequirements: TradingTechniqueDataRequirement[];
+}
+
 export interface TradingProfileForm {
   kind: 'analysis' | 'signal';
   timeframes: string[];
   indicators: string[];
   techniques: string[];
+  techniqueCapabilities?: TradingTechniqueCapability[];
   dataSources: {
     orderBook: boolean;
     news: boolean;

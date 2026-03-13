@@ -4,12 +4,21 @@ import type {
   TradingEnsembleConfig,
   TradingEnsembleResult,
   TradingIndicatorKey,
+  TradingProfileDataSources,
   TradingProfileConsensus,
   TradingTechnique,
+  TradingTechniqueCapability,
   TradingTechniqueScore,
 } from '@alice/shared';
 import type { TriangularArbitrageResult } from './trading-arbitrage-service.js';
 import type { TechnicalAnalysisResult } from './technical-indicators.js';
+import {
+  applyCapabilityToTechniqueScore,
+  buildUnsupportedTechniqueScores,
+  filterSupportedTradingTechniques,
+  mapTechniqueCapabilitiesByTechnique,
+  resolveTradingTechniqueCapabilities,
+} from './trading-technique-capability-service.js';
 import type { TradingMarginMode, TradingMarketType } from './tradingTypes.js';
 
 type TradingIntervalValue =
@@ -118,16 +127,28 @@ export function createTradingSignalAnalysisOrchestrationService(deps: {
     techniques: TradingTechnique[];
     ensembleConfig: TradingEnsembleConfig;
     consensusConfig: TradingProfileConsensus;
+    dataSources?: TradingProfileDataSources;
     arbitrageConfig?: TradingArbitrageConfig;
   }): Promise<{
     analysisMatrix: TradingAnalysisMatrixEntry[];
     primaryAnalysis: TradingAnalysisMatrixEntry;
     consensus: TradingConsensusResult;
+    techniqueCapabilities: TradingTechniqueCapability[];
     techniqueScores: TradingTechniqueScore[];
     ensembleResult: TradingEnsembleResult;
     arbitrageSnapshot: TriangularArbitrageResult | null;
     arbitrageSnapshots: TriangularArbitrageResult[];
   }> {
+    const techniqueCapabilities = resolveTradingTechniqueCapabilities({
+      techniques: params.techniques,
+      marketType: params.marketType,
+      dataSources: params.dataSources,
+      hasArbitrageConfig: Boolean(params.arbitrageConfig),
+    });
+    const capabilityByTechnique = mapTechniqueCapabilitiesByTechnique(techniqueCapabilities);
+    const supportedTechniques = filterSupportedTradingTechniques(techniqueCapabilities);
+    const unsupportedTechniqueScores = buildUnsupportedTechniqueScores(techniqueCapabilities);
+
     const analysisMatrix = await Promise.all(
       params.timeframes.map(async (frame) => {
         const result = await deps.calculateAndPersistTechnicalAnalysis({
@@ -138,7 +159,7 @@ export function createTradingSignalAnalysisOrchestrationService(deps: {
           marketType: params.marketType,
           marginMode: params.marginMode,
           enabledIndicators: params.enabledIndicators,
-          techniques: params.techniques,
+          techniques: supportedTechniques,
           ensembleConfig: params.ensembleConfig,
         });
         return {
@@ -152,11 +173,13 @@ export function createTradingSignalAnalysisOrchestrationService(deps: {
 
     const primaryAnalysis = analysisMatrix[0];
     const consensus = deps.buildMajorityConsensus(analysisMatrix, params.consensusConfig);
-    let techniqueScores = deps.aggregateTechniqueScores(analysisMatrix, params.techniques);
+    let supportedTechniqueScores = deps
+      .aggregateTechniqueScores(analysisMatrix, supportedTechniques)
+      .map((score) => applyCapabilityToTechniqueScore(score, capabilityByTechnique.get(score.technique)));
     let arbitrageSnapshot: TriangularArbitrageResult | null = null;
     let arbitrageSnapshots: TriangularArbitrageResult[] = [];
 
-    if (params.techniques.includes('arbitrage_triangular') && params.arbitrageConfig) {
+    if (supportedTechniques.includes('arbitrage_triangular') && params.arbitrageConfig) {
       const resolvedSymbol = primaryAnalysis.resolvedSymbol ?? params.symbol;
       const { base, quote } = deps.splitSymbolPair(resolvedSymbol);
       const { feePctByExchange, effectiveFeePct } = await deps.resolveArbitrageFeePctForExchanges({
@@ -191,21 +214,35 @@ export function createTradingSignalAnalysisOrchestrationService(deps: {
           : edgePct >= minEdge
             ? 'buy'
             : 'neutral';
-        techniqueScores = techniqueScores.concat([{
-          technique: 'arbitrage_triangular',
-          signal,
-          confidence: Math.round(confidence * 100) / 100,
-          rationale: `Edge ${edgePct.toFixed(2)}% (mín ${minEdge.toFixed(2)}%)`,
-        }]);
+        supportedTechniqueScores = supportedTechniqueScores.concat([
+          applyCapabilityToTechniqueScore({
+            technique: 'arbitrage_triangular',
+            signal,
+            confidence: Math.round(confidence * 100) / 100,
+            rationale: `Edge ${edgePct.toFixed(2)}% (mín ${minEdge.toFixed(2)}%)`,
+          }, capabilityByTechnique.get('arbitrage_triangular')),
+        ]);
       } else {
-        techniqueScores = techniqueScores.concat([{
-          technique: 'arbitrage_triangular',
-          signal: 'neutral',
-          confidence: 0,
-          rationale: 'Sem rota triangular válida com liquidez suficiente.',
-        }]);
+        supportedTechniqueScores = supportedTechniqueScores.concat([
+          applyCapabilityToTechniqueScore({
+            technique: 'arbitrage_triangular',
+            signal: 'neutral',
+            confidence: 0,
+            rationale: 'Sem rota triangular válida com liquidez suficiente.',
+          }, capabilityByTechnique.get('arbitrage_triangular')),
+        ]);
       }
     }
+
+    const supportedScoresByTechnique = new Map(
+      supportedTechniqueScores.map((score) => [score.technique, score]),
+    );
+    const unsupportedScoresByTechnique = new Map(
+      unsupportedTechniqueScores.map((score) => [score.technique, score]),
+    );
+    const techniqueScores = params.techniques
+      .map((technique) => supportedScoresByTechnique.get(technique) ?? unsupportedScoresByTechnique.get(technique))
+      .filter((score): score is TradingTechniqueScore => Boolean(score));
 
     const ensembleResult = deps.buildEnsembleResult(techniqueScores, params.ensembleConfig);
 
@@ -213,6 +250,7 @@ export function createTradingSignalAnalysisOrchestrationService(deps: {
       analysisMatrix,
       primaryAnalysis,
       consensus,
+      techniqueCapabilities,
       techniqueScores,
       ensembleResult,
       arbitrageSnapshot,

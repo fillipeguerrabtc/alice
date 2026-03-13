@@ -9,6 +9,7 @@ import type {
   TradingProfileModelConfig,
   TradingProfileNewsConfig,
   TradingTechnique,
+  TradingTechniqueCapability,
   TradingTechniqueScore,
 } from '@alice/shared';
 import type { EffectiveReasoningMode, ReasoningMode } from '@alice/shared-utils';
@@ -131,6 +132,7 @@ export type TradingSignalFeatureExtractionStageResult = {
     requiredAgree: number;
     isMajorityReached: boolean;
   };
+  techniqueCapabilities: TradingTechniqueCapability[];
   techniqueScores: TradingTechniqueScore[];
   ensembleResult: TradingEnsembleResult;
   arbitrageSnapshot: TriangularArbitrageResult | null;
@@ -214,6 +216,7 @@ export type TradingSignalEnginePipelineDeps<
     techniques: TradingTechnique[];
     ensembleConfig: TradingEnsembleConfig;
     consensusConfig: TradingProfileConsensus;
+    dataSources?: TradingProfileDataSources;
     arbitrageConfig?: TradingArbitrageConfig;
   }) => Promise<TradingSignalFeatureExtractionStageResult>;
   buildTradingSignalOperationalContext: (params: {
@@ -313,6 +316,7 @@ export type TradingSignalEnginePipelineDeps<
     sourceModel: string;
     modelVersion: string;
     techniques: TradingTechnique[];
+    techniqueCapabilities: TradingTechniqueCapability[];
     ensembleConfig: TradingEnsembleConfig;
     techniqueScores: TradingTechniqueScore[];
     ensembleResult: TradingEnsembleResult;

@@ -105,7 +105,14 @@ export function aggregateTechniqueScores(matrix: AnalysisMatrixEntry[], techniqu
         .map((list) => list.find((item) => item.technique === technique))
         .filter((item): item is TradingTechniqueScore => Boolean(item));
       if (scores.length === 0) {
-        return { technique, signal: 'neutral', confidence: 0 };
+        return {
+          technique,
+          supportLevel: 'blocked',
+          signal: 'neutral',
+          confidence: 0,
+          reasonCode: 'TECHNIQUE_SCORE_UNAVAILABLE',
+          reasonHuman: 'Technique sem score disponível no contexto atual.',
+        };
       }
       const weightMap = new Map<TradingOverallSignal, number>();
       let confidenceSum = 0;
@@ -122,8 +129,14 @@ export function aggregateTechniqueScores(matrix: AnalysisMatrixEntry[], techniqu
         }
       }
       const avgConfidence = confidenceSum / scores.length;
+      const primaryScore = scores[0];
       return {
         technique,
+        family: primaryScore?.family,
+        supportLevel: primaryScore?.supportLevel,
+        reasonCode: primaryScore?.reasonCode ?? null,
+        reasonHuman: primaryScore?.reasonHuman ?? null,
+        minimumDataRequirements: primaryScore?.minimumDataRequirements,
         signal: bestSignal,
         confidence: Math.round(avgConfidence * 100) / 100,
       };

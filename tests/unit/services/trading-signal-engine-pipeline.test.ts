@@ -82,4 +82,35 @@ describe('trading signal engine pipeline - candidate summary', () => {
     expect(summary.expectedState).toBe('no_trade');
     expect(summary.reasonCode).toBe('NO_CANDIDATES');
   });
+
+  it('não conta técnica não suportada como candidato válido', () => {
+    const summary = buildSignalCandidateSummary({
+      consensus: {
+        overallSignal: 'neutral',
+        confidence: 0.61,
+        alignedTimeframes: ['5m'],
+        misalignedTimeframes: ['15m'],
+        agreementRatio: 0.5,
+        requiredAgree: 1,
+        isMajorityReached: true,
+      },
+      ensembleResult: {
+        overallSignal: 'neutral',
+        confidence: 0.6,
+        topTechniques: [{ technique: 'cash_and_carry', signal: 'buy', confidence: 0.6 }],
+      },
+      techniqueScores: [
+        {
+          technique: 'cash_and_carry',
+          signal: 'buy',
+          confidence: 0.6,
+          supportLevel: 'not_supported_for_current_context',
+          reasonCode: 'BASIS_FUNDING_DATA_UNAVAILABLE',
+        },
+      ],
+    });
+
+    expect(summary.candidateCount).toBe(0);
+    expect(summary.expectedState).toBe('no_trade');
+  });
 });

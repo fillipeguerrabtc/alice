@@ -1,7 +1,7 @@
 # Domain Map do Trading (Baseline Rodada 1)
 
 Author: Fillipe Guerra  
-Data: 2026-03-12
+Data: 2026-03-13
 
 ## Objetivo
 Mapear o domínio Trading real do monorepo para orientar a refatoração com segurança, sem ruptura funcional e sem duplicação confusa entre stacks paralelas.
@@ -204,3 +204,20 @@ Arquivo principal: `apps/integrations-service/src/routes/trading-automation-rout
 - Novos hooks de observability por estágio:
 - `trading.signal.pipeline.stage`
 - `trading.signal.pipeline.completed`
+
+## 17. Atualização da Rodada 8
+- Foi introduzida uma capability matrix explícita por `technique` no backend:
+- `apps/integrations-service/src/trading-technique-capability-service.ts`
+- Famílias de especialistas ativas no contrato:
+- `directional_technical`
+- `intraday_microstructure`
+- `basis_funding_carry`
+- `inventory_spread_capture`
+- `cross_venue_arbitrage`
+- `analysis-profile` e `analysis/:symbol` agora retornam `techniqueCapabilities[]` com:
+- `supportLevel`
+- `reasonCode`
+- `reasonHuman`
+- `minimumDataRequirements`
+- Técnicas subimplementadas (`cash_and_carry`, `basis_trade`, `funding_arbitrage`, `grid_trading`, `market_making`) deixaram de gerar inferência fake por indicadores genéricos.
+- A UI de Sinais IA passa a exibir suporte real por técnica e estados `blocked`/`not_supported_for_current_context`.

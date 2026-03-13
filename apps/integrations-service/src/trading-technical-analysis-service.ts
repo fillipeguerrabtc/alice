@@ -108,7 +108,9 @@ export function createTradingTechnicalAnalysisService(deps: {
     }));
 
     const analysis = technicalIndicators.calculateFullAnalysis(candles, resolvedSymbol, interval, enabledIndicators);
-    const techniques = params.techniques?.length ? params.techniques : [...deps.defaultTradingTechniques];
+    const techniques = params.techniques === undefined
+      ? [...deps.defaultTradingTechniques]
+      : params.techniques;
     const ensembleConfig = params.ensembleConfig ?? { ...deps.defaultTradingEnsembleConfig };
     const techniqueScores = technicalIndicators.calculateTechniqueScores({ analysis, techniques });
     const ensembleResult = deps.buildEnsembleResult(techniqueScores, ensembleConfig);

@@ -30,6 +30,11 @@
 import { createLogger } from '@alice/logger';
 import type { TradingIndicatorKey, TradingTechnique, TradingTechniqueScore, TradingOverallSignal } from '@alice/shared';
 import {
+  applyCapabilityToTechniqueScore,
+  mapTechniqueCapabilitiesByTechnique,
+  resolveTradingTechniqueCapabilities,
+} from './trading-technique-capability-service.js';
+import {
   RSI,
   MACD,
   EMA,
@@ -696,16 +701,46 @@ export function calculateTechniqueScores(params: {
 }): TradingTechniqueScore[] {
   const { analysis, techniques } = params;
   const scores: TradingTechniqueScore[] = [];
+  const capabilities = resolveTradingTechniqueCapabilities({
+    techniques,
+    marketType: 'futures',
+    hasArbitrageConfig: false,
+  });
+  const capabilitiesByTechnique = mapTechniqueCapabilitiesByTechnique(capabilities);
 
   for (const technique of techniques) {
-    // Técnicas que dependem de dados externos (não apenas indicadores técnicos)
-    if (technique === 'arbitrage_triangular') {
+    const capability = capabilitiesByTechnique.get(technique);
+    if (!capability || capability.supportLevel !== 'supported') {
+      scores.push({
+        technique,
+        family: capability?.family,
+        supportLevel: capability?.supportLevel,
+        reasonCode: capability?.reasonCode ?? null,
+        reasonHuman: capability?.reasonHuman ?? 'Technique indisponível no contexto atual.',
+        minimumDataRequirements: capability?.minimumDataRequirements,
+        signal: 'neutral',
+        confidence: 0,
+        rationale: capability?.reasonHuman ?? 'Technique indisponível no contexto atual.',
+      });
       continue;
     }
 
     let score = 0;
     let maxScore = 0;
     let rationale = '';
+
+    if (technique === 'arbitrage_triangular') {
+      scores.push(applyCapabilityToTechniqueScore(
+        {
+          technique,
+          signal: 'neutral',
+          confidence: 0,
+          rationale: 'Arbitragem triangular depende de market graph e fees em tempo real.',
+        },
+        capability,
+      ));
+      continue;
+    }
 
     if (technique === 'scalping' || technique === 'mean_reversion') {
       if (analysis.rsi) {
@@ -833,117 +868,10 @@ export function calculateTechniqueScores(params: {
       rationale = 'MACD/RSI/Volume para momentum.';
     }
 
-    // Cash & Carry: Avalia condições de contango (futures premium sobre spot)
-    // Beneficia de baixa volatilidade e tendência estável
-    if (technique === 'cash_and_carry') {
-      if (analysis.atr) {
-        maxScore += 1;
-        // ATR baixo favorece cash & carry (spread estável)
-        if (analysis.atr.volatility === 'low') score += 1;
-        if (analysis.atr.volatility === 'high') score -= 1;
-      }
-      if (analysis.movingAverages) {
-        maxScore += 1;
-        // Tendência neutra/lateral é ideal para cash & carry
-        if (analysis.movingAverages.trend === 'sideways') score += 1;
-      }
-      if (analysis.adx) {
-        maxScore += 1;
-        // ADX baixo = sem tendência forte = bom para carry
-        if (analysis.adx.trendStrength === 'weak') score += 1;
-        if (analysis.adx.trendStrength === 'very_strong') score -= 1;
-      }
-      rationale = 'ATR baixo + tendência neutra + ADX fraco para carry estável.';
-    }
-
-    // Basis Trade: Similar a cash & carry, foca em convergência de preço
-    if (technique === 'basis_trade') {
-      if (analysis.bollinger) {
-        maxScore += 2;
-        // %B perto de 0.5 indica preço próximo à média (convergência)
-        const deviation = Math.abs(analysis.bollinger.percentB - 0.5);
-        if (deviation < 0.15) score += 2;
-        if (deviation > 0.4) score -= 1;
-      }
-      if (analysis.atr) {
-        maxScore += 1;
-        if (analysis.atr.volatility === 'low' || analysis.atr.volatility === 'medium') score += 1;
-        if (analysis.atr.volatility === 'high') score -= 1;
-      }
-      rationale = 'Bollinger convergente + volatilidade controlada para basis.';
-    }
-
-    // Funding Arbitrage: Avalia condições onde funding rate pode ser explorado
-    // RSI extremo + alta volatilidade pode indicar funding rate favorável
-    if (technique === 'funding_arbitrage') {
-      if (analysis.rsi) {
-        maxScore += 1;
-        // RSI extremo (overbought/oversold) indica funding rate potencialmente alto
-        if (analysis.rsi.value > 75 || analysis.rsi.value < 25) score += 1;
-      }
-      if (analysis.volume) {
-        maxScore += 1;
-        if (analysis.volume.interpretation === 'high' || analysis.volume.interpretation === 'very_high') score += 1;
-      }
-      if (analysis.adx) {
-        maxScore += 1;
-        // Tendência forte = funding rate enviesado = oportunidade
-        if (analysis.adx.trendStrength === 'strong' || analysis.adx.trendStrength === 'very_strong') score += 1;
-      }
-      rationale = 'RSI extremo + volume alto + tendência forte para funding arb.';
-    }
-
-    // Grid Trading: Range definido com volatilidade moderada
-    if (technique === 'grid_trading') {
-      if (analysis.supportResistance) {
-        maxScore += 3;
-        const price = analysis.currentPrice;
-        const rangeWidth = analysis.supportResistance.resistance1 - analysis.supportResistance.support1;
-        const rangePercent = rangeWidth / analysis.supportResistance.support1;
-        // Range de 2-10% é ideal para grid
-        if (rangePercent >= 0.02 && rangePercent <= 0.10) score += 2;
-        // Preço no meio do range é bom para grid bidirecional
-        const midRange = (analysis.supportResistance.support1 + analysis.supportResistance.resistance1) / 2;
-        if (Math.abs(price - midRange) / midRange < 0.02) score += 1;
-      }
-      if (analysis.adx) {
-        maxScore += 1;
-        // ADX baixo = mercado lateral = bom para grid
-        if (analysis.adx.trendStrength === 'weak') score += 1;
-        if (analysis.adx.trendStrength === 'very_strong') score -= 1;
-      }
-      if (analysis.atr) {
-        maxScore += 1;
-        // Volatilidade moderada ideal para grid
-        if (analysis.atr.volatility === 'medium') score += 1;
-      }
-      rationale = 'Range definido + ADX baixo + volatilidade moderada para grid.';
-    }
-
-    // Market Making: Spread e volume para provisão de liquidez
-    if (technique === 'market_making') {
-      if (analysis.volume) {
-        maxScore += 2;
-        // Volume alto = mais liquidez = spreads menores mas mais trades
-        if (analysis.volume.interpretation === 'normal') score += 2;
-        if (analysis.volume.interpretation === 'low') score -= 1;
-      }
-      if (analysis.atr) {
-        maxScore += 1;
-        // Volatilidade baixa a moderada favorece market making
-        if (analysis.atr.volatility === 'low' || analysis.atr.volatility === 'medium') score += 1;
-        if (analysis.atr.volatility === 'high') score -= 1;
-      }
-      if (analysis.adx) {
-        maxScore += 1;
-        // Sem tendência forte = melhor para market making
-        if (analysis.adx.trendStrength === 'weak') score += 1;
-        if (analysis.adx.trendStrength === 'very_strong') score -= 1;
-      }
-      rationale = 'Volume normal + volatilidade controlada + sem tendência para MM.';
-    }
-
-    scores.push(buildTechniqueScore({ technique, score, maxScore, rationale }));
+    scores.push(applyCapabilityToTechniqueScore(
+      buildTechniqueScore({ technique, score, maxScore, rationale }),
+      capability,
+    ));
   }
 
   return scores;
@@ -1037,4 +965,3 @@ INSTRUÇÕES PARA O LLM:
 4. Sua resposta será VERIFICADA contra esses valores
 `.trim();
 }
-

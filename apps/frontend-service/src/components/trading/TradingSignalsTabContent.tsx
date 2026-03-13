@@ -16,6 +16,7 @@ import {
   TradingSignalsSchedulerSection,
 } from './TradingSignalsSchedulerSection';
 import type { TradingNewsConfigForm, TradingNewsPresetOption } from './NewsConfigEditor';
+import type { TradingTechniqueCapability } from './TradingDomainTypes';
 import type { ReasoningMode } from '@/lib/reasoning-mode';
 
 type TradingSignalsArbitrageConfig = {
@@ -40,6 +41,7 @@ type TradingSignalsProfileForm = {
   indicators: string[];
   newsConfig: TradingNewsConfigForm;
   techniques: string[];
+  techniqueCapabilities?: TradingTechniqueCapability[];
   timeframes: string[];
 };
 
@@ -281,6 +283,7 @@ export function TradingSignalsTabContent({
             signalProfileForm={signalProfileForm}
             sourceOptions={sourceOptions}
             t={t}
+            techniqueCapabilities={signalProfileForm.techniqueCapabilities}
             techniqueOptions={techniqueOptions}
           />
 

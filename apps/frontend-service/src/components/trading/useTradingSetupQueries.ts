@@ -134,6 +134,7 @@ export function useTradingSetupQueries({
     queryFn: async () => {
       const params = new URLSearchParams();
       params.set('kind', 'signal');
+      params.set('marketType', selectedMarketType);
       const response = await apiRequest('GET', `/api/integrations/trading/analysis-profile?${params.toString()}`);
       return response.json();
     },

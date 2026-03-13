@@ -6,6 +6,7 @@ import type {
   TradingProfileConsensus,
   TradingProfileDataSources,
   TradingTechnique,
+  TradingTechniqueCapability,
   TradingTechniqueScore,
 } from '@alice/shared';
 import type { TradingLlmSignalNormalized, TradingSignalDeterministicOverride } from './trading-llm-signal-post-processing-service.js';
@@ -41,6 +42,7 @@ export function createTradingLlmSignalPersistenceService(deps: {
     sourceModel: string;
     modelVersion: string;
     techniques: TradingTechnique[];
+    techniqueCapabilities: TradingTechniqueCapability[];
     ensembleConfig: TradingEnsembleConfig;
     techniqueScores: TradingTechniqueScore[];
     ensembleResult: TradingEnsembleResult;
@@ -98,6 +100,7 @@ export function createTradingLlmSignalPersistenceService(deps: {
           stopLoss: params.llmSignal.suggestedStopLoss,
           riskReward: params.llmSignal.riskReward,
           techniques: params.techniques,
+          techniqueCapabilities: params.techniqueCapabilities,
           ensemble: params.ensembleConfig,
           techniqueScores: params.techniqueScores,
           ensembleResult: params.ensembleResult,

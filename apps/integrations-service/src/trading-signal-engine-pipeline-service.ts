@@ -54,7 +54,10 @@ export function buildSignalCandidateSummary(params: {
     consensusSignal: params.consensus.overallSignal,
     ensembleSignal: params.ensembleResult.overallSignal,
   });
-  const candidateCount = params.techniqueScores.filter((score) => score.signal !== 'neutral').length;
+  const candidateCount = params.techniqueScores
+    .filter((score) => (score.supportLevel ?? 'supported') === 'supported')
+    .filter((score) => score.signal !== 'neutral')
+    .length;
 
   let reasonCode: TradingSignalPipelineCandidateSummary['reasonCode'] = null;
   if (directionalBias === 'neutral') {
@@ -145,6 +148,7 @@ export function createTradingSignalEnginePipelineService<
       techniques: params.runtimeContext.techniques,
       ensembleConfig: params.runtimeContext.ensembleConfig,
       consensusConfig: params.runtimeContext.consensusConfig,
+      dataSources: params.runtimeContext.effectiveDataSources,
       arbitrageConfig: params.runtimeContext.arbitrageConfig,
     });
 
@@ -368,6 +372,7 @@ export function createTradingSignalEnginePipelineService<
       sourceModel: params.runtimeContext.agentContext.agent.modeloBase ?? DEFAULT_PUBLIC_LLM_MODEL_NAME,
       modelVersion: params.runtimeContext.agentContext.llmConfig.model,
       techniques: params.runtimeContext.techniques,
+      techniqueCapabilities: params.featureExtraction.techniqueCapabilities,
       ensembleConfig: params.runtimeContext.ensembleConfig,
       techniqueScores: params.featureExtraction.techniqueScores,
       ensembleResult: params.featureExtraction.ensembleResult,
