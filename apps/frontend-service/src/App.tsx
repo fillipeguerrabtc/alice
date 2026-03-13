@@ -139,11 +139,10 @@ function Router() {
       {/* - returnTo é validado contra open redirect attacks */}
       <Route path="/login" component={LoginRedirect} />
       <Route path="/" component={Dashboard} />
-      {/* Redireciona /chat/ (trailing slash) para /chat canônico */}
-      <Route path="/chat/">{() => <Redirect to="/chat" />}</Route>
       {/*
-       * Rota única para preservar a mesma instância do Chat entre /chat e /chat/:conversationId.
-       * Evita remount durante criação da conversa e previne sumiço temporário de mensagens em streaming.
+       * Rota única para preservar a mesma instância do Chat entre /chat, /chat/ e /chat/:conversationId.
+       * Importante: no wouter/regexparam a barra final é opcional, então uma rota separada para /chat/
+       * também casaria com /chat e bloquearia a renderização do Chat com redirect para a própria URL.
        */}
       <Route path="/chat/:conversationId?" component={Chat} />
       <Route path="/conversations" component={Conversations} />
