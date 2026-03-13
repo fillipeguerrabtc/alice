@@ -28,6 +28,7 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Auto Engine já opera por filas e persistência em `trading_auto_runs`, `trading_auto_run_steps` e `trading_auto_decisions`.
 - Signal Generation já expõe estados de sucesso e no-trade via `trading_signals` e metadata.
 - Baseline de feature flag e state model já foi concluída; a Shell V2 compartilhada já está montável em Real e Demo com fallback legacy por flag.
+- O modo `operate` da Workspace V2 já está ativo no caminho V2 para Real e Demo, com primeira dobra focada em execução e progressive disclosure para detalhes avançados.
 
 ## 5. Plano por rodadas
 1. Baseline, Feature Flag, Domain Map e Plano Canônico.
@@ -45,7 +46,7 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Rodada 1: Concluída
 - Rodada 2: Concluída
 - Rodada 3: Concluída
-- Rodada 4: Pendente
+- Rodada 4: Concluída
 - Rodada 5: Pendente
 - Rodada 6: Pendente
 - Rodada 7: Pendente
@@ -96,11 +97,23 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - `docs/trading/domain-map-trading.md`
 - `docs/trading/plano-refatoracao-trading.md`
 
+### Rodada 4
+- `apps/frontend-service/src/components/trading-v2/TradingWorkspaceOperateMode.tsx` (novo)
+- `apps/frontend-service/src/components/trading-v2/TradingWorkspaceOperateStatusCard.tsx` (novo)
+- `apps/frontend-service/src/components/trading-v2/TradingWorkspaceCompactOrderTicket.tsx` (novo)
+- `apps/frontend-service/src/components/trading-v2/index.ts`
+- `apps/frontend-service/src/pages/TradingContent.tsx`
+- `apps/frontend-service/src/pages/DemoTrading.tsx`
+- `docs/trading/workspace-shell-v2.md`
+- `docs/trading/domain-map-trading.md`
+- `docs/trading/plano-refatoracao-trading.md`
+
 ## 8. Migrations criadas
 - Rodada 1: Nenhuma.
 - Rodada 2:
 - `0109_trading_auto_run_terminal_states.sql` (enum `trading_auto_run_status` com `no_trade` e `blocked`, coluna `terminal_reason_code`, índice parcial por reason code).
 - Rodada 3: Nenhuma.
+- Rodada 4: Nenhuma.
 
 ## 9. Testes executados
 - Rodada 1:
@@ -110,6 +123,9 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Comando: `pnpm test`
 - Resultado: `129` arquivos de teste aprovados, `1385` testes aprovados, `0` falhas.
 - Rodada 3:
+- Comando: `pnpm test`
+- Resultado: `129` arquivos de teste aprovados, `1385` testes aprovados, `0` falhas.
+- Rodada 4:
 - Comando: `pnpm test`
 - Resultado: `129` arquivos de teste aprovados, `1385` testes aprovados, `0` falhas.
 
@@ -123,6 +139,9 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Rodada 3:
 - Comando: `pnpm typecheck`
 - Resultado: sucesso, sem erros.
+- Rodada 4:
+- Comando: `pnpm typecheck`
+- Resultado: sucesso, sem erros.
 
 ## 11. Resultados de ESLint
 - Rodada 1:
@@ -132,6 +151,9 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Comando: `pnpm lint`
 - Resultado: sucesso, sem warnings e sem errors.
 - Rodada 3:
+- Comando: `pnpm lint`
+- Resultado: sucesso, sem warnings e sem errors.
+- Rodada 4:
 - Comando: `pnpm lint`
 - Resultado: sucesso, sem warnings e sem errors.
 
@@ -155,6 +177,11 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - Rodada 3:
 - Comando: `pnpm --filter @alice/frontend-service build`
 - Resultado: sucesso.
+- Rodada 4:
+- Comando: `pnpm exec tsc -b` (em `apps/frontend-service`)
+- Resultado: sucesso.
+- Comando: `pnpm exec vite build` (em `apps/frontend-service`)
+- Resultado: sucesso.
 
 ## 13. Riscos conhecidos
 - Acoplamento alto em páginas grandes (`TradingContent.tsx`, `DemoTrading.tsx`) exige mudanças muito cirúrgicas por rodada.
@@ -164,7 +191,7 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - A convergência final para remover o shell legacy exige rollout gradual por flag para evitar regressão de UX em produção.
 
 ## 14. Pendências
-- Receber prompt da Rodada 4 para iniciar a implementação do modo Operar dentro da Workspace V2.
+- Iniciar Rodada 5 com AI Signals Cockpit V2 e reaproveitamento da base da Shell/Operate já consolidada.
 
 ## 15. Decisões arquiteturais registradas
 - Feature flag `trading_workspace_v2_enabled` adicionada como baseline de rollout controlado.
@@ -173,8 +200,9 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - State model do Auto Engine atualizado para terminal states explícitos (`succeeded`, `no_trade`, `blocked`, `failed`).
 - `terminal_reason_code` adicionado em `trading_auto_runs` para classificação queryável e auditável de estado terminal.
 - Shell V2 compartilhada criada em `components/trading-v2` e integrada em Trading Real e Demo Trading com quatro modos primários e progressive disclosure para áreas avançadas.
+- Modo `operate` implementado na V2 com blocos de execução reutilizando data sources reais existentes e mantendo separação explícita entre execução Real e Demo.
 
 ## 16. Próximos passos
-1. Iniciar Rodada 4 focando o modo `operate` dentro da Workspace V2.
-2. Manter evolução sem trilha paralela `legacy + v2`, com cleanup contínuo.
+1. Iniciar Rodada 5 focando AI Signals Cockpit V2 sobre a Shell compartilhada.
+2. Manter evolução sem trilha paralela `legacy + v2`, com cleanup contínuo controlado por rollout.
 3. Repetir checklist sequencial de validação e atualização documental ao fechamento da próxima rodada.

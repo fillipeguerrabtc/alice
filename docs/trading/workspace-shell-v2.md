@@ -1,4 +1,4 @@
-# Shared Trading Workspace Shell V2 (Rodada 3)
+# Shared Trading Workspace Shell V2 (Rodadas 3 e 4)
 
 Author: Fillipe Guerra  
 Data: 2026-03-12
@@ -13,6 +13,9 @@ Estabelecer uma shell compartilhada de workspace para Trading Real e Demo Tradin
 - `TradingWorkspaceTopBar.tsx`
 - `TradingWorkspaceSidebar.tsx`
 - `TradingWorkspaceBottomTray.tsx`
+- `TradingWorkspaceOperateMode.tsx`
+- `TradingWorkspaceOperateStatusCard.tsx`
+- `TradingWorkspaceCompactOrderTicket.tsx`
 - Tipos compartilhados em `types.ts`.
 - Integração em `TradingContent.tsx` (Real) e `DemoTrading.tsx` (Demo) condicionada a `featureFlags.tradingWorkspaceV2Enabled`.
 
@@ -36,6 +39,21 @@ Estabelecer uma shell compartilhada de workspace para Trading Real e Demo Tradin
 - governance
 - advanced order book
 - postmortem detail
+
+## Modo Operar (Rodada 4)
+- O modo `operate` passou a ser uma experiência dedicada dentro da Shell V2, sem alterar contratos de backend.
+- Primeira dobra prioriza execução com blocos explícitos:
+- `main chart area`
+- `compact order ticket`
+- `open positions panel`
+- `open orders panel`
+- `status card` com `websocket`, `engine health`, `risk mode` e `circuit breaker`.
+- Progressive disclosure para detalhes avançados:
+- Real: account/risk/order book avançado.
+- Demo: account snapshot + atalhos operacionais de pós-trade.
+- Integração de dados reaproveitada:
+- Real mantém hooks/queries e presenters já usados na tela legada.
+- Demo mantém execução simulada e passa a reutilizar feed real de market/klines no modo `operate`.
 
 ## Estratégia de compatibilidade
 - Caminho legado permanece íntegro e ativo quando a feature flag estiver desligada.

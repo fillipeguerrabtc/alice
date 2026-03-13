@@ -22,6 +22,9 @@ import { ErrorBoundary } from '@/components/error-boundary'; // ✅ CORREÇÃO: 
 import { useToast } from '@/hooks/use-toast';
 import { useKucoinWebSocket } from '@/hooks/useKucoinWebSocket';
 import {
+  TradingWorkspaceCompactOrderTicket,
+  TradingWorkspaceOperateMode,
+  TradingWorkspaceOperateStatusCard,
   TradingWorkspaceShell,
   type TradingWorkspacePrimaryMode,
   type TradingWorkspacePrimaryModeOption,
@@ -77,9 +80,15 @@ import {
   resolveTradingPriceChange,
   TradingPageSections,
   TradingDialogsSection,
+  TradingChartTabContent,
+  TradingOrdersTabContent,
+  TradingPositionsTabContent,
+  TradingAccountTabContent,
+  TradingControlTabContent,
   TradingHeaderSection,
   TradingOperationalAlerts,
   TradingOperationalTabsSection,
+  TradingOrderBookTabContent,
   TradingPrimaryTabsSection,
   TradingStatsPrimaryRow,
   TradingStatsSecondaryRow,
@@ -1516,8 +1525,15 @@ export function TradingContent() {
   });
   const showOperationalAlerts = Boolean(criticalApiError || !riskConfig?.tradingEnabled);
   const tradingWorkspaceV2Enabled = Boolean(status.featureFlags?.tradingWorkspaceV2Enabled);
-
   const activePrimaryMode = resolveTradingV2PrimaryMode(activeTab);
+  const isOperateMode = activePrimaryMode === 'operate';
+  const engineHealth: 'healthy' | 'degraded' | 'offline' = !isTradingEnabled
+    ? 'offline'
+    : (criticalApiError || status.circuitBreaker.state.toLowerCase() === 'open')
+      ? 'degraded'
+      : 'healthy';
+  const riskModeLabel = `${controlMode} • ${selectedMarketType}${selectedMarketType === 'margin' ? `/${selectedMarginMode}` : ''}`;
+
   const visibleTabValues = useMemo(
     () => new Set(visibleTabOptions.map((tab) => tab.value as TradingTabKey)),
     [visibleTabOptions],
@@ -1633,26 +1649,85 @@ export function TradingContent() {
               <TradingOperationalAlerts {...operationalAlertsSectionProps} />
             ) : null}
             <TradingHeaderSection {...headerSectionProps} />
-            <TradingStatsPrimaryRow {...statsPrimarySectionProps} />
-            <TradingStatsSecondaryRow {...statsSecondarySectionProps} />
 
-            <Tabs value={activeTab} onValueChange={handleTabChange}>
-              <TradingWorkspaceShell
-                activeMode={activePrimaryMode}
-                activeWorkspace={activeWorkspace}
-                bottomTraySections={v2BottomTraySections}
-                environmentMode="real"
-                modeOptions={TRADING_V2_MODE_OPTIONS}
-                onModeChange={handlePrimaryModeChange}
-                onWorkspaceChange={handleWorkspaceChangeV2}
-                sidebarSections={v2SidebarSections}
-                workspaceOptions={tradingWorkspaceOptions}
-              >
-                <TradingPrimaryTabsSection {...primaryTabsSectionProps} />
-                <TradingOperationalTabsSection {...operationalTabsSectionProps} />
-              </TradingWorkspaceShell>
-            </Tabs>
+            <TradingWorkspaceShell
+              activeMode={activePrimaryMode}
+              activeWorkspace={activeWorkspace}
+              bottomTraySections={v2BottomTraySections}
+              environmentMode="real"
+              modeOptions={TRADING_V2_MODE_OPTIONS}
+              onModeChange={handlePrimaryModeChange}
+              onWorkspaceChange={handleWorkspaceChangeV2}
+              sidebarSections={v2SidebarSections}
+              workspaceOptions={tradingWorkspaceOptions}
+            >
+              {isOperateMode ? (
+                <TradingWorkspaceOperateMode
+                  chartArea={(
+                    <div className="[&>div]:mt-0">
+                      <TradingChartTabContent {...operationalTabsSectionProps.chartTabProps} />
+                    </div>
+                  )}
+                  orderTicket={(
+                    <TradingWorkspaceCompactOrderTicket
+                      bestAskPrice={primaryTabsSectionProps.overviewTabProps.bestAskPrice}
+                      bestBidPrice={primaryTabsSectionProps.overviewTabProps.bestBidPrice}
+                      onOpenNewOrderDialog={primaryTabsSectionProps.overviewTabProps.onOpenNewOrderDialog}
+                      onOpenOcoOrderDialog={primaryTabsSectionProps.ordersTabProps.onOpenOcoOrderDialog}
+                      onQuickOrder={primaryTabsSectionProps.overviewTabProps.onQuickOrder}
+                      selectedSymbol={headerSectionProps.selectedSymbol}
+                      tradingEnabled={primaryTabsSectionProps.overviewTabProps.tradingEnabled}
+                    />
+                  )}
+                  statusCard={(
+                    <TradingWorkspaceOperateStatusCard
+                      circuitBreakerFailures={statsSecondarySectionProps.circuitBreakerFailures}
+                      circuitBreakerState={statsSecondarySectionProps.circuitBreakerState}
+                      engineHealth={engineHealth}
+                      riskMode={riskModeLabel}
+                      wsConnecting={headerSectionProps.wsConnecting}
+                      wsEnabled={headerSectionProps.wsEnabled}
+                      wsHealthy={headerSectionProps.wsHealthy}
+                    />
+                  )}
+                  openPositionsPanel={(
+                    <div className="[&>div]:mt-0">
+                      <TradingPositionsTabContent {...primaryTabsSectionProps.positionsTabProps} />
+                    </div>
+                  )}
+                  openOrdersPanel={(
+                    <div className="[&>div]:mt-0">
+                      <TradingOrdersTabContent {...primaryTabsSectionProps.ordersTabProps} />
+                    </div>
+                  )}
+                  advancedDisclosure={(
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                        <div className="[&>div]:mt-0">
+                          <TradingAccountTabContent {...operationalTabsSectionProps.accountTabProps} />
+                        </div>
+                        <div className="[&>div]:mt-0">
+                          <TradingControlTabContent {...operationalTabsSectionProps.controlTabProps} />
+                        </div>
+                      </div>
+                      <div className="[&>div]:mt-0">
+                        <TradingOrderBookTabContent {...operationalTabsSectionProps.orderBookTabProps} />
+                      </div>
+                    </div>
+                  )}
+                />
+              ) : (
+                <>
+                  <TradingStatsPrimaryRow {...statsPrimarySectionProps} />
+                  <TradingStatsSecondaryRow {...statsSecondarySectionProps} />
 
+                  <Tabs value={activeTab} onValueChange={handleTabChange}>
+                    <TradingPrimaryTabsSection {...primaryTabsSectionProps} />
+                    <TradingOperationalTabsSection {...operationalTabsSectionProps} />
+                  </Tabs>
+                </>
+              )}
+            </TradingWorkspaceShell>
             <TradingDialogsSection {...dialogsSectionProps} />
           </>
         ) : (

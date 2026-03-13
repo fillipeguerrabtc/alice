@@ -138,3 +138,22 @@ Arquivo principal: `apps/integrations-service/src/routes/trading-automation-rout
 - Trading Real e Demo Trading já possuem branch de renderização V2 via `featureFlags.tradingWorkspaceV2Enabled`.
 - A shell V2 centraliza quatro modos primários (`operate`, `ai-signals`, `portfolio-auto`, `post-trade`) com navegação consistente entre ambientes.
 - Áreas avançadas foram deslocadas para sidebar e bottom tray no caminho V2, preservando integridade funcional do caminho legacy.
+
+## 13. Atualização da Rodada 4
+- O modo `operate` foi implementado como trilha principal na Shell V2:
+- `apps/frontend-service/src/components/trading-v2/TradingWorkspaceOperateMode.tsx`
+- `apps/frontend-service/src/components/trading-v2/TradingWorkspaceOperateStatusCard.tsx`
+- `apps/frontend-service/src/components/trading-v2/TradingWorkspaceCompactOrderTicket.tsx`
+- Trading Real (`TradingContent.tsx`) no modo `operate` agora compõe:
+- `TradingChartTabContent`
+- `TradingWorkspaceCompactOrderTicket`
+- `TradingWorkspaceOperateStatusCard`
+- `TradingPositionsTabContent`
+- `TradingOrdersTabContent`
+- disclosure avançado com `TradingAccountTabContent`, `TradingControlTabContent` e `TradingOrderBookTabContent`.
+- Demo Trading (`DemoTrading.tsx`) no modo `operate` agora compõe:
+- chart com `TradingChartTabContent` usando `GET /api/integrations/trading/intervals` e `GET /api/integrations/trading/klines/:symbol`.
+- ticket compacto integrado ao fluxo real de criação/cancelamento de ordens demo.
+- status card e painéis resumidos de posições/ordens abertas.
+- disclosure avançado para snapshot de conta demo e atalhos de pós-trade.
+- O caminho legacy permanece preservado por feature flag nesta fase para segurança de rollout.

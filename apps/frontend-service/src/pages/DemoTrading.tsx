@@ -53,10 +53,14 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { ErrorBoundary } from '@/components/error-boundary';
 import {
+  TradingWorkspaceCompactOrderTicket,
+  TradingWorkspaceOperateMode,
+  TradingWorkspaceOperateStatusCard,
   TradingWorkspaceShell,
   type TradingWorkspacePrimaryMode,
   type TradingWorkspacePrimaryModeOption,
 } from '@/components/trading-v2';
+import { TradingChartTabContent, type KlineData } from '@/components/trading';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { emitTradingTelemetry } from '@/lib/tradingTelemetry';
 import { useKucoinWebSocket } from '@/hooks/useKucoinWebSocket';
@@ -175,6 +179,13 @@ interface TradingSymbolsResponse {
 interface TradingStatus {
   isConfigured: boolean;
   requiresTenant?: boolean;
+  circuitBreaker?: {
+    state: string;
+    failures: number;
+  };
+  riskConfig?: {
+    tradingEnabled?: boolean;
+  } | null;
   featureFlags?: {
     tradingWorkspaceV2Enabled?: boolean;
     [key: string]: unknown;
@@ -229,6 +240,7 @@ type DemoTradingTabDescriptor = {
 
 /** Intervalo de refetch para símbolos (5 minutos - mesma cache Redis do backend) */
 const SYMBOLS_REFETCH_INTERVAL = 300_000;
+const DEMO_DEFAULT_INTERVAL = '5m';
 const DEMO_TRADING_TAB_DESCRIPTORS: DemoTradingTabDescriptor[] = [
   { value: 'overview', icon: BarChart3, label: 'Visão Geral' },
   { value: 'positions', icon: Target, label: 'Posições' },
@@ -369,6 +381,7 @@ function DemoTradingContent() {
   // Seleção de mercado e símbolo (mesmo padrão Trading Real)
   const [selectedMarketType, setSelectedMarketType] = useState<MarketType>('futures');
   const [selectedSymbol, setSelectedSymbol] = useState('');
+  const [selectedInterval, setSelectedInterval] = useState(DEMO_DEFAULT_INTERVAL);
   // marginMode alinhado com Trading Real para compartilhar cache TanStack Query
   const selectedMarginMode: 'cross' | 'isolated' = 'cross';
 
@@ -626,6 +639,54 @@ function DemoTradingContent() {
     return params.toString();
   }, [selectedMarketType, selectedMarginMode]);
 
+  const { data: intervalsData } = useQuery<{
+    success: boolean;
+    data: {
+      intervals: string[];
+      granularityMap: Record<string, number>;
+      defaultInterval: string;
+    };
+  }>({
+    queryKey: ['/api/integrations/trading/intervals'],
+    enabled: !!user?.id && isConfigured,
+  });
+
+  const intervalOptions = useMemo(
+    () => (intervalsData?.data?.intervals ?? [DEMO_DEFAULT_INTERVAL]).map((interval) => ({
+      value: interval,
+      label: interval,
+    })),
+    [intervalsData],
+  );
+
+  useEffect(() => {
+    const defaultInterval = intervalsData?.data?.defaultInterval ?? DEMO_DEFAULT_INTERVAL;
+    const availableIntervals = intervalsData?.data?.intervals ?? [DEMO_DEFAULT_INTERVAL];
+    if (availableIntervals.includes(selectedInterval)) {
+      return;
+    }
+    setSelectedInterval(defaultInterval);
+  }, [intervalsData, selectedInterval]);
+
+  const granularityValue = intervalsData?.data?.granularityMap?.[selectedInterval] ?? null;
+
+  const { data: klinesData, isLoading: isLoadingKlines, refetch: refetchKlines } = useQuery<{
+    success: boolean;
+    data: KlineData[];
+  }>({
+    queryKey: ['/api/integrations/trading/klines', requestSymbol, selectedInterval, selectedMarketType, selectedMarginMode],
+    queryFn: async () => {
+      if (!granularityValue) {
+        throw new Error('Intervalo inválido para klines');
+      }
+      const params = new URLSearchParams(marketQueryString);
+      params.set('granularity', String(granularityValue));
+      const res = await apiRequest('GET', `/api/integrations/trading/klines/${requestSymbol}?${params.toString()}`);
+      return res.json();
+    },
+    enabled: !!user?.id && isConfigured && isSymbolValid && Boolean(granularityValue),
+  });
+
   const { data: marketData, isLoading: isLoadingMarket } = useQuery<{ success: boolean; data: MarketData }>({
     queryKey: ['/api/integrations/trading/market', requestSymbol, selectedMarketType, selectedMarginMode],
     queryFn: async () => {
@@ -662,6 +723,7 @@ function DemoTradingContent() {
   const volume24h = market?.contract?.volumeOf24h ?? 0;
   const fundingRate = market?.contract?.fundingFeeRate ?? 0;
   const maxLeverage = market?.contract?.maxLeverage ?? 0;
+  const klines = klinesData?.data ?? [];
 
   // ============================================================================
   // Queries de dados demo
@@ -889,6 +951,7 @@ function DemoTradingContent() {
   const closedPositions = positions.filter(p => p.status !== 'open');
   const balances = Array.isArray(balancesQuery.data) ? balancesQuery.data : [];
   const orders = Array.isArray(ordersQuery.data) ? ordersQuery.data : [];
+  const openOrders = orders.filter((order) => order.status === 'open' || order.status === 'pending');
   const postmortems = Array.isArray(postmortemsQuery.data) ? postmortemsQuery.data : [];
   const usdtBalance = balances.find((entry) => entry.currency.toUpperCase() === 'USDT');
   const balancesWithFunds = balances.filter((entry) => Number(entry.available) > 0 || Number(entry.frozen) > 0);
@@ -1088,6 +1151,20 @@ function DemoTradingContent() {
     })),
     [],
   );
+  const isOperateModeV2 = tradingWorkspaceV2Enabled && activePrimaryMode === 'operate';
+  const demoCircuitBreakerState = statusData?.data?.circuitBreaker?.state ?? 'unknown';
+  const demoCircuitBreakerFailures = statusData?.data?.circuitBreaker?.failures ?? 0;
+  const demoEngineHealth: 'healthy' | 'degraded' | 'offline' = !isConfigured
+    ? 'offline'
+    : demoCircuitBreakerState.toLowerCase() === 'open'
+      ? 'degraded'
+      : 'healthy';
+  const demoRiskMode = `${selectedMarketType}${selectedMarketType === 'margin' ? `/${selectedMarginMode}` : ''} • demo`;
+
+  const handleDemoQuickOrder = useCallback((side: 'buy' | 'sell') => {
+    setOrderForm((prev) => ({ ...prev, side }));
+    setOrderDialogOpen(true);
+  }, []);
 
   const wrapTabsWithShell = (children: ReactNode) => {
     if (!tradingWorkspaceV2Enabled) {
@@ -1254,7 +1331,7 @@ function DemoTradingContent() {
       </div>
 
       {/* Card de Cotação em Tempo Real */}
-      {isSymbolValid && (
+      {!isOperateModeV2 && isSymbolValid && (
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center justify-between flex-wrap gap-4">
@@ -1304,6 +1381,7 @@ function DemoTradingContent() {
       )}
 
       {/* Métricas Resumo */}
+      {!isOperateModeV2 ? (
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <Card>
           <CardContent className="pt-6">
@@ -1378,6 +1456,7 @@ function DemoTradingContent() {
           </Card>
         )}
       </div>
+      ) : null}
 
       {/* Dialog Nova Ordem - Estilo Exchange Real */}
       <Dialog open={orderDialogOpen} onOpenChange={setOrderDialogOpen}>
@@ -1729,6 +1808,160 @@ function DemoTradingContent() {
           </>
         ) : null}
 
+        {isOperateModeV2 ? (
+          <TradingWorkspaceOperateMode
+            chartArea={(
+              <div className="[&>div]:mt-0">
+                <TradingChartTabContent
+                  currentPrice={currentPrice}
+                  intervalOptions={intervalOptions}
+                  isLoadingKlines={isLoadingKlines}
+                  klines={klines}
+                  locale={user?.idioma ?? 'pt-BR'}
+                  onIntervalChange={setSelectedInterval}
+                  onRefresh={() => {
+                    void refetchKlines();
+                  }}
+                  onSymbolChange={setSelectedSymbol}
+                  selectedInterval={selectedInterval}
+                  selectedSymbol={selectedSymbol}
+                  symbolOptions={availableSymbols}
+                  timeZone={user?.timezone ?? 'UTC'}
+                />
+              </div>
+            )}
+            orderTicket={(
+              <TradingWorkspaceCompactOrderTicket
+                bestAskPrice={market?.ticker?.bestAskPrice ?? null}
+                bestBidPrice={market?.ticker?.bestBidPrice ?? null}
+                onOpenNewOrderDialog={() => setOrderDialogOpen(true)}
+                onQuickOrder={handleDemoQuickOrder}
+                selectedSymbol={selectedSymbol}
+                tradingEnabled={isConfigured}
+              />
+            )}
+            statusCard={(
+              <TradingWorkspaceOperateStatusCard
+                circuitBreakerFailures={demoCircuitBreakerFailures}
+                circuitBreakerState={demoCircuitBreakerState}
+                engineHealth={demoEngineHealth}
+                riskMode={demoRiskMode}
+                wsConnecting={wsState.connecting}
+                wsEnabled={wsEnabled}
+                wsHealthy={wsHealthy}
+              />
+            )}
+            openPositionsPanel={(
+              openPositions.length === 0 ? (
+                <EmptyState title="Nenhuma posição aberta" />
+              ) : (
+                <div className="space-y-2">
+                  {openPositions.slice(0, 8).map((position) => {
+                    const live = getLivePositionStats(position);
+                    return (
+                      <div key={position.id} className="flex items-center justify-between rounded-lg border p-3">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <Badge variant={position.side === 'long' ? 'default' : 'destructive'}>
+                              {position.side.toUpperCase()}
+                            </Badge>
+                            <span className="font-medium">{position.symbol}</span>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Entrada: ${formatMoney(position.entryPrice)} | Tamanho: {position.size}
+                          </p>
+                          {live.pnlValue !== null && live.pnlPct !== null ? (
+                            <p className={`text-xs ${live.pnlValue >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                              PnL RT: {live.pnlValue >= 0 ? '+' : ''}${formatMoney(live.pnlValue)} ({live.pnlPct >= 0 ? '+' : ''}{live.pnlPct.toFixed(2)}%)
+                            </p>
+                          ) : null}
+                        </div>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => closePositionMutation.mutate({ positionId: position.id })}
+                          disabled={closePositionMutation.isPending}
+                        >
+                          Fechar
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )
+            )}
+            openOrdersPanel={(
+              openOrders.length === 0 ? (
+                <EmptyState title="Nenhuma ordem em aberto" />
+              ) : (
+                <div className="space-y-2">
+                  {openOrders.slice(0, 8).map((order) => (
+                    <div key={order.id} className="flex items-center justify-between rounded-lg border p-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          {getStatusBadge(order.status)}
+                          <span className="font-medium">{order.symbol}</span>
+                          <Badge variant={order.side === 'buy' ? 'default' : 'destructive'}>{order.side.toUpperCase()}</Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {order.size} @ {order.fillPrice ? `$${formatMoney(order.fillPrice)}` : `$${formatMoney(order.price)}`}
+                        </p>
+                      </div>
+                      {order.status === 'open' ? (
+                        <Button variant="outline" size="sm" onClick={() => cancelOrderMutation.mutate(order.id)}>
+                          Cancelar
+                        </Button>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              )
+            )}
+            advancedDisclosure={(
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Account Snapshot (Demo)</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Saldo USDT</span>
+                      <span className="font-medium">${usdtBalance ? formatMoney(usdtBalance.available) : '---'}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Equity total</span>
+                      <span className={`font-medium ${getPnlColor(totalUnrealizedPnL)}`}>${formatMoney(totalAccountEquity)}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Win rate</span>
+                      <span className="font-medium">{winRate.toFixed(1)}%</span>
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Operação avançada</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Fila post-mortem</span>
+                      <Badge variant="outline">{queueStatsQuery.data?.pending ?? 0}</Badge>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={() => handleTabChange('postmortems')}>
+                        Post-mortems
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => handleTabChange('history')}>
+                        Histórico
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+          />
+        ) : (
+          <>
         {/* Tab: Visão Geral */}
         <TabsContent value="overview" className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -2330,6 +2563,8 @@ function DemoTradingContent() {
             </Card>
           </div>
         </TabsContent>
+          </>
+        )}
       </Tabs>,
       )}
 
