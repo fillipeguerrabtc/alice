@@ -53,6 +53,9 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { ErrorBoundary } from '@/components/error-boundary';
 import {
+  TradingWorkspaceDemoAiSignalsMode,
+  TradingWorkspaceDemoPortfolioAutoMode,
+  TradingWorkspaceDemoPostTradeMode,
   TradingWorkspaceCompactOrderTicket,
   TradingWorkspaceOperateMode,
   TradingWorkspaceOperateStatusCard,
@@ -68,13 +71,16 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 import { formatTradingNumber, parseLocaleNumberInput } from '@/lib/utils';
 import {
+  createDemoOrderFromSignal,
   getDemoBalances,
   getDemoFundHistory,
+  getDemoHandoffSignals,
   getDemoOrders,
   getDemoPositions,
   getDemoPostMortemQueueStats,
   getDemoPostMortems,
   getDemoSourceDatasets,
+  type DemoSignalHandoffItem,
 } from '@/services/api/tradingDemo';
 
 // ============================================================================
@@ -763,6 +769,13 @@ function DemoTradingContent() {
     refetchInterval: 15_000,
   });
 
+  const signalHandoffQuery = useQuery<DemoSignalHandoffItem[]>({
+    queryKey: ['/api/integrations/trading/signals', 'demo-handoff', selectedMarketType],
+    queryFn: () => getDemoHandoffSignals({ marketType: selectedMarketType, limit: 30 }),
+    enabled: !!user?.id && isConfigured && tradingWorkspaceV2Enabled,
+    refetchInterval: 15_000,
+  });
+
   const { data: namespacesData } = useQuery<NamespaceOption[]>({
     queryKey: ['/api/namespaces'],
     staleTime: 60_000,
@@ -832,6 +845,54 @@ function DemoTradingContent() {
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balances'] });
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/orders'] });
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/positions', 'all'] });
+    },
+  });
+
+  const executeSignalInDemoMutation = useMutation({
+    mutationFn: async (signal: DemoSignalHandoffItem) => {
+      const directionalSide: 'buy' | 'sell' | null = signal.signalType === 'entry_long'
+        ? 'buy'
+        : signal.signalType === 'entry_short'
+          ? 'sell'
+          : null;
+
+      if (!directionalSide) {
+        throw new Error('Apenas sinais direcionais podem ser executados em Demo.');
+      }
+      if (!signal.suggestedSize || signal.suggestedSize <= 0) {
+        throw new Error('Sinal sem tamanho sugerido válido para execução demo.');
+      }
+
+      const executionPayload = {
+        signalId: signal.id,
+        symbol: signal.symbol,
+        marketType: signal.marketType,
+        side: directionalSide,
+        size: signal.suggestedSize,
+        stopLoss: signal.suggestedStopLoss ?? undefined,
+        takeProfit: signal.suggestedTakeProfit ?? undefined,
+        entryType: signal.suggestedPrice ? 'limit' as const : 'market' as const,
+        price: signal.suggestedPrice ?? undefined,
+      };
+
+      return createDemoOrderFromSignal(executionPayload);
+    },
+    onSuccess: (_data, signal) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balances'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/orders'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/positions', 'all'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/signals', 'demo-handoff'] });
+      toast({
+        title: 'Sinal executado em Demo',
+        description: `${signal.symbol} enviado para paper execution com isolamento total de live execution.`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Falha ao executar sinal em Demo',
+        description: error.message,
+        variant: 'destructive',
+      });
     },
   });
 
@@ -953,6 +1014,7 @@ function DemoTradingContent() {
   const orders = Array.isArray(ordersQuery.data) ? ordersQuery.data : [];
   const openOrders = orders.filter((order) => order.status === 'open' || order.status === 'pending');
   const postmortems = Array.isArray(postmortemsQuery.data) ? postmortemsQuery.data : [];
+  const handoffSignals = Array.isArray(signalHandoffQuery.data) ? signalHandoffQuery.data : [];
   const usdtBalance = balances.find((entry) => entry.currency.toUpperCase() === 'USDT');
   const balancesWithFunds = balances.filter((entry) => Number(entry.available) > 0 || Number(entry.frozen) > 0);
 
@@ -960,6 +1022,23 @@ function DemoTradingContent() {
   const winCount = closedPositions.filter(p => parseFloat(p.realizedPnl ?? '0') > 0).length;
   const lossCount = closedPositions.filter(p => parseFloat(p.realizedPnl ?? '0') < 0).length;
   const winRate = closedPositions.length > 0 ? (winCount / closedPositions.length * 100) : 0;
+
+  const handleExecuteSignalInDemo = useCallback((signal: DemoSignalHandoffItem) => {
+    executeSignalInDemoMutation.mutate(signal);
+  }, [executeSignalInDemoMutation]);
+
+  const handleOpenPostmortemTrainingDialog = useCallback((postmortemId: string) => {
+    setSelectedPostmortemForTraining(postmortemId);
+    setSelectedTrainingNamespaceId('');
+    setPostmortemTrainingDialogOpen(true);
+  }, []);
+
+  const handleOpenPositionDetail = useCallback((positionId: string) => {
+    const position = closedPositions.find((candidate) => candidate.id === positionId) ?? null;
+    if (!position) return;
+    setSelectedClosedPosition(position);
+    setPositionDetailOpen(true);
+  }, [closedPositions]);
 
   // CORREÇÃO TDZ (22/02/2026): getLivePositionStats precisa ser declarado ANTES
   // de totalUnrealizedPnL que o usa. const/useCallback não são hoisted.
@@ -1124,6 +1203,18 @@ function DemoTradingContent() {
 
   const getPnlColor = (pnl: number) => pnl >= 0 ? 'text-green-500' : 'text-red-500';
 
+  const renderPositionLivePnl = useCallback((position: DemoPosition) => {
+    const live = getLivePositionStats(position);
+    if (live.pnlValue === null || live.pnlPct === null) {
+      return <span className="text-xs text-muted-foreground">PnL RT indisponível</span>;
+    }
+    return (
+      <span className={`text-xs ${live.pnlValue >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+        PnL RT: {live.pnlValue >= 0 ? '+' : ''}${formatMoney(live.pnlValue)} ({live.pnlPct >= 0 ? '+' : ''}{live.pnlPct.toFixed(2)}%)
+      </span>
+    );
+  }, [getLivePositionStats]);
+
   const getStatusBadge = (status: string) => {
     const variants: Record<string, { variant: 'default' | 'secondary' | 'destructive' | 'outline'; label: string }> = {
       open: { variant: 'default', label: 'Aberta' },
@@ -1143,6 +1234,20 @@ function DemoTradingContent() {
     const config = variants[status] ?? { variant: 'outline' as const, label: status };
     return <Badge variant={config.variant}>{config.label}</Badge>;
   };
+
+  const renderSignalTypeBadge = useCallback((signalType: DemoSignalHandoffItem['signalType']) => {
+    const signalTypeConfig: Record<DemoSignalHandoffItem['signalType'], { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
+      entry_long: { label: 'Long', variant: 'default' },
+      entry_short: { label: 'Short', variant: 'destructive' },
+      exit: { label: 'Exit', variant: 'secondary' },
+      adjust_sl: { label: 'SL', variant: 'outline' },
+      adjust_tp: { label: 'TP', variant: 'outline' },
+      hold: { label: 'Hold', variant: 'outline' },
+      neutral: { label: 'Neutral', variant: 'outline' },
+    };
+    const config = signalTypeConfig[signalType];
+    return <Badge variant={config.variant}>{config.label}</Badge>;
+  }, []);
 
   const workspaceOptions = useMemo(
     () => DEMO_TRADING_WORKSPACES.map((workspace) => ({
@@ -1331,7 +1436,7 @@ function DemoTradingContent() {
       </div>
 
       {/* Card de Cotação em Tempo Real */}
-      {!isOperateModeV2 && isSymbolValid && (
+      {!tradingWorkspaceV2Enabled && isSymbolValid && (
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center justify-between flex-wrap gap-4">
@@ -1381,7 +1486,7 @@ function DemoTradingContent() {
       )}
 
       {/* Métricas Resumo */}
-      {!isOperateModeV2 ? (
+      {!tradingWorkspaceV2Enabled ? (
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <Card>
           <CardContent className="pt-6">
@@ -1808,8 +1913,9 @@ function DemoTradingContent() {
           </>
         ) : null}
 
-        {isOperateModeV2 ? (
-          <TradingWorkspaceOperateMode
+        {tradingWorkspaceV2Enabled ? (
+          isOperateModeV2 ? (
+            <TradingWorkspaceOperateMode
             chartArea={(
               <div className="[&>div]:mt-0">
                 <TradingChartTabContent
@@ -1959,7 +2065,44 @@ function DemoTradingContent() {
                 </Card>
               </div>
             )}
-          />
+            />
+          ) : activePrimaryMode === 'ai-signals' ? (
+            <TradingWorkspaceDemoAiSignalsMode
+              executeSignalPending={executeSignalInDemoMutation.isPending}
+              formatDate={formatDate}
+              handoffSignals={handoffSignals}
+              isLoadingHandoffSignals={signalHandoffQuery.isLoading}
+              onExecuteSignal={handleExecuteSignalInDemo}
+              onOpenHistory={() => handleTabChange('history')}
+              onOpenPostmortems={() => handleTabChange('postmortems')}
+              onSendPostmortemToTraining={handleOpenPostmortemTrainingDialog}
+              postmortemIdsSentToTraining={postmortemIdsSentToTraining}
+              postmortems={postmortems}
+              queueStats={queueStatsQuery.data}
+              renderSignalTypeBadge={renderSignalTypeBadge}
+              sendPostmortemPending={sendPostMortemToTrainingMutation.isPending}
+            />
+          ) : activePrimaryMode === 'portfolio-auto' ? (
+            <TradingWorkspaceDemoPortfolioAutoMode
+              closePositionPending={closePositionMutation.isPending}
+              formatMoney={formatMoney}
+              onClosePosition={(positionId) => closePositionMutation.mutate({ positionId })}
+              openPositions={openPositions}
+              renderPositionLivePnl={renderPositionLivePnl}
+              totalAccountEquity={totalAccountEquity}
+              totalUnrealizedPnl={totalUnrealizedPnL}
+              usdtAvailable={usdtBalance?.available ?? '0'}
+              winRate={winRate}
+            />
+          ) : (
+            <TradingWorkspaceDemoPostTradeMode
+              closedPositions={closedPositions}
+              formatDate={formatDate}
+              formatMoney={formatMoney}
+              fundHistory={fundHistoryQuery.data ?? []}
+              onOpenPositionDetail={handleOpenPositionDetail}
+            />
+          )
         ) : (
           <>
         {/* Tab: Visão Geral */}

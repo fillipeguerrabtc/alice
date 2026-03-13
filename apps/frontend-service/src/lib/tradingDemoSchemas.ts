@@ -91,6 +91,30 @@ const sourceDatasetSchema = z.object({
   sourceId: z.string().optional(),
 }).passthrough();
 
+const demoSignalHandoffSchema = z.object({
+  id: z.string(),
+  symbol: z.string(),
+  marketType: z.enum(['futures', 'spot', 'margin']),
+  signalType: z.enum(['entry_long', 'entry_short', 'exit', 'adjust_sl', 'adjust_tp', 'hold', 'neutral']),
+  suggestedPrice: z.union([z.coerce.number(), z.null()]).optional(),
+  suggestedStopLoss: z.union([z.coerce.number(), z.null()]).optional(),
+  suggestedTakeProfit: z.union([z.coerce.number(), z.null()]).optional(),
+  suggestedSize: z.union([z.coerce.number(), z.null()]).optional(),
+  confidence: z.coerce.number(),
+  reasoning: z.string().nullable().optional(),
+  metadata: z.record(z.unknown()).optional(),
+}).passthrough();
+
+const demoOrderFromSignalSchema = z.object({
+  orderId: z.string(),
+  status: z.string(),
+  fillPrice: z.coerce.number().optional(),
+  fillSize: z.coerce.number().optional(),
+  fee: z.coerce.number().optional(),
+  positionId: z.string().optional(),
+  fromSignalId: z.string().optional(),
+}).passthrough();
+
 const responseWithData = <T extends z.ZodTypeAny>(schema: T) =>
   z.object({
     success: z.boolean().optional(),
@@ -104,3 +128,5 @@ export const demoFundHistoryResponseSchema = responseWithData(z.array(fundHistor
 export const demoPostMortemsResponseSchema = responseWithData(z.array(postMortemSchema));
 export const demoSourceDatasetsResponseSchema = responseWithData(z.array(sourceDatasetSchema));
 export const demoQueueStatsResponseSchema = responseWithData(queueStatsSchema);
+export const demoHandoffSignalsResponseSchema = responseWithData(z.array(demoSignalHandoffSchema));
+export const demoOrderFromSignalResponseSchema = responseWithData(demoOrderFromSignalSchema);

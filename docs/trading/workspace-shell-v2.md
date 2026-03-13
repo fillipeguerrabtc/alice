@@ -1,7 +1,7 @@
-# Shared Trading Workspace Shell V2 (Rodadas 3, 4 e 5)
+# Shared Trading Workspace Shell V2 (Rodadas 3, 4, 5 e 6)
 
 Author: Fillipe Guerra  
-Data: 2026-03-13
+Data: 2026-03-12
 
 ## Objetivo
 Estabelecer uma shell compartilhada de workspace para Trading Real e Demo Trading, com quatro modos primários de operação, sem quebrar o fluxo legado e com rollout controlado por feature flag.
@@ -79,3 +79,12 @@ Estabelecer uma shell compartilhada de workspace para Trading Real e Demo Tradin
 - A classificação visual deixa explícito: `blocked`, `no_trade`, `signal_generated`, `executed`, `failed`.
 - `neutral` e `hold` são tratados como contexto não-direcional (não como directional signal útil).
 - Handoff para Demo/Training ocorre via fluxo real de aprovação em `SignalApprovalPanel`, sem bypass de guardrails.
+
+## Convergência da Demo (Rodada 6)
+- A Demo Trading passa a operar no caminho V2 com modos dedicados para:
+- `ai-signals`
+- `portfolio-auto`
+- `post-trade`
+- O caminho V2 da Demo deixa de depender dos `TabsContent` legados para esses modos.
+- Handoff explícito de sinal para execução demo é exibido no modo `ai-signals`, usando rota dedicada de paper execution.
+- Fallback legado segue preservado quando a feature flag V2 estiver desligada.

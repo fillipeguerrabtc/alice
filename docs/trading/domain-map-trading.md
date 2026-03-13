@@ -1,7 +1,7 @@
 # Domain Map do Trading (Baseline Rodada 1)
 
 Author: Fillipe Guerra  
-Data: 2026-03-13
+Data: 2026-03-12
 
 ## Objetivo
 Mapear o domínio Trading real do monorepo para orientar a refatoração com segurança, sem ruptura funcional e sem duplicação confusa entre stacks paralelas.
@@ -171,3 +171,18 @@ Arquivo principal: `apps/integrations-service/src/routes/trading-automation-rout
 - Contract update em geração de sinal (`POST /api/integrations/trading/signals/generate`):
 - novo bloco `signalGeneration` com `stateCategory`, `reasonCode`, `reasonHuman`.
 - `SignalApprovalPanel` permanece como trilha real de handoff para Demo/Training, acessado por painel colapsável no cockpit.
+
+## 15. Atualização da Rodada 6
+- Novo domínio V2 específico para convergência da Demo:
+- `apps/frontend-service/src/components/trading-v2/TradingWorkspaceDemoAiSignalsMode.tsx`
+- `apps/frontend-service/src/components/trading-v2/TradingWorkspaceDemoPortfolioAutoMode.tsx`
+- `apps/frontend-service/src/components/trading-v2/TradingWorkspaceDemoPostTradeMode.tsx`
+- `DemoTrading.tsx` passa a usar trilhas V2 dedicadas para `ai-signals`, `portfolio-auto` e `post-trade` quando a feature flag V2 está ativa.
+- Handoff explícito de sinais IA para demo execution:
+- leitura de sinais via `GET /api/integrations/trading/signals`
+- execução paper via `POST /api/integrations/demo-trading/orders/from-signal`
+- Garantias de isolamento permanecem ancoradas em:
+- rotas `demo-trading/*`
+- persistência `demo_*`
+- `isDemo=true` no pipeline de post-mortem
+- scoping por tenant em todas as operações.
