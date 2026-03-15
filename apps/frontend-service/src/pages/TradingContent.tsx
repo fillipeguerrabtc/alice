@@ -332,6 +332,93 @@ export function TradingContent() {
     });
   }, [signalProfileForm.techniqueCapabilities, signalTechniqueOptions]);
 
+  const visibleTabValues = useMemo(
+    () => new Set(visibleTabOptions.map((tab) => tab.value as TradingTabKey)),
+    [visibleTabOptions],
+  );
+
+  const v2SidebarSections = useMemo(
+    () => [
+      {
+        id: 'risk-account',
+        title: 'Risk & Account',
+        description: 'Controles de risco e governança de conta fora da navegação principal.',
+        actions: [
+          {
+            id: 'risk-account-open',
+            label: 'Conta e risco',
+            description: 'Acessar limites, saldos e regras operacionais.',
+            onSelect: () => handleTabChange('account'),
+          },
+        ],
+      },
+      {
+        id: 'research-governance',
+        title: 'Research & Governance',
+        description: 'Capacidades avançadas acessadas por progressive disclosure.',
+        actions: [
+          {
+            id: 'research-open',
+            label: 'Lab / Research',
+            description: 'Explorar hipóteses e validações de pesquisa.',
+            onSelect: () => handleTabChange('lab'),
+          },
+          {
+            id: 'governance-open',
+            label: 'Governança operacional',
+            description: 'Abrir histórico de controles e handoff.',
+            onSelect: () => handleTabChange('control'),
+          },
+        ],
+      },
+    ],
+    [handleTabChange],
+  );
+
+  const v2BottomTraySections = useMemo(
+    () => [
+      {
+        id: 'advanced-market',
+        title: 'Mercado avançado',
+        description: 'Ferramentas de profundidade e contexto de execução.',
+        actions: [
+          {
+            id: 'advanced-order-book',
+            label: 'Advanced order book',
+            description: 'Abrir profundidade detalhada de livro de ofertas.',
+            onSelect: () => handleTabChange('orderbook'),
+          },
+          {
+            id: 'chart-open',
+            label: 'Chart avançado',
+            description: 'Abrir chart operacional completo.',
+            onSelect: () => handleTabChange('chart'),
+          },
+        ],
+      },
+      {
+        id: 'post-trade',
+        title: 'Pós-trade avançado',
+        description: 'Auditoria detalhada sem poluir o fluxo principal.',
+        actions: [
+          {
+            id: 'postmortem-detail-open',
+            label: 'Postmortem detail',
+            description: 'Abrir post-mortems detalhados para revisão.',
+            onSelect: () => handleTabChange('postmortems'),
+          },
+          {
+            id: 'history-open',
+            label: 'Histórico completo',
+            description: 'Acessar histórico de ordens e decisões.',
+            onSelect: () => handleTabChange('history'),
+          },
+        ],
+      },
+    ],
+    [handleTabChange],
+  );
+
   const {
     activeAutoRunDetail,
     intervalsData,
@@ -1556,11 +1643,6 @@ export function TradingContent() {
       : 'healthy';
   const riskModeLabel = `${controlMode} • ${selectedMarketType}${selectedMarketType === 'margin' ? `/${selectedMarginMode}` : ''}`;
 
-  const visibleTabValues = useMemo(
-    () => new Set(visibleTabOptions.map((tab) => tab.value as TradingTabKey)),
-    [visibleTabOptions],
-  );
-
   const handlePrimaryModeChange = (mode: TradingWorkspacePrimaryMode) => {
     const targetTab = TRADING_V2_MODE_TAB_TARGETS[mode].find((tab) => visibleTabValues.has(tab))
       ?? TRADING_V2_MODE_TAB_TARGETS[mode][0]
@@ -1574,88 +1656,6 @@ export function TradingContent() {
   const handleWorkspaceChangeV2 = (workspace: string) => {
     handleWorkspaceChange(workspace as TradingWorkspaceKey);
   };
-
-  const v2SidebarSections = useMemo(
-    () => [
-      {
-        id: 'risk-account',
-        title: 'Risk & Account',
-        description: 'Controles de risco e governança de conta fora da navegação principal.',
-        actions: [
-          {
-            id: 'risk-account-open',
-            label: 'Conta e risco',
-            description: 'Acessar limites, saldos e regras operacionais.',
-            onSelect: () => handleTabChange('account'),
-          },
-        ],
-      },
-      {
-        id: 'research-governance',
-        title: 'Research & Governance',
-        description: 'Capacidades avançadas acessadas por progressive disclosure.',
-        actions: [
-          {
-            id: 'research-open',
-            label: 'Lab / Research',
-            description: 'Explorar hipóteses e validações de pesquisa.',
-            onSelect: () => handleTabChange('lab'),
-          },
-          {
-            id: 'governance-open',
-            label: 'Governança operacional',
-            description: 'Abrir histórico de controles e handoff.',
-            onSelect: () => handleTabChange('control'),
-          },
-        ],
-      },
-    ],
-    [handleTabChange],
-  );
-
-  const v2BottomTraySections = useMemo(
-    () => [
-      {
-        id: 'advanced-market',
-        title: 'Mercado avançado',
-        description: 'Ferramentas de profundidade e contexto de execução.',
-        actions: [
-          {
-            id: 'advanced-order-book',
-            label: 'Advanced order book',
-            description: 'Abrir profundidade detalhada de livro de ofertas.',
-            onSelect: () => handleTabChange('orderbook'),
-          },
-          {
-            id: 'chart-open',
-            label: 'Chart avançado',
-            description: 'Abrir chart operacional completo.',
-            onSelect: () => handleTabChange('chart'),
-          },
-        ],
-      },
-      {
-        id: 'post-trade',
-        title: 'Pós-trade avançado',
-        description: 'Auditoria detalhada sem poluir o fluxo principal.',
-        actions: [
-          {
-            id: 'postmortem-detail-open',
-            label: 'Postmortem detail',
-            description: 'Abrir post-mortems detalhados para revisão.',
-            onSelect: () => handleTabChange('postmortems'),
-          },
-          {
-            id: 'history-open',
-            label: 'Histórico completo',
-            description: 'Acessar histórico de ordens e decisões.',
-            onSelect: () => handleTabChange('history'),
-          },
-        ],
-      },
-    ],
-    [handleTabChange],
-  );
 
   return (
     <ErrorBoundary>
