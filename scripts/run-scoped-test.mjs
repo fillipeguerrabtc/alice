@@ -1,0 +1,86 @@
+#!/usr/bin/env node
+/**
+ * Executor CLI para testes incrementais com fail-safe full.
+ *
+ * Author: Fillipe Guerra
+ * Data: 15 de Março de 2026
+ */
+
+import { spawnSync } from 'node:child_process';
+import { ROOT_DIR } from './workspace-scope.mjs';
+import { formatTestScopeReport, resolveTestScope } from './test-scope.mjs';
+
+function parseArguments(rawArgs) {
+  const args = [...rawArgs];
+  const options = {
+    full: false,
+    baseRef: '',
+    headRef: '',
+    passthroughArgs: [],
+  };
+
+  while (args.length > 0) {
+    const currentArg = args.shift();
+
+    if (currentArg === '--full') {
+      options.full = true;
+      continue;
+    }
+
+    if (currentArg === '--base') {
+      options.baseRef = args.shift() ?? '';
+      continue;
+    }
+
+    if (currentArg === '--head') {
+      options.headRef = args.shift() ?? '';
+      continue;
+    }
+
+    options.passthroughArgs.push(currentArg);
+  }
+
+  return options;
+}
+
+function runVitest(selectedTestFiles, passthroughArgs) {
+  const vitestArgs = ['exec', 'vitest', 'run', ...passthroughArgs, ...selectedTestFiles];
+  const result = spawnSync('pnpm', vitestArgs, {
+    cwd: ROOT_DIR,
+    stdio: 'inherit',
+    env: process.env,
+  });
+
+  if (typeof result.status === 'number') {
+    process.exit(result.status);
+  }
+
+  process.exit(1);
+}
+
+const options = parseArguments(process.argv.slice(2));
+
+if (options.full || process.env.ALICE_FORCE_FULL_VALIDATION === '1') {
+  console.log('[alice-scope] Task: test');
+  console.log('[alice-scope] Reason: Execução full solicitada explicitamente');
+  runVitest([], options.passthroughArgs);
+}
+
+const scopeResult = resolveTestScope({
+  rootDir: ROOT_DIR,
+  baseRef: options.baseRef,
+  headRef: options.headRef,
+});
+
+process.stdout.write(formatTestScopeReport(scopeResult));
+
+if (scopeResult.mode === 'empty') {
+  console.log('[alice-scope] Nenhum teste precisa executar.');
+  process.exit(0);
+}
+
+if (scopeResult.mode === 'full') {
+  runVitest([], options.passthroughArgs);
+}
+
+runVitest(scopeResult.selectedTestFiles, options.passthroughArgs);

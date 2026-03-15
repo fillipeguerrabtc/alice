@@ -188,3 +188,41 @@ Comparação com baseline full:
 - `typecheck`: 1m13.45s -> 54.30s
 - `lint`: 1m26.79s -> 57.54s
 - `build`: 5m40.19s -> 7.89s
+
+## Execução do Bloco 4
+
+### Entregas implementadas
+
+- `pnpm test` agora usa resolvedor incremental por suite afetada.
+- Novos comandos adicionados:
+  - `pnpm test:changed`
+  - `pnpm test:full`
+- `validate:enterprise` passa a chamar `pnpm test:full`.
+- CI em `push` para `main` passa a usar `pnpm test:full`.
+- Resolver de testes implementado em:
+  - `scripts/test-scope.mjs`
+  - `scripts/run-scoped-test.mjs`
+- Testes automatizados adicionados para o resolvedor de testes.
+
+### Estratégia adotada
+
+- Seleção por `git diff` + testes alterados diretamente.
+- Mapeamento de suites centralizadas em `tests/` para workspaces por referência real a `apps/<workspace>`, `packages/<workspace>` e `@alice/<workspace>`.
+- Expansão transitiva para dependentes impactados no caso de packages compartilhados.
+- Fail-safe full quando o workspace afetado não tiver mapeamento confiável de testes ou quando a mudança atingir infraestrutura/configuração de testes.
+
+### Evidência de ganho real
+
+Validação incremental executada para mudança isolada em `apps/auth-service/src/index.ts`:
+
+| Comando | Tempo | Escopo selecionado |
+|---|---:|---|
+| `pnpm test` | 37.46s | 4 arquivos de teste ligados a `@alice/auth-service` |
+
+Comparação com baseline full:
+
+- `test`: 10m10.90s -> 37.46s
+
+### Validação executada no bloco
+
+- `pnpm exec vitest run tests/unit/test-scope.test.ts tests/unit/workspace-scope.test.ts tests/unit/root-scripts-governance.test.ts` -> OK

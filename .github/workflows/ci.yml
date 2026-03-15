@@ -92,9 +92,9 @@ jobs:
 
   # ===========================================================================
   # Job 2: Build, TypeCheck, Lint e Testes
-  # PR: escopo incremental por workspace afetado
+  # PR: escopo incremental por workspace/suite afetada
   # main: gate full oficial
-  # Timeout: 25min (inclui testes full em todos os cenários)
+  # Timeout: 25min (inclui gate full em main)
   # ===========================================================================
   build-and-check:
     name: Build & Typecheck
@@ -161,7 +161,7 @@ jobs:
         run: |
           set -euo pipefail
           pnpm run typecheck:full
-          pnpm test
+          pnpm run test:full
           pnpm run lint:full
           pnpm run build:full
 

@@ -23,6 +23,7 @@ describe('root package scripts governance', () => {
     expect(scripts['dev:legacy']).toContain('server/index-dev.ts');
     expect(scripts['build:legacy']).toContain('server/index-prod.ts');
     expect(scripts['start:legacy']).toContain('node dist/index.js');
+    expect(scripts['test:full']).toBe('pnpm exec vitest run');
   });
 
   it('keeps recursive orchestration for runtime workflows and scoped/full separation for build', () => {
@@ -32,5 +33,7 @@ describe('root package scripts governance', () => {
     expect(scripts['build:microservices']).toBe('pnpm run build:full');
     expect(scripts['build:full']).toContain('turbo run build');
     expect(scripts['build:changed']).toBe('node ./scripts/run-scoped-task.mjs build');
+    expect(scripts.test).toBe('node ./scripts/run-scoped-test.mjs');
+    expect(scripts['test:changed']).toBe('node ./scripts/run-scoped-test.mjs');
   });
 });

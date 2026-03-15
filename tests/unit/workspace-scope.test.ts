@@ -58,6 +58,16 @@ describe('workspace scope resolver', () => {
     ).toEqual(['@alice/config']);
   });
 
+  it('expands test through downstream dependents like build and typecheck', () => {
+    expect(
+      expandImpactedWorkspaces('test', ['@alice/config'], mockGraph),
+    ).toEqual([
+      '@alice/auth-service',
+      '@alice/config',
+      '@alice/shared-utils',
+    ]);
+  });
+
   it('falls back to full for critical global configuration changes', () => {
     const result = classifyScopeFromFiles(['turbo.json'], mockGraph);
 

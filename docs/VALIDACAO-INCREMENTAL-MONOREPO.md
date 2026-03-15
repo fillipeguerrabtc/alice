@@ -5,7 +5,7 @@
 
 ## Objetivo
 
-Definir o uso operacional do fluxo incremental por workspace para `typecheck`, `lint` e `build`, preservando gates full oficiais para `main` e release.
+Definir o uso operacional do fluxo incremental por workspace e suite para `typecheck`, `lint`, `test` e `build`, preservando gates full oficiais para `main` e release.
 
 ## Comandos Locais
 
@@ -13,14 +13,16 @@ Definir o uso operacional do fluxo incremental por workspace para `typecheck`, `
 
 - `pnpm typecheck`
 - `pnpm lint`
+- `pnpm test`
 - `pnpm build`
 
-Os três comandos acima executam somente nos workspaces afetados por padrão, com expansão transitiva quando necessário.
+Os quatro comandos acima executam somente nos workspaces ou suites afetadas por padrão, com expansão transitiva quando necessário.
 
 ### Comandos explícitos changed-only
 
 - `pnpm typecheck:changed`
 - `pnpm lint:changed`
+- `pnpm test:changed`
 - `pnpm build:changed`
 
 São aliases explícitos do mesmo comportamento incremental do fluxo local padrão.
@@ -29,6 +31,7 @@ São aliases explícitos do mesmo comportamento incremental do fluxo local padr�
 
 - `pnpm typecheck:full`
 - `pnpm lint:full`
+- `pnpm test:full`
 - `pnpm build:full`
 - `pnpm validate:enterprise`
 
@@ -40,6 +43,8 @@ O resolvedor fica em:
 
 - `scripts/workspace-scope.mjs`
 - `scripts/run-scoped-task.mjs`
+- `scripts/test-scope.mjs`
+- `scripts/run-scoped-test.mjs`
 
 ### Fonte de verdade do escopo
 
@@ -52,6 +57,7 @@ O resolvedor fica em:
 - `typecheck`: workspace alterado + dependentes impactados
 - `build`: workspace alterado + dependentes impactados
 - `lint`: somente workspaces diretamente alterados
+- `test`: suites que referenciam os workspaces afetados + testes alterados diretamente
 
 ### Casos que forçam full
 
@@ -86,7 +92,7 @@ Exemplo resumido:
 ### Pull Request
 
 - `typecheck`, `lint` e `build` usam escopo incremental
-- `test` continua full
+- `test` também usa escopo incremental por suite/workspace afetado
 - o resolvedor recebe `origin/<base_ref>` e `github.sha`
 
 ### Push em `main`
@@ -120,6 +126,7 @@ Exemplo resumido:
 | Comando | Tempo |
 |---|---:|
 | `pnpm typecheck` | 1m13.45s |
+| `pnpm test` | 10m10.90s |
 | `pnpm lint` | 1m26.79s |
 | `pnpm build` | 5m40.19s |
 
@@ -128,11 +135,13 @@ Exemplo resumido:
 | Comando | Tempo | Escopo |
 |---|---:|---|
 | `pnpm typecheck` | 54.30s | `@alice/auth-service` |
+| `pnpm test` | 37.46s | 4 arquivos de teste ligados a `@alice/auth-service` |
 | `pnpm lint` | 57.54s | `@alice/auth-service` |
 | `pnpm build` | 7.89s | `@alice/auth-service` + upstream em cache |
 
 ## Observações Operacionais
 
 - O primeiro hit incremental ainda pode reconstruir dependências upstream se o cache local estiver vazio.
+- Se um workspace afetado não tiver mapeamento confiável de testes, `pnpm test` cai automaticamente para full.
 - Quando o detector estiver inseguro, ele executa full por design.
-- Nenhum fluxo local comum depende mais de `eslint .` ou de `tsc --noEmit` no repositório inteiro.
+- Nenhum fluxo local comum depende mais de `eslint .`, de `tsc --noEmit` no repositório inteiro ou de `vitest run` full para mudanças isoladas seguras.

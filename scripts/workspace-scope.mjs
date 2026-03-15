@@ -20,7 +20,7 @@ const SAFE_IGNORED_PREFIXES = [
   'docs/',
   'tests/',
 ];
-const GLOBAL_FULL_SCOPE_FILES = new Set([
+export const GLOBAL_FULL_SCOPE_FILES = new Set([
   '.github/actions/setup-node-pnpm/action.yml',
   '.gitignore',
   '.nvmrc',
@@ -33,7 +33,7 @@ const GLOBAL_FULL_SCOPE_FILES = new Set([
   'turbo.json',
   'tsconfig.build.json',
 ]);
-const GLOBAL_FULL_SCOPE_PREFIXES = [
+export const GLOBAL_FULL_SCOPE_PREFIXES = [
   'scripts/git-hooks/',
 ];
 
@@ -60,7 +60,7 @@ function parseLines(rawValue) {
     .filter(Boolean);
 }
 
-function resolveWorkspaceFromPath(workspaces, filePath) {
+export function resolveWorkspaceFromPath(workspaces, filePath) {
   for (const workspace of workspaces) {
     if (filePath === workspace.path || filePath.startsWith(`${workspace.path}/`)) {
       return workspace;
@@ -70,7 +70,7 @@ function resolveWorkspaceFromPath(workspaces, filePath) {
   return null;
 }
 
-function buildReasonMap(selectedWorkspaces, directWorkspaceNames, reverseDependencies) {
+export function buildReasonMap(selectedWorkspaces, directWorkspaceNames, reverseDependencies) {
   const reasons = new Map();
 
   for (const workspaceName of directWorkspaceNames) {
@@ -288,7 +288,7 @@ export function classifyScopeFromFiles(changedFiles, graph) {
 export function expandImpactedWorkspaces(taskName, directWorkspaceNames, graph) {
   const selectedWorkspaces = new Set(directWorkspaceNames);
 
-  if (taskName === 'build' || taskName === 'typecheck') {
+  if (taskName === 'build' || taskName === 'typecheck' || taskName === 'test') {
     const queue = [...directWorkspaceNames];
 
     while (queue.length > 0) {
