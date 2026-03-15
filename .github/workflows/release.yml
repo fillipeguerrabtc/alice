@@ -69,6 +69,65 @@ env:
 
 jobs:
   # ===========================================================================
+  # Job 0: Gate full antes da tag/release
+  # Timeout: 35min (typecheck full + testes + lint full + build full)
+  # ===========================================================================
+  validate-release:
+    name: Validate Release
+    runs-on: [self-hosted, linux, deploy]
+    timeout-minutes: 35
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+
+      - name: Calcular versões Node.js e pnpm
+        id: versions
+        run: |
+          NODE_LTS=$(curl -s --max-time 10 "https://nodejs.org/dist/index.json" 2>/dev/null | \
+            jq -r '[.[] | select(.lts) | .version] | first // empty' 2>/dev/null | \
+            sed 's/^v//' | sed -E 's/^([0-9]+)(\.[0-9]+)?(\.[0-9]+)?.*$/\1\2/' | sed 's/\.$//')
+
+          if [ -z "$NODE_LTS" ] || [ "$NODE_LTS" = "null" ]; then
+            NODE_LTS=$(cat .nvmrc 2>/dev/null | tr -d '[:space:]' || echo "22")
+          fi
+
+          PNPM_VER=$(jq -r '.packageManager // empty' package.json | sed 's/^pnpm@//')
+          if [ -z "$PNPM_VER" ] || [ "$PNPM_VER" = "null" ]; then
+            echo "::error::Campo packageManager não encontrado em package.json!"
+            exit 1
+          fi
+
+          echo "node-version=$NODE_LTS" >> $GITHUB_OUTPUT
+          echo "pnpm-version=$PNPM_VER" >> $GITHUB_OUTPUT
+
+      - name: Setup Node.js e pnpm
+        uses: ./.github/actions/setup-node-pnpm
+        with:
+          node-version: ${{ steps.versions.outputs.node-version }}
+          pnpm-version: ${{ steps.versions.outputs.pnpm-version }}
+          install-dependencies: 'true'
+
+      - name: Clean stale build artifacts
+        run: |
+          set -euo pipefail
+          find packages apps -type d -name dist -prune -exec rm -rf {} +
+          find packages apps -type f -name '*.tsbuildinfo' -delete
+          rm -rf .cache/turbo .cache/typescript
+
+      - name: Full validation before release
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+        run: |
+          set -euo pipefail
+          echo "🔒 Executando gate full de release..."
+          pnpm run validate:enterprise
+
+  # ===========================================================================
   # Job 1: Validação e Criação da Release
   # Timeout: 5min (validação + tag + release)
   # ===========================================================================
@@ -76,6 +135,7 @@ jobs:
     name: Create Release
     runs-on: [self-hosted, linux, deploy]
     timeout-minutes: 5
+    needs: validate-release
     outputs:
       version: ${{ inputs.version }}
       previous_tag: ${{ steps.previous-tag.outputs.previous_tag }}

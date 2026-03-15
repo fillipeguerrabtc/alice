@@ -163,3 +163,28 @@ O diagnóstico confirma que o monorepo já possui granularidade suficiente em `a
 - `pnpm typecheck` -> OK (`fail-safe full` por haver mudanças globais críticas no diff da própria implementação)
 - `pnpm lint` -> OK (`fail-safe full` pelo mesmo motivo)
 - `pnpm build` -> OK (`fail-safe full` pelo mesmo motivo)
+
+## Execução do Bloco 3
+
+### Governança aplicada
+
+- CI em `pull_request` para `main` agora usa validação incremental em `typecheck`, `lint` e `build`.
+- CI em `push` para `main` mantém gate full oficial.
+- Release agora executa `pnpm validate:enterprise` antes de criar a tag.
+- O resolvedor continua fail-closed para full quando houver incerteza.
+
+### Evidência de ganho real
+
+Validação incremental executada com mudança isolada temporária em `apps/auth-service/src/index.ts`:
+
+| Comando | Tempo | Escopo selecionado |
+|---|---:|---|
+| `pnpm typecheck` | 54.30s | `@alice/auth-service` |
+| `pnpm lint` | 57.54s | `@alice/auth-service` |
+| `pnpm build` | 7.89s | `@alice/auth-service` |
+
+Comparação com baseline full:
+
+- `typecheck`: 1m13.45s -> 54.30s
+- `lint`: 1m26.79s -> 57.54s
+- `build`: 5m40.19s -> 7.89s

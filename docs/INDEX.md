@@ -14,6 +14,7 @@ Manter a documentação canônica enxuta, com separação explícita entre SSOT 
 - `docs/OBSERVABILITY.md`: métricas, dashboards, alertas e runbooks de observabilidade.
 - `docs/SECRETS.md`: governança de secrets e variáveis.
 - `docs/PERMISSIONS.md`: RBAC e permissões de plataforma.
+- `docs/VALIDACAO-INCREMENTAL-MONOREPO.md`: fluxo local incremental por workspace e gates full oficiais.
 - `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`: tracking canônico por rodada.
 - `docs/ROADMAP.md`: direcionamento futuro (não substitui status de execução).
 

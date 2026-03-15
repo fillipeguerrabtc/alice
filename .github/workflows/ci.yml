@@ -28,13 +28,20 @@
 #   - GAP-GHACTIONS-001: Actions pinadas a SHA (supply chain security)
 #   - GAP-GHACTIONS-003: Least privilege permissions
 #
+# ATUALIZAÇÃO (15/03/2026):
+# - PRs usam validação incremental por workspace afetado
+# - Push em main mantém gates full oficiais
+# - Logs do resolvedor de escopo ficam visíveis no job
+#
 # Author: Fillipe Guerra
-# Data: 27/12/2025
+# Data: 15/03/2026
 # =============================================================================
 
 name: CI - Validation
 
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
 
@@ -84,19 +91,22 @@ jobs:
           echo "pnpm-version=$PNPM_VER" >> $GITHUB_OUTPUT
 
   # ===========================================================================
-  # Job 2: Build, TypeCheck e Lint (CONSOLIDADO)
-  # OTIMIZAÇÃO: Um único job faz tudo - elimina overhead de setup múltiplo
-  # Timeout: 10min (packages + typecheck + lint)
+  # Job 2: Build, TypeCheck, Lint e Testes
+  # PR: escopo incremental por workspace afetado
+  # main: gate full oficial
+  # Timeout: 25min (inclui testes full em todos os cenários)
   # ===========================================================================
   build-and-check:
     name: Build & Typecheck
     runs-on: [self-hosted, linux, deploy]
-    timeout-minutes: 10
+    timeout-minutes: 25
     permissions:
       contents: read
     needs: detect-changes
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js e pnpm
         uses: ./.github/actions/setup-node-pnpm
@@ -112,29 +122,48 @@ jobs:
           echo "Limpando artefatos de build antigos..."
           find packages apps -type d -name dist -prune -exec rm -rf {} +
           find packages apps -type f -name '*.tsbuildinfo' -delete
+          rm -rf .cache/turbo .cache/typescript
 
-      # Build packages na ordem correta de dependências
-      # CPX32: 8GB RAM → 6GB para Node.js (deixa 2GB para SO/Docker)
-      - name: Build shared packages (ordem de dependências)
+      - name: Fetch pull request base ref
+        if: ${{ github.event_name == 'pull_request' }}
         run: |
           set -euo pipefail
-          export NODE_OPTIONS="--max-old-space-size=6144"
-          
-          PACKAGES=("shared" "logger" "config" "database" "shared-utils")
-          for pkg in "${PACKAGES[@]}"; do
-            echo "--- Building @alice/$pkg ---"
-            pushd "packages/$pkg" > /dev/null
-            pnpm exec tsc -b --force
-            popd > /dev/null
-            test -f "packages/$pkg/dist/index.js" || (echo "ERRO: index.js não gerado" && exit 1)
-          done
-          echo "✅ Todos os packages buildados!"
+          git fetch --no-tags --prune --depth=1 origin "${{ github.base_ref }}"
 
-      - name: TypeScript Check
-        run: NODE_OPTIONS="--max-old-space-size=6144" pnpm run typecheck
+      - name: Log validation mode
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "🔎 Modo de validação: scoped PR"
+            echo "Base ref: origin/${{ github.base_ref }}"
+            echo "Head ref: ${{ github.sha }}"
+          else
+            echo "🔒 Modo de validação: full gate para main"
+          fi
 
-      - name: ESLint
-        run: pnpm run lint
+      - name: Scoped validation for pull requests
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          ALICE_SCOPE_BASE_REF: origin/${{ github.base_ref }}
+          ALICE_SCOPE_HEAD_REF: ${{ github.sha }}
+          NODE_OPTIONS: --max-old-space-size=6144
+        run: |
+          set -euo pipefail
+          pnpm run typecheck
+          pnpm test
+          pnpm run lint
+          pnpm run build
+
+      - name: Full validation for main
+        if: ${{ github.event_name == 'push' }}
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+        run: |
+          set -euo pipefail
+          pnpm run typecheck:full
+          pnpm test
+          pnpm run lint:full
+          pnpm run build:full
 
   # ===========================================================================
   # Job 3: Security & Compliance (CONSOLIDADO)
