@@ -21,13 +21,13 @@
 
 ## Visão Geral
 
-**Alice** é uma plataforma enterprise de IA autônoma pronta para produção, **especializada em Finanças, Trading e Gestão Financeira**. Utiliza o LLM **Qwen2.5 7B (vLLM AWQ)** hospedado em infraestrutura própria (Hetzner GPU Server GEX44 - RTX 4000 Ada 20GB), com Vision e geração de imagens via OpenAI.
+**Alice** é uma plataforma enterprise de IA autônoma pronta para produção, **especializada em Finanças, Trading e Gestão Financeira**. Utiliza o LLM **Qwen3 8B (vLLM AWQ)** hospedado em infraestrutura própria (Hetzner GPU Server GEX44 - RTX 4000 Ada 20GB), com Vision e geração de imagens via OpenAI.
 
 ### Capacidades Principais
 
 | Capacidade | Descrição |
 |------------|-----------|
-| **IA 100% Autônoma** | LLM próprio (Qwen2.5 7B vLLM AWQ) hospedado em servidor Hetzner GPU GEX44 (RTX 4000 Ada 20GB) |
+| **IA 100% Autônoma** | LLM próprio (Qwen3 8B vLLM AWQ) hospedado em servidor Hetzner GPU GEX44 (RTX 4000 Ada 20GB) |
 | **Chat em Tempo Real** | Conversação via WebSocket com streaming de tokens |
 | **Roteamento de Agentes** | Seleção automática ou manual de agentes por conversa |
 | **Análise de Imagens** | OpenAI Vision (gpt-4.1) para gráficos, documentos, screenshots |
@@ -76,7 +76,7 @@
 
 ## Arquitetura (resumo)
 
-- **Gate 2**: LLM local (Qwen2.5 7B) + Vision/Imagens via OpenAI.
+- **Gate 2**: LLM local (Qwen3 8B) + Vision/Imagens via OpenAI.
 - **GPU local**: LLM + Embeddings (always-on) e Training sob demanda; ASR via OpenAI.
 - **LoRA Adapters**: Adapters globais treinados via QLoRA, carregados dinamicamente no vLLM para inferência melhorada.
 - **RAG Trading**: Consulta contextual a documentos/learnings de trading para enriquecer sinais IA e post-mortems.
@@ -769,8 +769,8 @@ Proprietário - Todos os direitos reservados.
 *Storage: Servidor GEX44 1.92TB interno (/opt/alice) - SEM S3 externo*
 *ARQUITETURA ENTERPRISE: Texto 1024 dim Qwen3-Embedding-0.6B (Qdrant) | Imagem: OpenAI Vision → descrição textual (sem embeddings de imagem)*
 *Trading BTC Futures: KuCoin Perpetuals + WS realtime (ticker/orderbook/klines) + Indicadores Técnicos Determinísticos + Validação Cruzada Anti-Alucinação*
-*LLM: Qwen2.5 7B (vLLM AWQ) via Hetzner GPU Server GEX44 (RTX 4000 Ada 20GB) - Texto*
-*GPU Services (Gate 2): LLM (Qwen2.5 7B) e Embeddings Qwen3-Embedding-0.6B INT8 (1024 dim) gerenciados pelo GPU Manager Service; Training sob demanda. ASR/Vision via OpenAI.*
+*LLM: Qwen3 8B (vLLM AWQ) via Hetzner GPU Server GEX44 (RTX 4000 Ada 20GB) - Texto*
+*GPU Services (Gate 2): LLM (Qwen3 8B) e Embeddings Qwen3-Embedding-0.6B INT8 (1024 dim) gerenciados pelo GPU Manager Service; Training sob demanda. ASR/Vision via OpenAI.*
 *Pipeline Enterprise (06/01/2026): Release (`release.yml`) → Deploy Modular (`deploy-stack-modular.yml` - 5 stacks independentes ~10min)*
 *Rollback Cirúrgico: Só reverte stack com falha, outros continuam funcionando 100%*
 

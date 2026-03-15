@@ -72,7 +72,7 @@ const DEFAULT_PROFILE_CONFIG = {
     },
     llmJudge: {
       enabled: false,
-      model: 'Qwen/Qwen2.5-7B-Instruct-AWQ',
+      model: 'Qwen/Qwen3-8B-AWQ',
       temperature: 0.1,
       maxTokens: 512,
       promptSystemConfigKey: 'TRAINING_LLM_JUDGE_PROMPT',

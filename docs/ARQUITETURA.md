@@ -41,7 +41,7 @@
 **Alice** é uma plataforma enterprise de IA autônoma 100% self-hosted, projetada para organizações que exigem:
 
 - **Privacidade Total**: Dados nunca saem da infraestrutura própria
-- **Autonomia**: LLM próprio (Qwen2.5 7B Instruct AWQ) com Vision e geração de imagens via OpenAI - **Gate 2 (LLM local + OpenAI Vision)**
+- **Autonomia**: LLM próprio (Qwen3 8B AWQ) com Vision e geração de imagens via OpenAI - **Gate 2 (LLM local + OpenAI Vision)**
 - **Customização**: Fine-tuning específico via QLoRA para cada domínio (especializado em finanças/matemática)
 - **Custo Previsível**: LLM local sem cobrança por token; Vision/Imagens via OpenAI
 - **Compliance**: LGPD, GDPR, SOC 2 ready
@@ -663,7 +663,7 @@ sequenceDiagram
     participant WS as WebSocket Handler
     participant RC as Response Cache
     participant RAG as RAG Service
-    participant LLM as LLM (texto - Qwen2.5 7B)
+    participant LLM as LLM (texto - Qwen3 8B)
     participant DB as PostgreSQL
     
     U->>WS: Mensagem via WebSocket
@@ -922,7 +922,7 @@ C4Deployment
         }
         Deployment_Node(gpuServices, "GPU Services (Gate 2 - budget 20GB VRAM)", "Local GPU Services - SIMULTÂNEOS") {
             Container(gpuManager, "GPU Manager Service", "Fila priorizada, VRAM monitoring")
-            Container(llm, "Qwen2.5 7B Instruct (AWQ)", "LLM texto (~6GB budget)")
+            Container(llm, "Qwen3 8B (AWQ)", "LLM texto (~6GB budget)")
             Container(qwen, "Qwen3-Embedding-0.6B INT8", "1024 dim (~3GB budget)")
         }
     }
@@ -1656,7 +1656,7 @@ O deploy em produção falhava porque os scripts SSOT (`permissions-config.sh`, 
 **Status:** ✅ Aceito
 
 **Contexto:**
-A geração de sinais IA e análise post-mortem usavam apenas o modelo base (Qwen2.5 7B) sem aproveitar o ecossistema de aprendizado da plataforma (agentes especializados, RAG, fine-tuning). Cada chamada LLM era isolada, sem contexto de trades anteriores ou conhecimento acumulado.
+A geração de sinais IA e análise post-mortem usavam apenas o modelo base (Qwen3 8B) sem aproveitar o ecossistema de aprendizado da plataforma (agentes especializados, RAG, fine-tuning). Cada chamada LLM era isolada, sem contexto de trades anteriores ou conhecimento acumulado.
 
 **Problema:**
 - Sinais IA não consideravam learnings de trades anteriores
@@ -1850,7 +1850,7 @@ A plataforma possui uma **suite de testes unitários completa** usando **Vitest*
 *Data: 10 de Março de 2026*
 *Versão: 3.9.316 - Hardening P0 consolidado com status oficial no tracking canônico*
 *Stack: Express 5.2, Vite 7.3, Tailwind CSS 4.1, HTTP/3 via Caddy*
-*LLM: Qwen2.5 7B Instruct (AWQ) via GPU Manager Service (Hetzner GEX44) - Gate 2*
+*LLM: Qwen3 8B (AWQ) via GPU Manager Service (Hetzner GEX44) - Gate 2*
 *Embeddings: Qwen3-Embedding-0.6B INT8 (1024 dim) + OpenAI Vision (descrição textual, sem embeddings de imagem)*
 *Performance: HTTP Compression, HNSW m=24, SHA Pinning 95%+*
 *GPU: Serviços simultâneos (20GB VRAM budget), QLoRA fine-tuning semanal, zero latência de troca*

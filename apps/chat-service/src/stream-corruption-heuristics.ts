@@ -227,13 +227,26 @@ function hasFragmentedTokenNoise(content: string, profile: StreamCorruptionProfi
   let tinyOrNumeric = 0;
   let longNumericChain = 0;
   let maxNumericChain = 0;
+  let singleCharTokens = 0;
+  let shortAlphaTokens = 0;
+  let longLexicalTokens = 0;
   for (const token of tokens) {
     const normalized = token.toLowerCase();
     const isNumeric = /^\d+$/u.test(normalized);
     const isTinyToken = normalized.length <= 1;
     const isTinyConnector = normalized.length <= 2 && /^(?:[a-z]|\d+)$/u.test(normalized);
+    const isAlphabetic = /^[\p{L}\p{M}]+$/u.test(normalized);
     if (isNumeric || isTinyToken || isTinyConnector) {
       tinyOrNumeric += 1;
+    }
+    if (isTinyToken) {
+      singleCharTokens += 1;
+    }
+    if (!isNumeric && isAlphabetic && normalized.length <= 2) {
+      shortAlphaTokens += 1;
+    }
+    if (!isNumeric && normalized.length >= 4) {
+      longLexicalTokens += 1;
     }
     if (isNumeric || isTinyToken) {
       longNumericChain += 1;
@@ -247,7 +260,24 @@ function hasFragmentedTokenNoise(content: string, profile: StreamCorruptionProfi
 
   const tinyRatio = tinyOrNumeric / tokens.length;
   const tinyRatioThreshold = profile === 'trading' ? 0.33 : 0.26;
-  return tinyRatio >= tinyRatioThreshold || maxNumericChain >= 8;
+  const hasHealthyLexicalDensity = longLexicalTokens >= Math.max(8, Math.floor(tokens.length * 0.28));
+  const hasFinancialFormatting = /(?:us\$|r\$|€|£|btc|eth|%)/iu.test(content);
+  const hasSentenceCadence = /[.!?]/u.test(content) || /,\s/u.test(content);
+
+  // Respostas financeiras legítimas tendem a misturar números curtos, moeda e texto natural.
+  // Não devem ser classificadas como fragmentação quando a densidade lexical continua saudável.
+  if (hasHealthyLexicalDensity && hasSentenceCadence && hasFinancialFormatting && maxNumericChain < 4) {
+    return false;
+  }
+
+  const severeTinyNoise = tinyRatio >= tinyRatioThreshold && (
+    maxNumericChain >= 4 ||
+    singleCharTokens >= 4 ||
+    shortAlphaTokens >= 6 ||
+    !hasHealthyLexicalDensity
+  );
+
+  return severeTinyNoise || maxNumericChain >= 8;
 }
 
 function hasCssStyleLeakSoup(content: string): boolean {

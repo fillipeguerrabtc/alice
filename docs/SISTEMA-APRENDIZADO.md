@@ -54,7 +54,7 @@ A partir de 16/01/2026, a Alice utiliza **Gate 2 (LLM local + Vision OpenAI)** v
 
 | Componente | Modelo | Dimensões/VRAM | Infraestrutura |
 |------------|--------|----------------|----------------|
-| **LLM (texto)** | **Qwen2.5 7B Instruct (AWQ)** | ~6GB (budget) | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
+| **LLM (texto)** | **Qwen3 8B (AWQ)** | ~6GB (budget) | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
 | **Vision (análise)** | **OpenAI gpt-4.1** | N/A | OpenAI API |
 | **Embeddings de Texto** | Qwen3-Embedding-0.6B INT8 | **1024 dim** (~3GB budget) → Qdrant | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
 | **Imagem (descrição)** | OpenAI Vision (gpt-4.1) | Texto (sem embeddings de imagem) | OpenAI API |
@@ -320,7 +320,7 @@ O sistema de aprendizado agora forma um **ciclo fechado** onde cada operação d
 | Aspecto | Detalhes |
 |---------|----------|
 | **Escopo** | Global (compartilhado entre todos os tenants) |
-| **Modelo base** | Qwen2.5 7B Instruct AWQ |
+| **Modelo base** | Qwen3 8B AWQ |
 | **Método** | QLoRA 4-bit |
 | **Path produção** | `/opt/alice/data/lora-adapters/trading-global` |
 | **Ativação** | Automática após aprovação de job de treinamento |
@@ -525,7 +525,7 @@ Cada ciclo de fine-tuning QLoRA cria uma nova versão:
 | Campo | Descrição |
 |-------|-----------|
 | `version` | Número incremental (1, 2, 3...) |
-| `baseModel` | Qwen2.5 7B Instruct (AWQ) - LLM texto (Gate 2) |
+| `baseModel` | Qwen3 8B (AWQ) - LLM texto (Gate 2) |
 | `loraPath` | Caminho dos pesos QLoRA |
 | `trainingDataCount` | Quantidade de dados usados |
 | `imageDataCount` | Quantidade de imagens usadas |
@@ -589,7 +589,7 @@ Acessíveis em `/dashboard/analytics`:
 ## ✅ IMPLEMENTADO CORRETAMENTE (Gate 2)
 
 ### 1. Arquitetura Enterprise Gate 2 - GPU simultâneo (20GB VRAM budget)
-- ✅ **LLM (texto) dedicado**: Qwen2.5 7B Instruct (AWQ) - Chat/Trading (via GPU Manager)
+- ✅ **LLM (texto) dedicado**: Qwen3 8B (AWQ) - Chat/Trading (via GPU Manager)
 - ✅ **Vision (OpenAI)**: gpt-4.1 para análise de imagens/gráficos (via OpenAI API)
 - ✅ Embeddings de texto (Qwen3-Embedding-0.6B INT8, **1024 dim**, ~3GB) via GPU Manager Service → Qdrant
 - ✅ Imagens via OpenAI Vision (descrição textual, sem embeddings de imagem)
@@ -680,10 +680,10 @@ Acessíveis em `/dashboard/analytics`:
 **Status:** Build automático via CI/CD - TODOS SIMULTÂNEOS
 
 **Ações realizadas:**
-1. Workflow `release.yml` garante automaticamente **3 imagens GPU** (llm-qwen25, embeddings-gpu, qwen-trainer). Quando não há mudanças no contexto do serviço, o pipeline faz **retag no GHCR** (mesmo digest do release anterior) ao invés de rebuild completo.
+1. Workflow `release.yml` garante automaticamente **3 imagens GPU** (llm-qwen3, embeddings-gpu, qwen-trainer). Quando não há mudanças no contexto do serviço, o pipeline faz **retag no GHCR** (mesmo digest do release anterior) ao invés de rebuild completo.
 2. Timeout aumentado de 30min para 90min (imagens GPU são muito pesadas)
 3. **ATUALIZAÇÃO Gate 2**:
-   - `vllm/vllm-openai:v0.12.0` (llm-qwen25 - Qwen2.5 7B Instruct AWQ - LLM texto)
+   - `vllm/vllm-openai:v0.12.0` (llm-qwen3 - Qwen3 8B AWQ - LLM texto)
    - `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime` + bitsandbytes (embeddings-gpu INT8, ~8GB VRAM)
    - `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime` + peft (qwen-trainer QLoRA, on-demand)
    - ✅ **OpenAI Vision/Imagens** - gpt-4.1 (análise) + gpt-image-1 (geração)
@@ -724,7 +724,7 @@ Acessíveis em `/dashboard/analytics`:
 *Autor: Fillipe Guerra*
 *Documentação em Português Brasileiro (Regra 10 CLAUDE.md)*
 *Versão 5.7 - 06 de Março de 2026 - Gate 2*
-*LLM (texto): Qwen2.5 7B Instruct AWQ (vLLM) via GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB)*
+*LLM (texto): Qwen3 8B AWQ (vLLM) via GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB)*
 *Embeddings texto: Qwen3-Embedding-0.6B INT8 (1024 dim → Qdrant) + Imagem: OpenAI Vision (descrição textual, sem embeddings de imagem)*
 *ASR: OpenAI gpt-4o-transcribe via API externa*
 *Vision: OpenAI (gpt-4.1) para análise de imagens/gráficos via API externa*

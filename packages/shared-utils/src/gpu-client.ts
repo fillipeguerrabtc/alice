@@ -88,7 +88,7 @@ export enum GpuRequestPriority {
 
 /** Tipos de serviços GPU - Gate 2 (LLM separado + Embeddings + Training) */
 export enum GpuServiceType {
-  LLM = 'llm',                   // LLM (texto) - ex: Qwen2.5 7B (vLLM)
+  LLM = 'llm',                   // LLM (texto) - ex: Qwen3 8B (vLLM)
   EMBEDDINGS = 'embeddings',     // Text embeddings (GPU)
   TRAINING = 'training',         // Fine-tuning (QLoRA) - sob demanda
 }

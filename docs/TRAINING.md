@@ -133,7 +133,7 @@ O sistema de treinamento da Alice permite fine-tuning incremental do **LLM (text
 │                    GPU Trainer Service                        │
 │  ┌────────────────────────────────────────────────────────┐  │
 │  │  QLoRA Fine-tuning                                      │  │
-│  │  - Base: Qwen2.5 7B Instruct (LLM texto)                │  │
+│  │  - Base: Qwen3 8B Instruct (LLM texto)                │  │
 │  │  - Método: QLoRA 4-bit                                   │  │
 │  │  - VRAM: ~12GB                                           │  │
 │  │  - Dataset: JSONL persistido                             │  │
@@ -348,7 +348,7 @@ Content-Type: application/json
   "tenantId": "uuid",
   "namespaceId": "uuid",
   "name": "Trading Fine-Tuning",
-  "baseModel": "Qwen/Qwen2.5-7B-Instruct-AWQ",
+  "baseModel": "Qwen/Qwen3-8B-AWQ",
   "hyperparameters": {
     "epochs": 4,
     "learningRate": 0.00008,
@@ -382,7 +382,7 @@ Content-Type: application/json
 
 ### Visão Geral
 
-Adapters LoRA são especializações do modelo base (Qwen2.5 7B) treinadas com dados de trading aprovados. O escopo é **global** — um único adapter é compartilhado entre todos os tenants, treinado com datasets aprovados de todas as fontes.
+Adapters LoRA são especializações do modelo base (Qwen3 8B) treinadas com dados de trading aprovados. O escopo é **global** — um único adapter é compartilhado entre todos os tenants, treinado com datasets aprovados de todas as fontes.
 
 ### Fluxo de Ativação
 
@@ -465,7 +465,7 @@ Quando sinais IA ou post-mortems são gerados, o `lora-adapter-resolver.ts` no i
 1. Verifica cache Redis (`alice:lora:active-adapter`, TTL 60s)
 2. Se cache miss, consulta training-service via HTTP (`GET /api/training/lora/active`)
 3. Se adapter ativo, retorna `trading-global` como nome do modelo
-4. Se nenhum adapter ativo, retorna modelo base (`Qwen/Qwen2.5-7B-Instruct-AWQ`)
+4. Se nenhum adapter ativo, retorna modelo base (`Qwen/Qwen3-8B-AWQ`)
 5. Fallback: qualquer erro na resolução retorna modelo base (sem bloquear)
 
 ### Configuração vLLM
@@ -679,7 +679,7 @@ O sistema usa deduplicação semântica para evitar dados redundantes:
 
 | Parâmetro | Valor | Descrição |
 |-----------|-------|-----------|
-| **Base Model** | Qwen2.5 7B Instruct (AWQ) | Modelo base do LLM (texto) no Gate 2 |
+| **Base Model** | Qwen3 8B (AWQ) | Modelo base do LLM (texto) no Gate 2 |
 | **LoRA Rank** | 16 | Rank das matrizes LoRA |
 | **LoRA Alpha** | 32 | Fator de escala |
 | **Target Modules** | q_proj, k_proj, v_proj | Camadas alvo |
@@ -777,5 +777,5 @@ A página de treinamento no dashboard oferece:
 
 - [ARQUITETURA-GPU-MANAGER.md](./ARQUITETURA-GPU-MANAGER.md)
 - [CLAUDE.md - Regras do Projeto](../CLAUDE.md)
-- [Qwen2.5 7B Instruct AWQ - Hugging Face](https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-AWQ)
+- [Qwen3 8B AWQ - Hugging Face](https://huggingface.co/Qwen/Qwen3-8B-AWQ)
 - [PEFT/LoRA Documentation](https://huggingface.co/docs/peft)

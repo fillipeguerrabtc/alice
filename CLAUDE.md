@@ -84,7 +84,7 @@ Alice employs a **modular multi-stack architecture** with 51 containerized servi
     - **Integrations Service**: Handles external APIs (Stripe, Wise, Twilio, Gmail SMTP).
     - **Observability Service**: Prometheus, Grafana, Jaeger for metrics, dashboards, and tracing.
     - **Multimodal Inference (GPU + OpenAI)** - **Gate 2 (LLM separado + Vision via OpenAI)**: Processamento via GPU Manager Service (Hetzner GEX44) e OpenAI:
-        - LLM (texto): Qwen2.5 7B Instruct AWQ (vLLM) - chat e trading - GPU OBRIGATÓRIO
+        - LLM (texto): Qwen3 8B AWQ (vLLM) - chat e trading - GPU OBRIGATÓRIO
         - Vision (análise de imagens): OpenAI Responses API (`gpt-4.1`)
         - Embeddings de texto: Qwen3-Embedding-0.6B INT8 (1024 dim, ~3GB) → Qdrant - GPU OBRIGATÓRIO
         - Imagens: OpenAI Vision (descrição textual, sem embeddings de imagem) - GPU NÃO usada para imagens
@@ -104,7 +104,7 @@ Alice employs a **modular multi-stack architecture** with 51 containerized servi
 ## External Dependencies
 
 ### GPU Services (Hetzner GPU Server) - Atualizado 16/01/2026 - Gate 2 (LLM separado + Vision via OpenAI)
-- **LLM (texto)**: Qwen2.5 7B Instruct AWQ (vLLM) - chat e trading
+- **LLM (texto)**: Qwen3 8B AWQ (vLLM) - chat e trading
 - **Vision (análise de imagens)**: OpenAI Responses API (`gpt-4.1`)
 - **Geração de imagens**: OpenAI Images API (`gpt-image-1`)
 - **Embeddings Texto**: Qwen3-Embedding-0.6B INT8 (1024 dim, ~3GB) → Qdrant - quantização INT8
@@ -1412,7 +1412,7 @@ git commit -a -m "test: adiciona testes unitários"
 ---
 *Autor: Fillipe Guerra*
 *Versão: 5.19 - 29 de Janeiro de 2026*
-*LLM Tuning - Latência e TTFT (29/01/2026): AJUSTE ENTERPRISE para reduzir TTFT e picos de P99 no LLM. CAUSA RAIZ: `MAX_MODEL_LEN=8192` e `GPU_MEMORY_UTILIZATION=0.50` aumentavam prefill e pressão no KV cache. SOLUÇÃO: reduzir `MAX_MODEL_LEN` para 4096, `GPU_MEMORY_UTILIZATION` para 0.40 e definir `MAX_NUM_BATCHED_TOKENS=2048` e `MAX_NUM_SEQS=16` (melhor balanceamento latência/throughput). ARQUIVOS MODIFICADOS: docker/gpu/llm-qwen25/Dockerfile, docker/gpu/llm-qwen25/entrypoint.sh, infra/docker/stacks/docker-compose.alice.yml. Implementação 100% enterprise-grade (Regras 6, 7, 9 - mudanças cirúrgicas, sem workarounds, validação contínua).*
+*LLM Tuning - Latência e TTFT (29/01/2026): AJUSTE ENTERPRISE para reduzir TTFT e picos de P99 no LLM. CAUSA RAIZ: `MAX_MODEL_LEN=8192` e `GPU_MEMORY_UTILIZATION=0.50` aumentavam prefill e pressão no KV cache. SOLUÇÃO: reduzir `MAX_MODEL_LEN` para 4096, `GPU_MEMORY_UTILIZATION` para 0.40 e definir `MAX_NUM_BATCHED_TOKENS=2048` e `MAX_NUM_SEQS=16` (melhor balanceamento latência/throughput). ARQUIVOS MODIFICADOS: docker/gpu/llm-qwen3/Dockerfile, docker/gpu/llm-qwen3/entrypoint.sh, infra/docker/stacks/docker-compose.alice.yml. Implementação 100% enterprise-grade (Regras 6, 7, 9 - mudanças cirúrgicas, sem workarounds, validação contínua).*
 
 ---
 *Autor: Fillipe Guerra*

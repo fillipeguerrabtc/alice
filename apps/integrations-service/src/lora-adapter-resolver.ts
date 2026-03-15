@@ -53,7 +53,7 @@ interface AdapterResolveContext {
  * Se houver adapter LoRA ativo, retorna o nome do adapter.
  * Caso contrário, retorna o modelo base fornecido.
  *
- * @param baseModel - Nome do modelo base (ex: "Qwen/Qwen2.5-7B-Instruct-AWQ")
+ * @param baseModel - Nome do modelo base (ex: "Qwen/Qwen3-8B-AWQ")
  * @returns Nome do modelo a usar na requisição ao vLLM
  */
 export async function resolveModelWithAdapter(baseModel: string, context?: AdapterResolveContext): Promise<string> {

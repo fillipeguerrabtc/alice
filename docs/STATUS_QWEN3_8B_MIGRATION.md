@@ -153,11 +153,11 @@ Trocar o runtime de produção para Qwen3 com separação correta entre serving 
     - `LLM_MODEL_NAME=Qwen/Qwen3-8B-AWQ`
     - `TRAINER_BASE_MODEL=Qwen/Qwen3-8B`
     - `TEXT_MODEL_NAME=Qwen/Qwen3-Embedding-0.6B`.
-- `docker/gpu/llm-qwen25/entrypoint.sh`:
+- `docker/gpu/llm-qwen3/entrypoint.sh`:
   - atualização para contexto Qwen3;
   - adição de controle validado para `LLM_TRUST_REMOTE_CODE/TRUST_REMOTE_CODE` (booleano) com aplicação condicional de `--trust-remote-code`;
   - logs de startup ampliados para auditoria do modo ativo e compatibilidade de reasoning por `chat_template_kwargs.enable_thinking`.
-- `docker/gpu/llm-qwen25/Dockerfile`:
+- `docker/gpu/llm-qwen3/Dockerfile`:
   - defaults e metadados atualizados para Qwen3 (`MODEL_NAME=Qwen/Qwen3-8B-AWQ`) sem renomear artefatos de imagem, preservando estratégia de rollout.
 
 ### Validações
@@ -168,7 +168,7 @@ Executadas em sequência, sem paralelização:
 4. `build` (`cmd.exe /c pnpm build`) -> OK
 
 ### Riscos
-- O nome da imagem do serving (`-llm-qwen25`) foi preservado por segurança de rollout, mesmo com runtime Qwen3; a nomenclatura pode gerar ambiguidade operacional até uma janela dedicada de rename controlado.
+- O nome da imagem do serving (`-llm-qwen3`) foi preservado por segurança de rollout, mesmo com runtime Qwen3; a nomenclatura pode gerar ambiguidade operacional até uma janela dedicada de rename controlado.
 - `--trust-remote-code` passou a ser default no entrypoint para suportar melhor comportamento de template/tokenizer do Qwen3; recomenda-se manter origem de modelo restrita a repositórios confiáveis.
 
 ### Próximo Passo

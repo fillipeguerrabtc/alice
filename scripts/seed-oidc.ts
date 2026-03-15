@@ -55,7 +55,7 @@ const SYSTEM_MODULES = [
   {
     codigo: "chat",
     nome: "Chat IA",
-    descricao: "Interface de conversação com Alice (Qwen2.5 7B - texto)",
+    descricao: "Interface de conversação com Alice (Qwen3 8B - texto)",
     icone: "MessageSquare",
     categoria: "core",
     urlExterna: null,

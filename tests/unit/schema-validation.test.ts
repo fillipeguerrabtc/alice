@@ -305,8 +305,8 @@ describe('Schema - Tabelas Principais', () => {
     });
   });
 
-  // ARQUITETURA 16/01/2026: LLM texto Qwen2.5 7B
-  describe('llmConfig (Qwen2.5 7B)', () => {
+  // ARQUITETURA 16/01/2026: LLM texto Qwen3 8B
+  describe('llmConfig (Qwen3 8B)', () => {
     it('deve ter configuração de modelo LLM', () => {
       const columns = Object.keys(llmConfig);
       expect(columns).toContain('modelo');
@@ -436,11 +436,11 @@ describe('Schema - Insert Schemas (Zod Validation)', () => {
     });
 
     it('deve aceitar dados válidos de agente', () => {
-      // ARQUITETURA 16/01/2026: LLM texto Qwen2.5 7B
+      // ARQUITETURA 16/01/2026: LLM texto Qwen3 8B
       const validAgent = {
         nome: 'Agente Vendas',
         slug: 'agente-vendas',
-        modeloBase: 'Qwen2.5-7B-Instruct-AWQ',
+        modeloBase: 'Qwen3-8B',
       };
       const result = insertAgentSchema.safeParse(validAgent);
       expect(result.success).toBe(true);
@@ -477,7 +477,7 @@ describe('Schema - Insert Schemas (Zod Validation)', () => {
     it('deve aceitar configuração de LLM', () => {
       const validConfig = {
         // Gate 2: modelo LLM (texto) padrão
-        modelo: 'Qwen2.5-7B-Instruct-AWQ',
+        modelo: 'Qwen3-8B',
         endpoint: 'http://alice-gpu-manager:3010/v1/chat',
         maxTokens: 2048,
         temperatura: 0.7,

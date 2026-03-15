@@ -38,6 +38,17 @@ describe('evaluateCorruptedAssistantResponse', () => {
     expect(result.reason).toBeNull();
   });
 
+  it('nao trata resposta financeira valida como fragmented_tokens', () => {
+    const marketText = [
+      'A cotacao do Bitcoin (BTC) hoje esta em US$ 71.537,49, com uma variacao de 1,16% nas ultimas 24 horas.',
+      'A capitalizacao de mercado do Bitcoin e de aproximadamente US$ 1,43 trilhão.',
+    ].join(' ');
+
+    const result = evaluateCorruptedAssistantResponse(marketText, 'default');
+    expect(result.corrupted).toBe(false);
+    expect(result.reason).toBeNull();
+  });
+
   it('detecta vazamento de estilo CSS com semicolon soup', () => {
     const corruptedCssLeak = Array.from({ length: 8 }, () => ';rred;').join(' ');
     const result = evaluateCorruptedAssistantResponse(corruptedCssLeak, 'default');

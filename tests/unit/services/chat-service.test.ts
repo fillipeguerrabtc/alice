@@ -423,7 +423,7 @@ describe('Chat Service - Health Check', () => {
       service: 'chat-service',
       timestamp: new Date().toISOString(),
       llmProvider: 'gpu-manager-service',
-      model: 'Qwen/Qwen2.5-7B-Instruct-AWQ',
+      model: 'Qwen/Qwen3-8B-AWQ',
       circuitBreakers: {
         llm: { state: 'closed', stats: {} },
         rag: { state: 'closed', stats: {} },
@@ -432,7 +432,7 @@ describe('Chat Service - Health Check', () => {
 
     expect(health.status).toBe('ok');
     expect(health.llmProvider).toBe('gpu-manager-service');
-    expect(health.model).toBe('Qwen/Qwen2.5-7B-Instruct-AWQ');
+    expect(health.model).toBe('Qwen/Qwen3-8B-AWQ');
   });
 });
 

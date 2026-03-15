@@ -100,16 +100,16 @@ GPU 20GB VRAM - Serviços sempre ativos (Gate 2):
 
 | Serviço | Modelo | VRAM Real | Configuração | Função | Imagem Base | Imagem Size |
 |---------|--------|-----------|--------------|--------|-------------|-------------|
-| **gpu-llm** | Qwen2.5 7B Instruct (AWQ) | ~5-6GB (budget) | `gpu-memory-utilization=0.40`, `max-model-len=8192`, `dtype=float16` | **LLM texto** (chat, trading) | vllm/vllm-openai | ~8GB |
+| **gpu-llm** | Qwen3 8B (AWQ) | ~5-6GB (budget) | `gpu-memory-utilization=0.40`, `max-model-len=8192`, `dtype=float16` | **LLM texto** (chat, trading) | vllm/vllm-openai | ~8GB |
 | **gpu-embeddings** | Qwen3-Embedding-0.6B INT8 | ~2-3GB (budget) | `quantization=int8` | Embeddings para RAG | **pytorch-runtime** | **~11GB (-35% ✅)** |
 
 ### Configuração vLLM 0.12.0 (Gate 2)
 
-O Qwen2.5 7B usa vLLM v0.12.0 com as seguintes configurações **corrigidas**:
+O Qwen3 8B usa vLLM v0.12.0 com as seguintes configurações **corrigidas**:
 
 ```bash
 python3 -m vllm.entrypoints.openai.api_server \
-    --model "Qwen/Qwen2.5-7B-Instruct-AWQ" \
+    --model "Qwen/Qwen3-8B-AWQ" \
     --quantization awq \
     --dtype float16 \                     # OBRIGATÓRIO para AWQ (bfloat16 não suportado)
     --max-model-len 8192 \                # Gate 2: contexto 8k com KV cache calibrado
@@ -163,7 +163,7 @@ O vLLM suporta carregamento dinâmico de LoRA adapters em runtime, permitindo qu
 
 ```bash
 python3 -m vllm.entrypoints.openai.api_server \
-    --model "Qwen/Qwen2.5-7B-Instruct-AWQ" \
+    --model "Qwen/Qwen3-8B-AWQ" \
     --enable-lora \                          # Habilita suporte LoRA
     --max-lora-rank 64 \                     # Rank máximo suportado
     --max-loras 2 \                          # Máximo de adapters simultâneos
@@ -184,7 +184,7 @@ volumes:
    - Retorna nome do adapter (`trading-global`) ou modelo base como fallback
 
 2. **Request ao GPU Manager:**
-   - Body inclui `model: "trading-global"` (adapter) ou `model: "Qwen/Qwen2.5-7B-Instruct-AWQ"` (base)
+   - Body inclui `model: "trading-global"` (adapter) ou `model: "Qwen/Qwen3-8B-AWQ"` (base)
    - GPU Manager repassa ao vLLM que seleciona o adapter automaticamente
 
 3. **Ativação de adapter** (`training-service`):
@@ -360,7 +360,7 @@ DELETE /api/training/run/cancel
 
 ## Modelos (Gate 2)
 
-### LLM (texto): Qwen2.5 7B Instruct (AWQ)
+### LLM (texto): Qwen3 8B (AWQ)
 
 - Usado para: chat e trading (texto).
 - Requisito: deve ser o mesmo **modelo base** do pipeline de treinamento (QLoRA) para evitar divergência.
@@ -381,7 +381,7 @@ DELETE /api/training/run/cancel
 | Versão | Data | Descrição |
 |--------|------|-----------|
 | 4.3.0 | 22/01/2026 | ASR migrado para OpenAI (gpt-4o-transcribe); GPU dedicada apenas a LLM/Embeddings/Training |
-| 4.2.0 | 16/01/2026 | Remoção do VLM local e migração de Vision/Images para OpenAI; LLM Qwen2.5 7B com contexto 8k |
+| 4.2.0 | 16/01/2026 | Remoção do VLM local e migração de Vision/Images para OpenAI; LLM Qwen3 8B com contexto 8k |
 | 4.0.5 | 15/01/2026 | WS3: Corrigir SSOT GPU e garantir QUANTIZATION=int8 refletido no runtime (fail-fast, sem fallback) |
 | 4.0.4 | 12/01/2026 | Otimização COMPLETA: embeddings + trainer pytorch-devel → runtime (-12GB total, -35%) |
 | 4.0.3 | 12/01/2026 | Otimização imagem embeddings: pytorch-devel → pytorch-runtime (-6GB, -35%) |
@@ -396,7 +396,7 @@ DELETE /api/training/run/cancel
 
 ## Referências
 
-- [Qwen2.5 7B Instruct AWQ](https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-AWQ)
+- [Qwen3 8B AWQ](https://huggingface.co/Qwen/Qwen3-8B-AWQ)
 - [OpenAI Responses API](https://platform.openai.com/docs/api-reference/responses)
 - [OpenAI Image Generation](https://platform.openai.com/docs/guides/images/image-generation)
 - [vLLM Documentation](https://docs.vllm.ai/)

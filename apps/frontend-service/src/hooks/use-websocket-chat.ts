@@ -14,6 +14,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { frontendLogger } from '@/lib/logger';
 import { useAuth } from '@/hooks/use-auth';
+import { parseMessageSources } from '@/pages/Chat/chat-message-sources';
+import type { MessageSources } from '@/pages/Chat/components/types';
 
 // ============================================================================
 // CONFIGURAÇÃO DE RESILIÊNCIA (Regra 16 - Best Practices 2025)
@@ -95,7 +97,7 @@ export interface ChatMessage {
   // ATUALIZADO 23/12/2025: Removido 'video' (muito pesado para GPU)
   tipo?: 'text' | 'image' | 'audio' | 'mixed';
   anexos?: unknown[];
-  sources?: unknown[];
+  sources?: MessageSources;
   llmMetadata?: Record<string, unknown>;
   generatedImage?: GeneratedImageData;
   mediaAttachments?: MediaAttachment[];
@@ -106,7 +108,7 @@ interface StreamSsePayload {
   type?: string;
   messageId?: string;
   generatedImage?: GeneratedImageData;
-  sources?: unknown[];
+  sources?: unknown;
   usedFallback?: boolean;
 }
 
@@ -480,8 +482,11 @@ export function useWebSocketChat(options: UseWebSocketChatOptions = {}): UseWebS
               fullContent = parsed.content;
               onMessageUpdated?.(streamAssistantMessageId, { content: fullContent });
             }
-            if (parsed.type === 'sources' && Array.isArray(parsed.sources)) {
-              onMessageUpdated?.(streamAssistantMessageId, { sources: parsed.sources });
+            if (parsed.type === 'sources') {
+              const parsedSources = parseMessageSources(parsed.sources);
+              if (parsedSources) {
+                onMessageUpdated?.(streamAssistantMessageId, { sources: parsedSources });
+              }
             }
             if (parsed.type === 'llm_metadata') {
               onMessageUpdated?.(streamAssistantMessageId, {

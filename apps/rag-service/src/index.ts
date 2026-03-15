@@ -923,7 +923,7 @@ if (isProduction && !OPENAI_API_KEY) {
 // GPU Manager Service (Hetzner GEX44):
 // - Text embeddings: Qwen3-Embedding-0.6B INT8 (1024 dim) → Qdrant
 // - Transcrição de áudio: OpenAI ASR (gpt-4o-transcribe)
-// - LLM (texto): Qwen2.5 7B Instruct (AWQ)
+// - LLM (texto): Qwen3 8B (AWQ)
 // - Treinamento: gpu-trainer
 // Vision (análise/geração de imagens): OpenAI Responses/Images API (sem GPU)
 // ==============================================================================

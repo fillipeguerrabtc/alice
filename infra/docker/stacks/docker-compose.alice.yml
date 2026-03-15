@@ -672,7 +672,7 @@ services:
   # LLM (texto) - Qwen3 8B (AWQ)
   # ===========================================================================
   gpu-llm:
-    image: ${IMAGE_PREFIX}-llm-qwen25:${IMAGE_TAG:?IMAGE_TAG obrigatório}
+    image: ${IMAGE_PREFIX}-llm-qwen3:${IMAGE_TAG:?IMAGE_TAG obrigatório}
     platform: linux/amd64
     container_name: gpu-llm
     restart: unless-stopped

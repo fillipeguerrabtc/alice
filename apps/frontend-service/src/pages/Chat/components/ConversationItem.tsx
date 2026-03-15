@@ -78,7 +78,7 @@ export function ConversationItem({
             event.stopPropagation();
             onDelete?.();
           }}
-          className="rounded-md p-1 text-muted-foreground hover:text-destructive hover:bg-muted/60"
+          className="rounded-md p-1 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive hover:bg-muted/60 focus:opacity-100"
           aria-label="Excluir conversa"
           data-testid={`button-delete-conversation-${conversation.id}`}
         >

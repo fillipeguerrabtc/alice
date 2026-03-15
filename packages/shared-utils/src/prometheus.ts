@@ -936,7 +936,7 @@ export function instrumentCircuitBreaker(
  * ```typescript
  * const result = await measureDuration(
  *   metrics.llm.inferenceDuration,
- *   { model: 'Qwen2.5-7B-Instruct-AWQ', type: 'chat' },
+ *   { model: 'Qwen3-8B-AWQ', type: 'chat' },
  *   async () => llmClient.chat(messages)
  * );
  * ```

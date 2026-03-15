@@ -14,6 +14,33 @@ type NamespaceProfilePatch = {
   config?: NamespaceProfileConfig;
 };
 
+export function normalizeNamespaceProfileConfigAutoCollect(
+  config: NamespaceProfileConfig | null | undefined,
+  defaultConfig: NamespaceProfileConfig,
+): NamespaceProfileConfig {
+  const nextConfig = (config ?? defaultConfig) as NamespaceProfileConfig;
+
+  return {
+    ...nextConfig,
+    autoCollect: {
+      ...defaultConfig.autoCollect,
+      ...(nextConfig.autoCollect ?? {}),
+      sampling: {
+        ...defaultConfig.autoCollect.sampling,
+        ...(nextConfig.autoCollect?.sampling ?? {}),
+      },
+      caps: {
+        ...defaultConfig.autoCollect.caps,
+        ...(nextConfig.autoCollect?.caps ?? {}),
+      },
+      minChars: {
+        ...defaultConfig.autoCollect.minChars,
+        ...(nextConfig.autoCollect?.minChars ?? {}),
+      },
+    },
+  };
+}
+
 export type NamespaceProfileRuntime = {
   id: string | null;
   tenantId: string;
@@ -137,6 +164,6 @@ export async function resolveNamespaceProfileRuntime(
     version: profile.version,
     isActive: profile.isActive,
     autoCollectEnabled: profile.autoCollectEnabled,
-    config: profile.config,
+    config: normalizeNamespaceProfileConfigAutoCollect(profile.config, defaultConfig),
   };
 }

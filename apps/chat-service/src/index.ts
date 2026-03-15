@@ -18771,8 +18771,8 @@ function buildAgentModelOptionsResponse(opts: {
     if (value === 'Qwen2.5-7B-Instruct-AWQ') {
       return {
         value,
-        label: 'Qwen2.5 7B Instruct (AWQ)',
-        description: 'Compatibilidade legada para registros históricos',
+        label: 'Qwen3 8B (alias legado)',
+        description: 'Compatibilidade legada com normalização para o modelo atual',
       };
     }
     return { value, label: value, description: '' };

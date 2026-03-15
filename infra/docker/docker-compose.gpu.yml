@@ -8,13 +8,13 @@
 #
 # ARQUITETURA GPU (Gate 2 - 15/01/2026):
 # SERVIÇOS GPU (SSOT no stack modular; este arquivo é apenas compat local):
-# - gpu-llm: LLM (texto) - Qwen2.5 7B Instruct AWQ (contexto 8k)
+# - gpu-llm: LLM (texto) - Qwen3 8B AWQ (contexto 8k)
 # - gpu-embeddings: Qwen3-Embedding-0.6B INT8 (1024 dim) (budget ~2-3GB)
 # - ASR: OpenAI API (sem GPU local)
 # - gpu-trainer: QLoRA fine-tuning (sob demanda) (~12GB)
 # 
 # HISTÓRICO (v4.0.0+):
-# - Mixtral 8x7B → Qwen2.5 7B (texto)
+# - Mixtral 8x7B → Qwen3 8B (texto)
 # - Vision e geração de imagens migradas para OpenAI
 # - Embeddings usa quantização (INT8 quando aplicável) para reduzir pressão de VRAM
 # - Todos os serviços rodam simultaneamente (zero latência de troca)
@@ -35,10 +35,10 @@ version: '3.8'
 
 services:
   # =============================================================================
-  # Qwen2.5 7B Instruct (AWQ) - LLM (Texto) - 8k
+  # Qwen3 8B (AWQ) - LLM (Texto) - 8k
   # =============================================================================
   gpu-llm:
-    image: ghcr.io/${DOCKERHUB_USERNAME:-fillipeguerrabtc}/alice-llm-qwen25:${IMAGE_TAG:?IMAGE_TAG obrigatório}
+    image: ghcr.io/${DOCKERHUB_USERNAME:-fillipeguerrabtc}/alice-llm-qwen3:${IMAGE_TAG:?IMAGE_TAG obrigatório}
     platform: linux/amd64
     container_name: gpu-llm
     restart: unless-stopped
@@ -46,7 +46,7 @@ services:
     environment:
       - NVIDIA_VISIBLE_DEVICES=0
       - CUDA_VISIBLE_DEVICES=0
-      - MODEL_NAME=${LLM_MODEL_NAME:-Qwen/Qwen2.5-7B-Instruct-AWQ}
+      - MODEL_NAME=${LLM_MODEL_NAME:-Qwen/Qwen3-8B-AWQ}
       - QUANTIZATION=awq
       - MAX_MODEL_LEN=${LLM_MAX_MODEL_LEN:-3072}
       - GPU_MEMORY_UTILIZATION=${LLM_GPU_MEMORY_UTILIZATION:-0.30}
@@ -145,7 +145,7 @@ services:
     environment:
       - NVIDIA_VISIBLE_DEVICES=0
       - CUDA_VISIBLE_DEVICES=0
-      - BASE_MODEL=${TRAINER_BASE_MODEL:-Qwen/Qwen2.5-7B-Instruct-AWQ}
+      - BASE_MODEL=${TRAINER_BASE_MODEL:-Qwen/Qwen3-8B-AWQ}
       - TRAINING_METHOD=${TRAINER_METHOD:-qlora}
       - DEVICE=cuda
       - PORT=8000

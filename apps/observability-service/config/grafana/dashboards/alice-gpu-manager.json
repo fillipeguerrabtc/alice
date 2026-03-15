@@ -35,7 +35,7 @@
       "gridPos": { "h": 2, "w": 24, "x": 0, "y": 0 },
       "id": 100,
       "options": {
-        "content": "# Alice GPU Manager Dashboard - Enterprise\n**Hetzner GEX44** (RTX 4000 Ada 20GB VRAM) | **Gate 2** (serviços simultâneos) | LLM (texto) Qwen2.5 7B AWQ + Qwen3-Embedding-0.6B INT8 | Training via GPU Manager | VRAM Monitoring | Queue Management | Circuit Breakers",
+        "content": "# Alice GPU Manager Dashboard - Enterprise\n**Hetzner GEX44** (RTX 4000 Ada 20GB VRAM) | **Gate 2** (serviços simultâneos) | LLM (texto) Qwen3 8B AWQ + Qwen3-Embedding-0.6B INT8 | Training via GPU Manager | VRAM Monitoring | Queue Management | Circuit Breakers",
         "mode": "markdown"
       },
       "transparent": true,
@@ -123,7 +123,7 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "Qwen2.5 7B" },
+            "matcher": { "id": "byName", "options": "Qwen3 8B" },
             "properties": [
               {
                 "id": "color",
@@ -180,7 +180,7 @@
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "alice_gpu_vram_used_bytes{service=\"llm\"}",
-          "legendFormat": "Qwen2.5 7B",
+          "legendFormat": "Qwen3 8B",
           "refId": "A"
         },
         {
@@ -233,7 +233,7 @@
         "showPercentChange": false,
         "textMode": "value_and_name"
       },
-      "title": "Fila LLM (Qwen2.5 7B)",
+      "title": "Fila LLM (Qwen3 8B)",
       "type": "stat",
       "targets": [
         {

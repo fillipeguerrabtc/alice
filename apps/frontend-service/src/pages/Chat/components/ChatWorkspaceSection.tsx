@@ -1,5 +1,11 @@
 import type { ChatWorkspaceKey } from '../chat-page-routing';
-import { WorkspaceFilterBar } from '@/components/ui/workspace-filter-bar';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 type ChatWorkspaceOption = {
   label: string;
@@ -18,15 +24,25 @@ export function ChatWorkspaceSection({
   workspaceOptions,
 }: ChatWorkspaceSectionProps) {
   return (
-    <div className="border-b bg-muted/20 px-2 py-2">
-      <WorkspaceFilterBar
-        activeWorkspace={activeWorkspace}
-        options={workspaceOptions}
-        onWorkspaceChange={onWorkspaceChange}
-        getTestId={(workspace) => `chat-workspace-${workspace}`}
-        buttonClassName="whitespace-nowrap"
-        containerClassName="mb-0 flex-nowrap overflow-x-auto pb-1"
-      />
+    <div className="border-b bg-muted/10 px-3 py-2">
+      <div className="ml-auto flex w-full justify-end md:max-w-[220px]">
+        <Select value={activeWorkspace} onValueChange={(value) => onWorkspaceChange(value as ChatWorkspaceKey)}>
+          <SelectTrigger className="h-8 w-full bg-background/80" data-testid="chat-workspace-select">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent align="end">
+            {workspaceOptions.map((workspace) => (
+              <SelectItem
+                key={workspace.value}
+                value={workspace.value}
+                data-testid={`chat-workspace-${workspace.value}`}
+              >
+                {workspace.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
     </div>
   );
 }

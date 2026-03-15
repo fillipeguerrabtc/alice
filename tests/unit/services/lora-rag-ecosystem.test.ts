@@ -24,7 +24,7 @@ describe('LoRA Adapter Resolver - Tipos e Contratos', () => {
   const LORA_ADAPTER_NAME = 'trading-global';
   const REDIS_CACHE_KEY = 'alice:lora:active-adapter';
   const CACHE_TTL_SECONDS = 60;
-  const BASE_MODEL = 'Qwen/Qwen2.5-7B-Instruct-AWQ';
+  const BASE_MODEL = 'Qwen/Qwen3-8B-AWQ';
 
   it('deve usar nome de adapter correto para trading global', () => {
     expect(LORA_ADAPTER_NAME).toBe('trading-global');
@@ -38,8 +38,8 @@ describe('LoRA Adapter Resolver - Tipos e Contratos', () => {
     expect(CACHE_TTL_SECONDS).toBe(60);
   });
 
-  it('deve usar modelo base Qwen2.5-7B-Instruct-AWQ', () => {
-    expect(BASE_MODEL).toBe('Qwen/Qwen2.5-7B-Instruct-AWQ');
+  it('deve usar modelo base Qwen3-8B-AWQ', () => {
+    expect(BASE_MODEL).toBe('Qwen/Qwen3-8B-AWQ');
   });
 
   describe('Lógica de resolução de modelo', () => {

@@ -1059,7 +1059,7 @@ jobs:
           
           # Listas de imagens custom por grupo (evitar duplicação entre alice e all)
           INFRA_CUSTOM_IMAGES=(postgres caddy pgbackrest)
-          ALICE_CUSTOM_IMAGES=(api-gateway auth biometrics chat llm-gateway frontend integrations observability rag training gpu-manager llm-qwen25 embeddings-gpu qwen-trainer)
+          ALICE_CUSTOM_IMAGES=(api-gateway auth biometrics chat llm-gateway frontend integrations observability rag training gpu-manager llm-qwen3 embeddings-gpu qwen-trainer)
 
           # Determinar imagens custom por stack
           case "$STACK" in
@@ -7305,7 +7305,7 @@ jobs:
               "ghcr.io/${{ github.repository_owner }}/alice-integrations"
               "ghcr.io/${{ github.repository_owner }}/alice-observability"
               "ghcr.io/${{ github.repository_owner }}/alice-gpu-manager"
-              "ghcr.io/${{ github.repository_owner }}/alice-llm-qwen25"
+              "ghcr.io/${{ github.repository_owner }}/alice-llm-qwen3"
               "ghcr.io/${{ github.repository_owner }}/alice-embeddings-gpu"
               "ghcr.io/${{ github.repository_owner }}/alice-qwen-trainer"
               "ghcr.io/${{ github.repository_owner }}/alice-caddy"

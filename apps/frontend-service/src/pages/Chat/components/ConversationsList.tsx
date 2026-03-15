@@ -1,9 +1,15 @@
 import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
-import { Plus, MessageSquare, Trash2, CheckSquare, ChevronLeft } from 'lucide-react';
+import { Plus, MessageSquare, Trash2, CheckSquare, ChevronLeft, MoreHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { ConversationItem } from './ConversationItem';
 import type { Conversation } from './types';
 
@@ -74,47 +80,53 @@ export function ConversationsList({
             </Button>
           </div>
         )}
-        <Button
-          onClick={onNewChat}
-          className="w-full justify-start gap-2"
-          data-testid="button-new-chat"
-        >
-          <Plus className="h-4 w-4" />
-          Nova Conversa
-        </Button>
         <div className="flex items-center gap-2">
           <Button
-            variant={isSelectionMode ? 'secondary' : 'outline'}
-            size="sm"
             className="flex-1"
-            onClick={onToggleSelectionMode}
-            data-testid="button-toggle-selection"
+            onClick={onNewChat}
+            data-testid="button-new-chat"
           >
-            <CheckSquare className="h-4 w-4 mr-2" />
-            {isSelectionMode ? 'Cancelar seleção' : 'Selecionar'}
+            <Plus className="h-4 w-4 mr-2" />
+            Nova Conversa
           </Button>
-          <Button
-            variant="destructive"
-            size="sm"
-            className="flex-1"
-            onClick={onDeleteAll}
-            data-testid="button-delete-all"
-          >
-            <Trash2 className="h-4 w-4 mr-2" />
-            Excluir tudo
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon"
+                data-testid="button-conversation-actions"
+                aria-label="Ações da lista de conversas"
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={onToggleSelectionMode} data-testid="button-toggle-selection">
+                <CheckSquare className="mr-2 h-4 w-4" />
+                {isSelectionMode ? 'Cancelar seleção' : 'Selecionar conversas'}
+              </DropdownMenuItem>
+              {isSelectionMode && (
+                <DropdownMenuItem
+                  onClick={onDeleteSelected}
+                  disabled={selectedIds.size === 0}
+                  data-testid="button-delete-selected"
+                  className="text-destructive focus:text-destructive"
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Excluir selecionadas ({selectedIds.size})
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem
+                onClick={onDeleteAll}
+                data-testid="button-delete-all"
+                className="text-destructive focus:text-destructive"
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Excluir todas
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
-        {isSelectionMode && (
-          <Button
-            variant="destructive"
-            size="sm"
-            disabled={selectedIds.size === 0}
-            onClick={onDeleteSelected}
-            data-testid="button-delete-selected"
-          >
-            Excluir selecionadas ({selectedIds.size})
-          </Button>
-        )}
         {filterLabel && onClearFilter && (
           <div className="flex items-center justify-between gap-2 rounded-md border p-2 text-xs">
             <span className="text-muted-foreground">

@@ -755,11 +755,11 @@ jobs:
           fi
           
           # ARQUITETURA (22/01/2026+): 3 GPU services
-          # - llm-qwen25: LLM texto (Qwen2.5 7B AWQ, contexto 8k)
+          # - llm-qwen3: LLM texto (Qwen3 8B AWQ, contexto 8k)
           # - embeddings-gpu: INT8 quantization (8GB VRAM)
           # - qwen-trainer: QLoRA fine-tuning (sob demanda)
           GPU_SERVICES=(
-            "llm-qwen25:./docker/gpu/llm-qwen25"
+            "llm-qwen3:./docker/gpu/llm-qwen3"
             "embeddings-gpu:./docker/gpu/embeddings-gpu"
             "qwen-trainer:./docker/gpu/lora-trainer"
           )
@@ -883,7 +883,7 @@ jobs:
           ALL_IMAGES=(
             api-gateway auth biometrics chat llm-gateway frontend
             integrations observability rag training gpu-manager
-            pgbackrest postgres caddy llm-qwen25 embeddings-gpu qwen-trainer
+            pgbackrest postgres caddy llm-qwen3 embeddings-gpu qwen-trainer
           )
 
           # Inicializar manifesto JSON
@@ -1030,7 +1030,7 @@ jobs:
             echo '```'
             # Lista gerada dinamicamente a partir dos arrays SERVICES/GPU_SERVICES
             # (CLAUDE.md Regra 2 - não duplicar lista hardcoded que fica desatualizada)
-            for svc in api-gateway auth biometrics chat llm-gateway frontend integrations observability rag training gpu-manager pgbackrest postgres caddy llm-qwen25 embeddings-gpu qwen-trainer; do
+            for svc in api-gateway auth biometrics chat llm-gateway frontend integrations observability rag training gpu-manager pgbackrest postgres caddy llm-qwen3 embeddings-gpu qwen-trainer; do
               echo "${{ env.IMAGE_PREFIX }}-${svc}:${VERSION}"
             done
             echo '```'
