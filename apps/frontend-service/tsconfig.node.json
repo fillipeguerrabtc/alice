@@ -4,6 +4,7 @@
     "skipLibCheck": true,
     "module": "ESNext",
     "moduleResolution": "bundler",
+    "tsBuildInfoFile": "../../.cache/typescript/apps/frontend-service/tsconfig.node.tsbuildinfo",
     "allowSyntheticDefaultImports": true,
     "strict": true
   },

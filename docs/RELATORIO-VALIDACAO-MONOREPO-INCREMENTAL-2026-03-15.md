@@ -125,3 +125,41 @@ O diagnóstico confirma que o monorepo já possui granularidade suficiente em `a
 - mover o cache TypeScript para um diretório dedicado;
 - introduzir um resolvedor de escopo com fail-safe full;
 - separar explicitamente comandos locais changed-only dos gates full de CI, merge e release.
+
+## Execução do Bloco 2
+
+### Entregas implementadas
+
+- Scripts root locais agora usam resolvedor incremental:
+  - `pnpm typecheck`
+  - `pnpm lint`
+  - `pnpm build`
+- Comandos explícitos adicionados:
+  - `pnpm typecheck:changed`
+  - `pnpm lint:changed`
+  - `pnpm build:changed`
+  - `pnpm typecheck:full`
+  - `pnpm lint:full`
+  - `pnpm build:full`
+- `turbo` instalado no root e adotado como orquestrador oficial do fluxo local/full.
+- Resolver de escopo implementado em:
+  - `scripts/workspace-scope.mjs`
+  - `scripts/run-scoped-task.mjs`
+- `@alice/api-gateway` e `@alice/observability-service` agora expõem `typecheck` e `lint`.
+- Cache TypeScript migrado para `.cache/typescript/...` fora de `node_modules`.
+- `.cache/` e `.turbo/` ignorados no Git.
+- Testes automatizados adicionados para o detector de escopo.
+
+### Resultado técnico do bloco
+
+- O fluxo local passa a selecionar workspaces por `git diff` + grafo de dependências.
+- `build` e `typecheck` expandem dependentes impactados transitivamente.
+- `lint` permanece focado em workspaces diretamente alterados.
+- Em caso de incerteza, o resolvedor entra em modo `full` automaticamente.
+
+### Validação executada no bloco
+
+- `pnpm vitest run tests/unit/workspace-scope.test.ts` -> OK
+- `pnpm typecheck` -> OK (`fail-safe full` por haver mudanças globais críticas no diff da própria implementação)
+- `pnpm lint` -> OK (`fail-safe full` pelo mesmo motivo)
+- `pnpm build` -> OK (`fail-safe full` pelo mesmo motivo)

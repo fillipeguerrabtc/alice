@@ -13,6 +13,8 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
+    "incremental": true,
+    "tsBuildInfoFile": "../../.cache/typescript/apps/llm-gateway-service/tsconfig.tsbuildinfo",
     "noImplicitAny": true,
     "resolveJsonModule": true
   },

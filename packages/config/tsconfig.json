@@ -3,6 +3,7 @@
   "compilerOptions": {
     "outDir": "./dist",
     "rootDir": "./src",
+    "tsBuildInfoFile": "../../.cache/typescript/packages/config/tsconfig.tsbuildinfo",
     "baseUrl": ".",
     "paths": {
       "@alice/logger": ["../logger/src/index.ts"]

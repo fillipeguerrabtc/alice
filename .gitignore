@@ -36,6 +36,8 @@ test-gpu*.sh
 
 # TypeScript incremental build info (não versionar)
 *.tsbuildinfo
+.cache/
+.turbo/
 
 # Lockfiles npm (monorepo oficial usa pnpm)
 package-lock.json

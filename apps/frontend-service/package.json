@@ -8,7 +8,7 @@
   ],
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5000",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/"
