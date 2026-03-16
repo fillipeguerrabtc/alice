@@ -23,20 +23,25 @@ describe('frontend build governance', () => {
 });
 
 describe('trading hook-order governance', () => {
-  it('keeps trading useMemo hooks above status guard early returns', () => {
-    const source = readProjectFile('apps/frontend-service/src/pages/TradingContent.tsx');
-    const statusGuardIndex = source.indexOf('const statusGuardNode = resolveTradingStatusGate(');
-    const visibleTabValuesIndex = source.indexOf('const visibleTabValues = useMemo(');
-    const v2SidebarSectionsIndex = source.indexOf('const v2SidebarSections = useMemo(');
-    const v2BottomTraySectionsIndex = source.indexOf('const v2BottomTraySections = useMemo(');
+  it('keeps trading V2 useMemo hooks isolated above workspace returns', () => {
+    const tradingContentSource = readProjectFile('apps/frontend-service/src/pages/TradingContent.tsx');
+    const tradingV2Source = readProjectFile('apps/frontend-service/src/pages/TradingV2WorkspaceView.tsx');
+    const statusGuardIndex = tradingContentSource.indexOf('const statusGuardNode = resolveTradingStatusGate(');
+    const workspaceViewIndex = tradingContentSource.indexOf('<TradingV2WorkspaceView');
+    const visibleTabValuesIndex = tradingV2Source.indexOf('const visibleTabValues = useMemo(');
+    const sidebarSectionsIndex = tradingV2Source.indexOf('const sidebarSections = useMemo(');
+    const bottomTraySectionsIndex = tradingV2Source.indexOf('const bottomTraySections = useMemo(');
+    const workspaceReturnIndex = tradingV2Source.indexOf('return (');
 
     expect(statusGuardIndex).toBeGreaterThan(-1);
+    expect(workspaceViewIndex).toBeGreaterThan(statusGuardIndex);
     expect(visibleTabValuesIndex).toBeGreaterThan(-1);
-    expect(v2SidebarSectionsIndex).toBeGreaterThan(-1);
-    expect(v2BottomTraySectionsIndex).toBeGreaterThan(-1);
+    expect(sidebarSectionsIndex).toBeGreaterThan(-1);
+    expect(bottomTraySectionsIndex).toBeGreaterThan(-1);
+    expect(workspaceReturnIndex).toBeGreaterThan(-1);
 
-    expect(visibleTabValuesIndex).toBeLessThan(statusGuardIndex);
-    expect(v2SidebarSectionsIndex).toBeLessThan(statusGuardIndex);
-    expect(v2BottomTraySectionsIndex).toBeLessThan(statusGuardIndex);
+    expect(visibleTabValuesIndex).toBeLessThan(workspaceReturnIndex);
+    expect(sidebarSectionsIndex).toBeLessThan(workspaceReturnIndex);
+    expect(bottomTraySectionsIndex).toBeLessThan(workspaceReturnIndex);
   });
 });

@@ -5,13 +5,11 @@
  * Author: Fillipe Guerra
  * Data: 10 de Março de 2026
  */
-
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback } from 'react';
 import { useParams, useLocation } from 'wouter';
 import { useTranslation } from 'react-i18next';
 import { useToast } from '@/hooks/use-toast';
-
 import {
   ACCEPTED_TYPES,
 } from './components/types';
@@ -113,7 +111,6 @@ export function useChatPageLayoutController() {
     trainingDialogMode,
     trainingNamespaceId,
   } = useChatLocalState(isMobile);
-
   const {
     clearConversationFilter,
     conversationFilter,
@@ -151,7 +148,6 @@ export function useChatPageLayoutController() {
     setIsRecordingStarting,
     setMobileDrawerOpen,
   });
-
   const {
     clearPendingMedia,
     handleFileSelect,
@@ -162,7 +158,6 @@ export function useChatPageLayoutController() {
     setPendingMedia,
     t,
   });
-
   const {
     activeConversation,
     conversations,
@@ -174,7 +169,6 @@ export function useChatPageLayoutController() {
     conversationFilter,
     conversationId,
   });
-
   const {
     agentsData,
     approvalPolicy,
@@ -187,7 +181,6 @@ export function useChatPageLayoutController() {
   } = useChatQueryState({
     conversationId,
   });
-
   const {
     isSelectionMode,
     selectedConversationIds,
@@ -203,7 +196,6 @@ export function useChatPageLayoutController() {
     conversationId,
     messages,
   });
-
   const {
     bumpInputFocus,
     createConversation,
@@ -244,7 +236,6 @@ export function useChatPageLayoutController() {
     onUpdateApprovalPolicy: updateApprovalPolicy.mutate,
     setDeleteTargetId,
   });
-
   const {
     agentOptions,
     approvalPolicyForSelect,
@@ -290,7 +281,6 @@ export function useChatPageLayoutController() {
     notify: toast,
     t,
   });
-
   const {
     createStatusEvent,
     pushStreamEvent,
@@ -351,7 +341,6 @@ export function useChatPageLayoutController() {
   const handleSendQuickReply = useCallback((content: string) => {
     sendMessage({ content });
   }, [sendMessage]);
-
   const {
     handleSendRecordingNow,
     handleStartRecording,
@@ -378,7 +367,6 @@ export function useChatPageLayoutController() {
     setRecordingStartingState,
     t,
   });
-
   const {
     handleFeedback,
     handleRateImage,
@@ -399,7 +387,6 @@ export function useChatPageLayoutController() {
     t,
     trainingNamespaceId,
   });
-
   const {
     handleRegenerate,
     handleSend,
@@ -422,7 +409,6 @@ export function useChatPageLayoutController() {
     stopRequestedRef,
     streamControllerRef,
   });
-
   const {
     handleDeleteCurrentConversation,
     handleDeleteTargetOpenChange,
@@ -540,7 +526,6 @@ export function useChatPageLayoutController() {
     trainingDialogMode,
     trainingNamespaceId,
   });
-
   const chatPageLayoutProps = buildChatPageLayoutProps({
     state: {
       acceptedTypes: CHAT_ACCEPTED_MEDIA_TYPES,

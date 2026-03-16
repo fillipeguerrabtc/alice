@@ -1,36 +1,13 @@
-/**
- * Conteúdo principal do workspace de Trading.
- * Centraliza composição de estado, consultas, realtime e ações para renderizar TradingPageSections.
- *
- * Author: Fillipe Guerra
- * Data: 10 de Março de 2026
- */
-
-import { useEffect, useMemo, useRef } from 'react';
-import { Activity, Brain, FileCheck2, Wallet } from 'lucide-react';
+import { useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/hooks/use-auth';
 import { TIMEZONE } from '@/lib/i18n';
 import { isManualReasoningMode, type ReasoningMode } from '@/lib/reasoning-mode';
-import { Tabs } from '@/components/ui/tabs';
-import {
-  classifySignalGenerationFailure,
-  emitTradingTelemetry,
-} from '@/lib/tradingTelemetry';
-import { ErrorBoundary } from '@/components/error-boundary'; // ✅ CORREÇÃO: Import ErrorBoundary para graceful degradation
+import { ErrorBoundary } from '@/components/error-boundary';
 import { useToast } from '@/hooks/use-toast';
 import { useKucoinWebSocket } from '@/hooks/useKucoinWebSocket';
-import {
-  TradingWorkspaceAiSignalsCockpitMode,
-  TradingWorkspaceCompactOrderTicket,
-  TradingWorkspaceOperateMode,
-  TradingWorkspaceOperateStatusCard,
-  TradingWorkspaceShell,
-  isTradingWorkspaceV2Enabled,
-  type TradingWorkspacePrimaryMode,
-  type TradingWorkspacePrimaryModeOption,
-} from '@/components/trading-v2';
+import { isTradingWorkspaceV2Enabled } from '@/components/trading-v2';
 import {
   SIGNAL_TYPES,
   formatDecisionSummary,
@@ -82,116 +59,21 @@ import {
   resolveTradingPriceChange,
   TradingPageSections,
   TradingDialogsSection,
-  TradingChartTabContent,
-  TradingOrdersTabContent,
-  TradingPositionsTabContent,
-  TradingAccountTabContent,
-  TradingControlTabContent,
-  TradingHeaderSection,
-  TradingOperationalAlerts,
-  TradingOperationalTabsSection,
-  TradingOrderBookTabContent,
-  TradingPrimaryTabsSection,
-  TradingStatsPrimaryRow,
-  TradingStatsSecondaryRow,
   resolveTradingStatusGate,
   isFuturesPositionArray,
-  type TradingTabKey,
-  type TradingWorkspaceKey,
 } from '@/components/trading';
+import { TradingV2WorkspaceView } from './TradingV2WorkspaceView';
+import { useTradingTerminalAutoRunTelemetry } from './useTradingTerminalAutoRunTelemetry';
 
-/** Intervalo de atualização do status geral do trading (30s) */
 const STATUS_REFETCH_INTERVAL = 30_000;
-
-/** Intervalo de atualização da lista de símbolos (10 min - muda raramente) */
 const SYMBOLS_REFETCH_INTERVAL = 600_000;
-
-/** Intervalo de atualização dos sinais de trading (30s) */
 const SIGNALS_REFETCH_INTERVAL = 30_000;
-
-/** Intervalo de atualização de conta/posições/ordens (20s) */
 const ACCOUNT_REFETCH_INTERVAL = 20_000;
-
-/** Intervalo de atualização dos runs automáticos (15s) */
 const AUTO_RUNS_REFETCH_INTERVAL = 15_000;
-
-/**
- * ARQUITETURA REAL-TIME (10/02/2026):
- * - Ticker, OrderBook, Klines, Trades: WebSocket é fonte ÚNICA. REST apenas para carga inicial.
- * - Sem polling fallback (Regra 6 - PROIBIDO workarounds).
- * - Se WS cair: indicador visual + auto-reconnect com backoff exponencial.
- * - Posições/Ordens/Conta: polling periódico mantido (dados operacionais, não real-time market data).
- */
-
-/** Intervalo padrão de candles */
 const DEFAULT_INTERVAL = '5m';
-
-const TRADING_V2_MODE_OPTIONS: TradingWorkspacePrimaryModeOption[] = [
-  {
-    value: 'operate',
-    label: 'Operar',
-    description: 'Execução manual, ordens e posições.',
-    icon: Activity,
-  },
-  {
-    value: 'ai-signals',
-    label: 'Sinais IA',
-    description: 'Geração de sinais, análise e validação.',
-    icon: Brain,
-  },
-  {
-    value: 'portfolio-auto',
-    label: 'Portfólio Auto',
-    description: 'Auto-run e coordenação de portfólios.',
-    icon: Wallet,
-  },
-  {
-    value: 'post-trade',
-    label: 'Pós-trade',
-    description: 'Histórico operacional e auditoria.',
-    icon: FileCheck2,
-  },
-];
-
-const TRADING_V2_MODE_TAB_TARGETS: Record<TradingWorkspacePrimaryMode, TradingTabKey[]> = {
-  operate: ['overview', 'orders', 'positions'],
-  'ai-signals': ['signals-auto', 'signals', 'analysis'],
-  'portfolio-auto': ['portfolio-auto'],
-  'post-trade': ['history'],
-};
-
-const TRADING_V2_TAB_TO_MODE: Partial<Record<TradingTabKey, TradingWorkspacePrimaryMode>> = {
-  overview: 'operate',
-  orders: 'operate',
-  positions: 'operate',
-  'signals-auto': 'ai-signals',
-  signals: 'ai-signals',
-  analysis: 'ai-signals',
-  'portfolio-auto': 'portfolio-auto',
-  history: 'post-trade',
-  chart: 'operate',
-  orderbook: 'operate',
-  postmortems: 'post-trade',
-  account: 'post-trade',
-  control: 'post-trade',
-  lab: 'ai-signals',
-};
-
-function resolveTradingV2PrimaryMode(tab: TradingTabKey): TradingWorkspacePrimaryMode {
-  return TRADING_V2_TAB_TO_MODE[tab] ?? 'operate';
-}
-
-/**
- * Núcleo de composição do Trading.
- * Mantém a regra de hooks estável: todos os hooks são chamados sempre na mesma ordem.
- * O gate de autenticação fica no wrapper externo (`Trading.tsx`), e este módulo assume
- * execução já autenticada para evitar regressões de render condicional.
- */
 export function TradingContent() {
   const { t } = useTranslation();
-
   const { user, csrfReady } = useAuth();
-
   const locale = user?.idioma ?? 'pt-BR';
   const timeZone = user?.timezone ?? TIMEZONE;
   const userRoles = user?.roles ?? (user?.role ? [user.role] : []);
@@ -312,7 +194,6 @@ export function TradingContent() {
     handleWorkspaceChange,
     t,
   });
-
   const signalTechniqueOptionsWithSupport = useMemo(() => {
     const capabilityByTechnique = new Map(
       (signalProfileForm.techniqueCapabilities ?? []).map((capability) => [capability.technique, capability]),
@@ -331,94 +212,6 @@ export function TradingContent() {
       };
     });
   }, [signalProfileForm.techniqueCapabilities, signalTechniqueOptions]);
-
-  const visibleTabValues = useMemo(
-    () => new Set(visibleTabOptions.map((tab) => tab.value as TradingTabKey)),
-    [visibleTabOptions],
-  );
-
-  const v2SidebarSections = useMemo(
-    () => [
-      {
-        id: 'risk-account',
-        title: 'Risk & Account',
-        description: 'Controles de risco e governança de conta fora da navegação principal.',
-        actions: [
-          {
-            id: 'risk-account-open',
-            label: 'Conta e risco',
-            description: 'Acessar limites, saldos e regras operacionais.',
-            onSelect: () => handleTabChange('account'),
-          },
-        ],
-      },
-      {
-        id: 'research-governance',
-        title: 'Research & Governance',
-        description: 'Capacidades avançadas acessadas por progressive disclosure.',
-        actions: [
-          {
-            id: 'research-open',
-            label: 'Lab / Research',
-            description: 'Explorar hipóteses e validações de pesquisa.',
-            onSelect: () => handleTabChange('lab'),
-          },
-          {
-            id: 'governance-open',
-            label: 'Governança operacional',
-            description: 'Abrir histórico de controles e handoff.',
-            onSelect: () => handleTabChange('control'),
-          },
-        ],
-      },
-    ],
-    [handleTabChange],
-  );
-
-  const v2BottomTraySections = useMemo(
-    () => [
-      {
-        id: 'advanced-market',
-        title: 'Mercado avançado',
-        description: 'Ferramentas de profundidade e contexto de execução.',
-        actions: [
-          {
-            id: 'advanced-order-book',
-            label: 'Advanced order book',
-            description: 'Abrir profundidade detalhada de livro de ofertas.',
-            onSelect: () => handleTabChange('orderbook'),
-          },
-          {
-            id: 'chart-open',
-            label: 'Chart avançado',
-            description: 'Abrir chart operacional completo.',
-            onSelect: () => handleTabChange('chart'),
-          },
-        ],
-      },
-      {
-        id: 'post-trade',
-        title: 'Pós-trade avançado',
-        description: 'Auditoria detalhada sem poluir o fluxo principal.',
-        actions: [
-          {
-            id: 'postmortem-detail-open',
-            label: 'Postmortem detail',
-            description: 'Abrir post-mortems detalhados para revisão.',
-            onSelect: () => handleTabChange('postmortems'),
-          },
-          {
-            id: 'history-open',
-            label: 'Histórico completo',
-            description: 'Acessar histórico de ordens e decisões.',
-            onSelect: () => handleTabChange('history'),
-          },
-        ],
-      },
-    ],
-    [handleTabChange],
-  );
-
   const {
     activeAutoRunDetail,
     intervalsData,
@@ -452,7 +245,6 @@ export function TradingContent() {
     statusRefetchInterval: STATUS_REFETCH_INTERVAL,
     userId: user?.id,
   });
-
   const {
     availableSignalArbitrageAssets,
     availableSignalArbitrageExchanges,
@@ -487,7 +279,6 @@ export function TradingContent() {
     signalProfileForm,
     tradingCandidates,
   });
-
   const {
     enqueueTrading,
     enqueueTradingMutation,
@@ -505,7 +296,6 @@ export function TradingContent() {
     userId: user?.id,
     userTenantId: user?.tenantId,
   });
-
   const {
     newsPresets,
     selectedPreset: selectedSignalNewsPreset,
@@ -522,7 +312,6 @@ export function TradingContent() {
     setSelectedPresetId: setSelectedSignalNewsPresetId,
     presetName: signalNewsPresetName,
   });
-
   const {
     autoSignalAssetMap,
     autoSignalAssetOptions,
@@ -542,7 +331,6 @@ export function TradingContent() {
     statusRequiresTenant,
     symbolsRefetchInterval: SYMBOLS_REFETCH_INTERVAL,
   });
-
   const {
     isFuturesMarket,
     isSymbolValidForMarket,
@@ -557,14 +345,12 @@ export function TradingContent() {
     statusRequiresTenant,
     wsInterval,
   });
-
   const { symbolOptions, symbolSelectItems } = useTradingSymbolCandidateViewState({
     availableSymbols,
     favoriteSymbols,
     featuredSymbols,
     t,
   });
-
   const {
     toggleFavorite,
     toggleFeatured,
@@ -575,7 +361,6 @@ export function TradingContent() {
     selectedMarginMode,
     selectedMarketType,
   });
-
   const {
     accountData,
     accountError,
@@ -603,7 +388,6 @@ export function TradingContent() {
     symbolReady,
     isSymbolValidForMarket,
   });
-
   const {
     isLoadingScheduler,
     isLoadingSignals,
@@ -623,12 +407,10 @@ export function TradingContent() {
     statusIsConfigured,
     statusRequiresTenant,
   });
-
   useTradingSchedulerFormSync({
     schedulerConfig,
     setSchedulerForm,
   });
-
   const {
     availableNamespaces,
     isLoadingPostmortems,
@@ -656,7 +438,6 @@ export function TradingContent() {
     statusRefetchInterval: STATUS_REFETCH_INTERVAL,
     statusRequiresTenant,
   });
-
   useTradingBootstrapStateSync({
     autoMix,
     autoSelectAllAssets,
@@ -682,7 +463,6 @@ export function TradingContent() {
     tradingPortfolios,
     updateSignalArbitrageConfig,
   });
-
   const {
     orderHistoryItems,
     orderHistoryHasMore,
@@ -701,7 +481,6 @@ export function TradingContent() {
     t,
     notify: toast,
   });
-
   const {
     handleBalanceUpdate,
     handleOrderUpdate,
@@ -712,7 +491,6 @@ export function TradingContent() {
     isFuturesMarket,
     setPositionLiveQuotes,
   });
-
   const {
     state: wsState,
     ticker: wsTicker,
@@ -734,7 +512,6 @@ export function TradingContent() {
     onPositionUpdate: handlePositionUpdate,
     onBalance: handleBalanceUpdate,
   });
-
   const {
     klinesData,
     klinesError,
@@ -755,9 +532,7 @@ export function TradingContent() {
     statusIsConfigured,
     symbolReady,
   });
-
   const invalidateKlines = useTradingKlineInvalidation();
-
   const { market, normalizedSymbol, orderBookData, orderBookPrecision } = useTradingMarketOrderBookState({
     granularityValue,
     isSymbolValidForMarket,
@@ -773,7 +548,6 @@ export function TradingContent() {
     wsOrderBook,
     wsTicker,
   });
-
   const { openReviewDialog } = useTradingRiskReviewState({
     marketDefaultsInitialized,
     riskConfigData,
@@ -786,7 +560,6 @@ export function TradingContent() {
     setSelectedMarketType,
     setShowReviewOrderDialog,
   });
-
   const { sendPostMortemToTrainingMutation, updateSignalProfileMutation } = useTradingProfilePostmortemMutations({
     autoSaveSignalContextRef,
     autoSaveSignalLastPayloadRef,
@@ -798,7 +571,6 @@ export function TradingContent() {
     setSignalProfileForm,
     t,
   });
-
   useTradingSignalProfileAutoSave({
     autoSaveDebounceMs: AUTO_SAVE_DEBOUNCE_MS,
     autoSaveSignalContextRef,
@@ -813,7 +585,6 @@ export function TradingContent() {
     signalProfileResponse,
     updateSignalProfile: updateSignalProfileMutation.mutate,
   });
-
   const {
     createSignalMutation,
     deactivateSignalMutation,
@@ -847,7 +618,6 @@ export function TradingContent() {
     signalProfileForm,
     t,
   });
-
   const {
     approveReviewOrderMutation,
     createOrderMutation,
@@ -900,7 +670,6 @@ export function TradingContent() {
       setSelectedSignalId,
     },
   });
-
   const {
     currentPrice,
     contractMultiplier,
@@ -914,7 +683,6 @@ export function TradingContent() {
     isFuturesMarket,
     setOrderForm,
   });
-
   const { klines } = useTradingKlineSeriesState({
     klinesData,
     normalizedSymbol,
@@ -925,8 +693,6 @@ export function TradingContent() {
     wsKlines,
   });
 
-  // Derivados de posições — calculados aqui (antes dos early returns) para que o
-  // useEffect abaixo não viole a Regra de Hooks do React.
   const positionsPayload = positionsData?.data ?? null;
   const futuresPositions = selectedMarketType === 'futures' && isFuturesPositionArray(positionsPayload)
     ? positionsPayload
@@ -954,8 +720,6 @@ export function TradingContent() {
     selectedSymbol,
   });
 
-  // Subscrição de quotes de posições abertas (futures) para PnL em tempo real.
-  // DEVE ficar antes dos early returns para não violar a Regra de Hooks do React.
   useTradingFuturesQuoteSubscription({
     isFuturesMarket,
     openFuturesPositions,
@@ -963,7 +727,6 @@ export function TradingContent() {
     unsubscribePositionQuotes,
     wsConnected: wsState.connected,
   });
-
   const {
     canSubmitOrder,
     orderEffectivePrice,
@@ -978,7 +741,6 @@ export function TradingContent() {
     currentPrice,
     contractMultiplier,
   });
-
   const orders = ordersData?.data || [];
   const hasSignalArbitrage = signalProfileForm.techniques.includes('arbitrage_triangular');
   const {
@@ -1121,124 +883,11 @@ export function TradingContent() {
   };
   const orderBookDepth = orderBookResponse?.depth ?? restOrderBookDepth ?? null;
   const controlHistory = controlHistoryData?.data || [];
-  // `wsStatusData` já é o payload `{ success, data: KucoinWsStatus }`.
-  // O accessor extra `.data` fazia `wsStatus` ficar sempre undefined e o badge nunca renderizar.
   const wsStatus = wsStatusData?.data;
-  useEffect(() => {
-    if (!activeAutoRunDetail?.run) {
-      return;
-    }
-    const run = activeAutoRunDetail.run;
-    const isTerminal = run.status === 'succeeded'
-      || run.status === 'no_trade'
-      || run.status === 'blocked'
-      || run.status === 'failed'
-      || run.status === 'cancelled';
-    if (!isTerminal) {
-      return;
-    }
-    const eventKey = `${run.id}:${run.status}`;
-    if (emittedTerminalAutoRunsRef.current.has(eventKey)) {
-      return;
-    }
-
-    const payloadRecord = run.payload && typeof run.payload === 'object' && !Array.isArray(run.payload)
-      ? run.payload as Record<string, unknown>
-      : {};
-    const decision = Array.isArray(activeAutoRunDetail.decisions) ? activeAutoRunDetail.decisions[0] : undefined;
-    const entryPayload = decision?.entryPayload && typeof decision.entryPayload === 'object' && !Array.isArray(decision.entryPayload)
-      ? decision.entryPayload as Record<string, unknown>
-      : null;
-    const noTradeReasonCode = entryPayload && typeof entryPayload.noTradeReasonCode === 'string'
-      ? entryPayload.noTradeReasonCode
-      : null;
-    const terminalReasonCode = typeof run.terminalReasonCode === 'string' && run.terminalReasonCode.length > 0
-      ? run.terminalReasonCode
-      : noTradeReasonCode;
-    const payloadMarketType = typeof payloadRecord.marketType === 'string' ? payloadRecord.marketType : null;
-    const payloadUniverseScope = typeof payloadRecord.universeScope === 'string' ? payloadRecord.universeScope : null;
-    const payloadSymbol = typeof payloadRecord.symbol === 'string' ? payloadRecord.symbol : null;
-
-    const outcome = run.status === 'succeeded'
-      ? (run.runType === 'signal_auto' && (decision?.approved === false || Boolean(noTradeReasonCode)) ? 'no_trade' : 'succeeded')
-      : run.status;
-
-    emitTradingTelemetry(
-      run.status === 'succeeded' ? 'trading.autorun.completed' : 'trading.autorun.terminal',
-      {
-        runType: run.runType,
-        runId: run.id,
-        outcome,
-        status: run.status,
-        terminalReasonCode,
-        marketType: payloadMarketType,
-        universeScope: payloadUniverseScope,
-        symbol: payloadSymbol,
-        noTradeReasonCode,
-        error: run.error,
-      },
-      run.status === 'failed' ? 'error' : (run.status === 'cancelled' || run.status === 'blocked') ? 'warn' : 'info',
-    );
-
-    if (run.runType === 'signal_auto') {
-      if (run.status === 'succeeded') {
-        emitTradingTelemetry(
-          outcome === 'no_trade'
-            ? 'trading.signal.generation.no_trade'
-            : 'trading.signal.generation.succeeded',
-          {
-            source: 'auto_run',
-            runId: run.id,
-            marketType: payloadMarketType,
-            symbol: payloadSymbol,
-            noTradeReasonCode,
-          },
-        );
-      } else if (run.status === 'no_trade') {
-        emitTradingTelemetry(
-          'trading.signal.generation.no_trade',
-          {
-            source: 'auto_run',
-            runId: run.id,
-            marketType: payloadMarketType,
-            symbol: payloadSymbol,
-            noTradeReasonCode: terminalReasonCode,
-          },
-        );
-      } else if (run.status === 'blocked') {
-        emitTradingTelemetry(
-          'trading.signal.generation.blocked',
-          {
-            source: 'auto_run',
-            runId: run.id,
-            marketType: payloadMarketType,
-            symbol: payloadSymbol,
-            reasonCode: terminalReasonCode,
-            error: run.error,
-          },
-          'warn',
-        );
-      } else if (run.status === 'failed') {
-        const failureClass = classifySignalGenerationFailure(new Error(run.error ?? 'Signal auto run falhou'));
-        emitTradingTelemetry(
-          failureClass === 'blocked'
-            ? 'trading.signal.generation.blocked'
-            : 'trading.signal.generation.failed',
-          {
-            source: 'auto_run',
-            runId: run.id,
-            marketType: payloadMarketType,
-            symbol: payloadSymbol,
-            error: run.error,
-          },
-          failureClass === 'blocked' ? 'warn' : 'error',
-        );
-      }
-    }
-
-    emittedTerminalAutoRunsRef.current.add(eventKey);
-  }, [activeAutoRunDetail]);
-
+  useTradingTerminalAutoRunTelemetry({
+    activeAutoRunDetail,
+    emittedTerminalAutoRunsRef,
+  });
   const {
     criticalApiError,
     renderOrderStatusBadge,
@@ -1263,7 +912,6 @@ export function TradingContent() {
     wsEnabled,
     wsError: wsState.error,
   });
-
   const statusGuardNode = resolveTradingStatusGate({
     isLoadingStatus,
     refetchStatus,
@@ -1274,7 +922,6 @@ export function TradingContent() {
   if (statusGuardNode) {
     return statusGuardNode;
   }
-
   const status = statusData?.data;
   if (!status) {
     return null;
@@ -1435,7 +1082,6 @@ export function TradingContent() {
     tradingRebalances,
     validationErrorMessage: signalArbitrageErrorMessage,
   };
-
   const operationalTabsOptions = {
     allOrderHistorySelected,
     circuitBreakerOpen: status.circuitBreaker.state === 'open',
@@ -1483,7 +1129,6 @@ export function TradingContent() {
     symbolOptions,
     tradingEnabled: riskConfig?.tradingEnabled || false,
   };
-
   const dialogsOptions = {
     availableNamespaces,
     canSubmitOrder,
@@ -1556,7 +1201,6 @@ export function TradingContent() {
     volumeOf24h: market?.contract?.volumeOf24h || 0,
     wsEnabled,
   };
-
   const layoutOptions = {
     accountMode,
     activeSignals: status.activeSignals,
@@ -1615,7 +1259,6 @@ export function TradingContent() {
     wsPrivateState: wsStatus?.private?.state ?? 'disconnected',
     wsPublicState: wsStatus?.public?.state ?? 'disconnected',
   };
-
   const {
     dialogsSectionProps,
     headerSectionProps,
@@ -1633,29 +1276,12 @@ export function TradingContent() {
   });
   const showOperationalAlerts = Boolean(criticalApiError || !riskConfig?.tradingEnabled);
   const tradingWorkspaceV2Enabled = isTradingWorkspaceV2Enabled(status.featureFlags);
-  const activePrimaryMode = resolveTradingV2PrimaryMode(activeTab);
-  const isOperateMode = activePrimaryMode === 'operate';
-  const isAiSignalsMode = activePrimaryMode === 'ai-signals';
   const engineHealth: 'healthy' | 'degraded' | 'offline' = !isTradingEnabled
     ? 'offline'
     : (criticalApiError || status.circuitBreaker.state.toLowerCase() === 'open')
       ? 'degraded'
       : 'healthy';
   const riskModeLabel = `${controlMode} • ${selectedMarketType}${selectedMarketType === 'margin' ? `/${selectedMarginMode}` : ''}`;
-
-  const handlePrimaryModeChange = (mode: TradingWorkspacePrimaryMode) => {
-    const targetTab = TRADING_V2_MODE_TAB_TARGETS[mode].find((tab) => visibleTabValues.has(tab))
-      ?? TRADING_V2_MODE_TAB_TARGETS[mode][0]
-      ?? visibleTabOptions[0]?.value;
-    if (!targetTab) {
-      return;
-    }
-    handleTabChange(targetTab);
-  };
-
-  const handleWorkspaceChangeV2 = (workspace: string) => {
-    handleWorkspaceChange(workspace as TradingWorkspaceKey);
-  };
 
   return (
     <ErrorBoundary>
@@ -1667,128 +1293,22 @@ export function TradingContent() {
       >
         {tradingWorkspaceV2Enabled ? (
           <>
-            {showOperationalAlerts ? (
-              <TradingOperationalAlerts {...operationalAlertsSectionProps} />
-            ) : null}
-            <TradingHeaderSection {...headerSectionProps} />
-
-            <TradingWorkspaceShell
-              activeMode={activePrimaryMode}
+            <TradingV2WorkspaceView
+              activeTab={activeTab}
               activeWorkspace={activeWorkspace}
-              bottomTraySections={v2BottomTraySections}
-              environmentMode="real"
-              modeOptions={TRADING_V2_MODE_OPTIONS}
-              onModeChange={handlePrimaryModeChange}
-              onWorkspaceChange={handleWorkspaceChangeV2}
-              sidebarSections={v2SidebarSections}
+              engineHealth={engineHealth}
+              headerSectionProps={headerSectionProps}
+              onTabChange={handleTabChange}
+              onWorkspaceChange={handleWorkspaceChange}
+              operationalAlertsSectionProps={operationalAlertsSectionProps}
+              operationalTabsSectionProps={operationalTabsSectionProps}
+              primaryTabsSectionProps={primaryTabsSectionProps}
+              riskModeLabel={riskModeLabel}
+              showOperationalAlerts={showOperationalAlerts}
+              statsSecondarySectionProps={statsSecondarySectionProps}
+              visibleTabOptions={visibleTabOptions}
               workspaceOptions={tradingWorkspaceOptions}
-            >
-              {isOperateMode ? (
-                <TradingWorkspaceOperateMode
-                  chartArea={(
-                    <div className="[&>div]:mt-0">
-                      <TradingChartTabContent {...operationalTabsSectionProps.chartTabProps} />
-                    </div>
-                  )}
-                  orderTicket={(
-                    <TradingWorkspaceCompactOrderTicket
-                      bestAskPrice={primaryTabsSectionProps.overviewTabProps.bestAskPrice}
-                      bestBidPrice={primaryTabsSectionProps.overviewTabProps.bestBidPrice}
-                      onOpenNewOrderDialog={primaryTabsSectionProps.overviewTabProps.onOpenNewOrderDialog}
-                      onOpenOcoOrderDialog={primaryTabsSectionProps.ordersTabProps.onOpenOcoOrderDialog}
-                      onQuickOrder={primaryTabsSectionProps.overviewTabProps.onQuickOrder}
-                      selectedSymbol={headerSectionProps.selectedSymbol}
-                      tradingEnabled={primaryTabsSectionProps.overviewTabProps.tradingEnabled}
-                    />
-                  )}
-                  statusCard={(
-                    <TradingWorkspaceOperateStatusCard
-                      circuitBreakerFailures={statsSecondarySectionProps.circuitBreakerFailures}
-                      circuitBreakerState={statsSecondarySectionProps.circuitBreakerState}
-                      engineHealth={engineHealth}
-                      riskMode={riskModeLabel}
-                      wsConnecting={headerSectionProps.wsConnecting}
-                      wsEnabled={headerSectionProps.wsEnabled}
-                      wsHealthy={headerSectionProps.wsHealthy}
-                    />
-                  )}
-                  openPositionsPanel={(
-                    <div className="[&>div]:mt-0">
-                      <TradingPositionsTabContent {...primaryTabsSectionProps.positionsTabProps} />
-                    </div>
-                  )}
-                  openOrdersPanel={(
-                    <div className="[&>div]:mt-0">
-                      <TradingOrdersTabContent {...primaryTabsSectionProps.ordersTabProps} />
-                    </div>
-                  )}
-                  advancedDisclosure={(
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                        <div className="[&>div]:mt-0">
-                          <TradingAccountTabContent {...operationalTabsSectionProps.accountTabProps} />
-                        </div>
-                        <div className="[&>div]:mt-0">
-                          <TradingControlTabContent {...operationalTabsSectionProps.controlTabProps} />
-                        </div>
-                      </div>
-                      <div className="[&>div]:mt-0">
-                        <TradingOrderBookTabContent {...operationalTabsSectionProps.orderBookTabProps} />
-                      </div>
-                    </div>
-                  )}
-                />
-              ) : isAiSignalsMode ? (
-                <TradingWorkspaceAiSignalsCockpitMode
-                  activeAutoRunDetail={primaryTabsSectionProps.signalsAutoTabProps.activeAutoRunDetail}
-                  activeAutoRunId={primaryTabsSectionProps.signalsAutoTabProps.activeAutoRunId}
-                  allowedModes={primaryTabsSectionProps.signalsAutoTabProps.allowedModes}
-                  autoMix={primaryTabsSectionProps.signalsAutoTabProps.autoMix}
-                  autoModeOptions={primaryTabsSectionProps.signalsAutoTabProps.autoModeOptions}
-                  autoSelectAllAssets={primaryTabsSectionProps.signalsAutoTabProps.autoSelectAllAssets}
-                  autoSelectedAssetKeys={primaryTabsSectionProps.signalsAutoTabProps.autoSelectedAssetKeys}
-                  autoSignalAssetOptions={primaryTabsSectionProps.signalsAutoTabProps.autoSignalAssetOptions}
-                  autoUniverseScope={primaryTabsSectionProps.signalsAutoTabProps.autoUniverseScope}
-                  canOverrideReasoningMode={primaryTabsSectionProps.signalsAutoTabProps.canOverrideReasoningMode}
-                  environmentMode="real"
-                  hasAutoSignalAssetsError={primaryTabsSectionProps.signalsAutoTabProps.hasAutoSignalAssetsError}
-                  isLoadingAutoSignalAssets={primaryTabsSectionProps.signalsAutoTabProps.isLoadingAutoSignalAssets}
-                  isLoadingSignals={primaryTabsSectionProps.signalsTabProps.isLoadingSignals}
-                  locale={primaryTabsSectionProps.signalsAutoTabProps.locale}
-                  marketType={primaryTabsSectionProps.signalsTabProps.marketType}
-                  onAllowedModesChange={primaryTabsSectionProps.signalsAutoTabProps.onAllowedModesChange}
-                  onAutoMixChange={primaryTabsSectionProps.signalsAutoTabProps.onAutoMixChange}
-                  onAutoSelectAllAssetsChange={primaryTabsSectionProps.signalsAutoTabProps.onAutoSelectAllAssetsChange}
-                  onAutoSelectedAssetKeysChange={primaryTabsSectionProps.signalsAutoTabProps.onAutoSelectedAssetKeysChange}
-                  onAutoUniverseScopeChange={primaryTabsSectionProps.signalsAutoTabProps.onAutoUniverseScopeChange}
-                  onOpenGeneratedSignal={primaryTabsSectionProps.signalsAutoTabProps.onOpenGeneratedSignal}
-                  onOpenSignalsPanel={primaryTabsSectionProps.signalsAutoTabProps.onOpenSignalsPanel}
-                  onReasoningModeChange={primaryTabsSectionProps.signalsAutoTabProps.onReasoningModeChange}
-                  onRunAutoNow={primaryTabsSectionProps.signalsAutoTabProps.onRunAutoNow}
-                  onSelectAutoRun={primaryTabsSectionProps.signalsAutoTabProps.onSelectAutoRun}
-                  reasoningMode={primaryTabsSectionProps.signalsAutoTabProps.reasoningMode}
-                  reasoningModeOptions={primaryTabsSectionProps.signalsAutoTabProps.reasoningModeOptions}
-                  renderSignalTypeBadge={primaryTabsSectionProps.signalsTabProps.renderSignalTypeBadge}
-                  selectedSignal={primaryTabsSectionProps.signalsTabProps.selectedSignal}
-                  signalAutoRunPending={primaryTabsSectionProps.signalsAutoTabProps.signalAutoRunPending}
-                  signalAutoRuns={primaryTabsSectionProps.signalsAutoTabProps.signalAutoRuns}
-                  signals={primaryTabsSectionProps.signalsTabProps.signals}
-                  t={primaryTabsSectionProps.signalsAutoTabProps.t}
-                  timeZone={primaryTabsSectionProps.signalsAutoTabProps.timeZone}
-                  topTradingCandidates={primaryTabsSectionProps.signalsAutoTabProps.topTradingCandidates}
-                />
-              ) : (
-                <>
-                  <TradingStatsPrimaryRow {...statsPrimarySectionProps} />
-                  <TradingStatsSecondaryRow {...statsSecondarySectionProps} />
-
-                  <Tabs value={activeTab} onValueChange={handleTabChange}>
-                    <TradingPrimaryTabsSection {...primaryTabsSectionProps} />
-                    <TradingOperationalTabsSection {...operationalTabsSectionProps} />
-                  </Tabs>
-                </>
-              )}
-            </TradingWorkspaceShell>
+            />
             <TradingDialogsSection {...dialogsSectionProps} />
           </>
         ) : (
