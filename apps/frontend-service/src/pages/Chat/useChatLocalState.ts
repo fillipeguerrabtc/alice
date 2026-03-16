@@ -6,7 +6,7 @@ import { DEFAULT_REASONING_MODE, type ReasoningMode } from '@/lib/reasoning-mode
 type TrainingDialogMode = 'conversation' | 'messages' | null;
 
 export function useChatLocalState(isMobile: boolean) {
-  const [activeWorkspace, setActiveWorkspace] = useState<ChatWorkspaceKey>('conversation');
+  const [activeWorkspace, setActiveWorkspace] = useState<ChatWorkspaceKey>('all');
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);

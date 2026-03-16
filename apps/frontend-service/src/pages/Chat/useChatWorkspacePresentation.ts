@@ -45,10 +45,10 @@ export function useChatWorkspacePresentation({
     { value: 'always_confirm', label: t('chat.approvalPolicy.alwaysConfirm') },
     { value: 'never_confirm', label: t('chat.approvalPolicy.neverConfirm') },
   ] as const;
-  const showGovernanceControls = activeWorkspace === 'governance';
-  const showOperationsControls = activeWorkspace === 'operations';
-  const showDiagnosticsControls = activeWorkspace === 'diagnostics';
-  const showConversationWorkspaceHint = false;
+  const showGovernanceControls = activeWorkspace === 'all' || activeWorkspace === 'governance';
+  const showOperationsControls = activeWorkspace === 'all' || activeWorkspace === 'operations';
+  const showDiagnosticsControls = activeWorkspace === 'all' || activeWorkspace === 'diagnostics';
+  const showConversationWorkspaceHint = activeWorkspace !== 'all';
   const showDesktopActionMenu = Boolean(conversationId) && (showOperationsControls || showDiagnosticsControls);
 
   const workspaceHint = useMemo<WorkspaceHint>(() => {

@@ -2,7 +2,6 @@ import { type ComponentProps, type FormEvent, type RefObject } from 'react';
 import type { ChatWorkspaceKey } from '../chat-page-routing';
 import { ChatConversationsSidebar } from './ChatConversationsSidebar';
 import { ChatHeaderSection } from './ChatHeaderSection';
-import { ChatWorkspaceSection } from './ChatWorkspaceSection';
 import { ChatMessagesViewport } from './ChatMessagesViewport';
 import { ChatComposerSection } from './ChatComposerSection';
 import { ChatDialogsSection } from './ChatDialogsSection';
@@ -12,7 +11,7 @@ type ChatActionsMenuProps = ComponentProps<typeof ChatHeaderSection>['chatAction
 type ChatGovernanceControlsProps = ComponentProps<typeof ChatHeaderSection>['chatGovernanceControlsProps'];
 type ConversationsListProps = ComponentProps<typeof ChatConversationsSidebar>['conversationsListProps'];
 type ChatDialogsSectionProps = ComponentProps<typeof ChatDialogsSection>;
-type WorkspaceOption = ComponentProps<typeof ChatWorkspaceSection>['workspaceOptions'][number];
+type WorkspaceOption = ComponentProps<typeof ChatHeaderSection>['workspaceOptions'][number];
 type WorkspaceHint = ComponentProps<typeof ChatMessagesViewport>['workspaceHint'];
 
 type ChatPageLayoutProps = {
@@ -138,6 +137,7 @@ export function ChatPageLayout({
 
       <div className="flex-1 flex flex-col min-w-0">
         <ChatHeaderSection
+          activeWorkspace={activeWorkspace}
           chatActionsMenuProps={chatActionsMenuProps}
           chatGovernanceControlsProps={chatGovernanceControlsProps}
           conversationId={conversationId}
@@ -145,13 +145,9 @@ export function ChatPageLayout({
           modelBadgeLabel={modelBadgeLabel}
           onOpenMobileDrawer={onOpenMobileDrawer}
           onToggleSidebar={onToggleSidebar}
+          onWorkspaceChange={onWorkspaceChange}
           showDesktopActionMenu={showDesktopActionMenu}
           sidebarOpen={sidebarOpen}
-        />
-
-        <ChatWorkspaceSection
-          activeWorkspace={activeWorkspace}
-          onWorkspaceChange={onWorkspaceChange}
           workspaceOptions={workspaceOptions}
         />
 
