@@ -44,7 +44,7 @@ import {
 } from '@alice/shared-utils';
 import { chatServicePaths, chatServiceSchemas } from './openapi-specs.js';
 import { createLogger } from '@alice/logger';
-import { getDatabase, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, getPool } from '@alice/database';
+import { getDatabase, schema, closeDatabasePool, createDrizzleFeatureFlagStorage, getPool, isPoolHealthy } from '@alice/database';
 import { getSystemConfig } from '@alice/database/system-config';
 import {
   createCorrelationMiddleware, 
@@ -160,6 +160,9 @@ import {
 import {
   registerChatImageRoutes,
 } from './chat-image-routes.js';
+import {
+  createChatOperationalRuntime,
+} from './chat-operational-routes.js';
 
 // Logger centralizado: JSON em produção, pino-pretty em desenvolvimento
 const logger = createLogger('chat-service');
@@ -433,6 +436,13 @@ const SESSION_SECRET = (() => {
   }
   return secret;
 })();
+
+const chatOperationalRuntime = createChatOperationalRuntime({
+  logger,
+  sessionSecret: SESSION_SECRET,
+  parseEnvBool,
+});
+const { verifyWsToken, consumeWsTokenNonce } = chatOperationalRuntime;
 
 // Cache de sessões validadas para evitar queries repetitivas (TTL 5 minutos)
 // C4 Code Review: Usa RedisCacheAdapter em produção (Regra 6 - PROIBIDO in-memory em produção)
@@ -8501,278 +8511,30 @@ app.use(createSessionAuthMiddleware({
   publicPaths: ['/api/chat/health', '/live', '/ready', '/metrics'],
 }));
 
-app.get('/api/chat/health', async (_req: Request, res: Response) => {
-  const llmCircuitState = gpuManagerBreaker.opened ? 'open' : (gpuManagerBreaker.halfOpen ? 'half-open' : 'closed');
-  const ragStats = getRAGBreakerStats();
-  const integrationsStats = getIntegrationsBreakerStats();
-  
-  // Status degradado se qualquer circuit breaker crítico estiver aberto
-  const overallStatus = (llmCircuitState === 'open' || integrationsStats.state === 'open') ? 'degraded' : 'ok';
-  
-  let invalidAgentsCount: number | null = null;
-  try {
-    // Best-effort: não pode quebrar health endpoint
-    invalidAgentsCount = await countAgentsWithUnsupportedLlmModel();
-  } catch (error) {
-    logger.warn({ error }, 'Falha ao checar agentes com modeloBase inválido (health)');
-    invalidAgentsCount = null;
-  }
-
-  // Gate 2: LLM (texto) model-agnóstico por capability
-  res.json({ 
-    status: overallStatus, 
-    service: 'chat-service',
-    timestamp: new Date().toISOString(),
-    llmProvider: 'gpu-manager-service',
-    model: DEFAULT_LLM_CONFIG.model,
-    agents: {
-      allowedModels: ALLOWED_AGENT_LLM_MODEL_NAMES,
-      invalidModelCount: invalidAgentsCount,
+chatOperationalRuntime.registerRoutes({
+  app,
+  logger,
+  appVersion: APP_VERSION,
+  allowedAgentLlmModelNames: ALLOWED_AGENT_LLM_MODEL_NAMES.filter((value): value is string => typeof value === 'string'),
+  countAgentsWithUnsupportedLlmModel,
+  getIntegrationsBreakerStats,
+  getLlmCircuitBreakerSnapshot: () => ({
+    opened: gpuManagerBreaker.opened,
+    halfOpen: gpuManagerBreaker.halfOpen,
+    stats: {
+      failures: gpuManagerBreaker.stats.failures,
+      successes: gpuManagerBreaker.stats.successes,
+      timeouts: gpuManagerBreaker.stats.timeouts,
     },
-    websocket: {
-      agentAuth: {
-        requireWsAgentToken: WS_AGENT_AUTH_GOVERNANCE.requireWsAgentToken,
-        allowLegacySessionFallback: WS_AGENT_AUTH_GOVERNANCE.allowLegacySessionFallback,
-      },
-    },
-    circuitBreakers: {
-      llm: {
-        state: llmCircuitState,
-        stats: {
-          failures: gpuManagerBreaker.stats.failures,
-          successes: gpuManagerBreaker.stats.successes,
-          timeouts: gpuManagerBreaker.stats.timeouts,
-        },
-      },
-      rag: ragStats,
-      integrations: integrationsStats,
-    },
-  });
-});
-
-app.get('/api/chat/version', (_req: Request, res: Response) => {
-  res.json({
-    version: APP_VERSION,
-    publicModelName: DEFAULT_PUBLIC_LLM_MODEL_NAME,
-    servingModelId: DEFAULT_LLM_CONFIG.model,
-    service: 'chat-service',
-    timestamp: new Date().toISOString(),
-  });
-});
-
-// ============================================================================
-// WS TOKEN - Token efêmero para autenticação WebSocket
-// Resolve: "WebSocket is closed before the connection is established"
-// ============================================================================
-
-const WS_TOKEN_SECRET = process.env.WS_TOKEN_SECRET || SESSION_SECRET;
-const WS_TOKEN_TTL_SECONDS = Number(process.env.WS_TOKEN_TTL_SECONDS ?? '60');
-const WS_TOKEN_ONE_TIME_USE_REQUIRED = parseEnvBool(
-  process.env.WS_TOKEN_ONE_TIME_USE_REQUIRED,
-  process.env.NODE_ENV === 'production',
-  'WS_TOKEN_ONE_TIME_USE_REQUIRED'
-);
-const WS_TOKEN_NONCE_REDIS_PREFIX = 'alice:chat:ws-token:nonce';
-type WsTokenAudience = 'ws' | 'ws-agent';
-type WsTokenPayload = {
-  userId: string;
-  tenantId: string;
-  role: string;
-  nonce: string;
-  exp: number;
-  aud: WsTokenAudience;
-};
-
-/** Gera token HMAC efêmero para autenticação WebSocket */
-function generateWsToken(
-  payload: { userId: string; tenantId: string; role: string },
-  aud: WsTokenAudience = 'ws'
-): string {
-  const nonce = crypto.randomUUID();
-  const exp = Math.floor(Date.now() / 1000) + WS_TOKEN_TTL_SECONDS;
-  const data = JSON.stringify({ ...payload, nonce, exp, aud });
-  const signature = crypto.createHmac('sha256', WS_TOKEN_SECRET).update(data).digest('hex');
-  // Codificar payload + assinatura em base64url
-  return Buffer.from(`${data}.${signature}`).toString('base64url');
-}
-
-/** Valida token HMAC efêmero */
-function verifyWsToken(
-  token: string,
-  expectedAud: WsTokenAudience = 'ws'
-): WsTokenPayload | null {
-  try {
-    const decoded = Buffer.from(token, 'base64url').toString('utf-8');
-    const dotIndex = decoded.lastIndexOf('.');
-    if (dotIndex === -1) return null;
-
-    const data = decoded.slice(0, dotIndex);
-    const signature = decoded.slice(dotIndex + 1);
-
-    const expectedSig = crypto.createHmac('sha256', WS_TOKEN_SECRET).update(data).digest('hex');
-    if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSig))) {
-      return null;
-    }
-
-    const payload = JSON.parse(data) as WsTokenPayload;
-    if (payload.aud !== expectedAud) return null;
-    if (payload.exp < Math.floor(Date.now() / 1000)) return null;
-    if (!payload.nonce || typeof payload.nonce !== 'string') return null;
-
-    return payload;
-  } catch {
-    return null;
-  }
-}
-
-async function consumeWsTokenNonce(
-  payload: WsTokenPayload
-): Promise<{ accepted: boolean; result: 'accepted' | 'replay' | 'redis_unavailable' | 'redis_error' | 'disabled' }> {
-  if (!WS_TOKEN_ONE_TIME_USE_REQUIRED) {
-    return { accepted: true, result: 'disabled' };
-  }
-
-  const redis = getRedisClient();
-  if (!redis) {
-    return { accepted: false, result: 'redis_unavailable' };
-  }
-
-  const nowSeconds = Math.floor(Date.now() / 1000);
-  const ttlMs = Math.max(1000, (payload.exp - nowSeconds + 5) * 1000);
-  const redisKey = `${WS_TOKEN_NONCE_REDIS_PREFIX}:${payload.aud}:${payload.tenantId}:${payload.nonce}`;
-
-  try {
-    const lock = await redis.set(redisKey, '1', { NX: true, PX: ttlMs });
-    if (lock !== 'OK') {
-      return { accepted: false, result: 'replay' };
-    }
-    return { accepted: true, result: 'accepted' };
-  } catch (error) {
-    logger.error(
-      {
-        error: error instanceof Error ? error.message : String(error),
-        tenantId: payload.tenantId,
-        aud: payload.aud,
-      },
-      'Falha ao validar nonce one-time-use do ws-token'
-    );
-    return { accepted: false, result: 'redis_error' };
-  }
-}
-
-const wsTokenAuth = requireAuth({ allowAnonymous: true, logUnauthorized: false });
-const wsTokenQuerySchema = z.object({
-  aud: z.enum(['ws', 'ws-agent']).default('ws'),
-});
-// Permite request anônima para logar 401 de forma explícita, sem spam.
-app.get('/api/chat/ws-token', wsTokenAuth, async (req: Request, res: Response) => {
-  try {
-    const userId = req.user?.userId;
-    const tenantId = req.user?.tenantId ?? req.tenantId; // req.tenantId preenchido pelo middleware de auth
-    const role = req.user?.role;
-    const correlationId = req.headers['x-correlation-id'] as string | undefined;
-
-    if (!userId || !tenantId) {
-      logger.debug({
-        correlationId,
-        ip: req.ip,
-        statusCode: 401,
-      }, 'ws-token solicitado sem autenticação');
-      res.status(401).json({ error: 'Autenticação necessária' });
-      return;
-    }
-
-    const queryParsed = wsTokenQuerySchema.safeParse(req.query);
-    if (!queryParsed.success) {
-      res.status(400).json({ error: 'Parametro aud invalido' });
-      return;
-    }
-
-    const aud = queryParsed.data.aud as WsTokenAudience;
-    const safeRole = (role ?? 'viewer') as Role;
-    if (aud === 'ws-agent') {
-      const permissionCheck = await checkPermission(
-        { userId, tenantId, role: safeRole },
-        'chat:takeover:write'
-      );
-      if (!permissionCheck.allowed) {
-        res.status(403).json({ error: 'Permissao insuficiente para ws-agent' });
-        return;
-      }
-    }
-
-    const token = generateWsToken({ userId, tenantId, role: safeRole }, aud);
-    res.json({ success: true, data: { token, expiresIn: WS_TOKEN_TTL_SECONDS, aud } });
-  } catch (error) {
-    logger.error({ error: error instanceof Error ? error.message : String(error) }, 'Erro ao gerar ws-token');
-    res.status(500).json({ error: 'Erro ao gerar token WebSocket' });
-  }
-});
-
-// ============================================================================
-// KUBERNETES PROBES: /ready e /live (Regra 16 - Best Practices 2025)
-// /live: Processo está vivo? Se não, Kubernetes reinicia o container
-// /ready: Pronto para tráfego? Verifica conexão com PostgreSQL e LLM circuit breaker
-// ============================================================================
-
-// Liveness probe - verificação simples que o processo responde
-app.get('/live', (_req: Request, res: Response) => {
-  res.status(200).json({ 
-    status: 'alive', 
-    service: 'chat-service',
-    timestamp: new Date().toISOString(),
-  });
-});
-
-// Readiness probe - verifica se PostgreSQL e LLM estão acessíveis
-app.get('/ready', async (_req: Request, res: Response) => {
-  try {
-    const dbHealthy = await isPoolHealthy();
-    const llmReady = !gpuManagerBreaker.opened;
-    const invalidAgentsCount = dbHealthy ? await countAgentsWithUnsupportedLlmModel() : 0;
-    
-    // Chat precisa de PostgreSQL obrigatoriamente, LLM pode estar em degraded mode
-    const allReady = dbHealthy;
-    
-    if (allReady) {
-      res.status(200).json({
-        status: 'ready',
-        service: 'chat-service',
-        timestamp: new Date().toISOString(),
-        dependencies: {
-          postgresql: 'ready',
-          llm: llmReady ? 'ready' : 'circuit_open',
-          agents: invalidAgentsCount > 0 ? 'legacy_models_present' : 'ready',
-        },
-        warnings: invalidAgentsCount > 0 ? [{
-          code: 'LEGACY_AGENT_LLM_MODEL',
-          message:
-            `Detectados ${invalidAgentsCount} agentes com modeloBase não suportado para LLM (texto) no Gate 3. ` +
-            `Atualize os agentes para '${DEFAULT_PUBLIC_LLM_MODEL_NAME}'.`,
-        }] : [],
-      });
-    } else {
-      res.status(503).json({
-        status: 'not_ready',
-        service: 'chat-service',
-        reason: 'PostgreSQL não está acessível',
-        timestamp: new Date().toISOString(),
-        dependencies: {
-          postgresql: dbHealthy ? 'ready' : 'not_ready',
-          llm: llmReady ? 'ready' : 'circuit_open',
-          agents: 'unknown',
-        },
-      });
-    }
-  } catch (error) {
-    logger.error({ error }, 'Erro ao verificar readiness');
-    res.status(503).json({
-      status: 'not_ready',
-      service: 'chat-service',
-      reason: 'Erro ao verificar dependências',
-      timestamp: new Date().toISOString(),
-    });
-  }
+  }),
+  getRagBreakerStats: getRAGBreakerStats,
+  isPoolHealthy,
+  publicModelName: DEFAULT_PUBLIC_LLM_MODEL_NAME,
+  servingModelId: DEFAULT_LLM_CONFIG.model,
+  wsAgentAuthGovernance: {
+    requireWsAgentToken: WS_AGENT_AUTH_GOVERNANCE.requireWsAgentToken,
+    allowLegacySessionFallback: WS_AGENT_AUTH_GOVERNANCE.allowLegacySessionFallback,
+  },
 });
 
 app.get('/api/chat/stats', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:stats:read'), async (req: Request, res: Response) => {

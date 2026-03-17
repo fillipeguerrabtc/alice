@@ -167,24 +167,8 @@ import {
   createTrainingDataLifecycleService,
   evaluateTrainingQuality,
 } from './training-data-lifecycle.js';
-import { registerTrainingPlatformRoutes } from './routes/training-platform-routes.js';
-import { registerTrainingAuditRoutes } from './routes/training-audit-routes.js';
-import { registerTrainingLoraOrchestratorRoutes } from './routes/training-lora-orchestrator-routes.js';
-import { registerTrainingRuntimeRoutes } from './routes/training-runtime-routes.js';
-import { registerTrainingRunManagementRoutes } from './routes/training-run-management-routes.js';
-import { registerTrainingScheduleRoutes } from './routes/training-schedule-routes.js';
-import { registerTrainingDataRoutes } from './routes/training-data-routes.js';
-import { registerTrainingJobQueryRoutes } from './routes/training-job-query-routes.js';
-import { registerTrainingJobCancelRoutes } from './routes/training-job-cancel-routes.js';
-import { registerTrainingJobCreateRoutes } from './routes/training-job-create-routes.js';
-import { registerTrainingJobPromotionApprovalRoutes } from './routes/training-job-promotion-approval-routes.js';
-import { registerTrainingJobRollbackRoutes } from './routes/training-job-rollback-routes.js';
-import { registerTrainingJobPromoteRoutes } from './routes/training-job-promote-routes.js';
-import { registerTrainingRunStartRoutes } from './routes/training-run-start-routes.js';
-import { registerTrainingDataReviewRoutes } from './routes/training-data-review-routes.js';
-import { registerTrainingBulkImportRoutes } from './routes/training-bulk-import-routes.js';
-import { registerTrainingWebhookRoutes } from './routes/training-webhook-routes.js';
 import { buildFineTuningJobStreamFingerprint, isActiveFineTuningJobStatus } from './training-job-stream.js';
+import { registerTrainingRoutes } from './training-route-registration.js';
 // Fine-tuning Ã© executado localmente via GPU Manager Service (Regra 6 - sem stubs/migraÃ§Ã£o)
 
 // Logger centralizado: JSON em produÃ§Ã£o, pino-pretty em desenvolvimento
@@ -2887,193 +2871,382 @@ const trainingJobLifecycleService = createTrainingJobLifecycleService({
   createHttpError: (status, payload) => new TrainingHttpError(status, payload),
 });
 
-registerTrainingPlatformRoutes(app, {
-  logger,
-  getEmbeddingsCircuitBreakerSnapshot: () => ({
-    opened: gpuManagerEmbeddingsBreaker.opened,
-    halfOpen: gpuManagerEmbeddingsBreaker.halfOpen,
-    stats: {
-      failures: gpuManagerEmbeddingsBreaker.stats.failures,
-      successes: gpuManagerEmbeddingsBreaker.stats.successes,
-      timeouts: gpuManagerEmbeddingsBreaker.stats.timeouts,
+registerTrainingRoutes(app, {
+  platform: {
+    logger,
+    getEmbeddingsCircuitBreakerSnapshot: () => ({
+      opened: gpuManagerEmbeddingsBreaker.opened,
+      halfOpen: gpuManagerEmbeddingsBreaker.halfOpen,
+      stats: {
+        failures: gpuManagerEmbeddingsBreaker.stats.failures,
+        successes: gpuManagerEmbeddingsBreaker.stats.successes,
+        timeouts: gpuManagerEmbeddingsBreaker.stats.timeouts,
+      },
+    }),
+    getImmutableAuditIntegrityState: () => trainingImmutableAuditIntegrityState,
+    isPoolHealthy: async () => isPoolHealthy(),
+    tradingQueueNames: {
+      universe: tradingQueueNames.universe,
+      backtest: tradingQueueNames.backtest,
+      calibration: tradingQueueNames.calibration,
+      rebalance: tradingQueueNames.rebalance,
+      modelRisk: tradingQueueNames.modelRisk,
+      portfolioAutoRun: tradingQueueNames.portfolioAutoRun,
+      signalAutoRun: tradingQueueNames.signalAutoRun,
     },
-  }),
-  getImmutableAuditIntegrityState: () => trainingImmutableAuditIntegrityState,
-  isPoolHealthy: async () => isPoolHealthy(),
-  tradingQueueNames: {
-    universe: tradingQueueNames.universe,
-    backtest: tradingQueueNames.backtest,
-    calibration: tradingQueueNames.calibration,
-    rebalance: tradingQueueNames.rebalance,
-    modelRisk: tradingQueueNames.modelRisk,
-    portfolioAutoRun: tradingQueueNames.portfolioAutoRun,
-    signalAutoRun: tradingQueueNames.signalAutoRun,
+    enqueueTradingJob: async (queueName, payload) => enqueueTradingJob(
+      queueName as (typeof tradingQueueNames)[keyof typeof tradingQueueNames],
+      payload,
+    ),
+    parseTradingUniverseEnqueuePayload: (body) => tradingUniverseEnqueueSchema.parse(body),
+    parseTradingBacktestEnqueuePayload: (body) => tradingBacktestEnqueueSchema.parse(body),
+    parseTradingCalibrationEnqueuePayload: (body) => tradingCalibrationEnqueueSchema.parse(body),
+    parseTradingRebalanceEnqueuePayload: (body) => tradingRebalanceEnqueueSchema.parse(body),
+    parseTradingModelRiskEnqueuePayload: (body) => tradingModelRiskEnqueueSchema.parse(body),
+    parseTradingAutoPortfolioPayload: (body) => tradingAutoPortfolioPayloadSchema.parse(body),
+    parseTradingAutoSignalPayload: (body) => tradingAutoSignalPayloadSchema.parse(body),
+    buildTradingIdempotencyKey: (queueName, payload) => buildTradingIdempotencyKey(
+      queueName as Parameters<typeof buildTradingIdempotencyKey>[0],
+      payload,
+    ),
   },
-  enqueueTradingJob: async (queueName, payload) => enqueueTradingJob(
-    queueName as (typeof tradingQueueNames)[keyof typeof tradingQueueNames],
-    payload,
-  ),
-  parseTradingUniverseEnqueuePayload: (body) => tradingUniverseEnqueueSchema.parse(body),
-  parseTradingBacktestEnqueuePayload: (body) => tradingBacktestEnqueueSchema.parse(body),
-  parseTradingCalibrationEnqueuePayload: (body) => tradingCalibrationEnqueueSchema.parse(body),
-  parseTradingRebalanceEnqueuePayload: (body) => tradingRebalanceEnqueueSchema.parse(body),
-  parseTradingModelRiskEnqueuePayload: (body) => tradingModelRiskEnqueueSchema.parse(body),
-  parseTradingAutoPortfolioPayload: (body) => tradingAutoPortfolioPayloadSchema.parse(body),
-  parseTradingAutoSignalPayload: (body) => tradingAutoSignalPayloadSchema.parse(body),
-  buildTradingIdempotencyKey: (queueName, payload) => buildTradingIdempotencyKey(
-    queueName as Parameters<typeof buildTradingIdempotencyKey>[0],
-    payload,
-  ),
-});
-
-registerTrainingAuditRoutes(app, {
-  logger,
-  runTrainingImmutableAuditIntegrityCheck,
-  getTrainingImmutableAuditIntegrityState: () => trainingImmutableAuditIntegrityState,
-  resolveAuthorizedTenantId,
-  isTrainingGovernanceAuditAction,
-});
-
-registerTrainingLoraOrchestratorRoutes(app, {
-  logger,
-  resolveAuthorizedTenantId,
-  activateLoraAdapter,
-  getActiveAdapter,
-  deactivateLoraAdapter,
-  gpuManagerUrlOrchestrator: GPU_MANAGER_URL_FINAL,
-  internalApiSecretOrchestrator: INTERNAL_API_SECRET,
-});
-
-registerTrainingRuntimeRoutes(app, {
-  logger,
-  resolveAuthorizedTenantId,
-  readScheduleScopeMetadata,
-  loadTrainingSystemRuntimeConfig,
-  loadTrainingGovernanceRuntimeConfig,
-  getFineTuningQueuesStatus,
-  getTenantInflightFineTuningJobsCount: async (tenantId) => getTenantInflightFineTuningJobsCount(db, tenantId),
-  getTradingDataGovernancePolicy: () => tradingDataGovernancePolicy,
-  trainingRunStartRequireIdempotencyKey: TRAINING_RUN_START_REQUIRE_IDEMPOTENCY_KEY,
-});
-
-registerTrainingRunManagementRoutes(app, {
-  logger,
-  resolveAuthorizedTenantId,
-  cancelFineTuningJobAndLora: (params) => trainingJobLifecycleService.cancelFineTuningJobAndLora(params),
-  toTrainingHttpErrorResponse: (error) => (
-    error instanceof TrainingHttpError
-      ? { status: error.status, payload: error.responsePayload }
-      : null
-  ),
-});
-
-registerTrainingScheduleRoutes(app, {
-  logger,
-  resolveAuthorizedTenantId,
-  findNamespaceByIdInTenant,
-  loadTrainingSystemRuntimeConfig,
-  loadTrainingEnterpriseConfig,
-  isSameScheduleScope,
-  scheduleConfig: SCHEDULE_CONFIG,
-});
-
-registerTrainingDataRoutes(app, {
-  logger,
-  resolveAuthorizedTenantId,
-  parseCollectTrainingDataBody: (body) => collectTrainingDataSchema.parse(body),
-  parseCollectTrainingDataPayload: (body) => collectTrainingDataPayloadSchema.parse(body),
-  collectTrainingDataForTenant: async (params) => collectTrainingDataForTenant({
-    tenantId: params.tenantId,
-    createdBy: params.createdBy,
-    payload: params.payload as z.infer<typeof collectTrainingDataPayloadSchema>,
-  }),
-  toTrainingHttpErrorResponse: (error) => (
-    error instanceof TrainingHttpError
-      ? { status: error.status, payload: error.responsePayload }
-      : null
-  ),
-  findNamespaceByIdInTenant,
-  findAgentByIdInTenant,
-  persistTrainingGovernanceAudit: async (params) => trainingGovernanceAuditService.persistTrainingGovernanceAudit({
-    tenantId: params.tenantId,
-    userId: params.userId,
-    action: params.action,
-    resource: params.resource,
-    resourceId: params.resourceId,
-    request: params.request,
-    details: params.details,
-  }),
-  incrementReviewMetric: (status) => {
-    trainingPipelineMetrics.reviewTotal.labels(status).inc();
+  audit: {
+    logger,
+    runTrainingImmutableAuditIntegrityCheck,
+    getTrainingImmutableAuditIntegrityState: () => trainingImmutableAuditIntegrityState,
+    resolveAuthorizedTenantId,
+    isTrainingGovernanceAuditAction,
   },
-  incrementScopeOverrideMetric: (source) => {
-    trainingPipelineMetrics.scopeOverrideTotal.inc({ source });
+  loraOrchestrator: {
+    logger,
+    resolveAuthorizedTenantId,
+    activateLoraAdapter,
+    getActiveAdapter,
+    deactivateLoraAdapter,
+    gpuManagerUrlOrchestrator: GPU_MANAGER_URL_FINAL,
+    internalApiSecretOrchestrator: INTERNAL_API_SECRET,
   },
-  incrementScopeResolvedMetric: (source) => {
-    trainingPipelineMetrics.scopeResolvedTotal.inc({ source });
+  runtime: {
+    logger,
+    resolveAuthorizedTenantId,
+    readScheduleScopeMetadata,
+    loadTrainingSystemRuntimeConfig,
+    loadTrainingGovernanceRuntimeConfig,
+    getFineTuningQueuesStatus,
+    getTenantInflightFineTuningJobsCount: async (tenantId) => getTenantInflightFineTuningJobsCount(db, tenantId),
+    getTradingDataGovernancePolicy: () => tradingDataGovernancePolicy,
+    trainingRunStartRequireIdempotencyKey: TRAINING_RUN_START_REQUIRE_IDEMPOTENCY_KEY,
   },
-  incrementGovernanceAuditWritesMetric: (result) => {
-    trainingPipelineMetrics.governanceAuditWritesTotal.inc({
-      action: 'training_scope_binding_changed',
-      result,
-    });
+  runManagement: {
+    logger,
+    resolveAuthorizedTenantId,
+    cancelFineTuningJobAndLora: (params) => trainingJobLifecycleService.cancelFineTuningJobAndLora(params),
+    toTrainingHttpErrorResponse: (error) => (
+      error instanceof TrainingHttpError
+        ? { status: error.status, payload: error.responsePayload }
+        : null
+    ),
   },
-});
-
-registerTrainingDataReviewRoutes(app, {
-  logger,
-  resolveAuthorizedTenantId,
-  incrementReviewMetric: (status, count) => {
-    trainingPipelineMetrics.reviewTotal.labels(status).inc(count);
+  schedule: {
+    logger,
+    resolveAuthorizedTenantId,
+    findNamespaceByIdInTenant,
+    loadTrainingSystemRuntimeConfig,
+    loadTrainingEnterpriseConfig,
+    isSameScheduleScope,
+    scheduleConfig: SCHEDULE_CONFIG,
   },
-});
-
-registerTrainingBulkImportRoutes(app, {
-  logger,
-  resolveAuthorizedTenantId,
-  parseBulkImportBody: (body) => bulkImportSchema.parse(body),
-  findNamespaceByIdInTenant,
-  findAgentByIdInTenant,
-  computeSemHash,
-  evaluateTrainingQuality,
-  resolveScope,
-  observeScopeConfidence: (value) => {
-    trainingPipelineMetrics.scopeConfidenceHistogram.observe(value);
+  data: {
+    logger,
+    resolveAuthorizedTenantId,
+    parseCollectTrainingDataBody: (body) => collectTrainingDataSchema.parse(body),
+    parseCollectTrainingDataPayload: (body) => collectTrainingDataPayloadSchema.parse(body),
+    collectTrainingDataForTenant: async (params) => collectTrainingDataForTenant({
+      tenantId: params.tenantId,
+      createdBy: params.createdBy,
+      payload: params.payload as z.infer<typeof collectTrainingDataPayloadSchema>,
+    }),
+    toTrainingHttpErrorResponse: (error) => (
+      error instanceof TrainingHttpError
+        ? { status: error.status, payload: error.responsePayload }
+        : null
+    ),
+    findNamespaceByIdInTenant,
+    findAgentByIdInTenant,
+    persistTrainingGovernanceAudit: async (params) => trainingGovernanceAuditService.persistTrainingGovernanceAudit({
+      tenantId: params.tenantId,
+      userId: params.userId,
+      action: params.action,
+      resource: params.resource,
+      resourceId: params.resourceId,
+      request: params.request,
+      details: params.details,
+    }),
+    incrementReviewMetric: (status) => {
+      trainingPipelineMetrics.reviewTotal.labels(status).inc();
+    },
+    incrementScopeOverrideMetric: (source) => {
+      trainingPipelineMetrics.scopeOverrideTotal.inc({ source });
+    },
+    incrementScopeResolvedMetric: (source) => {
+      trainingPipelineMetrics.scopeResolvedTotal.inc({ source });
+    },
+    incrementGovernanceAuditWritesMetric: (result) => {
+      trainingPipelineMetrics.governanceAuditWritesTotal.inc({
+        action: 'training_scope_binding_changed',
+        result,
+      });
+    },
   },
-  incrementScopeQuarantineTotal: ({ sourceType, reason }) => {
-    trainingPipelineMetrics.scopeQuarantineTotal.inc({
-      source_type: sourceType,
-      reason,
-    });
+  dataReview: {
+    logger,
+    resolveAuthorizedTenantId,
+    incrementReviewMetric: (status, count) => {
+      trainingPipelineMetrics.reviewTotal.labels(status).inc(count);
+    },
   },
-  incrementScopeSuggestedNewNamespaceTotal: ({ sourceType }) => {
-    trainingPipelineMetrics.scopeSuggestedNewNamespaceTotal.inc({
-      source_type: sourceType,
-    });
+  bulkImport: {
+    logger,
+    resolveAuthorizedTenantId,
+    parseBulkImportBody: (body) => bulkImportSchema.parse(body),
+    findNamespaceByIdInTenant,
+    findAgentByIdInTenant,
+    computeSemHash,
+    evaluateTrainingQuality,
+    resolveScope,
+    observeScopeConfidence: (value) => {
+      trainingPipelineMetrics.scopeConfidenceHistogram.observe(value);
+    },
+    incrementScopeQuarantineTotal: ({ sourceType, reason }) => {
+      trainingPipelineMetrics.scopeQuarantineTotal.inc({
+        source_type: sourceType,
+        reason,
+      });
+    },
+    incrementScopeSuggestedNewNamespaceTotal: ({ sourceType }) => {
+      trainingPipelineMetrics.scopeSuggestedNewNamespaceTotal.inc({
+        source_type: sourceType,
+      });
+    },
+    getTrainingDataMinQuality: () => TRAINING_DATA_MIN_QUALITY,
+    buildTrainingIdempotencyKey: (params) => buildTrainingIdempotencyKey(params),
+    parseTrainingEmbeddingDedupeQueuePayload: (payload) => trainingEmbeddingDedupeQueuePayloadSchema.parse(payload),
+    enqueueTrainingEmbeddingDedupeJob,
   },
-  getTrainingDataMinQuality: () => TRAINING_DATA_MIN_QUALITY,
-  buildTrainingIdempotencyKey: (params) => buildTrainingIdempotencyKey(params),
-  parseTrainingEmbeddingDedupeQueuePayload: (payload) => trainingEmbeddingDedupeQueuePayloadSchema.parse(payload),
-  enqueueTrainingEmbeddingDedupeJob,
-});
-
-registerTrainingWebhookRoutes(app, {
-  logger,
-  collectTrainingDataForTenant,
-  parseCollectTrainingDataPayload: (body) => collectTrainingDataPayloadSchema.parse(body),
-  toTrainingHttpErrorResponse: (error) => (
-    error instanceof TrainingHttpError
-      ? { status: error.status, payload: error.responsePayload }
-      : null
-  ),
-  incrementWebhookAuthValidationTotal: ({ mode, result }) => {
-    trainingPipelineMetrics.webhookAuthValidationTotal.inc({ mode, result });
+  webhook: {
+    logger,
+    collectTrainingDataForTenant,
+    parseCollectTrainingDataPayload: (body) => collectTrainingDataPayloadSchema.parse(body),
+    toTrainingHttpErrorResponse: (error) => (
+      error instanceof TrainingHttpError
+        ? { status: error.status, payload: error.responsePayload }
+        : null
+    ),
+    incrementWebhookAuthValidationTotal: ({ mode, result }) => {
+      trainingPipelineMetrics.webhookAuthValidationTotal.inc({ mode, result });
+    },
+    incrementWebhookBodyDigestValidationTotal: ({ result }) => {
+      trainingPipelineMetrics.webhookBodyDigestValidationTotal.inc({ result });
+    },
+    incrementWebhookNonceValidationTotal: ({ storage, result }) => {
+      trainingPipelineMetrics.webhookNonceValidationTotal.inc({ storage, result });
+    },
   },
-  incrementWebhookBodyDigestValidationTotal: ({ result }) => {
-    trainingPipelineMetrics.webhookBodyDigestValidationTotal.inc({ result });
+  jobQuery: {
+    logger,
+    resolveAuthorizedTenantId,
+    getPromotionApprovalSummary,
+    buildFineTuningJobStreamFingerprint,
+    isActiveFineTuningJobStatus,
+    trainingJobStreamPollIntervalMs: TRAINING_JOB_STREAM_POLL_INTERVAL_MS,
+    trainingJobStreamHeartbeatMs: TRAINING_JOB_STREAM_HEARTBEAT_MS,
+    trainingGovernanceAuditActions: TRAINING_GOVERNANCE_AUDIT_ACTIONS,
   },
-  incrementWebhookNonceValidationTotal: ({ storage, result }) => {
-    trainingPipelineMetrics.webhookNonceValidationTotal.inc({ storage, result });
+  jobCreate: {
+    logger,
+    resolveAuthorizedTenantId,
+    readOptionalTrainingIdempotencyKey: (req) => trainingRunStartIdempotencyService.readOptionalTrainingIdempotencyKey(req),
+    buildRunStartRequestFingerprint: (params) => trainingRunStartIdempotencyService.buildRunStartRequestFingerprint(params),
+    hashIdempotencyKeyForAudit: (key) => trainingRunStartIdempotencyService.hashIdempotencyKeyForAudit(key),
+    lookupRunStartIdempotencyReplay: (params) => trainingRunStartIdempotencyService.lookupRunStartIdempotencyReplay(params),
+    sendTrainingRunStartError: (params) => trainingRunStartIdempotencyService.sendTrainingRunStartError(params),
+    applyIdempotencyResponseHeaders: (res, key, status) => (
+      trainingRunStartIdempotencyService.applyIdempotencyResponseHeaders(res, key, status)
+    ),
+    storeRunStartIdempotencyRecord: (params) => trainingRunStartIdempotencyService.storeRunStartIdempotencyRecord(params),
+    findNamespaceByIdInTenant,
+    findAgentByIdInTenant,
+    enqueueTrainingFineTuningRun,
+    persistTrainingGovernanceAudit: async (params) => trainingGovernanceAuditService.persistTrainingGovernanceAudit({
+      tenantId: params.tenantId,
+      userId: params.userId,
+      action: params.action,
+      resourceId: params.resourceId,
+      request: params.request,
+      details: params.details,
+    }),
+    trainingRunStartRequireIdempotencyKey: TRAINING_RUN_START_REQUIRE_IDEMPOTENCY_KEY,
+    trainingRunStartContentionRetryAfterSeconds: TRAINING_RUN_START_CONTENTION_RETRY_AFTER_SECONDS,
+    trainingRunStartCapacityRetryAfterSeconds: TRAINING_RUN_START_CAPACITY_RETRY_AFTER_SECONDS,
+    incrementRunStartIdempotencyMetric: (result) => {
+      trainingPipelineMetrics.runStartIdempotencyTotal.inc({
+        endpoint: 'custom_job',
+        result,
+      });
+    },
+    incrementGovernanceLockAttemptsMetric: (result) => {
+      trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
+        operation: 'run_start',
+        result,
+      });
+    },
+    incrementGovernanceAuditWritesMetric: (result) => {
+      trainingPipelineMetrics.governanceAuditWritesTotal.inc({
+        action: 'training_run_start_requested',
+        result,
+      });
+    },
+  },
+  jobCancel: {
+    logger,
+    resolveAuthorizedTenantId,
+    cancelFineTuningJobAndLora: (params) => trainingJobLifecycleService.cancelFineTuningJobAndLora(params),
+    toTrainingHttpErrorResponse: (error) => (
+      error instanceof TrainingHttpError
+        ? { status: error.status, payload: error.responsePayload }
+        : null
+    ),
+  },
+  jobPromotionApproval: {
+    logger,
+    resolveAuthorizedTenantId,
+    getPromotionApprovalSummary,
+    persistTrainingGovernanceAudit: async (params) => trainingGovernanceAuditService.persistTrainingGovernanceAudit({
+      tenantId: params.tenantId,
+      userId: params.userId,
+      action: params.action,
+      resourceId: params.resourceId,
+      request: params.request,
+      details: params.details,
+      executor: params.executor,
+    }),
+    trainingOperationLockTtlSeconds: TRAINING_OPERATION_LOCK_TTL_SECONDS,
+    incrementGovernanceLockAttemptsMetric: (result) => {
+      trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
+        operation: 'promotion_approval',
+        result,
+      });
+    },
+    incrementGovernanceAuditWritesMetric: (result) => {
+      trainingPipelineMetrics.governanceAuditWritesTotal.inc({
+        action: 'training_promotion_approval_recorded',
+        result,
+      });
+    },
+  },
+  jobRollback: {
+    logger,
+    resolveAuthorizedTenantId,
+    persistTrainingGovernanceAudit: async (params) => trainingGovernanceAuditService.persistTrainingGovernanceAudit({
+      tenantId: params.tenantId,
+      userId: params.userId,
+      action: params.action,
+      resourceId: params.resourceId,
+      request: params.request,
+      details: params.details,
+      executor: params.executor,
+    }),
+    trainingOperationLockTtlSeconds: TRAINING_OPERATION_LOCK_TTL_SECONDS,
+    incrementGovernanceLockAttemptsMetric: (result) => {
+      trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
+        operation: 'rollback',
+        result,
+      });
+    },
+    incrementGovernanceAuditWritesMetric: (result) => {
+      trainingPipelineMetrics.governanceAuditWritesTotal.inc({
+        action: 'training_model_rollback_executed',
+        result,
+      });
+    },
+  },
+  jobPromote: {
+    logger,
+    resolveAuthorizedTenantId,
+    getPromotionApprovalSummary,
+    persistTrainingGovernanceAudit: async (params) => trainingGovernanceAuditService.persistTrainingGovernanceAudit({
+      tenantId: params.tenantId,
+      userId: params.userId,
+      action: params.action,
+      resourceId: params.resourceId,
+      request: params.request,
+      details: params.details,
+      executor: params.executor,
+    }),
+    trainingOperationLockTtlSeconds: TRAINING_OPERATION_LOCK_TTL_SECONDS,
+    incrementGovernanceLockAttemptsMetric: (result) => {
+      trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
+        operation: 'promote',
+        result,
+      });
+    },
+    incrementGovernanceAuditWritesMetric: (result) => {
+      trainingPipelineMetrics.governanceAuditWritesTotal.inc({
+        action: 'training_model_promoted',
+        result,
+      });
+    },
+  },
+  runStart: {
+    logger,
+    resolveAuthorizedTenantId,
+    readOptionalTrainingIdempotencyKey: (req) => trainingRunStartIdempotencyService.readOptionalTrainingIdempotencyKey(req),
+    buildRunStartRequestFingerprint: (params) => trainingRunStartIdempotencyService.buildRunStartRequestFingerprint(params),
+    hashIdempotencyKeyForAudit: (key) => trainingRunStartIdempotencyService.hashIdempotencyKeyForAudit(key),
+    lookupRunStartIdempotencyReplay: (params) => trainingRunStartIdempotencyService.lookupRunStartIdempotencyReplay(params),
+    sendTrainingRunStartError: (params) => trainingRunStartIdempotencyService.sendTrainingRunStartError(params),
+    applyIdempotencyResponseHeaders: (res, key, status) => (
+      trainingRunStartIdempotencyService.applyIdempotencyResponseHeaders(res, key, status)
+    ),
+    loadTrainingGovernanceRuntimeConfig,
+    loadTrainingEnterpriseConfig,
+    getTenantInflightFineTuningJobsCount: async (tenantId) => getTenantInflightFineTuningJobsCount(db, tenantId),
+    findNamespaceByIdInTenant,
+    evaluateDataQuality,
+    startProgressiveLoRA,
+    enqueueTrainingFineTuningRun,
+    storeRunStartIdempotencyRecord: (params) => trainingRunStartIdempotencyService.storeRunStartIdempotencyRecord(params),
+    persistTrainingGovernanceAudit: async (params) => trainingGovernanceAuditService.persistTrainingGovernanceAudit({
+      tenantId: params.tenantId,
+      userId: params.userId,
+      action: params.action,
+      resourceId: params.resourceId,
+      request: params.request,
+      details: params.details,
+      executor: params.executor,
+    }),
+    baseModel: GPU_MANAGER_CONFIG.models.llm,
+    trainingRunStartRequireIdempotencyKey: TRAINING_RUN_START_REQUIRE_IDEMPOTENCY_KEY,
+    trainingRunStartContentionRetryAfterSeconds: TRAINING_RUN_START_CONTENTION_RETRY_AFTER_SECONDS,
+    trainingRunStartCapacityRetryAfterSeconds: TRAINING_RUN_START_CAPACITY_RETRY_AFTER_SECONDS,
+    incrementRunStartIdempotencyMetric: (result) => {
+      trainingPipelineMetrics.runStartIdempotencyTotal.inc({
+        endpoint: 'on_demand',
+        result,
+      });
+    },
+    incrementGovernanceLockAttemptsMetric: (result) => {
+      trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
+        operation: 'run_start',
+        result,
+      });
+    },
+    incrementGovernanceAuditWritesMetric: (result) => {
+      trainingPipelineMetrics.governanceAuditWritesTotal.inc({
+        action: 'training_run_start_requested',
+        result,
+      });
+    },
   },
 });
 
@@ -3167,209 +3340,6 @@ async function collectTrainingDataForTenant(params: {
 }) {
   return trainingDataLifecycleService.collectTrainingDataForTenant(params);
 }
-
-registerTrainingJobQueryRoutes(app, {
-  logger,
-  resolveAuthorizedTenantId,
-  getPromotionApprovalSummary,
-  buildFineTuningJobStreamFingerprint,
-  isActiveFineTuningJobStatus,
-  trainingJobStreamPollIntervalMs: TRAINING_JOB_STREAM_POLL_INTERVAL_MS,
-  trainingJobStreamHeartbeatMs: TRAINING_JOB_STREAM_HEARTBEAT_MS,
-  trainingGovernanceAuditActions: TRAINING_GOVERNANCE_AUDIT_ACTIONS,
-});
-
-registerTrainingJobCreateRoutes(app, {
-  logger,
-  resolveAuthorizedTenantId,
-  readOptionalTrainingIdempotencyKey: (req) => trainingRunStartIdempotencyService.readOptionalTrainingIdempotencyKey(req),
-  buildRunStartRequestFingerprint: (params) => trainingRunStartIdempotencyService.buildRunStartRequestFingerprint(params),
-  hashIdempotencyKeyForAudit: (key) => trainingRunStartIdempotencyService.hashIdempotencyKeyForAudit(key),
-  lookupRunStartIdempotencyReplay: (params) => trainingRunStartIdempotencyService.lookupRunStartIdempotencyReplay(params),
-  sendTrainingRunStartError: (params) => trainingRunStartIdempotencyService.sendTrainingRunStartError(params),
-  applyIdempotencyResponseHeaders: (res, key, status) => (
-    trainingRunStartIdempotencyService.applyIdempotencyResponseHeaders(res, key, status)
-  ),
-  storeRunStartIdempotencyRecord: (params) => trainingRunStartIdempotencyService.storeRunStartIdempotencyRecord(params),
-  findNamespaceByIdInTenant,
-  findAgentByIdInTenant,
-  enqueueTrainingFineTuningRun,
-  persistTrainingGovernanceAudit: async (params) => trainingGovernanceAuditService.persistTrainingGovernanceAudit({
-    tenantId: params.tenantId,
-    userId: params.userId,
-    action: params.action,
-    resourceId: params.resourceId,
-    request: params.request,
-    details: params.details,
-  }),
-  trainingRunStartRequireIdempotencyKey: TRAINING_RUN_START_REQUIRE_IDEMPOTENCY_KEY,
-  trainingRunStartContentionRetryAfterSeconds: TRAINING_RUN_START_CONTENTION_RETRY_AFTER_SECONDS,
-  trainingRunStartCapacityRetryAfterSeconds: TRAINING_RUN_START_CAPACITY_RETRY_AFTER_SECONDS,
-  incrementRunStartIdempotencyMetric: (result) => {
-    trainingPipelineMetrics.runStartIdempotencyTotal.inc({
-      endpoint: 'custom_job',
-      result,
-    });
-  },
-  incrementGovernanceLockAttemptsMetric: (result) => {
-    trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
-      operation: 'run_start',
-      result,
-    });
-  },
-  incrementGovernanceAuditWritesMetric: (result) => {
-    trainingPipelineMetrics.governanceAuditWritesTotal.inc({
-      action: 'training_run_start_requested',
-      result,
-    });
-  },
-});
-
-registerTrainingJobCancelRoutes(app, {
-  logger,
-  resolveAuthorizedTenantId,
-  cancelFineTuningJobAndLora: (params) => trainingJobLifecycleService.cancelFineTuningJobAndLora(params),
-  toTrainingHttpErrorResponse: (error) => (
-    error instanceof TrainingHttpError
-      ? { status: error.status, payload: error.responsePayload }
-      : null
-  ),
-});
-
-registerTrainingJobPromotionApprovalRoutes(app, {
-  logger,
-  resolveAuthorizedTenantId,
-  getPromotionApprovalSummary,
-  persistTrainingGovernanceAudit: async (params) => trainingGovernanceAuditService.persistTrainingGovernanceAudit({
-    tenantId: params.tenantId,
-    userId: params.userId,
-    action: params.action,
-    resourceId: params.resourceId,
-    request: params.request,
-    details: params.details,
-    executor: params.executor,
-  }),
-  trainingOperationLockTtlSeconds: TRAINING_OPERATION_LOCK_TTL_SECONDS,
-  incrementGovernanceLockAttemptsMetric: (result) => {
-    trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
-      operation: 'promotion_approval',
-      result,
-    });
-  },
-  incrementGovernanceAuditWritesMetric: (result) => {
-    trainingPipelineMetrics.governanceAuditWritesTotal.inc({
-      action: 'training_promotion_approval_recorded',
-      result,
-    });
-  },
-});
-
-registerTrainingJobRollbackRoutes(app, {
-  logger,
-  resolveAuthorizedTenantId,
-  persistTrainingGovernanceAudit: async (params) => trainingGovernanceAuditService.persistTrainingGovernanceAudit({
-    tenantId: params.tenantId,
-    userId: params.userId,
-    action: params.action,
-    resourceId: params.resourceId,
-    request: params.request,
-    details: params.details,
-    executor: params.executor,
-  }),
-  trainingOperationLockTtlSeconds: TRAINING_OPERATION_LOCK_TTL_SECONDS,
-  incrementGovernanceLockAttemptsMetric: (result) => {
-    trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
-      operation: 'rollback',
-      result,
-    });
-  },
-  incrementGovernanceAuditWritesMetric: (result) => {
-    trainingPipelineMetrics.governanceAuditWritesTotal.inc({
-      action: 'training_model_rollback_executed',
-      result,
-    });
-  },
-});
-
-registerTrainingJobPromoteRoutes(app, {
-  logger,
-  resolveAuthorizedTenantId,
-  getPromotionApprovalSummary,
-  persistTrainingGovernanceAudit: async (params) => trainingGovernanceAuditService.persistTrainingGovernanceAudit({
-    tenantId: params.tenantId,
-    userId: params.userId,
-    action: params.action,
-    resourceId: params.resourceId,
-    request: params.request,
-    details: params.details,
-    executor: params.executor,
-  }),
-  trainingOperationLockTtlSeconds: TRAINING_OPERATION_LOCK_TTL_SECONDS,
-  incrementGovernanceLockAttemptsMetric: (result) => {
-    trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
-      operation: 'promote',
-      result,
-    });
-  },
-  incrementGovernanceAuditWritesMetric: (result) => {
-    trainingPipelineMetrics.governanceAuditWritesTotal.inc({
-      action: 'training_model_promoted',
-      result,
-    });
-  },
-});
-
-registerTrainingRunStartRoutes(app, {
-  logger,
-  resolveAuthorizedTenantId,
-  readOptionalTrainingIdempotencyKey: (req) => trainingRunStartIdempotencyService.readOptionalTrainingIdempotencyKey(req),
-  buildRunStartRequestFingerprint: (params) => trainingRunStartIdempotencyService.buildRunStartRequestFingerprint(params),
-  hashIdempotencyKeyForAudit: (key) => trainingRunStartIdempotencyService.hashIdempotencyKeyForAudit(key),
-  lookupRunStartIdempotencyReplay: (params) => trainingRunStartIdempotencyService.lookupRunStartIdempotencyReplay(params),
-  sendTrainingRunStartError: (params) => trainingRunStartIdempotencyService.sendTrainingRunStartError(params),
-  applyIdempotencyResponseHeaders: (res, key, status) => (
-    trainingRunStartIdempotencyService.applyIdempotencyResponseHeaders(res, key, status)
-  ),
-  loadTrainingGovernanceRuntimeConfig,
-  loadTrainingEnterpriseConfig,
-  getTenantInflightFineTuningJobsCount: async (tenantId) => getTenantInflightFineTuningJobsCount(db, tenantId),
-  findNamespaceByIdInTenant,
-  evaluateDataQuality,
-  startProgressiveLoRA,
-  enqueueTrainingFineTuningRun,
-  storeRunStartIdempotencyRecord: (params) => trainingRunStartIdempotencyService.storeRunStartIdempotencyRecord(params),
-  persistTrainingGovernanceAudit: async (params) => trainingGovernanceAuditService.persistTrainingGovernanceAudit({
-    tenantId: params.tenantId,
-    userId: params.userId,
-    action: params.action,
-    resourceId: params.resourceId,
-    request: params.request,
-    details: params.details,
-    executor: params.executor,
-  }),
-  baseModel: GPU_MANAGER_CONFIG.models.llm,
-  trainingRunStartRequireIdempotencyKey: TRAINING_RUN_START_REQUIRE_IDEMPOTENCY_KEY,
-  trainingRunStartContentionRetryAfterSeconds: TRAINING_RUN_START_CONTENTION_RETRY_AFTER_SECONDS,
-  trainingRunStartCapacityRetryAfterSeconds: TRAINING_RUN_START_CAPACITY_RETRY_AFTER_SECONDS,
-  incrementRunStartIdempotencyMetric: (result) => {
-    trainingPipelineMetrics.runStartIdempotencyTotal.inc({
-      endpoint: 'on_demand',
-      result,
-    });
-  },
-  incrementGovernanceLockAttemptsMetric: (result) => {
-    trainingPipelineMetrics.governanceLockAttemptsTotal.inc({
-      operation: 'run_start',
-      result,
-    });
-  },
-  incrementGovernanceAuditWritesMetric: (result) => {
-    trainingPipelineMetrics.governanceAuditWritesTotal.inc({
-      action: 'training_run_start_requested',
-      result,
-    });
-  },
-});
 
 // NOTA: Nao usamos polling in-memory. Estado e persistido em DB e retomado no startup.
 // Polling removido (Regra 6): cancelamento e progresso sao tratados via DB + gpu-trainer.

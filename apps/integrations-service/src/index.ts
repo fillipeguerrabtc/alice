@@ -1,5 +1,4 @@
 import express from 'express';
-import type { Request } from 'express';
 import Stripe from 'stripe';
 import cors from 'cors';
 // helmet aplicado via createSecurityMiddleware de @alice/shared-utils
@@ -59,7 +58,7 @@ import type {
 import { TRADING_TRAINING_SOURCE_TYPES } from '@alice/shared';
 import { z } from 'zod';
 import { wiseService } from './wiseService.js';
-import { isWiseConfigured, getSandboxStatus, getProfileIdSafe, getWiseCircuitBreakerStatus, validateWiseWebhook, initWiseMetrics } from './wiseClient.js';
+import { isWiseConfigured, getSandboxStatus, getProfileIdSafe, getWiseCircuitBreakerStatus, initWiseMetrics } from './wiseClient.js';
 import * as kucoinClient from './kucoinClient.js';
 import * as kucoinSpotClient from './kucoinSpotClient.js';
 import * as kucoinMarginClient from './kucoinMarginClient.js';
@@ -194,24 +193,6 @@ import {
   checkWebhookIdempotency,
   markWebhookProcessed,
 } from './webhook-idempotency-service.js';
-import { getWiseAuthContextFromRequest } from './wise-auth-context-service.js';
-import {
-  insertWiseWebhookEvent,
-  upsertWiseActivities,
-  upsertWiseBalances,
-  upsertWiseCardOrders,
-  upsertWiseCardTransactions,
-  upsertWiseCards,
-  upsertWiseDisputes,
-  upsertWiseKycReviews,
-  upsertWiseProfiles,
-  upsertWiseQuotes,
-  upsertWiseRecipients,
-  upsertWiseSpendControls,
-  upsertWiseTransfers,
-  upsertWiseUsers,
-  upsertWiseWebhookSubscriptions,
-} from './wise-storage-service.js';
 import { registerDemoTradingRoutes } from './routes/demo-trading-routes.js';
 import { registerEmailRoutes } from './routes/email-routes.js';
 import { registerGrafanaAndGithubRoutes } from './routes/grafana-github-routes.js';
@@ -243,55 +224,12 @@ import { registerTradingSymbolRoutes } from './routes/trading-symbol-routes.js';
 import { registerTradingWebsocketRoutes } from './routes/trading-websocket-routes.js';
 import { registerTwilioOperationalRoutes } from './routes/twilio-operational-routes.js';
 import { registerTwilioWebhookRoutes } from './routes/twilio-webhook-routes.js';
-import { registerWiseAccountDetailsRoutes } from './routes/wise-account-details-routes.js';
-import { registerWiseBalanceAndQuotesRoutes } from './routes/wise-balance-and-quotes-routes.js';
-import { registerWiseCardManagementRoutes } from './routes/wise-card-management-routes.js';
-import { registerWiseCardOrdersRoutes } from './routes/wise-card-orders-routes.js';
-import { registerWiseCardSecureRoutes } from './routes/wise-card-secure-routes.js';
-import { registerWiseDisputesRoutes } from './routes/wise-disputes-routes.js';
-import { registerWiseOAuthRoutes } from './routes/wise-oauth-routes.js';
-import { registerWiseRecipientsTransfersRoutes } from './routes/wise-recipients-transfers-routes.js';
-import { registerWiseReferenceRoutes } from './routes/wise-reference-routes.js';
-import { registerWiseScaRoutes } from './routes/wise-sca-routes.js';
-import { registerWiseSimulationRoutes } from './routes/wise-simulation-routes.js';
-import { registerWiseSpendControlsRoutes } from './routes/wise-spend-controls-routes.js';
-import { registerWiseSpendLimitsRoutes } from './routes/wise-spend-limits-routes.js';
-import { registerWiseVerificationKycRoutes } from './routes/wise-verification-kyc-routes.js';
-import { registerWiseWebhookManagementRoutes } from './routes/wise-webhook-management-routes.js';
-import { registerWiseWebhookRoutes } from './routes/wise-webhook-routes.js';
-import {
-  batchGroupIdParamSchema,
-  balanceIdParamSchema,
-  numericIdParamSchema,
-  paginationQuerySchema,
-  wiseActivityQuerySchema,
-  wiseBalanceCreateSchema,
-  wiseBalanceMovementSchema,
-  wiseBalancesQuerySchema,
-  wiseBalanceStatementQuerySchema,
-  wiseCardOrderIdParamSchema,
-  wiseCardOrdersQuerySchema,
-  wiseCardTokenParamSchema,
-  wiseCurrencyQuerySchema,
-  wiseDisputeIdParamSchema,
-  wiseFileUploadSchema,
-  wiseGenericPayloadSchema,
-  wiseJosePayloadSchema,
-  wiseKycReviewIdParamSchema,
-  wiseProfileIdParamSchema,
-  wiseQuoteCreateSchema,
-  wiseRatesQuerySchema,
-  wiseRecipientRequirementsQuerySchema,
-  wiseRecipientsQuerySchema,
-  wiseSimulationActionSchema,
-  wiseTransactionIdParamSchema,
-  wiseWebhookIdParamSchema,
-} from './wise-route-schemas.js';
 import { createKucoinAccountClientAdapter } from './kucoin-account-client-adapter.js';
 import {
   registerIntegrationsShutdownCallbacks,
   startIntegrationsServer,
 } from './integrations-lifecycle.js';
+import { registerWiseRoutes } from './integrations-wise-routes.js';
 
 const logger = createLogger('integrations-service');
 const config = loadConfig(integrationsServiceConfigSchema);
@@ -1312,302 +1250,7 @@ registerEmailRoutes(app, {
 // Documentação: https://docs.wise.com/api-docs/
 // ============================================================
 
-const getWiseAuthContext = (req: Request) => getWiseAuthContextFromRequest(req.user as AuthContext | undefined);
-
-registerWiseBalanceAndQuotesRoutes(app, {
-  logger,
-  isWiseConfigured,
-  getWiseAuthContext,
-  parseWiseBalancesQuery: (input) => wiseBalancesQuerySchema.safeParse(input),
-  parseWiseBalanceCreate: (input) => wiseBalanceCreateSchema.safeParse(input),
-  parseBalanceIdParam: (input) => balanceIdParamSchema.safeParse(input),
-  parseWiseBalanceStatementQuery: (input) => wiseBalanceStatementQuerySchema.safeParse(input),
-  parseWiseCurrencyQuery: (input) => wiseCurrencyQuerySchema.safeParse(input),
-  parseWiseRatesQuery: (input) => wiseRatesQuerySchema.safeParse(input),
-  parseWiseQuoteCreate: (input) => wiseQuoteCreateSchema.safeParse(input),
-  parseWiseBalanceMovement: (input) => wiseBalanceMovementSchema.safeParse(input),
-  getBalances: (types) => wiseService.getBalances(types),
-  createBalance: (payload) => wiseService.createBalance(payload as Parameters<typeof wiseService.createBalance>[0]),
-  deleteBalance: (balanceId) => wiseService.deleteBalance(balanceId),
-  deleteWiseBalanceRecord: async (tenantId, balanceId) => {
-    await getDatabase().delete(schema.wiseBalances).where(
-      and(
-        eq(schema.wiseBalances.tenantId, tenantId),
-        eq(schema.wiseBalances.wiseBalanceId, balanceId),
-      ),
-    );
-  },
-  getBalanceStatement: (params) => wiseService.getBalanceStatement(params),
-  getBalanceCapacity: (currency) => wiseService.getBalanceCapacity(currency),
-  getTotalFunds: (currency) => wiseService.getTotalFunds(currency),
-  getExchangeRates: (source, target) => wiseService.getExchangeRates(source, target),
-  createQuote: (payload) => wiseService.createQuote(payload as Parameters<typeof wiseService.createQuote>[0]),
-  createBalanceMovement: (payload) => wiseService.createBalanceMovement(payload as Parameters<typeof wiseService.createBalanceMovement>[0]),
-  upsertWiseBalances: async (tenantId, balances) => upsertWiseBalances(tenantId, balances as Parameters<typeof upsertWiseBalances>[1]),
-  upsertWiseQuotes: async (tenantId, quote) => upsertWiseQuotes(tenantId, quote as Parameters<typeof upsertWiseQuotes>[1]),
-  isSandboxMode: () => wiseService.isSandboxMode(),
-});
-
-registerWiseRecipientsTransfersRoutes(app, {
-  logger,
-  isWiseConfigured,
-  getWiseAuthContext,
-  parseWiseRecipientsQuery: (input) => wiseRecipientsQuerySchema.safeParse(input),
-  parseNumericIdParam: (input) => numericIdParamSchema.safeParse(input),
-  parsePaginationQuery: (input) => paginationQuerySchema.safeParse(input),
-  parseBatchGroupIdParam: (input) => batchGroupIdParamSchema.safeParse(input),
-  listRecipients: (currency) => wiseService.listRecipients(currency),
-  createRecipient: (payload) => wiseService.createRecipient(payload as Parameters<typeof wiseService.createRecipient>[0]),
-  getRecipient: (id) => wiseService.getRecipient(id),
-  deleteRecipient: (id) => wiseService.deleteRecipient(id),
-  deleteRecipientRecord: async (tenantId, recipientId) => {
-    await getDatabase().delete(schema.wiseRecipients).where(
-      and(
-        eq(schema.wiseRecipients.tenantId, tenantId),
-        eq(schema.wiseRecipients.wiseRecipientId, recipientId),
-      ),
-    );
-  },
-  upsertWiseRecipients: async (tenantId, recipients) => upsertWiseRecipients(tenantId, recipients as Parameters<typeof upsertWiseRecipients>[1]),
-  listTransfers: (limit, offset) => wiseService.listTransfers(limit, offset),
-  createTransfer: (payload) => wiseService.createTransfer(payload as Parameters<typeof wiseService.createTransfer>[0]),
-  getTransfer: (id) => wiseService.getTransfer(id),
-  fundTransfer: (id) => wiseService.fundTransfer(id),
-  touchTransferRecord: async (tenantId, transferId) => {
-    await getDatabase().update(schema.wiseTransfers)
-      .set({ updatedAt: new Date() })
-      .where(and(
-        eq(schema.wiseTransfers.tenantId, tenantId),
-        eq(schema.wiseTransfers.wiseTransferId, transferId),
-      ));
-  },
-  cancelTransfer: (id) => wiseService.cancelTransfer(id),
-  upsertWiseTransfers: async (tenantId, transfers) => upsertWiseTransfers(tenantId, transfers as Parameters<typeof upsertWiseTransfers>[1]),
-  listBatchGroups: () => wiseService.listBatchGroups(),
-  createBatchGroup: (payload) => wiseService.createBatchGroup(payload as Parameters<typeof wiseService.createBatchGroup>[0]),
-  getBatchGroup: (id) => wiseService.getBatchGroup(id),
-  completeBatchGroup: (id, version) => wiseService.completeBatchGroup(id, version as Parameters<typeof wiseService.completeBatchGroup>[1]),
-});
-
-registerWiseWebhookRoutes(app, {
-  logger,
-  validateWiseWebhook,
-  checkWebhookIdempotency: checkWebhookIdempotencyWithLogger,
-  markWebhookProcessed,
-  insertWiseWebhookEvent,
-});
-
-registerWiseReferenceRoutes(app, {
-  logger,
-  isWiseConfigured,
-  getWiseAuthContext,
-  parseWiseRecipientRequirementsQuery: (input) => wiseRecipientRequirementsQuerySchema.safeParse(input),
-  parseWiseProfileIdParam: (input) => wiseProfileIdParamSchema.safeParse(input),
-  parseNumericIdParam: (input) => numericIdParamSchema.safeParse(input),
-  parseWiseActivityQuery: (input) => wiseActivityQuerySchema.safeParse(input),
-  getRecipientRequirements: (sourceCurrency, targetCurrency, sourceAmount) => wiseService.getRecipientRequirements(sourceCurrency, targetCurrency, sourceAmount),
-  getProfiles: () => wiseService.getProfiles(),
-  getProfileById: (profileId) => wiseService.getProfileById(profileId),
-  getCurrentUser: () => wiseService.getCurrentUser(),
-  getUserById: (id) => wiseService.getUserById(id),
-  listActivities: (query) => wiseService.listActivities(query),
-  upsertWiseProfiles,
-  upsertWiseUsers,
-  upsertWiseActivities,
-});
-
-registerWiseAccountDetailsRoutes(app, {
-  logger,
-  isWiseConfigured,
-  parseWiseProfileIdQuery: (input) => wiseProfileIdParamSchema.safeParse(input),
-  parseWiseGenericPayload: (input) => wiseGenericPayloadSchema.safeParse(input),
-  getAccountDetails: (profileId) => wiseService.getAccountDetails(profileId),
-  listAccountDetailsOrders: (profileId) => wiseService.listAccountDetailsOrders(profileId),
-  createAccountDetailsOrder: (profileId, payload) => wiseService.createAccountDetailsOrder(profileId, payload),
-});
-
-registerWiseCardManagementRoutes(app, {
-  logger,
-  isWiseConfigured,
-  getWiseAuthContext,
-  parseWiseProfileIdQuery: (input) => wiseProfileIdParamSchema.safeParse(input),
-  parseWiseCardTokenParam: (input) => wiseCardTokenParamSchema.safeParse(input),
-  parseWiseGenericPayload: (input) => wiseGenericPayloadSchema.safeParse(input),
-  listCards: (profileId) => wiseService.listCards(profileId),
-  getCard: (profileId, cardToken) => wiseService.getCard(profileId, cardToken),
-  updateCardStatus: (profileId, cardToken, payload) => wiseService.updateCardStatus(profileId, cardToken, payload),
-  resetCardPin: (profileId, cardToken) => wiseService.resetCardPin(profileId, cardToken),
-  getCardPermissions: (profileId, cardToken) => wiseService.getCardPermissions(profileId, cardToken),
-  updateCardPermission: (profileId, cardToken, payload) => wiseService.updateCardPermission(profileId, cardToken, payload),
-  updateCardPermissionsBulk: (profileId, payload) => wiseService.updateCardPermissionsBulk(profileId, payload),
-  upsertWiseCards,
-});
-
-registerWiseCardSecureRoutes(app, {
-  logger,
-  isWiseConfigured,
-  getWiseAuthContext,
-  parseWiseProfileIdQuery: (input) => wiseProfileIdParamSchema.safeParse(input),
-  parseWiseCardTokenQuery: (input) => wiseCardTokenParamSchema.safeParse(input),
-  parseWiseTransactionIdParam: (input) => wiseTransactionIdParamSchema.safeParse(input),
-  parseWiseGenericPayload: (input) => wiseGenericPayloadSchema.safeParse(input),
-  getCardTransaction: (profileId, transactionId) => wiseService.getCardTransaction(profileId, transactionId),
-  getTwCardEncryptionKey: () => wiseService.getTwCardEncryptionKey(),
-  getSensitiveCardDetails: (cardToken, payload) => wiseService.getSensitiveCardDetails(cardToken, payload),
-  getCardPin: (cardToken, payload) => wiseService.getCardPin(cardToken, payload),
-  upsertWiseCardTransactions,
-});
-
-registerWiseCardOrdersRoutes(app, {
-  logger,
-  isWiseConfigured,
-  getWiseAuthContext,
-  parseWiseProfileIdQuery: (input) => wiseProfileIdParamSchema.safeParse(input),
-  parseWiseCardOrdersQuery: (input) => wiseCardOrdersQuerySchema.safeParse(input),
-  parseWiseCardOrderIdParam: (input) => wiseCardOrderIdParamSchema.safeParse(input),
-  parseWiseGenericPayload: (input) => wiseGenericPayloadSchema.safeParse(input),
-  listCardOrders: (profileId, pageNumber, pageSize) => wiseService.listCardOrders(profileId, pageNumber, pageSize),
-  createCardOrder: (profileId, payload) => wiseService.createCardOrder(profileId, payload),
-  listCardOrderAvailability: (profileId) => wiseService.listCardOrderAvailability(profileId),
-  getCardOrder: (profileId, cardOrderId) => wiseService.getCardOrder(profileId, cardOrderId),
-  getCardOrderRequirements: (profileId, cardOrderId) => wiseService.getCardOrderRequirements(profileId, cardOrderId),
-  updateCardOrderStatus: (profileId, cardOrderId, payload) => wiseService.updateCardOrderStatus(profileId, cardOrderId, payload),
-  validateCardOrderAddress: (payload) => wiseService.validateCardOrderAddress(payload),
-  setCardOrderPin: (cardOrderId, payload) => wiseService.setCardOrderPin(cardOrderId, payload),
-  upsertWiseCardOrders,
-});
-
-registerWiseSpendControlsRoutes(app, {
-  logger,
-  isWiseConfigured,
-  getWiseAuthContext,
-  parseWiseProfileIdQuery: (input) => wiseProfileIdParamSchema.safeParse(input),
-  parseRuleIdParam: (input) => numericIdParamSchema.safeParse(input),
-  parseWiseGenericPayload: (input) => wiseGenericPayloadSchema.safeParse(input),
-  listSpendControls: (profileId) => wiseService.listSpendControls(profileId),
-  createSpendControl: (profileId, payload) => wiseService.createSpendControl(profileId, payload),
-  deleteSpendControl: (profileId, ruleId) => wiseService.deleteSpendControl(profileId, ruleId),
-  applySpendControl: (profileId, ruleId, payload) => wiseService.applySpendControl(profileId, ruleId, payload),
-  unassignSpendControl: (profileId, ruleId, payload) => wiseService.unassignSpendControl(profileId, ruleId, payload),
-  upsertWiseSpendControls,
-  deleteSpendControlRecord: async (tenantId, ruleId) => {
-    await getDatabase().delete(schema.wiseSpendControls).where(
-      and(
-        eq(schema.wiseSpendControls.tenantId, tenantId),
-        eq(schema.wiseSpendControls.wiseRuleId, ruleId),
-      ),
-    );
-  },
-});
-
-registerWiseSpendLimitsRoutes(app, {
-  logger,
-  isWiseConfigured,
-  parseWiseProfileIdQuery: (input) => wiseProfileIdParamSchema.safeParse(input),
-  parseWiseCardTokenParam: (input) => wiseCardTokenParamSchema.safeParse(input),
-  parseWiseGenericPayload: (input) => wiseGenericPayloadSchema.safeParse(input),
-  getSpendLimits: (profileId) => wiseService.getSpendLimits(profileId),
-  updateSpendLimits: (profileId, payload) => wiseService.updateSpendLimits(profileId, payload),
-  getCardSpendLimits: (profileId, cardToken) => wiseService.getCardSpendLimits(profileId, cardToken),
-  updateCardSpendLimits: (profileId, cardToken, payload) => wiseService.updateCardSpendLimits(profileId, cardToken, payload),
-  deleteCardSpendLimits: (profileId, cardToken) => wiseService.deleteCardSpendLimits(profileId, cardToken),
-});
-
-registerWiseDisputesRoutes(app, {
-  logger,
-  isWiseConfigured,
-  getWiseAuthContext,
-  parseWiseProfileIdQuery: (input) => wiseProfileIdParamSchema.safeParse(input),
-  parseWiseDisputeIdParam: (input) => wiseDisputeIdParamSchema.safeParse(input),
-  parseWiseGenericPayload: (input) => wiseGenericPayloadSchema.safeParse(input),
-  parseWiseFileUpload: (input) => wiseFileUploadSchema.safeParse(input),
-  listDisputeReasons: (profileId) => wiseService.listDisputeReasons(profileId),
-  getDisputeFlowStep: (profileId, scheme, reason, transactionId, payload) => wiseService.getDisputeFlowStep(profileId, scheme, reason, transactionId, payload),
-  submitDisputeFlow: (profileId, scheme, reason, transactionId, payload) => wiseService.submitDisputeFlow(profileId, scheme, reason, transactionId, payload),
-  uploadDisputeFile: (profileId, formData) => wiseService.uploadDisputeFile(profileId, formData),
-  listDisputes: (profileId, status) => wiseService.listDisputes(profileId, status),
-  getDispute: (profileId, disputeId) => wiseService.getDispute(profileId, disputeId),
-  updateDisputeStatus: (profileId, disputeId, payload) => wiseService.updateDisputeStatus(profileId, disputeId, payload),
-  upsertWiseDisputes,
-});
-
-registerWiseVerificationKycRoutes(app, {
-  logger,
-  isWiseConfigured,
-  getWiseAuthContext,
-  parseWiseProfileIdQuery: (input) => wiseProfileIdParamSchema.safeParse(input),
-  parseWiseKycReviewIdParam: (input) => wiseKycReviewIdParamSchema.safeParse(input),
-  parseWiseFileUpload: (input) => wiseFileUploadSchema.safeParse(input),
-  parseWiseGenericPayload: (input) => wiseGenericPayloadSchema.safeParse(input),
-  getVerificationRequiredEvidences: (profileId) => wiseService.getVerificationRequiredEvidences(profileId),
-  uploadVerificationDocument: (profileId, formData) => wiseService.uploadVerificationDocument(profileId, formData),
-  uploadAdditionalEvidences: (profileId, formData) => wiseService.uploadAdditionalEvidences(profileId, formData),
-  listKycReviews: (profileId) => wiseService.listKycReviews(profileId),
-  createKycReview: (profileId, payload) => wiseService.createKycReview(profileId, payload),
-  getKycReview: (profileId, kycReviewId) => wiseService.getKycReview(profileId, kycReviewId),
-  upsertWiseKycReviews,
-});
-
-registerWiseScaRoutes(app, {
-  logger,
-  isWiseConfigured,
-  parseWiseProfileIdQuery: (input) => wiseProfileIdParamSchema.safeParse(input),
-  parseWiseJosePayload: (input) => wiseJosePayloadSchema.safeParse(input),
-  getScaOneTimeToken: (profileId) => wiseService.getScaOneTimeToken(profileId),
-  createScaSession: (profileId, josePayload) => wiseService.createScaSession(profileId, josePayload),
-  createPin: (profileId, josePayload) => wiseService.createPin(profileId, josePayload),
-  verifyPin: (profileId, josePayload) => wiseService.verifyPin(profileId, josePayload),
-  deletePin: (profileId, josePayload) => wiseService.deletePin(profileId, josePayload),
-  createDeviceFingerprint: (profileId, josePayload) => wiseService.createDeviceFingerprint(profileId, josePayload),
-  verifyDeviceFingerprint: (profileId, josePayload) => wiseService.verifyDeviceFingerprint(profileId, josePayload),
-  deleteDeviceFingerprint: (profileId, josePayload) => wiseService.deleteDeviceFingerprint(profileId, josePayload),
-  createFacemap: (profileId, josePayload) => wiseService.createFacemap(profileId, josePayload),
-  verifyFacemap: (profileId, josePayload) => wiseService.verifyFacemap(profileId, josePayload),
-  deleteFacemap: (profileId, josePayload) => wiseService.deleteFacemap(profileId, josePayload),
-});
-
-registerWiseWebhookManagementRoutes(app, {
-  logger,
-  isWiseConfigured,
-  getWiseAuthContext,
-  parseWiseProfileIdQuery: (input) => wiseProfileIdParamSchema.safeParse(input),
-  parseWiseWebhookIdParam: (input) => wiseWebhookIdParamSchema.safeParse(input),
-  parseWiseGenericPayload: (input) => wiseGenericPayloadSchema.safeParse(input),
-  listWebhooks: (scope) => wiseService.listWebhooks(scope),
-  createWebhook: (scope, payload) => wiseService.createWebhook(scope, payload),
-  deleteWebhook: (scope, subscriptionId) => wiseService.deleteWebhook(scope, subscriptionId),
-  upsertWiseWebhookSubscriptions,
-});
-
-registerWiseSimulationRoutes(app, {
-  logger,
-  isWiseConfigured,
-  parseWiseProfileIdParam: (input) => wiseProfileIdParamSchema.safeParse(input),
-  parseWiseCardTokenParam: (input) => wiseCardTokenParamSchema.safeParse(input),
-  parseWiseKycReviewIdParam: (input) => wiseKycReviewIdParamSchema.safeParse(input),
-  parseWiseSimulationActionParam: (input) => wiseSimulationActionSchema.safeParse(input),
-  parseWiseGenericPayload: (input) => wiseGenericPayloadSchema.safeParse(input),
-  simulateTransfer: (transferId, action) => wiseService.simulateTransfer(transferId, action),
-  simulateVerification: (profileId, payload) => wiseService.simulateVerification(profileId, payload),
-  simulateBalanceTopup: (payload) => wiseService.simulateBalanceTopup(payload),
-  simulateCardTransaction: (profileId, cardToken, action, payload) => wiseService.simulateCardTransaction(profileId, cardToken, action, payload),
-  simulateCardAuthorisation: (profileId, cardToken, payload) => wiseService.simulateCardAuthorisation(profileId, cardToken, payload),
-  simulateCardRefund: (profileId, cardToken, payload) => wiseService.simulateCardRefund(profileId, cardToken, payload),
-  simulateCardProduction: (profileId, cardToken, payload) => wiseService.simulateCardProduction(profileId, cardToken, payload),
-  simulateCardRecentTransactions: (profileId, cardToken, limit) => wiseService.simulateCardRecentTransactions(profileId, cardToken, limit),
-  simulateKycRequirements: (profileId, kycReviewId) => wiseService.simulateKycRequirements(profileId, kycReviewId),
-  simulateBankTransactionImport: (profileId, payload) => wiseService.simulateBankTransactionImport(profileId, payload),
-});
-
-registerWiseOAuthRoutes(app, {
-  logger,
-  isWiseConfigured,
-  getSandboxStatus,
-  getProfileIdSafe,
-  exchangeRegistrationCode: (params) => wiseService.exchangeRegistrationCode(params),
-  exchangeAuthorizationCode: (params) => wiseService.exchangeAuthorizationCode(params),
-  refreshUserToken: (refreshToken) => wiseService.refreshUserToken(refreshToken),
-});
+registerWiseRoutes(app, { logger });
 
 // ============================================================
 // TWILIO/WHATSAPP API - Mensagens e Webhooks
