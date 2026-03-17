@@ -134,4 +134,18 @@ describe('test scope resolver', () => {
     expect(result.mode).toBe('empty');
     expect(result.ignoredFiles).toEqual(['docs/VALIDACAO-INCREMENTAL-MONOREPO.md']);
   });
+
+  it('ignores markdown documentation outside docs without forcing full test execution', () => {
+    const result = resolveTestScope({
+      graph: mockGraph,
+      testGraph: mockTestGraph,
+      changedFiles: ['apps/observability-service/README.md', 'README.md'],
+    });
+
+    expect(result.mode).toBe('empty');
+    expect(result.ignoredFiles).toEqual([
+      'apps/observability-service/README.md',
+      'README.md',
+    ]);
+  });
 });

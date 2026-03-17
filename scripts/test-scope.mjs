@@ -15,13 +15,13 @@ import {
   buildReasonMap,
   detectChangedFiles,
   expandImpactedWorkspaces,
+  isDocumentationPath,
   loadWorkspaceGraph,
   resolveWorkspaceFromPath,
 } from './workspace-scope.mjs';
 
 const SAFE_IGNORED_PREFIXES = [
   'attached_assets/',
-  'docs/',
 ];
 const TEST_ROOT = 'tests';
 const TEST_FILE_SUFFIX = '.test.ts';
@@ -128,7 +128,7 @@ function classifyChangedTestScope(changedFiles, graph, testGraph) {
   const workspaceFileMap = new Map();
 
   for (const changedFile of changedFiles) {
-    if (SAFE_IGNORED_PREFIXES.some(prefix => changedFile.startsWith(prefix))) {
+    if (isDocumentationPath(changedFile) || SAFE_IGNORED_PREFIXES.some(prefix => changedFile.startsWith(prefix))) {
       ignoredFiles.push(changedFile);
       continue;
     }

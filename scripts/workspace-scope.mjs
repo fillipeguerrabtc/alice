@@ -8,16 +8,16 @@
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { dirname, join, normalize, relative, resolve, sep } from 'node:path';
+import { dirname, extname, join, normalize, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const ROOT_DIR = resolve(__dirname, '..');
 
 const WORKSPACE_ROOTS = ['apps', 'packages'];
+const DOCUMENTATION_FILE_EXTENSIONS = new Set(['.adoc', '.md', '.mdx', '.rst']);
 const SAFE_IGNORED_PREFIXES = [
   'attached_assets/',
-  'docs/',
   'tests/',
 ];
 export const GLOBAL_FULL_SCOPE_FILES = new Set([
@@ -58,6 +58,11 @@ function parseLines(rawValue) {
     .split('\n')
     .map(line => line.trim())
     .filter(Boolean);
+}
+
+export function isDocumentationPath(filePath) {
+  return filePath.startsWith('docs/')
+    || DOCUMENTATION_FILE_EXTENSIONS.has(extname(filePath).toLowerCase());
 }
 
 export function resolveWorkspaceFromPath(workspaces, filePath) {
@@ -224,7 +229,7 @@ export function classifyScopeFromFiles(changedFiles, graph) {
   const ignoredFiles = [];
 
   for (const changedFile of changedFiles) {
-    if (SAFE_IGNORED_PREFIXES.some(prefix => changedFile.startsWith(prefix))) {
+    if (isDocumentationPath(changedFile) || SAFE_IGNORED_PREFIXES.some(prefix => changedFile.startsWith(prefix))) {
       ignoredFiles.push(changedFile);
       continue;
     }

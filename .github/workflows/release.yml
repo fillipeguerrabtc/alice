@@ -1,7 +1,7 @@
 # =============================================================================
 # GitHub Actions Workflow - Release & Build
 # =============================================================================
-# Descrição: Versionamento semântico + Build de imagens Docker
+# Descrição: Versionamento semântico + Build/Publicação de imagens Docker
 #
 # PIPELINE ENTERPRISE (3 workflows separados por responsabilidade):
 #   CI → Valida código (typecheck, lint, security, compliance)
@@ -9,11 +9,12 @@
 #   Deploy → Deploya para Hetzner + Health Check + Rollback
 #
 # RESPONSABILIDADES DESTE WORKFLOW:
-#   1. Validar e criar tag semântica (vX.Y.Z)
+#   1. Validar metadados e criar tag semântica (vX.Y.Z)
 #   2. Gerar changelog automático (Conventional Commits)
 #   3. Criar GitHub Release com notas (APÓS build das imagens)
 #   4. Build e push de TODAS as 17 imagens Docker (14 do job: 11 Alice + postgres + pgbackrest + caddy + 3 GPU)
 #   5. Deploy é disparado automaticamente via workflow_dispatch para `deploy-stack-modular.yml` (v3 Enterprise)
+#   6. O gate de qualidade fica em `ci.yml`; este workflow não repete `typecheck`, `lint`, `test` ou `build`
 #
 # OTIMIZAÇÃO (27/12/2025): Consolidação de builds Docker
 # - Matrix de 14 jobs → 1 job único com loop
@@ -37,7 +38,7 @@
 # - Infra services usam contextos específicos
 #
 # Author: Fillipe Guerra
-# Data: 02/01/2026
+# Data: 17/03/2026
 # =============================================================================
 
 name: Release & Tag
@@ -69,73 +70,13 @@ env:
 
 jobs:
   # ===========================================================================
-  # Job 0: Gate full antes da tag/release
-  # Timeout: 35min (typecheck full + testes + lint full + build full)
-  # ===========================================================================
-  validate-release:
-    name: Validate Release
-    runs-on: [self-hosted, linux, deploy]
-    timeout-minutes: 35
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout código
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          fetch-depth: 0
-
-      - name: Calcular versões Node.js e pnpm
-        id: versions
-        run: |
-          NODE_LTS=$(curl -s --max-time 10 "https://nodejs.org/dist/index.json" 2>/dev/null | \
-            jq -r '[.[] | select(.lts) | .version] | first // empty' 2>/dev/null | \
-            sed 's/^v//' | sed -E 's/^([0-9]+)(\.[0-9]+)?(\.[0-9]+)?.*$/\1\2/' | sed 's/\.$//')
-
-          if [ -z "$NODE_LTS" ] || [ "$NODE_LTS" = "null" ]; then
-            NODE_LTS=$(cat .nvmrc 2>/dev/null | tr -d '[:space:]' || echo "22")
-          fi
-
-          PNPM_VER=$(jq -r '.packageManager // empty' package.json | sed 's/^pnpm@//')
-          if [ -z "$PNPM_VER" ] || [ "$PNPM_VER" = "null" ]; then
-            echo "::error::Campo packageManager não encontrado em package.json!"
-            exit 1
-          fi
-
-          echo "node-version=$NODE_LTS" >> $GITHUB_OUTPUT
-          echo "pnpm-version=$PNPM_VER" >> $GITHUB_OUTPUT
-
-      - name: Setup Node.js e pnpm
-        uses: ./.github/actions/setup-node-pnpm
-        with:
-          node-version: ${{ steps.versions.outputs.node-version }}
-          pnpm-version: ${{ steps.versions.outputs.pnpm-version }}
-          install-dependencies: 'true'
-
-      - name: Clean stale build artifacts
-        run: |
-          set -euo pipefail
-          find packages apps -type d -name dist -prune -exec rm -rf {} +
-          find packages apps -type f -name '*.tsbuildinfo' -delete
-          rm -rf .cache/turbo .cache/typescript
-
-      - name: Full validation before release
-        env:
-          NODE_OPTIONS: --max-old-space-size=6144
-        run: |
-          set -euo pipefail
-          echo "🔒 Executando gate full de release..."
-          pnpm run validate:enterprise
-
-  # ===========================================================================
-  # Job 1: Validação e Criação da Release
+  # Job 0: Validação de metadata e Criação da Release
   # Timeout: 5min (validação + tag + release)
   # ===========================================================================
   create-release:
     name: Create Release
     runs-on: [self-hosted, linux, deploy]
     timeout-minutes: 5
-    needs: validate-release
     outputs:
       version: ${{ inputs.version }}
       previous_tag: ${{ steps.previous-tag.outputs.previous_tag }}
@@ -185,7 +126,7 @@ jobs:
           echo "✅ Tag ${{ inputs.version }} criada"
 
   # ===========================================================================
-  # Job 2: Build e Push Docker Images (CONSOLIDADO)
+  # Job 1: Build e Push Docker Images (CONSOLIDADO)
   # OTIMIZAÇÃO: 1 job único ao invés de matrix de 14 jobs
   # Elimina ~4min de overhead (14 setups → 1)
   # Timeout: 90min (GPU images são muito pesadas - PyTorch ~3GB, CUDA ~5-8GB)
@@ -1014,7 +955,7 @@ jobs:
           retention-days: 30
 
   # ===========================================================================
-  # Job 3: Publicar GitHub Release (APÓS build das imagens)
+  # Job 2: Publicar GitHub Release (APÓS build das imagens)
   #
   # MOTIVO ENTERPRISE:
   # - Evita condição de corrida: Release publicada antes das imagens existirem no GHCR
@@ -1153,7 +1094,7 @@ jobs:
           files: /tmp/manifest/images-manifest.json
 
   # ===========================================================================
-  # Job 4: Disparar Deploy em Produção (Stacks)
+  # Job 3: Disparar Deploy em Produção (Stacks)
   #
   # ENTERPRISE: Job separado para garantir visibilidade e execução
   # - Aparece na sequência visual do workflow

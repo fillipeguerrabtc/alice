@@ -85,4 +85,18 @@ describe('workspace scope resolver', () => {
     expect([...result.directWorkspaceNames]).toEqual([]);
     expect(result.ignoredFiles).toEqual(['docs/ARQUITETURA.md']);
   });
+
+  it('ignores markdown documentation outside docs without classifying workspace impact', () => {
+    const result = classifyScopeFromFiles(
+      ['apps/observability-service/README.md', 'README.md'],
+      mockGraph,
+    );
+
+    expect(result.fallbackToFull).toBe(false);
+    expect([...result.directWorkspaceNames]).toEqual([]);
+    expect(result.ignoredFiles).toEqual([
+      'apps/observability-service/README.md',
+      'README.md',
+    ]);
+  });
 });

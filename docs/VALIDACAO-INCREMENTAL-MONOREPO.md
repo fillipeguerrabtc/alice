@@ -6,7 +6,7 @@
 
 ## Objetivo
 
-Definir o uso operacional do fluxo incremental por workspace e suite para `typecheck`, `lint`, `test` e `build`, preservando gates full oficiais para `main` e release.
+Definir o uso operacional do fluxo incremental por workspace e suite para `typecheck`, `lint`, `test` e `build`, com `CI` como gate oficial e `Release` sem repetição do mesmo gate de qualidade.
 
 ## Comandos Locais
 
@@ -36,7 +36,7 @@ São aliases explícitos do mesmo comportamento incremental do fluxo local padr�
 - `pnpm build:full`
 - `pnpm validate:enterprise`
 
-`validate:enterprise` mantém o gate enterprise oficial usando sempre os comandos full.
+Os comandos full permanecem disponíveis para auditoria manual, troubleshooting e fallback explícito. Eles não fazem mais parte do fluxo normal de `Release`.
 
 ## Como o Escopo é Resolvido
 
@@ -51,6 +51,7 @@ O resolvedor fica em:
 
 - `git diff` + arquivos untracked no fluxo local
 - grafo real de dependências dos workspaces via `package.json`
+- classificação documental que também ignora Markdown fora de `docs/` quando a mudança é puramente documental
 - fail-safe para full quando houver incerteza
 
 ### Regras por task
@@ -95,18 +96,18 @@ Exemplo resumido:
 - `typecheck`, `lint` e `build` usam escopo incremental
 - `test` também usa escopo incremental por suite/workspace afetado
 - o resolvedor recebe `origin/<base_ref>` e `github.sha`
+- mudanças exclusivamente documentais pulam os jobs de checks de código
 
 ### Push em `main`
 
-- `typecheck:full`
-- `test`
-- `lint:full`
-- `build:full`
+- `typecheck`, `test`, `lint` e `build` usam o diff entre `github.event.before` e `github.sha`
+- fallback full acontece apenas quando o commit-base não pode ser resolvido com segurança
+- mudanças exclusivamente documentais também pulam os jobs de checks de código
 
 ### Release
 
-- gate full obrigatório antes de criar tag
-- release executa `pnpm validate:enterprise`
+- consome o commit já aprovado no `CI`
+- não repete `typecheck`, `lint`, `test` ou `build`
 - `scripts/release-functions.sh` promove `packages/tsconfig.base.json` para o guard global de rebuild, evitando retag incorreto quando a base TypeScript compartilhada muda
 
 ## Cache
@@ -146,6 +147,7 @@ Exemplo resumido:
 - O primeiro hit incremental ainda pode reconstruir dependências upstream se o cache local estiver vazio.
 - Se um workspace afetado não tiver mapeamento confiável de testes, `pnpm test` cai automaticamente para full.
 - Quando o detector estiver inseguro, ele executa full por design.
+- Arquivos Markdown como `README.md`, `AGENTS.md`, `CLAUDE.md` e READMEs locais em `apps/` ou `assets/` entram como `docs-only` mesmo fora de `docs/`.
 - Nenhum fluxo local comum depende mais de `eslint .`, de `tsc --noEmit` no repositório inteiro ou de `vitest run` full para mudanças isoladas seguras.
 - O grafo formal do `@alice/frontend-service` passa a declarar `@alice/shared` e `@alice/shared-utils` como dependências reais de workspace.
 - Os imports do frontend para pacotes compartilhados ficam restritos a subpaths públicos, sem alias genérico para `packages/*/src`.

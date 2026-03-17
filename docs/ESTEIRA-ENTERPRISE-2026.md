@@ -32,9 +32,9 @@ O resolvedor fica em:
 - `scripts/test-scope.mjs`
 - `scripts/run-scoped-test.mjs`
 
-### Gates full oficiais
+### Gates full manuais
 
-Os gates oficiais continuam full e conservadores:
+Os comandos full continuam disponíveis para auditoria manual, troubleshooting e fallback explícito:
 
 - `pnpm typecheck:full`
 - `pnpm lint:full`
@@ -42,7 +42,7 @@ Os gates oficiais continuam full e conservadores:
 - `pnpm build:full`
 - `pnpm validate:enterprise`
 
-No estado atual, `typecheck:full` ainda recompõe upstream compartilhado por `dependsOn` do `turbo.json` antes de validar workspaces dependentes. Isso foi confirmado no benchmark real de 17 de Março de 2026.
+No estado atual, `typecheck:full` ainda recompõe upstream compartilhado por `dependsOn` do `turbo.json` antes de validar workspaces dependentes. Isso foi confirmado no benchmark real de 17 de Março de 2026. O gate oficial do dia a dia, porém, fica concentrado no `CI` incremental.
 
 ### Changed-only
 
@@ -50,6 +50,7 @@ O changed-only local usa:
 
 - `git diff` + arquivos untracked
 - grafo real de workspaces lido de `apps/*/package.json` e `packages/*/package.json`
+- classificação documental que ignora Markdown fora de `docs/` em mudanças puramente documentais
 - expansão transitiva de dependentes quando necessário
 - fail-safe para execução full diante de incerteza
 
@@ -212,10 +213,11 @@ Comandos executados em série com `/usr/bin/time -f 'ELAPSED_SECONDS=%e'`:
 
 ### Release
 
-O release continua independente do changed-only local.
+O release continua independente do changed-only local para build/retag de imagens, mas não repete mais o gate de qualidade do `CI`.
 
 Pontos confirmados em `.github/workflows/release.yml`:
 
+- o workflow parte do pressuposto de que a revisão de qualidade já foi aprovada no `CI`
 - mudanças em `scripts/`, `tsconfig*`, lockfile e contratos globais acionam `FORCE_ALL_MICROS=1`
 - mudanças em `packages/*` usam impacto transitivo para rebuild das imagens Node afetadas
 - na ausência de impacto detectado, o release pode optar por `retag`

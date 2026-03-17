@@ -1,8 +1,9 @@
 # Alice Enterprise Platform - Guia de Deploy
 
-**Autor:** Fillipe Guerra  
-**Data:** 11 de Março de 2026  
-**Versão:** 11.20 - Hardening de pinagem de imagens e tag de release obrigatória
+**Author:** Fillipe Guerra
+**Data:** 17 de Março de 2026
+**Atualizado:** 17 de Março de 2026
+**Versão:** 11.21 - CI incremental sem redundância entre release e deploy
 
 ## Visão geral
 
@@ -29,6 +30,13 @@ Este guia descreve o deploy enterprise da plataforma Alice em produção (Hetzne
 
 - **Release & Tag:** `.github/workflows/release.yml`
 - **Deploy Modular:** `.github/workflows/deploy-stack-modular.yml`
+
+### Responsabilidades da esteira
+
+- `CI` é o gate único de validação de código e governança operacional.
+- Mudanças exclusivamente documentais não executam `typecheck`, `lint`, `test`, `build` nem scans de código no `CI`.
+- `Release` reutiliza o commit já aprovado no `CI`, cuida de tag, release notes, build e publicação de imagens, sem repetir o mesmo gate de qualidade.
+- `Deploy` permanece restrito à implantação, health check e rollback.
 
 ### Atualização de dependências do workflow (Node 24)
 

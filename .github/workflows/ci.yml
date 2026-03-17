@@ -28,13 +28,13 @@
 #   - GAP-GHACTIONS-001: Actions pinadas a SHA (supply chain security)
 #   - GAP-GHACTIONS-003: Least privilege permissions
 #
-# ATUALIZAÇÃO (15/03/2026):
-# - PRs usam validação incremental por workspace afetado
-# - Push em main mantém gates full oficiais
-# - Logs do resolvedor de escopo ficam visíveis no job
+# ATUALIZAÇÃO (17/03/2026):
+# - PRs e pushes em main usam validação incremental por escopo afetado
+# - Mudanças exclusivamente documentais pulam checks de código
+# - CI concentra o gate de qualidade; Release não repete esse papel
 #
 # Author: Fillipe Guerra
-# Data: 15/03/2026
+# Data: 17/03/2026
 # =============================================================================
 
 name: CI - Validation
@@ -63,8 +63,14 @@ jobs:
     outputs:
       node-version: ${{ steps.versions.outputs.node-version }}
       pnpm-version: ${{ steps.versions.outputs.pnpm-version }}
+      scope-mode: ${{ steps.scope.outputs.scope_mode }}
+      scope-base-ref: ${{ steps.scope.outputs.scope_base_ref }}
+      scope-head-ref: ${{ steps.scope.outputs.scope_head_ref }}
+      docs-only: ${{ steps.scope.outputs.docs_only }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
 
       - name: Calcular versões Node.js e pnpm
         id: versions
@@ -90,11 +96,82 @@ jobs:
           echo "node-version=$NODE_LTS" >> $GITHUB_OUTPUT
           echo "pnpm-version=$PNPM_VER" >> $GITHUB_OUTPUT
 
+      - name: Fetch pull request base ref
+        if: ${{ github.event_name == 'pull_request' }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --prune --depth=1 origin "${{ github.base_ref }}"
+
+      - name: Resolver escopo de validação e docs-only
+        id: scope
+        env:
+          ALICE_GITHUB_EVENT_NAME: ${{ github.event_name }}
+          ALICE_GITHUB_BASE_REF: ${{ github.base_ref }}
+          ALICE_GITHUB_BEFORE: ${{ github.event.before }}
+          ALICE_GITHUB_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          ZERO_SHA="0000000000000000000000000000000000000000"
+
+          if [ "$ALICE_GITHUB_EVENT_NAME" = "pull_request" ]; then
+            SCOPE_MODE="scoped"
+            SCOPE_BASE_REF="origin/$ALICE_GITHUB_BASE_REF"
+          elif [ -n "${ALICE_GITHUB_BEFORE:-}" ] && [ "$ALICE_GITHUB_BEFORE" != "$ZERO_SHA" ]; then
+            SCOPE_MODE="scoped"
+            SCOPE_BASE_REF="$ALICE_GITHUB_BEFORE"
+          else
+            SCOPE_MODE="full"
+            SCOPE_BASE_REF=""
+          fi
+
+          SCOPE_HEAD_REF="$ALICE_GITHUB_SHA"
+
+          {
+            echo "scope_mode=$SCOPE_MODE"
+            echo "scope_base_ref=$SCOPE_BASE_REF"
+            echo "scope_head_ref=$SCOPE_HEAD_REF"
+          } >> "$GITHUB_OUTPUT"
+
+          if [ "$SCOPE_MODE" = "full" ]; then
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+            echo "🔒 Fallback full habilitado: base ref indisponível para comparação segura."
+            exit 0
+          fi
+
+          ALICE_SCOPE_BASE_REF="$SCOPE_BASE_REF" ALICE_SCOPE_HEAD_REF="$SCOPE_HEAD_REF" node --input-type=module <<'EOF'
+          import { appendFileSync } from 'node:fs';
+          import { ROOT_DIR, detectChangedFiles, isDocumentationPath } from './scripts/workspace-scope.mjs';
+
+          const changedFilesResult = detectChangedFiles({
+            rootDir: ROOT_DIR,
+            baseRef: process.env.ALICE_SCOPE_BASE_REF,
+            headRef: process.env.ALICE_SCOPE_HEAD_REF,
+          });
+
+          if (!Array.isArray(changedFilesResult)) {
+            appendFileSync(process.env.GITHUB_OUTPUT, 'docs_only=false\n');
+            console.log(`[alice-ci] ${changedFilesResult.reason}`);
+            process.exit(0);
+          }
+
+          const docsOnly = changedFilesResult.length > 0
+            && changedFilesResult.every(filePath => isDocumentationPath(filePath));
+
+          appendFileSync(process.env.GITHUB_OUTPUT, `docs_only=${docsOnly}\n`);
+
+          console.log(`[alice-ci] Changed files (${changedFilesResult.length}):`);
+          for (const filePath of changedFilesResult) {
+            console.log(`  - ${filePath}`);
+          }
+          console.log(`[alice-ci] Docs only: ${docsOnly}`);
+          EOF
+
   # ===========================================================================
   # Job 2: Build, TypeCheck, Lint e Testes
-  # PR: escopo incremental por workspace/suite afetada
-  # main: gate full oficial
-  # Timeout: 25min (inclui gate full em main)
+  # PR e push em main: escopo incremental por workspace/suite afetada
+  # Fallback full: apenas quando o commit-base não puder ser resolvido com segurança
+  # Timeout: 25min
   # ===========================================================================
   build-and-check:
     name: Build & Typecheck
@@ -103,6 +180,7 @@ jobs:
     permissions:
       contents: read
     needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.docs-only != 'true' }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -133,19 +211,19 @@ jobs:
       - name: Log validation mode
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "🔎 Modo de validação: scoped PR"
-            echo "Base ref: origin/${{ github.base_ref }}"
-            echo "Head ref: ${{ github.sha }}"
+          if [ "${{ needs.detect-changes.outputs.scope-mode }}" = "scoped" ]; then
+            echo "🔎 Modo de validação: scoped CI"
+            echo "Base ref: ${{ needs.detect-changes.outputs.scope-base-ref }}"
+            echo "Head ref: ${{ needs.detect-changes.outputs.scope-head-ref }}"
           else
-            echo "🔒 Modo de validação: full gate para main"
+            echo "🔒 Modo de validação: full fallback"
           fi
 
-      - name: Scoped validation for pull requests
-        if: ${{ github.event_name == 'pull_request' }}
+      - name: Scoped validation in CI
+        if: ${{ needs.detect-changes.outputs.scope-mode == 'scoped' }}
         env:
-          ALICE_SCOPE_BASE_REF: origin/${{ github.base_ref }}
-          ALICE_SCOPE_HEAD_REF: ${{ github.sha }}
+          ALICE_SCOPE_BASE_REF: ${{ needs.detect-changes.outputs.scope-base-ref }}
+          ALICE_SCOPE_HEAD_REF: ${{ needs.detect-changes.outputs.scope-head-ref }}
           NODE_OPTIONS: --max-old-space-size=6144
         run: |
           set -euo pipefail
@@ -154,8 +232,8 @@ jobs:
           pnpm run lint
           pnpm run build
 
-      - name: Full validation for main
-        if: ${{ github.event_name == 'push' }}
+      - name: Full validation fallback in CI
+        if: ${{ needs.detect-changes.outputs.scope-mode == 'full' }}
         env:
           NODE_OPTIONS: --max-old-space-size=6144
         run: |
@@ -164,6 +242,13 @@ jobs:
           pnpm run test:full
           pnpm run lint:full
           pnpm run build:full
+
+      - name: Enterprise governance validation
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+        run: |
+          set -euo pipefail
+          pnpm run verify:enterprise-focus
 
   # ===========================================================================
   # Job 3: Security & Compliance (CONSOLIDADO)
@@ -178,6 +263,7 @@ jobs:
       contents: read
       security-events: write
     needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.docs-only != 'true' }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
@@ -323,7 +409,7 @@ jobs:
           done
           echo "✅ Express hardening verificado"
           echo "✅ Server timeouts verificados"
-      
+
       # Compliance summary removido (zero valor diagnóstico - CLAUDE.md Regra 6)
 
   # ===========================================================================
