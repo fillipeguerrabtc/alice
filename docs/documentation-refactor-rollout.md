@@ -1,20 +1,37 @@
 # Rollout da Refatoracao Documental
 
-Author: Fillipe Guerra  
-Data: 17 de Marco de 2026  
-Status: Bloco 0 concluido  
-Escopo: SSOT e inventario da refatoracao documental
+Author: Fillipe Guerra
+Data: 17 de Marco de 2026
+Status: Bloco 1 concluido
+Escopo: SSOT da refatoracao documental e acompanhamento por blocos
 
 ## Objetivo
 
 Estabelecer a fonte unica de verdade da refatoracao documental, com inventario rastreavel dos arquivos Markdown existentes, classificacao por tipo/status/acao proposta e sequenciamento dos proximos blocos sem mover arquivos neste momento.
 
-## Nao objetivos deste bloco
+## Nao objetivos desta rodada
 
-- Nao mover arquivos.
-- Nao reescrever documentos existentes.
+- Nao mover ainda todos os arquivos temporais para `archive`.
+- Nao quebrar ainda os grandes monolitos documentais.
+- Nao reorganizar ainda todos os subdiretorios.
 - Nao alterar comportamento do produto.
 - Nao redefinir conteudo tecnico fora da camada documental.
+
+## Execucao consolidada ate aqui
+
+### Bloco 0 - inventario e taxonomia
+
+- `docs/documentation-refactor-rollout.md` foi criado como SSOT da refatoracao.
+- O inventario classificou arquivos canonicos, temporais, runbooks, relatorios e archive.
+- A taxonomia-alvo foi definida sem movimentacao fisica de arquivos.
+
+### Bloco 1 - topo canonico principal
+
+- `README.md` foi reescrito como porta de entrada curta, com visao geral, quick start, mapa documental e links canonicos principais.
+- `AGENTS.md` e `CLAUDE.md` foram reduzidos e sincronizados, com foco em precedencia, regras permanentes e fechamento obrigatorio.
+- `docs/INDEX.md` foi reescrito como mapa principal da documentacao, separando claramente raiz canonica, docs tematicas, documentos temporais e archive.
+- A precedencia documental deixou de tratar `status`, `roadmap` e trackers temporais como nucleo do SSOT.
+- Nao houve movimentacao fisica de arquivos neste bloco.
 
 ## Evidencias do repositorio
 
@@ -225,7 +242,7 @@ Estabelecer a fonte unica de verdade da refatoracao documental, com inventario r
 | Bloco | Escopo | Saida esperada | Status inicial |
 | --- | --- | --- | --- |
 | `0` | SSOT da refatoracao e inventario classificado | `docs/documentation-refactor-rollout.md` criado e validado | concluido |
-| `1` | Higiene estrutural inicial e portal documental | estrutura-alvo criada, `docs/INDEX.md` ajustado, sem reescrita profunda | nao iniciado |
+| `1` | Reescrita do topo canonico principal | `README.md`, `AGENTS.md`, `CLAUDE.md` e `docs/INDEX.md` reescritos; precedencia documental corrigida | concluido |
 | `2` | Separacao fisica de canonical estavel | documentos normativos movidos para `docs/canonical/` com links atualizados | nao iniciado |
 | `3` | Separacao fisica de runbooks | runbooks movidos para `docs/runbooks/` e indexados | nao iniciado |
 | `4` | Isolamento de planos, roadmaps, status e trackers | temporais movidos para `docs/plans/` | nao iniciado |
@@ -235,37 +252,38 @@ Estabelecer a fonte unica de verdade da refatoracao documental, com inventario r
 
 ## Handoff para o proximo bloco
 
-- Criar a estrutura fisica da taxonomia-alvo sem alterar conteudo tecnico.
-- Atualizar `docs/INDEX.md` para refletir apenas portal, precedencia e taxonomia.
+- Criar a estrutura fisica da taxonomia-alvo sem reabrir a discussao editorial do topo canonico.
 - Mover primeiro os casos sem controversia editorial: runbooks ativos, planos claramente temporais, relatorios claramente temporais e Markdown solto da raiz.
+- Tratar a classificacao definida em `docs/INDEX.md` como regra de navegacao durante a transicao fisica.
 - Deixar consolidacao de conteudo sobreposto de treinamento/aprendizado para bloco proprio, sem inventar novo texto no mesmo passo dos movimentos.
-- Tratar `docs/STATUS-REAL-ATUAL.md`, `docs/ROADMAP.md` e `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md` explicitamente como temporais no novo indice.
 - Preservar READMEs locais junto de seus respectivos donos e apenas indexa-los quando agregarem navegacao.
 
 ## Validacao deste bloco
 
 ### Consistencia documental
 
-- Checagem automatizada das referencias Markdown atuais em `docs/documentation-refactor-rollout.md`: `OK`
-- Resultado: `163` referencias `.md` avaliadas; referencias atuais existentes confirmadas
+- `rg '^#' README.md AGENTS.md CLAUDE.md docs/INDEX.md docs/documentation-refactor-rollout.md`: `OK`
+- Validacao automatizada de links Markdown locais nos 5 arquivos alterados: `OK`
+- Resultado da validacao de links locais: `74` referencias verificadas, `0` quebradas
+- `git diff --check`: `OK` apos normalizacao do metadata sem trailing whitespace
 
 ### Gates sequenciais obrigatorios
 
 | Gate | Resultado | Observacao |
 | --- | --- | --- |
-| `pnpm typecheck` | OK | escopo inteligente nao encontrou workspace afetado por mudanca documental |
-| `pnpm test` | OK | nenhum teste aplicavel foi afetado |
-| `pnpm lint` | OK | nenhum workspace aplicavel foi afetado |
-| `pnpm build` | OK | nenhum workspace aplicavel foi afetado |
+| `pnpm typecheck` | OK | runner escopado selecionou `15` workspaces por tratar docs da raiz como caminho nao classificado com seguranca |
+| `pnpm test` | OK | `140` arquivos de teste e `1433` testes passaram; duracao total `513.27s` |
+| `pnpm lint` | OK | runner escopado selecionou `15` workspaces sem warnings reportados |
+| `pnpm build` | OK | runner escopado selecionou `15` workspaces e concluiu build sem erros |
 
 ## Checklist de saida deste bloco
 
-- [x] SSOT da refatoracao criado
-- [x] Inventario tecnico consolidado
-- [x] Taxonomia-alvo definida
-- [x] Criterios editoriais definidos
-- [x] Classificacao por tipo, status e acao proposta registrada
-- [x] Blocos de execucao com status inicial registrados
-- [x] Handoff para o proximo bloco registrado
+- [x] `README.md` reescrito como porta de entrada enxuta
+- [x] `AGENTS.md` refatorado como guia curto e sincronizado
+- [x] `CLAUDE.md` refatorado como SSOT curto e duravel
+- [x] `docs/INDEX.md` reescrito como mapa principal e regra de precedencia
+- [x] Precedencia entre canonicos, docs tematicas, temporais e archive corrigida
+- [x] Rollout atualizado com status e handoff do bloco 1
+- [x] Links, headings e coerencia editorial validados
 - [x] Validacoes sequenciais finais executadas
 - [x] Commit consolidado em ingles realizado
