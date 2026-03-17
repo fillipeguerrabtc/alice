@@ -33,7 +33,7 @@
 
 import * as esbuild from 'esbuild';
 import { readFileSync, existsSync, readdirSync } from 'fs';
-import { join, dirname } from 'path';
+import { join, dirname, resolve, relative } from 'path';
 import { fileURLToPath } from 'url';
 import { builtinModules } from 'module';
 
@@ -76,6 +76,79 @@ function collectExternalDeps(pkgPath) {
   }
 }
 
+/**
+ * Formata bytes em unidade legível para logs de build.
+ * @param {number} bytes
+ * @returns {string}
+ */
+function formatBytes(bytes) {
+  if (bytes < 1024) {
+    return `${bytes}b`;
+  }
+
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)}kb`;
+  }
+
+  return `${(bytes / (1024 * 1024)).toFixed(1)}mb`;
+}
+
+/**
+ * Normaliza caminhos do metafile para comparação estável.
+ * @param {string} pathValue
+ * @returns {string}
+ */
+function normalizeMetaPath(pathValue) {
+  return pathValue.replaceAll('\\', '/');
+}
+
+/**
+ * Resume a contribuição do código do serviço e de packages/ no bundle final.
+ * @param {string} serviceNameValue
+ * @param {string} rootDirValue
+ * @param {import('esbuild').Metafile} metafile
+ * @returns {{ outputBytes: number, serviceBytesInOutput: number, alicePackageBytesInOutput: number }}
+ */
+function summarizeBundle(serviceNameValue, rootDirValue, metafile) {
+  const outputEntry = Object.entries(metafile.outputs)
+    .find(([outputPath]) => outputPath.endsWith('.js'));
+
+  if (!outputEntry) {
+    return {
+      outputBytes: 0,
+      serviceBytesInOutput: 0,
+      alicePackageBytesInOutput: 0,
+    };
+  }
+
+  const [, outputMeta] = outputEntry;
+  let serviceBytesInOutput = 0;
+  let alicePackageBytesInOutput = 0;
+  const relativeServicePrefix = `apps/${serviceNameValue}/`;
+  const relativePackagesPrefix = 'packages/';
+
+  for (const [inputPath, inputMeta] of Object.entries(outputMeta.inputs)) {
+    const resolvedInputPath = resolve(process.cwd(), inputPath);
+    const normalizedInputPath = normalizeMetaPath(relative(rootDirValue, resolvedInputPath));
+    const bytesInOutput = inputMeta.bytesInOutput ?? 0;
+
+    if (normalizedInputPath.startsWith(relativeServicePrefix)) {
+      serviceBytesInOutput += bytesInOutput;
+      continue;
+    }
+
+    if (normalizedInputPath.startsWith(relativePackagesPrefix)) {
+      alicePackageBytesInOutput += bytesInOutput;
+    }
+  }
+
+  return {
+    outputBytes: outputMeta.bytes,
+    serviceBytesInOutput,
+    alicePackageBytesInOutput,
+  };
+}
+
 // ============================================================================
 // PASSO 1: Coletar dependências do serviço
 // ============================================================================
@@ -92,7 +165,8 @@ const packagesDeps = new Set();
 if (existsSync(packagesDir)) {
   const packageFolders = readdirSync(packagesDir, { withFileTypes: true })
     .filter(dirent => dirent.isDirectory())
-    .map(dirent => dirent.name);
+    .map(dirent => dirent.name)
+    .sort((left, right) => left.localeCompare(right));
   
   for (const folder of packageFolders) {
     const pkgPath = join(packagesDir, folder, 'package.json');
@@ -123,7 +197,7 @@ const nodeBuiltins = [
 // PASSO 5: Lista completa de externals
 // ============================================================================
 const externalPackages = [
-  ...allExternalDeps,
+  ...[...allExternalDeps].sort((left, right) => left.localeCompare(right)),
   ...nodeBuiltins,
 ];
 
@@ -160,7 +234,15 @@ try {
     },
   });
 
+  const bundleSummary = summarizeBundle(serviceName, rootDir, result.metafile);
+  const inlinePercent = bundleSummary.outputBytes > 0
+    ? ((bundleSummary.alicePackageBytesInOutput / bundleSummary.outputBytes) * 100).toFixed(1)
+    : '0.0';
+
   console.log(`✅ Build concluído: ${serviceDir}/dist/bundle.js\n`);
+  console.log(`📊 Bundle final: ${formatBytes(bundleSummary.outputBytes)}`);
+  console.log(`📊 Código do serviço no bundle: ${formatBytes(bundleSummary.serviceBytesInOutput)}`);
+  console.log(`📊 Código inline de @alice/*: ${formatBytes(bundleSummary.alicePackageBytesInOutput)} (${inlinePercent}%)\n`);
   
   // Log de warnings se houver
   if (result.warnings.length > 0) {

@@ -1,7 +1,8 @@
 # Índice de Documentação (SSOT) - Alice Enterprise Platform
 
 Author: Fillipe Guerra  
-Data: 11 de Março de 2026
+Data: 11 de Março de 2026  
+Atualizado: 17 de Março de 2026
 
 ## Objetivo
 Manter a documentação canônica enxuta, com separação explícita entre SSOT normativo e histórico arquivado.
@@ -15,6 +16,7 @@ Manter a documentação canônica enxuta, com separação explícita entre SSOT 
 - `docs/SECRETS.md`: governança de secrets e variáveis.
 - `docs/PERMISSIONS.md`: RBAC e permissões de plataforma.
 - `docs/VALIDACAO-INCREMENTAL-MONOREPO.md`: fluxo local incremental por workspace e gates full oficiais.
+- `docs/ESTEIRA-ENTERPRISE-2026.md`: consolidação final da esteira local, bundling, benchmarks e governança release/deploy.
 - `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`: tracking canônico por rodada.
 - `docs/ROADMAP.md`: direcionamento futuro (não substitui status de execução).
 
