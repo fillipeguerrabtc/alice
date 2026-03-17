@@ -23,9 +23,14 @@
       "@/components/*": ["./src/components/*"],
       "@/lib/*": ["./src/lib/*"],
       "@/hooks/*": ["./src/hooks/*"],
-      "@alice/shared/*": ["../../packages/shared/src/*"]
+      "@alice/shared/trading-training": ["../../packages/shared/src/trading-training.ts"],
+      "@alice/shared-utils/training-config": ["../../packages/shared-utils/src/training-config.ts"]
     }
   },
-  "include": ["src", "../../packages/shared/src"],
-  "references": [{ "path": "./tsconfig.node.json" }]
+  "include": ["src"],
+  "references": [
+    { "path": "../../packages/shared" },
+    { "path": "../../packages/shared-utils" },
+    { "path": "./tsconfig.node.json" }
+  ]
 }

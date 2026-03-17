@@ -25,9 +25,9 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { parseTrainingHyperparamsJson } from '@alice/shared-utils/training-config';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
-import { parseTrainingHyperparamsJson } from '../../../../packages/shared-utils/src/training-config';
 
 type ConfigValueType = 'int' | 'float' | 'json' | 'cron' | 'boolean';
 

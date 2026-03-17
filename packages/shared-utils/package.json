@@ -61,6 +61,10 @@
     "./agentic-events": {
       "types": "./dist/agentic-events.d.ts",
       "import": "./dist/agentic-events.js"
+    },
+    "./training-config": {
+      "types": "./dist/training-config.d.ts",
+      "import": "./dist/training-config.js"
     }
   },
   "scripts": {

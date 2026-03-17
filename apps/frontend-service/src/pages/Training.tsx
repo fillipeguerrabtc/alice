@@ -70,12 +70,12 @@ import { TrainingRollbackDialog } from './training/components/training-rollback-
 import { TrainingReviewDialog } from './training/components/training-review-dialog';
 import {
   type TrainingHyperparams,
-} from '../../../../packages/shared-utils/src/training-config';
+} from '@alice/shared-utils/training-config';
 import {
   TRADING_TRAINING_DOMAIN,
   TRADING_TRAINING_EXTERNAL_SOURCE_TYPE,
   TRADING_TRAINING_SOURCE_TYPES,
-} from '../../../../packages/shared/src/trading-training';
+} from '@alice/shared/trading-training';
 import {
   parseTrainingHyperparamsConfig,
   TRAINING_SYSTEM_CONFIG_DEFAULTS,

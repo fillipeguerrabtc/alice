@@ -25,18 +25,40 @@ const WS_URL = getEnvOrDefault('WS_URL', 'ws://localhost:3002');
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
-    alias: {
-      '@alice/shared': path.resolve(__dirname, '../../packages/shared/src'),
-      '@alice/shared/': `${path.resolve(__dirname, '../../packages/shared/src')}/`,
-      '@alice/shared-utils': path.resolve(__dirname, '../../packages/shared-utils/src'),
-      '@alice/shared-utils/': `${path.resolve(__dirname, '../../packages/shared-utils/src')}/`,
-      '@': path.resolve(__dirname, './src'),
-      '@/components': path.resolve(__dirname, './src/components'),
-      '@/lib': path.resolve(__dirname, './src/lib'),
-      '@/hooks': path.resolve(__dirname, './src/hooks'),
-      '@shared': path.resolve(__dirname, '../shared'),
-      '@assets': path.resolve(__dirname, '../attached_assets'),
-    },
+    alias: [
+      {
+        find: '@alice/shared/trading-training',
+        replacement: path.resolve(__dirname, '../../packages/shared/src/trading-training.ts'),
+      },
+      {
+        find: '@alice/shared-utils/training-config',
+        replacement: path.resolve(__dirname, '../../packages/shared-utils/src/training-config.ts'),
+      },
+      {
+        find: /^@\/components\//,
+        replacement: `${path.resolve(__dirname, './src/components')}/`,
+      },
+      {
+        find: /^@\/lib\//,
+        replacement: `${path.resolve(__dirname, './src/lib')}/`,
+      },
+      {
+        find: /^@\/hooks\//,
+        replacement: `${path.resolve(__dirname, './src/hooks')}/`,
+      },
+      {
+        find: /^@\//,
+        replacement: `${path.resolve(__dirname, './src')}/`,
+      },
+      {
+        find: '@shared',
+        replacement: path.resolve(__dirname, '../shared'),
+      },
+      {
+        find: '@assets',
+        replacement: path.resolve(__dirname, '../attached_assets'),
+      },
+    ],
   },
   server: {
     host: '0.0.0.0',

@@ -27,7 +27,7 @@ import {
   trainingHyperparamsSchema as sharedTrainingHyperparamsSchema,
   type TrainingHyperparams,
   type TrainingLrSchedulerType,
-} from '../../../../../../packages/shared-utils/src/training-config';
+} from '@alice/shared-utils/training-config';
 import {
   buildTrainingIdempotencyFingerprint,
   generateTrainingIdempotencyKey,

@@ -2,7 +2,7 @@ import { frontendLogger } from '@/lib/logger';
 import {
   parseTrainingHyperparamsJson as parseSharedTrainingHyperparamsJson,
   type TrainingHyperparams,
-} from '../../../../../packages/shared-utils/src/training-config';
+} from '@alice/shared-utils/training-config';
 
 export type TrainingHyperparamsPreset = 'safe' | 'standard' | 'large';
 

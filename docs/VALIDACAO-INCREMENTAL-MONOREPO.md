@@ -1,7 +1,7 @@
 # Validação Incremental do Monorepo
 
 **Author:** Fillipe Guerra  
-**Data:** 15 de Março de 2026
+**Data:** 17 de Março de 2026
 
 ## Objetivo
 
@@ -145,3 +145,7 @@ Exemplo resumido:
 - Se um workspace afetado não tiver mapeamento confiável de testes, `pnpm test` cai automaticamente para full.
 - Quando o detector estiver inseguro, ele executa full por design.
 - Nenhum fluxo local comum depende mais de `eslint .`, de `tsc --noEmit` no repositório inteiro ou de `vitest run` full para mudanças isoladas seguras.
+- O grafo formal do `@alice/frontend-service` passa a declarar `@alice/shared` e `@alice/shared-utils` como dependências reais de workspace.
+- Os imports do frontend para pacotes compartilhados ficam restritos a subpaths públicos, sem alias genérico para `packages/*/src`.
+- O `build` do frontend fica limitado ao `vite build`; a validação de tipos continua separada em `typecheck` para evitar retrabalho local.
+- O `lint` do frontend passa a usar cache próprio do ESLint em `.cache/eslint/frontend-service/`.
