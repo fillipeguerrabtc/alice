@@ -13,6 +13,10 @@
 - O detalhamento completo de execuções, validações e commits por rodada está no tracking canônico: `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
 - Este documento mantém o snapshot operacional consolidado da plataforma, sem replicar changelog extensivo por rodada.
 - Em caso de divergência entre relato histórico e estado de execução governado, prevalece o tracking canônico.
+- Rodada Chat 3 (17/03/2026): primeira fase segura de modularização em `@alice/shared` e `@alice/shared-utils`:
+  - `packages/shared/src/schema.ts` deixou de concentrar custom types e contratos JSONB/Zod puros; estes contratos passaram a módulos internos em `packages/shared/src/schema/`, mantendo `schema.ts` como facade pública canônica.
+  - `packages/shared-utils/src/index.ts` passou a reexportar barrels internos por domínio (`agentic`, `llm`, `observability`, `platform`, `runtime`, `trading`, `training`) sem migração ampla de consumidores.
+  - Mapa detalhado da rodada: `docs/MODULARIZACAO-SHARED-CHAT-3-2026-03-17.md`.
 - Rodada 13 (12/03/2026): hardening da migration `0108_qwen3_model_defaults.sql` no deploy:
   - Evidência operacional: job `Apply Database Schema (Drizzle)` falhou em produção com `ERROR: relation "trading_lora_jobs" does not exist`.
   - Causa raiz: migration usava nome legado `trading_lora_jobs` após unificação enterprise para `lora_jobs` na migration `0060_lora_jobs_unified_table.sql`.

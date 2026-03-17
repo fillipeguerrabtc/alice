@@ -13,42 +13,14 @@ import './rbac/types.js';
 
 export * from './logger.js';
 export * from './circuit-breaker.js';
-export * from './config.js';
 export * from './audit.js';
-export * from './metrics.js';
-export * from './health.js';
-export * from './async-context.js';
-export * from './tracing.js';
-export * from './express-hardening.js';
-export * from './feature-flags.js';
-export * from './feature-flags-storage.js';
-export * from './agentic-events.js';
-export * from './agentic-actions.js';
-export * from './prometheus.js';
-export * from './shutdown-manager.js';
-export * from './redis-cache-adapter.js';
-export * from './redis-queue.js';
-export * from './openapi.js';
-export * from './multi-tenant-validation.js';
-export * from './namespace-context-resolver.js';
-export * from './route-context-config.js';
-export * from './qdrant-client.js';
-export * from './gpu-client.js';
-export * from './training-dedup.js';
-export * from './training-auto-collect.js';
-export * from './session-auth.js';
-export * from './llm-models.js';
-export * from './llm-routing.js';
-export * from './llm/llm-gateway-client.js';
-export { TRADING_CHANNEL_PREFIX, TRADING_CHANNELS } from './trading-channels.js';
-export * from './trading-queues.js';
-export * from './training-queues.js';
-export * from './training-config.js';
-export * from './privacy.js';
-export * from './trading-microstructure.js';
-export * from './trading/llm-signal-schema.js';
-export * from './immutable-audit-ledger.js';
-export * from './runtime-announcements.js';
+export * from './observability/index.js';
+export * from './platform/index.js';
+export * from './agentic/index.js';
+export * from './runtime/index.js';
+export * from './training/index.js';
+export * from './llm/index.js';
+export * from './trading/index.js';
 
 export * as rbac from './rbac/index.js';
 export { 
@@ -88,11 +60,3 @@ export {
   ROLE_DESCRIPTIONS,
 } from './rbac/types.js';
 export { permissionCache, PermissionCache } from './rbac/cache.js';
-
-export type {
-  AgentEvent,
-  AgentEventPhase,
-  AgentEventStatus,
-  RedactionOptions,
-} from './agentic-events.js';
-export { redactSensitivePayload } from './agentic-events.js';
