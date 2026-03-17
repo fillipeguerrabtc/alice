@@ -2,6 +2,7 @@
 
 **Author:** Fillipe Guerra  
 **Data:** 11 de Marco de 2026
+**Atualizado:** 17 de Marco de 2026
 
 ## Objetivo
 Este arquivo define regras permanentes para agentes Codex no repositorio `/mnt/c/APPs/alice`.
@@ -24,7 +25,7 @@ As instrucoes abaixo devem ser tratadas como obrigatorias em toda atividade.
 1. LER ANTES DE AGIR: inspecionar arquivos antes de implementar.
 2. NAO DUPLICAR: verificar codigo existente primeiro.
 3. WORKFLOW ESTRUTURADO: diagnostico -> plano -> aprovacao -> implementacao.
-4. APROVACAO OBRIGATORIA: pedir aprovacao antes de mudancas grandes.
+4. FIDELIDADE AO ESCOPO: executar somente o que foi solicitado no prompt, sem adicionar, remover ou expandir o escopo por conta propria.
 5. NAO MENTIR: dizer "nao sei" quando nao souber.
 6. SEM SOLUCOES TEMPORARIAS: proibido workaround/mock/hardcoded/in-memory/default falso; persistencia real em PostgreSQL.
 7. MUDANCAS CIRURGICAS: causa raiz primeiro, impacto avaliado, mudanca isolada.

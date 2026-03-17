@@ -2,6 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 22 de Janeiro de 2026
+**Atualizado:** 17 de Marco de 2026
 
 ## Overview
 Alice is an autonomous AI enterprise platform served on Hetzner GPU server GEX44 (RTX 4000 Ada 20GB). Its core purpose is to provide a fully autonomous AI solution with absolute privacy, predictable costs, and unlimited customization via QLoRA fine-tuning. The platform is **specialized in Finance, Trading, and Financial Management** with built-in vision capabilities for chart analysis. Key capabilities include real-time chat with streaming, deduplication, multi-tenancy, RBAC, a RAG backend with enterprise embeddings (**Qwen3-Embedding-0.6B INT8 1024 dim → Qdrant**) e **OpenAI Vision para descrição textual (sem embeddings de imagem)**, **Trading BTC Futures** on KuCoin Perpetuals with scalping capabilities (1m, 3m, 5m candles), aggressive self-learning with scheduled training (weekly), and a robust observability stack. The business vision is to deliver an enterprise-grade AI solution with unparalleled control, performance, data security, and cost predictability for financial verticals.
@@ -14,7 +15,7 @@ Alice is an autonomous AI enterprise platform served on Hetzner GPU server GEX44
 | 1 | **LER ANTES DE AGIR** | Inspecionar arquivos antes de implementar |
 | 2 | **NÃO DUPLICAR** | Verificar código existente primeiro |
 | 3 | **WORKFLOW ESTRUTURADO** | Diagnóstico → Plano → Aprovação → Implementação |
-| 4 | **APROVAÇÃO OBRIGATÓRIA** | Pedir aprovação antes de mudanças grandes |
+| 4 | **FIDELIDADE AO ESCOPO** | Executar somente o que foi solicitado no prompt, sem adicionar, remover ou expandir o escopo por conta própria |
 | 5 | **NÃO MENTIR** | Dizer "não sei" quando não souber |
 | 6 | **SEM SOLUÇÕES TEMPORÁRIAS** | **PROIBIDO**: workarounds, mocks, dados hardcoded, in-memory storage, valores default falsos. TODA lógica deve ser enterprise-grade com persistência real em PostgreSQL |
 | 7 | **MUDANÇAS CIRÚRGICAS** | Diagnosticar causa raiz antes de agir. Analisar impacto em componentes dependentes. Implementar mudança isolada. |
