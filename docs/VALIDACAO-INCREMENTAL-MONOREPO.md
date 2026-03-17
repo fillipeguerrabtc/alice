@@ -2,6 +2,7 @@
 
 **Author:** Fillipe Guerra  
 **Data:** 17 de Março de 2026
+**Atualizado:** 17 de Março de 2026
 
 ## Objetivo
 
@@ -106,6 +107,7 @@ Exemplo resumido:
 
 - gate full obrigatório antes de criar tag
 - release executa `pnpm validate:enterprise`
+- `scripts/release-functions.sh` promove `packages/tsconfig.base.json` para o guard global de rebuild, evitando retag incorreto quando a base TypeScript compartilhada muda
 
 ## Cache
 
@@ -149,3 +151,5 @@ Exemplo resumido:
 - Os imports do frontend para pacotes compartilhados ficam restritos a subpaths públicos, sem alias genérico para `packages/*/src`.
 - O `build` do frontend fica limitado ao `vite build`; a validação de tipos continua separada em `typecheck` para evitar retrabalho local.
 - O `lint` do frontend passa a usar cache próprio do ESLint em `.cache/eslint/frontend-service/`.
+- A inteligência local de impacto já reconhece `@alice/shared` e `@alice/shared-utils` como dependências reais do `@alice/frontend-service`.
+- Ainda existe uma limitação fora do escopo deste chat no workflow de release: `biometrics-service`, por não ser workspace Node e não ter `package.json`, continua sujeito a rebuild conservador quando `packages/*` mudam.

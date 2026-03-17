@@ -50,6 +50,14 @@ else
   CHANGED_FILES="__NO_PREVIOUS_TAG__"
 fi
 
+# Promover entradas globais que o workflow consome de forma indireta.
+# `packages/tsconfig.base.json` altera a compilação de TODOS os packages TS
+# dentro das imagens Node, então precisa acionar o mesmo guard global usado
+# para `tsconfig.build.json` e demais contratos centrais.
+if echo "$CHANGED_FILES" | grep -qx "packages/tsconfig.base.json"; then
+  CHANGED_FILES="${CHANGED_FILES}"$'\n'"tsconfig.build.json"
+fi
+
 # ═══════════════════════════════════════════════════════════════════════
 # should_build() - Verifica se padrão de arquivo mudou
 # ═══════════════════════════════════════════════════════════════════════
