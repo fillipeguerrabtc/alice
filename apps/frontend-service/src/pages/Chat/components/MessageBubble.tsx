@@ -90,13 +90,17 @@ function parseThinkingContent(rawContent: string): ParsedThinkingContent {
   };
 }
 
-function buildThinkingCircularLines(lines: string[], slotCount: number): string[] {
+function buildThinkingDisplayLines(lines: string[], slotCount: number): string[] {
   if (slotCount <= 0) return [];
-  const slots = Array.from({ length: slotCount }, () => '');
-  lines.forEach((line, index) => {
-    slots[index % slotCount] = line;
-  });
-  return slots;
+  if (lines.length === 0) {
+    return Array.from({ length: slotCount }, () => '');
+  }
+
+  // Ao fechar um bloco de 3 linhas, limpa o painel e reinicia o streaming
+  // do Thinking sem misturar conteúdo novo com linhas antigas.
+  const batchStart = Math.floor((lines.length - 1) / slotCount) * slotCount;
+  const visibleLines = lines.slice(batchStart, batchStart + slotCount);
+  return Array.from({ length: slotCount }, (_, index) => visibleLines[index] ?? '');
 }
 
 const messageVariants = {
@@ -343,7 +347,7 @@ export function MessageBubble({
   const messageSources = (message.metadata?.sources as MessageSources | undefined) ?? undefined;
   const parsedRenderedContent = parseThinkingContent(renderedText);
   const parsedMessageContent = parseThinkingContent(message.content ?? '');
-  const thinkingCircularLines = buildThinkingCircularLines(parsedRenderedContent.thinkingLines, THINKING_DISPLAY_LINES);
+  const thinkingDisplayLines = buildThinkingDisplayLines(parsedRenderedContent.thinkingLines, THINKING_DISPLAY_LINES);
   const shouldShowThinkingBox = !isUser && isLast && isStreaming && parsedRenderedContent.thinkingLines.length > 0;
 
   // Se há actionResult no metadata, exibir apenas o resumo humano; suprimir JSON bruto no texto
@@ -433,8 +437,11 @@ export function MessageBubble({
                 {t('chat.streaming.thinking')}
               </p>
               <div className="space-y-1 font-mono text-[11px] leading-4 text-muted-foreground">
-                {thinkingCircularLines.map((line, index) => (
-                  <p key={`${message.id}-thinking-${index}`} className="h-4 overflow-hidden whitespace-nowrap text-ellipsis">
+                {thinkingDisplayLines.map((line, index) => (
+                  <p
+                    key={`${message.id}-thinking-${index}`}
+                    className="h-4 overflow-x-auto overflow-y-hidden whitespace-pre pr-2 [scrollbar-width:thin]"
+                  >
                     {line || ' '}
                   </p>
                 ))}

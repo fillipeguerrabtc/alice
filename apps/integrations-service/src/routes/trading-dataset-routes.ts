@@ -1,9 +1,10 @@
 import type { Express, Request, Response } from 'express';
 import { createLogger } from '@alice/logger';
-import { and, desc, eq, inArray, sql } from '@alice/database';
+import { and, desc, eq, sql } from '@alice/database';
 import { getDatabase, schema } from '@alice/database';
 import { extractAuthContext, requirePermission } from '@alice/shared-utils';
 import { z } from 'zod';
+import { buildTradingTrainingSourceCondition } from '../trading-training-data-scope.js';
 
 interface TradingAuthContext {
   tenantId: string;
@@ -22,11 +23,8 @@ interface TradingDatasetCreationResult {
   };
 }
 
-type TradingDatasetSourceType = typeof schema.trainingData.$inferSelect['sourceType'];
-
 interface RegisterTradingDatasetRoutesDeps {
   logger?: ReturnType<typeof createLogger>;
-  tradingSourceTypes: readonly TradingDatasetSourceType[];
   createTradingDatasetFromSignalSource: (params: {
     authContext: TradingAuthContext;
     signal: schema.TradingSignal;
@@ -105,6 +103,14 @@ export function registerTradingDatasetRoutes(
       }
 
       const db = getDatabase();
+      const tradingNamespace = await db.query.namespaces.findFirst({
+        where: and(
+          eq(schema.namespaces.tenantId, authContext.tenantId),
+          eq(schema.namespaces.slug, 'trading'),
+          eq(schema.namespaces.ativo, true),
+        ),
+        columns: { id: true },
+      });
       const rows = await db
         .select({
           status: schema.trainingData.status,
@@ -113,7 +119,7 @@ export function registerTradingDatasetRoutes(
         .from(schema.trainingData)
         .where(and(
           eq(schema.trainingData.tenantId, authContext.tenantId),
-          inArray(schema.trainingData.sourceType, [...deps.tradingSourceTypes]),
+          buildTradingTrainingSourceCondition(tradingNamespace?.id ?? null),
         ))
         .groupBy(schema.trainingData.status);
 
@@ -145,15 +151,23 @@ export function registerTradingDatasetRoutes(
         return;
       }
 
+      const db = getDatabase();
+      const tradingNamespace = await db.query.namespaces.findFirst({
+        where: and(
+          eq(schema.namespaces.tenantId, authContext.tenantId),
+          eq(schema.namespaces.slug, 'trading'),
+          eq(schema.namespaces.ativo, true),
+        ),
+        columns: { id: true },
+      });
       const limit = parsed.data.limit ?? 50;
       const offset = parsed.data.offset ?? 0;
       const whereClause = and(
         eq(schema.trainingData.tenantId, authContext.tenantId),
-        inArray(schema.trainingData.sourceType, [...deps.tradingSourceTypes]),
+        buildTradingTrainingSourceCondition(tradingNamespace?.id ?? null),
         parsed.data.status ? eq(schema.trainingData.status, parsed.data.status) : sql`1=1`,
       );
 
-      const db = getDatabase();
       const total = await db
         .select({ count: sql<number>`count(*)` })
         .from(schema.trainingData)
@@ -262,7 +276,7 @@ export function registerTradingDatasetRoutes(
         where: and(
           eq(schema.trainingData.id, req.params.id),
           eq(schema.trainingData.tenantId, authContext.tenantId),
-          inArray(schema.trainingData.sourceType, [...deps.tradingSourceTypes]),
+          buildTradingTrainingSourceCondition(parsed.data.namespaceId ?? null),
         ),
         columns: { id: true, sourceMetadata: true },
       });

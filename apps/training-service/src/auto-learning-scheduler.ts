@@ -21,7 +21,7 @@
 
 import crypto from 'node:crypto';
 import { createLogger } from '@alice/logger';
-import { eq, and, or, lt, desc, isNull, inArray, not } from '@alice/database';
+import { eq, and, or, lt, desc, isNull, not } from '@alice/database';
 import { getAllSystemConfig } from '@alice/database/system-config';
 import * as schema from '@alice/shared/schema';
 import type { Database } from '@alice/database';
@@ -29,6 +29,10 @@ import { getRedisClient, GPU_MANAGER_CONFIG } from '@alice/shared-utils';
 import { enqueueTrainingFineTuningRun } from './training-fine-tuning-queue.js';
 import { loadTrainingEnterpriseConfig } from './training-config.js';
 import { planCanonicalDatasetSelection } from './datasets/dataset-selection.js';
+import {
+  buildTradingTrainingSourceCondition,
+  isTradingTrainingRow,
+} from './trading-data-governance.js';
 import {
   getTenantInflightFineTuningJobsCount,
   loadTrainingGovernanceRuntimeConfig,
@@ -246,12 +250,11 @@ export async function collectTrainingData(tenantId?: string, namespaceId?: strin
 
   // Alinhado a prepareDatasetFromChatAndTrading: só contar exemplos ainda não usados em job (usedInJobId IS NULL).
   // Excluir sourceType trading (contado separadamente em tradingDataApprovedCount).
-  const TRADING_SOURCE_TYPES = ['trading_signal', 'trading_order', 'trading_postmortem', 'trading_demo'] as const;
   const trainingDataWhere = and(
     eq(schema.trainingData.status, 'approved'),
     eq(schema.trainingData.purpose, 'behavior_sft'),
     isNull(schema.trainingData.usedInJobId),
-    not(inArray(schema.trainingData.sourceType, [...TRADING_SOURCE_TYPES])),
+    not(buildTradingTrainingSourceCondition(namespaceId ?? null)),
     tenantId ? eq(schema.trainingData.tenantId, tenantId) : undefined,
     namespaceId
       ? or(
@@ -280,9 +283,8 @@ export async function collectTrainingData(tenantId?: string, namespaceId?: strin
     eq(schema.trainingData.status, 'approved'),
     eq(schema.trainingData.purpose, 'behavior_sft'),
     eq(schema.trainingData.isDuplicate, false),
-    inArray(schema.trainingData.sourceType, [...TRADING_SOURCE_TYPES]),
     tenantId ? eq(schema.trainingData.tenantId, tenantId) : undefined,
-    namespaceId ? eq(schema.trainingData.namespaceId, namespaceId) : undefined
+    namespaceId ? buildTradingTrainingSourceCondition(namespaceId) : undefined
   );
   const tradingApproved = namespaceId
     ? await db.query.trainingData.findMany({
@@ -292,9 +294,12 @@ export async function collectTrainingData(tenantId?: string, namespaceId?: strin
     : [];
   const tradingDataApprovedCount = tradingApproved.length;
 
-  const highRatedData = approvedData.filter((d: typeof schema.trainingData.$inferSelect) =>
-    (d.rating || 0) >= 4
-  );
+  const highRatedData = approvedData.filter((d: typeof schema.trainingData.$inferSelect) => {
+    if (isTradingTrainingRow(d, namespaceId ?? null)) {
+      return false;
+    }
+    return (d.rating || 0) >= 4;
+  });
 
   const qualityScore = approvedData.length > 0
     ? highRatedData.length / approvedData.length

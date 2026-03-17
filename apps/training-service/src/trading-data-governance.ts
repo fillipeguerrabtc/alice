@@ -1,11 +1,60 @@
-import { eq, inArray, sql, type SQL, schema } from '@alice/database';
+import { and, eq, inArray, or, sql, type SQL, schema } from '@alice/database';
+import {
+  TRADING_TRAINING_DOMAIN,
+  TRADING_TRAINING_EXTERNAL_SOURCE_TYPE,
+  TRADING_TRAINING_SOURCE_TYPES,
+} from '@alice/shared';
 
-export const TRADING_DATA_SOURCE_TYPES = [
-  'trading_signal',
-  'trading_order',
-  'trading_demo',
-  'trading_postmortem',
-] as const;
+export const TRADING_DATA_SOURCE_TYPES = TRADING_TRAINING_SOURCE_TYPES;
+
+type TradingTrainingRow = {
+  sourceType?: string | null;
+  namespaceId?: string | null;
+  inferredNamespaceId?: string | null;
+  inferredDomain?: string | null;
+};
+
+export function isTradingTrainingRow(row: TradingTrainingRow, namespaceId?: string | null): boolean {
+  const sourceType = row.sourceType ?? null;
+  if (TRADING_DATA_SOURCE_TYPES.includes(sourceType as (typeof TRADING_DATA_SOURCE_TYPES)[number])) {
+    return true;
+  }
+
+  if (sourceType !== TRADING_TRAINING_EXTERNAL_SOURCE_TYPE) {
+    return false;
+  }
+
+  if (row.inferredDomain === TRADING_TRAINING_DOMAIN) {
+    return true;
+  }
+
+  if (!namespaceId) {
+    return false;
+  }
+
+  return row.namespaceId === namespaceId || row.inferredNamespaceId === namespaceId;
+}
+
+export function buildTradingTrainingSourceCondition(namespaceId?: string | null): SQL<unknown> {
+  const externalCondition = namespaceId
+    ? and(
+        eq(schema.trainingData.sourceType, TRADING_TRAINING_EXTERNAL_SOURCE_TYPE),
+        or(
+          eq(schema.trainingData.namespaceId, namespaceId),
+          eq(schema.trainingData.inferredNamespaceId, namespaceId),
+          eq(schema.trainingData.inferredDomain, TRADING_TRAINING_DOMAIN),
+        ),
+      )
+    : and(
+        eq(schema.trainingData.sourceType, TRADING_TRAINING_EXTERNAL_SOURCE_TYPE),
+        eq(schema.trainingData.inferredDomain, TRADING_TRAINING_DOMAIN),
+      );
+
+  return or(
+    inArray(schema.trainingData.sourceType, [...TRADING_DATA_SOURCE_TYPES]),
+    externalCondition,
+  ) as SQL<unknown>;
+}
 
 export type TradingDataGovernancePolicy = {
   requireStrictApprovedDataForAutoEngine: boolean;
@@ -57,11 +106,10 @@ export function buildTradingDataEligibilityConditions(params: {
 }): SQL[] {
   const conditions: SQL[] = [
     eq(schema.trainingData.tenantId, params.tenantId),
-    eq(schema.trainingData.namespaceId, params.namespaceId),
     eq(schema.trainingData.status, 'approved'),
     eq(schema.trainingData.needsHumanReview, false),
     eq(schema.trainingData.isDuplicate, false),
-    inArray(schema.trainingData.sourceType, [...TRADING_DATA_SOURCE_TYPES]),
+    buildTradingTrainingSourceCondition(params.namespaceId),
   ];
 
   if (params.policy.enforceMinInferenceConfidence) {

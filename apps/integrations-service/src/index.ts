@@ -56,6 +56,7 @@ import type {
   TradingArbitrageConfig,
   TradingArbitrageExchange,
 } from '@alice/shared';
+import { TRADING_TRAINING_SOURCE_TYPES } from '@alice/shared';
 import { z } from 'zod';
 import { wiseService } from './wiseService.js';
 import { isWiseConfigured, getSandboxStatus, getProfileIdSafe, getWiseCircuitBreakerStatus, validateWiseWebhook, initWiseMetrics } from './wiseClient.js';
@@ -510,7 +511,7 @@ const {
 });
 
 /** Source types de trading em training_data (tabela universal). */
-const TRADING_SOURCE_TYPES = ['trading_signal', 'trading_order', 'trading_postmortem', 'trading_demo'] as const;
+const TRADING_SOURCE_TYPES = TRADING_TRAINING_SOURCE_TYPES;
 
 const {
   resolveTradingNamespaceId,
@@ -519,7 +520,6 @@ const {
   validateTenantNamespace,
 } = createTradingScopeProfileService({
   truncateText,
-  tradingSourceTypes: TRADING_SOURCE_TYPES,
 });
 
 const {
@@ -2152,7 +2152,6 @@ registerTradingSignalGenerationRoutes(app, {
 
 registerTradingDatasetRoutes(app, {
   logger,
-  tradingSourceTypes: TRADING_SOURCE_TYPES,
   createTradingDatasetFromSignalSource: (params) => createTradingDatasetFromSignalSource(params),
 });
 

@@ -72,6 +72,11 @@ import {
   type TrainingHyperparams,
 } from '../../../../packages/shared-utils/src/training-config';
 import {
+  TRADING_TRAINING_DOMAIN,
+  TRADING_TRAINING_EXTERNAL_SOURCE_TYPE,
+  TRADING_TRAINING_SOURCE_TYPES,
+} from '../../../../packages/shared/src/trading-training';
+import {
   parseTrainingHyperparamsConfig,
   TRAINING_SYSTEM_CONFIG_DEFAULTS,
   type TrainingHyperparamsPreset,
@@ -1284,8 +1289,30 @@ export default function Training() {
     return () => window.clearTimeout(tid);
   }, [postTrainingDialog.open, returnOrchestrator]);
 
-  const TRADING_SOURCE_TYPES = ['trading_signal', 'trading_order', 'trading_postmortem', 'trading_demo'] as const;
   const namespacesById = new Map((namespaces || []).map((ns) => [ns.id, ns.nome]));
+  const isTradingTrainingEntry = (entry: TrainingData): boolean => {
+    if (
+      entry.sourceType
+      && TRADING_TRAINING_SOURCE_TYPES.includes(entry.sourceType as typeof TRADING_TRAINING_SOURCE_TYPES[number])
+    ) {
+      return true;
+    }
+
+    if (entry.sourceType !== TRADING_TRAINING_EXTERNAL_SOURCE_TYPE) {
+      return false;
+    }
+
+    if ((entry.inferredDomain ?? '').toLowerCase() === TRADING_TRAINING_DOMAIN) {
+      return true;
+    }
+
+    const namespaceLabels = [entry.namespaceId, entry.inferredNamespaceId]
+      .map((id) => (id ? namespacesById.get(id) : null))
+      .filter((value): value is string => Boolean(value))
+      .map((value) => value.trim().toLowerCase());
+
+    return namespaceLabels.includes('trading');
+  };
   const activeJobsByScope = useMemo(() => {
     const scoped = allJobs
       .filter((job) => job.promotionStatus === 'active')
@@ -1307,7 +1334,7 @@ export default function Training() {
 
   const sourceOptions = Array.from(new Set(allData.map((d) => d.source))).sort();
   const rawSourceTypes = Array.from(new Set(allData.map((d) => d.sourceType).filter(Boolean) as string[])).sort();
-  const hasTradingData = rawSourceTypes.some((st) => TRADING_SOURCE_TYPES.includes(st as typeof TRADING_SOURCE_TYPES[number]));
+  const hasTradingData = allData.some((entry) => isTradingTrainingEntry(entry));
   const sourceTypeOptions = hasTradingData ? ['trading', ...rawSourceTypes] : rawSourceTypes;
 
   const filteredData = allData.filter((entry) => {
@@ -1316,7 +1343,7 @@ export default function Training() {
     if (sourceFilter !== 'all' && entry.source !== sourceFilter) return false;
     if (sourceTypeFilter !== 'all') {
       if (sourceTypeFilter === 'trading') {
-        if (!entry.sourceType || !TRADING_SOURCE_TYPES.includes(entry.sourceType as typeof TRADING_SOURCE_TYPES[number])) return false;
+        if (!isTradingTrainingEntry(entry)) return false;
       } else if (entry.sourceType !== sourceTypeFilter) {
         return false;
       }

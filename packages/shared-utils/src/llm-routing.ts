@@ -9,6 +9,7 @@
 
 import { createLogger } from './logger.js';
 import { getRedisClient } from './redis-cache-adapter.js';
+import { generateInternalAuthHeaders, isInternalAuthEnabled } from './rbac/middleware.js';
 
 const logger = createLogger('llm-routing');
 
@@ -16,6 +17,7 @@ const DEFAULT_CACHE_TTL_SECONDS = 60;
 const ENV_TRAINING_SERVICE_URL = process.env.TRAINING_SERVICE_URL?.trim() || null;
 const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET || '';
 const STRICT_BINDING_POLICY = process.env.LORA_STRICT_BINDING === 'true';
+const INTERNAL_LORA_READER_USER_ID = 'llm-routing-service';
 
 export interface LlmScopeContext {
   tenantId?: string;
@@ -214,12 +216,31 @@ async function fetchActiveAdapterFromTrainingService(
     if (context?.namespaceId) query.set('namespaceId', context.namespaceId);
     if (context?.agentId) query.set('agentId', context.agentId);
     const url = `${trainingServiceUrl}/api/training/lora/active${query.size > 0 ? `?${query.toString()}` : ''}`;
+    const internalHeaders = isInternalAuthEnabled()
+      ? generateInternalAuthHeaders({
+          userId: INTERNAL_LORA_READER_USER_ID,
+          tenantId: context?.tenantId,
+          role: 'super_admin',
+        })
+      : null;
 
     const response = await fetch(url, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
         'X-Internal-Api-Secret': INTERNAL_API_SECRET,
+        ...(internalHeaders ? {
+          'X-Internal-Signature': internalHeaders['x-internal-signature'],
+          'X-Internal-Timestamp': internalHeaders['x-internal-timestamp'],
+          'X-Internal-User-Id': internalHeaders['x-internal-user-id'],
+          'X-Internal-Role': internalHeaders['x-internal-role'],
+          ...(internalHeaders['x-internal-tenant-id']
+            ? { 'X-Internal-Tenant-Id': internalHeaders['x-internal-tenant-id'] }
+            : {}),
+          ...(internalHeaders['x-internal-custom-role-id']
+            ? { 'X-Internal-Custom-Role-Id': internalHeaders['x-internal-custom-role-id'] }
+            : {}),
+        } : {}),
       },
       signal: AbortSignal.timeout(5000),
     });

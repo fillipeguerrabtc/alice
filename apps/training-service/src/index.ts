@@ -1536,6 +1536,185 @@ function buildSignalAutoAssetKey(input: {
   return `${normalizedVenue}:${input.marketType}:${normalizedMargin}:${normalizedSymbol}`;
 }
 
+function inferInstrumentAssetsFromSymbol(symbol: string, marketType: SignalAutoMarketType): {
+  baseAsset: string | null;
+  quoteAsset: string | null;
+} {
+  const normalized = symbol.trim().toUpperCase();
+  if (normalized.includes('-')) {
+    const [baseAsset, quoteAsset] = normalized.split('-');
+    return {
+      baseAsset: baseAsset || null,
+      quoteAsset: quoteAsset || null,
+    };
+  }
+
+  if (marketType === 'futures') {
+    if (normalized.endsWith('USDTM')) {
+      return { baseAsset: normalized.slice(0, -5) || null, quoteAsset: 'USDT' };
+    }
+    if (normalized.endsWith('USDCM')) {
+      return { baseAsset: normalized.slice(0, -5) || null, quoteAsset: 'USDC' };
+    }
+  }
+
+  const commonQuotes = ['USDT', 'USDC', 'BTC', 'ETH', 'EUR', 'USD'] as const;
+  for (const quote of commonQuotes) {
+    if (normalized.endsWith(quote) && normalized.length > quote.length) {
+      return {
+        baseAsset: normalized.slice(0, -quote.length) || null,
+        quoteAsset: quote,
+      };
+    }
+  }
+
+  return { baseAsset: null, quoteAsset: null };
+}
+
+async function fetchTradingSymbolsForCatalog(params: {
+  tenantId: string;
+  userId: string | null;
+  marketType: SignalAutoMarketType;
+  marginMode?: 'cross' | 'isolated' | null;
+}): Promise<SignalAutoAsset[]> {
+  const internalHeaders = generateInternalAuthHeaders({
+    userId: params.userId ?? 'training-service',
+    tenantId: params.tenantId,
+    role: 'admin',
+  });
+  const query = new URLSearchParams({ marketType: params.marketType });
+  if (params.marketType === 'margin' && params.marginMode) {
+    query.set('marginMode', params.marginMode);
+  }
+
+  const response = await fetch(`${INTEGRATIONS_SERVICE_URL_FINAL}/api/integrations/trading/symbols?${query.toString()}`, {
+    method: 'GET',
+    headers: {
+      ...internalHeaders,
+      Accept: 'application/json',
+    },
+    signal: AbortSignal.timeout(20_000),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => '');
+    throw new Error(`Falha ao carregar catálogo de símbolos (${params.marketType}): ${errorText.slice(0, 200)}`);
+  }
+
+  const data = await response.json() as {
+    data?: {
+      symbols?: string[];
+      defaultSymbol?: string | null;
+    };
+  };
+  const symbols = Array.isArray(data?.data?.symbols) ? data.data.symbols : [];
+  const uniqueSymbols = Array.from(new Set([
+    ...symbols,
+    ...(data?.data?.defaultSymbol ? [data.data.defaultSymbol] : []),
+  ].map((value) => value.trim().toUpperCase()).filter((value) => value.length > 0)));
+
+  return uniqueSymbols.map((symbol) => ({
+    venue: 'kucoin',
+    symbol,
+    marketType: params.marketType,
+    marginMode: params.marketType === 'margin' ? (params.marginMode ?? 'cross') : undefined,
+  }));
+}
+
+async function ensureTradingInstrumentCatalogForSignalRun(params: {
+  tenantId: string;
+  userId: string | null;
+  marketTypes: SignalAutoMarketType[];
+  selectedAssets: SignalAutoAsset[];
+  selectAllAssets: boolean;
+}): Promise<number> {
+  const activeInstrumentCount = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(schema.tradingInstruments)
+    .where(and(
+      eq(schema.tradingInstruments.tenantId, params.tenantId),
+      eq(schema.tradingInstruments.isActive, true),
+    ));
+
+  const shouldSeedAllAssets = params.selectAllAssets && Number(activeInstrumentCount[0]?.count ?? 0) === 0;
+  const catalogAssets = new Map<string, SignalAutoAsset>();
+
+  for (const asset of params.selectedAssets) {
+    catalogAssets.set(buildSignalAutoAssetKey(asset), asset);
+  }
+
+  if (shouldSeedAllAssets) {
+    for (const marketType of params.marketTypes) {
+      if (marketType === 'margin') {
+        for (const marginMode of ['cross', 'isolated'] as const) {
+          const assets = await fetchTradingSymbolsForCatalog({
+            tenantId: params.tenantId,
+            userId: params.userId,
+            marketType,
+            marginMode,
+          });
+          for (const asset of assets) {
+            catalogAssets.set(buildSignalAutoAssetKey(asset), asset);
+          }
+        }
+        continue;
+      }
+
+      const assets = await fetchTradingSymbolsForCatalog({
+        tenantId: params.tenantId,
+        userId: params.userId,
+        marketType,
+      });
+      for (const asset of assets) {
+        catalogAssets.set(buildSignalAutoAssetKey(asset), asset);
+      }
+    }
+  }
+
+  const rows = Array.from(catalogAssets.values()).map((asset) => {
+    const inferredAssets = inferInstrumentAssetsFromSymbol(asset.symbol, asset.marketType);
+    return {
+      tenantId: params.tenantId,
+      venue: asset.venue,
+      venueType: 'cex' as const,
+      assetClass: 'crypto',
+      symbol: asset.symbol,
+      baseAsset: inferredAssets.baseAsset,
+      quoteAsset: inferredAssets.quoteAsset,
+      tradingHours: {},
+      fundingRules: {
+        marketType: asset.marketType,
+        marginMode: asset.marginMode ?? null,
+      },
+      isActive: true,
+    };
+  });
+
+  if (rows.length === 0) {
+    return 0;
+  }
+
+  await db.insert(schema.tradingInstruments)
+    .values(rows)
+    .onConflictDoUpdate({
+      target: [
+        schema.tradingInstruments.tenantId,
+        schema.tradingInstruments.venue,
+        schema.tradingInstruments.symbol,
+      ],
+      set: {
+        assetClass: 'crypto',
+        baseAsset: sql`excluded.base_asset`,
+        quoteAsset: sql`excluded.quote_asset`,
+        tradingHours: sql`excluded.trading_hours`,
+        fundingRules: sql`excluded.funding_rules`,
+        isActive: true,
+      },
+    });
+
+  return rows.length;
+}
+
 /** Atualiza status de um step no DB */
 async function updateAutoRunStep(
   runId: string,
@@ -2013,6 +2192,13 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
       marketType: asset.marketType,
       marginMode: asset.marginMode,
     })) as SignalAutoAsset[];
+    const syncedInstrumentCount = await ensureTradingInstrumentCatalogForSignalRun({
+      tenantId: run.tenantId,
+      userId: run.userId ?? null,
+      marketTypes,
+      selectedAssets,
+      selectAllAssets,
+    });
     const selectedAssetKeySet = new Set(
       selectedAssets.map((asset) => buildSignalAutoAssetKey({
         venue: asset.venue,
@@ -2321,6 +2507,7 @@ async function processSignalAutoRun(payload: z.infer<typeof tradingAutoSignalPay
         marketTypes,
         selectAllAssets,
         selectedAssets: selectAllAssets ? 'all' : selectedAssets.length,
+        syncedInstrumentCount,
         allowedModes: payload.autoMix ? 'auto_mix_all' : (payload.allowedModes ?? []),
         allowedOperationIntents,
         fetchLimit: candidateFetchLimit,

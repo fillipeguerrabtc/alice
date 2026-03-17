@@ -16,8 +16,9 @@ import type { DatasetSplitPolicy, TrainingDatasetManifest } from '@alice/shared'
 import { buildWalkForwardPlan } from '../trading/validation/walk-forward.js';
 import {
   buildTradingDataEligibilityConditions,
+  buildTradingTrainingSourceCondition,
+  isTradingTrainingRow,
   loadTradingDataGovernancePolicyFromEnv,
-  TRADING_DATA_SOURCE_TYPES,
 } from '../trading-data-governance.js';
 
 const logger = createLogger('training-canonical-dataset-selection');
@@ -416,10 +417,10 @@ async function loadEligibleRows(params: {
   if (params.options.inputRows) {
     const eligibleInputRows = params.options.inputRows.filter((row) => row.purpose === 'behavior_sft');
     const chatRows = eligibleInputRows.filter(
-      (row) => !TRADING_DATA_SOURCE_TYPES.includes((row.sourceType ?? '') as (typeof TRADING_DATA_SOURCE_TYPES)[number])
+      (row) => !isTradingTrainingRow(row, params.scope.namespaceId ?? null)
     );
     const tradingRows = eligibleInputRows.filter(
-      (row) => TRADING_DATA_SOURCE_TYPES.includes((row.sourceType ?? '') as (typeof TRADING_DATA_SOURCE_TYPES)[number])
+      (row) => isTradingTrainingRow(row, params.scope.namespaceId ?? null)
     );
     return {
       chatRows,
@@ -434,7 +435,7 @@ async function loadEligibleRows(params: {
       eq(schema.trainingData.purpose, 'behavior_sft'),
       eq(schema.trainingData.tenantId, params.scope.tenantId),
       isNull(schema.trainingData.usedInJobId),
-      not(inArray(schema.trainingData.sourceType, [...TRADING_DATA_SOURCE_TYPES])),
+      not(buildTradingTrainingSourceCondition(params.scope.namespaceId ?? null)),
       namespaceIdCondition(params.scope.namespaceId ?? null),
       agentIdCondition(params.scope.agentId ?? null),
       domainCondition(params.scope.domain ?? null)

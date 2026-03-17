@@ -11,6 +11,7 @@ Preservar rastreabilidade documental de relatórios históricos sem poluir o ín
 - Material sem precedência sobre os documentos canônicos em `docs/INDEX.md`.
 
 ## Relatórios arquivados
+- `docs/archive/relatorios/RELATORIO-IMPLEMENTACAO-CHAT-TRADING-REAL-E-LORA-2026-03-16.md`
 - `docs/archive/relatorios/RELATORIO-AUDITORIA-COPILOT-2026-02-25.md`
 - `docs/archive/relatorios/RELATORIO-CODE-REVIEW-CHAT-STREAMING-2026-02-26.md`
 - `docs/archive/relatorios/RELATORIO-CODE-REVIEW-ENTERPRISE.md`

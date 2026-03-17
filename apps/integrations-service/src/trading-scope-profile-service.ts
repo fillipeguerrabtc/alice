@@ -1,11 +1,10 @@
-import { getDatabase, schema, eq, and, inArray, desc, sql } from '@alice/database';
+import { getDatabase, schema, eq, and, desc, sql } from '@alice/database';
+import { buildTradingTrainingSourceCondition } from './trading-training-data-scope.js';
 
 type TradingProfileKind = 'analysis' | 'signal';
-type TradingSourceType = typeof schema.trainingData.$inferSelect.sourceType;
 
 export function createTradingScopeProfileService(deps: {
   truncateText: (input: string, maxLength: number) => string;
-  tradingSourceTypes: readonly TradingSourceType[];
 }) {
   async function resolveTradingNamespaceId(tenantId: string): Promise<string | null> {
     const db = getDatabase();
@@ -30,17 +29,15 @@ export function createTradingScopeProfileService(deps: {
       .from(schema.trainingData)
       .where(and(
         eq(schema.trainingData.tenantId, tenantId),
-        eq(schema.trainingData.namespaceId, namespaceId),
         eq(schema.trainingData.status, 'approved'),
-        inArray(schema.trainingData.sourceType, [...deps.tradingSourceTypes])
+        buildTradingTrainingSourceCondition(namespaceId)
       ));
 
     const samples = await db.query.trainingData.findMany({
       where: and(
         eq(schema.trainingData.tenantId, tenantId),
-        eq(schema.trainingData.namespaceId, namespaceId),
         eq(schema.trainingData.status, 'approved'),
-        inArray(schema.trainingData.sourceType, [...deps.tradingSourceTypes])
+        buildTradingTrainingSourceCondition(namespaceId)
       ),
       orderBy: [desc(schema.trainingData.criadoEm)],
       limit: 3,

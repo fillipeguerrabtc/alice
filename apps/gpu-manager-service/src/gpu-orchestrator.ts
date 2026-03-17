@@ -26,6 +26,7 @@
  */
 
 import { exec } from 'child_process';
+import { access, constants as fsConstants } from 'node:fs/promises';
 import { promisify } from 'util';
 import { createLogger } from '@alice/logger';
 
@@ -140,7 +141,8 @@ async function transitionTo(
  * Executa comando docker compose (timeout configurável)
  */
 async function runCompose(args: string[], timeoutMs = 60000): Promise<{ stdout: string; stderr: string }> {
-  const cmdWithEnvFile = buildComposeCommand(args, { includeEnvFile: true });
+  const envFileReadable = await isComposeEnvFileReadable();
+  const cmdWithEnvFile = buildComposeCommand(args, { includeEnvFile: envFileReadable });
   try {
     const { stdout, stderr } = await execAsync(cmdWithEnvFile, {
       timeout: timeoutMs,
@@ -149,6 +151,19 @@ async function runCompose(args: string[], timeoutMs = 60000): Promise<{ stdout: 
     return { stdout: stdout.trim(), stderr: stderr.trim() };
   } catch (error) {
     const primaryError = error instanceof Error ? error.message : String(error);
+    if (!envFileReadable) {
+      const cmdTrainingOnly = buildComposeCommand(args, { includeEnvFile: false, mode: 'training_only' });
+      logger.warn(
+        { cmd: cmdWithEnvFile, composeEnvFile: COMPOSE_ENV_FILE, error: primaryError },
+        'Compose sem env-file falhou; tentando compose dedicado do gpu-trainer',
+      );
+      return runComposeTrainingOnlyFallback({
+        cmdTrainingOnly,
+        timeoutMs,
+        primaryError,
+      });
+    }
+
     if (!isEnvFilePermissionError(primaryError)) {
       logger.error({ cmd: cmdWithEnvFile, error: primaryError }, 'Falha ao executar docker compose');
       throw new Error(`docker compose failed: ${primaryError}`);
@@ -160,11 +175,11 @@ async function runCompose(args: string[], timeoutMs = 60000): Promise<{ stdout: 
     );
 
     const cmdWithoutEnvFile = buildComposeCommand(args, { includeEnvFile: false });
-    try {
-      const { stdout, stderr } = await execAsync(cmdWithoutEnvFile, {
-        timeout: timeoutMs,
-        env: { ...process.env, DOCKER_HOST: process.env.DOCKER_HOST || 'unix:///var/run/docker.sock' },
-      });
+      try {
+        const { stdout, stderr } = await execAsync(cmdWithoutEnvFile, {
+          timeout: timeoutMs,
+          env: { ...process.env, DOCKER_HOST: process.env.DOCKER_HOST || 'unix:///var/run/docker.sock' },
+        });
       logger.info({ cmd: cmdWithoutEnvFile }, 'Fallback sem env-file executado com sucesso');
       return { stdout: stdout.trim(), stderr: stderr.trim() };
     } catch (fallbackError) {
@@ -182,28 +197,57 @@ async function runCompose(args: string[], timeoutMs = 60000): Promise<{ stdout: 
         { cmd: cmdTrainingOnly, error: fallbackMessage },
         'Fallback sem env-file ainda bloqueado; tentando compose dedicado do gpu-trainer',
       );
-
-      try {
-        const { stdout, stderr } = await execAsync(cmdTrainingOnly, {
-          timeout: timeoutMs,
-          env: { ...process.env, DOCKER_HOST: process.env.DOCKER_HOST || 'unix:///var/run/docker.sock' },
-        });
-        logger.info({ cmd: cmdTrainingOnly }, 'Fallback com compose dedicado do gpu-trainer executado com sucesso');
-        return { stdout: stdout.trim(), stderr: stderr.trim() };
-      } catch (trainingOnlyError) {
-        const trainingOnlyMessage = trainingOnlyError instanceof Error ? trainingOnlyError.message : String(trainingOnlyError);
-        logger.error(
-          {
-            cmd: cmdTrainingOnly,
-            error: trainingOnlyMessage,
-            previousError: fallbackMessage,
-            initialError: primaryError,
-          },
-          'Falha ao executar docker compose no fallback dedicado do gpu-trainer',
-        );
-        throw new Error(`docker compose failed: ${trainingOnlyMessage}`);
-      }
+      return runComposeTrainingOnlyFallback({
+        cmdTrainingOnly,
+        timeoutMs,
+        primaryError,
+        previousError: fallbackMessage,
+      });
     }
+  }
+}
+
+async function isComposeEnvFileReadable(): Promise<boolean> {
+  try {
+    await access(COMPOSE_ENV_FILE, fsConstants.R_OK);
+    return true;
+  } catch (error) {
+    logger.warn(
+      {
+        composeEnvFile: COMPOSE_ENV_FILE,
+        error: error instanceof Error ? error.message : String(error),
+      },
+      'Env-file do compose indisponivel para leitura; fallback sem env-file sera aplicado',
+    );
+    return false;
+  }
+}
+
+async function runComposeTrainingOnlyFallback(params: {
+  cmdTrainingOnly: string;
+  timeoutMs: number;
+  primaryError: string;
+  previousError?: string;
+}): Promise<{ stdout: string; stderr: string }> {
+  try {
+    const { stdout, stderr } = await execAsync(params.cmdTrainingOnly, {
+      timeout: params.timeoutMs,
+      env: { ...process.env, DOCKER_HOST: process.env.DOCKER_HOST || 'unix:///var/run/docker.sock' },
+    });
+    logger.info({ cmd: params.cmdTrainingOnly }, 'Fallback com compose dedicado do gpu-trainer executado com sucesso');
+    return { stdout: stdout.trim(), stderr: stderr.trim() };
+  } catch (trainingOnlyError) {
+    const trainingOnlyMessage = trainingOnlyError instanceof Error ? trainingOnlyError.message : String(trainingOnlyError);
+    logger.error(
+      {
+        cmd: params.cmdTrainingOnly,
+        error: trainingOnlyMessage,
+        previousError: params.previousError,
+        initialError: params.primaryError,
+      },
+      'Falha ao executar docker compose no fallback dedicado do gpu-trainer',
+    );
+    throw new Error(`docker compose failed: ${trainingOnlyMessage}`);
   }
 }
 

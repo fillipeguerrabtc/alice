@@ -7462,6 +7462,102 @@ function parseTradingDataSourcesFromText(text: string): {
   };
 }
 
+const CONTEXTUAL_TRADING_SIGNAL_PATTERNS = [
+  /\b(sinal|setup|setups|oportunidade|oportunidades|entrada|entradas)\b/i,
+  /\b(scalping|day\s*trade|swing|position|trend|breakout|momentum|range|arbitrage|arbitragem)\b/i,
+  /\b(gerar?|gere|criar?|crie|buscar?|busque|encontrar?|encontre)\b.*\b(sinal|oportunidade|setup)\b/i,
+] as const;
+
+const CONTEXTUAL_TRADING_ANALYSIS_PATTERNS = [
+  /\b(an[aá]lise|analise|cen[aá]rio|contexto|leitura|mercado)\b/i,
+  /\b(pre[çc]o|cota[çc][ãa]o|price|funding|open\s+interest|order\s*book|volatilidade)\b/i,
+  /\b(ajuda|apoio)\b.*\b(trading|mercado|cripto|crypto|btc|bitcoin|futures?)\b/i,
+] as const;
+
+function extractTradingSymbolFromText(text: string): string | undefined {
+  const match = text.match(/\b([a-z]{2,10}[-_/][a-z]{2,10}|[a-z]{6,12})\b/i);
+  if (!match) return undefined;
+
+  const raw = match[1].trim();
+  if (!raw.includes('-') && !raw.includes('/') && raw.length < 6) {
+    return undefined;
+  }
+
+  return raw.replace('/', '-').toUpperCase();
+}
+
+function detectTradingMarketSelection(
+  text: string,
+): { marketType?: 'spot' | 'margin' | 'futures'; marginMode?: 'cross' | 'isolated' } {
+  const lower = text.toLowerCase();
+  const isSpot = /\bspot\b|\bà vista\b|\bavista\b|\bmercado spot\b/.test(lower);
+  const isMargin = /\bmargem\b|\bmargin\b/.test(lower);
+  const isFutures = /\bfuture\b|\bfutures\b|\bperp\b|\bperpetual\b|\bperpétuo\b|\bperpetuo\b/.test(lower);
+  const isIsolated = /\bisolad[ao]\b|\bisolated\b/.test(lower);
+  const isCross = /\bcross\b|\bcruzad[ao]\b/.test(lower);
+
+  let marketType: 'spot' | 'margin' | 'futures' | undefined;
+  if (isMargin) {
+    marketType = 'margin';
+  } else if (isSpot) {
+    marketType = 'spot';
+  } else if (isFutures) {
+    marketType = 'futures';
+  }
+
+  let marginMode: 'cross' | 'isolated' | undefined;
+  if (marketType === 'margin') {
+    marginMode = isIsolated ? 'isolated' : (isCross ? 'cross' : undefined);
+  }
+
+  return { marketType, marginMode };
+}
+
+function isTradingConversationContext(params: {
+  agentSlug?: string | null;
+  agentName?: string | null;
+}): boolean {
+  const slug = (params.agentSlug ?? '').trim().toLowerCase();
+  const name = (params.agentName ?? '').trim().toLowerCase();
+  return slug === 'trading' || name.includes('trading');
+}
+
+function buildContextualTradingCommand(params: {
+  message: string;
+  agentSlug?: string | null;
+  agentName?: string | null;
+}): ParsedTradingCommand | null {
+  if (!isTradingConversationContext(params)) {
+    return null;
+  }
+
+  const message = params.message.trim();
+  if (!message) return null;
+
+  const normalized = message.toLowerCase();
+  const marketSelection = detectTradingMarketSelection(message);
+  const symbol = extractTradingSymbolFromText(message);
+  const analysisLike = CONTEXTUAL_TRADING_ANALYSIS_PATTERNS.some((pattern) => pattern.test(message));
+  const signalLike = CONTEXTUAL_TRADING_SIGNAL_PATTERNS.some((pattern) => pattern.test(message));
+  const explicitTradingMention = /\b(trading|trade|mercado|cripto|crypto|btc|bitcoin|eth|sol|xrp|bnb|futures?)\b/i.test(message);
+
+  if (!analysisLike && !signalLike && !explicitTradingMention && !normalized.includes('agente trading')) {
+    return null;
+  }
+
+  const type: TradingCommandType = signalLike ? 'generate_signal' : 'analysis';
+  return {
+    type,
+    isTrading: true,
+    rawText: message,
+    confidence: signalLike ? 0.78 : 0.72,
+    symbol,
+    marketType: marketSelection.marketType,
+    marginMode: marketSelection.marginMode,
+    matchedPattern: signalLike ? 'contextual_trading_signal' : 'contextual_trading_analysis',
+  };
+}
+
 const TRADING_COMMAND_TIMEOUT_MS = 90000;
 const TRADING_POSITION_LOOKUP_TIMEOUT_MS = 20000;
 
@@ -8020,6 +8116,101 @@ async function executeTradingCommand(
   } finally {
     clearTimeout(timeoutId);
   }
+}
+
+function formatTradingCommandResponse(
+  command: ParsedTradingCommand,
+  description: string,
+  result: TradingCommandResult
+): string {
+  if (!result.success) {
+    return `Falha ao executar comando de trading (${description}): ${result.error || 'erro desconhecido'}.`;
+  }
+
+  if (command.type === 'generate_signal') {
+    const payload = result.data as {
+      data?: {
+        id?: string;
+        signalType?: string;
+        symbol?: string;
+        confidence?: number;
+        metadata?: Record<string, unknown>;
+      };
+      validationStatus?: string;
+      universeSelection?: { source?: string; symbolsEvaluated?: number; candidatesEvaluated?: number };
+      signalGeneration?: { stateCategory?: string; reasonHuman?: string };
+    };
+    const signal = payload?.data;
+    const metadata = (signal?.metadata ?? {}) as Record<string, unknown>;
+    const confidence = typeof signal?.confidence === 'number'
+      ? `${(signal.confidence * 100).toFixed(0)}%`
+      : 'N/A';
+    const validationStatus = payload?.validationStatus || 'pending';
+    const tradeSummary = typeof metadata.tradeSummary === 'string' ? metadata.tradeSummary : null;
+    const reasoning = typeof metadata.reasoning === 'string' ? metadata.reasoning : null;
+    const generationReason = payload?.signalGeneration?.reasonHuman ?? null;
+    const universeSummary = payload?.universeSelection?.source === 'universe_candidates'
+      ? `Varredura real de ${payload?.universeSelection?.symbolsEvaluated ?? 0} ativos e ${payload?.universeSelection?.candidatesEvaluated ?? 0} candidates.`
+      : 'Execução com símbolo solicitado ou default operacional.';
+
+    return [
+      `Sinal IA${signal?.symbol ? ` para ${signal.symbol}` : ''}: ${signal?.signalType || 'indefinido'} com confiança ${confidence}.`,
+      `Validação: ${validationStatus}.`,
+      universeSummary,
+      tradeSummary ? `Plano: ${tradeSummary}` : null,
+      reasoning ? `Racional: ${reasoning}` : generationReason ? `Racional: ${generationReason}` : null,
+      signal?.id ? `ID do sinal: ${signal.id}.` : null,
+    ].filter(Boolean).join('\n');
+  }
+
+  if (command.type === 'analysis') {
+    const payload = result.data as {
+      data?: { overallSignal?: string; confidence?: number; currentPrice?: number };
+      consensus?: {
+        overallSignal?: string;
+        confidence?: number;
+        alignedTimeframes?: string[];
+        agreementRatio?: number;
+      };
+      tradePlan?: {
+        entry?: number;
+        stopLoss?: number;
+        takeProfit?: number;
+        riskRewardRatio?: number;
+      };
+      profile?: { timeframes?: string[]; dataSources?: Record<string, boolean> };
+      sources?: {
+        trainingData?: { totalApproved?: number };
+        news?: { results?: unknown[] };
+      };
+    };
+    const data = payload?.data ?? {};
+    const consensus = payload?.consensus;
+    const tradePlan = payload?.tradePlan ?? {};
+    const confidenceRaw = consensus?.confidence ?? data.confidence;
+    const confidence = typeof confidenceRaw === 'number'
+      ? `${(confidenceRaw * 100).toFixed(0)}%`
+      : 'N/A';
+    const agreementRatio = typeof consensus?.agreementRatio === 'number'
+      ? `${(consensus.agreementRatio * 100).toFixed(0)}%`
+      : 'N/A';
+    const timeframes = payload?.profile?.timeframes?.join(', ') || '5m';
+    const trainingSamples = payload?.sources?.trainingData?.totalApproved ?? 0;
+    const newsCount = Array.isArray(payload?.sources?.news?.results) ? payload.sources.news.results.length : 0;
+
+    return [
+      `Análise técnica${command.symbol ? ` de ${command.symbol}` : ''} concluída em modo real.`,
+      `Consenso: ${consensus?.overallSignal ?? data.overallSignal ?? 'indefinido'} com confiança ${confidence} e acordo ${agreementRatio}.`,
+      `Timeframes: ${timeframes}.`,
+      typeof data.currentPrice === 'number' ? `Preço atual: ${data.currentPrice}.` : null,
+      tradePlan.entry !== undefined || tradePlan.stopLoss !== undefined || tradePlan.takeProfit !== undefined
+        ? `Plano sugerido: entrada ${tradePlan.entry ?? 'N/A'}, stop ${tradePlan.stopLoss ?? 'N/A'}, alvo ${tradePlan.takeProfit ?? 'N/A'}, RR ${tradePlan.riskRewardRatio ?? 'N/A'}.`
+        : null,
+      `Fontes aplicadas: training=${trainingSamples}, news=${newsCount}.`,
+    ].filter(Boolean).join('\n');
+  }
+
+  return `Comando de trading executado: ${description}.`;
 }
 
 async function callIntegrationsService<T>(params: {
@@ -12706,8 +12897,14 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
 
       const pendingAgenticDetection = detectAgenticTaskRequest(userMessageContent, agenticDetectors);
       const pendingPaymentCommand = detectPaymentCommand(userMessageContent, agenticDetectors);
+      const pendingTradingCommand = isTradingCommandWithDetectors(userMessageContent, agenticDetectors)
+        || Boolean(buildContextualTradingCommand({
+          message: userMessageContent,
+          agentSlug: conversation?.agent?.slug ?? null,
+          agentName: conversation?.agent?.preferredName ?? conversation?.agent?.nome ?? null,
+        }));
       if (
-        isTradingCommandWithDetectors(userMessageContent, agenticDetectors)
+        pendingTradingCommand
         || pendingAgenticDetection.isTaskRequest
         || Boolean(pendingPaymentCommand)
       ) {
@@ -12740,8 +12937,16 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       }
     }
 
-    if (isTradingCommandWithDetectors(userMessageContent, agenticDetectors)) {
-      const parsedCommand = parseTradingCommand(userMessageContent);
+    const isExplicitTradingCommand = isTradingCommandWithDetectors(userMessageContent, agenticDetectors);
+    const parsedCommand = isExplicitTradingCommand
+      ? parseTradingCommand(userMessageContent)
+      : buildContextualTradingCommand({
+          message: userMessageContent,
+          agentSlug: conversation?.agent?.slug ?? null,
+          agentName: conversation?.agent?.preferredName ?? conversation?.agent?.nome ?? null,
+        });
+
+    if (parsedCommand) {
       const isNonExecutingTrading = [
         'generate_signal',
         'analysis',
@@ -12779,7 +12984,9 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       }
       const conversationState = await getOrCreateConversationState(conversationId);
       const approvalPolicy = (conversationState.approvalPolicy ?? 'never_confirm') as ConversationApprovalPolicy;
-      const validation = validateCommand(parsedCommand);
+      const validation = isExplicitTradingCommand
+        ? validateCommand(parsedCommand)
+        : { valid: true, missingFields: [] as string[] };
 
       if (!validation.valid) {
         const hint = getValidationHint(parsedCommand.type, validation.missingFields, 'pt');
@@ -12905,30 +13112,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       try {
         const result = await executeTradingCommand(userId, tenantId, parsedCommand, conversation?.agentId ?? undefined);
         const description = getCommandDescription(parsedCommand, 'pt');
-        let responseContent: string;
-        if (result.success && parsedCommand.type === 'generate_signal') {
-          const payload = result.data as {
-            data?: { id?: string; signalType?: string; symbol?: string; confidence?: number };
-            validationStatus?: string;
-            universeSelection?: { source?: string; symbolsEvaluated?: number };
-          };
-          const signal = payload?.data;
-          const confidence = typeof signal?.confidence === 'number'
-            ? `${(signal.confidence * 100).toFixed(0)}%`
-            : 'N/A';
-          const validationStatus = payload?.validationStatus || 'pending';
-          const signalId = signal?.id ? ` ID: ${signal.id}.` : '';
-          const universeNote = payload?.universeSelection?.source === 'universe_candidates'
-            ? ` Selecionado após varredura de ${payload?.universeSelection?.symbolsEvaluated ?? 0} ativos.`
-            : '';
-          responseContent = `Sinal gerado${signal?.symbol ? ` para ${signal.symbol}` : ''}: ` +
-            `${signal?.signalType || 'indefinido'} com confiança ${confidence}. ` +
-            `Validação: ${validationStatus}.${signalId}${universeNote}`;
-        } else {
-          responseContent = result.success
-            ? `Comando de trading executado: ${description}.`
-            : `Falha ao executar comando de trading (${description}): ${result.error || 'erro desconhecido'}.`;
-        }
+        const responseContent = formatTradingCommandResponse(parsedCommand, description, result);
 
         const [assistantMessage] = await db.insert(schema.messages).values({
           conversationId,
