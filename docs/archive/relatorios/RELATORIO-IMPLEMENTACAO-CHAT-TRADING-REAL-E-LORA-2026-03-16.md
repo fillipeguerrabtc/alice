@@ -106,3 +106,9 @@ Os sintomas observados eram:
 - Resolucao de LoRA ativo funcional entre servicos internos.
 - Primeiro treinamento de Trading desbloqueado operacionalmente no ambiente de producao.
 - Auto-runs de Trading com bootstrap de catalogo de instrumentos quando necessario.
+
+## Atualizacao de CI - 17 de Marco de 2026
+- A CI identificou uma regressao nos testes do `gpu-orchestrator` apos o hardening do preflight de leitura do `env-file`.
+- Causa raiz: o preflight via `access()` tratava qualquer erro de leitura como motivo para remover `--env-file` antes da execucao do `docker compose`, incluindo cenarios de teste em que o arquivo nao existe localmente.
+- Impacto: os testes esperavam a primeira tentativa com `--env-file` e fallback apenas quando o erro real do compose fosse `permission denied`.
+- Correcao aplicada: o preflight agora so pula o `--env-file` quando recebe erro de permissao real (`EACCES` ou `EPERM`). Para `ENOENT` ou outros erros, a validacao antecipada e ignorada e o compose continua sendo executado com `--env-file`, preservando o contrato esperado pela FSM e pelos testes.

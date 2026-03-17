@@ -141,7 +141,8 @@ async function transitionTo(
  * Executa comando docker compose (timeout configurável)
  */
 async function runCompose(args: string[], timeoutMs = 60000): Promise<{ stdout: string; stderr: string }> {
-  const envFileReadable = await isComposeEnvFileReadable();
+  const envFileStrategy = await resolveComposeEnvFileStrategy();
+  const envFileReadable = envFileStrategy !== 'skip_env_file';
   const cmdWithEnvFile = buildComposeCommand(args, { includeEnvFile: envFileReadable });
   try {
     const { stdout, stderr } = await execAsync(cmdWithEnvFile, {
@@ -207,11 +208,22 @@ async function runCompose(args: string[], timeoutMs = 60000): Promise<{ stdout: 
   }
 }
 
-async function isComposeEnvFileReadable(): Promise<boolean> {
+async function resolveComposeEnvFileStrategy(): Promise<'use_env_file' | 'skip_env_file'> {
   try {
     await access(COMPOSE_ENV_FILE, fsConstants.R_OK);
-    return true;
+    return 'use_env_file';
   } catch (error) {
+    if (!isAccessPermissionDeniedError(error)) {
+      logger.debug?.(
+        {
+          composeEnvFile: COMPOSE_ENV_FILE,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Preflight de legibilidade do env-file sera ignorado; compose validara o caminho em runtime',
+      );
+      return 'use_env_file';
+    }
+
     logger.warn(
       {
         composeEnvFile: COMPOSE_ENV_FILE,
@@ -219,8 +231,17 @@ async function isComposeEnvFileReadable(): Promise<boolean> {
       },
       'Env-file do compose indisponivel para leitura; fallback sem env-file sera aplicado',
     );
+    return 'skip_env_file';
+  }
+}
+
+function isAccessPermissionDeniedError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
     return false;
   }
+
+  const code = 'code' in error ? error.code : undefined;
+  return code === 'EACCES' || code === 'EPERM';
 }
 
 async function runComposeTrainingOnlyFallback(params: {
