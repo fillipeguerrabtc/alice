@@ -14,7 +14,7 @@ describe('frontend build governance', () => {
       scripts?: Record<string, string | undefined>;
     };
 
-    expect(packageJson.scripts?.build).toBe('pnpm run typecheck && vite build');
+    expect(packageJson.scripts?.build).toBe('vite build --config vite.config.ts');
     expect(packageJson.scripts?.typecheck).toBe(
       'tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json',
     );

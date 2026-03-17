@@ -16,8 +16,13 @@ function openApiPathToExpressPath(pathname: string): string {
 }
 
 function loadExpressRouteSignatures(): Set<string> {
-  const indexPath = path.join(process.cwd(), 'apps', 'chat-service', 'src', 'index.ts');
-  const source = readFileSync(indexPath, 'utf-8');
+  const chatSrcDir = path.join(process.cwd(), 'apps', 'chat-service', 'src');
+  const source = [
+    path.join(chatSrcDir, 'index.ts'),
+    path.join(chatSrcDir, 'chat-operational-routes.ts'),
+  ]
+    .map((filePath) => readFileSync(filePath, 'utf-8'))
+    .join('\n');
   const routeRegex = /app\.(get|post|patch|delete)\('([^']+)'/g;
 
   const signatures = new Set<string>();
