@@ -27,6 +27,7 @@ Consolidar as convencoes permanentes de engenharia, arquitetura, documentacao e 
 - Nao usar workarounds, mocks, hardcoded, placeholders ou persistencia falsa.
 - Priorizar causa raiz, impacto conhecido e mudanca isolada.
 - Manter TypeScript strict, zero `any` deliberado e logging padrao com Pino.
+- Separar responsabilidades da pipeline: CI valida qualidade, Release publica artefatos aprovados sem repetir o gate do CI e Deploy implanta os artefatos publicados.
 - Validar continuamente e fechar cada bloco com zero erros e zero warnings.
 - Manter documentacao em Portugues Brasileiro e seguir docs oficiais.
 - Conferir secrets e variaveis existentes antes de adicionar configuracoes novas.
@@ -52,8 +53,10 @@ Consolidar as convencoes permanentes de engenharia, arquitetura, documentacao e 
 
 ## Fechamento obrigatorio
 
-- Validar o escopo alterado em sequencia: typecheck, testes, lint e build.
-- Corrigir todos os erros e warnings antes de encerrar o bloco.
+- Em mudancas exclusivamente documentais, validar somente o conteudo e a consistencia do que foi alterado; nao executar typecheck, testes, lint ou build de codigo.
+- Em mudancas de codigo, executar typecheck, testes, lint e build somente no escopo alterado.
+- Executar validacao full apenas quando a necessidade estiver explicita pelo escopo, impacto ou dependencia cruzada.
+- Corrigir todos os erros e warnings das validacoes executadas antes de encerrar o bloco.
 - Atualizar a documentacao necessaria em Portugues Brasileiro com `Author` e data atual.
 - Criar commit consolidado em English.
 - Nao realizar push sem comando explicito do usuario.

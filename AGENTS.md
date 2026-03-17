@@ -38,8 +38,11 @@ Se houver conflito entre documentos do mesmo nivel, prevalece o mais especifico 
 
 ## Encerramento obrigatorio
 
-- Validar o que foi modificado de forma sequencial: typecheck, testes, lint e build.
-- Corrigir integralmente erros e warnings, inclusive nao bloqueantes.
+- Em mudancas exclusivamente documentais, validar somente o conteudo e a consistencia do que foi alterado; nao executar typecheck, testes, lint ou build de codigo.
+- Em mudancas de codigo, executar typecheck, testes, lint e build somente no escopo alterado.
+- Executar validacao full apenas quando a necessidade estiver explicita pelo escopo, impacto ou dependencia cruzada.
+- CI valida qualidade; Release publica artefatos aprovados sem repetir o gate de qualidade do CI; Deploy implanta os artefatos publicados.
+- Corrigir integralmente erros e warnings das validacoes executadas, inclusive nao bloqueantes.
 - Atualizar a documentacao impactada em Portugues Brasileiro com `Author` e data atual.
 - Criar commit consolidado em English.
 - Nunca fazer push automatico.
