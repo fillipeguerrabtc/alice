@@ -1,240 +1,84 @@
-# Observability Service - Alice Enterprise Platform
+# Observability Service
 
-**Autor:** Fillipe Guerra  
-**Data:** 07 de Março de 2026
-**Versão:** 3.3.0 - DR offsite criptografado + verificação operacional
+**Author:** Fillipe Guerra
+**Data:** 18 de Marco de 2026
+**Atualizado:** 18 de Marco de 2026
 
-Stack de observabilidade **SEPARADO e INDEPENDENTE** para garantir monitoramento mesmo se o sistema principal travar.
+## Escopo local
 
-**Contexto:** Este é o serviço de observabilidade dos 36 containers da plataforma Alice Enterprise (8 infraestrutura + 8 Alice + 14 observability + 6 GPU + 1 backup).
+Este README cobre apenas o subsistema em `apps/observability-service`: a API HTTP de observabilidade, o compose local desta pasta e os arquivos locais de dashboards, datasources e regras usados durante desenvolvimento e troubleshooting.
 
-## Componentes
+Arquitetura global, operacao da stack `OBSERVABILITY`, release e deploy ficam nos SSOTs de `docs/`.
 
-| Componente | Porta | Tecnologia | Licença | Função |
-|------------|-------|------------|---------|--------|
-| Prometheus | 9090 | Prometheus 3.8.1 | Apache 2.0 | Coleta de métricas |
-| Grafana | 3000 | Grafana OSS 12.3.2 | AGPL 3.0 | Dashboards e alertas |
-| Jaeger | 16686 | Jaeger 2.13.0 | Apache 2.0 | Distributed tracing |
-| OTel Collector | 4317/4318 | OpenTelemetry Collector 0.142.0 | Apache 2.0 | Instrumentação |
-| Langfuse Web | 3006 | Langfuse 3.140.0 | MIT | Métricas LLM (UI) |
-| Langfuse Worker | interno | Langfuse 3.140.0 | MIT | Processamento assíncrono/migrations |
-| Langfuse DB | 5433 | PostgreSQL 16 | PostgreSQL | Persistência Langfuse |
-| Health Checker | 3007 | Node.js/Express | - | Status do stack |
-| Vector | 8686 | Vector 0.51.1 | MPL 2.0 | Agregação de logs → Loki (metrics expostas para Prometheus) |
-| node-exporter | interno | node-exporter 1.8.2 | Apache 2.0 | Métricas do host |
+## SSOT relacionado
 
-> **NOTA 01/01/2026**: Alertmanager removido. Alertas gerenciados via **Grafana Alerting**.
-| cadvisor | 9101 | cadvisor 0.49.1 | Apache 2.0 | Métricas de containers |
+| Assunto | Documento |
+| --- | --- |
+| observabilidade da plataforma | [docs/operations/observability.md](../../docs/operations/observability.md) |
+| deploy da stack oficial | [docs/operations/deploy.md](../../docs/operations/deploy.md) |
+| provisionamento Grafana em `infra/` | [infra/observability/grafana/README.md](../../infra/observability/grafana/README.md) |
 
-## Métricas LLM Específicas
+## O que existe nesta pasta
 
-| Métrica | Descrição | Importância |
-|---------|-----------|-------------|
-| Token Usage | Tokens entrada/saída por request | Custo e otimização |
-| TTFT | Time to First Token | Experiência do usuário |
-| Request Latency | Latência total da resposta | Performance |
-| Error Rate | Taxa de falhas e timeouts | Confiabilidade |
-| Cost per Request | Custo por chamada de modelo | Budget |
-| RAG Retrieval Time | Tempo de busca vetorial | Qualidade RAG |
+| Caminho | Papel local |
+| --- | --- |
+| `src/index.ts` | sobe a API HTTP, Swagger, metricas e middlewares de autenticacao |
+| `src/observability-*.ts` | rotas e logica de health, metricas, admin, bootstrap e backup |
+| `config/grafana/dashboards/` | dashboards fonte usados no compose local e como base de sincronizacao |
+| `config/grafana/provisioning/` | datasources e provisioning do Grafana local desta pasta |
+| `config/prometheus/` | scrape config e alert rules locais |
+| `config/otel/` | configuracao local do OpenTelemetry Collector |
+| `docker-compose.yml` | stack local de desenvolvimento desta pasta |
 
-## Deploy
+## Comandos locais
 
-### Produção (100% Automático via GitHub Actions)
-
-**O deploy é totalmente automatizado.** Ao fazer push para a branch `main`:
-
-1. GitHub Actions faz build das imagens Docker
-2. Push para GitHub Container Registry (GHCR)
-3. SSH para Hetzner VM
-4. Docker Compose inicia todos os serviços
-5. Health checks validam o stack
-
-**Nenhum comando manual é necessário em produção.**
-
-### Desenvolvimento Local (apenas para testes)
+Execute a partir de `apps/observability-service`:
 
 ```bash
-# Copiar variáveis de ambiente
-cp .env.example .env
-
-# Iniciar stack completo
-cd apps/observability-service
-docker-compose up -d
-
-# Verificar status
-docker-compose ps
-
-# Ver logs
-docker-compose logs -f
-
-# Parar
-docker-compose down
+pnpm dev
+pnpm typecheck
+pnpm lint
+pnpm build
+docker compose up -d
+docker compose down
 ```
 
-## URLs de Acesso (Produção)
+Se preferir executar pela raiz do monorepo:
 
-| Serviço | URL | Descrição |
-|---------|-----|-----------|
-| Grafana | https://observability.yesyoudeserve.duckdns.org | Dashboards e alertas |
-| Prometheus | https://metrics.yesyoudeserve.duckdns.org | Métricas e consultas |
-| Jaeger | https://traces.yesyoudeserve.duckdns.org | Distributed tracing |
-| Langfuse | https://langfuse.yesyoudeserve.duckdns.org | LLM observability |
-| Health API | https://yesyoudeserve.duckdns.org/api/observability/health | Health check endpoint |
-
-> **Alertas**: Gerenciados via Grafana Alerting (menu Alerting no Grafana).
-
-## Configuração do API Gateway (Caddy)
-
-O frontend Alice acessa os endpoints `/api/observability/*` através do Caddy.
-Em produção, o Caddyfile em `infra/docker/Caddyfile` gerencia o roteamento automaticamente:
-
-```caddy
-observability.yesyoudeserve.duckdns.org {
-	import security_headers
-	
-	reverse_proxy grafana:3000 {
-		import proxy_headers
-	}
-}
+```bash
+pnpm --filter @alice/observability-service dev
+pnpm --filter @alice/observability-service typecheck
+pnpm --filter @alice/observability-service lint
+pnpm --filter @alice/observability-service build
 ```
 
-O roteamento para a API de observabilidade é feito via subpath:
+## Endpoints principais
 
-```caddy
-handle /api/observability/* {
-    reverse_proxy alice-observability:3007 {
-        import proxy_headers
-    }
-}
-```
+| Endpoint | Uso |
+| --- | --- |
+| `/health` | health check simples |
+| `/live` e `/ready` | sinais de liveness e readiness |
+| `/metrics` | metricas Prometheus do proprio servico |
+| `/api/observability/health` | status agregado do stack monitorado |
+| `/api/observability/services/:name` | health por dependencia |
+| `/api/observability/urls` | URLs internas e externas cadastradas |
+| `/api/docs` | Swagger / OpenAPI do servico |
 
-### Autenticação
+## Variaveis locais mais relevantes
 
-- **Desenvolvimento (Cursor IDE)**: Sem autenticação (INTERNAL_API_SECRET não configurado)
-- **Produção**: ForwardAuth middleware valida sessão do usuário via auth-service
+| Variavel | Uso |
+| --- | --- |
+| `PORT` | porta da API, com default `3007` |
+| `INTERNAL_API_SECRET` | autenticacao interna obrigatoria em producao |
+| `CORS_ORIGINS` | origens permitidas em producao |
+| `PROMETHEUS_URL`, `GRAFANA_URL`, `JAEGER_URL`, `LANGFUSE_URL` | endpoints internos monitorados |
+| `PROMETHEUS_EXTERNAL_URL`, `GRAFANA_EXTERNAL_URL`, `JAEGER_EXTERNAL_URL`, `LANGFUSE_EXTERNAL_URL` | links externos retornados pelas rotas administrativas |
+| `.env.example` | defaults usados pelo compose local desta pasta |
 
-O frontend usa `credentials: 'include'` para enviar cookies de sessão automaticamente.
+Rotas alem de `/health`, `/live`, `/ready` e `/metrics` exigem sessao valida ou autenticacao interna.
 
-## Endpoints do Health Checker
+## Limites deste README
 
-| Endpoint | Método | Descrição |
-|----------|--------|-----------|
-| `/health` | GET | Health check simples |
-| `/api/observability/health` | GET | Status completo do stack |
-| `/api/observability/services/:name` | GET | Status individual |
-| `/api/observability/urls` | GET | URLs de acesso |
-| `/metrics` | GET | Métricas Prometheus |
-
-## Backup e DR (Offsite Criptografado)
-
-- O `backup-orchestrator` mantém artefatos por backup em `BACKUP_DIR/artifacts/<backupId>`.
-- O endpoint `POST /api/backup/verify/:id` valida:
-  - integridade local de manifesto/artefatos;
-  - integridade offsite (quando configurado);
-  - `pgbackrest verify` para PostgreSQL.
-- A sincronização offsite criptografada usa OpenSSL AES-256-CBC com PBKDF2.
-
-### Variáveis de ambiente de DR
-
-| Variável | Obrigatória | Descrição |
-|----------|-------------|-----------|
-| `BACKUP_OFFSITE_DIR` | Não | Diretório offsite para cópia de artefatos por `backupId` |
-| `BACKUP_OFFSITE_REQUIRED` | Não (default `true`) | Quando `true`, falha de sync offsite reprova o backup |
-| `BACKUP_OFFSITE_ENCRYPTION_REQUIRED` | Não (default `true`) | Exige criptografia dos artefatos sincronizados |
-| `BACKUP_CIPHER_PASS` | Sim quando offsite criptografado | Passphrase usada na criptografia OpenSSL |
-
-## Variáveis de Ambiente
-
-Consulte `.env.example` para a lista completa. Em produção, configure via GitHub Secrets:
-
-| Secret | Descrição |
-|--------|-----------|
-| `GRAFANA_ADMIN_PASSWORD` | Senha do admin Grafana |
-| `LANGFUSE_SECRET_KEY` | Chave secreta Langfuse (prefixo `sk-lf-`) |
-| `LANGFUSE_NEXT_AUTH_SECRET` | Chave de autenticação Langfuse |
-
-## Alertas Configurados
-
-| Alerta | Condição | Severidade |
-|--------|----------|------------|
-| LLMHighLatency | P95 > 30s por 5 min | warning |
-| LLMCriticalLatency | P99 > 60s por 2 min | critical |
-| LLMHighErrorRate | Taxa de erros > 5% | warning |
-| CircuitBreakerOpen | Circuit breaker aberto | critical |
-| HighTokenUsage | > 1M tokens/hora | warning |
-| RAGHighRetrievalTime | P95 > 3s | warning |
-
-## Persistência de Dados
-
-| Componente | Volume | Caminho no Container |
-|------------|--------|----------------------|
-| Prometheus | prometheus_data | /prometheus |
-| Grafana | grafana_data | /var/lib/grafana |
-| Langfuse PostgreSQL | langfuse_postgres_data | /var/lib/postgresql/data |
-
-## Estrutura de Arquivos
-
-```
-apps/observability-service/
-├── config/
-│   ├── grafana/
-│   │   ├── dashboards/
-│   │   │   └── llm-metrics.json
-│   │   └── provisioning/
-│   │       ├── dashboards/
-│   │       │   └── dashboards.yml
-│   │       └── datasources/
-│   │           └── datasources.yml
-│   ├── otel/
-│   │   └── otel-collector.yml
-│   └── prometheus/
-│       ├── prometheus.yml
-│       └── rules/
-│           └── llm-alerts.yml
-├── src/
-│   └── index.ts
-├── docker-compose.yml
-├── Dockerfile
-├── package.json
-├── tsconfig.json
-├── .env.example
-└── README.md
-```
-
-## Arquitetura
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                     OBSERVABILITY STACK                          │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
-│  │ Prometheus  │  │   Grafana   │  │   Jaeger    │              │
-│  │   :9090     │──│   :3000     │  │  :16686     │              │
-│  └──────┬──────┘  └─────────────┘  └──────┬──────┘              │
-│         │                                  │                     │
-│  ┌──────┴──────────────────────────────────┴──────┐             │
-│  │              OTel Collector                     │             │
-│  │         :4317 (gRPC) / :4318 (HTTP)            │             │
-│  └────────────────────────────────────────────────┘             │
-│                           │                                      │
-│  ┌─────────────┐  ┌───────┴───────┐  ┌─────────────────────┐   │
-│  │  Langfuse   │  │Health Checker │  │ Langfuse PostgreSQL │   │
-│  │   :3006     │  │    :3007      │  │       :5433         │   │
-│  └──────┬──────┘  └───────────────┘  └──────────┬──────────┘   │
-│         └────────────────────────────────────────┘              │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                   Recebe métricas de
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    MICROSERVIÇOS ALICE                           │
-│  Auth (:3001) │ Chat (:3002) │ RAG (:3003) │ Training (:3004)   │
-└─────────────────────────────────────────────────────────────────┘
-```
-
----
-
-*Autor: Fillipe Guerra*
-*Documentação em Português Brasileiro (Regra 10 CLAUDE.md)*
-*Versão 3.3.0 - 07 de Março de 2026*
-*Tecnologias: Node.js 22 LTS (Alpine 3.21), pnpm 10.26.2, TypeScript 5.9.3*
-*Total de Containers: 36 (8 infraestrutura + 8 Alice + 14 observability + 6 GPU + 1 backup)*
+- Nao replica arquitetura global da plataforma.
+- Nao descreve pipeline, release ou deploy de producao.
+- Nao substitui runbooks operacionais nem o SSOT de observabilidade em `docs/operations/`.

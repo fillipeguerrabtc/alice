@@ -1,134 +1,59 @@
-# Grafana SSO com Alice IdP
+# Grafana da stack de observabilidade
 
-**Autor:** Fillipe Guerra  
-**Data:** 28 de Janeiro de 2026
+**Author:** Fillipe Guerra
+**Data:** 18 de Marco de 2026
+**Atualizado:** 18 de Marco de 2026
 
-## Visão Geral
+## Escopo local
 
-O Grafana OSS 12.3.2 está configurado para usar **Alice Enterprise Platform** como Identity Provider (IdP) único via OAuth 2.0/OIDC.
+Este README cobre apenas o conteudo de `infra/observability/grafana/`: configuracao do Grafana, file provisioning de datasources, dashboards e alerting, alem do compose isolado usado para troubleshooting local.
 
-## Arquitetura
+Arquitetura global da observabilidade, pipeline de entrega e deploy oficial da stack ficam nos SSOTs de `docs/operations/`.
 
-```
-┌─────────────────┐       OAuth 2.0        ┌─────────────────┐
-│                 │ ◄────────────────────► │                 │
-│   Grafana OSS   │   Authorization Code   │   Alice IdP     │
-│     12.3.2      │         + PKCE         │  (auth-service) │
-│                 │                        │                 │
-└─────────────────┘                        └─────────────────┘
-         │                                          │
-         │                                          │
-         ▼                                          ▼
-    Role Mapping                              PostgreSQL
-    - super_admin → Admin                     (oauth_clients)
-    - admin → Admin
-    - manager → Editor
-    - viewer/guest → Viewer
-```
+## SSOT relacionado
 
-## Configuração
+| Assunto | Documento |
+| --- | --- |
+| observabilidade da plataforma | [docs/operations/observability.md](../../../docs/operations/observability.md) |
+| deploy da stack oficial | [docs/operations/deploy.md](../../../docs/operations/deploy.md) |
+| stack oficial `OBSERVABILITY` | [infra/docker/stacks/docker-compose.observability.yml](../../docker/stacks/docker-compose.observability.yml) |
+| dashboards fonte do app | [apps/observability-service/README.md](../../../apps/observability-service/README.md) |
 
-### 1. Variáveis de Ambiente Obrigatórias
+## O que existe nesta pasta
 
-```bash
-# Segurança
-GF_SECURITY_ADMIN_PASSWORD=<senha-forte>
-GF_SECURITY_SECRET_KEY=<secret-32-chars-min>
+| Caminho | Papel local |
+| --- | --- |
+| `grafana.ini` | configuracao isolada de auth, seguranca, database e plugins |
+| `provisioning/datasources/datasources.yml` | datasources provisionadas no boot |
+| `provisioning/dashboards/` | pastas e JSONs provisionados por dominio |
+| `provisioning/alerting/` | regras, contact points e notification policies |
+| `docker-compose.grafana.yml` | compose isolado de Grafana para troubleshooting |
 
-# OAuth Alice
-GF_AUTH_GENERIC_OAUTH_CLIENT_ID=grafana-sso
-GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET=5eAD6BBTuxplWz2bVmZcHW3tO0TSotR3_3da9gS6sHw
+## Uso local isolado
 
-# Alice IdP
-ALICE_OIDC_ISSUER=https://yesyoudeserve.duckdns.org
-
-# Database
-GF_DATABASE_HOST=postgres:5432
-GF_DATABASE_NAME=grafana
-GF_DATABASE_USER=grafana
-GF_DATABASE_PASSWORD=<senha-db>
-```
-
-### 2. Cliente OAuth (já registrado no banco)
-
-```sql
-SELECT client_id, redirect_uris, scopes FROM oauth_clients WHERE client_id = 'grafana-sso';
-```
-
-Resultado esperado:
-- **client_id**: `grafana-sso`
-- **redirect_uris**: `https://grafana.yesyoudeserve.duckdns.org/login/generic_oauth`
-- **scopes**: `openid, profile, email, groups, roles`
-
-### 3. Role Mapping
-
-| Alice Role   | Grafana Role | Permissões                        |
-|--------------|--------------|-----------------------------------|
-| super_admin  | Admin        | Controle total + gerenciamento    |
-| admin        | Admin        | Controle total                    |
-| manager      | Editor       | Criar/editar dashboards e alertas |
-| operator     | Viewer       | Visualizar dashboards e alertas   |
-| viewer       | Viewer       | Apenas visualização               |
-| guest        | Viewer       | Apenas visualização (limitada)    |
-
-### 4. Deploy
+Execute a partir de `infra/observability/grafana`:
 
 ```bash
-cd infra/observability/grafana
-docker-compose -f docker-compose.grafana.yml up -d
+docker compose -f docker-compose.grafana.yml up -d
+docker compose -f docker-compose.grafana.yml down
 ```
 
-## Fluxo de Autenticação
+Variaveis obrigatorias para o compose isolado:
 
-1. Usuário acessa `https://grafana.yesyoudeserve.duckdns.org`
-2. Clica em "Sign in with Alice Enterprise"
-3. Redirecionado para Alice IdP (`/oauth/authorize`)
-4. Autentica via:
-   - Credenciais locais
-   - Google OAuth
-   - GitHub OAuth
-   - SAML 2.0 (Azure AD/Okta)
-5. Após autenticação, callback para Grafana (`/login/generic_oauth`)
-6. Grafana recebe tokens e extrai claims
-7. Role é mapeada conforme tabela acima
-8. Sessão criada no Grafana
+- `GF_SECURITY_ADMIN_PASSWORD`
+- `GF_SECURITY_SECRET_KEY`
+- `GF_DATABASE_PASSWORD`
+- `GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET`
+- `ALICE_OIDC_ISSUER`
 
-## Identity Provisioning
+## Notas de manutencao
 
-O sistema **Identity Provisioning** (Outbox Pattern) sincroniza automaticamente:
+- O compose oficial de producao nao e `docker-compose.grafana.yml`; ele continua em [infra/docker/stacks/docker-compose.observability.yml](../../docker/stacks/docker-compose.observability.yml).
+- Este README nao replica o role mapping nem o fluxo completo de OIDC; a configuracao ativa deve ser verificada diretamente em `grafana.ini` e, quando aplicavel, no compose oficial da stack.
+- Quando houver atualizacao de dashboards nas fontes do app, confirme a sincronizacao do material provisionado antes do deploy da stack `OBSERVABILITY`.
 
-- **Criação de usuário**: Quando usuário é criado no Alice, é provisionado no Grafana
-- **Atualização de role**: Quando role muda no Alice, atualiza no Grafana
-- **Deleção de usuário**: Quando usuário é removido do Alice, é desativado no Grafana
+## Limites deste README
 
-## Troubleshooting
-
-### Erro: "OIDC token validation failed"
-- Verificar se `ALICE_OIDC_ISSUER` está correto
-- Verificar se o issuer no token JWT corresponde ao configurado
-
-### Erro: "Invalid redirect_uri"
-- Verificar se o redirect_uri no banco corresponde ao configurado no Grafana
-- Deve ser: `https://grafana.yesyoudeserve.duckdns.org/login/generic_oauth`
-
-### Erro: "Role not assigned"
-- Verificar se o claim `role` está presente no token
-- Verificar JMESPath no `role_attribute_path`
-
-### Logs
-```bash
-docker logs alice-grafana -f --tail 100
-```
-
-## Referências
-
-- [Grafana OAuth Documentation](https://grafana.com/docs/grafana/latest/setup-grafana/configure-security/configure-authentication/generic-oauth/)
-- [OIDC Specification](https://openid.net/specs/openid-connect-core-1_0.html)
-- [Alice OIDC Provider](../../../apps/auth-service/src/oidc/)
-
----
-
-*Autor: Fillipe Guerra*  
-*Documentação em Português Brasileiro*  
-*Atualizado: 27 de Dezembro de 2025*  
-*Total de Containers: 36 (8 infraestrutura + 8 Alice + 14 observability + 6 GPU + 1 backup)*
+- Nao descreve a arquitetura completa da stack.
+- Nao substitui runbooks, deploy global ou SSOTs de operacao.
+- Nao documenta regras de agentes, release ou pipeline.

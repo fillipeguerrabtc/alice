@@ -3,7 +3,7 @@
 **Author:** Fillipe Guerra
 **Data:** 18 de Marco de 2026
 **Atualizado:** 18 de Marco de 2026
-**Status:** Bloco 5 concluido
+**Status:** Bloco 6 concluido
 **Escopo:** SSOT da refatoracao documental e acompanhamento por blocos
 
 ## Objetivo
@@ -82,6 +82,13 @@ Registrar o estado real da refatoracao documental apos os blocos executados, com
 - `FIXES-TRADING-CRITICAL-ERRORS.md` permaneceu corretamente rebaixado para historico em `docs/archive/root/trading-critical-errors-2026-02-16.md`.
 - Referencias a `validacao`, `release`, `deploy` e `research/lab` foram revisadas para apontar para SSOTs gerais ou para o estado real da workspace atual, sem contradizer a esteira vigente.
 
+### Bloco 6 - READMEs locais e docs de subsistema
+
+- `apps/observability-service/README.md` deixou de repetir arquitetura global, deploy e inventario completo da plataforma, passando a documentar somente API local, compose local, arquivos da pasta e links para os SSOTs corretos.
+- `assets/branding/README.md` passou a cobrir somente assets raster, fluxo real do script de atualizacao e limites locais, sem redefinir guidelines globais de design.
+- `infra/observability/grafana/README.md` foi reduzido a configuracao local de provisioning e compose isolado, com referencia explicita para o compose oficial da stack e para os SSOTs globais de observabilidade e deploy.
+- As referencias locais a pipeline, arquitetura, SSO e deploy foram revisadas para apontar para fontes ativas do repositorio, evitando duplicacao editorial e drift com o estado atual do projeto.
+
 ## Evidencias usadas neste bloco
 
 - `sed -n '1,240p' AGENTS.md`
@@ -144,6 +151,19 @@ Registrar o estado real da refatoracao documental apos os blocos executados, com
 - Arquivos em `docs/archive/`: `45`
 
 ## Snapshot confirmado apos o Bloco 5
+
+- Total de arquivos Markdown rastreados: `93`
+- Arquivos Markdown na raiz do repositorio: `3`
+- Arquivos Markdown na raiz de `docs/`: `2`
+- Arquivos em `docs/architecture/`: `2`
+- Arquivos em `docs/operations/`: `16`
+- Arquivos em `docs/product/`: `2`
+- Arquivos em `docs/engineering/`: `3`
+- Arquivos em `docs/status/`: `2`
+- Arquivos em `docs/archive/`: `45`
+- Arquivos em `docs/trading/`: `17`
+
+## Snapshot confirmado apos o Bloco 6
 
 - Total de arquivos Markdown rastreados: `93`
 - Arquivos Markdown na raiz do repositorio: `3`
@@ -286,6 +306,10 @@ Registrar o estado real da refatoracao documental apos os blocos executados, com
 - Validacao automatizada de headings em `docs/**/*.md` com `node`
 - Revisao manual de eliminacao de duplicacoes entre `training`, `learning`, `onboarding` e `status`
 - Confirmacao de que `docs/status/current-platform-status.md` permaneceu como snapshot, e nao como historico de rodadas
+- Revisao manual de escopo local em `apps/observability-service/README.md`, `assets/branding/README.md` e `infra/observability/grafana/README.md`
+- Conferencia de caminhos e links relativos com `find`, `sed -n` e `rg -n` dentro de `apps/observability-service`, `assets/branding`, `infra/observability/grafana` e `apps/frontend-service`
+- Verificacao de aderencia do branding com `scripts/update-branding.py`
+- Verificacao de aderencia do Grafana local com `infra/docker/stacks/docker-compose.observability.yml`
 
 ## Proximos blocos recomendados
 
@@ -293,7 +317,7 @@ Registrar o estado real da refatoracao documental apos os blocos executados, com
 | --- | --- | --- |
 | `4` | consolidar sobreposicoes grandes de treinamento, aprendizado e status sem perder SSOT | concluido |
 | `5` | refatorar o dominio Trading com namespace dedicado e precedencia explicita | concluido |
-| `6` | varredura final de links, headings e referencias historicas de baixa prioridade | nao iniciado |
+| `6` | normalizar READMEs locais e docs de subsistema sem reabrir SSOTs globais | concluido |
 
 ## Handoff
 
@@ -304,3 +328,4 @@ Registrar o estado real da refatoracao documental apos os blocos executados, com
 - Manter `docs/operations/deployment.md` como porta de entrada e `docs/operations/release.md` e `docs/operations/deploy.md` como referencias separadas.
 - Preservar `docs/archive/ops/rag-doc-processing-2026-03-01.md` como historico; nao reabrir essa nota temporal como SSOT.
 - Evitar reabrir discussao taxonomica: a movimentacao fisica desta rodada e a referencia vigente.
+- Para READMEs locais, manter o contrato editorial desta rodada: escopo curto, operacional e sempre apontando para SSOT global quando o assunto extrapolar o subsistema.

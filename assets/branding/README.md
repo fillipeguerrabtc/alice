@@ -1,66 +1,50 @@
-# Branding - Alice Enterprise Platform
+# Branding local
 
-**Autor:** Fillipe Guerra
+**Author:** Fillipe Guerra
+**Data:** 18 de Marco de 2026
+**Atualizado:** 18 de Marco de 2026
 
-## Arquivos Oficiais
+## Escopo local
 
-| Arquivo | Uso | Dimensões |
-|---------|-----|-----------|
-| `logo-round.png` | Logo principal (sidebar, header, landing page) | 512x512 |
-| `favicon.png` | Favicon do navegador | 64x64 |
+Esta pasta guarda os arquivos raster versionados do branding e o fluxo local de atualizacao dos assets consumidos pelo frontend.
 
-## Design do Logo
+Diretrizes visuais, linguagem de interface e padroes de design nao ficam aqui; o SSOT global continua em [docs/product/design-guidelines.md](../../docs/product/design-guidelines.md).
 
-O logo da Alice é um **"A" estilizado** dentro de um círculo, representando:
-- **A** de Alice (Assistente de IA)
-- Design minimalista e moderno
-- Cores: Preto (#2d2d2d) sobre fundo transparente
+## Arquivos desta pasta
 
-## Onde São Usados
+| Arquivo | Papel local |
+| --- | --- |
+| `logo-round.png` | logo raster principal atualmente distribuido para o frontend |
+| `favicon.png` | favicon em PNG gerado pelo fluxo local |
+| `favicon.ico` | favicon de compatibilidade usado pelo frontend |
+| `logo-round_old.png` | referencia historica; nao usar como asset ativo |
 
-### Frontend Alice (Produção)
-- `apps/frontend-service/public/logo-round.png` - Sidebar, Login, Landing page
-- `apps/frontend-service/public/favicon.png` - Tab do navegador
+## Fluxo local de atualizacao
 
-### Componentes que Usam o Logo
-- `Login.tsx` - Página de login
-- `app-sidebar.tsx` - Sidebar do dashboard
-- `Landing.tsx` - Header, hero, cards, footer
-- `App.tsx` - Tela de loading
-
-1. **Website Settings** → Brand Image (logo do site público)
-2. **Letter Head** → Logo em documentos impressos
-
-
-## Cores da Marca
-
-- Preto/Cinza escuro: `#2d2d2d`
-- Branco: `#ffffff`
-- Fundo transparente para flexibilidade
-
-## Script de Atualização
-
-Para atualizar o branding:
+O fluxo oficial desta pasta usa [scripts/update-branding.py](../../scripts/update-branding.py):
 
 ```bash
-# 1. Salve a nova imagem em assets/branding/alice-new-logo.png
-# 2. Execute o script:
-python scripts/update-branding.py
-
-# O script irá:
-# - Gerar favicon.png (64x64)
-# - Gerar logo-round.png (512x512)
-# - Copiar para apps/frontend-service/public/
+python scripts/update-branding.py assets/branding/<arquivo-origem>.png
 ```
 
-## Manutenção
+O script:
 
-Esta pasta é a **fonte única de verdade** (SSOT) para todos os assets de branding.
-Nunca modifique os arquivos em outras pastas diretamente.
-Sempre atualize aqui primeiro usando o script `update-branding.py`.
+- gera `favicon.png` em `128x128`
+- gera `logo-round.png` em `1024x1024`
+- copia os dois PNGs para `apps/frontend-service/public/`
 
----
+## Consumo atual
 
-*Autor: Fillipe Guerra*
-*Atualizado: 12 de Janeiro de 2026*
-*Logo: "A" estilizado dentro de círculo - design minimalista*
+O frontend consome os arquivos publicados em `apps/frontend-service/public/`:
+
+- `favicon.ico`
+- `favicon.png`
+- `logo-round.png`
+
+O `favicon.ico` nao e atualizado por `scripts/update-branding.py`; se ele precisar mudar, a revisao e sincronizacao devem ser feitas conscientemente.
+
+## Limites deste README
+
+- Nao redefine paleta, tipografia ou regras globais de produto.
+- Nao documenta deploy, pipeline ou arquitetura global.
+- Nao substitui o SSOT de design em `docs/product/`.
