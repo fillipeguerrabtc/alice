@@ -59,13 +59,18 @@ export const chatServicePaths = {
       summary: 'Criar nova conversa',
       tags: ['Chat'],
       requestBody: {
+        required: true,
         content: {
           'application/json': {
             schema: {
               type: 'object',
               properties: {
-                title: { type: 'string' },
-                metadata: { type: 'object' },
+                agentId: { type: 'string', format: 'uuid', nullable: true },
+                namespaceId: { type: 'string', format: 'uuid', nullable: true },
+                reasoningMode: { type: 'string', enum: ['auto', 'thinking', 'non_thinking'], default: 'auto' },
+                titulo: { type: 'string' },
+                context: { type: 'string', enum: ['trading', 'sales', 'support', 'cambio', 'default'] },
+                route: { type: 'string' },
               },
             },
           },
@@ -201,10 +206,12 @@ export const chatServicePaths = {
           'application/json': {
             schema: {
               type: 'object',
-              required: ['content'],
+              required: ['conteudo'],
               properties: {
-                content: { type: 'string' },
-                attachments: { type: 'array', items: { type: 'string', format: 'uri' } },
+                conteudo: { type: 'string' },
+                tipo: { type: 'string', enum: ['text', 'image', 'audio', 'mixed'], default: 'text' },
+                namespaceId: { type: 'string', format: 'uuid', nullable: true },
+                agentId: { type: 'string', format: 'uuid', nullable: true },
                 reasoningMode: { type: 'string', enum: ['auto', 'thinking', 'non_thinking'], default: 'auto' },
               },
             },
@@ -412,7 +419,7 @@ export const chatServicePaths = {
   '/api/chat/stream': {
     post: {
       summary: 'Enviar mensagem com streaming SSE',
-      description: 'Endpoint canônico de streaming do chat com suporte a reasoning mode.',
+      description: 'Endpoint canônico de streaming do chat com suporte explícito a Área, Agente e Raciocínio.',
       tags: ['LLM'],
       requestBody: {
         required: true,
@@ -423,7 +430,46 @@ export const chatServicePaths = {
               properties: {
                 conversationId: { type: 'string', format: 'uuid' },
                 message: { type: 'string' },
+                messages: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      role: { type: 'string', enum: ['user', 'assistant', 'system'] },
+                      content: { type: 'string' },
+                    },
+                    required: ['role', 'content'],
+                  },
+                },
+                namespaceId: { type: 'string', format: 'uuid', nullable: true },
+                agentId: { type: 'string', format: 'uuid', nullable: true },
                 route: { type: 'string' },
+                approvalPolicy: { type: 'string', enum: ['always_confirm', 'confirm_risky', 'never_confirm'] },
+                agentRouting: {
+                  type: 'object',
+                  description: 'Compatibilidade legada temporária para transição interna.',
+                  properties: {
+                    mode: { type: 'string', enum: ['auto', 'manual'] },
+                    agentIds: { type: 'array', items: { type: 'string', format: 'uuid' } },
+                  },
+                },
+                streamDiagnostics: { type: 'boolean', default: false },
+                mediaAttachments: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      id: { type: 'string', format: 'uuid' },
+                      filename: { type: 'string' },
+                      mimeType: { type: 'string' },
+                      file: { type: 'string' },
+                      uploadId: { type: 'string', format: 'uuid' },
+                      fileUrl: { type: 'string' },
+                      size: { type: 'integer' },
+                    },
+                    required: ['filename', 'mimeType'],
+                  },
+                },
                 reasoningMode: { type: 'string', enum: ['auto', 'thinking', 'non_thinking'], default: 'auto' },
               },
             },

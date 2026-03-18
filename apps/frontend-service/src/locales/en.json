@@ -437,9 +437,25 @@
     },
     "reasoning": {
       "label": "Reasoning",
-      "auto": "Auto",
-      "thinking": "Thinking",
-      "nonThinking": "Non-thinking"
+      "auto": "Automatic",
+      "thinking": "Deeper",
+      "nonThinking": "Fast"
+    },
+    "header": {
+      "conversationTitle": "Conversation",
+      "newConversationTitle": "New conversation",
+      "conversationDescription": "Adjust area, agent, and reasoning without pulling focus away from the conversation.",
+      "newConversationDescription": "Choose how Alice should handle this conversation and start when you're ready."
+    },
+    "selectionControls": {
+      "area": "Area",
+      "agent": "Agent",
+      "reasoning": "Reasoning",
+      "areaPlaceholder": "Select an area",
+      "agentPlaceholder": "Select an agent",
+      "reasoningPlaceholder": "Select reasoning",
+      "automaticArea": "Automatic",
+      "automaticAgent": "Automatic"
     },
     "training": {
       "send": "Send to Training",

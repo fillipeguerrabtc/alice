@@ -1,13 +1,3 @@
-export type ChatWorkspaceKey = 'all' | 'conversation' | 'operations' | 'governance' | 'diagnostics';
-
-export const CHAT_WORKSPACES: Array<{ value: ChatWorkspaceKey; label: string }> = [
-  { value: 'all', label: 'Todos' },
-  { value: 'conversation', label: 'Conversa' },
-  { value: 'operations', label: 'Operações' },
-  { value: 'governance', label: 'Governança' },
-  { value: 'diagnostics', label: 'Diagnóstico' },
-];
-
 const ROUTE_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ROUTE_NUMERIC_ID_PATTERN = /^\d+$/;
 const ROUTE_HEX_HASH_PATTERN = /^[0-9a-f]{24,}$/i;

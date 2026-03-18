@@ -5,6 +5,7 @@ import type { Message } from './components/types';
 export type ChatAgentSummary = {
   id: string;
   nome: string;
+  namespaceId?: string | null;
   preferredName?: string | null;
   slug?: string | null;
   status?: string | null;
@@ -14,6 +15,8 @@ export type ChatNamespace = {
   id: string;
   nome: string;
   slug: string;
+  ativo?: boolean | null;
+  ordem?: number | null;
 };
 
 export type ChatApprovalPolicy = 'always_confirm' | 'confirm_risky' | 'never_confirm';

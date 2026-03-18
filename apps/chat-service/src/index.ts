@@ -117,7 +117,7 @@ import {
   classificarConsultaAgentic,
 } from './rag-client.js';
 import type { MediaUploadResult, RAGContextResponse } from './rag-client.js';
-import { parseContextoSistema, resolveNamespaceByContext, resolveNamespaceByRoute, type NamespaceContext } from '@alice/shared-utils';
+import { parseContextoSistema, resolveNamespaceByRoute } from '@alice/shared-utils';
 import {
   initOrchestrator,
   getOrCreateConversationState,
@@ -4409,7 +4409,7 @@ type SemanticRouteResolution = {
   matchedExceptionIds: string[];
 };
 
-async function resolveSemanticRoute(params: {
+async function _resolveSemanticRoute(params: {
   tenantId: string;
   userMessage: string;
   agenticDetectors: AgenticDetectors;
@@ -4498,6 +4498,53 @@ async function resolveSemanticRoute(params: {
       eq(schema.agents.status, 'active')
     ),
   });
+  const scopedAgents = params.namespaceId
+    ? agents.filter((agent) => agent.namespaceId === params.namespaceId)
+    : agents;
+
+  if (params.namespaceId) {
+    let bestAgentInNamespace: { id: string; score: number } | null = null;
+    for (const agent of scopedAgents) {
+      const text = buildRoutingText([
+        agent.nome,
+        agent.preferredName,
+        agent.slug,
+        agent.descricao,
+        agent.personalidade,
+        agent.instrucoes,
+        agent.capacidades ? agent.capacidades.join(' ') : null,
+      ]);
+      if (!text) continue;
+      const score = computeRoutingScore(text, params.userMessage);
+      if (!bestAgentInNamespace || score > bestAgentInNamespace.score) {
+        bestAgentInNamespace = { id: agent.id, score };
+      }
+    }
+    return {
+      agentId: bestAgentInNamespace?.id,
+      namespaceId: params.namespaceId,
+      score: bestAgentInNamespace?.score ?? 0,
+      source: 'namespace',
+      profile,
+      needsHumanReview: (
+        hybridPolicy.enabled
+        && hybridPolicy.humanReview.enabled
+        && (
+          exceptionDecision.requireHumanReview
+          || isHighRiskRoute
+          || ((bestAgentInNamespace?.score ?? 0) < thresholds.humanReview)
+        )
+      ),
+      reviewReasons: [
+        ...(exceptionDecision.requireHumanReview ? ['exception_require_human_review'] : []),
+        ...(isHighRiskRoute ? ['high_risk_route'] : []),
+        ...(((bestAgentInNamespace?.score ?? 0) < thresholds.humanReview) ? ['low_confidence_semantic_routing'] : []),
+      ],
+      autoAcceptThreshold: thresholds.autoAccept,
+      humanReviewThreshold: thresholds.humanReview,
+      matchedExceptionIds: exceptionDecision.matchedExceptionIds,
+    };
+  }
 
   const namespaceDetectorMatch = await matchNamespaceByDetectors({
     tenantId: params.tenantId,
@@ -5047,6 +5094,249 @@ function mergeConversationMetadata(
   };
 }
 
+type PersistedChatSelection = {
+  selectedAgentId: string | null;
+  selectedNamespaceId: string | null;
+  reasoningMode: ReasoningMode;
+  source: string;
+  fromMetadata: boolean;
+};
+
+function hasOwnProperty(input: unknown, key: string): boolean {
+  return Boolean(input && typeof input === 'object' && Object.prototype.hasOwnProperty.call(input, key));
+}
+
+function normalizeOptionalString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value : null;
+}
+
+function normalizeMetadataReasoningMode(value: unknown): ReasoningMode {
+  const parsed = reasoningModeSchema.safeParse(value);
+  return parsed.success ? parsed.data : DEFAULT_REASONING_MODE;
+}
+
+function readPersistedChatSelection(metadata: unknown): PersistedChatSelection | null {
+  if (!metadata || typeof metadata !== 'object') {
+    return null;
+  }
+
+  const selection = (metadata as {
+    selection?: {
+      selectedAgentId?: unknown;
+      selectedNamespaceId?: unknown;
+      reasoningMode?: unknown;
+      source?: unknown;
+    };
+  }).selection;
+
+  if (!selection || typeof selection !== 'object') {
+    return null;
+  }
+
+  return {
+    selectedAgentId: normalizeOptionalString(selection.selectedAgentId),
+    selectedNamespaceId: normalizeOptionalString(selection.selectedNamespaceId),
+    reasoningMode: normalizeMetadataReasoningMode(selection.reasoningMode),
+    source: typeof selection.source === 'string' && selection.source.trim().length > 0
+      ? selection.source.trim()
+      : 'metadata_global_auto',
+    fromMetadata: true,
+  };
+}
+
+function resolvePersistedChatSelection(conversation?: ConversationWithAgent | null): PersistedChatSelection {
+  const metadataSelection = readPersistedChatSelection(conversation?.metadata);
+  if (metadataSelection) {
+    return metadataSelection;
+  }
+
+  return {
+    selectedAgentId: conversation?.agentId ?? null,
+    selectedNamespaceId: conversation?.namespaceId ?? null,
+    reasoningMode: DEFAULT_REASONING_MODE,
+    source: conversation?.agentId
+      ? 'legacy_fixed_agent'
+      : conversation?.namespaceId
+        ? 'legacy_namespace_auto'
+        : 'legacy_global_auto',
+    fromMetadata: false,
+  };
+}
+
+function resolveEffectiveReasoningMode(params: {
+  requestedMode: ReasoningMode | undefined;
+  persistedMode: ReasoningMode;
+  role: Role | undefined;
+}): ReasoningMode {
+  if (params.requestedMode) {
+    return params.requestedMode;
+  }
+  if (params.persistedMode === 'auto') {
+    return 'auto';
+  }
+  return canOverrideReasoningMode(params.role) ? params.persistedMode : DEFAULT_REASONING_MODE;
+}
+
+async function resolveCanonicalChatSelection(params: {
+  tenantId: string;
+  conversation?: ConversationWithAgent | null;
+  requestedAgentId?: string | null;
+  requestedNamespaceId?: string | null;
+  requestedReasoningMode: ReasoningMode | undefined;
+  hasRequestedAgentId: boolean;
+  hasRequestedNamespaceId: boolean;
+  role: Role | undefined;
+}): Promise<{
+  persistedAgentId: string | null;
+  persistedNamespaceId: string | null;
+  reasoningMode: ReasoningMode;
+  source: string;
+}> {
+  const persistedSelection = resolvePersistedChatSelection(params.conversation);
+  const explicitSelectionRequested = params.hasRequestedAgentId || params.hasRequestedNamespaceId;
+
+  let persistedAgentId = params.hasRequestedAgentId
+    ? params.requestedAgentId ?? null
+    : persistedSelection.selectedAgentId;
+  let persistedNamespaceId = params.hasRequestedNamespaceId
+    ? params.requestedNamespaceId ?? null
+    : persistedSelection.selectedNamespaceId;
+
+  const selectedAgent = persistedAgentId
+    ? await db.query.agents.findFirst({
+        where: and(
+          eq(schema.agents.id, persistedAgentId),
+          eq(schema.agents.tenantId, params.tenantId),
+          eq(schema.agents.status, 'active'),
+        ),
+        columns: {
+          id: true,
+          namespaceId: true,
+        },
+      })
+    : null;
+
+  if (persistedAgentId && !selectedAgent) {
+    if (explicitSelectionRequested) {
+      throw new ClientInputError('Agente selecionado inválido ou inativo.', {
+        statusCode: 400,
+        code: 'CHAT_AGENT_INVALID',
+      });
+    }
+    logger.warn(
+      { tenantId: params.tenantId, agentId: persistedAgentId },
+      'Agente persistido para o chat não está mais disponível; limpando seleção fixa'
+    );
+    persistedAgentId = null;
+  }
+
+  if (selectedAgent) {
+    if (!selectedAgent.namespaceId) {
+      if (explicitSelectionRequested) {
+        throw new ClientInputError('Agente selecionado não está vinculado a uma área ativa.', {
+          statusCode: 400,
+          code: 'CHAT_AGENT_NAMESPACE_REQUIRED',
+        });
+      }
+      logger.warn(
+        { tenantId: params.tenantId, agentId: selectedAgent.id },
+        'Agente persistido sem namespace; limpando seleção fixa do chat'
+      );
+      persistedAgentId = null;
+      persistedNamespaceId = null;
+    } else if (persistedNamespaceId && persistedNamespaceId !== selectedAgent.namespaceId) {
+      if (explicitSelectionRequested) {
+        throw new ClientInputError('O agente selecionado não pertence à área informada.', {
+          statusCode: 400,
+          code: 'CHAT_AGENT_NAMESPACE_MISMATCH',
+        });
+      }
+      logger.warn(
+        {
+          tenantId: params.tenantId,
+          agentId: selectedAgent.id,
+          namespaceId: persistedNamespaceId,
+          agentNamespaceId: selectedAgent.namespaceId,
+        },
+        'Seleção persistida com namespace divergente do agente; corrigindo para o namespace real do agente'
+      );
+      persistedNamespaceId = selectedAgent.namespaceId;
+    } else {
+      persistedNamespaceId = selectedAgent.namespaceId;
+    }
+  }
+
+  if (persistedNamespaceId) {
+    const selectedNamespace = await db.query.namespaces.findFirst({
+      where: and(
+        eq(schema.namespaces.id, persistedNamespaceId),
+        eq(schema.namespaces.tenantId, params.tenantId),
+        eq(schema.namespaces.ativo, true),
+      ),
+      columns: {
+        id: true,
+      },
+    });
+
+    if (!selectedNamespace) {
+      if (explicitSelectionRequested) {
+        throw new ClientInputError('Área selecionada inválida ou inativa.', {
+          statusCode: 400,
+          code: 'CHAT_NAMESPACE_INVALID',
+        });
+      }
+      logger.warn(
+        { tenantId: params.tenantId, namespaceId: persistedNamespaceId },
+        'Namespace persistido para o chat não está mais disponível; limpando seleção de área'
+      );
+      persistedNamespaceId = null;
+      persistedAgentId = null;
+    }
+  }
+
+  const source = explicitSelectionRequested
+    ? persistedAgentId
+      ? 'request_fixed_agent'
+      : persistedNamespaceId
+        ? 'request_namespace_auto'
+        : 'request_global_auto'
+    : persistedSelection.fromMetadata
+      ? persistedSelection.source
+      : persistedAgentId
+        ? 'legacy_fixed_agent'
+        : persistedNamespaceId
+          ? 'legacy_namespace_auto'
+          : 'legacy_global_auto';
+
+  return {
+    persistedAgentId,
+    persistedNamespaceId,
+    reasoningMode: resolveEffectiveReasoningMode({
+      requestedMode: params.requestedReasoningMode,
+      persistedMode: persistedSelection.reasoningMode,
+      role: params.role,
+    }),
+    source,
+  };
+}
+
+function buildConversationSelectionMetadata(params: {
+  selectedAgentId: string | null;
+  selectedNamespaceId: string | null;
+  reasoningMode: ReasoningMode;
+  source: string;
+}): Record<string, unknown> {
+  return {
+    selection: {
+      selectedAgentId: params.selectedAgentId,
+      selectedNamespaceId: params.selectedNamespaceId,
+      reasoningMode: params.reasoningMode,
+      source: params.source,
+      updatedAt: new Date().toISOString(),
+    },
+  };
+}
+
 async function updateAgentRoutingMetadata(params: {
   conversationId: string;
   metadata: unknown;
@@ -5474,6 +5764,7 @@ async function resolveAgentRoutingForMessage(params: {
   conversationState: Awaited<ReturnType<typeof getOrCreateConversationState>>;
   agenticDetectors: AgenticDetectors;
   requestedNamespaceId?: string | null;
+  fixedAgentId?: string | null;
   route?: string | null;
   userId?: string | null;
 }): Promise<{
@@ -5481,7 +5772,7 @@ async function resolveAgentRoutingForMessage(params: {
   namespaceId?: string | null;
   namespaceFallbackReason?: string;
   mode: AgentRoutingMode;
-  source: 'auto' | 'manual' | 'mention' | 'none';
+  source: 'auto' | 'manual' | 'mention' | 'none' | 'fixed' | 'namespace';
   score: number;
   threshold: number;
   profile: LlmContextProfile;
@@ -5546,11 +5837,49 @@ async function resolveAgentRoutingForMessage(params: {
   });
   const routingThresholds = resolveRoutingThresholds(routingProfile.config, hybridPolicy);
   const routingThreshold = routingThresholds.autoAccept;
+  const scopedAgents = params.requestedNamespaceId
+    ? agents.filter((agent) => agent.namespaceId === params.requestedNamespaceId)
+    : agents;
   const normalizedMessage = normalizeAgentToken(params.userMessage);
   const hasExplicitAgentIntent = ['agente', 'falar com', 'conversar com']
     .some((keyword) => normalizedMessage.includes(keyword));
+  const greetingMessage = isGreetingMessage(params.userMessage);
+
+  if (params.fixedAgentId) {
+    const fixedAgent = agents.find((agent) => agent.id === params.fixedAgentId) ?? null;
+    if (!fixedAgent) {
+      return {
+        agent: null,
+        namespaceId: params.requestedNamespaceId ?? params.conversation.namespaceId ?? null,
+        mode: 'manual',
+        source: 'fixed',
+        score: 0,
+        threshold: routingThreshold,
+        profile,
+        isCommandOnly: false,
+        error: 'Agente fixo inválido ou indisponível.',
+      };
+    }
+
+    return {
+      agent: fixedAgent,
+      namespaceId: fixedAgent.namespaceId ?? params.requestedNamespaceId ?? params.conversation.namespaceId ?? null,
+      mode: 'manual',
+      source: 'fixed',
+      score: 1,
+      threshold: routingThreshold,
+      profile,
+      isCommandOnly: false,
+      humanReviewRequired: false,
+      humanReviewThreshold: routingThresholds.humanReview,
+      reviewReasons: [],
+      matchedExceptionIds: exceptionDecision.matchedExceptionIds,
+      hybridPolicyVersion: hybridPolicy.version,
+    };
+  }
+
   if (command.action === 'none' && hasExplicitAgentIntent) {
-    const inferredAgents = matchAgentsFromMessageText(agents, params.userMessage);
+    const inferredAgents = matchAgentsFromMessageText(scopedAgents, params.userMessage);
     if (inferredAgents.length > 0) {
       command = {
         ...command,
@@ -5566,9 +5895,8 @@ async function resolveAgentRoutingForMessage(params: {
   const stateRouting = resolveRoutingStateFromMetadata(params.conversationState.metadata);
   let mode: AgentRoutingMode = stateRouting.mode;
   let manualAgentIds = [...stateRouting.agentIds];
-  let source: 'auto' | 'manual' | 'mention' | 'none' = 'none';
+  let source: 'auto' | 'manual' | 'mention' | 'none' | 'fixed' | 'namespace' = 'none';
   let commandResponse: string | undefined;
-  const greetingMessage = isGreetingMessage(params.userMessage);
   if (
     greetingMessage &&
     command.action === 'none' &&
@@ -5615,26 +5943,20 @@ async function resolveAgentRoutingForMessage(params: {
   }
 
   if (command.action === 'manual') {
-    const { matched, unknownTokens } = matchAgentsFromTokens(agents, command.tokens);
-    let inferredAgents = matched.length > 0 ? matched : matchAgentsFromMessageText(agents, params.userMessage);
+    const { matched, unknownTokens } = matchAgentsFromTokens(scopedAgents, command.tokens);
+    let inferredAgents = matched.length > 0 ? matched : matchAgentsFromMessageText(scopedAgents, params.userMessage);
     if (!inferredAgents.length) {
-      const namespaceDetectorMatch = await matchNamespaceByDetectors({
-        tenantId: params.tenantId,
-        message: params.userMessage,
-        agenticDetectors: params.agenticDetectors,
-      });
-      if (namespaceDetectorMatch) {
-        const namespaceAgents = agents.filter((agent) => agent.namespaceId === namespaceDetectorMatch.namespaceId);
-        if (namespaceAgents.length > 0) {
-          const namespaceSelection = selectBestAgentFromPool(namespaceAgents, params.userMessage);
-          inferredAgents = [namespaceSelection.agent ?? namespaceAgents[0]];
+      if (params.requestedNamespaceId) {
+        if (scopedAgents.length > 0) {
+          const namespaceSelection = selectBestAgentFromPool(scopedAgents, params.userMessage);
+          inferredAgents = [namespaceSelection.agent ?? scopedAgents[0]];
         } else {
           return {
             agent: null,
-            namespaceId: namespaceDetectorMatch.namespaceId,
-            mode: stateRouting.mode,
-            source: 'manual',
-            score: namespaceDetectorMatch.score,
+            namespaceId: params.requestedNamespaceId,
+            mode: 'auto',
+            source: 'namespace',
+            score: 0,
             threshold: routingThreshold,
             profile,
             isCommandOnly: command.isCommandOnly,
@@ -5642,19 +5964,44 @@ async function resolveAgentRoutingForMessage(params: {
           };
         }
       } else {
-        return {
-          agent: null,
-          namespaceId: params.requestedNamespaceId ?? params.conversation.namespaceId ?? null,
-          mode: stateRouting.mode,
-          source: 'manual',
-          score: 0,
-          threshold: routingThreshold,
-          profile,
-          isCommandOnly: command.isCommandOnly,
-          error: unknownTokens.length
-            ? `Agente(s) não encontrado(s): ${unknownTokens.join(', ')}. Use @slug do agente.`
-            : 'Nenhum agente encontrado para o comando informado.',
-        };
+        const namespaceDetectorMatch = await matchNamespaceByDetectors({
+          tenantId: params.tenantId,
+          message: params.userMessage,
+          agenticDetectors: params.agenticDetectors,
+        });
+        if (namespaceDetectorMatch) {
+          const namespaceAgents = agents.filter((agent) => agent.namespaceId === namespaceDetectorMatch.namespaceId);
+          if (namespaceAgents.length > 0) {
+            const namespaceSelection = selectBestAgentFromPool(namespaceAgents, params.userMessage);
+            inferredAgents = [namespaceSelection.agent ?? namespaceAgents[0]];
+          } else {
+            return {
+              agent: null,
+              namespaceId: namespaceDetectorMatch.namespaceId,
+              mode: stateRouting.mode,
+              source: 'manual',
+              score: namespaceDetectorMatch.score,
+              threshold: routingThreshold,
+              profile,
+              isCommandOnly: command.isCommandOnly,
+              error: 'Nenhum agente ativo disponível no namespace identificado.',
+            };
+          }
+        } else {
+          return {
+            agent: null,
+            namespaceId: params.requestedNamespaceId ?? params.conversation.namespaceId ?? null,
+            mode: stateRouting.mode,
+            source: 'manual',
+            score: 0,
+            threshold: routingThreshold,
+            profile,
+            isCommandOnly: command.isCommandOnly,
+            error: unknownTokens.length
+              ? `Agente(s) não encontrado(s): ${unknownTokens.join(', ')}. Use @slug do agente.`
+              : 'Nenhum agente encontrado para o comando informado.',
+          };
+        }
       }
     }
     const resolvedCommandOnly = command.isCommandOnly || isSwitchOnlyCommandMessage({
@@ -5685,7 +6032,7 @@ async function resolveAgentRoutingForMessage(params: {
 
   let poolAgents: AgentRoutingRecord[] = [];
   if (command.tokens.length > 0 && command.action === 'none') {
-    const { matched } = matchAgentsFromTokens(agents, command.tokens);
+    const { matched } = matchAgentsFromTokens(scopedAgents, command.tokens);
     if (matched.length > 0) {
       poolAgents = matched;
       source = 'mention';
@@ -5693,12 +6040,15 @@ async function resolveAgentRoutingForMessage(params: {
   }
 
   if (poolAgents.length === 0 && mode === 'manual' && manualAgentIds.length > 0) {
-    poolAgents = agents.filter((agent) => manualAgentIds.includes(agent.id));
+    poolAgents = scopedAgents.filter((agent) => manualAgentIds.includes(agent.id));
     source = 'manual';
   }
 
   if (poolAgents.length === 0) {
-    poolAgents = agents;
+    poolAgents = scopedAgents;
+    if (params.requestedNamespaceId) {
+      source = 'namespace';
+    }
   }
 
   const selection = selectBestAgentFromPool(poolAgents, params.userMessage);
@@ -5707,7 +6057,11 @@ async function resolveAgentRoutingForMessage(params: {
 
   const isAutoMode = mode === 'auto' && source !== 'mention';
   if (isAutoMode) {
-    if (!selectedAgent || score < routingThreshold) {
+    const isExplicitNamespaceScope = Boolean(params.requestedNamespaceId);
+    if (!selectedAgent && poolAgents.length > 0 && isExplicitNamespaceScope) {
+      selectedAgent = poolAgents[0] ?? null;
+      score = 1;
+    } else if (!isExplicitNamespaceScope && (!selectedAgent || score < routingThreshold)) {
       selectedAgent = null;
       score = 0;
     }
@@ -5791,6 +6145,7 @@ async function resolveAgentRoutingForMessage(params: {
     threshold: routingThreshold,
     selectedAgentId: selectedAgent?.id ?? null,
     selectedNamespaceId: namespaceId ?? null,
+    fixedAgentId: params.fixedAgentId ?? null,
     requestedNamespaceId: params.requestedNamespaceId ?? null,
     commandOnly: command.isCommandOnly,
     humanReviewRequired,
@@ -9049,8 +9404,9 @@ const _wsAgentMessageSchema = z.object({
 });
 
 const createConversationSchema = z.object({
-  agentId: z.string().uuid().optional(),
-  namespaceId: z.string().uuid().optional(),
+  agentId: z.string().uuid().nullable().optional(),
+  namespaceId: z.string().uuid().nullable().optional(),
+  reasoningMode: reasoningModeSchema.optional(),
   titulo: z.string().optional(),
   /** Contexto semântico para reconhecimento automático (ex: 'trading' na rota /trading) */
   context: z.enum(['trading', 'sales', 'support', 'cambio', 'default']).optional(),
@@ -9071,76 +9427,34 @@ app.post('/api/chat/conversations', requireAuth(), requireSameTenant(getTenantId
   }
 
   const userId = auth.userId;
+  const userRole = auth.role as Role | undefined;
 
   try {
+    const rawBody = req.body && typeof req.body === 'object' ? req.body as Record<string, unknown> : {};
     const body = createConversationSchema.parse(req.body);
+    assertReasoningModeAuthorization({
+      requestedMode: body.reasoningMode,
+      role: userRole,
+    });
 
-    // Reconhecimento automático: quando route/context é fornecido sem namespaceId/agentId
-    let agentId = body.agentId ?? undefined;
-    let namespaceId = body.namespaceId ?? undefined;
-    if ((!agentId && !namespaceId) && body.route) {
-      const resolved = await resolveNamespaceByRoute(tenantId, body.route, {
-        getNamespaceBySlug: async (tId, slug) =>
-          db.query.namespaces.findFirst({
-            where: and(
-              eq(schema.namespaces.tenantId, tId),
-              eq(schema.namespaces.slug, slug),
-              eq(schema.namespaces.ativo, true)
-            ),
-            columns: { id: true, tenantId: true, contextoSistema: true },
-          }),
-        getNamespacesByTenant: async (tId) =>
-          db.query.namespaces.findMany({
-            where: and(eq(schema.namespaces.tenantId, tId), eq(schema.namespaces.ativo, true)),
-            columns: { id: true, slug: true, contextoSistema: true },
-          }),
-        getActiveAgentByNamespace: async (nsId) =>
-          db.query.agents.findFirst({
-            where: and(
-              eq(schema.agents.namespaceId, nsId),
-              eq(schema.agents.status, 'active')
-            ),
-            orderBy: [desc(schema.agents.atualizadoEm)],
-            columns: { id: true },
-          }),
-      });
-      if (resolved.namespaceId) namespaceId = resolved.namespaceId;
-      if (resolved.agentId) agentId = resolved.agentId;
-    }
-    if ((!agentId && !namespaceId) && body.context) {
-      const resolved = await resolveNamespaceByContext(tenantId, body.context as NamespaceContext, {
-        getNamespaceBySlug: async (tId, slug) =>
-          db.query.namespaces.findFirst({
-            where: and(
-              eq(schema.namespaces.tenantId, tId),
-              eq(schema.namespaces.slug, slug),
-              eq(schema.namespaces.ativo, true)
-            ),
-            columns: { id: true, tenantId: true },
-          }),
-        getActiveAgentByNamespace: async (nsId) =>
-          db.query.agents.findFirst({
-            where: and(
-              eq(schema.agents.namespaceId, nsId),
-              eq(schema.agents.status, 'active')
-            ),
-            orderBy: [desc(schema.agents.atualizadoEm)],
-            columns: { id: true },
-          }),
-      });
-      if (resolved.namespaceId) namespaceId = resolved.namespaceId;
-      if (resolved.agentId) agentId = resolved.agentId;
-    }
+    const canonicalSelection = await resolveCanonicalChatSelection({
+      tenantId,
+      requestedAgentId: body.agentId,
+      requestedNamespaceId: body.namespaceId,
+      requestedReasoningMode: body.reasoningMode,
+      hasRequestedAgentId: hasOwnProperty(rawBody, 'agentId'),
+      hasRequestedNamespaceId: hasOwnProperty(rawBody, 'namespaceId'),
+      role: userRole,
+    });
 
-    // SEGURANÇA: Validação cross-tenant - namespaceId/agentId devem pertencer ao tenant
     await validateConversationTenantConsistency(
-      { agentId, namespaceId },
+      { agentId: canonicalSelection.persistedAgentId, namespaceId: canonicalSelection.persistedNamespaceId },
       tenantId,
       {
-        getAgent: agentId
+        getAgent: canonicalSelection.persistedAgentId
           ? async (id) => db.query.agents.findFirst({ where: eq(schema.agents.id, id), columns: { id: true, tenantId: true } })
           : undefined,
-        getNamespace: namespaceId
+        getNamespace: canonicalSelection.persistedNamespaceId
           ? async (id) => db.query.namespaces.findFirst({ where: eq(schema.namespaces.id, id), columns: { id: true, tenantId: true } })
           : undefined,
       }
@@ -9149,14 +9463,24 @@ app.post('/api/chat/conversations', requireAuth(), requireSameTenant(getTenantId
     const [conversation] = await db.insert(schema.conversations).values({
       tenantId,
       userId,
-      agentId,
-      namespaceId,
+      agentId: canonicalSelection.persistedAgentId,
+      namespaceId: canonicalSelection.persistedNamespaceId,
       titulo: body.titulo || 'Nova Conversa',
+      metadata: buildConversationSelectionMetadata({
+        selectedAgentId: canonicalSelection.persistedAgentId,
+        selectedNamespaceId: canonicalSelection.persistedNamespaceId,
+        reasoningMode: canonicalSelection.reasoningMode,
+        source: canonicalSelection.source,
+      }),
     }).returning();
 
     logger.info({ conversationId: conversation.id, userId }, 'Conversa criada');
     res.json({ conversation });
   } catch (error) {
+    if (error instanceof ClientInputError) {
+      logger.warn({ code: error.code, message: error.message }, 'Requisição inválida ao criar conversa');
+      return res.status(error.statusCode).json({ error: error.message, code: error.code });
+    }
     logger.error({ error }, 'Falha ao criar conversa');
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
@@ -9600,6 +9924,8 @@ const sendMessageSchema = z.object({
   // O database schema (messageTypeEnum) mantém 'document' para compatibilidade com mensagens existentes,
   // mas a API não aceita mais este valor para novas mensagens.
   tipo: z.enum(['text', 'image', 'audio', 'mixed']).default('text'),
+  namespaceId: z.string().uuid().nullable().optional(),
+  agentId: z.string().uuid().nullable().optional(),
   reasoningMode: reasoningModeSchema.optional(),
 });
 
@@ -9645,7 +9971,8 @@ const streamMessageSchema = z.object({
     content: z.string().min(1).max(32000),
   })).min(1).max(50).optional(),
   conversationId: z.string().uuid().optional(),
-  namespaceId: z.string().uuid().optional(),
+  namespaceId: z.string().uuid().nullable().optional(),
+  agentId: z.string().uuid().nullable().optional(),
   /** Rota/pathname para resolução de contexto no LLM Gateway (ex: /chat, /trading) */
   route: z.string().min(1).max(200).optional(),
   /** Política de aprovação do tenant para ações de baixo risco */
@@ -9697,6 +10024,7 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
   }
 
   try {
+    const rawBody = req.body && typeof req.body === 'object' ? req.body as Record<string, unknown> : {};
     const body = sendMessageSchema.parse(req.body);
     assertReasoningModeAuthorization({
       requestedMode: body.reasoningMode,
@@ -9717,15 +10045,50 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
     }
 
     const conversationState = await getOrCreateConversationState(id);
+    const canonicalSelection = await resolveCanonicalChatSelection({
+      tenantId,
+      conversation,
+      requestedAgentId: body.agentId,
+      requestedNamespaceId: body.namespaceId,
+      requestedReasoningMode: body.reasoningMode,
+      hasRequestedAgentId: hasOwnProperty(rawBody, 'agentId'),
+      hasRequestedNamespaceId: hasOwnProperty(rawBody, 'namespaceId'),
+      role: userRole,
+    });
+
+    const hasCanonicalSelectionInput = hasOwnProperty(rawBody, 'agentId') || hasOwnProperty(rawBody, 'namespaceId');
+
+    if (hasCanonicalSelectionInput) {
+      const nextConversationStateMetadata = mergeConversationStateMetadata(conversationState.metadata, {
+        agentRouting: {
+          mode: canonicalSelection.persistedAgentId ? 'manual' : 'auto',
+          agentIds: canonicalSelection.persistedAgentId ? [canonicalSelection.persistedAgentId] : [],
+          updatedAt: new Date().toISOString(),
+          reason: canonicalSelection.persistedAgentId ? 'canonical_fixed_agent' : 'canonical_scope_reset',
+        },
+      });
+      await db.update(schema.conversationStates)
+        .set({ metadata: nextConversationStateMetadata, atualizadoEm: new Date() })
+        .where(eq(schema.conversationStates.conversationId, id));
+      conversationState.metadata = nextConversationStateMetadata;
+    }
+
+    const conversationForRouting: ConversationWithAgent = {
+      ...conversation,
+      agentId: canonicalSelection.persistedAgentId,
+      namespaceId: canonicalSelection.persistedNamespaceId,
+    };
     const agenticSettings = await getOrCreateAgenticSettings(tenantId);
     const agenticDetectors = normalizeAgenticDetectors(agenticSettings.detectors);
     const routingDecision = await resolveAgentRoutingForMessage({
       tenantId,
       conversationId: id,
       userMessage: body.conteudo,
-      conversation,
+      conversation: conversationForRouting,
       conversationState,
       agenticDetectors,
+      requestedNamespaceId: canonicalSelection.persistedNamespaceId,
+      fixedAgentId: canonicalSelection.persistedAgentId,
       route: '/chat',
       userId,
     });
@@ -9735,41 +10098,41 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
     }
 
     const activeAgent = routingDecision.agent;
-    const activeAgentId = activeAgent?.id ?? conversation.agentId ?? undefined;
-    const activeNamespaceId = routingDecision.namespaceId ?? conversation.namespaceId ?? null;
-    const shouldUpdateConversation = Boolean(
-      (activeAgentId && activeAgentId !== conversation.agentId)
-      || (activeNamespaceId && activeNamespaceId !== conversation.namespaceId)
-      || routingDecision.source !== 'none'
+    const activeAgentId = activeAgent?.id ?? undefined;
+    const activeNamespaceId = routingDecision.namespaceId ?? canonicalSelection.persistedNamespaceId ?? null;
+    const updatedMetadata = mergeConversationMetadata(
+      conversation.metadata,
+      buildConversationSelectionMetadata({
+        selectedAgentId: canonicalSelection.persistedAgentId,
+        selectedNamespaceId: canonicalSelection.persistedNamespaceId,
+        reasoningMode: canonicalSelection.reasoningMode,
+        source: canonicalSelection.source,
+      })
     );
-
-    if (shouldUpdateConversation) {
-      const updatedMetadata = mergeConversationMetadata(conversation.metadata, {
-        routing: {
-          mode: routingDecision.mode,
-          source: routingDecision.source,
-          score: routingDecision.score,
-          profile: routingDecision.profile,
-          autoAcceptThreshold: routingDecision.threshold,
-          humanReviewThreshold: routingDecision.humanReviewThreshold ?? null,
-          needsHumanReview: routingDecision.humanReviewRequired ?? false,
-          reviewReasons: routingDecision.reviewReasons ?? [],
-          matchedExceptionIds: routingDecision.matchedExceptionIds ?? [],
-          hybridPolicyVersion: routingDecision.hybridPolicyVersion ?? null,
-          selectedAgentId: activeAgentId ?? null,
-          namespaceFallbackReason: routingDecision.namespaceFallbackReason ?? null,
-          updatedAt: new Date().toISOString(),
-        },
-      });
-      await db.update(schema.conversations)
-        .set({
-          agentId: activeAgentId ?? conversation.agentId ?? null,
-          namespaceId: activeNamespaceId ?? conversation.namespaceId ?? null,
-          metadata: updatedMetadata,
-          atualizadoEm: new Date(),
-        })
-        .where(eq(schema.conversations.id, id));
-    }
+    updatedMetadata.routing = {
+      mode: routingDecision.mode,
+      source: routingDecision.source,
+      score: routingDecision.score,
+      profile: routingDecision.profile,
+      autoAcceptThreshold: routingDecision.threshold,
+      humanReviewThreshold: routingDecision.humanReviewThreshold ?? null,
+      needsHumanReview: routingDecision.humanReviewRequired ?? false,
+      reviewReasons: routingDecision.reviewReasons ?? [],
+      matchedExceptionIds: routingDecision.matchedExceptionIds ?? [],
+      hybridPolicyVersion: routingDecision.hybridPolicyVersion ?? null,
+      selectedAgentId: activeAgentId ?? null,
+      selectedNamespaceId: activeNamespaceId ?? null,
+      namespaceFallbackReason: routingDecision.namespaceFallbackReason ?? null,
+      updatedAt: new Date().toISOString(),
+    };
+    await db.update(schema.conversations)
+      .set({
+        agentId: activeAgentId ?? null,
+        namespaceId: activeNamespaceId,
+        metadata: updatedMetadata,
+        atualizadoEm: new Date(),
+      })
+      .where(eq(schema.conversations.id, id));
 
     const [userMessage] = await db.insert(schema.messages).values({
       conversationId: id,
@@ -9779,6 +10142,9 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
       isFromUser: true,
     }).returning();
 
+    const persistedSelectedAgent = canonicalSelection.persistedAgentId && conversation.agent?.id === canonicalSelection.persistedAgentId
+      ? conversation.agent
+      : null;
     const agentConfig: AgentConfig | null = activeAgent
       ? {
           nome: activeAgent.nome,
@@ -9791,7 +10157,7 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
           maxTokens: activeAgent.maxTokens,
           namespaceId: activeAgent.namespaceId,
         }
-      : (conversation.agent as AgentConfig | null);
+      : (persistedSelectedAgent as AgentConfig | null);
     const assistantSettings = await getAssistantSettingsForTenant(req.tenantId);
     const userProfile = await db.query.users.findFirst({
       where: eq(schema.users.id, userId),
@@ -9864,13 +10230,13 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
             avatar: activeAgent.avatar,
             slug: activeAgent.slug,
           }
-        : conversation.agent
+        : persistedSelectedAgent
           ? {
-              id: conversation.agent.id,
-              nome: conversation.agent.nome,
-              preferredName: conversation.agent.preferredName,
-              avatar: conversation.agent.avatar,
-              slug: conversation.agent.slug,
+              id: persistedSelectedAgent.id,
+              nome: persistedSelectedAgent.nome,
+              preferredName: persistedSelectedAgent.preferredName,
+              avatar: persistedSelectedAgent.avatar,
+              slug: persistedSelectedAgent.slug,
             }
           : null;
 
@@ -9940,7 +10306,7 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
       llmMessages,
       { conversationId: id, source: 'sync', profile: resolveContextProfile(body.conteudo), knobs: syncRuntimeProfile.config }
     );
-    llmConfig.reasoningMode = body.reasoningMode ?? DEFAULT_REASONING_MODE;
+    llmConfig.reasoningMode = canonicalSelection.reasoningMode;
     const scopedLlmConfig = await applyScopedAdapterToConfig(llmConfig, {
       tenantId,
       namespaceId: activeNamespaceId ?? undefined,
@@ -9959,8 +10325,8 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
     const guardrailStartTime = Date.now();
     const assistantAgentName = activeAgent?.preferredName?.trim()
       || activeAgent?.nome?.trim()
-      || conversation.agent?.preferredName?.trim()
-      || conversation.agent?.nome?.trim()
+      || persistedSelectedAgent?.preferredName?.trim()
+      || persistedSelectedAgent?.nome?.trim()
       || null;
     const finalizedResponse = await enforceResponseGuardrails({
       responseText: response as string,
@@ -10009,7 +10375,7 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
 
     const autoCollectDecision = await shouldAutoCollectTrainingWithProfile({
       tenantId,
-      namespaceId: activeNamespaceId || conversation.agent?.namespaceId,
+      namespaceId: activeNamespaceId || persistedSelectedAgent?.namespaceId,
       conversationId: id,
       userId,
       userMessage: body.conteudo,
@@ -10021,7 +10387,7 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
     if (autoCollectDecision.allowed) {
       void collectTrainingSample({
         tenantId,
-        namespaceId: (activeNamespaceId || conversation.agent?.namespaceId) as string,
+        namespaceId: (activeNamespaceId || persistedSelectedAgent?.namespaceId) as string,
         conversationId: id,
         source: 'chat-auto',
         sourceType: 'chat',
@@ -10075,13 +10441,13 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
           avatar: activeAgent.avatar,
           slug: activeAgent.slug,
         }
-      : conversation.agent
+      : persistedSelectedAgent
         ? {
-            id: conversation.agent.id,
-            nome: conversation.agent.nome,
-            preferredName: conversation.agent.preferredName,
-            avatar: conversation.agent.avatar,
-            slug: conversation.agent.slug,
+            id: persistedSelectedAgent.id,
+            nome: persistedSelectedAgent.nome,
+            preferredName: persistedSelectedAgent.preferredName,
+            avatar: persistedSelectedAgent.avatar,
+            slug: persistedSelectedAgent.slug,
           }
         : null;
 
@@ -10102,6 +10468,7 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
 
 app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:messages:write'), async (req: Request, res: Response) => {
   // OWASP API3 - Validação Zod obrigatória
+  const rawBody = req.body && typeof req.body === 'object' ? req.body as Record<string, unknown> : {};
   const parseResult = streamMessageSchema.safeParse(req.body);
   if (!parseResult.success) {
     return res.status(400).json({ error: 'Input inválido' });
@@ -10110,6 +10477,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     messages: inputMessages,
     conversationId: _conversationId,
     namespaceId,
+    agentId,
     message,
     mediaAttachments,
     agentRouting,
@@ -10234,31 +10602,27 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       }
       conversation = existingConversation;
     } else {
-      const semanticRoute = await resolveSemanticRoute({
+      const canonicalSelection = await resolveCanonicalChatSelection({
         tenantId,
-        userMessage: userMessageContent,
-        agenticDetectors,
-        namespaceId: namespaceId ?? null,
-        route: clientRoute ?? '/chat',
+        requestedAgentId: agentId,
+        requestedNamespaceId: namespaceId,
+        requestedReasoningMode,
+        hasRequestedAgentId: hasOwnProperty(rawBody, 'agentId'),
+        hasRequestedNamespaceId: hasOwnProperty(rawBody, 'namespaceId'),
+        role: userRole,
       });
       const [created] = await db.insert(schema.conversations).values({
         tenantId,
         userId,
-        agentId: semanticRoute.agentId,
-        namespaceId: semanticRoute.namespaceId ?? namespaceId,
+        agentId: canonicalSelection.persistedAgentId,
+        namespaceId: canonicalSelection.persistedNamespaceId,
         titulo: 'Nova Conversa',
-        metadata: {
-          routing: {
-            source: semanticRoute.source,
-            score: semanticRoute.score,
-            profile: semanticRoute.profile,
-            autoAcceptThreshold: semanticRoute.autoAcceptThreshold,
-            humanReviewThreshold: semanticRoute.humanReviewThreshold,
-            needsHumanReview: semanticRoute.needsHumanReview,
-            reviewReasons: semanticRoute.reviewReasons,
-            matchedExceptionIds: semanticRoute.matchedExceptionIds,
-          },
-        },
+        metadata: buildConversationSelectionMetadata({
+          selectedAgentId: canonicalSelection.persistedAgentId,
+          selectedNamespaceId: canonicalSelection.persistedNamespaceId,
+          reasoningMode: canonicalSelection.reasoningMode,
+          source: canonicalSelection.source,
+        }),
       }).returning();
 
       if (!created) {
@@ -10273,21 +10637,19 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       conversation = createdWithAgent ?? created;
       conversationId = created.id;
       conversationCreated = true;
-      if (semanticRoute.needsHumanReview) {
-        await persistHybridReviewEvent({
-          tenantId,
-          userId,
-          route: clientRoute ?? '/chat',
-          context: semanticRoute.profile,
-          reason: semanticRoute.reviewReasons[0] ?? 'low_confidence_semantic_routing',
-          namespaceId: semanticRoute.namespaceId ?? null,
-          agentId: semanticRoute.agentId ?? null,
-          preview: userMessageContent,
-        });
-      }
     }
 
     const conversationState = await getOrCreateConversationState(conversationId);
+    const canonicalSelection = await resolveCanonicalChatSelection({
+      tenantId,
+      conversation,
+      requestedAgentId: agentId,
+      requestedNamespaceId: namespaceId,
+      requestedReasoningMode,
+      hasRequestedAgentId: hasOwnProperty(rawBody, 'agentId'),
+      hasRequestedNamespaceId: hasOwnProperty(rawBody, 'namespaceId'),
+      role: userRole,
+    });
 
     // Persistir approvalPolicy enviada pelo frontend (E2E consistency)
     if (requestApprovalPolicy && requestApprovalPolicy !== (conversationState.approvalPolicy ?? 'never_confirm')) {
@@ -10295,7 +10657,24 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       conversationState.approvalPolicy = requestApprovalPolicy;
     }
 
-    if (agentRouting) {
+    const hasCanonicalSelectionInput = hasOwnProperty(rawBody, 'agentId') || hasOwnProperty(rawBody, 'namespaceId');
+
+    if (hasCanonicalSelectionInput) {
+      const nextConversationStateMetadata = mergeConversationStateMetadata(conversationState.metadata, {
+        agentRouting: {
+          mode: canonicalSelection.persistedAgentId ? 'manual' : 'auto',
+          agentIds: canonicalSelection.persistedAgentId ? [canonicalSelection.persistedAgentId] : [],
+          updatedAt: new Date().toISOString(),
+          reason: canonicalSelection.persistedAgentId ? 'canonical_fixed_agent' : 'canonical_scope_reset',
+        },
+      });
+      await db.update(schema.conversationStates)
+        .set({ metadata: nextConversationStateMetadata, atualizadoEm: new Date() })
+        .where(eq(schema.conversationStates.conversationId, conversationId));
+      conversationState.metadata = nextConversationStateMetadata;
+    }
+
+    if (!hasCanonicalSelectionInput && agentRouting) {
       const requestedAgentIds = agentRouting.agentIds ?? [];
       if (agentRouting.mode === 'manual' && requestedAgentIds.length === 0) {
         res.write(`data: ${JSON.stringify({ error: 'Selecione ao menos um agente para o modo manual.' })}\n\n`);
@@ -10309,6 +10688,9 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           where: and(
             eq(schema.agents.tenantId, tenantId),
             eq(schema.agents.status, 'active'),
+            canonicalSelection.persistedNamespaceId
+              ? eq(schema.agents.namespaceId, canonicalSelection.persistedNamespaceId)
+              : undefined,
             inArray(schema.agents.id, requestedAgentIds)
           ),
         });
@@ -10330,15 +10712,32 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           reason: agentRouting.mode === 'manual' ? 'manual_ui' : 'auto_ui',
         },
       });
+      conversationState.metadata = mergeConversationStateMetadata(conversationState.metadata, {
+        agentRouting: {
+          mode: agentRouting.mode,
+          agentIds: agentRouting.mode === 'manual' ? requestedAgentIds : [],
+          updatedAt: new Date().toISOString(),
+          reason: agentRouting.mode === 'manual' ? 'manual_ui' : 'auto_ui',
+        },
+      });
     }
+    if (!conversation) {
+      throw new Error('Conversa não disponível para roteamento');
+    }
+    const conversationForRouting: ConversationWithAgent = {
+      ...conversation,
+      agentId: canonicalSelection.persistedAgentId,
+      namespaceId: canonicalSelection.persistedNamespaceId,
+    };
     const routingDecision = await resolveAgentRoutingForMessage({
       tenantId,
       conversationId,
       userMessage: userMessageContent,
-      conversation,
+      conversation: conversationForRouting,
       conversationState,
       agenticDetectors,
-      requestedNamespaceId: namespaceId ?? null,
+      requestedNamespaceId: canonicalSelection.persistedNamespaceId,
+      fixedAgentId: canonicalSelection.persistedAgentId,
       route: clientRoute ?? '/chat',
       userId,
     });
@@ -10351,55 +10750,56 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     }
 
     const activeAgent = routingDecision.agent;
-    const activeAgentId = activeAgent?.id ?? conversation?.agentId ?? undefined;
-    const activeNamespaceId = routingDecision.namespaceId ?? conversation?.namespaceId ?? null;
-    const shouldUpdateConversation = Boolean(
-      (activeAgentId && activeAgentId !== conversation?.agentId)
-      || (activeNamespaceId && activeNamespaceId !== conversation?.namespaceId)
-      || routingDecision.source !== 'none'
+    const activeAgentId = activeAgent?.id ?? undefined;
+    const activeNamespaceId = routingDecision.namespaceId ?? canonicalSelection.persistedNamespaceId ?? null;
+    const updatedMetadata = mergeConversationMetadata(
+      conversation?.metadata,
+      buildConversationSelectionMetadata({
+        selectedAgentId: canonicalSelection.persistedAgentId,
+        selectedNamespaceId: canonicalSelection.persistedNamespaceId,
+        reasoningMode: canonicalSelection.reasoningMode,
+        source: canonicalSelection.source,
+      })
     );
-
-    if (shouldUpdateConversation && conversationId) {
-      const updatedMetadata = mergeConversationMetadata(conversation?.metadata, {
-        routing: {
-          mode: routingDecision.mode,
-          source: routingDecision.source,
-          score: routingDecision.score,
-          profile: routingDecision.profile,
-          autoAcceptThreshold: routingDecision.threshold,
-          humanReviewThreshold: routingDecision.humanReviewThreshold ?? null,
-          needsHumanReview: routingDecision.humanReviewRequired ?? false,
-          reviewReasons: routingDecision.reviewReasons ?? [],
-          matchedExceptionIds: routingDecision.matchedExceptionIds ?? [],
-          hybridPolicyVersion: routingDecision.hybridPolicyVersion ?? null,
-          selectedAgentId: activeAgentId ?? null,
-          namespaceFallbackReason: routingDecision.namespaceFallbackReason ?? null,
-          updatedAt: new Date().toISOString(),
-        },
-      });
-      await db.update(schema.conversations)
-        .set({
-          agentId: activeAgentId ?? conversation?.agentId ?? null,
-          namespaceId: activeNamespaceId ?? conversation?.namespaceId ?? null,
-          metadata: updatedMetadata,
-          atualizadoEm: new Date(),
-        })
-        .where(eq(schema.conversations.id, conversationId));
-    }
+    updatedMetadata.routing = {
+      mode: routingDecision.mode,
+      source: routingDecision.source,
+      score: routingDecision.score,
+      profile: routingDecision.profile,
+      autoAcceptThreshold: routingDecision.threshold,
+      humanReviewThreshold: routingDecision.humanReviewThreshold ?? null,
+      needsHumanReview: routingDecision.humanReviewRequired ?? false,
+      reviewReasons: routingDecision.reviewReasons ?? [],
+      matchedExceptionIds: routingDecision.matchedExceptionIds ?? [],
+      hybridPolicyVersion: routingDecision.hybridPolicyVersion ?? null,
+      selectedAgentId: activeAgentId ?? null,
+      selectedNamespaceId: activeNamespaceId ?? null,
+      namespaceFallbackReason: routingDecision.namespaceFallbackReason ?? null,
+      updatedAt: new Date().toISOString(),
+    };
+    await db.update(schema.conversations)
+      .set({
+        agentId: activeAgentId ?? null,
+        namespaceId: activeNamespaceId,
+        metadata: updatedMetadata,
+        atualizadoEm: new Date(),
+      })
+      .where(eq(schema.conversations.id, conversationId));
 
     if (conversation) {
-      if (activeAgentId) {
-        conversation.agentId = activeAgentId;
-      }
-      if (activeNamespaceId) {
-        conversation.namespaceId = activeNamespaceId;
-      }
+      conversation.agentId = activeAgentId ?? null;
+      conversation.namespaceId = activeNamespaceId;
+      conversation.metadata = updatedMetadata;
     }
+
+    const persistedSelectedAgent = canonicalSelection.persistedAgentId && conversation?.agent?.id === canonicalSelection.persistedAgentId
+      ? conversation.agent
+      : null;
 
     const llmContextRoute = await resolveLlmContextRoute({
       tenantId,
       route: clientRoute,
-      namespaceId: activeNamespaceId ?? namespaceId ?? conversation?.namespaceId ?? conversation?.agent?.namespaceId ?? null,
+      namespaceId: activeNamespaceId ?? canonicalSelection.persistedNamespaceId ?? conversation?.agent?.namespaceId ?? null,
     });
 
     const agentPayload = activeAgent
@@ -10410,13 +10810,13 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           avatar: activeAgent.avatar,
           slug: activeAgent.slug,
         }
-      : conversation?.agent
+      : persistedSelectedAgent
         ? {
-            id: conversation.agent.id,
-            nome: conversation.agent.nome,
-            preferredName: conversation.agent.preferredName,
-            avatar: conversation.agent.avatar,
-            slug: conversation.agent.slug,
+            id: persistedSelectedAgent.id,
+            nome: persistedSelectedAgent.nome,
+            preferredName: persistedSelectedAgent.preferredName,
+            avatar: persistedSelectedAgent.avatar,
+            slug: persistedSelectedAgent.slug,
           }
         : null;
 
@@ -10432,7 +10832,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           maxTokens: activeAgent.maxTokens,
           namespaceId: activeAgent.namespaceId,
         }
-      : (conversation?.agent as AgentConfig | null);
+      : (persistedSelectedAgent as AgentConfig | null);
 
     res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
@@ -10939,7 +11339,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         }
       }
 
-      const namespaceIdForMedia = activeNamespaceId || conversation?.agent?.namespaceId || namespaceId;
+      const namespaceIdForMedia = activeNamespaceId || canonicalSelection.persistedNamespaceId || conversation?.agent?.namespaceId;
       const ragQuery = visionSummaries.length > 0
         ? `${visionSummaries.join('\n\n')}\n\nPergunta do usuário:\n${userContent}`
         : userContent;
@@ -11020,7 +11420,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           mediaMessages,
           { conversationId, source: 'stream', profile: mediaProfile, knobs: mediaRuntimeProfile.config }
         );
-        llmConfig.reasoningMode = requestedReasoningMode ?? DEFAULT_REASONING_MODE;
+        llmConfig.reasoningMode = canonicalSelection.reasoningMode;
         const scopedLlmConfig = await applyScopedAdapterToConfig(llmConfig, {
           tenantId,
           namespaceId: namespaceIdForMedia ?? undefined,
@@ -13772,12 +14172,12 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             payload: {
               limit: ragParams.limit,
               threshold: ragParams.threshold,
-              namespaceId: activeNamespaceId || namespaceId,
+              namespaceId: activeNamespaceId || canonicalSelection.persistedNamespaceId,
             },
           });
           return buscarContextoRAG(
             userMessageContent,
-            activeNamespaceId || namespaceId,
+            activeNamespaceId || canonicalSelection.persistedNamespaceId || undefined,
             ragParams.limit,
             ragParams.threshold,
             { userId, tenantId, role: req.user?.role as Role }
@@ -13827,7 +14227,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       const classificationWebMode = ragClassification?.classification?.webMode;
       const streamRuntimeProfile = await resolveNamespaceProfileRuntime(db, {
         tenantId,
-        namespaceId: activeNamespaceId ?? namespaceId ?? conversation?.namespaceId ?? conversation?.agent?.namespaceId ?? null,
+        namespaceId: activeNamespaceId ?? canonicalSelection.persistedNamespaceId ?? conversation?.namespaceId ?? conversation?.agent?.namespaceId ?? null,
       });
       let memorySearchApplied = false;
 
@@ -13836,7 +14236,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         ragSources = ragResult.sources;
         logger.info({ 
           ragChunks: ragResult.sources.length,
-          namespaceId,
+          namespaceId: canonicalSelection.persistedNamespaceId,
         }, 'Contexto RAG injetado no streaming');
       }
 
@@ -13945,7 +14345,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         });
         const agenticResult = await buscarContextoAgentic({
           query: userMessageContent,
-          namespaceId: activeNamespaceId || namespaceId,
+          namespaceId: activeNamespaceId || canonicalSelection.persistedNamespaceId || undefined,
           forceMode: explicitWebRequest || explicitDeepWebRequest ? 'web' : undefined,
           webMode: explicitDeepWebRequest ? 'deepweb' : (classificationWebMode === 'deepweb' ? 'deepweb' : undefined),
           limit: ragParams.limit,
@@ -14054,10 +14454,10 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         llmMessages,
         { conversationId, source: 'stream', profile: streamProfile, knobs: streamRuntimeProfile.config }
       );
-      llmConfig.reasoningMode = requestedReasoningMode ?? DEFAULT_REASONING_MODE;
+      llmConfig.reasoningMode = canonicalSelection.reasoningMode;
       const scopedLlmConfig = await applyScopedAdapterToConfig(llmConfig, {
         tenantId,
-        namespaceId: activeNamespaceId || namespaceId || undefined,
+        namespaceId: activeNamespaceId || canonicalSelection.persistedNamespaceId || undefined,
         agentId: conversation?.agentId ?? undefined,
       });
       emitAgentEvent({
@@ -14363,7 +14763,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         },
         scopedLlmConfig,
         getAdaptiveGpuPriority('stream', streamRuntimeProfile.config),
-        { route: llmContextRoute, tenantId, userId, conversationId, namespaceId: activeNamespaceId || namespaceId || undefined, agentId: conversation?.agentId ?? undefined },
+        { route: llmContextRoute, tenantId, userId, conversationId, namespaceId: activeNamespaceId || canonicalSelection.persistedNamespaceId || undefined, agentId: conversation?.agentId ?? undefined },
         (meta) => {
           try {
             if (res.headersSent && !res.writableEnded && meta.usedFallback) {

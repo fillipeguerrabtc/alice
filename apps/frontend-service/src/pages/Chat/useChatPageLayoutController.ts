@@ -6,7 +6,7 @@
  * Data: 10 de Março de 2026
  */
 import { useQueryClient } from '@tanstack/react-query';
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useParams, useLocation } from 'wouter';
 import { useTranslation } from 'react-i18next';
 import { useToast } from '@/hooks/use-toast';
@@ -35,6 +35,7 @@ import { useChatLocalState } from './useChatLocalState';
 import { useChatContainerBindings } from './useChatContainerBindings';
 import { useChatSendMessageMutation } from './useChatSendMessageMutation';
 import { buildChatPageLayoutProps } from './chat-page-layout-props-builder';
+import { readConversationSelection } from './chat-selection';
 import { useAuth } from '@/hooks/use-auth';
 import { isManualReasoningMode } from '@/lib/reasoning-mode';
 
@@ -53,7 +54,6 @@ export function useChatPageLayoutController() {
   const userRoles = currentUser?.roles ?? (currentUser?.role ? [currentUser.role] : []);
   const canOverrideReasoningMode = userRoles.some((role) => role === 'admin' || role === 'super_admin');
   const {
-    activeWorkspace,
     deleteAllOpen,
     deleteSelectedOpen,
     deleteTargetId,
@@ -77,9 +77,7 @@ export function useChatPageLayoutController() {
     recordingStartingRef,
     recordingStreamRef,
     recordingUnmountedRef,
-    reasoningMode,
     runtimeNotice,
-    setActiveWorkspace,
     setDeleteAllOpen,
     setDeleteSelectedOpen,
     setDeleteTargetId,
@@ -92,7 +90,9 @@ export function useChatPageLayoutController() {
     setMessages,
     setMobileDrawerOpen,
     setPendingMedia,
-    setReasoningMode,
+    setSelectedAgentId,
+    setSelectedAreaNamespaceId,
+    setSelectedReasoningMode,
     setRuntimeNotice,
     setShowStreamDiagnostics,
     setShowTrainingDialog,
@@ -104,6 +104,9 @@ export function useChatPageLayoutController() {
     showStreamDiagnostics,
     showTrainingDialog,
     sidebarOpen,
+    selectedAgentId,
+    selectedAreaNamespaceId,
+    selectedReasoningMode,
     stopRequestedRef,
     streamControllerRef,
     streamEvents,
@@ -206,7 +209,6 @@ export function useChatPageLayoutController() {
     handleConfirmDeleteSelected,
     handleNewChatWithClose,
     handleSelectConversation,
-    updateApprovalPolicy,
   } = useChatConversationLifecycle({
     clearConversationSelection,
     conversationId,
@@ -223,35 +225,11 @@ export function useChatPageLayoutController() {
     t,
   });
   const {
-    fallbackMessageUser,
-    handleApprovalPolicyChange,
-    handleConfirmDeleteTarget,
-    workspaceOptions,
-  } = useChatContainerBindings({
-    bumpInputFocus,
-    conversationId,
-    currentUser,
-    deleteTargetId,
-    onDeleteConversation: deleteConversation.mutate,
-    onUpdateApprovalPolicy: updateApprovalPolicy.mutate,
-    setDeleteTargetId,
-  });
-  const {
-    agentOptions,
-    approvalPolicyForSelect,
-    approvalPolicyOptions,
     modelBadgeLabel,
-    showConversationWorkspaceHint,
     showDesktopActionMenu,
-    showDiagnosticsControls,
-    showGovernanceControls,
     showOperationsControls,
-    workspaceHint,
   } = useChatWorkspacePresentation({
-    activeWorkspace,
-    agentsData,
     appVersion,
-    approvalPolicy,
     conversationId,
     t,
     versionData,
@@ -261,11 +239,8 @@ export function useChatPageLayoutController() {
     ensureRoutingSelection,
     routedAgent,
     routingAgentIds,
-    routingDebug,
     routingKey,
-    routingLabel,
     routingMode,
-    routingSourceLabel,
     setRoutedAgentByConversation,
     setRoutingAgentIds,
     setRoutingAgentIdsByConversation,
@@ -281,6 +256,72 @@ export function useChatPageLayoutController() {
     notify: toast,
     t,
   });
+  const {
+    fallbackMessageUser,
+    areaOptions,
+    handleSelectedAgentIdChange,
+    handleSelectedAreaNamespaceIdChange,
+    handleSelectedReasoningModeChange,
+    handleConfirmDeleteTarget,
+    agentOptions,
+    reasoningOptions,
+    selectedAgentId: normalizedSelectedAgentId,
+    selectedAreaNamespaceId: normalizedSelectedAreaNamespaceId,
+    selectedReasoningMode: normalizedSelectedReasoningMode,
+    selectedSelectionPayload,
+  } = useChatContainerBindings({
+    agentsData,
+    bumpInputFocus,
+    conversationId,
+    currentUser,
+    deleteTargetId,
+    namespaces,
+    onDeleteConversation: deleteConversation.mutate,
+    onRoutingAgentIdsChange: setRoutingAgentIds,
+    onRoutingModeChange: setRoutingMode,
+    routingAgentIds,
+    routingMode,
+    selectedAgentId,
+    selectedAreaNamespaceId,
+    selectedReasoningMode,
+    setDeleteTargetId,
+    setSelectedAgentId,
+    setSelectedAreaNamespaceId,
+    setSelectedReasoningMode,
+    t,
+  });
+  const selectionConversationSyncRef = useRef<string | null>(null);
+  useEffect(() => {
+    const nextConversationKey = conversationId ?? 'new';
+    if (selectionConversationSyncRef.current === nextConversationKey) {
+      return;
+    }
+    if (conversationId && !activeConversation) {
+      return;
+    }
+
+    selectionConversationSyncRef.current = nextConversationKey;
+    const nextConversationSelection = readConversationSelection(activeConversation);
+    const nextReasoningMode = !canOverrideReasoningMode
+      && isManualReasoningMode(nextConversationSelection.selectedReasoningMode)
+      ? 'auto'
+      : nextConversationSelection.selectedReasoningMode;
+
+    setSelectedAreaNamespaceId(nextConversationSelection.selectedAreaNamespaceId);
+    setSelectedAgentId(nextConversationSelection.selectedAgentId);
+    setSelectedReasoningMode(nextReasoningMode);
+    setRoutingMode(nextConversationSelection.selectedAgentId ? 'manual' : 'auto');
+    setRoutingAgentIds(nextConversationSelection.selectedAgentId ? [nextConversationSelection.selectedAgentId] : []);
+  }, [
+    activeConversation,
+    canOverrideReasoningMode,
+    conversationId,
+    setRoutingAgentIds,
+    setRoutingMode,
+    setSelectedAgentId,
+    setSelectedAreaNamespaceId,
+    setSelectedReasoningMode,
+  ]);
   const {
     createStatusEvent,
     pushStreamEvent,
@@ -309,7 +350,9 @@ export function useChatPageLayoutController() {
     routingAgentIds,
     routingKey,
     routingMode,
-    reasoningMode,
+    selectedAgentId: selectedSelectionPayload.agentId ?? null,
+    selectedNamespaceId: selectedSelectionPayload.namespaceId ?? null,
+    selectedReasoningMode: selectedSelectionPayload.reasoningMode,
     setIsStreaming,
     setLastResponseUsedFallback,
     setMessages,
@@ -370,8 +413,6 @@ export function useChatPageLayoutController() {
   const {
     handleFeedback,
     handleRateImage,
-    openConversationTrainingDialog,
-    openMessageTrainingDialog,
     sendConversationToTraining,
     sendSelectedMessagesToTraining,
   } = useChatTrainingFeedbackActions({
@@ -416,9 +457,7 @@ export function useChatPageLayoutController() {
     handleOpenMobileDrawer,
     handleQuickReply,
     handleSubmitTraining,
-    handleToggleSelectionMode,
     handleToggleSidebar,
-    handleToggleStreamDiagnostics,
     handleTrainingDialogOpenChange,
     isSubmitTrainingPending,
   } = useChatUiInteractionHandlers({
@@ -457,8 +496,7 @@ export function useChatPageLayoutController() {
   } = useChatSectionProps({
     activeConversationCount: selectedConversationIds.size,
     agentOptions,
-    approvalPolicyForSelect,
-    approvalPolicyOptions,
+    areaOptions,
     conversationFilterActive: conversationFilter.isActive,
     conversationFilterLabel,
     conversationId,
@@ -471,10 +509,8 @@ export function useChatPageLayoutController() {
     isFetchingNextPage,
     isSelectionMode,
     isSubmitTrainingPending,
-    messageSelectionMode,
     messagesCount: messages.length,
     namespaces,
-    onApprovalPolicyChange: handleApprovalPolicyChange,
     onClearFilter: clearConversationFilter,
     onCloseSidebar: handleCloseConversationsSidebar,
     onConfirmDeleteAll: handleConfirmDeleteAll,
@@ -490,37 +526,27 @@ export function useChatPageLayoutController() {
     onLoadMore: handleLoadMoreConversations,
     onNamespaceChange: setTrainingNamespaceId,
     onNewChat: handleNewChatWithClose,
-    onOpenConversationTrainingDialog: openConversationTrainingDialog,
-    onOpenMessageTrainingDialog: openMessageTrainingDialog,
     onReasoningModeChange: (nextMode) => {
       if (!canOverrideReasoningMode && isManualReasoningMode(nextMode)) {
         return;
       }
-      setReasoningMode(nextMode);
+      handleSelectedReasoningModeChange(nextMode);
     },
-    onRoutingAgentIdsChange: setRoutingAgentIds,
-    onRoutingModeChange: setRoutingMode,
+    onAreaChange: handleSelectedAreaNamespaceIdChange,
+    onAgentChange: handleSelectedAgentIdChange,
     onSelectConversation: handleSelectConversation,
     onSubmitTraining: handleSubmitTraining,
-    onToggleMessageSelectionMode: handleToggleSelectionMode,
     onToggleSelectConversation: toggleConversationSelection,
     onToggleSelectionMode: toggleConversationSelectionMode,
-    onToggleStreamDiagnostics: handleToggleStreamDiagnostics,
     onTrainingDialogOpenChange: handleTrainingDialogOpenChange,
-    routingAgentIds,
-    routingDebug,
-    routingLabel,
-    routingMode,
-    routingSourceLabel,
-    reasoningMode,
+    reasoningOptions,
+    reasoningMode: normalizedSelectedReasoningMode,
+    selectedAgentId: normalizedSelectedAgentId,
+    selectedAreaNamespaceId: normalizedSelectedAreaNamespaceId,
     selectedConversationIds,
     selectedMessageCount: selectedMessageIds.size,
     canOverrideReasoningMode,
-    showDesktopActionMenu,
-    showDiagnosticsControls,
-    showGovernanceControls,
-    showOperationsControls,
-    showStreamDiagnostics,
+    showConversationActions: showOperationsControls,
     showTrainingDialog,
     t,
     trainingDialogMode,
@@ -529,7 +555,6 @@ export function useChatPageLayoutController() {
   const chatPageLayoutProps = buildChatPageLayoutProps({
     state: {
       acceptedTypes: CHAT_ACCEPTED_MEDIA_TYPES,
-      activeWorkspace,
       conversationId,
       focusNonce,
       input,
@@ -544,7 +569,6 @@ export function useChatPageLayoutController() {
       modelBadgeLabel,
       pendingMedia,
       runtimeNotice,
-      showConversationWorkspaceHint,
       showDesktopActionMenu,
       showLoginBanner,
       showStreamDiagnostics,
@@ -558,8 +582,6 @@ export function useChatPageLayoutController() {
       chatDialogsSectionProps,
       chatGovernanceControlsProps,
       conversationsListProps,
-      workspaceHint,
-      workspaceOptions,
     },
     viewport: {
       messages,
@@ -586,7 +608,6 @@ export function useChatPageLayoutController() {
       onSubmitComposer: handleSubmit,
       onToggleMessageSelection: toggleMessageSelection,
       onToggleSidebar: handleToggleSidebar,
-      onWorkspaceChange: setActiveWorkspace,
     },
   });
 

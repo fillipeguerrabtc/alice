@@ -462,9 +462,25 @@
     },
     "reasoning": {
       "label": "Raciocínio",
-      "auto": "Auto",
-      "thinking": "Com Thinking",
-      "nonThinking": "Sem Thinking"
+      "auto": "Automático",
+      "thinking": "Mais Profundo",
+      "nonThinking": "Rápido"
+    },
+    "header": {
+      "conversationTitle": "Conversa",
+      "newConversationTitle": "Nova conversa",
+      "conversationDescription": "Ajuste área, agente e raciocínio sem perder o foco da conversa.",
+      "newConversationDescription": "Escolha como a Alice deve conduzir a conversa e comece quando quiser."
+    },
+    "selectionControls": {
+      "area": "Área",
+      "agent": "Agente",
+      "reasoning": "Raciocínio",
+      "areaPlaceholder": "Selecione uma área",
+      "agentPlaceholder": "Selecione um agente",
+      "reasoningPlaceholder": "Selecione o raciocínio",
+      "automaticArea": "Automática",
+      "automaticAgent": "Automático"
     },
     "training": {
       "send": "Enviar p/ Treino",

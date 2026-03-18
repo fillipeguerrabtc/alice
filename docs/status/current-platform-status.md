@@ -28,6 +28,13 @@ Registrar um snapshot curto do estado atual da plataforma, sem acumular historic
 - Orquestracao de GPU: [../architecture/gpu-manager.md](../architecture/gpu-manager.md)
 - Deploy, release e smart pull: [../operations/deployment.md](../operations/deployment.md), [../operations/release.md](../operations/release.md) e [../operations/deploy.md](../operations/deploy.md)
 
+### Produto e experiencia principal
+
+- O chat principal foi consolidado para operar somente com `Área`, `Agente` e `Raciocínio` no topo da experiencia.
+- `Área` e o namespace canonico da conversa; `Agente` representa o especialista dentro dessa area; `Raciocínio` usa os modos `Automático`, `Rápido` e `Mais Profundo`.
+- Workspace selector saiu do fluxo principal do chat.
+- Operações, governança e diagnóstico permanecem acessiveis por navegacao dedicada fora do chat principal.
+
 ### Treinamento e aprendizado
 
 - Visao geral do treinamento: [../operations/training/overview.md](../operations/training/overview.md)

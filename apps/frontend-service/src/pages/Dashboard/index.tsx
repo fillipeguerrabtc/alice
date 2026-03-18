@@ -15,6 +15,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
 import { useLocation } from 'wouter';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -28,6 +29,7 @@ import {
   TrendingUp, 
   Users, 
   Activity,
+  Headphones,
   CreditCard,
   Wallet,
   Globe,
@@ -330,6 +332,41 @@ export default function Dashboard() {
   const displayCircuitBreakers: CircuitBreakerStatus[] = circuitBreakerData?.breakers || [];
 
   const conversationsBarData = weeklyConversations?.data || [];
+  const workspaceAccessCards = [
+    {
+      title: 'Training & Qualidade',
+      description: 'Revisão de dataset, jobs, promoção e materiais que alimentam a qualidade da Alice.',
+      icon: Brain,
+      accentClassName: 'border-amber-500/30 bg-amber-500/5',
+      primaryAction: { label: 'Abrir Training', path: '/training' },
+      secondaryActions: [
+        { label: 'Documentos', path: '/documents' },
+        { label: 'Galeria', path: '/images' },
+      ],
+    },
+    {
+      title: 'Administração & Governança',
+      description: 'RBAC, namespaces e configurações avançadas ficam concentrados nas superfícies administrativas.',
+      icon: Shield,
+      accentClassName: 'border-sky-500/30 bg-sky-500/5',
+      primaryAction: { label: 'Abrir Usuários', path: '/users' },
+      secondaryActions: [
+        { label: 'Namespaces', path: '/namespaces' },
+        { label: 'Configurações', path: '/system-settings' },
+      ],
+    },
+    {
+      title: 'Support & Diagnóstico',
+      description: 'Acompanhamento operacional e investigação técnica agora ficam fora do chat principal.',
+      icon: Headphones,
+      accentClassName: 'border-emerald-500/30 bg-emerald-500/5',
+      primaryAction: { label: 'Abrir Observabilidade', path: '/observability' },
+      secondaryActions: [
+        { label: 'Atendimento', path: '/takeover' },
+        { label: 'Conversas', path: '/conversations' },
+      ],
+    },
+  ] as const;
   const handleConversationDaySelect = useCallback((date: string) => {
     const params = new URLSearchParams();
     params.set('from', date);
@@ -363,6 +400,44 @@ export default function Dashboard() {
               {t('dashboard.systemOnline')}
             </Badge>
           </div>
+        </div>
+      </motion.div>
+
+      <motion.div variants={itemVariants}>
+        <div className="grid gap-4 xl:grid-cols-3">
+          {workspaceAccessCards.map((card) => (
+            <Card key={card.title} className={card.accentClassName}>
+              <CardHeader className="space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <CardTitle className="flex items-center gap-2 text-lg">
+                      <card.icon className="h-5 w-5 text-primary" />
+                      {card.title}
+                    </CardTitle>
+                    <CardDescription className="mt-2 text-sm text-muted-foreground">
+                      {card.description}
+                    </CardDescription>
+                  </div>
+                  <Badge variant="outline">Fluxo dedicado</Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="flex flex-wrap gap-2">
+                <Button size="sm" onClick={() => navigateTo(card.primaryAction.path)}>
+                  {card.primaryAction.label}
+                </Button>
+                {card.secondaryActions.map((action) => (
+                  <Button
+                    key={action.path}
+                    size="sm"
+                    variant="outline"
+                    onClick={() => navigateTo(action.path)}
+                  >
+                    {action.label}
+                  </Button>
+                ))}
+              </CardContent>
+            </Card>
+          ))}
         </div>
       </motion.div>
 

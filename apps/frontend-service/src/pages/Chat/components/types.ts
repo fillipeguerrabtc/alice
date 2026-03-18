@@ -110,6 +110,18 @@ export interface Message {
 
 export interface Conversation {
   id: string;
+  agentId?: string | null;
+  namespaceId?: string | null;
+  metadata?: {
+    selection?: {
+      selectedAgentId?: string | null;
+      selectedNamespaceId?: string | null;
+      reasoningMode?: 'auto' | 'thinking' | 'non_thinking' | null;
+      source?: string | null;
+      updatedAt?: string | null;
+    } | null;
+    [key: string]: unknown;
+  } | null;
   titulo: string | null;
   criadoEm: string;
   atualizadoEm: string;

@@ -4,6 +4,7 @@ import { apiRequest } from '@/lib/queryClient';
 import { parseMessageSources } from './chat-message-sources';
 import { mediaAttachmentToBase64 } from './chat-media-attachments';
 import { normalizeRouteForContext } from './chat-page-routing';
+import { buildCanonicalChatSelectionPayload } from './chat-selection';
 import { normalizeServerMessage, type ServerMessagePayload } from './chat-message-normalization';
 import { frontendLogger } from '@/lib/logger';
 import type { AgentEvent, MediaAttachment, Message, RuntimeNotice, RuntimeNoticeCode } from './components/types';
@@ -17,8 +18,9 @@ type NotifyFn = (params: {
 }) => void;
 
 type CreateConversationPayload = {
-  agentId?: string;
-  namespaceId?: string;
+  agentId?: string | null;
+  namespaceId?: string | null;
+  reasoningMode?: ReasoningMode;
   context?: 'trading' | 'sales' | 'support' | 'cambio' | 'default';
   route?: string;
 };
@@ -59,7 +61,9 @@ export type ChatStreamMutationOptions = {
   routingAgentIds: string[];
   routingKey: string;
   routingMode: RoutingMode;
-  reasoningMode: ReasoningMode;
+  selectedAgentId: string | null;
+  selectedNamespaceId: string | null;
+  selectedReasoningMode: ReasoningMode;
   setIsStreaming: Dispatch<SetStateAction<boolean>>;
   setLastResponseUsedFallback: Dispatch<SetStateAction<boolean>>;
   setMessages: Dispatch<SetStateAction<Message[]>>;
@@ -115,7 +119,9 @@ export function createChatStreamMutationConfig(options: ChatStreamMutationOption
       routingAgentIds,
       routingKey,
       routingMode,
-      reasoningMode,
+      selectedAgentId,
+      selectedNamespaceId,
+      selectedReasoningMode,
       setIsStreaming,
       setLastResponseUsedFallback,
       setMessages,
@@ -132,6 +138,11 @@ export function createChatStreamMutationConfig(options: ChatStreamMutationOption
       streamControllerRef,
       t,
     } = options;
+    const selectedPayload = buildCanonicalChatSelectionPayload({
+      agentId: selectedAgentId,
+      namespaceId: selectedNamespaceId,
+      reasoningMode: selectedReasoningMode,
+    });
 
     if (!isAuthenticated) {
       notify({
@@ -182,10 +193,11 @@ export function createChatStreamMutationConfig(options: ChatStreamMutationOption
     const routeQuerySuffix = routeContextFromQuery ? `?from=${encodeURIComponent(routeContextFromQuery)}` : '';
     let activeConversationId = conversationId;
     if (!activeConversationId) {
-      const contextPayload: CreateConversationPayload = {};
-      if (currentRoutingMode === 'manual' && currentRoutingAgentIds.length === 1) {
-        contextPayload.agentId = currentRoutingAgentIds[0];
-      }
+      const contextPayload: CreateConversationPayload = {
+        agentId: selectedPayload.agentId,
+        namespaceId: selectedPayload.namespaceId,
+      };
+      contextPayload.reasoningMode = selectedPayload.reasoningMode;
       if (resolvedRoute.startsWith('/trading') || resolvedRoute.startsWith('/demo-trading')) {
         contextPayload.context = 'trading';
         contextPayload.route = resolvedRoute;
@@ -276,11 +288,7 @@ export function createChatStreamMutationConfig(options: ChatStreamMutationOption
       ...(mediaPayload && mediaPayload.length > 0 ? { mediaAttachments: mediaPayload } : {}),
       route: resolvedRoute,
       approvalPolicy,
-      agentRouting: {
-        mode: currentRoutingMode,
-        agentIds: currentRoutingMode === 'manual' ? currentRoutingAgentIds : [],
-      },
-      reasoningMode,
+      ...selectedPayload,
       streamDiagnostics: showStreamDiagnostics,
     };
 

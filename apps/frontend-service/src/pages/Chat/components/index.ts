@@ -25,6 +25,5 @@ export { ChatDialogsSection } from './ChatDialogsSection';
 export { ChatMessagesViewport } from './ChatMessagesViewport';
 export { ChatHeaderSection } from './ChatHeaderSection';
 export { ChatConversationsSidebar } from './ChatConversationsSidebar';
-export { ChatWorkspaceSection } from './ChatWorkspaceSection';
 export { ChatComposerSection } from './ChatComposerSection';
 export { ChatPageLayout } from './ChatPageLayout';

@@ -16,11 +16,6 @@ const containerVariants = {
   },
 } as const;
 
-type WorkspaceHint = {
-  title: string;
-  description: string;
-};
-
 type ChatMessagesViewportProps = {
   isStreaming: boolean;
   lastResponseUsedFallback: boolean;
@@ -35,14 +30,12 @@ type ChatMessagesViewportProps = {
   onToggleMessageSelection: (messageId: string, index: number, shiftKey: boolean) => void;
   scrollAreaRef: RefObject<HTMLDivElement | null>;
   selectedMessageIds: Set<string>;
-  showConversationWorkspaceHint: boolean;
   showLoginBanner: boolean;
   showStreamDiagnostics: boolean;
   streamEvents: AgentEvent[];
   streamStatusLabel: string | null;
   runtimeNotice: RuntimeNotice | null;
   typingSpeedMs?: number;
-  workspaceHint: WorkspaceHint | null;
 };
 
 export function ChatMessagesViewport({
@@ -59,14 +52,12 @@ export function ChatMessagesViewport({
   onToggleMessageSelection,
   scrollAreaRef,
   selectedMessageIds,
-  showConversationWorkspaceHint,
   showLoginBanner,
   showStreamDiagnostics,
   streamEvents,
   streamStatusLabel,
   runtimeNotice,
   typingSpeedMs,
-  workspaceHint,
 }: ChatMessagesViewportProps) {
   const { t } = useTranslation();
   const isRuntimeRestored = runtimeNotice?.code === 'serving_restored';
@@ -78,12 +69,12 @@ export function ChatMessagesViewport({
     : 'chat.runtimeNotice.interruption.description';
 
   return (
-    <ScrollArea ref={scrollAreaRef} className="flex-1 p-2 md:p-4">
-      <div ref={messagesContainerRef} className="min-h-full">
+    <ScrollArea ref={scrollAreaRef} className="flex-1">
+      <div ref={messagesContainerRef} className="mx-auto min-h-full w-full max-w-3xl px-3 pb-6 pt-4 md:px-6 md:pb-8 md:pt-6">
         {runtimeNotice && (
           <Alert
             variant="default"
-            className={`mb-3 ${isRuntimeRestored ? 'border-emerald-500/50 bg-emerald-500/10' : 'border-amber-500/50 bg-amber-500/10'}`}
+            className={`mb-4 rounded-2xl ${isRuntimeRestored ? 'border-emerald-500/50 bg-emerald-500/10' : 'border-amber-500/50 bg-amber-500/10'}`}
           >
             {isRuntimeRestored ? (
               <Info className="h-4 w-4 text-emerald-700" />
@@ -94,15 +85,8 @@ export function ChatMessagesViewport({
             <AlertDescription>{t(runtimeNoticeDescriptionKey)}</AlertDescription>
           </Alert>
         )}
-        {showConversationWorkspaceHint && workspaceHint && (
-          <Alert className="mb-3">
-            <Info className="h-4 w-4" />
-            <AlertTitle>{workspaceHint.title}</AlertTitle>
-            <AlertDescription>{workspaceHint.description}</AlertDescription>
-          </Alert>
-        )}
         {showLoginBanner && (
-          <Alert variant="default" className="mb-3 border-amber-500/50 bg-amber-500/10">
+          <Alert variant="default" className="mb-4 rounded-2xl border-amber-500/50 bg-amber-500/10">
             <Info className="h-4 w-4 text-amber-600" />
             <AlertTitle>Faça login para chat em tempo real</AlertTitle>
             <AlertDescription>
@@ -118,7 +102,7 @@ export function ChatMessagesViewport({
               variants={containerVariants}
               initial="hidden"
               animate="visible"
-              className="space-y-3 md:space-y-4 max-w-4xl mx-auto"
+              className="mx-auto w-full space-y-4"
             >
               {messages.map((message, index) => (
                 <MessageBubble
@@ -140,7 +124,7 @@ export function ChatMessagesViewport({
                 />
               ))}
               {lastResponseUsedFallback && messages.length > 0 && (
-                <Alert variant="default" className="mt-3 border-amber-500/50 bg-amber-500/10">
+                <Alert variant="default" className="mt-4 rounded-2xl border-amber-500/50 bg-amber-500/10">
                   <AlertTriangle className="h-4 w-4 text-amber-600" />
                   <AlertTitle>{t('chat.fallbackBanner.title')}</AlertTitle>
                   <AlertDescription>{t('chat.fallbackBanner.desc')}</AlertDescription>

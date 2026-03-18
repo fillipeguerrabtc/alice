@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckSquare, FileCheck, MoreHorizontal, Send, Trash2 } from 'lucide-react';
+import { MoreHorizontal, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -9,32 +9,14 @@ import {
 
 type ChatActionsMenuProps = {
   compact?: boolean;
-  showOperationsControls: boolean;
-  showDiagnosticsControls: boolean;
-  messageSelectionMode: boolean;
-  selectedMessageCount: number;
-  showStreamDiagnostics: boolean;
-  onOpenConversationTrainingDialog: () => void;
-  onToggleMessageSelectionMode: () => void;
-  onOpenMessageTrainingDialog: () => void;
-  onToggleStreamDiagnostics: () => void;
+  showConversationActions: boolean;
   onDeleteConversation: () => void;
-  t: (key: string) => string;
 };
 
 export function ChatActionsMenu({
   compact = false,
-  messageSelectionMode,
   onDeleteConversation,
-  onOpenConversationTrainingDialog,
-  onOpenMessageTrainingDialog,
-  onToggleMessageSelectionMode,
-  onToggleStreamDiagnostics,
-  selectedMessageCount,
-  showDiagnosticsControls,
-  showOperationsControls,
-  showStreamDiagnostics,
-  t,
+  showConversationActions,
 }: ChatActionsMenuProps) {
   return (
     <DropdownMenu>
@@ -49,32 +31,7 @@ export function ChatActionsMenu({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        {showOperationsControls && (
-          <>
-            <DropdownMenuItem onClick={onOpenConversationTrainingDialog}>
-              <FileCheck className="h-4 w-4 mr-2" />
-              {t('chat.training.send')}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={onToggleMessageSelectionMode}>
-              <CheckSquare className="h-4 w-4 mr-2" />
-              {messageSelectionMode ? t('chat.selection.cancelSelection') : t('chat.selection.selectMessages')}
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={onOpenMessageTrainingDialog}
-              disabled={selectedMessageCount === 0}
-            >
-              <Send className="h-4 w-4 mr-2" />
-              {t('chat.selection.sendSelected')}
-            </DropdownMenuItem>
-          </>
-        )}
-        {showDiagnosticsControls && (
-          <DropdownMenuItem onClick={onToggleStreamDiagnostics}>
-            <AlertTriangle className="h-4 w-4 mr-2" />
-            {showStreamDiagnostics ? 'Ocultar detalhes técnicos do stream' : 'Mostrar detalhes técnicos do stream'}
-          </DropdownMenuItem>
-        )}
-        {showOperationsControls && (
+        {showConversationActions && (
           <DropdownMenuItem
             onClick={onDeleteConversation}
             className="text-destructive focus:text-destructive"

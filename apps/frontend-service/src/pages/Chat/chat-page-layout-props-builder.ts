@@ -9,14 +9,11 @@ type ChatPageLayoutSections = Pick<
   | 'chatDialogsSectionProps'
   | 'chatGovernanceControlsProps'
   | 'conversationsListProps'
-  | 'workspaceHint'
-  | 'workspaceOptions'
 >;
 
 type ChatPageLayoutState = Pick<
   ChatPageLayoutProps,
   | 'acceptedTypes'
-  | 'activeWorkspace'
   | 'conversationId'
   | 'focusNonce'
   | 'input'
@@ -31,7 +28,6 @@ type ChatPageLayoutState = Pick<
   | 'modelBadgeLabel'
   | 'pendingMedia'
   | 'runtimeNotice'
-  | 'showConversationWorkspaceHint'
   | 'showDesktopActionMenu'
   | 'showLoginBanner'
   | 'showStreamDiagnostics'
@@ -69,7 +65,6 @@ type ChatPageLayoutHandlers = Pick<
   | 'onSubmitComposer'
   | 'onToggleMessageSelection'
   | 'onToggleSidebar'
-  | 'onWorkspaceChange'
 >;
 
 type BuildChatPageLayoutPropsOptions = {

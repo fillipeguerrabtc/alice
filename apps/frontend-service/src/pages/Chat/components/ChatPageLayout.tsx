@@ -1,5 +1,4 @@
 import { type ComponentProps, type FormEvent, type RefObject } from 'react';
-import type { ChatWorkspaceKey } from '../chat-page-routing';
 import { ChatConversationsSidebar } from './ChatConversationsSidebar';
 import { ChatHeaderSection } from './ChatHeaderSection';
 import { ChatMessagesViewport } from './ChatMessagesViewport';
@@ -11,12 +10,9 @@ type ChatActionsMenuProps = ComponentProps<typeof ChatHeaderSection>['chatAction
 type ChatGovernanceControlsProps = ComponentProps<typeof ChatHeaderSection>['chatGovernanceControlsProps'];
 type ConversationsListProps = ComponentProps<typeof ChatConversationsSidebar>['conversationsListProps'];
 type ChatDialogsSectionProps = ComponentProps<typeof ChatDialogsSection>;
-type WorkspaceOption = ComponentProps<typeof ChatHeaderSection>['workspaceOptions'][number];
-type WorkspaceHint = ComponentProps<typeof ChatMessagesViewport>['workspaceHint'];
 
 type ChatPageLayoutProps = {
   acceptedTypes: string;
-  activeWorkspace: ChatWorkspaceKey;
   chatActionsMenuProps: ChatActionsMenuProps;
   chatDialogsSectionProps: ChatDialogsSectionProps;
   chatGovernanceControlsProps: ChatGovernanceControlsProps;
@@ -53,12 +49,10 @@ type ChatPageLayoutProps = {
   onSubmitComposer: (event: FormEvent<HTMLFormElement>) => void;
   onToggleMessageSelection: (messageId: string, index: number, shiftKey: boolean) => void;
   onToggleSidebar: () => void;
-  onWorkspaceChange: (workspace: ChatWorkspaceKey) => void;
   pendingMedia: MediaAttachment[];
   runtimeNotice: RuntimeNotice | null;
   scrollAreaRef: RefObject<HTMLDivElement | null>;
   selectedMessageIds: Set<string>;
-  showConversationWorkspaceHint: boolean;
   showDesktopActionMenu: boolean;
   showLoginBanner: boolean;
   showStreamDiagnostics: boolean;
@@ -66,13 +60,10 @@ type ChatPageLayoutProps = {
   streamEvents: AgentEvent[];
   streamStatusLabel: string | null;
   typingSpeedMs?: number;
-  workspaceHint: WorkspaceHint;
-  workspaceOptions: WorkspaceOption[];
 };
 
 export function ChatPageLayout({
   acceptedTypes,
-  activeWorkspace,
   chatActionsMenuProps,
   chatDialogsSectionProps,
   chatGovernanceControlsProps,
@@ -109,12 +100,10 @@ export function ChatPageLayout({
   onSubmitComposer,
   onToggleMessageSelection,
   onToggleSidebar,
-  onWorkspaceChange,
   pendingMedia,
   runtimeNotice,
   scrollAreaRef,
   selectedMessageIds,
-  showConversationWorkspaceHint,
   showDesktopActionMenu,
   showLoginBanner,
   showStreamDiagnostics,
@@ -122,11 +111,9 @@ export function ChatPageLayout({
   streamEvents,
   streamStatusLabel,
   typingSpeedMs,
-  workspaceHint,
-  workspaceOptions,
 }: ChatPageLayoutProps) {
   return (
-    <div className="flex h-full">
+    <div className="flex h-full bg-[radial-gradient(circle_at_top,hsl(var(--primary)/0.08),transparent_34%),linear-gradient(180deg,hsl(var(--background))_0%,hsl(var(--muted)/0.22)_100%)]">
       <ChatConversationsSidebar
         conversationsListProps={conversationsListProps}
         isMobile={isMobile}
@@ -135,9 +122,8 @@ export function ChatPageLayout({
         sidebarOpen={sidebarOpen}
       />
 
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex min-w-0 flex-1 flex-col">
         <ChatHeaderSection
-          activeWorkspace={activeWorkspace}
           chatActionsMenuProps={chatActionsMenuProps}
           chatGovernanceControlsProps={chatGovernanceControlsProps}
           conversationId={conversationId}
@@ -145,10 +131,8 @@ export function ChatPageLayout({
           modelBadgeLabel={modelBadgeLabel}
           onOpenMobileDrawer={onOpenMobileDrawer}
           onToggleSidebar={onToggleSidebar}
-          onWorkspaceChange={onWorkspaceChange}
           showDesktopActionMenu={showDesktopActionMenu}
           sidebarOpen={sidebarOpen}
-          workspaceOptions={workspaceOptions}
         />
 
         <div className="flex-1 flex min-h-0">
@@ -166,14 +150,12 @@ export function ChatPageLayout({
             onToggleMessageSelection={onToggleMessageSelection}
             scrollAreaRef={scrollAreaRef}
             selectedMessageIds={selectedMessageIds}
-            showConversationWorkspaceHint={showConversationWorkspaceHint}
             showLoginBanner={showLoginBanner}
             showStreamDiagnostics={showStreamDiagnostics}
             streamEvents={streamEvents}
             streamStatusLabel={streamStatusLabel}
             runtimeNotice={runtimeNotice}
             typingSpeedMs={typingSpeedMs}
-            workspaceHint={workspaceHint}
           />
         </div>
 

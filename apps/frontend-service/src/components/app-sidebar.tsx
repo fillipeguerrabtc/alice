@@ -45,15 +45,27 @@ const menuItems = [
   { title: 'Chat', url: '/chat', icon: MessageSquare },
   { title: 'Conversas', url: '/conversations', icon: MessageSquare },
   { title: 'Documentos', url: '/documents', icon: FileText },
-  { title: 'Training', url: '/training', icon: Brain },
   { title: 'Integrações', url: '/integrations', icon: Plug },
   { title: 'Perfil', url: '/profile', icon: User },
 ];
 
-const operationsItems = [
-  { title: 'Atendimento', url: '/takeover', icon: Headphones },
+const qualityItems = [
+  { title: 'Training', url: '/training', icon: Brain },
   { title: 'Galeria de Imagens', url: '/images', icon: Sparkles },
+];
+
+const supportItems = [
+  { title: 'Atendimento', url: '/takeover', icon: Headphones },
+  { title: 'Observabilidade', url: '/observability', icon: Activity },
+];
+
+const adminItems = [
   { title: 'Agentes IA', url: '/agents', icon: Bot },
+  { title: 'Namespaces', url: '/namespaces', icon: FolderKanban },
+  { title: 'Usuários', url: '/users', icon: Users },
+  { title: 'Configuração da Alice', url: '/alice-config', icon: Settings2 },
+  { title: 'Configurações do Sistema', url: '/system-settings', icon: Settings },
+  { title: 'Modo Agentic', url: '/agentic-config', icon: Shield },
 ];
 
 const financeItems = [
@@ -63,15 +75,6 @@ const financeItems = [
 ];
 
 const adminExternalLinks: Array<{ title: string; url: string; icon: typeof ExternalLink; description: string }> = [];
-
-const adminItems = [
-  { title: 'Observabilidade', url: '/observability', icon: Activity },
-  { title: 'Namespaces', url: '/namespaces', icon: FolderKanban },
-  { title: 'Usuários', url: '/users', icon: Users },
-  { title: 'Configuração da Alice', url: '/alice-config', icon: Settings2 },
-  { title: 'Configurações do Sistema', url: '/system-settings', icon: Settings },
-  { title: 'Modo Agentic', url: '/agentic-config', icon: Shield },
-];
 
 function buildChatUrlFromPath(pathname: string): string {
   const normalizedPath = pathname.startsWith('/') ? pathname : `/${pathname}`;
@@ -161,10 +164,10 @@ export function AppSidebar() {
         <Separator className="my-2" />
 
         <SidebarGroup>
-          <SidebarGroupLabel>Operações</SidebarGroupLabel>
+          <SidebarGroupLabel>Qualidade & Training</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {operationsItems.map((item) => (
+              {qualityItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton
                     asChild
@@ -184,10 +187,10 @@ export function AppSidebar() {
         <Separator className="my-2" />
 
         <SidebarGroup>
-          <SidebarGroupLabel>Finanças</SidebarGroupLabel>
+          <SidebarGroupLabel>Support & Diagnóstico</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {financeItems.map((item) => (
+              {supportItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton
                     asChild
@@ -209,7 +212,7 @@ export function AppSidebar() {
         <SidebarGroup>
           <SidebarGroupLabel className="flex items-center gap-1">
             <Shield className="h-3 w-3" />
-            Administração
+            Administração & Governança
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
@@ -245,6 +248,29 @@ export function AppSidebar() {
                       <span className="flex-1">{item.title}</span>
                       <ExternalLink className="h-3 w-3 opacity-50 group-hover:opacity-100 transition-opacity" />
                     </a>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <Separator className="my-2" />
+
+        <SidebarGroup>
+          <SidebarGroupLabel>Finanças</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {financeItems.map((item) => (
+                <SidebarMenuItem key={item.title}>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={location === item.url || location.startsWith(item.url)}
+                  >
+                    <Link href={item.url} data-testid={`link-${item.title.toLowerCase().replace(' ', '-')}`}>
+                      <item.icon className="h-4 w-4" />
+                      <span>{item.title}</span>
+                    </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}

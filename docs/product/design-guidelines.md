@@ -96,6 +96,12 @@ Usar escala consistente: `2, 4, 8, 12, 16, 24, 32` (px-2, h-8, m-12, etc.)
 
 - **Mensagens do usuário:** Bolha à direita, cor primary
 - **Mensagens da Alice:** Bolha à esquerda, cor neutra
+- Topo do chat principal com apenas tres controles canonicos: `Área`, `Agente` e `Raciocínio`
+- `Área` representa o namespace ativo da conversa e pode voltar para modo automático sem esconder o contexto da conversa
+- `Agente` representa o especialista dentro da área selecionada; quando estiver em automático, o roteamento continua livre dentro do escopo permitido
+- `Raciocínio` usa apenas os labels `Automático`, `Rápido` e `Mais Profundo`
+- Workspace selector nao faz parte da experiencia principal do chat
+- Operações, governança e diagnóstico devem viver em superficies dedicadas de navegação, nunca como trilhas principais dentro do topo do chat
 - Preview de mídia inline (imagens/vídeos reproduzíveis)
 - Área de upload: borda tracejada, drag-drop
 - Gravação de voz: animação de forma de onda

@@ -1,12 +1,10 @@
 import { useRef, useState } from 'react';
 import type { AgentEvent, MediaAttachment, Message, RuntimeNotice } from './components/types';
-import type { ChatWorkspaceKey } from './chat-page-routing';
 import { DEFAULT_REASONING_MODE, type ReasoningMode } from '@/lib/reasoning-mode';
 
 type TrainingDialogMode = 'conversation' | 'messages' | null;
 
 export function useChatLocalState(isMobile: boolean) {
-  const [activeWorkspace, setActiveWorkspace] = useState<ChatWorkspaceKey>('all');
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -27,7 +25,9 @@ export function useChatLocalState(isMobile: boolean) {
   const [isTranscribingRecording, setIsTranscribingRecording] = useState(false);
   const [lastResponseUsedFallback, setLastResponseUsedFallback] = useState(false);
   const [runtimeNotice, setRuntimeNotice] = useState<RuntimeNotice | null>(null);
-  const [reasoningMode, setReasoningMode] = useState<ReasoningMode>(DEFAULT_REASONING_MODE);
+  const [selectedAreaNamespaceId, setSelectedAreaNamespaceId] = useState<string | null>(null);
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const [selectedReasoningMode, setSelectedReasoningMode] = useState<ReasoningMode>(DEFAULT_REASONING_MODE);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingStreamRef = useRef<MediaStream | null>(null);
@@ -44,7 +44,6 @@ export function useChatLocalState(isMobile: boolean) {
   const lastMessagesSyncRef = useRef(0);
 
   return {
-    activeWorkspace,
     deleteAllOpen,
     deleteSelectedOpen,
     deleteTargetId,
@@ -68,9 +67,7 @@ export function useChatLocalState(isMobile: boolean) {
     recordingStartingRef,
     recordingStreamRef,
     recordingUnmountedRef,
-    reasoningMode,
     runtimeNotice,
-    setActiveWorkspace,
     setDeleteAllOpen,
     setDeleteSelectedOpen,
     setDeleteTargetId,
@@ -83,7 +80,9 @@ export function useChatLocalState(isMobile: boolean) {
     setMessages,
     setMobileDrawerOpen,
     setPendingMedia,
-    setReasoningMode,
+    setSelectedAgentId,
+    setSelectedAreaNamespaceId,
+    setSelectedReasoningMode,
     setRuntimeNotice,
     setShowStreamDiagnostics,
     setShowTrainingDialog,
@@ -95,6 +94,9 @@ export function useChatLocalState(isMobile: boolean) {
     showStreamDiagnostics,
     showTrainingDialog,
     sidebarOpen,
+    selectedAgentId,
+    selectedAreaNamespaceId,
+    selectedReasoningMode,
     stopRequestedRef,
     streamControllerRef,
     streamEvents,

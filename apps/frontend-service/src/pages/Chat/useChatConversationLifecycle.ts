@@ -4,6 +4,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import type { TFunction } from 'i18next';
 import { apiRequest } from '@/lib/queryClient';
 import type { Conversation, Message } from './components/types';
+import type { ReasoningMode } from '@/lib/reasoning-mode';
 
 type ApprovalPolicy = 'always_confirm' | 'confirm_risky' | 'never_confirm';
 
@@ -26,8 +27,9 @@ type UseChatConversationLifecycleOptions = {
 };
 
 type CreateConversationPayload = {
-  agentId?: string;
-  namespaceId?: string;
+  agentId?: string | null;
+  namespaceId?: string | null;
+  reasoningMode?: ReasoningMode;
   context?: 'trading' | 'sales' | 'support' | 'cambio' | 'default';
   route?: string;
 };
@@ -62,8 +64,9 @@ export function useChatConversationLifecycle(options: UseChatConversationLifecyc
   const createConversation = useMutation({
     mutationFn: async (payload?: CreateConversationPayload) => {
       const body: Record<string, unknown> = { titulo: 'Nova Conversa' };
-      if (payload?.agentId) body.agentId = payload.agentId;
-      if (payload?.namespaceId) body.namespaceId = payload.namespaceId;
+      if (payload && Object.prototype.hasOwnProperty.call(payload, 'agentId')) body.agentId = payload.agentId ?? null;
+      if (payload && Object.prototype.hasOwnProperty.call(payload, 'namespaceId')) body.namespaceId = payload.namespaceId ?? null;
+      if (payload?.reasoningMode) body.reasoningMode = payload.reasoningMode;
       if (payload?.context) body.context = payload.context;
       if (payload?.route) body.route = payload.route;
       const res = await apiRequest('POST', '/api/chat/conversations', body);

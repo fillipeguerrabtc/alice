@@ -12,8 +12,7 @@ type ChatDialogsSectionProps = ComponentProps<typeof ChatDialogsSection>;
 type UseChatSectionPropsOptions = {
   activeConversationCount: number;
   agentOptions: ChatGovernanceControlsProps['agentOptions'];
-  approvalPolicyForSelect: ChatGovernanceControlsProps['approvalPolicyForSelect'];
-  approvalPolicyOptions: ChatGovernanceControlsProps['approvalPolicyOptions'];
+  areaOptions: ChatGovernanceControlsProps['areaOptions'];
   conversationFilterActive: boolean;
   conversationFilterLabel?: string;
   conversationId?: string;
@@ -26,10 +25,8 @@ type UseChatSectionPropsOptions = {
   isFetchingNextPage: boolean;
   isSelectionMode: ConversationsListProps['isSelectionMode'];
   isSubmitTrainingPending: ChatDialogsSectionProps['isSubmitTrainingPending'];
-  messageSelectionMode: ChatActionsMenuProps['messageSelectionMode'];
   messagesCount: ChatDialogsSectionProps['messagesCount'];
   namespaces: ChatDialogsSectionProps['namespaces'];
-  onApprovalPolicyChange: ChatGovernanceControlsProps['onApprovalPolicyChange'];
   onClearFilter: () => void;
   onCloseSidebar: ConversationsListProps['onCloseSidebar'];
   onConfirmDeleteAll: ChatDialogsSectionProps['onConfirmDeleteAll'];
@@ -45,34 +42,24 @@ type UseChatSectionPropsOptions = {
   onLoadMore: ConversationsListProps['onLoadMore'];
   onNamespaceChange: ChatDialogsSectionProps['onTrainingNamespaceChange'];
   onNewChat: ConversationsListProps['onNewChat'];
-  onOpenConversationTrainingDialog: ChatActionsMenuProps['onOpenConversationTrainingDialog'];
-  onOpenMessageTrainingDialog: ChatActionsMenuProps['onOpenMessageTrainingDialog'];
+  onAreaChange: ChatGovernanceControlsProps['onAreaChange'];
   onReasoningModeChange: ChatGovernanceControlsProps['onReasoningModeChange'];
-  onRoutingAgentIdsChange: ChatGovernanceControlsProps['onRoutingAgentIdsChange'];
-  onRoutingModeChange: ChatGovernanceControlsProps['onRoutingModeChange'];
+  onAgentChange: ChatGovernanceControlsProps['onAgentChange'];
   onSelectConversation: ConversationsListProps['onSelectConversation'];
   onSubmitTraining: ChatDialogsSectionProps['onSubmitTraining'];
-  onToggleMessageSelectionMode: ChatActionsMenuProps['onToggleMessageSelectionMode'];
   onToggleSelectConversation: ConversationsListProps['onToggleSelectConversation'];
   onToggleSelectionMode: ConversationsListProps['onToggleSelectionMode'];
-  onToggleStreamDiagnostics: ChatActionsMenuProps['onToggleStreamDiagnostics'];
   onTrainingDialogOpenChange: ChatDialogsSectionProps['onTrainingDialogOpenChange'];
-  routingAgentIds: ChatGovernanceControlsProps['routingAgentIds'];
-  routingDebug: ChatGovernanceControlsProps['routingDebug'];
-  routingLabel: ChatGovernanceControlsProps['routingLabel'];
+  reasoningOptions: ChatGovernanceControlsProps['reasoningOptions'];
   reasoningMode: ChatGovernanceControlsProps['reasoningMode'];
-  routingMode: ChatGovernanceControlsProps['routingMode'];
-  routingSourceLabel: ChatGovernanceControlsProps['routingSourceLabel'];
+  selectedAgentId: ChatGovernanceControlsProps['selectedAgentId'];
+  selectedAreaNamespaceId: ChatGovernanceControlsProps['selectedAreaNamespaceId'];
   selectedConversationIds: ConversationsListProps['selectedIds'];
-  selectedMessageCount: ChatActionsMenuProps['selectedMessageCount'];
+  selectedMessageCount: number;
   canOverrideReasoningMode: ChatGovernanceControlsProps['canOverrideReasoningMode'];
-  showDesktopActionMenu: boolean;
-  showDiagnosticsControls: ChatActionsMenuProps['showDiagnosticsControls'];
-  showGovernanceControls: ChatGovernanceControlsProps['showGovernanceControls'];
-  showOperationsControls: ChatActionsMenuProps['showOperationsControls'];
-  showStreamDiagnostics: ChatActionsMenuProps['showStreamDiagnostics'];
+  showConversationActions: ChatActionsMenuProps['showConversationActions'];
   showTrainingDialog: ChatDialogsSectionProps['showTrainingDialog'];
-  t: ChatActionsMenuProps['t'];
+  t: (key: string) => string;
   trainingDialogMode: ChatDialogsSectionProps['trainingDialogMode'];
   trainingNamespaceId: ChatDialogsSectionProps['trainingNamespaceId'];
 };
@@ -80,8 +67,7 @@ type UseChatSectionPropsOptions = {
 export function useChatSectionProps({
   activeConversationCount,
   agentOptions,
-  approvalPolicyForSelect,
-  approvalPolicyOptions,
+  areaOptions,
   conversationFilterActive,
   conversationFilterLabel,
   conversationId,
@@ -94,10 +80,8 @@ export function useChatSectionProps({
   isFetchingNextPage,
   isSelectionMode,
   isSubmitTrainingPending,
-  messageSelectionMode,
   messagesCount,
   namespaces,
-  onApprovalPolicyChange,
   onClearFilter,
   onCloseSidebar,
   onConfirmDeleteAll,
@@ -113,32 +97,22 @@ export function useChatSectionProps({
   onLoadMore,
   onNamespaceChange,
   onNewChat,
-  onOpenConversationTrainingDialog,
-  onOpenMessageTrainingDialog,
+  onAreaChange,
   onReasoningModeChange,
-  onRoutingAgentIdsChange,
-  onRoutingModeChange,
+  onAgentChange,
   onSelectConversation,
   onSubmitTraining,
-  onToggleMessageSelectionMode,
   onToggleSelectConversation,
   onToggleSelectionMode,
-  onToggleStreamDiagnostics,
   onTrainingDialogOpenChange,
-  routingAgentIds,
-  routingDebug,
-  routingLabel,
+  reasoningOptions,
   reasoningMode,
-  routingMode,
-  routingSourceLabel,
+  selectedAgentId,
+  selectedAreaNamespaceId,
   selectedConversationIds,
   selectedMessageCount,
   canOverrideReasoningMode,
-  showDesktopActionMenu,
-  showDiagnosticsControls,
-  showGovernanceControls,
-  showOperationsControls,
-  showStreamDiagnostics,
+  showConversationActions,
   showTrainingDialog,
   t,
   trainingDialogMode,
@@ -186,66 +160,36 @@ export function useChatSectionProps({
   ]);
 
   const chatActionsMenuProps = useMemo<ChatActionsMenuProps>(() => ({
-    messageSelectionMode,
     onDeleteConversation: onDeleteCurrentConversation,
-    onOpenConversationTrainingDialog,
-    onOpenMessageTrainingDialog,
-    onToggleMessageSelectionMode,
-    onToggleStreamDiagnostics,
-    selectedMessageCount,
-    showDiagnosticsControls,
-    showOperationsControls,
-    showStreamDiagnostics,
-    t,
+    showConversationActions,
   }), [
-    messageSelectionMode,
     onDeleteCurrentConversation,
-    onOpenConversationTrainingDialog,
-    onOpenMessageTrainingDialog,
-    onToggleMessageSelectionMode,
-    onToggleStreamDiagnostics,
-    selectedMessageCount,
-    showDiagnosticsControls,
-    showOperationsControls,
-    showStreamDiagnostics,
-    t,
+    showConversationActions,
   ]);
 
   const chatGovernanceControlsProps = useMemo<ChatGovernanceControlsProps>(() => ({
     agentOptions,
-    approvalPolicyForSelect,
-    approvalPolicyOptions,
-    conversationId,
-    onApprovalPolicyChange,
+    areaOptions,
+    onAgentChange,
+    onAreaChange,
     onReasoningModeChange,
-    onRoutingAgentIdsChange,
-    onRoutingModeChange,
     reasoningMode,
-    routingAgentIds,
     canOverrideReasoningMode,
-    routingDebug,
-    routingLabel,
-    routingMode,
-    routingSourceLabel,
-    showGovernanceControls,
+    reasoningOptions,
+    selectedAgentId,
+    selectedAreaNamespaceId,
     t,
   }), [
     agentOptions,
-    approvalPolicyForSelect,
-    approvalPolicyOptions,
-    conversationId,
-    onApprovalPolicyChange,
+    areaOptions,
+    onAgentChange,
+    onAreaChange,
     onReasoningModeChange,
-    onRoutingAgentIdsChange,
-    onRoutingModeChange,
     reasoningMode,
-    routingAgentIds,
     canOverrideReasoningMode,
-    routingDebug,
-    routingLabel,
-    routingMode,
-    routingSourceLabel,
-    showGovernanceControls,
+    reasoningOptions,
+    selectedAgentId,
+    selectedAreaNamespaceId,
     t,
   ]);
 
@@ -300,6 +244,5 @@ export function useChatSectionProps({
     chatDialogsSectionProps,
     chatGovernanceControlsProps,
     conversationsListProps,
-    showDesktopActionMenu,
   };
 }

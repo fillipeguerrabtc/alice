@@ -1,7 +1,17 @@
 import { useCallback, useEffect, useMemo } from 'react';
-import { CHAT_WORKSPACES } from './chat-page-routing';
+import {
+  applyAgentSelectionChange,
+  applyAreaSelectionChange,
+  buildCanonicalChatSelectionPayload,
+  buildChatAgentOptions,
+  buildChatAreaOptionsWithLabels,
+  buildChatReasoningOptionsWithLabels,
+  normalizeChatSelection,
+} from './chat-selection';
 import { buildMessageUserSnapshot } from './chat-message-normalization';
-import type { ChatApprovalPolicy } from './useChatQueryState';
+import type { RoutingMode } from './useChatRoutingState';
+import type { ReasoningMode } from '@/lib/reasoning-mode';
+import type { ChatAgentSummary, ChatNamespace } from './useChatQueryState';
 import type { Dispatch, SetStateAction } from 'react';
 
 type MessageUserSnapshotInput = {
@@ -13,30 +23,79 @@ type MessageUserSnapshotInput = {
 } | null | undefined;
 
 type UseChatContainerBindingsOptions = {
+  agentsData?: ChatAgentSummary[];
   bumpInputFocus: () => void;
   conversationId?: string;
   currentUser: MessageUserSnapshotInput;
   deleteTargetId: string | null;
+  namespaces?: ChatNamespace[];
   onDeleteConversation: (conversationId: string) => void;
-  onUpdateApprovalPolicy: (policy: ChatApprovalPolicy) => void;
+  onRoutingAgentIdsChange: (values: string[]) => void;
+  onRoutingModeChange: (value: RoutingMode) => void;
+  routingAgentIds: string[];
+  routingMode: RoutingMode;
+  selectedAgentId: string | null;
+  selectedAreaNamespaceId: string | null;
+  selectedReasoningMode: ReasoningMode;
   setDeleteTargetId: Dispatch<SetStateAction<string | null>>;
+  setSelectedAgentId: Dispatch<SetStateAction<string | null>>;
+  setSelectedAreaNamespaceId: Dispatch<SetStateAction<string | null>>;
+  setSelectedReasoningMode: Dispatch<SetStateAction<ReasoningMode>>;
+  t: (key: string) => string;
 };
 
 export function useChatContainerBindings({
+  agentsData,
   bumpInputFocus,
   conversationId,
   currentUser,
   deleteTargetId,
+  namespaces,
   onDeleteConversation,
-  onUpdateApprovalPolicy,
+  onRoutingAgentIdsChange,
+  onRoutingModeChange,
+  routingAgentIds,
+  routingMode,
+  selectedAgentId,
+  selectedAreaNamespaceId,
+  selectedReasoningMode,
   setDeleteTargetId,
+  setSelectedAgentId,
+  setSelectedAreaNamespaceId,
+  setSelectedReasoningMode,
+  t,
 }: UseChatContainerBindingsOptions) {
-  const workspaceOptions = useMemo(
-    () => CHAT_WORKSPACES.map((workspace) => ({
-      value: workspace.value,
-      label: workspace.label,
-    })),
-    [],
+  const normalizedSelection = useMemo(() => normalizeChatSelection({
+    agentsData,
+    namespaces,
+    selectedAgentId,
+    selectedAreaNamespaceId,
+  }), [
+    agentsData,
+    namespaces,
+    selectedAgentId,
+    selectedAreaNamespaceId,
+  ]);
+  const areaOptions = useMemo(
+    () => buildChatAreaOptionsWithLabels(
+      namespaces,
+      t('chat.selectionControls.automaticArea'),
+    ),
+    [namespaces, t],
+  );
+  const agentOptions = useMemo(
+    () => buildChatAgentOptions(normalizedSelection.filteredAgents, {
+      automaticLabel: t('chat.selectionControls.automaticAgent'),
+    }),
+    [normalizedSelection.filteredAgents, t],
+  );
+  const reasoningOptions = useMemo(
+    () => buildChatReasoningOptionsWithLabels({
+      reasoningAuto: t('chat.reasoning.auto'),
+      reasoningFast: t('chat.reasoning.nonThinking'),
+      reasoningDeep: t('chat.reasoning.thinking'),
+    }),
+    [t],
   );
 
   const fallbackMessageUser = useMemo(
@@ -45,12 +104,59 @@ export function useChatContainerBindings({
   );
 
   useEffect(() => {
+    if (normalizedSelection.selectedAreaNamespaceId !== selectedAreaNamespaceId) {
+      setSelectedAreaNamespaceId(normalizedSelection.selectedAreaNamespaceId);
+    }
+    if (normalizedSelection.selectedAgentId !== selectedAgentId) {
+      setSelectedAgentId(normalizedSelection.selectedAgentId);
+    }
+  }, [
+    normalizedSelection.selectedAgentId,
+    normalizedSelection.selectedAreaNamespaceId,
+    selectedAgentId,
+    selectedAreaNamespaceId,
+    setSelectedAgentId,
+    setSelectedAreaNamespaceId,
+  ]);
+
+  useEffect(() => {
+    if (routingAgentIds.length <= 1) {
+      return;
+    }
+    onRoutingAgentIdsChange(routingAgentIds.slice(0, 1));
+  }, [onRoutingAgentIdsChange, routingAgentIds]);
+
+  useEffect(() => {
+    const legacySelectedAgentId = routingMode === 'manual'
+      ? routingAgentIds[0] ?? null
+      : null;
+    if (legacySelectedAgentId === selectedAgentId) {
+      return;
+    }
+
+    const nextSelection = applyAgentSelectionChange({
+      agentsData,
+      namespaces,
+      nextAgentId: legacySelectedAgentId,
+      selectedAreaNamespaceId,
+    });
+
+    setSelectedAgentId(nextSelection.selectedAgentId);
+    setSelectedAreaNamespaceId(nextSelection.selectedAreaNamespaceId);
+  }, [
+    agentsData,
+    namespaces,
+    routingAgentIds,
+    routingMode,
+    selectedAgentId,
+    selectedAreaNamespaceId,
+    setSelectedAgentId,
+    setSelectedAreaNamespaceId,
+  ]);
+
+  useEffect(() => {
     bumpInputFocus();
   }, [bumpInputFocus, conversationId]);
-
-  const handleApprovalPolicyChange = useCallback((value: string) => {
-    onUpdateApprovalPolicy(value as ChatApprovalPolicy);
-  }, [onUpdateApprovalPolicy]);
 
   const handleConfirmDeleteTarget = useCallback(() => {
     if (deleteTargetId) {
@@ -59,10 +165,67 @@ export function useChatContainerBindings({
     setDeleteTargetId(null);
   }, [deleteTargetId, onDeleteConversation, setDeleteTargetId]);
 
+  const handleSelectedAreaNamespaceIdChange = useCallback((namespaceId: string | null) => {
+    const nextSelection = applyAreaSelectionChange(namespaceId);
+    setSelectedAreaNamespaceId(nextSelection.selectedAreaNamespaceId);
+    setSelectedAgentId(nextSelection.selectedAgentId);
+    onRoutingModeChange('auto');
+    onRoutingAgentIdsChange([]);
+  }, [
+    onRoutingAgentIdsChange,
+    onRoutingModeChange,
+    setSelectedAgentId,
+    setSelectedAreaNamespaceId,
+  ]);
+
+  const handleSelectedAgentIdChange = useCallback((agentId: string | null) => {
+    const nextSelection = applyAgentSelectionChange({
+      agentsData,
+      namespaces,
+      nextAgentId: agentId,
+      selectedAreaNamespaceId,
+    });
+
+    setSelectedAreaNamespaceId(nextSelection.selectedAreaNamespaceId);
+    setSelectedAgentId(nextSelection.selectedAgentId);
+    onRoutingModeChange(nextSelection.selectedAgentId ? 'manual' : 'auto');
+    onRoutingAgentIdsChange(nextSelection.selectedAgentId ? [nextSelection.selectedAgentId] : []);
+  }, [
+    agentsData,
+    namespaces,
+    onRoutingAgentIdsChange,
+    onRoutingModeChange,
+    selectedAreaNamespaceId,
+    setSelectedAgentId,
+    setSelectedAreaNamespaceId,
+  ]);
+
+  const handleSelectedReasoningModeChange = useCallback((reasoningMode: ReasoningMode) => {
+    setSelectedReasoningMode(reasoningMode);
+  }, [setSelectedReasoningMode]);
+
+  const selectedSelectionPayload = useMemo(() => buildCanonicalChatSelectionPayload({
+    agentId: normalizedSelection.selectedAgentId,
+    namespaceId: normalizedSelection.selectedAreaNamespaceId,
+    reasoningMode: selectedReasoningMode,
+  }), [
+    normalizedSelection.selectedAgentId,
+    normalizedSelection.selectedAreaNamespaceId,
+    selectedReasoningMode,
+  ]);
+
   return {
+    agentOptions,
+    areaOptions,
     fallbackMessageUser,
-    handleApprovalPolicyChange,
     handleConfirmDeleteTarget,
-    workspaceOptions,
+    handleSelectedAgentIdChange,
+    handleSelectedAreaNamespaceIdChange,
+    handleSelectedReasoningModeChange,
+    reasoningOptions,
+    selectedAgentId: normalizedSelection.selectedAgentId,
+    selectedAreaNamespaceId: normalizedSelection.selectedAreaNamespaceId,
+    selectedReasoningMode,
+    selectedSelectionPayload,
   };
 }
