@@ -17,6 +17,7 @@ Ser o ponto de entrada da entrega operacional da Alice, separando claramente o q
 | Pipeline de ponta a ponta | [docs/engineering/pipeline-overview.md](../engineering/pipeline-overview.md) |
 | Release de artefatos | [docs/operations/release.md](release.md) |
 | Deploy em producao | [docs/operations/deploy.md](deploy.md) |
+| Inventario dos servidores e SSH | [docs/operations/servers.md](servers.md) |
 | Smart pull e `built_images` | [docs/engineering/pull-inteligente-flow.md](../engineering/pull-inteligente-flow.md) |
 | Validacao incremental do monorepo | [docs/engineering/validation-monorepo.md](../engineering/validation-monorepo.md) |
 | Observabilidade e SLOs | [docs/operations/observability.md](observability.md) |
@@ -68,12 +69,14 @@ Ser o ponto de entrada da entrega operacional da Alice, separando claramente o q
 
 - A action local [`.github/actions/hetzner-ssh`](../../.github/actions/hetzner-ssh/action.yml) centraliza parte relevante dos comandos remotos.
 - A centralizacao ainda e parcial: transferencia de arquivos, download de manifesto e alguns passos de captura continuam usando `ssh` e `scp` diretos.
+- O inventario oficial dos servidores e as indicacoes corretas de acesso SSH ficam em [docs/operations/servers.md](servers.md).
 - O SSOT documental deve refletir essa centralizacao parcial, nunca afirmar que todo o deploy remoto ja foi encapsulado pela action local.
 
 ## Referencias operacionais
 
 - [docs/operations/release.md](release.md)
 - [docs/operations/deploy.md](deploy.md)
+- [docs/operations/servers.md](servers.md)
 - [docs/operations/secrets.md](secrets.md)
 - [docs/operations/permissions.md](permissions.md)
 - [docs/operations/observability.md](observability.md)

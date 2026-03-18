@@ -14,6 +14,7 @@ Definir os conjuntos de secrets usados pela entrega operacional da Alice e expli
 
 | Assunto | Arquivo |
 | --- | --- |
+| inventario dos servidores e acesso SSH | `docs/operations/servers.md` |
 | geracao fail-fast de `.env.prod` | `infra/scripts/generate-env-prod.sh` |
 | preflight por stack | `infra/scripts/preflight-secrets.sh` |
 | validacao complementar de secrets | `infra/scripts/validate-secrets.sh` |
@@ -32,7 +33,7 @@ Definir os conjuntos de secrets usados pela entrega operacional da Alice e expli
 
 | Secret | Uso |
 | --- | --- |
-| `HETZNER_VM_HOST` | host de producao |
+| `HETZNER_VM_HOST` | host SSH do servidor de producao |
 | `HETZNER_VM_USER` | usuario SSH |
 | `HETZNER_SSH_PRIVATE_KEY` | chave do host |
 | `GH_PAT` | GHCR, API GitHub e disparo de workflows |
@@ -125,4 +126,5 @@ Validacao minima por stack antes do `compose up`:
 
 - [docs/operations/deploy.md](deploy.md)
 - [docs/operations/deployment.md](deployment.md)
+- [docs/operations/servers.md](servers.md)
 - [docs/operations/permissions.md](permissions.md)

@@ -53,5 +53,6 @@ Se houver conflito entre documentos do mesmo nivel, prevalece o mais especifico 
 
 - [CLAUDE.md](CLAUDE.md)
 - [docs/INDEX.md](docs/INDEX.md)
+- [docs/operations/servers.md](docs/operations/servers.md) para identificar corretamente os servidores de `Deploy` (Runner) e `Producao` e o caminho de acesso SSH.
 - [.github/workflows/deploy-stack-modular.yml](.github/workflows/deploy-stack-modular.yml)
 - [infra/scripts/permissions-config.sh](infra/scripts/permissions-config.sh)

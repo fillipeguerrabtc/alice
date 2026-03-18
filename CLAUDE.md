@@ -39,6 +39,7 @@ Consolidar as convencoes permanentes de engenharia, arquitetura, documentacao e 
 
 - Desenvolvimento e producao operam com integracoes reais; mocks e previews nao fazem parte do fluxo oficial.
 - A arquitetura e modular e multi-stack, com separacao entre `INFRA`, `ALICE`, `OBSERVABILITY` e `BACKUP`.
+- A identificacao dos servidores de `Deploy` (Runner) e `Producao`, assim como as indicacoes corretas de acesso SSH, ficam em [docs/operations/servers.md](docs/operations/servers.md).
 - Redes e volumes compartilhados entre stacks devem permanecer `external: true`, com rollback cirurgico por stack.
 - O workflow recomendado de deploy e [.github/workflows/deploy-stack-modular.yml](.github/workflows/deploy-stack-modular.yml).
 - O SSOT de permissoes operacionais e [infra/scripts/permissions-config.sh](infra/scripts/permissions-config.sh).

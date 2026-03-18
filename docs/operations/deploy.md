@@ -83,6 +83,7 @@ Cada stack tem jobs separados de:
 
 - A action local [`.github/actions/hetzner-ssh`](../../.github/actions/hetzner-ssh/action.yml) centraliza boa parte da execucao remota.
 - A centralizacao ainda e parcial.
+- O inventario oficial dos servidores e as indicacoes corretas de acesso SSH ficam em [docs/operations/servers.md](servers.md).
 - Transferencias com `scp`, copia de scripts, captura de resultados intermediarios e alguns passos de bootstrap continuam usando `ssh`/`scp` diretos.
 
 ## Preflight e fail-fast
@@ -112,6 +113,7 @@ Antes do `compose up`, o workflow aplica:
 
 - [docs/operations/deployment.md](deployment.md)
 - [docs/operations/release.md](release.md)
+- [docs/operations/servers.md](servers.md)
 - [docs/engineering/pull-inteligente-flow.md](../engineering/pull-inteligente-flow.md)
 - [docs/operations/secrets.md](secrets.md)
 - [docs/operations/permissions.md](permissions.md)
