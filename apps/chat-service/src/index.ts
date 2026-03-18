@@ -9216,6 +9216,55 @@ app.get('/api/chat/conversations', requireAuth(), requireSameTenant(getTenantIdF
   }
 });
 
+app.get('/api/chat/conversations/:id', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:conversations:read'), async (req: Request, res: Response) => {
+  const paramsResult = uuidParamSchema.safeParse(req.params);
+  if (!paramsResult.success) {
+    return res.status(400).json({ error: 'ID de conversa inválido', details: paramsResult.error.format() });
+  }
+
+  const auth = req.user;
+  const tenantId = req.tenantId;
+
+  if (!auth?.userId) {
+    return res.status(401).json({ error: 'Autenticação necessária' });
+  }
+
+  const userId = auth.userId;
+  const userRole = auth.role as Role | undefined;
+  const canViewAllUsers = userRole === 'super_admin' || userRole === 'admin' || userRole === 'manager';
+
+  try {
+    const conversation = await db.query.conversations.findFirst({
+      where: and(
+        eq(schema.conversations.id, paramsResult.data.id),
+        tenantId ? eq(schema.conversations.tenantId, tenantId) : undefined,
+        canViewAllUsers ? undefined : eq(schema.conversations.userId, userId),
+        not(eq(schema.conversations.status, 'deleted'))
+      ),
+      with: {
+        agent: {
+          columns: {
+            id: true,
+            nome: true,
+            preferredName: true,
+            avatar: true,
+            slug: true,
+          },
+        },
+      },
+    });
+
+    if (!conversation) {
+      return res.status(404).json({ error: 'Conversa não encontrada' });
+    }
+
+    res.json({ conversation });
+  } catch (error) {
+    logger.error({ error, conversationId: paramsResult.data.id }, 'Falha ao buscar conversa');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
 app.delete(
   '/api/chat/conversations/:id',
   requireAuth(),

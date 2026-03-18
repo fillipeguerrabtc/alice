@@ -85,7 +85,20 @@ export const chatServicePaths = {
       tags: ['Chat'],
       parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
       responses: {
-        200: { description: 'Dados da conversa' },
+        200: {
+          description: 'Dados da conversa',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  conversation: { $ref: '#/components/schemas/Conversation' },
+                },
+                required: ['conversation'],
+              },
+            },
+          },
+        },
         404: { $ref: '#/components/responses/NotFound' },
       },
     },

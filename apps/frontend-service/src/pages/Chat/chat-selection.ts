@@ -83,12 +83,13 @@ export function normalizeChatSelection({
 }: NormalizeChatSelectionOptions): NormalizeChatSelectionResult {
   const validNamespaceIds = new Set((namespaces ?? []).map((namespace) => namespace.id));
   const validAgentMap = new Map((agentsData ?? []).map((agent) => [agent.id, agent]));
+  const hasLoadedAgents = Array.isArray(agentsData);
 
   let nextAreaNamespaceId =
     selectedAreaNamespaceId && validNamespaceIds.size > 0 && !validNamespaceIds.has(selectedAreaNamespaceId)
       ? null
       : selectedAreaNamespaceId;
-  let nextSelectedAgentId = selectedAgentId && validAgentMap.has(selectedAgentId)
+  let nextSelectedAgentId = selectedAgentId && (!hasLoadedAgents || validAgentMap.has(selectedAgentId))
     ? selectedAgentId
     : null;
 
@@ -105,7 +106,7 @@ export function normalizeChatSelection({
 
   const filteredAgents = getFilteredAgentsByArea(agentsData, nextAreaNamespaceId);
 
-  if (nextSelectedAgentId && !filteredAgents.some((agent) => agent.id === nextSelectedAgentId)) {
+  if (nextSelectedAgentId && hasLoadedAgents && !filteredAgents.some((agent) => agent.id === nextSelectedAgentId)) {
     nextSelectedAgentId = null;
   }
 
@@ -216,6 +217,8 @@ type BuildChatSelectionPayloadOptions = {
   reasoningMode: ReasoningMode;
 };
 
+type ConversationMetadataSelection = NonNullable<NonNullable<Conversation['metadata']>['selection']>;
+
 function normalizeSelectionString(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value : null;
 }
@@ -227,7 +230,7 @@ function normalizeSelectionReasoningMode(value: unknown): ReasoningMode {
 }
 
 function hasSelectionKey(
-  selection: Conversation['metadata'] extends { selection?: infer T } ? T : never,
+  selection: ConversationMetadataSelection | null | undefined,
   key: 'selectedAgentId' | 'selectedNamespaceId' | 'reasoningMode',
 ): boolean {
   return Boolean(selection && typeof selection === 'object' && Object.prototype.hasOwnProperty.call(selection, key));

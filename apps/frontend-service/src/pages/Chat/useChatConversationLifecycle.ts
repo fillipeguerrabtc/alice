@@ -83,6 +83,7 @@ export function useChatConversationLifecycle(options: UseChatConversationLifecyc
     },
     onSuccess: (_, id) => {
       queryClient.invalidateQueries({ queryKey: ['/api/chat/conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/chat/conversations', id, 'detail'] });
       if (conversationId === id) {
         clearMessages();
         navigate('/chat');
@@ -114,6 +115,9 @@ export function useChatConversationLifecycle(options: UseChatConversationLifecyc
     },
     onSuccess: (_, ids) => {
       queryClient.invalidateQueries({ queryKey: ['/api/chat/conversations'] });
+      ids.forEach((id) => {
+        queryClient.invalidateQueries({ queryKey: ['/api/chat/conversations', id, 'detail'] });
+      });
       if (conversationId && ids.includes(conversationId)) {
         clearMessages();
         navigate('/chat');
@@ -127,6 +131,9 @@ export function useChatConversationLifecycle(options: UseChatConversationLifecyc
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/chat/conversations'] });
+      if (conversationId) {
+        queryClient.invalidateQueries({ queryKey: ['/api/chat/conversations', conversationId, 'detail'] });
+      }
       clearMessages();
       navigate('/chat');
     },

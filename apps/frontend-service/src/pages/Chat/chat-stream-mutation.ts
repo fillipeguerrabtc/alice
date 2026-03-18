@@ -412,6 +412,7 @@ export function createChatStreamMutationConfig(options: ChatStreamMutationOption
             if (parsed.type === 'conversation' && parsed.conversationId && !conversationId) {
               navigate(`/chat/${parsed.conversationId}${routeQuerySuffix}`);
               queryClient.invalidateQueries({ queryKey: ['/api/chat/conversations'] });
+              queryClient.invalidateQueries({ queryKey: ['/api/chat/conversations', parsed.conversationId, 'detail'] });
               resetTimeout();
             }
 
@@ -725,6 +726,9 @@ export function createChatStreamMutationConfig(options: ChatStreamMutationOption
 
     setIsStreaming(false);
     queryClient.invalidateQueries({ queryKey: ['/api/chat/conversations'] });
+    if (activeConversationId) {
+      queryClient.invalidateQueries({ queryKey: ['/api/chat/conversations', activeConversationId, 'detail'] });
+    }
     return fullContent;
   };
 

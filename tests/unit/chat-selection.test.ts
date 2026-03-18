@@ -124,4 +124,40 @@ describe('chat-selection', () => {
       selectedReasoningMode: 'thinking',
     });
   });
+
+  it('preserva o agente selecionado enquanto a lista de agentes ainda nao carregou', () => {
+    expect(normalizeChatSelection({
+      agentsData: undefined,
+      namespaces: undefined,
+      selectedAgentId: 'agent-support',
+      selectedAreaNamespaceId: 'namespace-support',
+    })).toEqual({
+      filteredAgents: [],
+      selectedAgent: null,
+      selectedAgentId: 'agent-support',
+      selectedAreaNamespaceId: 'namespace-support',
+    });
+  });
+
+  it('remove o agente selecionado quando a lista carregada nao contem mais o agente persistido', () => {
+    expect(normalizeChatSelection({
+      agentsData: [
+        {
+          id: 'agent-sales',
+          nome: 'Sales Agent',
+          preferredName: 'Alice Sales',
+          namespaceId: 'namespace-sales',
+          slug: 'sales',
+        },
+      ],
+      namespaces,
+      selectedAgentId: 'agent-support',
+      selectedAreaNamespaceId: 'namespace-support',
+    })).toEqual({
+      filteredAgents: [],
+      selectedAgent: null,
+      selectedAgentId: null,
+      selectedAreaNamespaceId: 'namespace-support',
+    });
+  });
 });

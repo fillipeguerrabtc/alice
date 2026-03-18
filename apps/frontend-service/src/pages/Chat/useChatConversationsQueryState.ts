@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from 'react';
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import type { Conversation, ConversationsResponse } from './components/types';
 
@@ -52,7 +52,7 @@ export function useChatConversationsQueryState({
     () => conversationsData?.pages.flatMap((page) => page.conversations) ?? [],
     [conversationsData],
   );
-  const activeConversation = useMemo(
+  const listedActiveConversation = useMemo(
     () => (
       conversationId
         ? conversations.find((conversation) => conversation.id === conversationId) ?? null
@@ -60,6 +60,19 @@ export function useChatConversationsQueryState({
     ),
     [conversationId, conversations],
   );
+  const { data: activeConversationData } = useQuery<{ conversation: Conversation }>({
+    queryKey: ['/api/chat/conversations', conversationId, 'detail'],
+    queryFn: async () => {
+      if (!conversationId) {
+        throw new Error('ConversationId ausente para carregamento da conversa');
+      }
+      const res = await apiRequest('GET', `/api/chat/conversations/${conversationId}`);
+      return res.json() as Promise<{ conversation: Conversation }>;
+    },
+    enabled: Boolean(conversationId),
+    staleTime: 1000 * 60,
+  });
+  const activeConversation = activeConversationData?.conversation ?? listedActiveConversation ?? null;
 
   return {
     activeConversation,
