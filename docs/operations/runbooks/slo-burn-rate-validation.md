@@ -1,23 +1,34 @@
-# SLO Burn Rate Validation Runbook
+# Runbook de Validacao de SLO Burn Rate
 
-Data: 2026-03-05  
-Escopo: jornadas críticas (chat stream, trading signal, training queue, rag ingest)
+**Author:** Fillipe Guerra
+**Data:** 18 de Marco de 2026
+**Atualizado:** 18 de Marco de 2026
 
 ## Objetivo
-- Validar recording rules e alertas de burn-rate por jornada.
-- Confirmar exposição de métricas derivadas para operação SRE.
 
-## Pré-requisitos
-- Prometheus acessível no ambiente alvo.
-- Rules de observabilidade carregadas.
+Validar recording rules e alertas de burn rate das jornadas criticas da plataforma.
 
-## Execução
+## Jornadas cobertas
+
+- `chat-stream`
+- `trading-signal`
+- `training-queue`
+- `rag-ingest`
+
+## Preconditions
+
+- Prometheus acessivel no ambiente alvo
+- regras e dashboards da stack `OBSERVABILITY` carregados
+
+## Execucao
+
 ```bash
 bash infra/scripts/validate-slo-burn-rates.sh \
   --prometheus-url https://metrics.yesyoudeserve.duckdns.org
 ```
 
-## Evidências mínimas
+## Evidencias minimas
+
 - `01-slo-burn-rate-all.json`
 - `02-slo-burn-rate-chat-stream.json`
 - `03-slo-burn-rate-trading-signal.json`
@@ -25,7 +36,12 @@ bash infra/scripts/validate-slo-burn-rates.sh \
 - `05-slo-burn-rate-rag-ingest.json`
 - `06-queue-lag-seconds.json`
 
-## Critério de sucesso
-- Retorno `status=success` nas queries.
-- Séries disponíveis para `alice_slo_burn_rate{journey=...}`.
-- Série disponível para `alice_queue_lag_seconds`.
+## Criterio de sucesso
+
+- todas as consultas retornam `status=success`
+- existe serie para `alice_slo_burn_rate{journey=...}`
+- existe serie para `alice_queue_lag_seconds`
+
+## Referencias
+
+- [../observability.md](../observability.md)

@@ -36,7 +36,7 @@ Alice e uma plataforma enterprise de IA autonoma com arquitetura modular de micr
 
 - Entrada e governanca: [README.md](README.md), [AGENTS.md](AGENTS.md), [CLAUDE.md](CLAUDE.md), [docs/INDEX.md](docs/INDEX.md)
 - Arquitetura: [docs/architecture/platform.md](docs/architecture/platform.md), [docs/architecture/gpu-manager.md](docs/architecture/gpu-manager.md)
-- Operacao e deploy: [docs/operations/deployment.md](docs/operations/deployment.md), [docs/operations/observability.md](docs/operations/observability.md)
+- Operacao e deploy: [docs/operations/deployment.md](docs/operations/deployment.md), [docs/operations/release.md](docs/operations/release.md), [docs/operations/deploy.md](docs/operations/deploy.md), [docs/operations/observability.md](docs/operations/observability.md)
 - Configuracao e seguranca: [docs/operations/getting-started.md](docs/operations/getting-started.md), [docs/operations/secrets.md](docs/operations/secrets.md), [docs/operations/permissions.md](docs/operations/permissions.md)
 - Validacao de engenharia: [docs/engineering/validation-monorepo.md](docs/engineering/validation-monorepo.md)
 - Contexto temporal ativo: [docs/status/current-platform-status.md](docs/status/current-platform-status.md), [docs/status/roadmap.md](docs/status/roadmap.md), [docs/documentation-refactor-rollout.md](docs/documentation-refactor-rollout.md)
@@ -48,7 +48,7 @@ Alice e uma plataforma enterprise de IA autonoma com arquitetura modular de micr
 - Guia operacional para agentes: [AGENTS.md](AGENTS.md)
 - SSOT de engenharia e operacao: [CLAUDE.md](CLAUDE.md)
 - Arquitetura da plataforma: [docs/architecture/platform.md](docs/architecture/platform.md)
-- Deploy e release: [docs/operations/deployment.md](docs/operations/deployment.md)
+- Deploy e release: [docs/operations/deployment.md](docs/operations/deployment.md), [docs/operations/release.md](docs/operations/release.md), [docs/operations/deploy.md](docs/operations/deploy.md)
 - Secrets e configuracao: [docs/operations/secrets.md](docs/operations/secrets.md)
 
 [README.md](README.md) nao substitui SSOT tecnico. Em caso de duvida, use [docs/INDEX.md](docs/INDEX.md) para localizar o documento vigente e sua precedencia.

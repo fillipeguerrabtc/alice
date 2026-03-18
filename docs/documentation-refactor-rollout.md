@@ -3,7 +3,7 @@
 **Author:** Fillipe Guerra
 **Data:** 18 de Marco de 2026
 **Atualizado:** 18 de Marco de 2026
-**Status:** Bloco 2 concluido
+**Status:** Bloco 3 concluido
 **Escopo:** SSOT da refatoracao documental e acompanhamento por blocos
 
 ## Objetivo
@@ -40,6 +40,21 @@ Registrar o estado real da refatoracao documental apos os blocos executados, com
 - Markdown solto da raiz do repositorio foi realocado para `docs/product/`, `docs/architecture/` ou `docs/archive/`.
 - `README.md`, `docs/INDEX.md`, `docs/archive/INDEX.md` e referencias internas principais foram atualizados para a nova taxonomia.
 
+### Bloco 3 - arquitetura, operacoes, deploy e observabilidade
+
+- Monolitos remanescentes de arquitetura, operacoes e esteira foram reduzidos para overviews objetivos.
+- A trilha operacional passou a separar explicitamente `deployment`, `release`, `deploy`, `observability`, `permissions`, `secrets` e `runbooks`.
+- A trilha de engenharia passou a separar `pipeline overview`, `validacao incremental` e `smart pull`.
+- A documentacao canonica agora reflete o comportamento real da esteira:
+  - `CI` valida
+  - `Release` publica
+  - `Deploy` implanta
+  - `Release` nao repete o gate do `CI`
+  - `Release` exige `CI` previo bem-sucedido
+  - `docs-only` e `pipeline-only` nao seguem para `Release` ou `Deploy`
+  - `built_images` e `images-manifest.json` governam smart pull e retag local no deploy
+- O runbook ativo passou a ficar concentrado em `docs/operations/runbooks/INDEX.md`, sem infiltrar checklist operacional dentro dos SSOTs conceituais.
+
 ## Evidencias usadas neste bloco
 
 - `sed -n '1,240p' AGENTS.md`
@@ -50,14 +65,24 @@ Registrar o estado real da refatoracao documental apos os blocos executados, com
 - `git status --short`
 - `git ls-files '*.md'`
 - `rg -n` para caminhos documentais antigos e novas referencias
+- `sed -n '1,320p' docs/operations/deployment.md`
+- `sed -n '1,320p' docs/engineering/pipeline-overview.md`
+- `sed -n '1,360p' .github/workflows/release.yml`
+- `sed -n '1,420p' .github/workflows/deploy-stack-modular.yml`
+- `sed -n '1,320p' scripts/workspace-scope.mjs`
+- `sed -n '1,320p' scripts/release-functions.sh`
+- `sed -n '1,360p' infra/scripts/deploy-functions.sh`
+- `sed -n '1,260p' infra/scripts/permissions-config.sh`
+- validacao de links relativos via `node`
+- validacao de headings via `node`
 
-## Snapshot confirmado apos o Bloco 2
+## Snapshot confirmado apos o Bloco 3
 
 - Total de arquivos Markdown rastreados: `90`
 - Arquivos Markdown na raiz do repositorio: `3`
 - Arquivos Markdown na raiz de `docs/`: `2`
 - Arquivos em `docs/architecture/`: `9`
-- Arquivos em `docs/operations/`: `16`
+- Arquivos em `docs/operations/`: `19`
 - Arquivos em `docs/product/`: `7`
 - Arquivos em `docs/engineering/`: `3`
 - Arquivos em `docs/status/`: `2`
@@ -78,10 +103,12 @@ Registrar o estado real da refatoracao documental apos os blocos executados, com
     │   ├── platform.md
     │   └── trading/
     ├── operations/
+    │   ├── deploy.md
     │   ├── deployment.md
     │   ├── getting-started.md
     │   ├── observability.md
     │   ├── permissions.md
+    │   ├── release.md
     │   ├── secrets.md
     │   ├── runbooks/
     │   ├── trading/
@@ -125,6 +152,14 @@ Registrar o estado real da refatoracao documental apos os blocos executados, com
 | `docs/PERMISSIONS.md` | `docs/operations/permissions.md` | governanca operacional concentrada em operacoes |
 | `docs/TRAINING.md` e correlatos | `docs/operations/training/` | SSOTs de treinamento agrupados por tema |
 | `docs/VALIDACAO-INCREMENTAL-MONOREPO.md`, `docs/ESTEIRA-ENTERPRISE-2026.md`, `docs/PULL-INTELIGENTE-FLOW.md` | `docs/engineering/` | trilha de engenharia separada do canonico operacional |
+
+### Canonicos novos criados no Bloco 3
+
+| Arquivo atual | Papel |
+| --- | --- |
+| `docs/operations/release.md` | referencia especifica da publicacao de artefatos |
+| `docs/operations/deploy.md` | procedimento operacional de implantacao em producao |
+| `docs/operations/runbooks/INDEX.md` | indice de runbooks ativos |
 | `design_guidelines.md`, `docs/GUIA-TREINAMENTO-AGENTES.md`, `docs/TRADING_PLATFORM_INSTITUTIONAL_V2.md` | `docs/product/` | conteudo de produto retirado da raiz e da raiz de `docs/` |
 
 ### Runbooks ativos
@@ -174,18 +209,22 @@ Registrar o estado real da refatoracao documental apos os blocos executados, com
 - Conferencia do inventario de markdowns com `git ls-files '*.md'`
 - Varredura de referencias para caminhos antigos com `rg -n`
 - Revisao manual de `README.md`, `docs/INDEX.md`, `docs/archive/INDEX.md` e links relativos impactados por movimentacao
+- Validacao automatizada de links Markdown locais com `node`
+- Validacao automatizada de headings em `docs/**/*.md` com `node`
 
 ## Proximos blocos recomendados
 
 | Bloco | Escopo sugerido | Status inicial |
 | --- | --- | --- |
-| `3` | consolidar sobreposicoes grandes de treinamento, aprendizado e status sem perder SSOT | nao iniciado |
-| `4` | revisar redundancias editoriais residuais e normalizar cabecalhos/metadata | nao iniciado |
-| `5` | varredura final de links, headings e referencias historicas de baixa prioridade | nao iniciado |
+| `4` | consolidar sobreposicoes grandes de treinamento, aprendizado e status sem perder SSOT | nao iniciado |
+| `5` | revisar redundancias editoriais residuais e normalizar cabecalhos/metadata | nao iniciado |
+| `6` | varredura final de links, headings e referencias historicas de baixa prioridade | nao iniciado |
 
 ## Handoff
 
 - Usar `docs/INDEX.md` como portal principal para qualquer bloco seguinte.
 - Tratar `docs/status/` como contexto ativo e `docs/archive/` como historico sem precedencia.
 - Priorizar no proximo bloco a consolidacao de conteudo sobreposto antes de criar novos SSOTs.
+- Manter `docs/operations/deployment.md` como porta de entrada e `docs/operations/release.md` e `docs/operations/deploy.md` como referencias separadas.
+- Preservar `docs/archive/ops/rag-doc-processing-2026-03-01.md` como historico; nao reabrir essa nota temporal como SSOT.
 - Evitar reabrir discussao taxonomica: a movimentacao fisica desta rodada e a referencia vigente.

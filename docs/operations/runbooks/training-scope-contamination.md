@@ -1,30 +1,30 @@
-# Runbook - Contaminação de Escopo (Training/LoRA)
+# Runbook de Contaminacao de Escopo
 
-**Autor:** Fillipe Guerra  
-**Data:** 11 de Fevereiro de 2026  
-**Objetivo:** diagnosticar e corrigir incidentes de vazamento/comportamento cruzado entre namespaces/agentes.
+**Author:** Fillipe Guerra
+**Data:** 18 de Marco de 2026
+**Atualizado:** 18 de Marco de 2026
 
----
+## Objetivo
 
-## 1) Sinais de incidente
+Diagnosticar e conter vazamento de contexto entre namespaces, agentes e adapters no fluxo de training/LoRA.
 
-- Respostas de um agente usando conhecimento de outro domínio/namespace.
-- Queda abrupta de precisão após ativação de adapter recente.
-- Aumento de overrides manuais ou itens em quarentena no Training.
-- Logs de policy strict com adapter ausente para escopo ativo.
+## Sinais de incidente
 
----
+- respostas de um escopo usando conhecimento de outro
+- queda brusca de precisao apos ativacao de adapter recente
+- aumento de overrides manuais ou quarentena
+- logs de politica estrita com adapter ausente para o escopo ativo
 
-## 2) Diagnóstico rápido
+## Diagnostico rapido
 
-## 2.1 Verificar adapter ativo por escopo
+### Adapter ativo por escopo
 
 ```bash
 curl -s "http://alice-training:3004/api/training/lora/active?tenantId=<TENANT>&namespaceId=<NAMESPACE>&agentId=<AGENT>" \
   -H "X-Internal-Api-Secret: $INTERNAL_API_SECRET"
 ```
 
-## 2.2 Verificar métricas de governança
+### Metricas a conferir
 
 - `alice_training_scope_quarantine_total{source_type,reason}`
 - `alice_training_scope_override_total{source}`
@@ -32,44 +32,44 @@ curl -s "http://alice-training:3004/api/training/lora/active?tenantId=<TENANT>&n
 - `alice_lora_resolve_total{result}`
 - `alice_chat_lora_resolve_total{result}`
 
-## 2.3 Verificar trilha de override
+### Trilha de override
 
-Consultar tabela `training_scope_overrides` para confirmar:
-- quem alterou escopo (`changedBy`)
-- de/para (`oldNamespaceId/newNamespaceId`, `oldAgentId/newAgentId`, `oldDomain/newDomain`)
-- motivo (`reason`)
-- origem (`source`)
+Validar em `training_scope_overrides`:
 
----
+- `changedBy`
+- `oldNamespaceId` e `newNamespaceId`
+- `oldAgentId` e `newAgentId`
+- `oldDomain` e `newDomain`
+- `reason`
+- `source`
 
-## 3) Contenção imediata
+## Contencao imediata
 
-- Desativar adapter suspeito no escopo afetado (namespace/agent).
-- Manter política estrita habilitada em produção (`LORA_STRICT_BINDING=true`).
-- Bloquear aprovação de itens ambíguos até resolver quarentena manualmente.
+1. desativar o adapter suspeito no escopo afetado
+2. manter `LORA_STRICT_BINDING=true`
+3. bloquear aprovacoes ambiguas ate resolver a quarentena
 
----
+## Correcao estrutural
 
-## 4) Correção estruturada
+1. revisar itens aprovados recentemente no escopo afetado
+2. reclassificar itens incorretos via resolucao de escopo
+3. reprocessar o job LoRA somente com dados do escopo correto
+4. reativar o adapter apenas apos validacao funcional
 
-1. Revisar itens recentes aprovados no escopo afetado.
-2. Reclassificar itens incorretos via resolução de escopo (`/api/training/data/:id/resolve-scope`).
-3. Reprocessar job LoRA somente com dados do escopo correto.
-4. Reativar adapter por escopo após validação de consistência.
+## Criterio de saida
 
----
+- nenhum novo evento por 24h
+- quarentena estabilizada
+- fallback para base model em patamar esperado
+- validacao funcional concluida para o escopo corrigido
 
-## 5) Critérios de saída do incidente
+## Pos-incidente
 
-- Sem novos eventos de contaminação por 24h.
-- Quarentena estabilizada (sem crescimento anômalo).
-- Taxa de fallback/base model dentro do esperado para escopos com adapter ativo.
-- Validação funcional em chat + trading + post-mortem para o escopo corrigido.
+- registrar causa raiz e acao preventiva
+- revisar `training_dataset_profiles` se necessario
+- ajustar regra operacional da equipe sem transformar o runbook em historico cronologico
 
----
+## Referencias
 
-## 6) Pós-incidente
-
-- Registrar causa raiz e ações preventivas.
-- Atualizar perfil de seleção semântica (`training_dataset_profiles`) se necessário.
-- Revisar regras operacionais da equipe para uso de override.
+- [../../architecture/gpu-manager.md](../../architecture/gpu-manager.md)
+- [../observability.md](../observability.md)

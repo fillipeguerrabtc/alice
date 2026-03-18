@@ -1,373 +1,102 @@
-# Pull Inteligente - Fluxo de Decisão
-
-**Autor:** Fillipe Guerra  
-**Data:** 14 de Fevereiro de 2026  
-**Versão:** 1.0
-
-## Overview
-
-Este documento descreve o fluxo de decisão da função `pull_if_needed()` implementada em `infra/scripts/deploy-functions.sh`, que otimiza o download de imagens Docker durante o deploy.
-
-## Arquitetura
-
-```
-Release Workflow (release.yml)
-    ↓
-build-images job
-    ↓
-Análise de mudanças (git diff)
-    ├─ Código mudou → BUILD
-    └─ Código igual → RETAG
-    ↓
-build-summary step
-    ├─ Concatena builds (microservices + GPU)
-    ├─ Se nada buildado → "__NONE__"
-    └─ Output: built_images
-        ↓
-trigger-deploy job
-    ↓
-workflow_dispatch para deploy-stack-modular.yml
-    ├─ stack: "all"
-    ├─ version: "v1.0.0"
-    └─ built_images: "auth,chat,rag" (ou "__NONE__" ou "")
-        ↓
-Deploy Workflow (deploy-stack-modular.yml)
-    ↓
-Job: prepare
-    └─ Recebe built_images como input
-        ↓
-    ├─ Export BUILT_IMAGES="${{ github.event.inputs.built_images }}"
-    ├─ Source /opt/alice/scripts/deploy-functions.sh
-    └─ Loop em cada imagem:
-        ├─ SERVICE_NAME=$(extract_service_name "$img")
-        └─ pull_if_needed "$SERVICE_NAME" "$img" "$BUILT_IMAGES"
-```
-
-## Fluxo de Decisão - pull_if_needed()
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│ pull_if_needed(SERVICE_NAME, IMAGE_FULL, BUILT_IMAGES)         │
-└─────────────────────────────────────────────────────────────────┘
-                              ↓
-                    ┌─────────────────┐
-                    │ CASO 1:         │
-                    │ Tag existe      │───→ ⏩ SKIP (0s)
-                    │ localmente?     │
-                    └────────┬────────┘
-                             │ não
-                             ↓
-                    ┌─────────────────┐
-                    │ CASO 2:         │
-                    │ Imagem externa  │───→ 📥 PULL com retry (2-30s)
-                    │ (Docker Hub)?   │
-                    └────────┬────────┘
-                             │ não (GHCR)
-                             ↓
-                    ┌─────────────────┐
-                    │ BUILT_IMAGES    │
-                    │ definido?       │───→ não → CASO 4 (deploy manual)
-                    └────────┬────────┘              ↓
-                             │ sim               📥 PULL com retry
-                             ↓
-              ┌──────────────┴──────────────┐
-              │                             │
-    ┌─────────▼─────────┐      ┌───────────▼──────────┐
-    │ BUILT_IMAGES =    │      │ SERVICE_NAME         │
-    │ "__NONE__"?       │      │ está na lista?       │
-    └─────────┬─────────┘      └───────────┬──────────┘
-              │ sim                         │
-              ↓                   ┌─────────┴─────────┐
-    ┌─────────────────┐           │ sim              │ não
-    │ try_local_retag │           ↓                  ↓
-    └────────┬────────┘  ┌────────────────┐  ┌─────────────────┐
-             │ OK        │ 🔨 BUILD       │  │ 🏷️ RETAG        │
-             ↓           │ na Release     │  │ na Release      │
-    🏷️ RETAG OK (0.1s)  └────────┬───────┘  └────────┬────────┘
-             │                    │                   │
-             │                    ↓                   ↓
-             │           📥 PULL com retry   try_local_retag
-             │                    │           ┌──────┴──────┐
-             │                    │           │ OK         │ falha
-             │                    │           ↓            ↓
-             │                    │   🏷️ RETAG OK   📥 PULL
-             │                    │           │            │
-             └────────────────────┴───────────┴────────────┘
-                                  ↓
-                          return 0 (sucesso)
-                             ou
-                          return 1 (falha)
-```
-
-## Casos de Uso
+# Smart Pull e Fluxo de Decisao
 
-### Caso 1: Tag Existe Localmente
+**Author:** Fillipe Guerra
+**Data:** 18 de Marco de 2026
+**Atualizado:** 18 de Marco de 2026
 
-**Entrada:**
-- SERVICE_NAME: "auth"
-- IMAGE_FULL: "ghcr.io/.../alice-auth:v1.0.0"
-- BUILT_IMAGES: "auth,chat"
+## Objetivo
 
-**Condição:** `docker image inspect` retorna sucesso
+Explicar como o `Deploy` decide entre `skip`, `retag local` e `pull`, usando `built_images` e, quando disponivel, o manifesto de imagens da `Release`.
 
-**Saída:**
-```
-   ⏩ SKIP (tag v1.0.0 já existe localmente)
-```
+## Fontes de verdade
 
-**Tempo:** ~0s (zero rede)
+- Workflow de release: [`.github/workflows/release.yml`](../../.github/workflows/release.yml)
+- Workflow de deploy: [`.github/workflows/deploy-stack-modular.yml`](../../.github/workflows/deploy-stack-modular.yml)
+- Script de decisao: [`infra/scripts/deploy-functions.sh`](../../infra/scripts/deploy-functions.sh)
 
----
+## Conceitos
 
-### Caso 2: Imagem Externa (Docker Hub/Quay)
+### Smart pull
 
-**Entrada:**
-- SERVICE_NAME: "redis"
-- IMAGE_FULL: "redis:7.4.7-alpine"
-- BUILT_IMAGES: "auth,chat"
+Decisao por imagem no servidor para evitar download desnecessario e impedir uso de artefato stale.
 
-**Condição:** Imagem não é GHCR (não contém "ghcr.io")
+### Selective pull
 
-**Saída:**
-```
-   📥 PULL (imagem externa - Docker Hub/Quay)
-   [pull_with_retry com 5 tentativas]
-```
+Otimizacao do workflow de deploy que verifica no GHCR apenas as imagens que realmente foram buildadas na `Release`.
 
-**Tempo:** ~2-30s (depende da rede e cache de layers)
+### `built_images`
 
----
+Sinal emitido pela `Release` que informa quais imagens foram buildadas de fato.
 
-### Caso 3a: Release 100% Retag
+### `images-manifest.json`
 
-**Entrada:**
-- SERVICE_NAME: "auth"
-- IMAGE_FULL: "ghcr.io/.../alice-auth:v1.0.0"
-- BUILT_IMAGES: "__NONE__"
+Manifesto com `digest` esperado por imagem, usado como referencia preferencial no servidor.
 
-**Condição:** Release não buildou nada (tudo foi retag)
+## Semantica de `built_images`
 
-**Saída:**
-```
-   🏷️  Release fez 100% retag - tentando retag local...
-   [try_local_retag verifica digest]
-   
-   Se OK:
-      🏷️ RETAG LOCAL (v1.0.0 → v1.0.0, conteúdo idêntico verificado)
-   
-   Se falha:
-      📥 PULL (retag geral mas sem imagem local compatível)
-```
+| Valor | Significado |
+| --- | --- |
+| lista CSV | houve build seletivo dessas imagens |
+| `__NONE__` | a release foi 100 por cento retag |
+| vazio | deploy manual, sem contexto de release |
 
-**Tempo:** ~0.1s (retag OK) ou ~2-30s (pull necessário)
+## Prioridade de decisao
 
----
+1. Se existir manifesto valido no servidor, comparar digest local versus digest esperado.
+2. Se nao houver manifesto, usar a logica legada baseada em `built_images`.
+3. Imagens externas ao GHCR fazem `pull` direto.
 
-### Caso 3b: Serviço Foi Buildado
+## Comportamento com manifesto
 
-**Entrada:**
-- SERVICE_NAME: "auth"
-- IMAGE_FULL: "ghcr.io/.../alice-auth:v1.0.0"
-- BUILT_IMAGES: "auth,chat,rag"
+| Situacao | Acao |
+| --- | --- |
+| tag local com digest esperado | `skip` |
+| outra tag local do mesmo repo com digest esperado | `retag local` |
+| digest local ausente ou diferente | `pull` |
 
-**Condição:** "auth" está na lista de buildadas
+## Comportamento sem manifesto
 
-**Saída:**
-```
-   🔨 auth foi buildado no Release - fazendo pull
-   [pull_with_retry com 5 tentativas]
-```
+### Caso `built_images="__NONE__"`
 
-**Tempo:** ~2-30s (conteúdo novo, pull necessário)
+- o deploy entende que a release so retaggeou imagens
+- tenta `retag local`
+- se nao encontrar imagem local, falha em modo seguro e orienta uso de deploy manual com `built_images` vazio
 
----
+### Caso `built_images="svc1,svc2"`
 
-### Caso 3c: Serviço Foi Retagged
+- imagens listadas fazem `pull`
+- imagens nao listadas tentam `retag local`
 
-**Entrada:**
-- SERVICE_NAME: "frontend"
-- IMAGE_FULL: "ghcr.io/.../alice-frontend:v1.0.0"
-- BUILT_IMAGES: "auth,chat,rag"
+### Caso `built_images=""`
 
-**Condição:** "frontend" NÃO está na lista (foi retagged)
+- deploy manual
+- o workflow faz `pull` conservador
 
-**Saída:**
-```
-   🏷️  frontend foi retagged - tentando retag local...
-   [try_local_retag verifica digest]
-   
-   Se OK:
-      🏷️ RETAG LOCAL (v1.0.0 → v1.0.0, conteúdo idêntico verificado)
-   
-   Se falha:
-      📥 PULL (retag mas sem imagem local compatível)
-```
+## Selective pull no prepare
 
-**Tempo:** ~0.1s (retag OK) ou ~2-30s (pull necessário)
+Antes dos deploys por stack, o workflow:
 
----
+- ignora verificacao remota quando `built_images="__NONE__"`
+- verifica no GHCR apenas as imagens efetivamente buildadas
+- evita manifest inspect desnecessario para imagens apenas retaggeadas
 
-### Caso 4: Deploy Manual (Sem Release)
+## Relacao com retag e build inteligente
 
-**Entrada:**
-- SERVICE_NAME: "auth"
-- IMAGE_FULL: "ghcr.io/.../alice-auth:v1.0.0"
-- BUILT_IMAGES: "" (vazio)
+- O `Release` decide `build` versus `retag` por imagem com base em diff e integridade do release anterior.
+- O `Deploy` nao reavalia o diff de codigo.
+- O `Deploy` so decide como obter o artefato correto no servidor.
 
-**Condição:** Deploy manual via GitHub Actions UI (sem Release)
+## Falhas e resposta esperada
 
-**Saída:**
-```
-   📥 PULL (deploy manual, sem info de build/retag)
-   [pull_with_retry com 5 tentativas]
-```
+| Falha | Resposta |
+| --- | --- |
+| credencial GHCR invalida | fail-fast |
+| release 100 por cento retag sem imagem local | fail-fast, usar deploy manual se for preciso forcar pull |
+| manifesto ausente | fallback para `built_images` |
+| imagem externa | `pull` com retry |
 
-**Tempo:** ~2-30s (sem info de Release, pull seguro)
+## Referencias
 
----
-
-## Funções Auxiliares
-
-### extract_service_name()
-
-Extrai o nome do serviço de uma imagem Docker.
-
-**Exemplos:**
-
-| Entrada | Saída |
-|---------|-------|
-| `ghcr.io/.../alice-auth:v1.0.0` | `auth` |
-| `ghcr.io/.../alice-gpu-embeddings:v1.0.0` | `gpu-embeddings` |
-| `redis:7.4.7-alpine` | `redis` |
-| `quay.io/minio/minio:latest` | `minio` |
-
-**Implementação:**
-```bash
-extract_service_name() {
-  local image="$1"
-  local repo="${image%:*}"
-  
-  if echo "$repo" | grep -q "alice-"; then
-    echo "$repo" | sed 's/.*alice-//'
-  else
-    basename "$repo"
-  fi
-}
-```
-
----
-
-### try_local_retag()
-
-Tenta criar tag local reutilizando imagem existente com **verificação de identidade**.
-
-**Segurança:**
-- Compara config digest remoto (Image ID) com IDs locais
-- Só retag se conteúdo for IDÊNTICO
-- Previne tag apontando para conteúdo errado/stale
-
-**Retorno:**
-- `0` - Retag OK (imagem local compatível encontrada)
-- `1` - Precisa pull (sem tag local ou conteúdo difere)
-
-**Implementação:**
-```bash
-try_local_retag() {
-  local image="$1"
-  
-  # 1. Buscar config digest remoto via manifest inspect
-  # 2. Comparar com Image IDs locais
-  # 3. Se match → docker tag
-  # 4. Se não match ou erro → return 1
-}
-```
-
----
-
-### pull_with_retry()
-
-Pull com retry e backoff progressivo.
-
-**Configuração:**
-- **Tentativas:** 5
-- **Backoff:** 15s, 30s, 60s, 90s, 120s
-- **Tolerância:** Timeouts intermitentes do GHCR
-
-**Uso:**
-```bash
-if ! pull_with_retry "$IMAGE_FULL"; then
-  echo "❌ ERRO: Falha no pull após 5 tentativas"
-  exit 1
-fi
-```
-
----
-
-## Métricas de Economia
-
-### Deploy Normal (sem mudanças)
-
-**Antes (pull sempre):**
-- 50 imagens × 30s média = **25 minutos**
-
-**Depois (pull inteligente):**
-- Release envia `__NONE__`
-- Todas tentam retag local (0.1s cada)
-- 50 imagens × 0.1s = **5 segundos**
-
-**Economia:** ~24min 55s (99.6% mais rápido) 🚀
-
----
-
-### Deploy Misto (3 builds + 47 retags)
-
-**Antes (pull sempre):**
-- 50 imagens × 30s média = **25 minutos**
-
-**Depois (pull inteligente):**
-- 3 buildadas: 3 × 30s = 90s
-- 47 retagged: 47 × 0.1s = 4.7s
-- **Total:** ~95 segundos (~1.5 minutos)
-
-**Economia:** ~23.5 minutos (93.6% mais rápido) 🚀
-
----
-
-## Troubleshooting
-
-### Logs Importantes
-
-| Log | Significado | Ação |
-|-----|-------------|------|
-| `⏩ SKIP` | Tag existe | ✅ OK - Zero rede |
-| `📥 PULL (imagem externa)` | Docker Hub/Quay | ✅ OK - Pull normal |
-| `🔨 buildado no Release` | Conteúdo novo | ✅ OK - Pull necessário |
-| `🏷️ retagged` | Conteúdo igual | ✅ OK - Retag local |
-| `❌ FALHOU` | Pull falhou | 🔴 Erro - Ver logs GHCR |
-
-### Debug
-
-Para debug, adicionar `set -x` antes do source:
-
-```bash
-set -x  # Debug mode
-source /opt/alice/scripts/deploy-functions.sh
-pull_if_needed "auth" "$IMAGE" "$BUILT_IMAGES"
-set +x  # Desligar debug
-```
-
----
-
-## Referências
-
-- **CLAUDE.md Regra 2:** Não duplicar (funções centralizadas)
-- **CLAUDE.md Regra 6:** Enterprise-grade (retry logic, verificação de identidade)
-- **CLAUDE.md Regra 7:** Mudanças cirúrgicas (refatoração sem quebrar compatibilidade)
-- **CLAUDE.md Regra 9:** Validação contínua (testes automatizados)
-- **DEPLOYMENT.md:** Documentação completa do deploy
-- **release.yml:** Workflow de Release com build summary
-- **deploy-stack-modular.yml:** Workflow de Deploy modular
-
----
-
-**Fim do Documento**
+- [docs/engineering/pipeline-overview.md](pipeline-overview.md)
+- [docs/operations/release.md](../operations/release.md)
+- [docs/operations/deploy.md](../operations/deploy.md)

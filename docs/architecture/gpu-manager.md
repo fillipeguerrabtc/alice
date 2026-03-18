@@ -1,403 +1,101 @@
-# Arquitetura GPU Manager Service
+# Arquitetura do GPU Manager
 
-**Autor:** Fillipe Guerra  
-**Data:** 11 de Março de 2026  
-**Versão:** 5.0.0 - Qwen3-8B + Preempção Canônica em GPU Única (20GB)
+**Author:** Fillipe Guerra
+**Data:** 18 de Marco de 2026
+**Atualizado:** 18 de Marco de 2026
 
-> **ATUALIZAÇÃO CANÔNICA (11/03/2026):**
-> - Serving: `gpu-llm` + `gpu-embeddings` (Qwen3)
-> - Training: `gpu-trainer` (Qwen3 base) em modo mutuamente exclusivo
-> - Preempção automática para treino on-demand e agendado
-> - Sem retorno por timeout: inferência só retorna ao fim do treino ou via restore manual
-> - Embeddings desligado durante treino (single GPU 20GB)
+## Objetivo
 
-## Estado Canônico Atual
+Descrever a arquitetura vigente do subsistema GPU da Alice, com foco em componentes, estados, contracts e limites operacionais.
 
-### Modelos SSOT
+## Escopo
 
-| Papel | Modelo |
-|-------|--------|
-| Serving LLM | `Qwen/Qwen3-8B-AWQ` |
-| Training base | `Qwen/Qwen3-8B` |
-| Embeddings | `Qwen/Qwen3-Embedding-0.6B` |
+- O documento cobre a coordenacao entre `alice-gpu-manager`, `gpu-llm`, `gpu-embeddings` e `qwen-trainer`.
+- Procedimentos operacionais ficam em [docs/operations/runbooks/training-gpu-validation.md](../operations/runbooks/training-gpu-validation.md) e [docs/operations/deploy.md](../operations/deploy.md).
+- Observabilidade fica em [docs/operations/observability.md](../operations/observability.md).
 
-### Orquestração GPU (FSM)
+## Componentes
 
-- Estados: `serving_ready`, `serving_draining`, `training_starting`, `training_active`, `training_finishing`, `serving_restoring`, `error`.
-- Endpoints canônicos:
-  - `GET /api/gpu/orchestrator/state`
-  - `POST /api/gpu/orchestrator/prepare-training`
-  - `POST /api/gpu/orchestrator/restore-serving`
-- Alias compatível: `POST /api/gpu/orchestrator/return` (legado).
+| Componente | Papel |
+| --- | --- |
+| `alice-gpu-manager` | fila priorizada, roteamento, protecao e arbitragem de capacidade |
+| `gpu-llm` | inferencia de texto |
+| `gpu-embeddings` | embeddings de texto para RAG |
+| `qwen-trainer` | treinamento on-demand sob profile `gpu-training` |
 
-### Rollout Canário (Operacional)
+## Modelo de capacidade
 
-1. Aplicar release em 1 tenant/pipeline interno com baixa criticidade.
-2. Confirmar transições FSM completas (`serving_ready -> training_active -> serving_ready`) com auditoria em `gpu_runtime_events`.
-3. Validar chat notices (`runtime_notice`) em WebSocket e SSE.
-4. Expandir gradualmente por lote de tenants após 24h sem regressão.
+- A plataforma opera com GPU unica e capacidade mutuamente coordenada.
+- `gpu-llm` e `gpu-embeddings` formam o estado de serving padrao.
+- `qwen-trainer` nao sobe no `docker compose up` regular; ele e preparado para uso on-demand.
+- O treinamento consome a capacidade GPU de modo exclusivo o suficiente para exigir transicao orquestrada de serving para training.
 
-### Rollback (Passo a Passo)
+## Estados canonicios
 
-1. Bloquear novos inícios de treino no Training Service.
-2. Acionar `POST /api/gpu/orchestrator/restore-serving` para garantir retorno de inferência.
-3. Reaplicar stack anterior com env/versionamento previamente congelados.
-4. Validar health checks, métricas de fila e latência de chat/trading.
-5. Reabrir execução de treinos somente após estabilização.
+Os estados expostos pelo orquestrador sao:
 
-### Riscos Remanescentes
+- `serving_ready`
+- `serving_draining`
+- `training_starting`
+- `training_active`
+- `training_finishing`
+- `serving_restoring`
+- `error`
 
-- Conteúdo histórico abaixo deste ponto pode citar Qwen2.5/Gate 2 em contexto legado.
-- Mudança de nomenclatura de imagens/serviços foi minimizada por segurança de rollout.
-- Falhas de restore exigem intervenção operacional (mantido fail-closed para proteger coerência de runtime).
+## Fluxos principais
 
-> **OTIMIZAÇÃO CRÍTICA v4.0.4 (12/01/2026):** Migração de imagens GPU de `pytorch-devel` para `pytorch-runtime`:
-> - **embeddings-gpu**: 17.6GB → ~11GB (-6GB, -35%)
-> - **lora-trainer**: 17GB → ~11GB (-6GB, -35%)
-> 
-> **Economia Total:** 18GB (-35%), 30 fewer layers (90→60), deploy **50x mais rápido** (~20-25min vs ~40min).
-> **Causa Raiz:** CUDA dev tools (gcc, nvcc, headers) são desnecessários para inferência/training.
+### Inferencia
 
-> **NOTA (Histórico v4.0.x):** Ajustes finos de VRAM em vLLM foram feitos após análise de erro "No available memory for cache blocks".
-> No **Gate 2**, a plataforma usa **LLM (texto)** e **Embeddings** locais, com **budgets conservadores** para coexistência em 20GB. **ASR** e **Vision** são via OpenAI.
+1. `alice-chat`, `alice-rag` ou servicos dependentes chamam `alice-gpu-manager`.
+2. O manager seleciona a fila e o backend de capacidade adequado.
+3. `gpu-llm` atende requests de texto.
+4. `gpu-embeddings` atende requests de embeddings.
 
-> **ATUALIZAÇÃO v4.0.1 (12/01/2026):** Correções para vLLM v0.12.0: `--limit-mm-per-prompt` (formato JSON), `--dtype float16` (obrigatório para AWQ).
+### Entrada em treinamento
 
-> **ATUALIZAÇÃO v4.0.0 (11/01/2026):** Arquitetura simplificada com serviços GPU simultâneos (histórico). O **SSOT atual** é o **Gate 2**.
+1. Um job de treino solicita `prepare-training`.
+2. O manager drena serving, interrompe embeddings quando necessario e reserva capacidade.
+3. `qwen-trainer` sobe apenas para o ciclo de treinamento.
+4. O sistema permanece em estado de treino ate conclusao ou restauracao manual.
 
----
+### Retorno para serving
 
-## Visão Geral
+1. O treino conclui ou a operacao aciona `restore-serving`.
+2. O manager reconstroi o estado de serving.
+3. `gpu-llm` e `gpu-embeddings` voltam a ser o baseline do runtime.
 
-O **GPU Manager Service** é um serviço centralizado que gerencia todas as requisições para serviços GPU na Alice Enterprise Platform. Ele implementa:
+## Interfaces operacionais
 
-- **Arquitetura Simplificada**: Serviços GPU rodam simultaneamente (com budgets de VRAM)
-- **Gate 2**: Separação explícita de **LLM (texto)** + Embeddings + Training (tipos capability-based)
-- **Fila Priorizada**: Chat > Trading > Embeddings > Training
-- **Monitoramento de VRAM**: Tempo real via nvidia-smi
-- **Circuit Breakers**: Proteção centralizada por serviço
-- **Métricas Enterprise**: Prometheus (latência, fila, VRAM, erros)
+### Endpoints
 
----
+- `GET /api/gpu/orchestrator/state`
+- `POST /api/gpu/orchestrator/prepare-training`
+- `POST /api/gpu/orchestrator/restore-serving`
+- `POST /api/gpu/orchestrator/return`
 
-## Arquitetura Gate 2 (atual)
+### Clientes internos esperados
 
-### Distribuição de VRAM (20GB Total - budgets)
+- `alice-chat`
+- `alice-rag`
+- `alice-training`
+- `alice-integrations`
+- `alice-llm-gateway`
 
-Budgets conservadores para coexistência (fonte de verdade em runtime: `nvidia-smi` + métricas do GPU Manager):
+## Regras de operacao
 
-```
-GPU 20GB VRAM - Serviços sempre ativos (Gate 2):
-┌─────────────────────────────────────────────────────────────┐
-│  LLM (texto)        ~6GB  (gpu-llm)                          │
-│  Embeddings         ~3GB  (gpu-embeddings)                   │
-├─────────────────────────────────────────────────────────────┤
-│  TOTAL (budget)     ~9GB + margem de segurança               │
-└─────────────────────────────────────────────────────────────┘
-```
+- O manager e o boundary unico para uso da GPU pela plataforma.
+- Falha de restauracao deve manter o sistema em postura fail-closed, nunca mascarar inconsistencias de runtime.
+- A separacao entre serving e training e obrigatoria; bypass direto para containers GPU nao faz parte do fluxo suportado.
+- A imagem `qwen-trainer` participa da `Release`, mas o container continua on-demand no `Deploy`.
 
-### Serviços GPU Sempre Ativos
+## Entrega e deploy
 
-| Serviço | Modelo | VRAM Real | Configuração | Função | Imagem Base | Imagem Size |
-|---------|--------|-----------|--------------|--------|-------------|-------------|
-| **gpu-llm** | Qwen3 8B (AWQ) | ~5-6GB (budget) | `gpu-memory-utilization=0.40`, `max-model-len=8192`, `dtype=float16` | **LLM texto** (chat, trading) | vllm/vllm-openai | ~8GB |
-| **gpu-embeddings** | Qwen3-Embedding-0.6B INT8 | ~2-3GB (budget) | `quantization=int8` | Embeddings para RAG | **pytorch-runtime** | **~11GB (-35% ✅)** |
+- `Release` decide build versus retag das imagens GPU com a mesma governanca das demais imagens publicadas.
+- `Deploy` usa `built_images` e, quando presente, `images-manifest.json` para diferenciar pull real, retag local e skip por digest.
+- A validacao de health da stack `ALICE` considera `qwen-trainer` como on-demand, portanto sua ausencia em steady state e esperada.
 
-### Configuração vLLM 0.12.0 (Gate 2)
+## Observabilidade e runbooks
 
-O Qwen3 8B usa vLLM v0.12.0 com as seguintes configurações **corrigidas**:
-
-```bash
-python3 -m vllm.entrypoints.openai.api_server \
-    --model "Qwen/Qwen3-8B-AWQ" \
-    --quantization awq \
-    --dtype float16 \                     # OBRIGATÓRIO para AWQ (bfloat16 não suportado)
-    --max-model-len 8192 \                # Gate 2: contexto 8k com KV cache calibrado
-    --gpu-memory-utilization 0.40         # Gate 2: budget conservador para coexistência em 20GB
-```
-
-**Nota (VRAM):** Budgets e `max-model-len` impactam KV cache. Em produção, valide o consumo real via `alice_gpu_*` e `nvidia-smi`.
-
-**Correções v4.0.1 (vLLM):**
-- `--limit-mm-per-prompt`: formato JSON obrigatório `'{"key": value}'`
-- `--dtype float16`: obrigatório para AWQ (bfloat16 causa `ValidationError`)
-
-### Serviço Sob Demanda (Profile)
-
-| Serviço | Modelo | VRAM | Função | Imagem Base | Imagem Size |
-|---------|--------|------|--------|-------------|-------------|
-| **gpu-trainer** | QLoRA (modelo base = LLM do stack) | ~12GB | Fine-tuning (pausa outros serviços) | **pytorch-runtime** | **~11GB (-35% ✅)** |
-
-#### Políticas de Imagem gpu-trainer (11/02/2026)
-
-O **gpu-trainer** segue as **mesmas políticas** das demais imagens GPU da plataforma:
-
-| Aspecto | Detalhes |
-|---------|----------|
-| **Pipeline** | Incluído em `release.yml` como `qwen-trainer` (build com as demais) |
-| **Versionamento** | Mesmo tag semântico das releases (ex: v3.52.1) |
-| **Retag** | Lógica de retag inteligente aplicada (evita rebuild quando código não mudou) |
-| **Cache** | GHCR BuildKit cache por imagem |
-| **Pull no Deploy** | Imagem é pullada no deploy ALICE via `--profile gpu-training` (config) |
-| **Persistência** | Imagem permanece no servidor após pull (mesma retenção das outras) |
-| **On-demand** | Container **não** é iniciado em `docker compose up`; orquestrador sobe quando treino é solicitado |
-| **Imagem pronta** | Sim — pull no deploy garante que a imagem está no servidor antes de qualquer treino |
-
-**Quick check no deploy:** `gpu-trainer: NOT FOUND` é **esperado** antes do orquestrador subir o container. O workflow trata como `⏸️ gpu-trainer: on-demand (não iniciado)`.
-
-### Orquestrador GPU (11/02/2026)
-
-**Abordagem simplificada (menor latência):** troca apenas Embeddings ↔ Trainer; **LLM permanece sempre ativo**.
-
-- **Estados:** `llm_embeddings` (padrão) | `training`
-- **Fluxo:** Treino solicitado → para embeddings → sobe trainer
-- **RAG durante treino:** interrompe treino → volta embeddings
-- **Idle 10 min:** retorno automático para embeddings
-- **Endpoints:** `GET /api/gpu/orchestrator/state`, `POST /api/gpu/orchestrator/return`
-
-### LoRA Adapters Dinâmicos (09/02/2026)
-
-O vLLM suporta carregamento dinâmico de LoRA adapters em runtime, permitindo que adapters treinados via QLoRA sejam aplicados sem reiniciar o container.
-
-**Configuração vLLM para LoRA:**
-
-```bash
-python3 -m vllm.entrypoints.openai.api_server \
-    --model "Qwen/Qwen3-8B-AWQ" \
-    --enable-lora \                          # Habilita suporte LoRA
-    --max-lora-rank 64 \                     # Rank máximo suportado
-    --max-loras 2 \                          # Máximo de adapters simultâneos
-    --lora-modules trading-global=/opt/alice/data/lora-adapters/trading-global  # Auto-detect
-```
-
-**Volume montado:**
-```yaml
-volumes:
-  - /opt/alice/data/lora-adapters:/opt/alice/data/lora-adapters:ro
-```
-
-**Fluxo de uso:**
-
-1. **Resolução** (`lora-adapter-resolver.ts` no integrations-service):
-   - Verifica cache Redis (`alice:lora:active-adapter`, TTL 60s)
-   - Se cache miss, consulta training-service (`GET /api/training/lora/active`)
-   - Retorna nome do adapter (`trading-global`) ou modelo base como fallback
-
-2. **Request ao GPU Manager:**
-   - Body inclui `model: "trading-global"` (adapter) ou `model: "Qwen/Qwen3-8B-AWQ"` (base)
-   - GPU Manager repassa ao vLLM que seleciona o adapter automaticamente
-
-3. **Ativação de adapter** (`training-service`):
-   - `POST /api/training/lora/activate/:jobId` copia arquivos para path padrão
-   - Invalida cache Redis para forçar atualização
-   - vLLM detecta adapter no próximo request (sem restart)
-
-**Observações:**
-- LoRA adapters **NÃO aumentam** uso de VRAM significativamente (~50-100MB por adapter)
-- Compatibilidade: AWQ + LoRA é suportado pelo vLLM 0.12.0+
-- Fallback: se adapter indisponível, usa modelo base sem degradação
-
----
-
-## Benefícios da Nova Arquitetura
-
-### Antes (v3.0.0)
-
-- ❌ Apenas 1 serviço GPU por vez
-- ❌ Latência de troca de 30-60 segundos
-- ❌ Complexidade de orquestração (Docker API)
-- ❌ Sem suporte nativo a vision (dependia de soluções externas)
-- ❌ Dependência de serviço separado para análise de imagens (legado)
-
-### Depois (Gate 2)
-
-- ✅ Todos os serviços rodando simultaneamente (com budgets conservadores)
-- ✅ **Zero latência de troca**
-- ✅ Arquitetura simplificada (sem Docker API)
-- ✅ Separação explícita: LLM (texto) + Vision via OpenAI
-- ✅ Observabilidade model-agnóstica (capability-based)
-
----
-
-## Diagrama de Arquitetura
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Serviços Alice                            │
-│  (chat, rag, training, integrations)                         │
-└─────────────────────────────────────────────────────────────┘
-                            │
-                            ▼
-┌─────────────────────────────────────────────────────────────┐
-│              GPU Manager Service (Porta 3010)                │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │  Fila Redis Priorizada                               │   │
-│  │  - Chat: Priority 10 (CRITICAL)                      │   │
-│  │  - Trading: Priority 8 (HIGH)                        │   │
-│  │  - Embeddings: Priority 5 (MEDIUM)                   │   │
-│  │  - Training: Priority 2 (LOW)                        │   │
-│  └──────────────────────────────────────────────────────┘   │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │  Circuit Breakers + Métricas Prometheus              │   │
-│  │  - Proteção por serviço GPU                          │   │
-│  │  - Retry com backoff exponencial                     │   │
-│  │  - Métricas de latência, fila, VRAM                  │   │
-│  └──────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
-                            │
-                            ▼
-┌─────────────────────────────────────────────────────────────┐
-│     Containers GPU (SEMPRE ATIVOS - Gate 2)                │
-│  ┌──────────┐  ┌──────────┐                               │
-│  │   LLM    │  │Embeddings│                               │
-│  │  :8004   │  │  :8001   │                               │
-│  │  ~6GB    │  │  ~3GB    │                               │
-│  │ SEMPRE   │  │ SEMPRE   │                               │
-│  └──────────┘  └──────────┘                               │
-│                                                             │
-│  ┌──────────┐ (profile: gpu-training - sob demanda)        │
-│  │ Trainer  │                                              │
-│  │  :8003   │                                              │
-│  │  ~12GB   │                                              │
-│  │ON-DEMAND │                                              │
-│  └──────────┘                                              │
-└─────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Endpoints da API
-
-### Health Checks
-
-| Endpoint | Método | Descrição |
-|----------|--------|-----------|
-| `/health` | GET | Health check básico |
-| `/live` | GET | Liveness probe (Kubernetes) |
-| `/ready` | GET | Readiness probe (verifica Redis e VRAM) |
-
-### Requisições GPU
-
-| Endpoint | Método | Descrição |
-|----------|--------|-----------|
-| `/api/gpu/request` | POST | Enfileira requisição GPU |
-| `/api/gpu/request/:id/result` | GET | Obtém resultado da requisição |
-| `/api/gpu/stream` | POST | Streaming direto (bypass fila) |
-
-### Status e Métricas
-
-| Endpoint | Método | Descrição |
-|----------|--------|-----------|
-| `/api/gpu/vram` | GET | Status de VRAM atual |
-| `/api/gpu/queue/status` | GET | Status das filas por serviço |
-| `/api/gpu/services` | GET | Status dos serviços GPU |
-| `/metrics` | GET | Métricas Prometheus |
-
----
-
-## Configuração
-
-### Variáveis de Ambiente
-
-| Variável | Descrição | Padrão |
-|----------|-----------|--------|
-| `PORT` | Porta do serviço | `3010` |
-| `REDIS_URL` | URL do Redis | (obrigatório) |
-| `INTERNAL_API_SECRET` | Secret para autenticação interna | (obrigatório) |
-| `LLM_GPU_URL` | URL do serviço LLM | `http://gpu-llm:8000` |
-| `EMBEDDINGS_GPU_URL` | URL do serviço de embeddings | `http://gpu-embeddings:8000` |
-| `TRAINING_GPU_URL` | URL do serviço de training | `http://gpu-trainer:8000` |
-| `GPU_SERVICE_TIMEOUT` | Timeout para requisições GPU | `60000` (60s) |
-
----
-
-## Treinamento (Schedule + On-Demand)
-
-### Schedule Semanal
-
-O treinamento automático é agendado para domingo às 3:00 AM:
-
-```
-┌───────────────────────────────────────────────────────────┐
-│  Domingo 3:00 AM - Treinamento Semanal QLoRA              │
-├───────────────────────────────────────────────────────────┤
-│  1. Avaliar qualidade dos dados (mín. 50 aprovados)       │
-│  2. Pausar serviços GPU principais (liberar VRAM)         │
-│  3. Iniciar container gpu-trainer                          │
-│  4. Executar QLoRA incremental                             │
-│  5. Comparar métricas com baseline                         │
-│  6. Se regressão > 5%: rollback automático                │
-│  7. Retomar serviços GPU principais                        │
-└───────────────────────────────────────────────────────────┘
-```
-
-### Treinamento On-Demand
-
-Via Training Service API ou Dashboard Admin:
-
-```bash
-# Iniciar treinamento on-demand
-POST /api/training/run/start
-{
-  "tenantId": "uuid",
-  "trainingType": "incremental",
-  "includeImages": false,
-  "priority": "normal"
-}
-
-# Verificar status
-GET /api/training/run/status?tenantId=uuid
-
-# Cancelar treinamento
-DELETE /api/training/run/cancel
-{
-  "trainingRunId": "uuid",
-  "reason": "Cancelado pelo usuário"
-}
-```
-
----
-
-## Modelos (Gate 2)
-
-### LLM (texto): Qwen3 8B (AWQ)
-
-- Usado para: chat e trading (texto).
-- Requisito: deve ser o mesmo **modelo base** do pipeline de treinamento (QLoRA) para evitar divergência.
-
-### Vision (análise de imagens): OpenAI Responses API (`gpt-4.1`)
-
-- Usado para: análise multimodal de imagens (ex.: screenshots e gráficos).
-- Não utiliza GPU local (remove carga e complexidade operacional).
-
-### Geração de imagens: OpenAI Images API (`gpt-image-1`)
-
-- Usado para: geração de imagens a partir de prompt.
-
----
-
-## Histórico de Versões
-
-| Versão | Data | Descrição |
-|--------|------|-----------|
-| 4.3.0 | 22/01/2026 | ASR migrado para OpenAI (gpt-4o-transcribe); GPU dedicada apenas a LLM/Embeddings/Training |
-| 4.2.0 | 16/01/2026 | Remoção do VLM local e migração de Vision/Images para OpenAI; LLM Qwen3 8B com contexto 8k |
-| 4.0.5 | 15/01/2026 | WS3: Corrigir SSOT GPU e garantir QUANTIZATION=int8 refletido no runtime (fail-fast, sem fallback) |
-| 4.0.4 | 12/01/2026 | Otimização COMPLETA: embeddings + trainer pytorch-devel → runtime (-12GB total, -35%) |
-| 4.0.3 | 12/01/2026 | Otimização imagem embeddings: pytorch-devel → pytorch-runtime (-6GB, -35%) |
-| 4.0.2 | 12/01/2026 | Correção VRAM Qwen-VL (ajustes de KV cache e budget) |
-| 4.0.1 | 12/01/2026 | Correções vLLM 0.12.0 (dtype float16, JSON limit-mm-per-prompt) |
-| 4.0.0 | 11/01/2026 | Arquitetura simplificada, Qwen2.5-VL, todos simultâneos |
-| 3.0.0 | 09/01/2026 | Orquestração dinâmica via Docker API |
-| 2.0.0 | 25/12/2025 | Fila priorizada, circuit breakers |
-| 1.0.0 | 17/12/2025 | Versão inicial |
-
----
-
-## Referências
-
-- [Qwen3 8B AWQ](https://huggingface.co/Qwen/Qwen3-8B-AWQ)
-- [OpenAI Responses API](https://platform.openai.com/docs/api-reference/responses)
-- [OpenAI Image Generation](https://platform.openai.com/docs/guides/images/image-generation)
-- [vLLM Documentation](https://docs.vllm.ai/)
-- [CLAUDE.md - Regras do Projeto](../../CLAUDE.md)
+- Dashboards e alertas de GPU ficam em [docs/operations/observability.md](../operations/observability.md).
+- Validacao de treino em GPU fica em [docs/operations/runbooks/training-gpu-validation.md](../operations/runbooks/training-gpu-validation.md).
+- Recovery e restore operacional ficam em [docs/operations/runbooks/dr-game-day.md](../operations/runbooks/dr-game-day.md).

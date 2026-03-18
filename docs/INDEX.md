@@ -24,9 +24,9 @@ Ser o portal principal da documentacao do repositorio, definindo a taxonomia vig
 - Raiz obrigatoria: [README.md](../README.md), [AGENTS.md](../AGENTS.md) e [CLAUDE.md](../CLAUDE.md).
 - Portal documental: [docs/INDEX.md](INDEX.md).
 - Arquitetura: [docs/architecture/platform.md](architecture/platform.md), [docs/architecture/gpu-manager.md](architecture/gpu-manager.md) e a trilha de dominio em [docs/architecture/trading/](architecture/trading/).
-- Operacoes: [docs/operations/deployment.md](operations/deployment.md), [docs/operations/observability.md](operations/observability.md), [docs/operations/secrets.md](operations/secrets.md), [docs/operations/permissions.md](operations/permissions.md), onboarding em [docs/operations/getting-started.md](operations/getting-started.md), treinamento em [docs/operations/training/](operations/training/) e runbooks em [docs/operations/runbooks/](operations/runbooks/).
+- Operacoes: [docs/operations/deployment.md](operations/deployment.md), [docs/operations/release.md](operations/release.md), [docs/operations/deploy.md](operations/deploy.md), [docs/operations/observability.md](operations/observability.md), [docs/operations/secrets.md](operations/secrets.md), [docs/operations/permissions.md](operations/permissions.md), onboarding em [docs/operations/getting-started.md](operations/getting-started.md), treinamento em [docs/operations/training/](operations/training/) e runbooks em [docs/operations/runbooks/INDEX.md](operations/runbooks/INDEX.md).
 - Produto: [docs/product/design-guidelines.md](product/design-guidelines.md), [docs/product/training-business-guide.md](product/training-business-guide.md) e a trilha de produto trading em [docs/product/trading/](product/trading/).
-- Engenharia: [docs/engineering/validation-monorepo.md](engineering/validation-monorepo.md), [docs/engineering/pipeline-overview.md](engineering/pipeline-overview.md) e [docs/engineering/pull-inteligente-flow.md](engineering/pull-inteligente-flow.md).
+- Engenharia: [docs/engineering/pipeline-overview.md](engineering/pipeline-overview.md), [docs/engineering/validation-monorepo.md](engineering/validation-monorepo.md) e [docs/engineering/pull-inteligente-flow.md](engineering/pull-inteligente-flow.md).
 - Status ativo: [docs/status/current-platform-status.md](status/current-platform-status.md), [docs/status/roadmap.md](status/roadmap.md) e [docs/documentation-refactor-rollout.md](documentation-refactor-rollout.md).
 - Historico arquivado: [docs/archive/INDEX.md](archive/INDEX.md), com planos em `docs/archive/plans/`, relatorios em `docs/archive/reports/`, notas historicas da raiz em `docs/archive/root/`, notas operacionais em `docs/archive/ops/` e lote legado em `docs/archive/relatorios/`.
 
@@ -41,10 +41,12 @@ Ser o portal principal da documentacao do repositorio, definindo a taxonomia vig
 ### Operacoes
 
 - [docs/operations/deployment.md](operations/deployment.md)
+- [docs/operations/release.md](operations/release.md)
+- [docs/operations/deploy.md](operations/deploy.md)
 - [docs/operations/observability.md](operations/observability.md)
 - [docs/operations/secrets.md](operations/secrets.md)
 - [docs/operations/permissions.md](operations/permissions.md)
-- [docs/operations/training/overview.md](operations/training/overview.md)
+- [docs/operations/runbooks/INDEX.md](operations/runbooks/INDEX.md)
 
 ### Produto
 
@@ -54,8 +56,9 @@ Ser o portal principal da documentacao do repositorio, definindo a taxonomia vig
 
 ### Engenharia
 
-- [docs/engineering/validation-monorepo.md](engineering/validation-monorepo.md)
 - [docs/engineering/pipeline-overview.md](engineering/pipeline-overview.md)
+- [docs/engineering/validation-monorepo.md](engineering/validation-monorepo.md)
+- [docs/engineering/pull-inteligente-flow.md](engineering/pull-inteligente-flow.md)
 
 ## Regras editoriais
 

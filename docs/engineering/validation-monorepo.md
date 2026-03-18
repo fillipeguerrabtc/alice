@@ -1,34 +1,30 @@
-# Validação Incremental do Monorepo
+# Validacao Incremental do Monorepo
 
-**Author:** Fillipe Guerra  
-**Data:** 17 de Março de 2026
-**Atualizado:** 17 de Março de 2026
+**Author:** Fillipe Guerra
+**Data:** 18 de Marco de 2026
+**Atualizado:** 18 de Marco de 2026
 
 ## Objetivo
 
-Definir o uso operacional do fluxo incremental por workspace e suite para `typecheck`, `lint`, `test` e `build`, com `CI` como gate oficial e `Release` sem repetição do mesmo gate de qualidade.
+Documentar como o monorepo resolve escopo incremental para `typecheck`, `lint`, `test` e `build`, com `CI` como gate oficial e fallback seguro para full.
 
-## Comandos Locais
-
-### Padrão local
+## Comandos locais padrao
 
 - `pnpm typecheck`
 - `pnpm lint`
 - `pnpm test`
 - `pnpm build`
 
-Os quatro comandos acima executam somente nos workspaces ou suites afetadas por padrão, com expansão transitiva quando necessário.
+Esses comandos sao changed-only por padrao.
 
-### Comandos explícitos changed-only
+## Aliases explicitos
 
 - `pnpm typecheck:changed`
 - `pnpm lint:changed`
 - `pnpm test:changed`
 - `pnpm build:changed`
 
-São aliases explícitos do mesmo comportamento incremental do fluxo local padrão.
-
-### Gates full oficiais
+## Gates full disponiveis
 
 - `pnpm typecheck:full`
 - `pnpm lint:full`
@@ -36,122 +32,69 @@ São aliases explícitos do mesmo comportamento incremental do fluxo local padr�
 - `pnpm build:full`
 - `pnpm validate:enterprise`
 
-Os comandos full permanecem disponíveis para auditoria manual, troubleshooting e fallback explícito. Eles não fazem mais parte do fluxo normal de `Release`.
+## Fonte de verdade do escopo
 
-## Como o Escopo é Resolvido
+- [`scripts/workspace-scope.mjs`](../../scripts/workspace-scope.mjs)
+- [`scripts/run-scoped-task.mjs`](../../scripts/run-scoped-task.mjs)
+- [`scripts/test-scope.mjs`](../../scripts/test-scope.mjs)
+- [`scripts/run-scoped-test.mjs`](../../scripts/run-scoped-test.mjs)
 
-O resolvedor fica em:
+## Como o escopo e resolvido
 
-- `scripts/workspace-scope.mjs`
-- `scripts/run-scoped-task.mjs`
-- `scripts/test-scope.mjs`
-- `scripts/run-scoped-test.mjs`
+### Entradas
 
-### Fonte de verdade do escopo
+- `git diff` entre base e head, quando o `CI` tem referencia segura
+- arquivos untracked no fluxo local
+- grafo real de workspaces em `apps/*/package.json` e `packages/*/package.json`
 
-- `git diff` + arquivos untracked no fluxo local
-- grafo real de dependências dos workspaces via `package.json`
-- classificação documental que também ignora Markdown fora de `docs/` quando a mudança é puramente documental
-- fail-safe para full quando houver incerteza
+### Regras de exclusao
+
+- documentacao nao entra como escopo de codigo
+- caminhos `pipeline-only` nao tornam o commit `release-eligible`
+- caminhos seguros ignorados, como `attached_assets/` e `tests/`, seguem regra propria do resolvedor
 
 ### Regras por task
 
-- `typecheck`: workspace alterado + dependentes impactados
-- `build`: workspace alterado + dependentes impactados
-- `lint`: somente workspaces diretamente alterados
-- `test`: suites que referenciam os workspaces afetados + testes alterados diretamente
+| Task | Regra |
+| --- | --- |
+| `typecheck` | workspace alterado + dependentes impactados |
+| `build` | workspace alterado + dependentes impactados |
+| `lint` | workspaces diretamente alterados |
+| `test` | suites e testes que referenciam workspaces afetados |
 
-### Casos que forçam full
+## Casos que forcam `full`
 
-- mudanças em configuração global crítica
-- caminhos não classificados com segurança
-- alterações no resolvedor de escopo
-- diferenças de `package.json`, `pnpm-lock.yaml`, `turbo.json`, `eslint.config.mjs` ou bases TypeScript globais
+- diff sem base segura
+- mudanca em arquivos globais criticos
+- alteracao no proprio resolvedor
+- caminhos nao classificados com seguranca
 
-## Logs Esperados
+## Arquivos globais criticos
 
-Os comandos locais registram:
+- `.nvmrc`
+- `eslint.config.mjs`
+- `package.json`
+- `pnpm-lock.yaml`
+- `pnpm-workspace.yaml`
+- `packages/tsconfig.base.json`
+- `scripts/build-service.mjs`
+- `turbo.json`
+- `tsconfig.build.json`
 
-- arquivos alterados
-- workspaces diretos
-- workspaces selecionados
-- motivo do modo `scoped` ou `full`
+## Uso no `CI`
 
-Exemplo resumido:
+- Quando `scope_mode=scoped`, o `CI` roda os comandos padrao incrementais.
+- Quando `scope_mode=full`, o `CI` roda `typecheck:full`, `test:full`, `lint:full` e `build:full`.
+- `docs-only` e `pipeline-only` nao executam os gates de codigo da aplicacao.
 
-```text
-[alice-scope] Task: build
-[alice-scope] Reason: Escopo incremental resolvido por git diff e grafo de dependências
-[alice-scope] Changed files (1):
-  - apps/auth-service/src/index.ts
-[alice-scope] Direct workspaces (1): @alice/auth-service
-[alice-scope] Selected workspaces (1):
-  - @alice/auth-service (direto)
-```
+## Observacoes operacionais
 
-## CI e Governance
+- O fallback para `full` e intencional e fail-safe.
+- O cache de `Turbo` vive em `.cache/turbo`.
+- O cache incremental de TypeScript vive em `.cache/typescript/...`.
+- O fluxo normal de `Release` nao deve substituir o papel deste resolvedor; ele so consome um commit ja aprovado pelo `CI`.
 
-### Pull Request
+## Referencias
 
-- `typecheck`, `lint` e `build` usam escopo incremental
-- `test` também usa escopo incremental por suite/workspace afetado
-- o resolvedor recebe `origin/<base_ref>` e `github.sha`
-- mudanças exclusivamente documentais pulam os jobs de checks de código
-
-### Push em `main`
-
-- `typecheck`, `test`, `lint` e `build` usam o diff entre `github.event.before` e `github.sha`
-- fallback full acontece apenas quando o commit-base não pode ser resolvido com segurança
-- mudanças exclusivamente documentais também pulam os jobs de checks de código
-
-### Release
-
-- consome o commit já aprovado no `CI`
-- não repete `typecheck`, `lint`, `test` ou `build`
-- `scripts/release-functions.sh` promove `packages/tsconfig.base.json` para o guard global de rebuild, evitando retag incorreto quando a base TypeScript compartilhada muda
-
-## Cache
-
-### Turbo
-
-- diretório: `.cache/turbo`
-
-### TypeScript
-
-- diretório: `.cache/typescript/...`
-- fora de `node_modules`
-- separado por workspace
-
-## Benchmark Inicial
-
-### Baseline full medido antes da refatoração
-
-| Comando | Tempo |
-|---|---:|
-| `pnpm typecheck` | 1m13.45s |
-| `pnpm test` | 10m10.90s |
-| `pnpm lint` | 1m26.79s |
-| `pnpm build` | 5m40.19s |
-
-### Execução incremental validada com alteração isolada em `@alice/auth-service`
-
-| Comando | Tempo | Escopo |
-|---|---:|---|
-| `pnpm typecheck` | 54.30s | `@alice/auth-service` |
-| `pnpm test` | 37.46s | 4 arquivos de teste ligados a `@alice/auth-service` |
-| `pnpm lint` | 57.54s | `@alice/auth-service` |
-| `pnpm build` | 7.89s | `@alice/auth-service` + upstream em cache |
-
-## Observações Operacionais
-
-- O primeiro hit incremental ainda pode reconstruir dependências upstream se o cache local estiver vazio.
-- Se um workspace afetado não tiver mapeamento confiável de testes, `pnpm test` cai automaticamente para full.
-- Quando o detector estiver inseguro, ele executa full por design.
-- Arquivos Markdown como `README.md`, `AGENTS.md`, `CLAUDE.md` e READMEs locais em `apps/` ou `assets/` entram como `docs-only` mesmo fora de `docs/`.
-- Nenhum fluxo local comum depende mais de `eslint .`, de `tsc --noEmit` no repositório inteiro ou de `vitest run` full para mudanças isoladas seguras.
-- O grafo formal do `@alice/frontend-service` passa a declarar `@alice/shared` e `@alice/shared-utils` como dependências reais de workspace.
-- Os imports do frontend para pacotes compartilhados ficam restritos a subpaths públicos, sem alias genérico para `packages/*/src`.
-- O `build` do frontend fica limitado ao `vite build`; a validação de tipos continua separada em `typecheck` para evitar retrabalho local.
-- O `lint` do frontend passa a usar cache próprio do ESLint em `.cache/eslint/frontend-service/`.
-- A inteligência local de impacto já reconhece `@alice/shared` e `@alice/shared-utils` como dependências reais do `@alice/frontend-service`.
-- Ainda existe uma limitação fora do escopo deste chat no workflow de release: `biometrics-service`, por não ser workspace Node e não ter `package.json`, continua sujeito a rebuild conservador quando `packages/*` mudam.
+- [docs/engineering/pipeline-overview.md](pipeline-overview.md)
+- [docs/operations/release.md](../operations/release.md)
