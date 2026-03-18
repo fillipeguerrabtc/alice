@@ -97,6 +97,11 @@ jobs:
           echo "node-version=$NODE_LTS" >> $GITHUB_OUTPUT
           echo "pnpm-version=$PNPM_VER" >> $GITHUB_OUTPUT
 
+      - name: Setup Node.js para resolver escopo
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af
+        with:
+          node-version: ${{ steps.versions.outputs.node-version }}
+
       - name: Fetch pull request base ref
         if: ${{ github.event_name == 'pull_request' }}
         run: |
