@@ -443,7 +443,7 @@ Permitir que o Chat consulte e **atualize dashboards** do Grafana com RBAC, audi
 5. **Governança de escopo:** quarentena, overrides, resoluções manuais, **conversas fatiadas**, **sugestão novo namespace**
 6. **Trading datasets:** criação, duplicados, qualidade
 
-**Configurações de treino (Plano 11/02/2026):** `DOCUMENT_MAX_CHUNKS`, `TRAINING_DOC_MAX_SAMPLES`, `CONVERSATION_SLICE_SIZE`, `MIN_ONDEMAND_DATASET_SIZE` — editáveis via UI (Configurações do Sistema). Valores em PostgreSQL têm precedência sobre env. Ver `docs/TRAINING.md`.
+**Configurações de treino (Plano 11/02/2026):** `DOCUMENT_MAX_CHUNKS`, `TRAINING_DOC_MAX_SAMPLES`, `CONVERSATION_SLICE_SIZE`, `MIN_ONDEMAND_DATASET_SIZE` — editáveis via UI (Configurações do Sistema). Valores em PostgreSQL têm precedência sobre env. Ver `docs/operations/training/overview.md`.
 
 **Alertas:**
 
@@ -685,8 +685,8 @@ docker logs loki
 ### Alice Platform
 
 - `CLAUDE.md` - 18 Regras Fundamentais
-- `docs/ARQUITETURA.md` - Arquitetura Gate 2 (LLM separado + Vision via OpenAI)
-- `docs/ARQUITETURA-GPU-MANAGER.md` - GPU Manager Service
+- `docs/architecture/platform.md` - Arquitetura Gate 2 (LLM separado + Vision via OpenAI)
+- `docs/architecture/gpu-manager.md` - GPU Manager Service
 - Auditoria 13/01/2026 consolidada neste documento
 
 ---

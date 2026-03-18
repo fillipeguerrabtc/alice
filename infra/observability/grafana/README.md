@@ -124,7 +124,7 @@ docker logs alice-grafana -f --tail 100
 
 - [Grafana OAuth Documentation](https://grafana.com/docs/grafana/latest/setup-grafana/configure-security/configure-authentication/generic-oauth/)
 - [OIDC Specification](https://openid.net/specs/openid-connect-core-1_0.html)
-- [Alice OIDC Provider](../../apps/auth-service/src/oidc/)
+- [Alice OIDC Provider](../../../apps/auth-service/src/oidc/)
 
 ---
 

@@ -40,7 +40,7 @@ Expandir a curadoria da aba Training com:
 - `apps/frontend-service/src/pages/Training.tsx`
 - `apps/frontend-service/src/locales/pt-BR.json`
 - `apps/frontend-service/src/locales/en.json`
-- `docs/TRAINING.md`
+- `docs/operations/training/overview.md`
 
 ## Validacao executada (sequencial, um por vez)
 

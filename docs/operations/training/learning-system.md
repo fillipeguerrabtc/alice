@@ -73,7 +73,7 @@ Com servidor GPU dedicado, os serviços de inferência rodam simultaneamente (bu
 | **Chat, RAG (+ Vision/ASR OpenAI)** | ~0.5-1 segundo | **ZERO troca de containers** - todos sempre carregados na VRAM |
 | **Fine-tuning QLoRA** | Ativação via profile | Apenas training usa troca (semanal ou on-demand) |
 
-> **Gate 2:** Serviços GPU de inferência rodam localmente no servidor Hetzner GPU GEX44 com containers Docker 24/7. GPU Manager Service gerencia requisições com fila priorizada, monitoramento VRAM e circuit breakers. Fine-tuning QLoRA é ativado on-demand via Docker Compose profile. Ver [docs/ARQUITETURA-GPU-MANAGER.md](ARQUITETURA-GPU-MANAGER.md) para guia completo.
+> **Gate 2:** Serviços GPU de inferência rodam localmente no servidor Hetzner GPU GEX44 com containers Docker 24/7. GPU Manager Service gerencia requisições com fila priorizada, monitoramento VRAM e circuit breakers. Fine-tuning QLoRA é ativado on-demand via Docker Compose profile. Ver [docs/architecture/gpu-manager.md](../../architecture/gpu-manager.md) para guia completo.
 
 **Componentes:**
 - **Redis Queue:** Processamento assíncrono de embeddings

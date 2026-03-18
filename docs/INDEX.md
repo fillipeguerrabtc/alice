@@ -1,61 +1,65 @@
 # Indice de Documentacao - Alice
 
 **Author:** Fillipe Guerra
-**Data:** 17 de Marco de 2026
-**Atualizado:** 17 de Marco de 2026
+**Data:** 18 de Marco de 2026
+**Atualizado:** 18 de Marco de 2026
 
 ## Objetivo
 
-Ser o portal principal da documentacao do repositorio, definindo navegacao e precedencia sem duplicar conteudo tecnico.
+Ser o portal principal da documentacao do repositorio, definindo a taxonomia vigente, a navegacao e a precedencia sem duplicar conteudo tecnico.
 
 ## Regra de precedencia
 
 1. Instrucoes ativas de sistema, developer e usuario no bloco atual.
 2. [AGENTS.md](../AGENTS.md) e [CLAUDE.md](../CLAUDE.md) para governanca permanente de agentes, engenharia e operacao.
-3. Documentos canonicos tematicos vigentes em `docs/`.
-4. Documentos temporais ativos, como planos, rollouts, status, reviews e relatorios, apenas como contexto.
-5. [docs/archive/INDEX.md](archive/INDEX.md) e todo o conteudo em [docs/archive/](archive/) apenas como historico.
+3. `docs/INDEX.md` como mapa editorial da taxonomia vigente.
+4. SSOTs tematicos duraveis em `docs/architecture/`, `docs/operations/`, `docs/product/` e `docs/engineering/`.
+5. Contexto temporal ativo em `docs/status/` e no rollout de refatoracao documental.
+6. [docs/archive/INDEX.md](archive/INDEX.md) e o restante de `docs/archive/` apenas como historico.
 
 [README.md](../README.md) e `docs/INDEX.md` sao portas de entrada. Eles nao substituem o SSOT tecnico dos documentos tematicos.
 
-> Ate a reorganizacao fisica completa da taxonomia, a precedencia e definida por esta classificacao editorial, nao pela pasta onde o arquivo esta.
+## Taxonomia vigente
 
-## Documentos canonicos da raiz
+- Raiz obrigatoria: [README.md](../README.md), [AGENTS.md](../AGENTS.md) e [CLAUDE.md](../CLAUDE.md).
+- Portal documental: [docs/INDEX.md](INDEX.md).
+- Arquitetura: [docs/architecture/platform.md](architecture/platform.md), [docs/architecture/gpu-manager.md](architecture/gpu-manager.md) e a trilha de dominio em [docs/architecture/trading/](architecture/trading/).
+- Operacoes: [docs/operations/deployment.md](operations/deployment.md), [docs/operations/observability.md](operations/observability.md), [docs/operations/secrets.md](operations/secrets.md), [docs/operations/permissions.md](operations/permissions.md), onboarding em [docs/operations/getting-started.md](operations/getting-started.md), treinamento em [docs/operations/training/](operations/training/) e runbooks em [docs/operations/runbooks/](operations/runbooks/).
+- Produto: [docs/product/design-guidelines.md](product/design-guidelines.md), [docs/product/training-business-guide.md](product/training-business-guide.md) e a trilha de produto trading em [docs/product/trading/](product/trading/).
+- Engenharia: [docs/engineering/validation-monorepo.md](engineering/validation-monorepo.md), [docs/engineering/pipeline-overview.md](engineering/pipeline-overview.md) e [docs/engineering/pull-inteligente-flow.md](engineering/pull-inteligente-flow.md).
+- Status ativo: [docs/status/current-platform-status.md](status/current-platform-status.md), [docs/status/roadmap.md](status/roadmap.md) e [docs/documentation-refactor-rollout.md](documentation-refactor-rollout.md).
+- Historico arquivado: [docs/archive/INDEX.md](archive/INDEX.md), com planos em `docs/archive/plans/`, relatorios em `docs/archive/reports/`, notas historicas da raiz em `docs/archive/root/`, notas operacionais em `docs/archive/ops/` e lote legado em `docs/archive/relatorios/`.
 
-- [README.md](../README.md): visao geral e quick start.
-- [AGENTS.md](../AGENTS.md): guia operacional permanente para agentes.
-- [CLAUDE.md](../CLAUDE.md): SSOT de engenharia, operacao e entrega.
-
-## Documentacao canonica tematica
+## SSOTs principais por trilha
 
 ### Arquitetura
 
-- [docs/ARQUITETURA.md](ARQUITETURA.md)
-- [docs/ARQUITETURA-GPU-MANAGER.md](ARQUITETURA-GPU-MANAGER.md)
+- [docs/architecture/platform.md](architecture/platform.md)
+- [docs/architecture/gpu-manager.md](architecture/gpu-manager.md)
+- [docs/architecture/trading/domain-map.md](architecture/trading/domain-map.md)
 
-### Operacao e deploy
+### Operacoes
 
-- [docs/DEPLOYMENT.md](DEPLOYMENT.md)
-- [docs/OBSERVABILITY.md](OBSERVABILITY.md)
-- [docs/VALIDACAO-INCREMENTAL-MONOREPO.md](VALIDACAO-INCREMENTAL-MONOREPO.md)
+- [docs/operations/deployment.md](operations/deployment.md)
+- [docs/operations/observability.md](operations/observability.md)
+- [docs/operations/secrets.md](operations/secrets.md)
+- [docs/operations/permissions.md](operations/permissions.md)
+- [docs/operations/training/overview.md](operations/training/overview.md)
 
-### Configuracao e seguranca
+### Produto
 
-- [docs/GUIA-CONFIGURACAO-INICIAL.md](GUIA-CONFIGURACAO-INICIAL.md)
-- [docs/SECRETS.md](SECRETS.md)
-- [docs/PERMISSIONS.md](PERMISSIONS.md)
+- [docs/product/design-guidelines.md](product/design-guidelines.md)
+- [docs/product/training-business-guide.md](product/training-business-guide.md)
+- [docs/product/trading/platform-institutional.md](product/trading/platform-institutional.md)
 
-## Documentacao temporal ativa
+### Engenharia
 
-- [docs/documentation-refactor-rollout.md](documentation-refactor-rollout.md): plano e acompanhamento da refatoracao documental.
-- [docs/STATUS-REAL-ATUAL.md](STATUS-REAL-ATUAL.md): snapshot operacional do momento.
-- [docs/ROADMAP.md](ROADMAP.md): direcionamento futuro.
-- [docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md](PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md), [docs/PLANO-DE-CORRECOES-ENTERPRISE.md](PLANO-DE-CORRECOES-ENTERPRISE.md) e [docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md](PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md): planos e trackers ativos.
-- `docs/RELATORIO-*.md`, `docs/REVISAO_*.md`, `docs/MODULARIZACAO-*.md` e `docs/STATUS_*.md`: evidencias temporais de execucao, review e validacao.
+- [docs/engineering/validation-monorepo.md](engineering/validation-monorepo.md)
+- [docs/engineering/pipeline-overview.md](engineering/pipeline-overview.md)
 
-## Historico arquivado
+## Regras editoriais
 
-- Indice historico: [docs/archive/INDEX.md](archive/INDEX.md)
-- Conteudo arquivado: [docs/archive/relatorios/](archive/relatorios/)
-
-Em caso de divergencia entre archive e documentacao vigente, sempre prevalece o documento canonico tematico aplicavel.
+- Documento canonico deve viver fora de `docs/archive/` e nao depender de historico para ser compreendido.
+- Documento datado, por rodada, review, validacao, plano ou snapshot nao ocupa espaco canonico tematico.
+- `docs/status/` concentra contexto temporal ativo; material fechado, supersedido ou apenas rastreavel pertence ao archive.
+- Em caso de divergencia entre archive e documentacao vigente, sempre prevalece o documento canonico tematico aplicavel.

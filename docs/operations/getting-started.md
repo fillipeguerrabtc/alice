@@ -12,14 +12,14 @@ Este manual é focado em **operações pedidas no chat** e em **como usar agente
 - Configuração mínima (Core, Agentic, Namespaces e Agentes).
 - Ciclo **chat → aprovação → treino**.
 
-> **Importante:** Este guia é prático e didático. Para aprofundamento técnico, consulte os SSOTs: `docs/SISTEMA-APRENDIZADO.md`, `docs/TRAINING.md`, `docs/ARQUITETURA.md`, `docs/SECRETS.md` e `docs/PERMISSIONS.md`.
+> **Importante:** Este guia é prático e didático. Para aprofundamento técnico, consulte os SSOTs: `docs/operations/training/learning-system.md`, `docs/operations/training/overview.md`, `docs/architecture/platform.md`, `docs/operations/secrets.md` e `docs/operations/permissions.md`.
 
 ---
 
 ## 1) Pré‑requisitos obrigatórios
 
 1. **Secrets configuradas**  
-   - Siga `docs/SECRETS.md` (SSOT).
+   - Siga `docs/operations/secrets.md` (SSOT).
 
 2. **Contas administrativas (3 sistemas independentes)**  
    - **Alice/Auth:** `ADMIN_USER` + `ADMIN_PWD`
@@ -1509,7 +1509,7 @@ Validação mínima pós-operação:
 
 ## 19) Checklist de secrets por ambiente (resumo)
 
-> **SSOT obrigatório:** a lista exata e atual está em `docs/SECRETS.md`.  
+> **SSOT obrigatório:** a lista exata e atual está em `docs/operations/secrets.md`.
 > Este checklist é um **resumo didático** para onboarding rápido.
 
 ### 19.1 Desenvolvimento (local)
@@ -1788,9 +1788,9 @@ No `integrations-service`, **não há endpoints públicos** para `sales-order` e
 
 ## Referências
 
-- `docs/SISTEMA-APRENDIZADO.md`
-- `docs/TRAINING.md`
-- `docs/ARQUITETURA.md`
-- `docs/SECRETS.md`
-- `docs/PERMISSIONS.md`
-- `docs/OBSERVABILITY.md`
+- `docs/operations/training/learning-system.md`
+- `docs/operations/training/overview.md`
+- `docs/architecture/platform.md`
+- `docs/operations/secrets.md`
+- `docs/operations/permissions.md`
+- `docs/operations/observability.md`

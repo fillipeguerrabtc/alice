@@ -4,19 +4,19 @@
 **Data:** 12 de Março de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
 **Versão:** 15.22 - Hardening final Qwen3 (SSOT hyperparams + cobertura de testes + operação)
-**Fonte canônica de status de execução por rodada:** `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`
+**Fonte canônica de status de execução por rodada:** `docs/archive/plans/codex-enterprise-execution.md`
 
 ---
 
 ## Atualizações executadas e precedência (11-12/03/2026)
 
-- O detalhamento completo de execuções, validações e commits por rodada está no tracking canônico: `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+- O detalhamento completo de execuções, validações e commits por rodada está no tracking canônico: `docs/archive/plans/codex-enterprise-execution.md`.
 - Este documento mantém o snapshot operacional consolidado da plataforma, sem replicar changelog extensivo por rodada.
 - Em caso de divergência entre relato histórico e estado de execução governado, prevalece o tracking canônico.
 - Rodada Chat 3 (17/03/2026): primeira fase segura de modularização em `@alice/shared` e `@alice/shared-utils`:
   - `packages/shared/src/schema.ts` deixou de concentrar custom types e contratos JSONB/Zod puros; estes contratos passaram a módulos internos em `packages/shared/src/schema/`, mantendo `schema.ts` como facade pública canônica.
   - `packages/shared-utils/src/index.ts` passou a reexportar barrels internos por domínio (`agentic`, `llm`, `observability`, `platform`, `runtime`, `trading`, `training`) sem migração ampla de consumidores.
-  - Mapa detalhado da rodada: `docs/MODULARIZACAO-SHARED-CHAT-3-2026-03-17.md`.
+  - Mapa detalhado da rodada: `docs/archive/reports/implementation/modularizacao-shared-chat-3-2026-03-17.md`.
 - Rodada 13 (12/03/2026): hardening da migration `0108_qwen3_model_defaults.sql` no deploy:
   - Evidência operacional: job `Apply Database Schema (Drizzle)` falhou em produção com `ERROR: relation "trading_lora_jobs" does not exist`.
   - Causa raiz: migration usava nome legado `trading_lora_jobs` após unificação enterprise para `lora_jobs` na migration `0060_lora_jobs_unified_table.sql`.
@@ -486,7 +486,7 @@ Retenção Arquivo:   30 dias
 ## Atualizações recentes (resumo)
 
 - O resumo detalhado de alterações por rodada foi consolidado no tracking canônico para reduzir duplicidade documental.
-- Consultar `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md` para histórico completo de implementação, validações e commits.
+- Consultar `docs/archive/plans/codex-enterprise-execution.md` para histórico completo de implementação, validações e commits.
 
 ## Tuning seguro (aplicação + servidor)
 
@@ -605,14 +605,14 @@ Container `alice-pgbackrest-exporter` unhealthy (FailingStreak 4863, falhando de
 
 Diagnóstico via SSH em produção (`docker inspect`, logs, env vars, `/proc/net/tcp`, `/proc/net/tcp6`, `pgbackrest info`).
 
-**Arquivos modificados:** `infra/docker/stacks/docker-compose.backup.yml` (environment + healthcheck), `docs/ARQUITETURA.md`, `docs/STATUS-REAL-ATUAL.md`.
+**Arquivos modificados:** `infra/docker/stacks/docker-compose.backup.yml` (environment + healthcheck), `docs/architecture/platform.md`, `docs/status/current-platform-status.md`.
 
 ---
 
 ## Referências internas
 
-- `docs/ARQUITETURA.md`
-- `docs/ARQUITETURA-GPU-MANAGER.md`
-- `docs/DEPLOYMENT.md`
-- `docs/OBSERVABILITY.md`
-- `docs/SECRETS.md`
+- `docs/architecture/platform.md`
+- `docs/architecture/gpu-manager.md`
+- `docs/operations/deployment.md`
+- `docs/operations/observability.md`
+- `docs/operations/secrets.md`

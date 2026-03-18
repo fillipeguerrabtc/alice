@@ -163,7 +163,7 @@ Leitura prática:
 
 ### Baseline original
 
-Baseline original já documentado em `docs/VALIDACAO-INCREMENTAL-MONOREPO.md`:
+Baseline original já documentado em `docs/engineering/validation-monorepo.md`:
 
 | Comando | Tempo original |
 |---|---:|

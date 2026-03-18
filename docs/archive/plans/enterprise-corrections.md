@@ -420,8 +420,8 @@ Objetivo: fechar gaps do score atual (72%) e elevar readiness para padrao Diaman
 ### INF-002 - SSOT de runtime: scripts root padronizados para modo microservicos
 - Arquivos a alterar/criar:
   - Alterar `package.json` (scripts root)
-  - Alterar `docs/DEPLOYMENT.md`
-  - Alterar `docs/ARQUITETURA.md`
+  - Alterar `docs/operations/deployment.md`
+  - Alterar `docs/architecture/platform.md`
   - Criar teste de smoke em `tests/e2e/runtime-entrypoint-smoke.test.ts`
 - Contratos:
   - Comandos default `dev/build/start` devem refletir arquitetura oficial multi-service
@@ -462,8 +462,8 @@ Objetivo: fechar gaps do score atual (72%) e elevar readiness para padrao Diaman
 ### INF-004 - Exercicios de restore (Game Day) para backup/DR
 - Arquivos a alterar/criar:
   - Alterar `apps/observability-service/src/backup-orchestrator.ts`
-  - Alterar `docs/DEPLOYMENT.md`
-  - Criar `docs/DR-RUNBOOK.md`
+  - Alterar `docs/operations/deployment.md`
+  - Criar `docs/operations/runbooks/dr-game-day.md`
   - Criar testes `tests/e2e/backup-restore-game-day.test.ts`
 - Contratos:
   - RTO/RPO declarados e medidos por ambiente

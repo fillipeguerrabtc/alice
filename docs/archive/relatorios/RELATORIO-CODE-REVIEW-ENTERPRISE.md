@@ -28,9 +28,9 @@ Modo: somente leitura (nenhum arquivo de codigo alterado)
 Leituras base:
 - `README.md`
 - `docs/INDEX.md`
-- `docs/ARQUITETURA.md`
-- `docs/DEPLOYMENT.md`
-- `docs/STATUS-REAL-ATUAL.md`
+- `docs/architecture/platform.md`
+- `docs/operations/deployment.md`
+- `docs/status/current-platform-status.md`
 
 Validacoes executadas:
 - Typecheck/Lint/Test/Build do workspace.
@@ -418,7 +418,7 @@ Evidencias:
 - **Recomendacao** (SEM codar)
   Definir script root SSOT para stack microservicos (turbo/pnpm filters), mantendo legacy apenas em comando explicitamente depreciado.
 - **Criterio de aceite**
-  `pnpm dev/start/build` default executa fluxo de microservicos documentado em `docs/DEPLOYMENT.md`.
+  `pnpm dev/start/build` default executa fluxo de microservicos documentado em `docs/operations/deployment.md`.
 
 - **ID**: MED-001
 - **Titulo**
@@ -482,7 +482,7 @@ Evidencias:
 - **Severidade**: MEDIUM
 - **Impacto**
   Indicadores de status podem superestimar maturidade real-time e mascarar custo/latencia por polling residual.
-- **Evidencia**: claim em `docs/STATUS-REAL-ATUAL.md:59`; polling no frontend demo em `apps/frontend-service/src/pages/DemoTrading.tsx:398`, `:435`, `:442`, `:449`, `:462`
+- **Evidencia**: claim em `docs/status/current-platform-status.md:59`; polling no frontend demo em `apps/frontend-service/src/pages/DemoTrading.tsx:398`, `:435`, `:442`, `:449`, `:462`
 - **Causa raiz provavel**
   Documentacao consolidada com premissa de arquitetura alvo, nao estado implementado completo.
 - **Recomendacao** (SEM codar)
@@ -518,15 +518,15 @@ Evidencias:
 - **Criterio de aceite**
   Build reproduzivel com lock deterministico e verificacao de integridade.
 
-## 7) Gap analysis: docs/STATUS-REAL-ATUAL.md vs implementacao real
+## 7) Gap analysis: docs/status/current-platform-status.md vs implementacao real
 
 | Afirmacao no STATUS | Evidencia no codigo | Resultado |
 |---|---|---|
-| "Autenticacao interna HMAC unificada entre servicos" (`docs/STATUS-REAL-ATUAL.md:11`) | Rotas internas de chat sem guard interno (`apps/chat-service/src/index.ts:18549`, `:18829`) | **PARCIAL / DIVERGENTE** |
-| "Trading market data 100% WS, sem polling REST" (`docs/STATUS-REAL-ATUAL.md:59`) | `DemoTrading` usa `refetchInterval` para market e dados operacionais (`apps/frontend-service/src/pages/DemoTrading.tsx:398`, `:435`, `:442`, `:449`, `:462`) | **PARCIAL / DIVERGENTE** |
-| "WebSocket frontend alinhado com /ws/chat" (`docs/STATUS-REAL-ATUAL.md:61`) | Hook usa `/ws/chat` (`apps/frontend-service/src/hooks/useKucoinWebSocket.ts:279`) | **OK** |
-| "Seguranca enterprise com RLS" (`docs/STATUS-REAL-ATUAL.md:46`) | RLS existe, mas com mismatch de GUC em varias migrations (`migrations/0012_technical_indicators.sql:151`) | **PARCIAL / DIVERGENTE** |
-| "Observabilidade de latencia/auto-runs em Prometheus" (`docs/STATUS-REAL-ATUAL.md:11`) | metricas presentes em training/integrations (`apps/training-service/src/index.ts:447`, `apps/integrations-service/src/index.ts:2325`) | **OK** |
+| "Autenticacao interna HMAC unificada entre servicos" (`docs/status/current-platform-status.md:11`) | Rotas internas de chat sem guard interno (`apps/chat-service/src/index.ts:18549`, `:18829`) | **PARCIAL / DIVERGENTE** |
+| "Trading market data 100% WS, sem polling REST" (`docs/status/current-platform-status.md:59`) | `DemoTrading` usa `refetchInterval` para market e dados operacionais (`apps/frontend-service/src/pages/DemoTrading.tsx:398`, `:435`, `:442`, `:449`, `:462`) | **PARCIAL / DIVERGENTE** |
+| "WebSocket frontend alinhado com /ws/chat" (`docs/status/current-platform-status.md:61`) | Hook usa `/ws/chat` (`apps/frontend-service/src/hooks/useKucoinWebSocket.ts:279`) | **OK** |
+| "Seguranca enterprise com RLS" (`docs/status/current-platform-status.md:46`) | RLS existe, mas com mismatch de GUC em varias migrations (`migrations/0012_technical_indicators.sql:151`) | **PARCIAL / DIVERGENTE** |
+| "Observabilidade de latencia/auto-runs em Prometheus" (`docs/status/current-platform-status.md:11`) | metricas presentes em training/integrations (`apps/training-service/src/index.ts:447`, `apps/integrations-service/src/index.ts:2325`) | **OK** |
 
 ## 8) Riscos institucionais (hedge fund/trading profissional)
 

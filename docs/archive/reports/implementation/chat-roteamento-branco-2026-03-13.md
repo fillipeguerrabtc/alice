@@ -94,7 +94,7 @@ Mudanca:
 ## 9. Arquivos alterados nesta rodada
 - `apps/frontend-service/src/App.tsx`
 - `tests/unit/frontend/chat-route-guard.test.ts`
-- `docs/RELATORIO-CORRECAO-CHAT-ROTEAMENTO-BRANCO-2026-03-13.md`
+- `docs/archive/reports/implementation/chat-roteamento-branco-2026-03-13.md`
 
 ## 10. Observacoes operacionais
 - A investigacao em producao incluiu:

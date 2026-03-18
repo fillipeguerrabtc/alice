@@ -1,41 +1,39 @@
-# Índice de Histórico Arquivado - Alice Enterprise Platform
+# Indice de Historico Arquivado - Alice
 
-Author: Fillipe Guerra  
-Data: 11 de Março de 2026
+**Author:** Fillipe Guerra
+**Data:** 18 de Marco de 2026
+**Atualizado:** 18 de Marco de 2026
 
 ## Objetivo
-Preservar rastreabilidade documental de relatórios históricos sem poluir o índice principal de SSOT.
+
+Preservar rastreabilidade documental de planos, relatorios, revisoes, snapshots e notas historicas sem poluir o espaco canonico do SSOT.
 
 ## Escopo do archive
-- Conteúdos históricos e relatórios de execução pontual.
-- Material sem precedência sobre os documentos canônicos em `docs/INDEX.md`.
 
-## Relatórios arquivados
-- `docs/archive/relatorios/RELATORIO-IMPLEMENTACAO-CHAT-TRADING-REAL-E-LORA-2026-03-16.md`
-- `docs/archive/relatorios/RELATORIO-AUDITORIA-COPILOT-2026-02-25.md`
-- `docs/archive/relatorios/RELATORIO-CODE-REVIEW-CHAT-STREAMING-2026-02-26.md`
-- `docs/archive/relatorios/RELATORIO-CODE-REVIEW-ENTERPRISE.md`
-- `docs/archive/relatorios/RELATORIO-CORE-REVIEW-CHAT-STREAMING-WEB-ROTA-2026-02-27.md`
-- `docs/archive/relatorios/RELATORIO-CORRECAO-TRAINING-QUEUE-E-NAMESPACE-2026-03-06.md`
-- `docs/archive/relatorios/RELATORIO-CORRECOES-RAG-TRAINING-2026-02-26.md`
-- `docs/archive/relatorios/RELATORIO-IMPLEMENTACAO-CHATGPT-LIKE-STREAM-CORRUPCAO-DOCUMENTS-2026-02-28.md`
-- `docs/archive/relatorios/RELATORIO-IMPLEMENTACAO-CORRECAO-DEPLOY-ALICE-RAG-2026-02-28.md`
-- `docs/archive/relatorios/RELATORIO-IMPLEMENTACAO-CORRECAO-QUALIDADE-LLM-2026-03-01.md`
-- `docs/archive/relatorios/RELATORIO-IMPLEMENTACAO-CORRECAO-UX-DOCUMENTS-2026-02-28.md`
-- `docs/archive/relatorios/RELATORIO-IMPLEMENTACAO-CORRECOES-CHAT-2026-02-26-RODADA-3.md`
-- `docs/archive/relatorios/RELATORIO-IMPLEMENTACAO-CORRECOES-CHAT-TRADING-2026-02-25.md`
-- `docs/archive/relatorios/RELATORIO-IMPLEMENTACAO-CORRECOES-CHAT-TRADING-2026-02-26-RODADA-2.md`
-- `docs/archive/relatorios/RELATORIO-IMPLEMENTACAO-CORRECOES-DOCUMENTOS-CHAT-2026-02-27-RODADA-4.md`
-- `docs/archive/relatorios/RELATORIO-IMPLEMENTACAO-FILA-REVISAO-HIBRIDA-2026-03-06.md`
-- `docs/archive/relatorios/RELATORIO-IMPLEMENTACAO-RAG-DOCUMENTS-CHAT-2026-03-01.md`
-- `docs/archive/relatorios/RELATORIO-IMPLEMENTACAO-REMEDIACAO-TRAINING-DATASET-2026-03-06-BLOCO-1.md`
-- `docs/archive/relatorios/RELATORIO-IMPLEMENTACAO-REMEDIACAO-TRAINING-DATASET-2026-03-06-BLOCO-2.md`
-- `docs/archive/relatorios/RELATORIO-IMPLEMENTACAO-ROTEAMENTO-HIBRIDO-ENTERPRISE-2026-03-06.md`
-- `docs/archive/relatorios/RELATORIO-IMPLEMENTACAO-SELECAO-MULTIPLA-TRAINING-E-CORRECAO-RAG-2026-03-02.md`
-- `docs/archive/relatorios/RELATORIO-IMPLEMENTACAO-SSE-ROTEAMENTO-RAG-BULK-TRADING-2026-02-26.md`
-- `docs/archive/relatorios/RELATORIO-IMPLEMENTACAO-STREAMING-TEMPO-REAL-TREINAMENTO-2026-03-06.md`
-- `docs/archive/relatorios/RELATORIO-IMPLEMENTACAO-TRAINING-ASYNC-LORA-STREAMING-2026-02-26.md`
-- `docs/archive/relatorios/RELATORIO-IMPLEMENTACAO-TRAINING-SELECIONAR-TODOS-E-AJUSTE-NAMESPACE-2026-03-03.md`
+- Conteudos historicos, datados, fechados ou mantidos apenas por rastreabilidade.
+- Material sem precedencia sobre os documentos vigentes mapeados em [docs/INDEX.md](../INDEX.md).
+- Evidencias temporais que nao devem permanecer no espaco canonico tematico.
+
+## Estrutura vigente
+
+- `docs/archive/plans/`: planos, trackers e rollouts temporais movidos da raiz de `docs/`.
+- `docs/archive/reports/implementation/`: relatorios de correcao, execucao e refatoracao por rodada.
+- `docs/archive/reports/reviews/`: reviews e revisoes tecnicas datadas.
+- `docs/archive/reports/validation/`: relatorios de validacao e fechamento.
+- `docs/archive/reports/status/`: snapshots e migracoes temporais preservadas como historico.
+- `docs/archive/root/`: markdowns datados que antes estavam soltos na raiz do repositorio.
+- `docs/archive/ops/`: notas operacionais historicas fora do SSOT.
+- `docs/archive/relatorios/`: lote legado arquivado antes da taxonomia atual.
+
+## Referencias principais
+
+- Planos arquivados: `docs/archive/plans/codex-enterprise-execution.md`, `docs/archive/plans/enterprise-implementation-blocks.md`, `docs/archive/plans/enterprise-corrections.md`, `docs/archive/plans/trading-refactor.md`
+- Implementacao arquivada: `docs/archive/reports/implementation/agentic-refactor-2026-02-27.md`, `docs/archive/reports/implementation/modularizacao-shared-chat-3-2026-03-17.md`
+- Reviews arquivadas: `docs/archive/reports/reviews/chat-enterprise-review-2026-03-12.md`, `docs/archive/reports/reviews/chat-enterprise-review-2026-03-15.md`
+- Status arquivado: `docs/archive/reports/status/qwen3-8b-migration.md`
+- Raiz arquivada: `docs/archive/root/trading-critical-errors-2026-02-16.md`
+- Operacoes arquivadas: `docs/archive/ops/rag-doc-processing-2026-03-01.md`
 
 ## Regra de uso
-- Em caso de divergência entre histórico arquivado e documentação canônica, prevalecem os SSOT definidos em `docs/INDEX.md`.
+
+- Em caso de divergencia entre historico arquivado e documentacao canonica, prevalecem os SSOT definidos em [docs/INDEX.md](../INDEX.md).

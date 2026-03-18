@@ -30,7 +30,7 @@
 **Solução Implementada:**
 - ✅ Corrigido endpoint GET de `/balances` → `/balance`
 - ✅ Atualizados todos os 12 `invalidateQueries` de `/balances` → `/balance`
-- ✅ Validado contra documentação `docs/STATUS-REAL-ATUAL.md` linha 349
+- ✅ Validado contra documentação `docs/status/current-platform-status.md` linha 349
 
 **Arquivos Modificados:**
 - `apps/frontend-service/src/pages/DemoTrading.tsx`
@@ -176,7 +176,7 @@ Todas as mudanças seguem as regras de segurança enterprise:
 
 ## 📚 Referências
 
-- **Documentação Backend**: `docs/STATUS-REAL-ATUAL.md` linha 349
+- **Documentação Backend**: `docs/status/current-platform-status.md` linha 349
 - **CLAUDE.md**: Regras 6, 7, 8, 10, 16
 - **Problem Statement**: GitHub Issue original
 - **Commits**: 

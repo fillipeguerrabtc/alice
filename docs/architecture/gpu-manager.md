@@ -400,4 +400,4 @@ DELETE /api/training/run/cancel
 - [OpenAI Responses API](https://platform.openai.com/docs/api-reference/responses)
 - [OpenAI Image Generation](https://platform.openai.com/docs/guides/images/image-generation)
 - [vLLM Documentation](https://docs.vllm.ai/)
-- [CLAUDE.md - Regras do Projeto](../CLAUDE.md)
+- [CLAUDE.md - Regras do Projeto](../../CLAUDE.md)

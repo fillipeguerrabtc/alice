@@ -113,6 +113,6 @@ Executar a segunda passagem enterprise comparando a review externa com a remedia
 - `packages/database/src/system-config.ts`
 - `apps/frontend-service/src/pages/Training.tsx`
 - `migrations/0101_training_dataset_manifest_and_lifecycle_hardening.sql`
-- `docs/TRAINING.md`
+- `docs/operations/training/overview.md`
 - `docs/INDEX.md`
 

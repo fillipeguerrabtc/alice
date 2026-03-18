@@ -6,14 +6,14 @@
 > **Framework:** arc42 + C4 Model + ADRs  
 > **Idioma:** Português Brasileiro (termos técnicos em inglês)
 > 
-> **Notas de atualização:** detalhes de CI/CD, Smart Deploy e troubleshooting ficam em `docs/DEPLOYMENT.md` (SSOT). Hardening de DR/restore (offsite criptografado + readiness checks) fica em `docs/DR-RUNBOOK.md` e `apps/observability-service/src/backup-orchestrator.ts`.
-> **Fonte canônica de execução do backlog:** `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
+> **Notas de atualização:** detalhes de CI/CD, Smart Deploy e troubleshooting ficam em `docs/operations/deployment.md` (SSOT). Hardening de DR/restore (offsite criptografado + readiness checks) fica em `docs/operations/runbooks/dr-game-day.md` e `apps/observability-service/src/backup-orchestrator.ts`.
+> **Fonte canônica de execução do backlog:** `docs/archive/plans/codex-enterprise-execution.md`.
 
 ### Atualizações e precedência documental (11/03/2026)
 
 - Este documento é normativo para arquitetura e decisões técnicas vigentes (arc42 + C4 + ADRs).
-- O histórico de execução por rodada é mantido exclusivamente em `docs/PLANO-EXECUCAO-CODEX-ENTERPRISE-2026-03-10.md`.
-- O snapshot operacional consolidado permanece em `docs/STATUS-REAL-ATUAL.md`.
+- O histórico de execução por rodada é mantido exclusivamente em `docs/archive/plans/codex-enterprise-execution.md`.
+- O snapshot operacional consolidado permanece em `docs/status/current-platform-status.md`.
 - Em caso de divergência entre relatório histórico e documento normativo, prevalecem os SSOT acima e o tracking canônico.
 
 ## Sumário
@@ -1559,7 +1559,7 @@ prepare-production-server.sh  fix-production-permissions.sh  (scripts futuros)
 | Caddy | 1000 | 755 | Web server, serve certificados públicos |
 | Backups | 70 | 755 | pgBackRest Alpine, root deve poder ler |
 
-**Documentação:** `docs/PERMISSIONS.md`
+**Documentação:** `docs/operations/permissions.md`
 
 **REF:** CLAUDE.md Regra 2 (Não duplicar), Regra 6 (Enterprise-grade), Regra 7 (Causa raiz)
 

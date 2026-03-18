@@ -28,11 +28,11 @@ Fechar a migração Qwen3-8B com hardening enterprise, alinhamento definitivo de
   - RBAC admin/superadmin;
   - compatibilidade legada Qwen2.5.
 - Atualizar documentação PT-BR com Author e data atual:
-  - `docs/ARQUITETURA-GPU-MANAGER.md`
-  - `docs/TRAINING.md`
-  - `docs/SISTEMA-APRENDIZADO.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/STATUS_QWEN3_8B_MIGRATION.md`
+  - `docs/architecture/gpu-manager.md`
+  - `docs/operations/training/overview.md`
+  - `docs/operations/training/learning-system.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/reports/status/qwen3-8b-migration.md`
 - Consolidar notas operacionais de rollout canário, rollback passo a passo e riscos remanescentes.
 
 ## Rodada 10 - Conclusão

@@ -183,7 +183,7 @@ sudo /opt/alice/app/infra/scripts/prepare-production-server.sh
 
 ### Variáveis opcionais de treino (Alice stack)
 
-As seguintes variáveis de ambiente são opcionais e possuem defaults (documentadas em `docs/TRAINING.md` e `docs/TREINAMENTO-LIMITES-E-BOAS-PRATICAS.md`):
+As seguintes variáveis de ambiente são opcionais e possuem defaults (documentadas em `docs/operations/training/overview.md` e `docs/operations/training/reference-limits.md`):
 
 | Variável | Container | Default | Descrição |
 | --- | --- | --- | --- |
@@ -271,7 +271,7 @@ docker logs alice-gpu-llm 2>&1 | grep -i lora
 
 ### Checklist essencial
 
-- [ ] Secrets configurados no GitHub (`docs/SECRETS.md`)
+- [ ] Secrets configurados no GitHub (`docs/operations/secrets.md`)
 - [ ] Chave SSH válida para `root@178.63.41.108`
 - [ ] Release criada e publicada em GHCR
 - [ ] Deploy disparado via workflow
@@ -306,7 +306,7 @@ bash infra/scripts/validate-slo-burn-rates.sh --prometheus-url https://metrics.y
 
 ## Secrets obrigatórios (referência)
 
-Consulte `docs/SECRETS.md` para a lista completa. O deploy é fail-fast se secrets críticos estiverem ausentes.
+Consulte `docs/operations/secrets.md` para a lista completa. O deploy é fail-fast se secrets críticos estiverem ausentes.
 
 **Secret adicional (opcional):**
 
@@ -364,7 +364,7 @@ gh workflow run deploy-stack-modular.yml \
 
 O procedimento operacional de restore (com metas de RTO/RPO e evidências obrigatórias) está em:
 
-- `docs/DR-RUNBOOK.md`
+- `docs/operations/runbooks/dr-game-day.md`
 
 ## Troubleshooting rápido
 
@@ -596,9 +596,9 @@ docker logs alice-caddy --tail 100 | grep "trading"
 
 ## Documentação relacionada
 
-- `docs/ARQUITETURA.md`
-- `docs/ARQUITETURA-GPU-MANAGER.md`
-- `docs/OBSERVABILITY.md`
-- `docs/PERMISSIONS.md`
-- `docs/SECRETS.md`
-- `docs/STATUS-REAL-ATUAL.md`
+- `docs/architecture/platform.md`
+- `docs/architecture/gpu-manager.md`
+- `docs/operations/observability.md`
+- `docs/operations/permissions.md`
+- `docs/operations/secrets.md`
+- `docs/status/current-platform-status.md`

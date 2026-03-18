@@ -17,8 +17,8 @@ Este guia explica, de forma simples, **como treinar os Agentes da Alice** usando
 Ele foi escrito para **usuários de negócio**, sem exigir conhecimento técnico.  
 Quando precisar de detalhes técnicos (API, cron, infraestrutura), consulte:
 
-- `docs/TRAINING.md`
-- `docs/SISTEMA-APRENDIZADO.md`
+- `docs/operations/training/overview.md`
+- `docs/operations/training/learning-system.md`
 
 ---
 
@@ -386,5 +386,5 @@ Se você seguir este guia, o Agente Trading evolui de forma **segura, limpa e es
 
 Se precisar de apoio técnico, use como referência:
 
-- `docs/TRAINING.md`
-- `docs/SISTEMA-APRENDIZADO.md`
+- `docs/operations/training/overview.md`
+- `docs/operations/training/learning-system.md`

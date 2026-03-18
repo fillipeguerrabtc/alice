@@ -277,9 +277,9 @@
 - Atualização documental SSOT para refletir arquitetura/código atuais:
   - `README.md`
   - `docs/INDEX.md`
-  - `docs/ARQUITETURA.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/SISTEMA-APRENDIZADO.md`
+  - `docs/architecture/platform.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/operations/training/learning-system.md`
   - `docs/archive/relatorios/RELATORIO-CODE-REVIEW-ENTERPRISE.md` (nota de snapshot histórico)
 - Atualização dos guardrails de contrato do integrations para suportar modularização de rotas sem enfraquecer cobertura:
   - `tests/unit/services/helpers/integrations-source.ts`
@@ -656,9 +656,9 @@
   - aplicação inicial em `DemoTrading` (posições, saldos, ordens, post-mortems e histórico)
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
+  - `docs/status/current-platform-status.md`
 
 ### Validação executada nesta rodada (sequencial)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service exec tsc --noEmit`
@@ -680,9 +680,9 @@
   - foco exclusivo em padronização visual e redução de duplicação
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
+  - `docs/status/current-platform-status.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 2)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service exec tsc --noEmit`
@@ -704,9 +704,9 @@
   - manutenção de animações e layout sem alterar contratos backend/frontend
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
+  - `docs/status/current-platform-status.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 3)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service exec tsc --noEmit`
@@ -728,9 +728,9 @@
   - manutenção de comportamento de loading e mutações sem alteração de contrato
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
+  - `docs/status/current-platform-status.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 4)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service exec tsc --noEmit`
@@ -751,9 +751,9 @@
   - sem alteração de mutações, payloads ou comportamento de RBAC
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
+  - `docs/status/current-platform-status.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 5)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service exec tsc --noEmit`
@@ -771,9 +771,9 @@
   - alinhamento total com o padrão compartilhado já aplicado em tabelas/cards (`TableEmptyRow` + `EmptyState`)
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
+  - `docs/status/current-platform-status.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 6)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service exec tsc --noEmit`
@@ -795,9 +795,9 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de mantenibilidade da página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
+  - `docs/status/current-platform-status.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 7)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service exec tsc --noEmit`
@@ -819,9 +819,9 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
+  - `docs/status/current-platform-status.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 8)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service exec tsc --noEmit`
@@ -843,9 +843,9 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
+  - `docs/status/current-platform-status.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 9)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service exec tsc --noEmit`
@@ -867,9 +867,9 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
+  - `docs/status/current-platform-status.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 10)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service exec tsc --noEmit`
@@ -891,9 +891,9 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
+  - `docs/status/current-platform-status.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 11)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service exec tsc --noEmit`
@@ -915,9 +915,9 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
+  - `docs/status/current-platform-status.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 12)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service exec tsc --noEmit`
@@ -939,9 +939,9 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
+  - `docs/status/current-platform-status.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 13)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service exec tsc --noEmit`
@@ -964,9 +964,9 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
+  - `docs/status/current-platform-status.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 14)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service exec tsc --noEmit`
@@ -987,9 +987,9 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
+  - `docs/status/current-platform-status.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 15)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service exec tsc --noEmit`
@@ -1010,9 +1010,9 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
+  - `docs/status/current-platform-status.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 16)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service exec tsc --noEmit`
@@ -1034,9 +1034,9 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
+  - `docs/status/current-platform-status.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 17)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service exec tsc --noEmit`
@@ -1057,9 +1057,9 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
+  - `docs/status/current-platform-status.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 18)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service exec tsc --noEmit`
@@ -1081,9 +1081,9 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
+  - `docs/status/current-platform-status.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 19)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service exec tsc --noEmit`
@@ -1106,9 +1106,9 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
+  - `docs/status/current-platform-status.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 20)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service exec tsc --noEmit`
@@ -1130,9 +1130,9 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
+  - `docs/status/current-platform-status.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 21)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service exec tsc --noEmit`
@@ -1154,9 +1154,9 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
+  - `docs/status/current-platform-status.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 22)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service exec tsc --noEmit`
@@ -1179,9 +1179,9 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
+  - `docs/status/current-platform-status.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 23)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service exec tsc --noEmit`
@@ -1203,9 +1203,9 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
+  - `docs/status/current-platform-status.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 24)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service exec tsc --noEmit`
@@ -1227,9 +1227,9 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
+  - `docs/status/current-platform-status.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 25)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service exec tsc --noEmit`
@@ -1251,9 +1251,9 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
+  - `docs/status/current-platform-status.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 26)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service exec tsc --noEmit`
@@ -1275,9 +1275,9 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
+  - `docs/status/current-platform-status.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 27)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service exec tsc --noEmit`
@@ -1299,9 +1299,9 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
+  - `docs/status/current-platform-status.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 28)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service exec tsc --noEmit`
@@ -1323,9 +1323,9 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
+  - `docs/status/current-platform-status.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 29)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service exec tsc --noEmit`
@@ -1347,9 +1347,9 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
+  - `docs/status/current-platform-status.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 30)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service exec tsc --noEmit`
@@ -1372,9 +1372,9 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
+  - `docs/status/current-platform-status.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 31)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service exec tsc --noEmit`
@@ -1396,9 +1396,9 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
+  - `docs/status/current-platform-status.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 32)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service exec tsc --noEmit`
@@ -1421,9 +1421,9 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
+  - `docs/status/current-platform-status.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 33)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service exec tsc --noEmit`
@@ -1445,10 +1445,10 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 34)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -1470,10 +1470,10 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 35)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -1495,10 +1495,10 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 36)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -1520,10 +1520,10 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 37)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -1545,10 +1545,10 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 38)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -1570,10 +1570,10 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 39)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -1595,10 +1595,10 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 40)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -1620,10 +1620,10 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 41)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -1645,10 +1645,10 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 42)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -1673,10 +1673,10 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 43)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -1701,10 +1701,10 @@
   - bloco P2 de frontend segue em fechamento com redução progressiva da mega-página de trading
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 44)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -1728,10 +1728,10 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 45)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -1754,10 +1754,10 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 46)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -1780,10 +1780,10 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 47)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -1806,10 +1806,10 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 48)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -1832,10 +1832,10 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 49)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -1858,10 +1858,10 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 50)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -1884,10 +1884,10 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 51)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -1911,10 +1911,10 @@
   - sem mudança de payloads, apenas redução de acoplamento e melhoria de legibilidade/manutenibilidade da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 52)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -1937,10 +1937,10 @@
   - sem mudança de comportamento funcional, apenas redução de acoplamento da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 53)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -1963,10 +1963,10 @@
   - sem mudança de comportamento funcional, apenas redução de acoplamento da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 54)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -1989,10 +1989,10 @@
   - sem mudança de comportamento funcional, apenas redução de acoplamento da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 55)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -2015,10 +2015,10 @@
   - sem mudança de comportamento funcional, apenas redução de acoplamento da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 56)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -2041,10 +2041,10 @@
   - sem mudança de comportamento funcional, apenas redução de acoplamento da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 57)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -2067,10 +2067,10 @@
   - sem mudança de comportamento funcional, apenas redução de acoplamento da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 58)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -2093,10 +2093,10 @@
   - sem mudança de comportamento funcional, apenas redução de acoplamento da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 59)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -2119,10 +2119,10 @@
   - sem mudança de comportamento funcional, apenas redução de acoplamento da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 60)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -2145,10 +2145,10 @@
   - sem mudança de comportamento funcional, apenas redução de acoplamento da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 61)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -2171,10 +2171,10 @@
   - sem mudança de comportamento funcional, apenas redução de acoplamento da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 62)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -2197,10 +2197,10 @@
   - sem mudança de comportamento funcional, apenas redução de acoplamento da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 63)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -2223,10 +2223,10 @@
   - sem mudança de comportamento funcional, apenas redução de acoplamento da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 64)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -2249,10 +2249,10 @@
   - sem mudança de comportamento funcional, apenas redução de acoplamento da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 65)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -2275,10 +2275,10 @@
   - sem mudança de comportamento funcional, apenas redução de acoplamento da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 66)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -2301,10 +2301,10 @@
   - sem mudança de comportamento funcional, apenas redução de acoplamento da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 67)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -2327,10 +2327,10 @@
   - sem mudança de comportamento funcional, apenas redução de acoplamento da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 68)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -2353,10 +2353,10 @@
   - sem mudança de comportamento funcional, apenas redução de acoplamento da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 69)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -2379,10 +2379,10 @@
   - sem mudança de comportamento funcional, apenas redução de acoplamento da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 70)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -2406,10 +2406,10 @@
   - sem mudança de comportamento funcional, apenas redução de acoplamento da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 71)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -2432,10 +2432,10 @@
   - sem mudança de comportamento funcional, apenas redução de acoplamento da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 72)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -2458,10 +2458,10 @@
   - sem mudança de comportamento funcional, apenas redução de acoplamento da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 73)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -2484,10 +2484,10 @@
   - sem mudança de comportamento funcional, apenas redução de acoplamento da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 74)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -2511,10 +2511,10 @@
   - sem mudança de comportamento funcional, apenas redução de acoplamento da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 75)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -2538,10 +2538,10 @@
   - sem mudança de comportamento funcional, apenas redução de acoplamento da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 76)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -2565,10 +2565,10 @@
   - sem mudança de comportamento funcional, apenas redução de acoplamento da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 77)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -2592,10 +2592,10 @@
   - sem mudança de comportamento funcional, apenas redução de acoplamento da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 78)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -2619,10 +2619,10 @@
   - sem mudança de comportamento funcional, apenas redução de acoplamento da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 79)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -2646,10 +2646,10 @@
   - sem mudança de comportamento funcional, apenas redução de acoplamento da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 80)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -2673,10 +2673,10 @@
   - sem mudança de comportamento funcional, apenas redução de acoplamento da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 81)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -2700,10 +2700,10 @@
   - sem mudança de comportamento funcional, apenas redução de acoplamento da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 82)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -2727,10 +2727,10 @@
   - sem mudança de comportamento funcional, apenas redução de acoplamento da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 83)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -2756,10 +2756,10 @@
   - sem mudança de comportamento funcional, apenas redução de acoplamento da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 84)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -2783,10 +2783,10 @@
   - sem mudança de comportamento funcional, apenas redução de acoplamento da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 85)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -2810,10 +2810,10 @@
   - sem mudança de comportamento funcional, apenas redução de acoplamento da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 86)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -2838,10 +2838,10 @@
   - sem mudança de comportamento funcional, apenas redução adicional de acoplamento da mega-página
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 87)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -2864,10 +2864,10 @@
   - sem mudança de comportamento funcional, apenas redução de densidade do container principal de trading
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 88)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -2890,10 +2890,10 @@
   - sem mudança de comportamento funcional, apenas redução de densidade do container principal de trading
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 89)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -2916,10 +2916,10 @@
   - sem mudança de comportamento funcional, apenas redução de densidade do container principal de trading
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 90)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -2943,10 +2943,10 @@
   - sem mudança de comportamento funcional, apenas redução de densidade do container principal de trading
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 91)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -2970,10 +2970,10 @@
   - sem mudança de comportamento funcional, apenas redução de densidade e acoplamento do container principal de trading
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 92)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -2997,10 +2997,10 @@
   - sem mudança de comportamento funcional, apenas redução de acoplamento e repetição de estado no container principal de trading
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 93)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -3024,10 +3024,10 @@
   - sem mudança de comportamento funcional, apenas redução de acoplamento do container principal de trading
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 94)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -3051,10 +3051,10 @@
   - sem mudança de comportamento funcional, apenas redução de densidade/acoplamento do container principal de chat
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 95)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -3077,10 +3077,10 @@
   - sem mudança de comportamento funcional, apenas redução de densidade/acoplamento do container principal de chat
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 96)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -3103,10 +3103,10 @@
   - sem mudança de comportamento funcional, apenas redução de densidade/acoplamento do container principal de chat
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 97)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -3130,10 +3130,10 @@
   - sem mudança de comportamento funcional, apenas redução de densidade/acoplamento do container principal de trading
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 98)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -3157,10 +3157,10 @@
   - sem mudança de comportamento funcional, apenas redução de densidade/acoplamento do container principal de trading
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 99)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -3183,10 +3183,10 @@
   - sem mudança de comportamento funcional, apenas redução de densidade/acoplamento do container principal de chat
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 100)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -3210,10 +3210,10 @@
   - sem mudança de comportamento funcional, apenas redução de densidade/acoplamento do container principal de chat
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 101)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -3236,10 +3236,10 @@
   - sem mudança de comportamento funcional, apenas redução de densidade/acoplamento do container principal de chat
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 102)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -3263,10 +3263,10 @@
   - sem mudança de comportamento funcional, apenas redução de densidade/acoplamento do container principal de chat
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 103)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -3290,10 +3290,10 @@
   - sem mudança de comportamento funcional, apenas redução de densidade/acoplamento do container principal de trading
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 104)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -3316,10 +3316,10 @@
   - sem mudança de comportamento funcional, apenas redução de densidade/acoplamento do container principal de WisePayments
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 105)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -3343,10 +3343,10 @@
   - sem mudança de comportamento funcional, apenas redução de densidade/acoplamento do container principal de trading
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 106)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -3370,10 +3370,10 @@
   - sem mudança de comportamento funcional, apenas redução de densidade/acoplamento do container principal de WisePayments
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 107)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -3396,10 +3396,10 @@
   - sem mudança de comportamento funcional, apenas redução de densidade/acoplamento do container principal de WisePayments
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 108)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -3422,10 +3422,10 @@
   - sem mudança de comportamento funcional, apenas redução de densidade/acoplamento do container principal de WisePayments
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 109)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -3448,10 +3448,10 @@
   - sem mudança de comportamento funcional, apenas redução de densidade/acoplamento do container principal de WisePayments
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 110)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -3474,10 +3474,10 @@
   - sem mudança de comportamento funcional, apenas redução de densidade/acoplamento do container principal de WisePayments
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 111)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -3500,10 +3500,10 @@
   - sem mudança de comportamento funcional, apenas redução de densidade/acoplamento do container principal de WisePayments
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 112)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -3526,10 +3526,10 @@
   - sem mudança de comportamento funcional, apenas redução de densidade/acoplamento do container principal de WisePayments
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 113)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -3552,10 +3552,10 @@
   - sem mudança de comportamento funcional, apenas redução de densidade/acoplamento do container principal de WisePayments
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 114)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -3578,10 +3578,10 @@
   - sem mudança de comportamento funcional, apenas redução de densidade/acoplamento do container principal de WisePayments
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 115)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -3604,10 +3604,10 @@
   - sem mudança de comportamento funcional, apenas redução de densidade/acoplamento do container principal de WisePayments
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 116)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -3630,10 +3630,10 @@
   - sem mudança de comportamento funcional, apenas redução de densidade/acoplamento do container principal de WisePayments
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 117)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -3657,10 +3657,10 @@
   - sem mudança de comportamento funcional, apenas redução de densidade/acoplamento do container principal de Trading
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 118)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -3687,10 +3687,10 @@
   - `WisePayments.tsx` reduzido de 1503 para 1231 linhas
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 119)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -3714,10 +3714,10 @@
   - `Chat/index.tsx` reduzido de 2459 para 2375 linhas
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 120)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -3740,10 +3740,10 @@
   - `Chat/index.tsx` reduzido de 2375 para 2263 linhas
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 121)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -3769,10 +3769,10 @@
   - `Trading.tsx` reduzido de 2700 para 2538 linhas
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 122)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -3796,10 +3796,10 @@
   - `Trading.tsx` reduzido de 2538 para 2424 linhas
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 123)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -3822,10 +3822,10 @@
   - `Trading.tsx` reduzido de 2424 para 2397 linhas
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 124)
 1. `npx -y pnpm@10.26.2 --filter @alice/frontend-service typecheck`
@@ -3849,10 +3849,10 @@
   - `Chat/index.tsx` reduzido de 2263 para 2045 linhas
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 125)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -3876,10 +3876,10 @@
   - `Trading.tsx` reduzido de 2397 para 2350 linhas
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 126)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -3902,10 +3902,10 @@
   - `WisePayments.tsx` reduzido de 1231 para 999 linhas
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 127)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -3928,10 +3928,10 @@
   - `Chat/index.tsx` reduzido de 2045 para 1929 linhas
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 128)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -3954,10 +3954,10 @@
   - `Chat/index.tsx` reduzido de 1929 para 1889 linhas
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 129)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -3980,10 +3980,10 @@
   - `Chat/index.tsx` reduzido de 1889 para 1857 linhas
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 130)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -4007,10 +4007,10 @@
   - `Chat/index.tsx` reduzido de 1857 para 1811 linhas
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 131)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -4034,10 +4034,10 @@
   - `Chat/index.tsx` reduzido de 1811 para 1772 linhas
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 132)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -4062,10 +4062,10 @@
   - `Chat/index.tsx` reduzido de 1772 para 1751 linhas
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 133)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -4090,10 +4090,10 @@
   - `Chat/index.tsx` reduzido de 1751 para 1231 linhas
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 134)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -4116,10 +4116,10 @@
   - `Trading.tsx` reduzido de 2350 para 2324 linhas
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 135)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -4143,10 +4143,10 @@
   - `WisePayments.tsx` reduzido de 1000 para 968 linhas
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 136)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -4177,10 +4177,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 137)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -4206,10 +4206,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 138)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -4238,10 +4238,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 139)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -4270,10 +4270,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 140)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -4308,10 +4308,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 141)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -4340,10 +4340,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 142)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -4382,10 +4382,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 143)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -4409,10 +4409,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 144)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -4439,10 +4439,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 145)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -4469,10 +4469,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 146)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -4498,10 +4498,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 147)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -4526,10 +4526,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do composition root
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 148)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -4555,10 +4555,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural no composition root
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 149)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -4591,10 +4591,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do container
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 150)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -4633,10 +4633,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de composição de props no container
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 151)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -4670,10 +4670,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do composition root
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 152)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -4716,10 +4716,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do container
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 153)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -4752,10 +4752,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do composition root
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 154)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -4785,10 +4785,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de apresentação/handlers no header do chat
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 155)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -4816,10 +4816,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural/memoização no composition root
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 156)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -4844,10 +4844,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de composição no composition root
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 157)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -4874,10 +4874,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de apresentação/handlers no composition root
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 158)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -4905,10 +4905,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do composition root
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 159)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -4935,10 +4935,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do composition root
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 160)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -4961,10 +4961,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural da camada de apresentação
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 161)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -4990,10 +4990,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do composition root
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 162)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -5018,10 +5018,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do composition root
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 163)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -5051,10 +5051,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do composition root
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 164)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -5081,10 +5081,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do composition root
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 165)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -5112,10 +5112,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do composition root
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 166)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -5138,10 +5138,10 @@
   - correção de wiring do novo hook para handlers de upload (`handleDisputeFileChange`, `handleKycDocumentChange`) usando `fileUploadState` como fonte canônica.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 167)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -5165,10 +5165,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do composition root.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 168)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -5193,10 +5193,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do composition root.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 169)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -5220,10 +5220,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do composition root.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 170)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -5250,10 +5250,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do composition root.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 171)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -5279,10 +5279,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do composition root.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 172)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -5310,10 +5310,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do composition root.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 173)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -5336,10 +5336,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do composition root.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 174)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -5365,10 +5365,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do composition root.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 175)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -5395,10 +5395,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do composition root.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 176)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -5423,10 +5423,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do composition root.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 177)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -5452,10 +5452,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do composition root.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 178)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -5482,10 +5482,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do composition root.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 179)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -5510,10 +5510,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do composition root.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 180)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -5539,10 +5539,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do composition root.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 181)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -5573,10 +5573,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do composition root.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 182)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -5605,10 +5605,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do composition root.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 183)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -5635,10 +5635,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do composition root.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 184)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -5662,10 +5662,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do composition root.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 185)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -5687,10 +5687,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do composition root.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 186)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -5716,10 +5716,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de UI/composição.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 187)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -5746,10 +5746,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do composition root.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 188)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -5775,10 +5775,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de UI/composição.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 189)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -5804,10 +5804,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de UI/composição.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 190)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -5831,10 +5831,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de UI/composição.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 191)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -5862,10 +5862,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de UI/composição.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 192)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -5890,10 +5890,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do composition root.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 193)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -5920,10 +5920,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do composition root.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 194)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -5949,10 +5949,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do composition root.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 195)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -5978,10 +5978,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do composition root.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 196)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -6006,10 +6006,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do composition root.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 197)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -6034,10 +6034,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do composition root.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 198)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -6062,10 +6062,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do composition root.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 199)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -6093,10 +6093,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do composition root.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 200)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -6118,10 +6118,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural da composição de tabs.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 201)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -6147,10 +6147,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do composition root.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 202)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -6174,10 +6174,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do composition root.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 203)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -6199,10 +6199,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do composition root.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 204)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -6225,10 +6225,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural da composição de queries/filtros.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 205)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -6252,10 +6252,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do composition root.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 206)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -6279,10 +6279,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de bounded context Twilio/WhatsApp.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 207)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -6307,10 +6307,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de bounded context Wise.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 208)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -6334,10 +6334,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de bounded context de health.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 209)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -6361,10 +6361,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de bounded context de webhook governance.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 210)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -6389,10 +6389,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de bounded context LLM parser.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 211)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -6416,10 +6416,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de bounded context de external calls.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 212)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -6443,10 +6443,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de bounded context de bootstrap externo.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 213)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -6470,10 +6470,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de bounded context de auth context Wise.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 214)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -6497,10 +6497,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de bounded context de startup.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 215)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -6526,10 +6526,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de bounded context de configuração WS KuCoin.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 216)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -6553,10 +6553,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de bounded context de market data handlers.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 217)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -6581,10 +6581,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de bounded context de observabilidade WS KuCoin.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 218)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -6611,10 +6611,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de bounded context de request resolver.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 219)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -6637,10 +6637,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de bounded context de resolução de tenant WS privado.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 220)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -6668,10 +6668,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de bounded context de catálogo de símbolos.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 221)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -6696,10 +6696,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de bounded context de fees KuCoin.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 222)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -6724,10 +6724,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de bounded context de market context.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 223)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -6752,10 +6752,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de bounded context de notícias de trading.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 224)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -6781,10 +6781,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de bounded context de suporte de sinais.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 225)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -6809,10 +6809,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de bounded context de consenso/ensemble.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 226)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -6838,10 +6838,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de bounded context de config de perfil.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 227)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -6866,10 +6866,10 @@
   - compatibilidade de tipagem reforçada para contratos reais de order book (Spot/Futures) sem alteração de payloads, contratos de API ou RBAC.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 228)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -6895,10 +6895,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de bounded context de contexto de agente/scheduler.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 229)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -6925,10 +6925,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de bounded context de trade-plan determinístico.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 230)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -6953,10 +6953,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de bounded context de normalização de sinal LLM.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 231)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -6981,10 +6981,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de bounded context de prompt/token budget LLM.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 232)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -7011,10 +7011,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de bounded context de escopo/perfil de trading.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 233)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -7039,10 +7039,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de runtime e hardening operacional de shutdown.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 234)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -7067,10 +7067,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de observabilidade de chamadas.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 235)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -7089,10 +7089,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente hardening de consistência em runtime.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 236)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -7118,10 +7118,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural e hardening operacional de scheduler.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 237)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -7146,10 +7146,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural e hardening operacional de scheduler/state.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 238)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -7176,10 +7176,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de core de dataset.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 239)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -7203,10 +7203,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural e reforço de tipagem compartilhada.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 240)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -7228,10 +7228,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural e redução de drift entre fluxos.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 241)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -7256,10 +7256,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de orchestration de dataset.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 242)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -7285,10 +7285,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de análise técnica persistida.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 243)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -7313,10 +7313,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de geração legacy institucional.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 244)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -7342,10 +7342,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural da execução LLM de sinais.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 245)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -7370,10 +7370,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de pós-processamento de sinal.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 246)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -7399,10 +7399,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural da validação final de sinal.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 247)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -7427,10 +7427,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural da persistência de sinal.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 248)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -7455,10 +7455,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de composição/budget do prompt LLM.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 249)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -7484,10 +7484,10 @@
   - sem alteração de comportamento funcional; apenas desacoplamento estrutural para composition root mais fino.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 250)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -7513,10 +7513,10 @@
   - sem alteração de comportamento funcional; apenas desacoplamento estrutural do contexto operacional de sinal.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 251)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -7544,10 +7544,10 @@
   - `apps/frontend-service/src/components/trading/index.ts` atualizado para exportar o novo hook de composição.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 252)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -7573,10 +7573,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 253)
 1. `npx pnpm --filter @alice/integrations-service typecheck`
@@ -7605,10 +7605,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural e hardening de tipagem.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 254)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -7638,10 +7638,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente hardening de tipagem e redução de risco de regressão silenciosa.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 255)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -7673,10 +7673,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 256)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -7707,10 +7707,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural e hardening de tipagem.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 257)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -7737,10 +7737,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de composição.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 258)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -7764,10 +7764,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural da página.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 259)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -7788,10 +7788,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do composition root.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 260)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -7814,10 +7814,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural e padronização de queries.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 261)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -7843,10 +7843,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural e hardening de organização do domínio.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 262)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -7872,10 +7872,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural e padronização do domínio.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 263)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -7902,10 +7902,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural e padronização do domínio.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 264)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -7931,10 +7931,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural e redução de densidade.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 265)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -7964,10 +7964,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural por subdomínio.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 266)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -8003,10 +8003,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural por escopo de query.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 267)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -8041,10 +8041,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural por subdomínio.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 268)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -8074,10 +8074,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural por subdomínio.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 269)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -8108,10 +8108,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural por subdomínio operacional.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 270)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -8137,10 +8137,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural por subdomínio.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 271)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -8169,10 +8169,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural por subdomínio.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 272)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -8202,10 +8202,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de handlers por subdomínio.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 273)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -8241,10 +8241,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural da camada de composição.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 274)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -8278,10 +8278,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural da camada de composição.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 275)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -8307,10 +8307,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural final da camada de composição/constants.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 276)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -8337,10 +8337,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente centralização tipada e redução de drift entre hooks/componentes.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 277)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -8366,10 +8366,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural dos handlers de domínio.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 278)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -8403,10 +8403,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural do container de composição.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 279)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -8444,10 +8444,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural de state/mutations por subdomínio.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 280)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -8486,10 +8486,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural da camada de UI por subdomínio.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 281)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -8524,10 +8524,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural da camada de UI por subdomínio.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 282)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -8567,10 +8567,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural da camada de UI por subdomínio.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 283)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -8611,10 +8611,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural da camada de UI por subdomínio.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 284)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -8651,10 +8651,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural da camada de UI por subdomínio.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 285)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -8701,10 +8701,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural da camada de UI por subdomínio.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 286)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -8757,10 +8757,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural da camada de UI por subdomínio.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 287)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -8800,10 +8800,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural da camada de UI por subdomínio.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 288)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -8843,10 +8843,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural da camada de UI por subdomínio.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 289)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -8873,10 +8873,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural da camada de UI.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 290)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -8920,10 +8920,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural da camada de UI por subdomínio.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 291)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -8961,10 +8961,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural da camada de UI por subdomínio.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 292)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -9007,10 +9007,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural da camada de UI por subdomínio.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 293)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -9050,10 +9050,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural da camada de UI por subdomínio.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 294)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -9086,10 +9086,10 @@
   - sem alteração de payloads, contratos de API ou RBAC; somente desacoplamento estrutural da camada de UI por subdomínio.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 295)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -9120,10 +9120,10 @@
   - leitura de churn confirma predominância de micro-refactors recentes nesse domínio; execução foi reancorada para fechamento dos residuais críticos (`TradingContent` + `Chat`) antes de novos desdobramentos.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 296)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -9155,10 +9155,10 @@
   - Plano consolidado em 100% com SSOT atualizado.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 297)
 1. `npx pnpm --filter @alice/frontend-service typecheck`
@@ -9188,10 +9188,10 @@
   - Sem alteração de payloads, contratos de API, RBAC, semântica assíncrona de filas ou fluxo funcional de negócio.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 298)
 1. `npx --yes pnpm@10.26.2 install --no-frozen-lockfile`
@@ -9218,10 +9218,10 @@
   - sem alteração de workflows/triggers, sem alteração de contratos de API, sem alteração de RBAC.
 - Atualização de SSOT documental desta rodada:
   - `README.md`
-  - `docs/ARQUITETURA.md`
+  - `docs/architecture/platform.md`
   - `docs/INDEX.md`
-  - `docs/STATUS-REAL-ATUAL.md`
-  - `docs/PLANO-IMPLEMENTACAO-ENTERPRISE-BLOCOS.md`
+  - `docs/status/current-platform-status.md`
+  - `docs/archive/plans/enterprise-implementation-blocks.md`
 
 ### Validação executada nesta rodada (sequencial - continuação 299)
 1. `bash -n infra/scripts/fix-production-permissions.sh`

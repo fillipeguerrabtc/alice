@@ -153,13 +153,13 @@ Este documento lista os secrets obrigatórios e opcionais usados no deploy enter
 | `ACME_DNS_PRECHECK_HOSTS` | Lista de hosts para checagem (override do Caddyfile) |
 | `LLM_GATEWAY_URL` | URL do LLM Gateway (ex: `http://alice-llm-gateway:3011`). Se definido, Chat/Integrations roteiam LLM via gateway. |
 | `TRAINING_SERVICE_URL` | URL interna do training-service (ex: `http://alice-training:3004`). Obrigatória para LoRA routing e workers dependentes. |
-| `DOCUMENT_MAX_CHUNKS` | Máximo de chunks por documento (default 50). Ver `docs/DEPLOYMENT.md`. |
+| `DOCUMENT_MAX_CHUNKS` | Máximo de chunks por documento (default 50). Ver `docs/operations/deployment.md`. |
 | `TRAINING_DOC_MAX_SAMPLES` | Máximo de chunks selecionados por doc para treino (default 50). |
 | `TRAINING_CONVERSATION_MAX_MESSAGES` | Máximo de mensagens por conversa na coleta (default 50). |
 | `CONVERSATION_SLICE_SIZE` | Tamanho da janela para fatiamento de conversas longas (default 10). |
 | `MIN_ONDEMAND_DATASET_SIZE` | Mínimo de exemplos para treino on-demand (default 10). |
 
-> **Treino:** Valores editáveis via UI (Configurações do Sistema). PostgreSQL tem precedência sobre env. Ver `docs/TRAINING.md`.
+> **Treino:** Valores editáveis via UI (Configurações do Sistema). PostgreSQL tem precedência sobre env. Ver `docs/operations/training/overview.md`.
 > **Web Crawl (06/03/2026):** Se `WEB_CRAWL_ALLOWED_DOMAINS` não estiver definido, o `generate-env-prod.sh` gera fallback com `BASE_URL`, `CORS_ORIGIN` e `CORS_ORIGINS`. Se `WEB_CRAWL_REQUIRE_ALLOWLIST=true` e a lista final ficar vazia, o deploy falha em modo fail-fast.
 
 **Author:** Fillipe Guerra  

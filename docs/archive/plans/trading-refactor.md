@@ -12,7 +12,7 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - APIs e pipelines de Trading no `integrations-service`
 - Auto Engine e processamento assíncrono no `training-service`
 - Contratos compartilhados em `packages/`
-- Documentação operacional em `docs/trading/`
+- Documentação operacional distribuída entre `docs/architecture/trading/`, `docs/product/trading/` e `docs/operations/`
 
 ## 3. Premissas e guardrails
 - Sem mudança funcional de produto na Rodada 1 (baseline).
@@ -70,8 +70,8 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - `apps/integrations-service/src/routes/trading-signal-generation-routes.ts`
 - `packages/shared-utils/src/feature-flags.ts`
 - `tests/unit/feature-flags.test.ts`
-- `docs/trading/plano-refatoracao-trading.md` (novo)
-- `docs/trading/domain-map-trading.md` (novo)
+- `docs/archive/plans/trading-refactor.md` (novo)
+- `docs/architecture/trading/domain-map.md` (novo)
 
 ### Rodada 2
 - `packages/shared/src/schema.ts`
@@ -82,10 +82,10 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - `apps/frontend-service/src/components/trading/useTradingSetupQueries.ts`
 - `apps/frontend-service/src/pages/TradingContent.tsx`
 - `apps/frontend-service/src/pages/DemoTrading.tsx`
-- `docs/trading/domain-map-trading.md`
-- `docs/trading/auto-engine-state-model.md` (novo)
-- `docs/trading/auto-engine-contracts-observability.md` (novo)
-- `docs/trading/plano-refatoracao-trading.md`
+- `docs/architecture/trading/domain-map.md`
+- `docs/architecture/trading/auto-engine-state-model.md` (novo)
+- `docs/architecture/trading/auto-engine-contracts-observability.md` (novo)
+- `docs/archive/plans/trading-refactor.md`
 
 ### Rodada 3
 - `apps/frontend-service/src/components/trading-v2/types.ts` (novo)
@@ -96,9 +96,9 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - `apps/frontend-service/src/components/trading-v2/index.ts` (novo)
 - `apps/frontend-service/src/pages/TradingContent.tsx`
 - `apps/frontend-service/src/pages/DemoTrading.tsx`
-- `docs/trading/workspace-shell-v2.md` (novo)
-- `docs/trading/domain-map-trading.md`
-- `docs/trading/plano-refatoracao-trading.md`
+- `docs/product/trading/workspace-shell.md` (novo)
+- `docs/architecture/trading/domain-map.md`
+- `docs/archive/plans/trading-refactor.md`
 
 ### Rodada 4
 - `apps/frontend-service/src/components/trading-v2/TradingWorkspaceOperateMode.tsx` (novo)
@@ -107,9 +107,9 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - `apps/frontend-service/src/components/trading-v2/index.ts`
 - `apps/frontend-service/src/pages/TradingContent.tsx`
 - `apps/frontend-service/src/pages/DemoTrading.tsx`
-- `docs/trading/workspace-shell-v2.md`
-- `docs/trading/domain-map-trading.md`
-- `docs/trading/plano-refatoracao-trading.md`
+- `docs/product/trading/workspace-shell.md`
+- `docs/architecture/trading/domain-map.md`
+- `docs/archive/plans/trading-refactor.md`
 
 ### Rodada 5
 - `apps/frontend-service/src/components/trading-v2/TradingWorkspaceAiSignalsCockpitMode.tsx` (novo)
@@ -118,11 +118,11 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - `apps/frontend-service/src/lib/tradingTelemetry.ts`
 - `apps/frontend-service/src/components/trading/useTradingSignalMutations.ts`
 - `apps/integrations-service/src/routes/trading-signal-generation-routes.ts`
-- `docs/trading/ai-signals-cockpit-v2.md` (novo)
-- `docs/trading/workspace-shell-v2.md`
-- `docs/trading/domain-map-trading.md`
-- `docs/trading/auto-engine-contracts-observability.md`
-- `docs/trading/plano-refatoracao-trading.md`
+- `docs/product/trading/ai-signals-cockpit.md` (novo)
+- `docs/product/trading/workspace-shell.md`
+- `docs/architecture/trading/domain-map.md`
+- `docs/architecture/trading/auto-engine-contracts-observability.md`
+- `docs/archive/plans/trading-refactor.md`
 
 ### Rodada 6
 - `apps/frontend-service/src/components/trading-v2/TradingWorkspaceDemoAiSignalsMode.tsx` (novo)
@@ -132,20 +132,20 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - `apps/frontend-service/src/lib/tradingDemoSchemas.ts`
 - `apps/frontend-service/src/services/api/tradingDemo.ts`
 - `apps/frontend-service/src/pages/DemoTrading.tsx`
-- `docs/trading/convergencia-demo-workspace-v2.md` (novo)
-- `docs/trading/demo-isolation-guarantees.md` (novo)
-- `docs/trading/workspace-shell-v2.md`
-- `docs/trading/domain-map-trading.md`
-- `docs/trading/plano-refatoracao-trading.md`
+- `docs/product/trading/demo-workspace-convergence.md` (novo)
+- `docs/architecture/trading/demo-isolation-guarantees.md` (novo)
+- `docs/product/trading/workspace-shell.md`
+- `docs/architecture/trading/domain-map.md`
+- `docs/archive/plans/trading-refactor.md`
 
 ### Rodada 7
 - `apps/integrations-service/src/trading-signal-engine-types.ts` (novo)
 - `apps/integrations-service/src/trading-signal-engine-pipeline-service.ts` (novo)
 - `apps/integrations-service/src/trading-llm-signal-generation-service.ts`
 - `tests/unit/services/trading-signal-engine-pipeline.test.ts` (novo)
-- `docs/trading/signal-engine-pipeline.md` (novo)
-- `docs/trading/domain-map-trading.md`
-- `docs/trading/plano-refatoracao-trading.md`
+- `docs/architecture/trading/signal-engine-pipeline.md` (novo)
+- `docs/architecture/trading/domain-map.md`
+- `docs/archive/plans/trading-refactor.md`
 
 ### Rodada 8
 - `packages/shared/src/schema.ts`
@@ -166,10 +166,10 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - `apps/frontend-service/src/pages/TradingContent.tsx`
 - `tests/unit/services/trading-technique-capability-service.test.ts` (novo)
 - `tests/unit/services/trading-signal-engine-pipeline.test.ts`
-- `docs/trading/strategy-specialists-data-requirements.md` (novo)
-- `docs/trading/domain-map-trading.md`
-- `docs/trading/signal-engine-pipeline.md`
-- `docs/trading/plano-refatoracao-trading.md`
+- `docs/product/trading/strategy-specialists-data-requirements.md` (novo)
+- `docs/architecture/trading/domain-map.md`
+- `docs/architecture/trading/signal-engine-pipeline.md`
+- `docs/archive/plans/trading-refactor.md`
 
 ### Rodada 9
 - `packages/shared/src/schema.ts`
@@ -182,10 +182,10 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - `apps/integrations-service/src/index.ts`
 - `apps/frontend-service/src/services/api/trading.ts`
 - `apps/frontend-service/src/components/trading-v2/TradingWorkspaceAiSignalsCockpitMode.tsx`
-- `docs/trading/training-calibration-promotion-path.md` (novo)
-- `docs/trading/ai-signals-cockpit-v2.md`
-- `docs/trading/domain-map-trading.md`
-- `docs/trading/plano-refatoracao-trading.md`
+- `docs/operations/trading/training-calibration-promotion-path.md` (novo)
+- `docs/product/trading/ai-signals-cockpit.md`
+- `docs/architecture/trading/domain-map.md`
+- `docs/archive/plans/trading-refactor.md`
 
 ### Rodada 10
 - `apps/frontend-service/src/components/trading-v2/workspace-rollout-adapter.ts` (novo)
@@ -201,10 +201,10 @@ Executar uma refatoração progressiva e production-grade do domínio Trading da
 - `tests/unit/frontend/trading-signals-cockpit-state-adapter.test.ts` (novo)
 - `tests/unit/frontend/trading-signal-demo-handoff-adapter.test.ts` (novo)
 - `tests/unit/services/trading-signal-promotion-service-helpers.test.ts` (novo)
-- `docs/trading/arquitetura-compatibilidade-trading-v2.md` (novo)
-- `docs/trading/rollout-migration-rollback-trading-v2.md` (novo)
-- `docs/trading/operacao-testes-trading-v2.md` (novo)
-- `docs/trading/plano-refatoracao-trading.md`
+- `docs/architecture/trading/compatibility-layer.md` (novo)
+- `docs/operations/runbooks/trading/migration-rollback.md` (novo)
+- `docs/operations/runbooks/trading/operacao-testes.md` (novo)
+- `docs/archive/plans/trading-refactor.md`
 
 ## 8. Migrations criadas
 - Rodada 1: Nenhuma.

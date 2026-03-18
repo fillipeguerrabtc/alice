@@ -40,7 +40,7 @@ CONVERSATION_SLICE_SIZE=10
 MIN_ONDEMAND_DATASET_SIZE=10
 ```
 
-Ver `docs/TREINAMENTO-LIMITES-E-BOAS-PRATICAS.md` para detalhes técnicos e `docs/DEPLOYMENT.md` para deploy.
+Ver `docs/operations/training/reference-limits.md` para detalhes técnicos e `docs/operations/deployment.md` para deploy.
 
 ---
 
@@ -775,7 +775,7 @@ A página de treinamento no dashboard oferece:
 
 ## Referências
 
-- [ARQUITETURA-GPU-MANAGER.md](./ARQUITETURA-GPU-MANAGER.md)
-- [CLAUDE.md - Regras do Projeto](../CLAUDE.md)
+- [ARQUITETURA-GPU-MANAGER.md](../../architecture/gpu-manager.md)
+- [CLAUDE.md - Regras do Projeto](../../../CLAUDE.md)
 - [Qwen3 8B AWQ - Hugging Face](https://huggingface.co/Qwen/Qwen3-8B-AWQ)
 - [PEFT/LoRA Documentation](https://huggingface.co/docs/peft)
