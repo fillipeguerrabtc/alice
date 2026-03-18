@@ -47,7 +47,10 @@ Se houver conflito entre documentos do mesmo nivel, prevalece o mais especifico 
 - Corrigir integralmente erros e warnings das validacoes executadas, inclusive nao bloqueantes.
 - Atualizar a documentacao impactada em Portugues Brasileiro com `Author` e data atual.
 - Criar commit consolidado em English.
-- Nunca fazer push automatico.
+- Push automatico para `main`, `master` ou branch protegida equivalente e proibido.
+- Push para branch de trabalho dedicada e permitido somente quando o fluxo da tarefa explicitar trabalho via branch/PR.
+- Merge permanece sempre manual.
+- Na ausencia de instrucao explicita para fluxo com branch/PR, operar sem push.
 
 ## Referencias canonicas
 

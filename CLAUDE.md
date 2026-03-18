@@ -33,7 +33,11 @@ Consolidar as convencoes permanentes de engenharia, arquitetura, documentacao e 
 - Validar continuamente e fechar cada bloco com zero erros e zero warnings.
 - Manter documentacao em Portugues Brasileiro e seguir docs oficiais.
 - Conferir secrets e variaveis existentes antes de adicionar configuracoes novas.
-- Fazer commit consolidado em English antes de qualquer review ou push; push e sempre manual do usuario.
+- Fazer commit consolidado em English antes de qualquer review ou push.
+- Push automatico para `main`, `master` ou branch protegida equivalente e proibido.
+- Push para branch de trabalho dedicada e permitido somente quando o fluxo da tarefa explicitar trabalho via branch/PR.
+- Merge permanece sempre manual.
+- Na ausencia de instrucao explicita para fluxo com branch/PR, operar sem push.
 
 ## Contexto estavel do projeto
 
@@ -62,4 +66,7 @@ Consolidar as convencoes permanentes de engenharia, arquitetura, documentacao e 
 - Corrigir todos os erros e warnings das validacoes executadas antes de encerrar o bloco.
 - Atualizar a documentacao necessaria em Portugues Brasileiro com `Author` e data atual.
 - Criar commit consolidado em English.
-- Nao realizar push sem comando explicito do usuario.
+- Nao realizar push para `main`, `master` ou branch protegida equivalente.
+- Push para branch de trabalho dedicada so e permitido quando o fluxo da tarefa explicitar trabalho via branch/PR.
+- Merge permanece manual.
+- Na ausencia de instrucao explicita para fluxo com branch/PR, encerrar sem push.
