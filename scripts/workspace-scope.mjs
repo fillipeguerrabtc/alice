@@ -16,6 +16,11 @@ export const ROOT_DIR = resolve(__dirname, '..');
 
 const WORKSPACE_ROOTS = ['apps', 'packages'];
 const DOCUMENTATION_FILE_EXTENSIONS = new Set(['.adoc', '.md', '.mdx', '.rst']);
+const PIPELINE_ONLY_PREFIXES = [
+  '.github/workflows/',
+  '.github/actions/',
+  '.github/.workflow-test',
+];
 const SAFE_IGNORED_PREFIXES = [
   'attached_assets/',
   'tests/',
@@ -63,6 +68,10 @@ function parseLines(rawValue) {
 export function isDocumentationPath(filePath) {
   return filePath.startsWith('docs/')
     || DOCUMENTATION_FILE_EXTENSIONS.has(extname(filePath).toLowerCase());
+}
+
+export function isPipelineOnlyPath(filePath) {
+  return PIPELINE_ONLY_PREFIXES.some(prefix => filePath.startsWith(prefix));
 }
 
 export function resolveWorkspaceFromPath(workspaces, filePath) {

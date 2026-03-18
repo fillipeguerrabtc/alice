@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   classifyScopeFromFiles,
   expandImpactedWorkspaces,
+  isPipelineOnlyPath,
 } from '../../scripts/workspace-scope.mjs';
 
 const mockGraph = {
@@ -98,5 +99,11 @@ describe('workspace scope resolver', () => {
       'apps/observability-service/README.md',
       'README.md',
     ]);
+  });
+
+  it('classifies workflow and action paths as pipeline-only for release gating', () => {
+    expect(isPipelineOnlyPath('.github/workflows/ci.yml')).toBe(true);
+    expect(isPipelineOnlyPath('.github/actions/setup-node-pnpm/action.yml')).toBe(true);
+    expect(isPipelineOnlyPath('apps/auth-service/src/index.ts')).toBe(false);
   });
 });

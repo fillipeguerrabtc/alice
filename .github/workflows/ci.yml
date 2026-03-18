@@ -30,7 +30,7 @@
 #
 # ATUALIZAÇÃO (17/03/2026):
 # - PRs e pushes em main usam validação incremental por escopo afetado
-# - Mudanças exclusivamente documentais pulam checks de código
+# - Mudanças exclusivamente documentais ou apenas de pipeline pulam checks de código da aplicação
 # - CI concentra o gate de qualidade; Release não repete esse papel
 #
 # Author: Fillipe Guerra
@@ -67,6 +67,7 @@ jobs:
       scope-base-ref: ${{ steps.scope.outputs.scope_base_ref }}
       scope-head-ref: ${{ steps.scope.outputs.scope_head_ref }}
       docs-only: ${{ steps.scope.outputs.docs_only }}
+      release-eligible: ${{ steps.scope.outputs.release_eligible }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -102,7 +103,7 @@ jobs:
           set -euo pipefail
           git fetch --no-tags --prune --depth=1 origin "${{ github.base_ref }}"
 
-      - name: Resolver escopo de validação e docs-only
+      - name: Resolver escopo de validação, docs-only e elegibilidade de release
         id: scope
         env:
           ALICE_GITHUB_EVENT_NAME: ${{ github.event_name }}
@@ -135,13 +136,19 @@ jobs:
 
           if [ "$SCOPE_MODE" = "full" ]; then
             echo "docs_only=false" >> "$GITHUB_OUTPUT"
+            echo "release_eligible=true" >> "$GITHUB_OUTPUT"
             echo "🔒 Fallback full habilitado: base ref indisponível para comparação segura."
             exit 0
           fi
 
           ALICE_SCOPE_BASE_REF="$SCOPE_BASE_REF" ALICE_SCOPE_HEAD_REF="$SCOPE_HEAD_REF" node --input-type=module <<'EOF'
           import { appendFileSync } from 'node:fs';
-          import { ROOT_DIR, detectChangedFiles, isDocumentationPath } from './scripts/workspace-scope.mjs';
+          import {
+            ROOT_DIR,
+            detectChangedFiles,
+            isDocumentationPath,
+            isPipelineOnlyPath,
+          } from './scripts/workspace-scope.mjs';
 
           const changedFilesResult = detectChangedFiles({
             rootDir: ROOT_DIR,
@@ -157,19 +164,25 @@ jobs:
 
           const docsOnly = changedFilesResult.length > 0
             && changedFilesResult.every(filePath => isDocumentationPath(filePath));
+          const releaseEligible = changedFilesResult.some(filePath =>
+            !isDocumentationPath(filePath) && !isPipelineOnlyPath(filePath),
+          );
 
           appendFileSync(process.env.GITHUB_OUTPUT, `docs_only=${docsOnly}\n`);
+          appendFileSync(process.env.GITHUB_OUTPUT, `release_eligible=${releaseEligible}\n`);
 
           console.log(`[alice-ci] Changed files (${changedFilesResult.length}):`);
           for (const filePath of changedFilesResult) {
             console.log(`  - ${filePath}`);
           }
           console.log(`[alice-ci] Docs only: ${docsOnly}`);
+          console.log(`[alice-ci] Release eligible: ${releaseEligible}`);
           EOF
 
   # ===========================================================================
   # Job 2: Build, TypeCheck, Lint e Testes
   # PR e push em main: escopo incremental por workspace/suite afetada
+  # Mudanças sem impacto de aplicação (docs/pipeline-only) pulam este job
   # Fallback full: apenas quando o commit-base não puder ser resolvido com segurança
   # Timeout: 25min
   # ===========================================================================
@@ -180,7 +193,7 @@ jobs:
     permissions:
       contents: read
     needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.docs-only != 'true' }}
+    if: ${{ needs.detect-changes.outputs.release-eligible == 'true' }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -263,7 +276,7 @@ jobs:
       contents: read
       security-events: write
     needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.docs-only != 'true' }}
+    if: ${{ needs.detect-changes.outputs.release-eligible == 'true' }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
@@ -424,8 +437,8 @@ jobs:
     permissions:
       contents: read
       actions: write
-    needs: [build-and-check, security-and-compliance]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.build-and-check.result == 'success' && needs.security-and-compliance.result == 'success'
+    needs: [detect-changes, build-and-check, security-and-compliance]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.detect-changes.outputs.release-eligible == 'true' && needs.build-and-check.result == 'success' && needs.security-and-compliance.result == 'success'
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
