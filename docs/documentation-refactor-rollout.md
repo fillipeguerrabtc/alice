@@ -3,7 +3,7 @@
 **Author:** Fillipe Guerra
 **Data:** 18 de Marco de 2026
 **Atualizado:** 18 de Marco de 2026
-**Status:** bloco 7 concluido
+**Status:** concluido
 **Tipo:** rollout
 
 ## Objetivo
@@ -97,11 +97,29 @@ Registrar o estado real da refatoracao documental apos os blocos executados, com
 - Titulos e headings herdados do padrao anterior foram alinhados ao papel vigente de cada arquivo, com ajuste pontual em onboarding, roadmap, design e overviews tecnicos.
 - A revisao final confirmou consistencia editorial da documentacao ativa sem reabrir monolitos ja estabilizados nem mover arquivos sem necessidade.
 
+### Bloco 8 - fechamento, auditoria final e hardening documental
+
+- A arvore final de documentacao foi revisada como sistema unico, com conferencia de raiz, canonicos, docs tematicas, namespace de Trading e archive.
+- `README.md` foi confirmado como onboarding curto e util, sem assumir papel de SSOT tecnico.
+- `AGENTS.md` e `CLAUDE.md` foram validados como documentos canonicos sincronizados em precedencia, regras permanentes e politica de validacao por escopo.
+- `docs/INDEX.md` foi confirmado como mapa principal de navegacao e classificacao editorial.
+- `docs/archive/INDEX.md` foi endurecido com metadata minima completa, mantendo o archive explicitamente fora do espaco canonico.
+- A auditoria final confirmou que material temporal continua fora das trilhas canonicas e que `docs/status/` permanece restrito a contexto ativo.
+- A documentacao de pipeline e validacao foi conferida contra `.github/workflows/ci.yml`, `.github/workflows/release.yml`, `.github/workflows/deploy-stack-modular.yml`, `scripts/workspace-scope.mjs`, `scripts/release-functions.sh` e `infra/scripts/deploy-functions.sh`.
+- O fechamento confirmou alinhamento explicito de comportamento atual:
+  - `CI` valida qualidade
+  - `Release` publica artefatos aprovados sem repetir o gate do `CI`
+  - `Deploy` implanta artefatos publicados
+  - `docs-only` e `pipeline-only` nao seguem automaticamente para `Release` ou `Deploy`
+  - `built_images` e `images-manifest.json` seguem como contrato entre `Release` e `Deploy`
+- Links relativos, headings e metadata dos documentos ativos foram revalidados por auditoria automatizada antes do encerramento.
+
 ## Evidencias usadas neste bloco
 
 - `sed -n '1,240p' AGENTS.md`
 - `sed -n '1,260p' CLAUDE.md`
 - `sed -n '1,260p' docs/documentation-refactor-rollout.md`
+- `sed -n '261,520p' docs/documentation-refactor-rollout.md`
 - `find . -maxdepth 2 -type f -name '*.md'`
 - `find docs -maxdepth 4 -type d | sort`
 - `git status --short`
@@ -138,6 +156,20 @@ Registrar o estado real da refatoracao documental apos os blocos executados, com
 - validacao automatizada de links relativos e links para diretorio residual via `node`
 - validacao automatizada de hierarquia de headings via `node`
 - `sed -n` em `docs/product/design-guidelines.md`, `docs/status/roadmap.md`, `docs/operations/getting-started.md`, `docs/engineering/pipeline-overview.md` e `docs/operations/training/overview.md`
+- `sed -n '1,260p' docs/INDEX.md`
+- `sed -n '1,260p' docs/archive/INDEX.md`
+- `sed -n '1,260p' README.md`
+- `sed -n '1,260p' .github/workflows/ci.yml`
+- `sed -n '430,540p' .github/workflows/ci.yml`
+- `sed -n '1,260p' docs/operations/release.md`
+- `sed -n '1,260p' docs/operations/deploy.md`
+- `sed -n '1,260p' docs/engineering/validation-monorepo.md`
+- `sed -n '1,260p' docs/trading/INDEX.md`
+- `sed -n '1,220p' apps/observability-service/README.md`
+- `sed -n '1,220p' assets/branding/README.md`
+- `sed -n '1,220p' infra/observability/grafana/README.md`
+- `rg -n` em workflows e scripts para `docs-only`, `pipeline-only`, `release-eligible`, `built_images` e `images-manifest.json`
+- contagem estrutural via `node` para raiz, `docs/`, `docs/archive/`, `docs/trading/` e READMEs locais
 
 ## Snapshot confirmado apos o Bloco 3
 
@@ -190,6 +222,21 @@ Registrar o estado real da refatoracao documental apos os blocos executados, com
 - Arquivos em `docs/trading/`: `17`
 
 ## Snapshot confirmado apos o Bloco 7
+
+- Total de arquivos Markdown rastreados: `95`
+- Arquivos Markdown ativos fora de `docs/archive/`: `50`
+- Arquivos Markdown na raiz do repositorio: `3`
+- READMEs locais ativos em `apps/`, `assets/` e `infra/`: `3`
+- Arquivos Markdown na raiz de `docs/`: `2`
+- Arquivos em `docs/architecture/`: `2`
+- Arquivos em `docs/operations/`: `16`
+- Arquivos em `docs/product/`: `2`
+- Arquivos em `docs/engineering/`: `3`
+- Arquivos em `docs/status/`: `2`
+- Arquivos em `docs/archive/`: `45`
+- Arquivos em `docs/trading/`: `17`
+
+## Snapshot confirmado apos o Bloco 8
 
 - Total de arquivos Markdown rastreados: `95`
 - Arquivos Markdown ativos fora de `docs/archive/`: `50`
@@ -351,14 +398,38 @@ Registrar o estado real da refatoracao documental apos os blocos executados, com
 | `6` | normalizar READMEs locais e docs de subsistema sem reabrir SSOTs globais | concluido |
 | `7` | padronizar metadata, tipos documentais, headings e links restantes da documentacao ativa | concluido |
 
-## Handoff
+## Auditoria final de consistencia
 
-- Usar `docs/INDEX.md` como portal principal para qualquer bloco seguinte.
-- Tratar `docs/status/` como contexto ativo e `docs/archive/` como historico sem precedencia.
-- Priorizar no proximo bloco a normalizacao editorial residual e limpeza de metadados, sem reabrir a reorganizacao de training ja concluida.
-- Tratar `docs/trading/INDEX.md` como porta de entrada obrigatoria para qualquer manutencao documental do dominio Trading.
-- Manter `docs/operations/deployment.md` como porta de entrada e `docs/operations/release.md` e `docs/operations/deploy.md` como referencias separadas.
-- Preservar `docs/archive/ops/rag-doc-processing-2026-03-01.md` como historico; nao reabrir essa nota temporal como SSOT.
-- Evitar reabrir discussao taxonomica: a movimentacao fisica desta rodada e a referencia vigente.
-- Para READMEs locais, manter o contrato editorial desta rodada: escopo curto, operacional e sempre apontando para SSOT global quando o assunto extrapolar o subsistema.
-- Para documentos ativos novos ou revisados, manter o padrao minimo de metadata com `Author`, `Atualizado`, `Status` e `Tipo`.
+### Confirmacoes de fechamento
+
+- `README.md` permanece curto, util e orientado a onboarding, com ponte clara para `docs/INDEX.md`.
+- `AGENTS.md` e `CLAUDE.md` permanecem canonicos, sincronizados e consistentes com a politica atual de validacao por escopo e de separacao entre `CI`, `Release` e `Deploy`.
+- `docs/INDEX.md` permanece como mapa principal da documentacao e regra editorial de classificacao.
+- O material temporal permanece fora do espaco canonico tematico; `docs/archive/` e `docs/status/` nao invadem SSOTs de arquitetura, operacao, produto ou engenharia.
+- Os links principais da documentacao local foram validados sem links quebrados nem referencias residuais para diretorios.
+- A metadata minima dos documentos ativos foi confirmada com `Author`, `Atualizado`, `Status` e `Tipo`, incluindo `docs/archive/INDEX.md`.
+- A documentacao de pipeline, release, deploy e validacao incremental esta alinhada com o comportamento real implementado nos workflows e scripts atuais.
+- Nao foram encontradas contradicoes relevantes entre a documentacao ativa e o estado atual da esteira ou da arquitetura documental.
+
+### Checklist final de completude documental
+
+- [x] raiz do repositorio restrita a `README.md`, `AGENTS.md` e `CLAUDE.md`
+- [x] `docs/INDEX.md` como portal principal
+- [x] canonicos tematicos separados de status e archive
+- [x] namespace `docs/trading/` organizado por natureza
+- [x] material temporal fora do espaco canonico
+- [x] pipeline documentada conforme comportamento real do codigo
+- [x] politica de validacao por escopo refletida em governanca e SSOTs
+- [x] `docs-only` e `pipeline-only` alinhados com a esteira real
+- [x] metadata minima consistente nos documentos ativos
+- [x] links relativos e headings validados
+
+## Pendencias pequenas
+
+- Nenhuma pendencia bloqueante foi identificada para o fechamento desta refatoracao documental.
+- O historico legado em `docs/archive/relatorios/` continua preservado como lote arquivado e nao requer normalizacao adicional para manter a coerencia do SSOT vigente.
+
+## Proximos passos opcionais
+
+- Se houver manutencao documental recorrente, transformar a auditoria local de metadata, links e headings em script versionado de apoio editorial.
+- Em alteracoes futuras de pipeline, manter a revisao cruzada entre SSOTs de `docs/engineering/` e `docs/operations/` para evitar drift.
