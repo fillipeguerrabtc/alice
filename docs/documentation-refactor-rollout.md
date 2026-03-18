@@ -3,8 +3,8 @@
 **Author:** Fillipe Guerra
 **Data:** 18 de Marco de 2026
 **Atualizado:** 18 de Marco de 2026
-**Status:** Bloco 6 concluido
-**Escopo:** SSOT da refatoracao documental e acompanhamento por blocos
+**Status:** bloco 7 concluido
+**Tipo:** rollout
 
 ## Objetivo
 
@@ -89,6 +89,14 @@ Registrar o estado real da refatoracao documental apos os blocos executados, com
 - `infra/observability/grafana/README.md` foi reduzido a configuracao local de provisioning e compose isolado, com referencia explicita para o compose oficial da stack e para os SSOTs globais de observabilidade e deploy.
 - As referencias locais a pipeline, arquitetura, SSO e deploy foram revisadas para apontar para fontes ativas do repositorio, evitando duplicacao editorial e drift com o estado atual do projeto.
 
+### Bloco 7 - padronizacao editorial global
+
+- A metadata minima dos documentos ativos foi normalizada com `Author`, `Atualizado`, `Status` e `Tipo`, incluindo raiz do repositorio, SSOTs em `docs/` e READMEs locais de subsistema.
+- Os tipos documentais passaram a distinguir explicitamente `governanca`, `onboarding`, `indice`, `ssot`, `runbook`, `status`, `roadmap`, `rollout` e `readme local`.
+- Links residuais para diretorios foram substituidos por referencias a documentos canonicos concretos, como `docs/archive/INDEX.md` e `docs/operations/training/overview.md`.
+- Titulos e headings herdados do padrao anterior foram alinhados ao papel vigente de cada arquivo, com ajuste pontual em onboarding, roadmap, design e overviews tecnicos.
+- A revisao final confirmou consistencia editorial da documentacao ativa sem reabrir monolitos ja estabilizados nem mover arquivos sem necessidade.
+
 ## Evidencias usadas neste bloco
 
 - `sed -n '1,240p' AGENTS.md`
@@ -125,6 +133,11 @@ Registrar o estado real da refatoracao documental apos os blocos executados, com
 - `sed -n '1,260p' apps/integrations-service/src/routes/trading-signal-promotion-routes.ts`
 - `sed -n '1,200p' apps/integrations-service/src/routes/trading-websocket-routes.ts`
 - `rg -n` em `apps/frontend-service/`, `apps/integrations-service/`, `apps/training-service/` e `packages/` para confirmar flag canonica, rotas de Trading, promotion path, handoff demo e capability matrix
+- `git ls-files '*.md' | grep -v '^docs/archive/' | sort`
+- auditoria de metadata, H1 e tipos documentais via `node`
+- validacao automatizada de links relativos e links para diretorio residual via `node`
+- validacao automatizada de hierarquia de headings via `node`
+- `sed -n` em `docs/product/design-guidelines.md`, `docs/status/roadmap.md`, `docs/operations/getting-started.md`, `docs/engineering/pipeline-overview.md` e `docs/operations/training/overview.md`
 
 ## Snapshot confirmado apos o Bloco 3
 
@@ -167,6 +180,21 @@ Registrar o estado real da refatoracao documental apos os blocos executados, com
 
 - Total de arquivos Markdown rastreados: `93`
 - Arquivos Markdown na raiz do repositorio: `3`
+- Arquivos Markdown na raiz de `docs/`: `2`
+- Arquivos em `docs/architecture/`: `2`
+- Arquivos em `docs/operations/`: `16`
+- Arquivos em `docs/product/`: `2`
+- Arquivos em `docs/engineering/`: `3`
+- Arquivos em `docs/status/`: `2`
+- Arquivos em `docs/archive/`: `45`
+- Arquivos em `docs/trading/`: `17`
+
+## Snapshot confirmado apos o Bloco 7
+
+- Total de arquivos Markdown rastreados: `95`
+- Arquivos Markdown ativos fora de `docs/archive/`: `50`
+- Arquivos Markdown na raiz do repositorio: `3`
+- READMEs locais ativos em `apps/`, `assets/` e `infra/`: `3`
 - Arquivos Markdown na raiz de `docs/`: `2`
 - Arquivos em `docs/architecture/`: `2`
 - Arquivos em `docs/operations/`: `16`
@@ -310,14 +338,18 @@ Registrar o estado real da refatoracao documental apos os blocos executados, com
 - Conferencia de caminhos e links relativos com `find`, `sed -n` e `rg -n` dentro de `apps/observability-service`, `assets/branding`, `infra/observability/grafana` e `apps/frontend-service`
 - Verificacao de aderencia do branding com `scripts/update-branding.py`
 - Verificacao de aderencia do Grafana local com `infra/docker/stacks/docker-compose.observability.yml`
+- Validacao de metadata minima consistente em todos os Markdown ativos fora de `docs/archive/`
+- Eliminacao de links ativos para diretorios quando ja existia documento canonico explicito
+- Validacao automatizada de H1 por documento e de hierarquia sem salto de heading
 
-## Proximos blocos recomendados
+## Blocos recentes desta rodada
 
 | Bloco | Escopo sugerido | Status inicial |
 | --- | --- | --- |
 | `4` | consolidar sobreposicoes grandes de treinamento, aprendizado e status sem perder SSOT | concluido |
 | `5` | refatorar o dominio Trading com namespace dedicado e precedencia explicita | concluido |
 | `6` | normalizar READMEs locais e docs de subsistema sem reabrir SSOTs globais | concluido |
+| `7` | padronizar metadata, tipos documentais, headings e links restantes da documentacao ativa | concluido |
 
 ## Handoff
 
@@ -329,3 +361,4 @@ Registrar o estado real da refatoracao documental apos os blocos executados, com
 - Preservar `docs/archive/ops/rag-doc-processing-2026-03-01.md` como historico; nao reabrir essa nota temporal como SSOT.
 - Evitar reabrir discussao taxonomica: a movimentacao fisica desta rodada e a referencia vigente.
 - Para READMEs locais, manter o contrato editorial desta rodada: escopo curto, operacional e sempre apontando para SSOT global quando o assunto extrapolar o subsistema.
+- Para documentos ativos novos ou revisados, manter o padrao minimo de metadata com `Author`, `Atualizado`, `Status` e `Tipo`.

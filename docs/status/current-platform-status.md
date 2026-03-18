@@ -3,6 +3,8 @@
 **Author:** Fillipe Guerra
 **Data:** 18 de Marco de 2026
 **Atualizado:** 18 de Marco de 2026
+**Status:** snapshot ativo
+**Tipo:** status
 
 ## Objetivo
 

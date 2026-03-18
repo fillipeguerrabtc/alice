@@ -2,7 +2,9 @@
 
 **Author:** Fillipe Guerra
 **Data:** 17 de Marco de 2026
-**Atualizado:** 17 de Marco de 2026
+**Atualizado:** 18 de Marco de 2026
+**Status:** ativo
+**Tipo:** governanca
 
 ## Objetivo
 
@@ -15,7 +17,7 @@ Definir as regras permanentes para agentes que atuam no repositorio `/mnt/c/APPs
 3. [CLAUDE.md](CLAUDE.md) para convencoes permanentes de engenharia, arquitetura e entrega.
 4. [docs/INDEX.md](docs/INDEX.md) para navegacao e classificacao documental.
 5. Documentacao canonica tematica em `docs/` para o conteudo tecnico vigente.
-6. Planos, rollouts, status, relatorios, reviews e [docs/archive/](docs/archive/) servem como contexto e historico, nunca como override do SSOT vigente.
+6. Planos, rollouts, status, relatorios, reviews e [docs/archive/INDEX.md](docs/archive/INDEX.md) servem como contexto e historico, nunca como override do SSOT vigente.
 
 Se houver conflito entre documentos do mesmo nivel, prevalece o mais especifico para o escopo afetado.
 

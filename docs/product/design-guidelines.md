@@ -1,12 +1,18 @@
-# Alice - Diretrizes de Design Enterprise
+# Diretrizes de Design da Alice
 
-**Autor:** Fillipe Guerra
+**Author:** Fillipe Guerra
+**Data:** 18 de Marco de 2026
+**Atualizado:** 18 de Marco de 2026
+**Status:** ativo
+**Tipo:** ssot
 
-## Filosofia de Design
+## Objetivo
 
-**Plataforma enterprise de IA** com estética sofisticada combinando a precisão do Linear, a clareza do Stripe e a acessibilidade do Notion. Interface moderna, rica em dados, com foco em Português Brasileiro.
+Consolidar os principios visuais, de interface e de experiencia da Alice sem duplicar detalhes de implementacao de componentes ou fluxos operacionais fora do contexto de design.
 
----
+## Principios de design
+
+Plataforma enterprise de IA com estetica sofisticada, foco em clareza operacional, leitura de dados e suporte nativo a Portugues Brasileiro.
 
 ## Identidade Visual
 
@@ -30,8 +36,6 @@
 | Small | 14px | Regular | Metadados |
 | XS | 12px | Regular | Legendas |
 
----
-
 ## Sistema de Layout
 
 ### Espaçamento (Tailwind)
@@ -46,8 +50,6 @@ Usar escala consistente: `2, 4, 8, 12, 16, 24, 32` (px-2, h-8, m-12, etc.)
 | Formulários | `max-w-4xl` (56rem) |
 | Interface de Chat | `max-w-3xl` (48rem) |
 | Conteúdo texto | `max-w-prose` |
-
----
 
 ## Design de Componentes
 
@@ -116,8 +118,6 @@ Usar escala consistente: `2, 4, 8, 12, 16, 24, 32` (px-2, h-8, m-12, etc.)
 - Botão fechar no canto superior direito
 - Rodapé com ações alinhadas à direita
 
----
-
 ## Layouts por Página
 
 ### Landing (Página Inicial)
@@ -152,8 +152,6 @@ Usar escala consistente: `2, 4, 8, 12, 16, 24, 32` (px-2, h-8, m-12, etc.)
 - Ações perigosas (Excluir, Desconectar) em card separado no rodapé
 - Barra de rodapé persistente para salvar
 
----
-
 ## Interações e Animações
 
 | Tipo | Duração | Uso |
@@ -166,8 +164,6 @@ Usar escala consistente: `2, 4, 8, 12, 16, 24, 32` (px-2, h-8, m-12, etc.)
 
 **Regra:** Animações mínimas - priorizar velocidade e clareza.
 
----
-
 ## Acessibilidade (WCAG 2.1 AA)
 
 - [ ] Contraste alto de texto
@@ -177,8 +173,6 @@ Usar escala consistente: `2, 4, 8, 12, 16, 24, 32` (px-2, h-8, m-12, etc.)
 - [ ] Erros de formulário anunciados
 - [ ] aria-labels em todos os elementos interativos
 
----
-
 ## Imagens e Mídia
 
 | Contexto | Diretrizes |
@@ -187,8 +181,6 @@ Usar escala consistente: `2, 4, 8, 12, 16, 24, 32` (px-2, h-8, m-12, etc.)
 | Interface de Chat | Avatares (32px círculos), anexos de mídia inline |
 | Configurações | Ícones (24px) para identificação visual |
 | Marketing | Hero com gradiente abstrato IA/tech ou padrões geométricos |
-
----
 
 ## Considerações para Português Brasileiro
 

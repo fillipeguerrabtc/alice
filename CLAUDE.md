@@ -2,7 +2,9 @@
 
 **Author:** Fillipe Guerra
 **Data:** 17 de Marco de 2026
-**Atualizado:** 17 de Marco de 2026
+**Atualizado:** 18 de Marco de 2026
+**Status:** ativo
+**Tipo:** governanca
 
 ## Objetivo
 
@@ -15,7 +17,7 @@ Consolidar as convencoes permanentes de engenharia, arquitetura, documentacao e 
 3. [CLAUDE.md](CLAUDE.md) para convencoes duraveis de engenharia e operacao.
 4. [docs/INDEX.md](docs/INDEX.md) como portal de navegacao e regra editorial de precedencia.
 5. Documentos canonicos tematicos em `docs/` como SSOT tecnico vigente.
-6. Planos, status, rollouts, relatorios e [docs/archive/](docs/archive/) como contexto temporal e historico, sem precedencia sobre o SSOT vigente.
+6. Planos, status, rollouts, relatorios e [docs/archive/INDEX.md](docs/archive/INDEX.md) como contexto temporal e historico, sem precedencia sobre o SSOT vigente.
 
 ## Regras fundamentais
 
@@ -47,9 +49,9 @@ Consolidar as convencoes permanentes de engenharia, arquitetura, documentacao e 
 - [README.md](README.md) e onboarding e ponto de entrada, nao SSOT tecnico.
 - [AGENTS.md](AGENTS.md) governa como agentes devem operar neste repositorio.
 - [docs/INDEX.md](docs/INDEX.md) define navegacao, classificacao e precedencia editorial.
-- Documentos tematicos canonicos em [docs/](docs/) concentram a verdade tecnica vigente.
+- Documentos tematicos canonicos em [docs/INDEX.md](docs/INDEX.md) concentram a verdade tecnica vigente.
 - Planos, status, rollouts, reviews e relatorios sao documentos temporais de acompanhamento.
-- [docs/archive/](docs/archive/) preserva historico e nunca prevalece sobre documentos vigentes.
+- [docs/archive/INDEX.md](docs/archive/INDEX.md) preserva historico e nunca prevalece sobre documentos vigentes.
 
 ## Fechamento obrigatorio
 

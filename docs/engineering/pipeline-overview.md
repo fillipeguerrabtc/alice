@@ -1,8 +1,10 @@
-# Pipeline Overview
+# Overview da Pipeline
 
 **Author:** Fillipe Guerra
 **Data:** 18 de Marco de 2026
 **Atualizado:** 18 de Marco de 2026
+**Status:** ativo
+**Tipo:** ssot
 
 ## Objetivo
 
