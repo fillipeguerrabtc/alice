@@ -1,0 +1,33 @@
+name: Hetzner SSH
+description: Executa comandos SSH no host Hetzner padrão do projeto
+
+inputs:
+  script:
+    description: Script shell executado remotamente
+    required: true
+  command_timeout:
+    description: Timeout do comando remoto
+    required: false
+    default: 5m
+  port:
+    description: Porta SSH
+    required: false
+    default: "22"
+  envs:
+    description: Lista de variáveis para repassar ao host remoto
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Run SSH command on Hetzner
+      uses: appleboy/ssh-action@v1.2.5
+      with:
+        host: ${{ env.HETZNER_HOST }}
+        username: ${{ env.HETZNER_USER }}
+        key: ${{ env.HETZNER_SSH_PRIVATE_KEY }}
+        port: ${{ inputs.port }}
+        command_timeout: ${{ inputs.command_timeout }}
+        envs: ${{ inputs.envs }}
+        script: ${{ inputs.script }}

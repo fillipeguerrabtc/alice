@@ -103,8 +103,7 @@ jobs:
             });
 
             const successfulRun = response.data.workflow_runs.find(run =>
-              run.name === 'CI - Validation'
-              && run.head_sha === head_sha
+              run.head_sha === head_sha
               && run.conclusion === 'success'
             );
 

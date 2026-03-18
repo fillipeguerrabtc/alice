@@ -129,6 +129,7 @@ env:
   IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/alice
   HETZNER_HOST: ${{ secrets.HETZNER_VM_HOST }}
   HETZNER_USER: ${{ secrets.HETZNER_VM_USER }}
+  HETZNER_SSH_PRIVATE_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
   DEPLOY_PATH: /opt/alice
 
 jobs:
@@ -213,12 +214,8 @@ jobs:
       - name: Check server stacks health (Smart Deploy)
         id: server-health
         if: github.event.inputs.smart_deploy == 'true'
-        uses: appleboy/ssh-action@v1.2.5
+        uses: ./.github/actions/hetzner-ssh
         with:
-          host: ${{ secrets.HETZNER_VM_HOST }}
-          username: ${{ secrets.HETZNER_VM_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
           command_timeout: 60s
           script: |
             set -euo pipefail
@@ -1767,12 +1764,8 @@ jobs:
       # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 11 (Docs oficiais)
       # =======================================================================
       - name: Atualizar daemon.json (idempotente)
-        uses: appleboy/ssh-action@v1.2.5
+        uses: ./.github/actions/hetzner-ssh
         with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
           command_timeout: 2m
           script: |
             set -euo pipefail
@@ -1964,24 +1957,16 @@ jobs:
           rm -f ~/.ssh/deploy_key 2>/dev/null || true
 
       - name: Restringir permissões .env.prod no servidor
-        uses: appleboy/ssh-action@v1.2.5
+        uses: ./.github/actions/hetzner-ssh
         with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
           script: |
             chmod 600 /opt/alice/app/infra/docker/.env.prod
             chown root:root /opt/alice/app/infra/docker/.env.prod
             echo "✅ Permissões do .env.prod restringidas para 600 no servidor"
 
       - name: Validar servidor de produção (fail-fast)
-        uses: appleboy/ssh-action@v1.2.5
+        uses: ./.github/actions/hetzner-ssh
         with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
           script: |
             set -euo pipefail
             echo "🔍 Validando servidor de produção..."
@@ -2243,12 +2228,8 @@ jobs:
       # REF: https://docs.docker.com/reference/cli/docker/login/#credential-stores
       # =======================================================================
       - name: Validar config.json no servidor + diagnóstico conectividade
-        uses: appleboy/ssh-action@v1.2.5
+        uses: ./.github/actions/hetzner-ssh
         with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
           command_timeout: 2m
           script: |
             set -euo pipefail
@@ -2375,12 +2356,8 @@ jobs:
             echo "✅ Validação config.json servidor concluída — credenciais prontas para docker pull"
 
       - name: Preparar infraestrutura base (networks, volumes, permissões)
-        uses: appleboy/ssh-action@v1.2.5
+        uses: ./.github/actions/hetzner-ssh
         with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
           command_timeout: 5m
           script: |
             set -euo pipefail
@@ -2753,12 +2730,8 @@ jobs:
     
     steps:
       - name: Validar servidor de produção (OBRIGATÓRIO)
-        uses: appleboy/ssh-action@v1.2.5
+        uses: ./.github/actions/hetzner-ssh
         with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
           command_timeout: 2m
           script: |
             set -euo pipefail
@@ -2874,12 +2847,8 @@ jobs:
             echo "✅ Validação do servidor de produção OK"
 
       - name: Criar estrutura de diretórios (ATÔMICA)
-        uses: appleboy/ssh-action@v1.2.5
+        uses: ./.github/actions/hetzner-ssh
         with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
           command_timeout: 5m
           script: |
             set -euo pipefail
@@ -2913,12 +2882,8 @@ jobs:
             echo "✅ Estrutura de diretórios criada com sucesso"
 
       - name: Sincronizar configs do SearXNG (CRÍTICO)
-        uses: appleboy/ssh-action@v1.2.5
+        uses: ./.github/actions/hetzner-ssh
         with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
           command_timeout: 3m
           script: |
             set -euo pipefail
@@ -2964,12 +2929,8 @@ jobs:
             echo "✅ Configurações do SearXNG sincronizadas"
 
       - name: Configurar permissões PostgreSQL (CRÍTICO)
-        uses: appleboy/ssh-action@v1.2.5
+        uses: ./.github/actions/hetzner-ssh
         with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
           command_timeout: 5m
           script: |
             set -euo pipefail
@@ -3252,12 +3213,8 @@ jobs:
             echo ""
 
       - name: Validar estado final (fail-fast)
-        uses: appleboy/ssh-action@v1.2.5
+        uses: ./.github/actions/hetzner-ssh
         with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
           command_timeout: 3m
           script: |
             set -euo pipefail
@@ -3393,12 +3350,8 @@ jobs:
     
     steps:
       - name: Limpar containers parciais do deploy anterior (se existirem)
-        uses: appleboy/ssh-action@v1.2.5
+        uses: ./.github/actions/hetzner-ssh
         with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
           command_timeout: 5m
           script: |
             set -euo pipefail
@@ -3570,12 +3523,8 @@ jobs:
             fi
 
       - name: Limpar lock files e sockets do PostgreSQL (redundant safety check)
-        uses: appleboy/ssh-action@v1.2.5
+        uses: ./.github/actions/hetzner-ssh
         with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
           command_timeout: 2m
           script: |
             set -euo pipefail
@@ -3655,12 +3604,8 @@ jobs:
       # =================================================================
 
       - name: Create PostgreSQL Docker volume (belt-and-suspenders)
-        uses: appleboy/ssh-action@v1.2.5
+        uses: ./.github/actions/hetzner-ssh
         with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
           command_timeout: 5m
           script: |
             set -euo pipefail
@@ -3788,12 +3733,8 @@ jobs:
 
       - name: Deploy stack infra via SSH
         id: deploy
-        uses: appleboy/ssh-action@v1.2.5
+        uses: ./.github/actions/hetzner-ssh
         with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
           # =================================================================
           # CORREÇÃO PR#86 (08/01/2026): command_timeout aumentado
           # =================================================================
@@ -4180,12 +4121,8 @@ jobs:
 
       - name: Diagnóstico rápido INFRA (na tela)
         if: failure()
-        uses: appleboy/ssh-action@v1.2.5
+        uses: ./.github/actions/hetzner-ssh
         with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
           command_timeout: 3m
           script: |
             set +e
@@ -4201,12 +4138,8 @@ jobs:
             done
 
       - name: Clean init containers (post-deploy)
-        uses: appleboy/ssh-action@v1.2.5
+        uses: ./.github/actions/hetzner-ssh
         with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
           command_timeout: 2m
           script: |
             set -euo pipefail
@@ -4264,15 +4197,11 @@ jobs:
 
       - name: Capturar logs de falha INFRA (servidor)
         if: failure()
-        uses: appleboy/ssh-action@v1.2.5
+        uses: ./.github/actions/hetzner-ssh
         env:
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
         with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
           command_timeout: 5m
           envs: RUN_ID,RUN_ATTEMPT
           script: |
@@ -4355,12 +4284,8 @@ jobs:
     steps:
       - name: Check health with retry logic and diagnostics
         id: check
-        uses: appleboy/ssh-action@v1.2.5
+        uses: ./.github/actions/hetzner-ssh
         with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
           command_timeout: 7m
           script: |
             set -euo pipefail
@@ -4468,12 +4393,8 @@ jobs:
       
       - name: Troubleshoot unhealthy containers (se falhou)
         if: failure()
-        uses: appleboy/ssh-action@v1.2.5
+        uses: ./.github/actions/hetzner-ssh
         with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
           command_timeout: 5m
           script: |
             set +e  # Não falhar se container não existir
@@ -4556,16 +4477,12 @@ jobs:
     
     steps:
       - name: Execute rollback cirúrgico (5 estágios)
-        uses: appleboy/ssh-action@v1.2.5
+        uses: ./.github/actions/hetzner-ssh
         env:
           IS_ROLLBACK: ${{ needs.validate.outputs.is_rollback }}
           ROLLBACK_VERSION: ${{ needs.validate.outputs.rollback_version }}
           DEPLOY_RESULT: ${{ needs.deploy-infra.result }}
         with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
           command_timeout: 7m
           envs: IS_ROLLBACK,ROLLBACK_VERSION,DEPLOY_RESULT
           script: |
@@ -4837,12 +4754,8 @@ jobs:
     
     steps:
       - name: Execute Drizzle Push via SSH
-        uses: appleboy/ssh-action@v1.2.5
+        uses: ./.github/actions/hetzner-ssh
         with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
           command_timeout: 7m
           script: |
             set -euo pipefail
@@ -5017,12 +4930,8 @@ jobs:
     steps:
       - name: Deploy stack alice via SSH
         id: deploy
-        uses: appleboy/ssh-action@v1.2.5
+        uses: ./.github/actions/hetzner-ssh
         with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
           # =================================================================
           # CORREÇÃO CRÍTICA (12/01/2026): Timeout aumentado para GPU images
           # =================================================================
@@ -5351,12 +5260,8 @@ jobs:
 
       - name: Diagnóstico rápido ALICE (na tela)
         if: failure()
-        uses: appleboy/ssh-action@v1.2.5
+        uses: ./.github/actions/hetzner-ssh
         with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
           command_timeout: 3m
           script: |
             set +e
@@ -5373,15 +5278,11 @@ jobs:
 
       - name: Capturar logs de falha ALICE (servidor)
         if: failure()
-        uses: appleboy/ssh-action@v1.2.5
+        uses: ./.github/actions/hetzner-ssh
         env:
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
         with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
           command_timeout: 5m
           envs: RUN_ID,RUN_ATTEMPT
           script: |
@@ -5464,12 +5365,8 @@ jobs:
     steps:
       - name: Check health with retry logic
         id: check
-        uses: appleboy/ssh-action@v1.2.5
+        uses: ./.github/actions/hetzner-ssh
         with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
           command_timeout: 7m
           script: |
             set -euo pipefail
@@ -5598,15 +5495,11 @@ jobs:
     
     steps:
       - name: Execute rollback cirúrgico (5 estágios)
-        uses: appleboy/ssh-action@v1.2.5
+        uses: ./.github/actions/hetzner-ssh
         env:
           IS_ROLLBACK: ${{ needs.validate.outputs.is_rollback }}
           ROLLBACK_VERSION: ${{ needs.validate.outputs.rollback_version }}
         with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
           command_timeout: 7m
           envs: IS_ROLLBACK,ROLLBACK_VERSION
           script: |
@@ -5804,12 +5697,8 @@ jobs:
     steps:
       - name: Deploy stack observability via SSH
         id: deploy
-        uses: appleboy/ssh-action@v1.2.5
+        uses: ./.github/actions/hetzner-ssh
         with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
           # =================================================================
           # CORREÇÃO (08/02/2026): Timeout aumentado para 13 imagens externas
           # =================================================================
@@ -6080,12 +5969,8 @@ jobs:
 
       - name: Diagnóstico rápido OBSERVABILITY (na tela)
         if: failure()
-        uses: appleboy/ssh-action@v1.2.5
+        uses: ./.github/actions/hetzner-ssh
         with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
           command_timeout: 3m
           script: |
             set +e
@@ -6102,15 +5987,11 @@ jobs:
 
       - name: Capturar logs de falha OBSERVABILITY (servidor)
         if: failure()
-        uses: appleboy/ssh-action@v1.2.5
+        uses: ./.github/actions/hetzner-ssh
         env:
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
         with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
           command_timeout: 5m
           envs: RUN_ID,RUN_ATTEMPT
           script: |
@@ -6194,12 +6075,8 @@ jobs:
     steps:
       - name: Check health with retry logic
         id: check
-        uses: appleboy/ssh-action@v1.2.5
+        uses: ./.github/actions/hetzner-ssh
         with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
           # =================================================================
           # CORREÇÃO PR#100 (09/01/2026): Alinhar command_timeout com MAX_RETRIES
           # =================================================================
@@ -6353,15 +6230,11 @@ jobs:
     
     steps:
       - name: Execute rollback cirúrgico (5 estágios)
-        uses: appleboy/ssh-action@v1.2.5
+        uses: ./.github/actions/hetzner-ssh
         env:
           IS_ROLLBACK: ${{ needs.validate.outputs.is_rollback }}
           ROLLBACK_VERSION: ${{ needs.validate.outputs.rollback_version }}
         with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
           command_timeout: 7m
           envs: IS_ROLLBACK,ROLLBACK_VERSION
           script: |
@@ -6536,12 +6409,8 @@ jobs:
     steps:
       - name: Deploy stack backup via SSH
         id: deploy
-        uses: appleboy/ssh-action@v1.2.5
+        uses: ./.github/actions/hetzner-ssh
         with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
           command_timeout: 7m
           script: |
             set -euo pipefail
@@ -6733,12 +6602,8 @@ jobs:
 
       - name: Diagnóstico rápido BACKUP (na tela)
         if: failure()
-        uses: appleboy/ssh-action@v1.2.5
+        uses: ./.github/actions/hetzner-ssh
         with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
           command_timeout: 3m
           script: |
             set +e
@@ -6753,15 +6618,11 @@ jobs:
 
       - name: Capturar logs de falha BACKUP (servidor)
         if: failure()
-        uses: appleboy/ssh-action@v1.2.5
+        uses: ./.github/actions/hetzner-ssh
         env:
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
         with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
           command_timeout: 5m
           envs: RUN_ID,RUN_ATTEMPT
           script: |
@@ -6845,12 +6706,8 @@ jobs:
     steps:
       - name: Check health with retry logic
         id: check
-        uses: appleboy/ssh-action@v1.2.5
+        uses: ./.github/actions/hetzner-ssh
         with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
           # CORREÇÃO PR#100: Alinhar command_timeout com MAX_RETRIES (350s + margem)
           command_timeout: 7m
           script: |
@@ -6947,15 +6804,11 @@ jobs:
     
     steps:
       - name: Execute rollback cirúrgico (5 estágios)
-        uses: appleboy/ssh-action@v1.2.5
+        uses: ./.github/actions/hetzner-ssh
         env:
           IS_ROLLBACK: ${{ needs.validate.outputs.is_rollback }}
           ROLLBACK_VERSION: ${{ needs.validate.outputs.rollback_version }}
         with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
           command_timeout: 5m
           envs: IS_ROLLBACK,ROLLBACK_VERSION
           script: |
@@ -7219,11 +7072,8 @@ jobs:
       # REF: CLAUDE.md Regra 11 (Melhores práticas 2025)
       # =========================================================================
       - name: Cleanup Docker images (post-deploy)
-        uses: appleboy/ssh-action@v1.2.5
+        uses: ./.github/actions/hetzner-ssh
         with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           command_timeout: 5m
           script: |
             set -euo pipefail
