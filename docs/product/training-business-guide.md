@@ -1,390 +1,69 @@
-# Guia de Treinamento de Agentes da Alice (Negócios)
+# Guia de Treinamento de Agentes da Alice
 
-**Autor:** Fillipe Guerra  
-**Data:** 09 de Fevereiro de 2026  
-**Versão:** 1.1.0 - Guia didático + Ecossistema LLM (LoRA + RAG + Feedback Loop)
+**Author:** Fillipe Guerra
+**Data:** 18 de Marco de 2026
+**Atualizado:** 18 de Marco de 2026
 
----
+## Objetivo
 
-## Objetivo deste guia
+Explicar, em linguagem de uso real, como negocio deve alimentar conhecimento e comportamento dos agentes sem misturar o guia com detalhes de infra, pipeline ou runbook tecnico.
 
-Este guia explica, de forma simples, **como treinar os Agentes da Alice** usando:
+## Regra simples
 
-- **Documentos e livros** (RAG);
-- **Conversas no chat** (dados de qualidade);
-- **Operações e sinais de trading** (experiência prática).
+- `RAG` = fatos, playbooks, politicas e conteudo que muda.
+- `Training` = comportamento, estilo, formato de resposta e especializacao do agente.
 
-Ele foi escrito para **usuários de negócio**, sem exigir conhecimento técnico.  
-Quando precisar de detalhes técnicos (API, cron, infraestrutura), consulte:
+## Fluxo recomendado de uso
 
-- `docs/operations/training/overview.md`
-- `docs/operations/training/learning-system.md`
+### 1. Separar o dominio
 
----
+- Criar ou escolher o `namespace` correto.
+- Garantir que o agente certo esta vinculado a esse contexto.
+- Nao misturar conteudo de dominios diferentes no mesmo namespace.
 
-## 1) Conceitos básicos (o que é e para que serve)
+### 2. Alimentar conhecimento pelo RAG
 
-### 1.1 Treinamento / Fine-tuning
+- Subir documentos, manuais e playbooks que precisam ficar consultaveis.
+- Usar `RAG` para regras e fatos que mudam com frequencia.
+- Validar no chat se o agente recupera o conteudo esperado antes de pensar em fine-tuning.
 
-**O que é:** ensinar o modelo a **responder melhor** em um domínio específico (ex.: trading).  
-**Para que serve:** ajustar **estilo**, **tom**, **prioridades** e **raciocínio** com base em dados aprovados.  
-**Quando usar:** quando o agente precisa **aprender comportamento**, não só consultar fatos.
+### 3. Coletar comportamento de alta qualidade
 
-**Exemplo:**  
-Você quer que o Agente Trading responda sempre com:
+- Aprovar apenas conversas, sinais e exemplos que representam o padrao ideal do agente.
+- Reprovar respostas vagas, inseguras ou com contexto incompleto.
+- Tratar exemplos repetidos ou ruidosos como passivo de qualidade, nao como volume util.
 
-- Resumo da operação;  
-- Plano (entrada, stop, alvo);  
-- Risco e validações.
+### 4. Revisar o material antes do treino
 
-Treinamento é o caminho para **fixar esse padrão**.
+- Confirmar escopo correto de `namespace`, `agent` e `domain`.
+- Verificar se o dado precisa mesmo virar `Training` ou se deveria ficar apenas no `RAG`.
+- Evitar promover dados sensiveis ou ambiguidade de contexto sem revisao humana.
 
-### 1.2 RAG (Base de Conhecimento)
+### 5. Treinar e validar
 
-**O que é:** uma “memória consultável” que o agente usa na hora de responder.  
-**Para que serve:** manter **fatos atualizados** sem mudar o modelo.  
-**Quando usar:** quando o conteúdo muda com frequência (ex.: regras internas, playbooks).
+- Criar o job pelo fluxo oficial de `Training`.
+- Validar o comportamento do adapter no escopo correto antes de promover.
+- Manter rollback e promocao como decisoes controladas, nunca automaticas por conveniencia.
 
-**Exemplo:**  
-Você atualiza a política de risco.  
-Você sobe o documento no RAG e o agente passa a usar a regra **imediatamente**.
+## Quando usar RAG e quando usar Training
 
-### 1.3 Namespace
+| Situacao | Melhor caminho |
+| --- | --- |
+| Politica, procedimento, regra ou playbook que muda | `RAG` |
+| Estilo de resposta, tom, formato e criterio de decisao | `Training` |
+| Conhecimento geral que precisa ser consultado sem retreinar | `RAG` |
+| Ajuste fino de agente especializado por namespace | `Training` |
 
-**O que é:** “pasta” de conhecimento separada por área (ex.: Trading, Jurídico, Suporte).  
-**Para que serve:** evitar mistura de assuntos e reduzir respostas fora de contexto.
+## O que evitar
 
-**Exemplo:**  
-O namespace **Trading** só recebe conteúdo de trading.  
-O agente de trading consulta esse namespace.
+- Usar `Training` para corrigir fato que deveria estar em documento.
+- Misturar exemplos de dominios diferentes no mesmo escopo.
+- Aprovar volume alto de exemplos medianos so para bater minimo de dataset.
+- Tratar historico de rodadas como instrucao operacional atual.
 
-**Como a separação funciona na prática:**
+## Se precisar de detalhe tecnico
 
-- **RAG**: todo documento precisa de um **namespace**.  
-  Sem namespace, o upload é bloqueado.
-- **Busca**: o agente consulta apenas o namespace configurado no contexto.  
-  Isso impede que conteúdo jurídico apareça em respostas de trading.
-- **Treinamento**: dados aprovados são vinculados ao **namespace** de origem.  
-  Assim, o Agente Trading aprende apenas com dados de trading.
-
-### 1.4 Dataset de Treinamento
-
-**O que é:** conjunto de exemplos aprovados (conversas, sinais, análises) usados no fine‑tuning.  
-**Para que serve:** ensinar o **comportamento ideal** do agente.
-
-### 1.5 Deduplicação Semântica
-
-**O que é:** limpeza automática de conteúdos muito parecidos.  
-**Para que serve:** evitar “lixo repetido” no treinamento.
-
-**Exemplo:**  
-10 conversas quase iguais → o sistema mantém apenas **as melhores**.
-
----
-
-## 2) Quando usar RAG ou Treinamento?
-
-| Situação | Use RAG | Use Treinamento |
-| --- | --- | --- |
-| Regras e políticas atualizadas | ✅ | ❌ |
-| Livros, manuais e playbooks | ✅ | ❌ |
-| Estilo e formato de resposta | ❌ | ✅ |
-| Tom de voz (mais direto ou mais didático) | ❌ | ✅ |
-| Exemplos de decisão (bons e ruins) | ⚠️ (como referência) | ✅ |
-
-**Regra simples:**  
-**RAG = fatos** | **Treinamento = comportamento**
-
----
-
-## 2.1 AgenticConfig + RAG (melhor prática)
-
-**O que usar:**  
-- **AgenticConfig**: define gatilhos, roteamento, permissões e limites do agente.  
-- **RAG**: contém playbooks e manuais operacionais (fatos e regras).
-
-**Por que usar ambos:**  
-- O agente **detecta a intenção** com AgenticConfig.  
-- O agente **executa com segurança** consultando playbooks no RAG.  
-- O comportamento é **auditável** e consistente com governança.
-
-**Regra prática:**  
-Se o conteúdo muda (processo, regra, checklist) → **RAG**.  
-Se o agente precisa decidir “como responder” → **Treinamento**.
-
----
-
-## 2.2 Aprovações no chat (senha ou biometria)
-
-Algumas ações exigem aprovação humana (ex.: trading, pagamentos).  
-No chat, você pode aprovar:
-
-- **Com senha** (método padrão);
-- **Com biometria facial** (opcional, CPU-only, sem liveness).
-
-> A biometria é **uma camada opcional** — quem preferir pode aprovar com senha.
-
----
-
-## 3) Passo a passo — Inserir documentos no RAG (namespace Trading)
-
-### 3.1 Defina o objetivo do conteúdo
-
-Pergunte:  
-“Qual decisão de negócio este documento ajuda a tomar?”
-
-**Exemplo:**  
-“Este playbook define quando operar scalping em 5m.”
-
-### 3.2 Prepare os documentos (boa qualidade)
-
-Preferências:
-
-- PDF, DOCX, TXT, Markdown, CSV ou JSON.
-- Textos claros e estruturados.
-- Uma versão “limpa” do documento (sem propaganda ou ruído).
-
-### 3.3 Crie ou selecione o namespace **Trading**
-
-No painel, selecione o namespace **Trading** para o upload.  
-(Esse namespace separa o conhecimento de outras áreas.)  
-Se não existir, crie em **Namespaces** antes de enviar o documento.
-
-### 3.4 Faça o upload
-
-- Envie o documento para o RAG com o namespace **Trading**.
-- O sistema divide em “trechos” e gera embeddings.
-- O conteúdo fica **disponível imediatamente** para consulta.
-
-### 3.5 Valide na prática
-
-- Faça uma pergunta real no chat/trading.
-- Verifique se a resposta cita o conteúdo correto.
-
-**Exemplo de pergunta:**  
-“Qual é o limite de risco diário para scalping?”
-
----
-
-## 4) Passo a passo — Treinar com conversas de chat
-
-### 4.1 Use conversas reais e de alta qualidade
-
-- Perguntas claras.
-- Respostas completas, com contexto e justificativa.
-
-**Exemplo de boa conversa:**  
-Usuário: “Quero operar BTC em 5m. Qual estratégia?”  
-Agente: “Sugiro scalping com confirmação de RSI + volume. Entrada em X, stop em Y.”
-
-### 4.2 Avalie a conversa
-
-- Dê nota **4 ou 5 estrelas** para respostas boas.
-- Evite aprovar respostas genéricas.
-
-### 4.3 Envie para Treinamento
-
-- Use o botão **“Enviar para Treino”** (quando disponível).
-- Ou aprove no painel de Treinamento.
-
-### 4.4 Aprovação final
-
-- No painel `/training`, aprove apenas o que for **excelente**.
-- Reprove respostas vagas, erradas ou inseguras.
-
----
-
-## 5) Passo a passo — Treinar com operações e sinais de trading
-
-### 5.1 Gere sinais com contexto completo
-
-- Timeframe, marketType e motivo da operação.
-- Indique **por que** o sinal foi dado.
-
-### 5.2 Acompanhe o resultado
-
-- O sinal foi bom?  
-- O stop estava correto?  
-- O risco foi respeitado?
-
-### 5.3 Classifique e aprove
-
-- **Aprovado**: sinal correto, bem explicado, risco controlado.
-- **Rejeitado**: sinal ruim, sem fundamento ou sem controle de risco.
-
-### 5.4 Use a aprovação para dataset
-
-- Sinais aprovados viram exemplos para fine‑tuning.
-
----
-
-## 6) Como funciona a geração de datasets (visão simples)
-
-1. **Coleta de dados** (chat, sinais, análises)  
-2. **Curadoria** (aprovado/reprovado)  
-3. **Deduplicação semântica** (remove repetição)  
-4. **Geração de dataset JSONL**  
-5. **Treinamento QLoRA**  
-6. **Validação** (melhorou ou piorou?)  
-7. **Deploy** (se melhorou) ou rollback (se piorou)
-
-**Resultado:**  
-O agente aprende **o comportamento aprovado** pela equipe.
-
----
-
-## 7) Deduplicação semântica (por que isso importa)
-
-O sistema calcula um “hash semântico” para cada exemplo.  
-Se 2 exemplos são **95% parecidos**, só o melhor fica.
-
-**Benefício:** evita “lixo repetido” e melhora a qualidade.
-
-**Como ajudar o sistema:**
-
-- Evite copiar a mesma resposta.
-- Crie exemplos **variados**, com casos reais.
-
----
-
-## 8) O que inserir no RAG (bons exemplos)
-
-✅ **Playbooks de Trading**
-
-- Estratégias por timeframe (1m, 5m, 15m).  
-
-✅ **Políticas de risco e compliance**
-
-- Limites de exposição, stop obrigatório, regras de alavancagem.
-
-✅ **Glossário interno**
-
-- Termos que o time usa (ex.: “região de liquidez”, “pivô diário”).
-
-✅ **Relatórios e análises oficiais**
-
-- Relatórios auditados, pesquisas internas e documentos técnicos.
-
-✅ **Checklist operacional**
-
-- “Antes de abrir posição, valide A, B, C”.
-
----
-
-## 9) O que evitar no treinamento (importante!)
-
-❌ **Dados pessoais ou sensíveis**  
-Ex.: CPFs, chaves privadas, informações de clientes.
-
-❌ **Conteúdo sem fonte ou rumor**  
-Ex.: “vi no Twitter que o BTC vai subir”.
-
-❌ **Documentos desatualizados**  
-Se uma regra mudou, o antigo deve ser removido ou substituído.
-
-❌ **Mensagens curtas e vagas**  
-Ex.: “acho que vai subir”.
-
-❌ **Dump de logs crus**  
-Sem contexto, isso vira ruído.
-
----
-
-## 10) Boas práticas específicas para o Agente Trading
-
-- Sempre indicar **timeframe** e **mercado** (spot/futures/margin).
-- Registrar **motivos objetivos** (indicadores, price action).
-- Incluir **risco** (stop, take profit, risco diário).
-- Evitar “certezas absolutas” (usar linguagem de probabilidade).
-
-**Exemplo aprovado:**  
-“Entrada em 5m com RSI sobrevendido, stop em 2%.  
-Risco calculado para 1% do capital.”
-
----
-
-## 11) Checklist rápido (para usuários de negócio)
-
-Antes de enviar qualquer conteúdo:
-
-- O conteúdo é **claro e objetivo**?
-- Está **atualizado**?
-- Ajuda a tomar **decisões reais**?
-- Está **sem dados sensíveis**?
-- Representa o **padrão ideal** do agente?
-
-Se sim, ele pode entrar no RAG ou no Treinamento.
-
----
-
-## 12) Ecossistema de evolução contínua (LoRA + RAG + Feedback Loop)
-
-> **NOVO (09/02/2026):** A Alice agora possui um ciclo fechado de evolução, onde cada operação melhora a inteligência futura.
-
-### O que mudou?
-
-Antes, cada geração de sinal IA e cada análise post-mortem eram **isoladas** — o modelo não aprendia com operações anteriores. Agora, o sistema funciona como um **ciclo contínuo**:
-
-```
-Sinal IA (com conhecimento acumulado)
-    → Operação (Real ou Demo)
-    → Post-Mortem automático (com conhecimento acumulado)
-    → Learnings indexados no RAG (automático)
-    → Próximo sinal IA é melhor (usa learnings)
-```
-
-### Como funciona na prática?
-
-1. **RAG contextual**: quando a Alice gera um sinal IA ou analisa um post-mortem, ela consulta automaticamente documentos e análises anteriores do namespace Trading. Isso dá **contexto histórico** à resposta.
-
-2. **Feedback automático**: quando um post-mortem é finalizado com sucesso, as lições aprendidas (o que repetir, o que evitar) são **automaticamente indexadas** no RAG. Isso significa que o próximo sinal já pode consultar essas lições.
-
-3. **LoRA adapter**: quando você aprova um treinamento no dashboard, o adapter (especialização do modelo) é ativado automaticamente. A partir desse momento, **todas as chamadas LLM** (sinais, post-mortems, chat) usam o modelo melhorado.
-
-### O que você precisa fazer?
-
-- **Continue aprovando dados de qualidade** — isso alimenta o treinamento.
-- **Continue subindo documentos no RAG** — isso enriquece o contexto.
-- **Aprove adapters LoRA** quando o treinamento concluir — isso melhora o modelo base.
-- **Acompanhe os dashboards** — painéis de LoRA + RAG no Grafana mostram se o ciclo está funcionando.
-
-### Resumo do ciclo
-
-| Etapa | O que acontece | Quem faz |
-|-------|----------------|----------|
-| 1. Sinal IA gerado | Alice consulta RAG + usa LoRA adapter | Automático |
-| 2. Operação executada | Real ou Demo | Usuário/Alice |
-| 3. Post-Mortem gerado | Alice consulta RAG + usa LoRA adapter | Automático |
-| 4. Learnings indexados | Motivadores e lições vão para o RAG | Automático |
-| 5. Training aprovado | Admin aprova → LoRA adapter ativado | Manual |
-| 6. Modelo melhorado | Próximos sinais/post-mortems usam adapter | Automático |
-
----
-
-## 13) Resumo final (bem direto)
-
-- **RAG** = base de conhecimento (fatos atualizados).  
-- **Treinamento** = comportamento do agente (estilo, decisão, padrão).  
-- **Namespace Trading** = conhecimento isolado só de trading.  
-- **Deduplicação semântica** = mantém só o que importa.
-
-- **Feedback Loop** = cada trade melhora a inteligência futura (automático).
-- **LoRA Adapter** = especialização do modelo ativada após treinamento aprovado.
-
-Se você seguir este guia, o Agente Trading evolui de forma **segura, limpa e escalável**, com ciclo de feedback automático.
-
----
-
-## Próximos passos recomendados
-
-1. Criar uma “pasta” de documentos Trading (playbooks, políticas e checklist).
-2. Subir tudo no RAG usando o namespace **Trading**.
-3. Gerar sinais com justificativa e aprovar apenas os melhores.
-4. Rodar o treinamento incremental quando houver dados suficientes.
-5. **Aprovar adapters LoRA** quando treinamento concluir (dashboard Trading).
-6. **Monitorar dashboards** de LoRA + RAG para verificar se o ciclo está funcionando.
-
-Se precisar de apoio técnico, use como referência:
-
-- `docs/operations/training/overview.md`
-- `docs/operations/training/learning-system.md`
+- Panorama tecnico: [../operations/training/overview.md](../operations/training/overview.md)
+- Modelo de aprendizado: [../operations/training/learning-system.md](../operations/training/learning-system.md)
+- Limites e configuracoes: [../operations/training/reference-limits.md](../operations/training/reference-limits.md)
+- Governanca de auto-collect: [../operations/training/auto-collect-governance.md](../operations/training/auto-collect-governance.md)

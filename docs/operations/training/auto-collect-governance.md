@@ -1,97 +1,78 @@
-# Governança de Auto-Collect por Namespace
+# Governanca de Auto-Collect por Namespace
+
+**Author:** Fillipe Guerra
+**Data:** 18 de Marco de 2026
+**Atualizado:** 18 de Marco de 2026
 
 ## Objetivo
 
-Padronizar a coleta automática de dados de treinamento com governança por namespace (`namespace_profiles`), consentimento explícito do usuário e pipeline de qualidade/privacidade enterprise.
+Padronizar a coleta automatica de dados de treinamento com isolamento por namespace, consentimento explicito, policy gate e comportamento fail-closed.
 
-## Arquitetura de governança
+## Fonte de verdade
 
-- Cada namespace possui 1 profile em `namespace_profiles` (relação 1:1).
-- O profile é criado automaticamente na criação do namespace.
-- Existe reconciliação assíncrona contínua para namespace sem profile (`TRAINING_NAMESPACE_PROFILE_RECONCILE_QUEUE`).
-- Configuração padrão é SSOT em `system_config` na chave `NAMESPACE_PROFILE_DEFAULT_CONFIG_JSON`.
+- Cada namespace possui um profile em `namespace_profiles`.
+- A configuracao default vem de `system_config.NAMESPACE_PROFILE_DEFAULT_CONFIG_JSON`.
+- Reconciliacao automatica usa a fila `alice:training:namespace-profile-reconcile`.
+- Policy gate assincro usa a fila `alice:training:data-policy-gate`.
 
-## Pipeline de candidato de treinamento
+## Defaults canonicos atuais
 
-- Eligibility Gate
-  - Verifica profile ativo, `autoCollectEnabled`, política de consentimento e limites mínimos de conteúdo.
-- Privacy/PII
-  - Regras de privacidade por namespace (`profile.config.privacy.rules`) com ações `redact`, `quarantine`, `reject`.
-  - Mensagens persistidas já redigidas quando privacy está habilitado.
-- Quality Scoring
-  - Score baseline (`computeQualityScore`) comparado com `profile.config.quality.minScore`.
-  - Rejeição automática por qualidade apenas quando `autoRejectBelowMin=true`.
-- Dedupe
-  - `semhash` + dedupe por embedding.
-  - Escopo configurável por profile: `tenant` ou `namespace`.
-  - Threshold de similaridade configurável por profile.
-- Policy Gate assíncrono
-  - Worker dedicado (`TRAINING_DATA_POLICY_GATE_QUEUE`).
-  - LLM Judge opcional (`profile.config.quality.llmJudge.enabled`) com prompt no `system_config`.
-- Quarentena/Human review
-  - Itens com baixa confiança, profile ausente, ou match de regra de privacidade ficam em revisão humana.
+| Area | Default atual |
+| --- | --- |
+| Consentimento | `requiresUserConsent=true` |
+| Sampling | `enabled=true`, `rate=0.5`, `deterministicKey=semhash` |
+| Caps diarios | tenant `1000`, namespace `300`, usuario `100` |
+| Conteudo minimo | usuario `8` chars, assistant `16` chars |
+| Privacy | `enabled=true`, `logRedactionSummary=true` |
+| Qualidade | `enabled=true`, `minScore=0.35`, `autoRejectBelowMin=true` |
+| LLM judge | `enabled=false`, modelo `Qwen/Qwen3-8B-AWQ` |
+| Dedupe | `scope=tenant`, `similarityThreshold=0.95` |
 
-## Consentimento e opt-out
+## Pipeline de governanca
 
-- Preferências do usuário em `users.preferencias.training`:
-  - `allowTrainingUsage`
-  - `allowAutoCollect`
-- Para `source=chat-auto` e `sourceType=chat`, quando o profile exige consentimento:
-  - Se qualquer flag for `false`, o item é rejeitado por política (`user_opt_out`).
+### 1. Eligibility gate
 
-## Sampling, caps e anti-poluição
+- O profile do namespace precisa existir e estar valido.
+- O namespace precisa permitir `autoCollect`.
+- O conteudo minimo e as regras basicas do profile precisam ser atendidos.
 
-- Sampling determinístico (sem variação aleatória entre retries):
-  - `profile.config.autoCollect.sampling.enabled`
-  - `profile.config.autoCollect.sampling.rate`
-  - `deterministicKey` (`semhash`, `conversationId`, `messagePairHash`)
-- Caps diários:
-  - `dailyTenantCap`
-  - `dailyNamespaceCap`
-  - `dailyUserCap`
-- Controle via Redis com chaves diárias por escopo.
+### 2. Consentimento
+
+- O sistema consulta `users.preferencias.training`.
+- Se `allowTrainingUsage=false` ou `allowAutoCollect=false`, a coleta automatica e rejeitada por politica.
+- Nao existe fallback silencioso para ignorar opt-out do usuario.
+
+### 3. Privacidade e PII
+
+- Regras de privacidade vivem no profile do namespace.
+- As acoes possiveis continuam `redact`, `quarantine` e `reject`.
+- Conteudo sensivel nao deve ser logado fora do resumo controlado de redacao.
+
+### 4. Qualidade e dedupe
+
+- O score baseline e comparado com `quality.minScore`.
+- Rejeicao automatica so ocorre quando `autoRejectBelowMin=true`.
+- Dedupe combina `semhash` e similaridade vetorial no escopo configurado pelo profile.
+
+### 5. Quarentena e revisao humana
+
+- Itens com baixa confianca, profile ausente ou match de regra sensivel ficam em revisao.
+- Quando necessario, o sistema agenda reconciliacao do profile antes de permitir liberacao segura.
 
 ## Observabilidade
 
 - `alice_training_auto_collect_attempt_total{reason}` no `chat-service`.
-- Métricas de `training-service` para:
-  - redações de privacidade
-  - quarentena por privacidade
-  - rejeição por consentimento
-- Lineage events:
-  - `training_data.collected`
-  - `training_data.rejected_policy`
-  - `training_data.quarantined_policy`
-  - `training_data.judged`
+- Eventos de lineage: `training_data.collected`, `training_data.rejected_policy`, `training_data.quarantined_policy`, `training_data.judged`.
+- As metricas e eventos devem refletir motivo de bloqueio, nao apenas sucesso bruto de ingestao.
 
-## Operação e troubleshooting
+## Postura fail-closed
 
-- Se profile estiver ausente:
-  - item entra em modo restritivo (quarentena/revisão),
-  - worker de reconcile é enfileirado automaticamente.
-- Se `NAMESPACE_PROFILE_DEFAULT_CONFIG_JSON` estiver inválido:
-  - comportamento fail-fast para evitar ingestão fora de política.
-- Se Redis indisponível em auto-collect:
-  - decisão de coleta é negada (sem fallback inseguro).
+- `NAMESPACE_PROFILE_DEFAULT_CONFIG_JSON` invalido deve falhar rapido.
+- Redis indisponivel no auto-collect bloqueia a decisao automatica.
+- Ausencia de profile nao pode abrir excecao insegura para ingestao.
 
-## Checklist de segurança
+## Relacao com os demais docs
 
-- Sem hardcode de thresholds/rules em runtime.
-- Sem log de conteúdo sensível nas etapas de policy.
-- Isolamento por tenant em todas as consultas críticas.
-- Processamento pesado sempre assíncrono com filas e idempotência.
-
-## Atualização 02/03/2026
-
-- Remoção final da lógica legada no `chat-service` para SLA/history/routing por perfil hardcoded.
-- Fluxos `sync`, `stream`, `websocket`, `websocket-media` e `external-channel` passaram a usar knobs de `namespace_profiles.config` em runtime.
-- Threshold de roteamento, orçamento de prompt, prioridade GPU, limites de memória e histórico agora são governados por namespace profile.
-- Fallback seguro mantido somente quando o namespace não está disponível, sem bypass de política.
-- Correção de sampling determinístico para seed não-hex (`conversationId`): normalização via SHA-256 antes da projeção para faixa `[0..1]`.
-- Correção de drift de caps diários: rollback explícito dos contadores já aplicados quando o bloqueio ocorre em etapas posteriores (tenant → namespace → user), evitando rejeições prematuras por contagem inflada.
-- Hardening de guardrails em respostas numéricas: ativação do perfil de corrupção `trading` usando detector oficial de comandos de trading.
-
----
-
-**Autor:** Fillipe Guerra  
-**Data:** 02 de Março de 2026
+- Panorama geral do treinamento: [overview.md](overview.md)
+- Modelo de aprendizado e dataset: [learning-system.md](learning-system.md)
+- Limites e thresholds editaveis: [reference-limits.md](reference-limits.md)

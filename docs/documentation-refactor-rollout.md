@@ -3,7 +3,7 @@
 **Author:** Fillipe Guerra
 **Data:** 18 de Marco de 2026
 **Atualizado:** 18 de Marco de 2026
-**Status:** Bloco 3 concluido
+**Status:** Bloco 4 concluido
 **Escopo:** SSOT da refatoracao documental e acompanhamento por blocos
 
 ## Objetivo
@@ -12,8 +12,8 @@ Registrar o estado real da refatoracao documental apos os blocos executados, com
 
 ## Nao objetivos desta rodada
 
-- Nao consolidar profundamente os monolitos de treinamento, aprendizado e status.
-- Nao reescrever em profundidade documentos normativos grandes alem do necessario para navegacao e consistencia.
+- Nao mexer profundamente na trilha de trading fora de referencias necessarias.
+- Nao reabrir a taxonomia ja estabilizada nos blocos anteriores.
 - Nao alterar comportamento de produto, pipelines ou workflows fora de ajustes minimos de path documental.
 
 ## Execucao consolidada
@@ -55,6 +55,20 @@ Registrar o estado real da refatoracao documental apos os blocos executados, com
   - `built_images` e `images-manifest.json` governam smart pull e retag local no deploy
 - O runbook ativo passou a ficar concentrado em `docs/operations/runbooks/INDEX.md`, sem infiltrar checklist operacional dentro dos SSOTs conceituais.
 
+### Bloco 4 - training, aprendizado, onboarding e status
+
+- A trilha `docs/operations/training/` foi reduzida a quatro documentos com papeis explicitos:
+  - `overview.md` como porta de entrada e snapshot
+  - `learning-system.md` como modelo de aprendizado
+  - `reference-limits.md` como SSOT de limites e configuracoes
+  - `auto-collect-governance.md` como SSOT de governanca de coleta automatica
+- O runbook `docs/operations/runbooks/training-gpu-validation.md` deixou de carregar historico de incidentes por data e passou a manter somente execucao, criterios de sucesso e troubleshooting ativo.
+- `docs/operations/getting-started.md` foi refeito como onboarding tecnico curto, orientado a uso real e navegacao do SSOT.
+- `docs/product/training-business-guide.md` foi reduzido a um guia de negocio focado em quando usar `RAG` versus `Training`.
+- `docs/status/current-platform-status.md` virou snapshot curto do estado atual da plataforma.
+- `docs/archive/reports/status/qwen3-8b-migration.md` permaneceu em `archive`, mas foi resumido para historico consolidado, sem tracking cumulativo de rodadas.
+- A separacao entre overview, governanca, runbook e historico passou a ficar explicita tambem na trilha de treinamento.
+
 ## Evidencias usadas neste bloco
 
 - `sed -n '1,240p' AGENTS.md`
@@ -75,8 +89,29 @@ Registrar o estado real da refatoracao documental apos os blocos executados, com
 - `sed -n '1,260p' infra/scripts/permissions-config.sh`
 - validacao de links relativos via `node`
 - validacao de headings via `node`
+- `sed -n '1,260p' docs/operations/training/overview.md`
+- `sed -n '1,260p' docs/operations/training/learning-system.md`
+- `sed -n '1,260p' docs/operations/training/reference-limits.md`
+- `sed -n '1,260p' docs/operations/training/auto-collect-governance.md`
+- `sed -n '1,260p' docs/operations/getting-started.md`
+- `sed -n '1,220p' docs/product/training-business-guide.md`
+- `sed -n '1,260p' docs/status/current-platform-status.md`
+- `sed -n '1,220p' docs/archive/reports/status/qwen3-8b-migration.md`
+- `rg -n` em `apps/`, `packages/`, `infra/` e `docs/` para confirmar defaults de training, filas, reasoning mode, rotas canonicas e pipeline
 
 ## Snapshot confirmado apos o Bloco 3
+
+- Total de arquivos Markdown rastreados: `90`
+- Arquivos Markdown na raiz do repositorio: `3`
+- Arquivos Markdown na raiz de `docs/`: `2`
+- Arquivos em `docs/architecture/`: `9`
+- Arquivos em `docs/operations/`: `19`
+- Arquivos em `docs/product/`: `7`
+- Arquivos em `docs/engineering/`: `3`
+- Arquivos em `docs/status/`: `2`
+- Arquivos em `docs/archive/`: `45`
+
+## Snapshot confirmado apos o Bloco 4
 
 - Total de arquivos Markdown rastreados: `90`
 - Arquivos Markdown na raiz do repositorio: `3`
@@ -211,12 +246,14 @@ Registrar o estado real da refatoracao documental apos os blocos executados, com
 - Revisao manual de `README.md`, `docs/INDEX.md`, `docs/archive/INDEX.md` e links relativos impactados por movimentacao
 - Validacao automatizada de links Markdown locais com `node`
 - Validacao automatizada de headings em `docs/**/*.md` com `node`
+- Revisao manual de eliminacao de duplicacoes entre `training`, `learning`, `onboarding` e `status`
+- Confirmacao de que `docs/status/current-platform-status.md` permaneceu como snapshot, e nao como historico de rodadas
 
 ## Proximos blocos recomendados
 
 | Bloco | Escopo sugerido | Status inicial |
 | --- | --- | --- |
-| `4` | consolidar sobreposicoes grandes de treinamento, aprendizado e status sem perder SSOT | nao iniciado |
+| `4` | consolidar sobreposicoes grandes de treinamento, aprendizado e status sem perder SSOT | concluido |
 | `5` | revisar redundancias editoriais residuais e normalizar cabecalhos/metadata | nao iniciado |
 | `6` | varredura final de links, headings e referencias historicas de baixa prioridade | nao iniciado |
 
@@ -224,7 +261,7 @@ Registrar o estado real da refatoracao documental apos os blocos executados, com
 
 - Usar `docs/INDEX.md` como portal principal para qualquer bloco seguinte.
 - Tratar `docs/status/` como contexto ativo e `docs/archive/` como historico sem precedencia.
-- Priorizar no proximo bloco a consolidacao de conteudo sobreposto antes de criar novos SSOTs.
+- Priorizar no proximo bloco a normalizacao editorial residual e limpeza de metadados, sem reabrir a reorganizacao de training ja concluida.
 - Manter `docs/operations/deployment.md` como porta de entrada e `docs/operations/release.md` e `docs/operations/deploy.md` como referencias separadas.
 - Preservar `docs/archive/ops/rag-doc-processing-2026-03-01.md` como historico; nao reabrir essa nota temporal como SSOT.
 - Evitar reabrir discussao taxonomica: a movimentacao fisica desta rodada e a referencia vigente.
