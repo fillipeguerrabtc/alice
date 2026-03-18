@@ -6,6 +6,10 @@ Data: 2026-03-13
 ## 1. Objetivo da refatoração
 Executar uma refatoração progressiva e production-grade do domínio Trading da Alice, cobrindo Frontend, Backend, UX, observability, state model, Signal Engine, integração com Training e Demo Trading, sem quebrar a arquitetura real do monorepo.
 
+## Nota editorial
+
+Este documento e historico. O SSOT vigente do dominio Trading agora esta concentrado em [docs/trading/INDEX.md](../../trading/INDEX.md), e os caminhos abaixo refletem a execucao original da refatoracao.
+
 ## 2. Escopo
 - Trading Real (`apps/frontend-service/src/pages/Trading.tsx` + `TradingContent.tsx`)
 - Demo Trading (`apps/frontend-service/src/pages/DemoTrading.tsx`)

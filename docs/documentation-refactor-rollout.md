@@ -3,7 +3,7 @@
 **Author:** Fillipe Guerra
 **Data:** 18 de Marco de 2026
 **Atualizado:** 18 de Marco de 2026
-**Status:** Bloco 4 concluido
+**Status:** Bloco 5 concluido
 **Escopo:** SSOT da refatoracao documental e acompanhamento por blocos
 
 ## Objetivo
@@ -12,9 +12,9 @@ Registrar o estado real da refatoracao documental apos os blocos executados, com
 
 ## Nao objetivos desta rodada
 
-- Nao mexer profundamente na trilha de trading fora de referencias necessarias.
-- Nao reabrir a taxonomia ja estabilizada nos blocos anteriores.
-- Nao alterar comportamento de produto, pipelines ou workflows fora de ajustes minimos de path documental.
+- Nao alterar comportamento de produto, pipelines ou workflows.
+- Nao duplicar governanca geral de validacao, release, deploy ou observability dentro do dominio Trading.
+- Nao transformar a documentacao de Trading em backlog operacional ou historico por rodada.
 
 ## Execucao consolidada
 
@@ -69,6 +69,19 @@ Registrar o estado real da refatoracao documental apos os blocos executados, com
 - `docs/archive/reports/status/qwen3-8b-migration.md` permaneceu em `archive`, mas foi resumido para historico consolidado, sem tracking cumulativo de rodadas.
 - A separacao entre overview, governanca, runbook e historico passou a ficar explicita tambem na trilha de treinamento.
 
+### Bloco 5 - namespace e precedencia do dominio Trading
+
+- O dominio Trading ganhou um namespace dedicado em `docs/trading/`, com indice proprio e precedencia explicita.
+- Os SSOTs do dominio passaram a ficar agrupados por natureza dentro do proprio namespace:
+  - `docs/trading/architecture/`
+  - `docs/trading/product/`
+  - `docs/trading/operations/`
+  - `docs/trading/runbooks/`
+- Documentos que ainda estavam com linguagem de rodada, rollout ou fechamento foram reescritos para refletir somente o estado vigente do produto.
+- `docs/TRADING_PLATFORM_INSTITUTIONAL_V2.md` permaneceu absorvido como documento canonico em `docs/trading/product/platform-institutional.md`.
+- `FIXES-TRADING-CRITICAL-ERRORS.md` permaneceu corretamente rebaixado para historico em `docs/archive/root/trading-critical-errors-2026-02-16.md`.
+- Referencias a `validacao`, `release`, `deploy` e `research/lab` foram revisadas para apontar para SSOTs gerais ou para o estado real da workspace atual, sem contradizer a esteira vigente.
+
 ## Evidencias usadas neste bloco
 
 - `sed -n '1,240p' AGENTS.md`
@@ -98,6 +111,13 @@ Registrar o estado real da refatoracao documental apos os blocos executados, com
 - `sed -n '1,260p' docs/status/current-platform-status.md`
 - `sed -n '1,220p' docs/archive/reports/status/qwen3-8b-migration.md`
 - `rg -n` em `apps/`, `packages/`, `infra/` e `docs/` para confirmar defaults de training, filas, reasoning mode, rotas canonicas e pipeline
+- `find docs/trading -maxdepth 3 -type f | sort`
+- `sed -n '1,260p' docs/archive/plans/trading-refactor.md`
+- `sed -n '1,260p' docs/archive/root/trading-critical-errors-2026-02-16.md`
+- `sed -n '1,220p' apps/frontend-service/src/components/trading-v2/workspace-rollout-adapter.ts`
+- `sed -n '1,260p' apps/integrations-service/src/routes/trading-signal-promotion-routes.ts`
+- `sed -n '1,200p' apps/integrations-service/src/routes/trading-websocket-routes.ts`
+- `rg -n` em `apps/frontend-service/`, `apps/integrations-service/`, `apps/training-service/` e `packages/` para confirmar flag canonica, rotas de Trading, promotion path, handoff demo e capability matrix
 
 ## Snapshot confirmado apos o Bloco 3
 
@@ -123,6 +143,19 @@ Registrar o estado real da refatoracao documental apos os blocos executados, com
 - Arquivos em `docs/status/`: `2`
 - Arquivos em `docs/archive/`: `45`
 
+## Snapshot confirmado apos o Bloco 5
+
+- Total de arquivos Markdown rastreados: `93`
+- Arquivos Markdown na raiz do repositorio: `3`
+- Arquivos Markdown na raiz de `docs/`: `2`
+- Arquivos em `docs/architecture/`: `2`
+- Arquivos em `docs/operations/`: `16`
+- Arquivos em `docs/product/`: `2`
+- Arquivos em `docs/engineering/`: `3`
+- Arquivos em `docs/status/`: `2`
+- Arquivos em `docs/archive/`: `45`
+- Arquivos em `docs/trading/`: `17`
+
 ## Taxonomia vigente
 
 ```text
@@ -135,8 +168,7 @@ Registrar o estado real da refatoracao documental apos os blocos executados, com
     ├── documentation-refactor-rollout.md
     ├── architecture/
     │   ├── gpu-manager.md
-    │   ├── platform.md
-    │   └── trading/
+    │   └── platform.md
     ├── operations/
     │   ├── deploy.md
     │   ├── deployment.md
@@ -146,12 +178,10 @@ Registrar o estado real da refatoracao documental apos os blocos executados, com
     │   ├── release.md
     │   ├── secrets.md
     │   ├── runbooks/
-    │   ├── trading/
     │   └── training/
     ├── product/
     │   ├── design-guidelines.md
-    │   ├── training-business-guide.md
-    │   └── trading/
+    │   └── training-business-guide.md
     ├── engineering/
     │   ├── pipeline-overview.md
     │   ├── pull-inteligente-flow.md
@@ -159,6 +189,12 @@ Registrar o estado real da refatoracao documental apos os blocos executados, com
     ├── status/
     │   ├── current-platform-status.md
     │   └── roadmap.md
+    ├── trading/
+    │   ├── INDEX.md
+    │   ├── architecture/
+    │   ├── operations/
+    │   ├── product/
+    │   └── runbooks/
     └── archive/
         ├── INDEX.md
         ├── ops/
@@ -195,7 +231,8 @@ Registrar o estado real da refatoracao documental apos os blocos executados, com
 | `docs/operations/release.md` | referencia especifica da publicacao de artefatos |
 | `docs/operations/deploy.md` | procedimento operacional de implantacao em producao |
 | `docs/operations/runbooks/INDEX.md` | indice de runbooks ativos |
-| `design_guidelines.md`, `docs/GUIA-TREINAMENTO-AGENTES.md`, `docs/TRADING_PLATFORM_INSTITUTIONAL_V2.md` | `docs/product/` | conteudo de produto retirado da raiz e da raiz de `docs/` |
+| `design_guidelines.md`, `docs/GUIA-TREINAMENTO-AGENTES.md` | `docs/product/` | conteudo de produto retirado da raiz e da raiz de `docs/` |
+| `docs/TRADING_PLATFORM_INSTITUTIONAL_V2.md` | `docs/trading/product/platform-institutional.md` | SSOT de produto do Trading consolidado no namespace do dominio |
 
 ### Runbooks ativos
 
@@ -205,17 +242,17 @@ Registrar o estado real da refatoracao documental apos os blocos executados, com
 | `docs/RUNBOOK-CONTAMINACAO-ESCOPO.md` | `docs/operations/runbooks/training-scope-contamination.md` |
 | `docs/SLO-BURN-RATE-RUNBOOK.md` | `docs/operations/runbooks/slo-burn-rate-validation.md` |
 | `docs/TRAINING-GPU-VALIDATION-RUNBOOK.md` | `docs/operations/runbooks/training-gpu-validation.md` |
-| `docs/trading/operacao-testes-trading-v2.md` | `docs/operations/runbooks/trading/operacao-testes.md` |
-| `docs/trading/rollout-migration-rollback-trading-v2.md` | `docs/operations/runbooks/trading/migration-rollback.md` |
+| `docs/trading/operacao-testes-trading-v2.md` | `docs/trading/runbooks/operacao-testes.md` |
+| `docs/trading/rollout-migration-rollback-trading-v2.md` | `docs/trading/runbooks/migration-rollback.md` |
 
 ### Trading reorganizado por natureza
 
 | Natureza | Destino atual |
 | --- | --- |
-| arquitetura de dominio | `docs/architecture/trading/` |
-| produto e UX | `docs/product/trading/` |
-| operacao de dominio | `docs/operations/trading/` |
-| runbooks de dominio | `docs/operations/runbooks/trading/` |
+| arquitetura de dominio | `docs/trading/architecture/` |
+| produto e UX | `docs/trading/product/` |
+| operacao de dominio | `docs/trading/operations/` |
+| runbooks de dominio | `docs/trading/runbooks/` |
 | plano temporal | `docs/archive/plans/trading-refactor.md` |
 
 ### Material temporal e historico arquivado
@@ -235,8 +272,8 @@ Registrar o estado real da refatoracao documental apos os blocos executados, com
 
 - A raiz do repositorio voltou a conter apenas `README.md`, `AGENTS.md` e `CLAUDE.md`.
 - A raiz de `docs/` ficou restrita a `docs/INDEX.md` e `docs/documentation-refactor-rollout.md`.
-- Diretorios antigos `docs/trading/` e `docs/ops/` foram eliminados apos a realocacao do conteudo.
-- O SSOT vigente agora e encontrado pela combinacao de trilha tematica e precedencia editorial, sem depender de convencoes antigas de nome de arquivo.
+- O namespace `docs/trading/` foi reintroduzido de forma curada, agora com separacao interna entre arquitetura, produto, operacao e runbooks.
+- O SSOT vigente agora combina precedencia editorial global com navegacao dedicada por dominio quando o assunto e Trading.
 
 ## Validacao documental executada
 
@@ -244,6 +281,7 @@ Registrar o estado real da refatoracao documental apos os blocos executados, com
 - Conferencia do inventario de markdowns com `git ls-files '*.md'`
 - Varredura de referencias para caminhos antigos com `rg -n`
 - Revisao manual de `README.md`, `docs/INDEX.md`, `docs/archive/INDEX.md` e links relativos impactados por movimentacao
+- Revisao manual de `docs/trading/INDEX.md`, `docs/trading/runbooks/INDEX.md` e dos SSOTs reescritos do dominio Trading
 - Validacao automatizada de links Markdown locais com `node`
 - Validacao automatizada de headings em `docs/**/*.md` com `node`
 - Revisao manual de eliminacao de duplicacoes entre `training`, `learning`, `onboarding` e `status`
@@ -254,7 +292,7 @@ Registrar o estado real da refatoracao documental apos os blocos executados, com
 | Bloco | Escopo sugerido | Status inicial |
 | --- | --- | --- |
 | `4` | consolidar sobreposicoes grandes de treinamento, aprendizado e status sem perder SSOT | concluido |
-| `5` | revisar redundancias editoriais residuais e normalizar cabecalhos/metadata | nao iniciado |
+| `5` | refatorar o dominio Trading com namespace dedicado e precedencia explicita | concluido |
 | `6` | varredura final de links, headings e referencias historicas de baixa prioridade | nao iniciado |
 
 ## Handoff
@@ -262,6 +300,7 @@ Registrar o estado real da refatoracao documental apos os blocos executados, com
 - Usar `docs/INDEX.md` como portal principal para qualquer bloco seguinte.
 - Tratar `docs/status/` como contexto ativo e `docs/archive/` como historico sem precedencia.
 - Priorizar no proximo bloco a normalizacao editorial residual e limpeza de metadados, sem reabrir a reorganizacao de training ja concluida.
+- Tratar `docs/trading/INDEX.md` como porta de entrada obrigatoria para qualquer manutencao documental do dominio Trading.
 - Manter `docs/operations/deployment.md` como porta de entrada e `docs/operations/release.md` e `docs/operations/deploy.md` como referencias separadas.
 - Preservar `docs/archive/ops/rag-doc-processing-2026-03-01.md` como historico; nao reabrir essa nota temporal como SSOT.
 - Evitar reabrir discussao taxonomica: a movimentacao fisica desta rodada e a referencia vigente.

@@ -16,7 +16,7 @@ Centralizar os runbooks ativos da trilha operacional da Alice e manter esses pro
 | Validacao de burn rate e SLO | [slo-burn-rate-validation.md](slo-burn-rate-validation.md) |
 | Validacao operacional de GPU training | [training-gpu-validation.md](training-gpu-validation.md) |
 | Contaminacao de escopo em training/LoRA | [training-scope-contamination.md](training-scope-contamination.md) |
-| Trading | [trading/](trading/) |
+| Trading | [../../trading/runbooks/INDEX.md](../../trading/runbooks/INDEX.md) |
 
 ## Regras editoriais
 

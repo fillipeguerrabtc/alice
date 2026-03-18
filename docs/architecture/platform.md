@@ -13,7 +13,7 @@ Descrever a arquitetura estrutural vigente da plataforma Alice sem misturar proc
 - Este documento cobre a topologia da plataforma, seus boundaries e os fluxos principais entre stacks, servicos e dependencias.
 - Procedimentos de `CI`, `Release` e `Deploy` ficam em [docs/engineering/pipeline-overview.md](../engineering/pipeline-overview.md), [docs/operations/release.md](../operations/release.md) e [docs/operations/deploy.md](../operations/deploy.md).
 - Observabilidade, permissoes, secrets e runbooks ficam na trilha `docs/operations/`.
-- Dominios especializados ficam nos seus SSOTs proprios, como [docs/architecture/gpu-manager.md](gpu-manager.md) e [docs/architecture/trading/domain-map.md](trading/domain-map.md).
+- Dominios especializados ficam nos seus SSOTs proprios, como [docs/architecture/gpu-manager.md](gpu-manager.md) e [docs/trading/INDEX.md](../trading/INDEX.md).
 
 ## Principios arquiteturais
 
@@ -124,7 +124,7 @@ Descrever a arquitetura estrutural vigente da plataforma Alice sem misturar proc
 ## SSOTs relacionados
 
 - [docs/architecture/gpu-manager.md](gpu-manager.md)
-- [docs/architecture/trading/domain-map.md](trading/domain-map.md)
+- [docs/trading/INDEX.md](../trading/INDEX.md)
 - [docs/operations/deployment.md](../operations/deployment.md)
 - [docs/operations/observability.md](../operations/observability.md)
 - [docs/engineering/pipeline-overview.md](../engineering/pipeline-overview.md)
