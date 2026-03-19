@@ -330,6 +330,7 @@
     "title": "Chat",
     "newConversation": "Nova Conversa",
     "welcome": "Bem-vindo a Alice",
+    "emptyStatePrompt": "No que voce esta pensando hoje?",
     "welcomeMessage": "Sou sua assistente de IA enterprise. Como posso ajudar?",
     "filters": {
       "activeLabel": "Filtro ativo",

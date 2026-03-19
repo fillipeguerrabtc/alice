@@ -48,26 +48,26 @@ function getSelectedOptionLabel(
   selectedValue: string | null,
 ) {
   const resolvedValue = selectedValue ?? CHAT_AUTOMATIC_OPTION_VALUE;
-  return options.find((option) => option.value === resolvedValue)?.label ?? '';
+  return options.find((option) => option.value === resolvedValue)?.label ?? options[0]?.label ?? '';
 }
 
-function getManualSummaryItems(options: {
+function getTopSummaryItems(options: {
   areaLabel: string;
   agentLabel: string;
-  selectedAgentId: string | null;
-  selectedAreaNamespaceId: string | null;
+  t: (key: string) => string;
 }) {
-  const items: string[] = [];
-
-  if (options.selectedAreaNamespaceId) {
-    items.push(options.areaLabel);
-  }
-
-  if (options.selectedAgentId) {
-    items.push(options.agentLabel);
-  }
-
-  return items;
+  return [
+    {
+      key: 'area',
+      label: options.t('chat.selectionControls.area'),
+      value: options.areaLabel,
+    },
+    {
+      key: 'agent',
+      label: options.t('chat.selectionControls.agent'),
+      value: options.agentLabel,
+    },
+  ].filter((item) => item.value.trim().length > 0);
 }
 
 export function ChatIdentityMenu({
@@ -88,13 +88,12 @@ export function ChatIdentityMenu({
   const currentAgentLabel = getSelectedOptionLabel(agentOptions, selectedAgentId);
   const currentReasoningLabel =
     reasoningOptions.find((option) => option.value === reasoningMode)?.label ?? t('chat.reasoning.auto');
-  const manualSummaryItems = getManualSummaryItems({
+  const topSummaryItems = getTopSummaryItems({
     areaLabel: currentAreaLabel,
     agentLabel: currentAgentLabel,
-    selectedAgentId,
-    selectedAreaNamespaceId,
+    t,
   });
-  const hasManualConversationConfig = manualSummaryItems.length > 0;
+  const hasManualConversationConfig = Boolean(selectedAreaNamespaceId || selectedAgentId);
 
   return (
     <div className="flex min-w-0 items-center gap-2">
@@ -138,16 +137,12 @@ export function ChatIdentityMenu({
           <DropdownMenuLabel className="px-2 pb-1 pt-1 text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground/80">
             {t('chat.selectionControls.reasoning')}
           </DropdownMenuLabel>
-          <DropdownMenuRadioGroup value={reasoningMode}>
+          <DropdownMenuRadioGroup value={reasoningMode} onValueChange={(value) => onReasoningModeChange(value as ReasoningMode)}>
             {reasoningOptions.map((option) => (
               <DropdownMenuRadioItem
                 key={option.value}
                 value={option.value}
                 disabled={!canOverrideReasoningMode && option.value !== 'auto'}
-                onSelect={(event) => {
-                  event.preventDefault();
-                  onReasoningModeChange(option.value);
-                }}
                 className="rounded-xl px-8 py-2.5"
                 data-testid={`chat-identity-reasoning-${option.value}`}
               >
@@ -169,15 +164,14 @@ export function ChatIdentityMenu({
               <DropdownMenuLabel className="px-2 pb-1 pt-1 text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground/80">
                 {t('chat.selectionControls.area')}
               </DropdownMenuLabel>
-              <DropdownMenuRadioGroup value={selectedAreaNamespaceId ?? CHAT_AUTOMATIC_OPTION_VALUE}>
+              <DropdownMenuRadioGroup
+                value={selectedAreaNamespaceId ?? CHAT_AUTOMATIC_OPTION_VALUE}
+                onValueChange={(value) => onAreaChange(value === CHAT_AUTOMATIC_OPTION_VALUE ? null : value)}
+              >
                 {areaOptions.map((option) => (
                   <DropdownMenuRadioItem
                     key={option.value}
                     value={option.value}
-                    onSelect={(event) => {
-                      event.preventDefault();
-                      onAreaChange(option.value === CHAT_AUTOMATIC_OPTION_VALUE ? null : option.value);
-                    }}
                     className="rounded-xl px-8 py-2.5"
                     data-testid={`chat-identity-area-${option.value}`}
                   >
@@ -199,15 +193,14 @@ export function ChatIdentityMenu({
               <DropdownMenuLabel className="px-2 pb-1 pt-1 text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground/80">
                 {t('chat.selectionControls.agent')}
               </DropdownMenuLabel>
-              <DropdownMenuRadioGroup value={selectedAgentId ?? CHAT_AUTOMATIC_OPTION_VALUE}>
+              <DropdownMenuRadioGroup
+                value={selectedAgentId ?? CHAT_AUTOMATIC_OPTION_VALUE}
+                onValueChange={(value) => onAgentChange(value === CHAT_AUTOMATIC_OPTION_VALUE ? null : value)}
+              >
                 {agentOptions.map((option) => (
                   <DropdownMenuRadioItem
                     key={option.value}
                     value={option.value}
-                    onSelect={(event) => {
-                      event.preventDefault();
-                      onAgentChange(option.value === CHAT_AUTOMATIC_OPTION_VALUE ? null : option.value);
-                    }}
                     className="rounded-xl px-8 py-2.5"
                     data-testid={`chat-identity-agent-${option.value}`}
                   >
@@ -227,18 +220,19 @@ export function ChatIdentityMenu({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      {manualSummaryItems.length > 0 && (
+      {topSummaryItems.length > 0 && (
         <div
-          className="hidden min-w-0 items-center gap-1.5 md:flex"
-          data-testid="chat-manual-summary"
+          className="hidden min-w-0 items-center gap-1.5 lg:flex"
+          data-testid="chat-current-routing-summary"
           aria-label={t('chat.identityMenu.manualConfigSummary')}
         >
-          {manualSummaryItems.map((item) => (
+          {topSummaryItems.map((item) => (
             <span
-              key={item}
-              className="max-w-[10rem] truncate rounded-full border border-border/60 bg-background/70 px-2.5 py-1 text-[11px] font-medium text-muted-foreground"
+              key={item.key}
+              className="inline-flex max-w-[13rem] items-center gap-1 truncate rounded-full border border-border/60 bg-background/70 px-2.5 py-1 text-[11px] font-medium text-muted-foreground"
             >
-              {item}
+              <span className="shrink-0 text-muted-foreground/70">{item.label}:</span>
+              <span className="truncate text-foreground">{item.value}</span>
             </span>
           ))}
         </div>

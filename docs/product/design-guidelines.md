@@ -1,7 +1,7 @@
 # Diretrizes de Design da Alice
 
 **Author:** Fillipe Guerra
-**Data:** 18 de Marco de 2026
+**Data:** 19 de Marco de 2026
 **Atualizado:** 19 de Marco de 2026
 **Status:** ativo
 **Tipo:** ssot
@@ -101,10 +101,14 @@ Usar escala consistente: `2, 4, 8, 12, 16, 24, 32` (px-2, h-8, m-12, etc.)
 - `Área` representa o namespace ativo da conversa e pode voltar para modo automático sem esconder o contexto da conversa
 - `Agente` representa o especialista dentro da área selecionada; quando estiver em automático, o roteamento continua livre dentro do escopo permitido
 - `Raciocínio` usa apenas os labels `Automático`, `Rápido` e `Mais Profundo`
-- Quando `Área` ou `Agente` estiverem em modo manual, a superficie principal deve exibir apenas um resumo discreto do override ativo
+- O topo do chat deve exibir o estado atual de `Área` e `Agente` em formato compacto, inclusive quando ambos estiverem em modo automático
+- O composer deve exibir o `Raciocínio` atual como estado visível da conversa, em linguagem compacta no estilo ChatGPT
+- Quando `Área` ou `Agente` estiverem em modo manual, a superficie principal deve reforcar esse override sem voltar a usar formulario persistente
 - Workspace selector nao faz parte da experiencia principal do chat
 - Operações, governança e diagnóstico devem viver em superficies dedicadas de navegação, nunca como trilhas principais dentro do topo do chat
 - O botao `+` do composer deve ficar reservado para anexos e futuras acoes do input; configuracao da conversa nao deve competir com esse menu
+- A tela inicial vazia do chat deve ser leve, limpa e sem ilustrações pesadas concorrendo com a entrada da conversa
+- Streaming, thinking e respostas parciais devem respeitar a largura util do chat, sem overflow horizontal, sem scrollbar oscilando e sem exceder o limite visual definido para o painel de thinking
 - Preview de mídia inline (imagens/vídeos reproduzíveis)
 - Área de upload: borda tracejada, drag-drop
 - Gravação de voz: animação de forma de onda

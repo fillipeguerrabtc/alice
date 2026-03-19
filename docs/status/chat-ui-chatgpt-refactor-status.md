@@ -18,6 +18,7 @@ Refatorar a UI/UX do chat da Alice para um padrao premium no estilo ChatGPT, rem
 - Manter o botao `+` do composer exclusivo para anexos.
 - Exibir resumo discreto de estado manual somente quando houver override de `Area` e/ou `Agente`.
 - Atualizar a documentacao canonica impactada e validar o escopo alterado do frontend.
+- Corrigir regressões funcionais e visuais introduzidas na primeira entrega do padrao ChatGPT-like.
 
 ## Decisoes congeladas
 
@@ -28,6 +29,7 @@ Refatorar a UI/UX do chat da Alice para um padrao premium no estilo ChatGPT, rem
 5. Quando tudo estiver em automatico, a interface deve ficar clean e sem ruido.
 6. Quando `Area` ou `Agente` estiverem em modo manual, mostrar apenas resumo discreto de estado, sem reintroduzir formulario persistente na superficie.
 7. A experiencia deve ficar o mais proxima possivel do ChatGPT em fluxo, densidade e percepcao premium, preservando a logica real da Alice.
+8. O estado atual de `Raciocinio`, `Area` e `Agente` precisa ficar visivel na superficie principal sem reintroduzir controles altos e persistentes.
 
 ## Blocos estrategicos
 
@@ -130,6 +132,46 @@ Refatorar a UI/UX do chat da Alice para um padrao premium no estilo ChatGPT, rem
 - Em andamento.
 - Revisao final de consistencia e consolidacao de entrega em curso.
 
+## Rodada de remediacao em 19 de Marco de 2026
+
+### Diagnostico adicional confirmado
+
+- `Area` e `Agente` falhavam porque o submenu lateral do dropdown era renderizado sem `Portal`, enquanto o menu pai usava `overflow-x-hidden`, cortando a abertura lateral.
+- O estado atual de `Raciocinio` nao ficava visivel fora do menu `Alice`.
+- O topo nao exibia `Area` e `Agente` atuais quando estavam em automatico, reduzindo previsibilidade operacional.
+- A tela inicial permanecia pesada, com robozinho e card hero, contrariando o objetivo de leveza do padrao ChatGPT.
+- Havia uma race condition no bootstrap da primeira mensagem em conversa nova: o frontend navegava para a conversa antes da persistencia do stream e a sincronizacao podia sobrescrever o estado otimista com um payload ainda vazio.
+- O shell autenticado mantinha scroll global concorrendo com o scroll interno do chat.
+- O painel de thinking usava overflow horizontal por linha, gerando corte visual e tremor na experiencia de streaming.
+
+### Implementacao aplicada nesta rodada
+
+- Dropdown compartilhado refatorado para suportar `SubContent` em `Portal` e evitar clipping lateral.
+- `ChatIdentityMenu` atualizado para:
+  - usar `RadioGroup` controlado por `onValueChange`;
+  - expor `Area` e `Agente` atuais no topo do chat em formato compacto;
+  - manter a configuracao centralizada em `Alice`.
+- Composer atualizado para exibir o `Raciocinio` atual de forma persistente e compacta, no estilo ChatGPT.
+- `WelcomeScreen` simplificada para uma tela inicial leve, sem robozinho e sem card hero pesado.
+- `MessageBubble` endurecida contra overflow horizontal no painel de thinking e no corpo da resposta.
+- Shell autenticado do app ajustado para evitar scroll externo concorrente na rota do chat.
+- Protecao de sincronizacao otimista adicionada para impedir que a query de mensagens apague a primeira interacao antes da persistencia real.
+- Teste unitario adicionado cobrindo a regra de deferimento da sincronizacao otimista.
+
+### Validacoes concluídas nesta rodada
+
+- `pnpm --filter @alice/frontend-service run typecheck`
+- `pnpm exec vitest run --passWithNoTests tests/unit/chat-selection.test.ts tests/unit/chat-conversation-selection-sync.test.ts tests/unit/chat-container-bindings.test.ts apps/frontend-service/src/pages/Chat/useChatWorkspacePresentation.test.ts apps/frontend-service/src/pages/Chat/useChatMessageSyncEffects.test.ts`
+- `pnpm --filter @alice/frontend-service run lint`
+- `pnpm --filter @alice/frontend-service run build`
+- Todas as validacoes desta rodada encerraram sem erros.
+
+### Investigacao remota de producao
+
+- O host `178.63.41.108` respondeu a `ping` e o dominio HTTPS respondeu normalmente durante a investigacao.
+- A porta `22/tcp` permaneceu com timeout a partir deste ambiente, impedindo coleta de logs por SSH nesta sessao.
+- Nenhuma alteracao foi feita no servidor de producao.
+
 ## Arquivos impactados
 
 - `docs/status/chat-ui-chatgpt-refactor-status.md`
@@ -137,11 +179,20 @@ Refatorar a UI/UX do chat da Alice para um padrao premium no estilo ChatGPT, rem
 - `apps/frontend-service/src/pages/Chat/components/ChatHeaderSection.tsx`
 - `apps/frontend-service/src/pages/Chat/components/ChatPageLayout.tsx`
 - `apps/frontend-service/src/pages/Chat/components/ChatInput.tsx`
+- `apps/frontend-service/src/pages/Chat/components/WelcomeScreen.tsx`
+- `apps/frontend-service/src/pages/Chat/components/MessageBubble.tsx`
 - `apps/frontend-service/src/pages/Chat/components/ChatGovernanceControls.tsx`
 - `apps/frontend-service/src/pages/Chat/components/index.ts`
 - `apps/frontend-service/src/pages/Chat/chat-page-layout-props-builder.ts`
+- `apps/frontend-service/src/pages/Chat/chat-stream-mutation.ts`
+- `apps/frontend-service/src/pages/Chat/useChatMessageSyncEffects.ts`
+- `apps/frontend-service/src/pages/Chat/useChatMessageSyncEffects.test.ts`
+- `apps/frontend-service/src/pages/Chat/useChatLocalState.ts`
+- `apps/frontend-service/src/pages/Chat/useChatPageLifecycle.ts`
 - `apps/frontend-service/src/pages/Chat/useChatSectionProps.ts`
 - `apps/frontend-service/src/pages/Chat/useChatPageLayoutController.ts`
+- `apps/frontend-service/src/components/ui/dropdown-menu.tsx`
+- `apps/frontend-service/src/App.tsx`
 - `apps/frontend-service/src/locales/pt-BR.json`
 - `apps/frontend-service/src/locales/en.json`
 - `docs/product/design-guidelines.md`
@@ -155,12 +206,12 @@ Refatorar a UI/UX do chat da Alice para um padrao premium no estilo ChatGPT, rem
 
 ## Riscos conhecidos
 
-- Esconder configuracao demais pode reduzir previsibilidade operacional caso o estado manual fique invisivel.
-- Refatoracao do topo precisa preservar a integridade da sincronizacao entre `Area`, `Agente` e `Raciocinio`.
-- A densidade visual precisa melhorar sem degradar acessibilidade, foco e uso em mobile.
+- A investigacao remota de producao permanece parcialmente bloqueada enquanto a porta `22/tcp` nao estiver acessivel a partir deste ambiente.
+- O ajuste de scroll do chat foi feito no shell autenticado somente para a rota `/chat`; qualquer regressao em paginas full-height adjacentes precisa ser observada na validacao final.
 
 ## Proximos passos
 
-1. Revisar o diff final e a consistencia dos arquivos alterados.
-2. Criar o commit consolidado em English.
-3. Encerrar sem push, conforme a governanca vigente.
+1. Executar testes, lint e build no escopo alterado do frontend.
+2. Revisar consistencia visual e funcional do chat apos a remediacao.
+3. Criar o commit consolidado em English.
+4. Encerrar sem push, conforme a governanca vigente.

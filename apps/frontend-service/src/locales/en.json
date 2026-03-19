@@ -305,6 +305,7 @@
     "title": "Chat",
     "newConversation": "New Conversation",
     "welcome": "Welcome to Alice",
+    "emptyStatePrompt": "What are you thinking about today?",
     "welcomeMessage": "I am your enterprise AI assistant. How can I help you?",
     "filters": {
       "activeLabel": "Active filter",

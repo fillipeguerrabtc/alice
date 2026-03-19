@@ -68,6 +68,7 @@ export function useChatPageLayoutController() {
     mediaRecorderRef,
     messages,
     mobileDrawerOpen,
+    optimisticConversationSyncRef,
     pendingMedia,
     pendingMediaRef,
     pendingSendRef,
@@ -144,6 +145,7 @@ export function useChatPageLayoutController() {
     mediaRecorderRef,
     pendingMedia,
     pendingMediaRef,
+    optimisticConversationSyncRef,
     recordingCancelledRef,
     recordingStartingRef,
     recordingStreamRef,
@@ -345,9 +347,11 @@ export function useChatPageLayoutController() {
     showStreamDiagnostics,
     stopRequestedRef,
     streamControllerRef,
+    optimisticConversationSyncRef,
     t,
   });
   useChatMessageSyncEffects({
+    conversationId,
     conversationMessages,
     conversationMessagesUpdatedAt,
     fallbackMessageAgent,
@@ -355,6 +359,7 @@ export function useChatPageLayoutController() {
     isFetchingConversationMessages,
     isStreaming,
     lastMessagesSyncRef,
+    optimisticConversationSyncRef,
     pendingSendRef,
     sendMessage,
     setMessages,
@@ -531,9 +536,12 @@ export function useChatPageLayoutController() {
     trainingDialogMode,
     trainingNamespaceId,
   });
+  const currentReasoningLabel = reasoningOptions.find((option) => option.value === normalizedSelectedReasoningMode)?.label
+    ?? t('chat.reasoning.auto');
   const chatPageLayoutProps = buildChatPageLayoutProps({
     state: {
       acceptedTypes: CHAT_ACCEPTED_MEDIA_TYPES,
+      currentReasoningLabel,
       focusNonce,
       input,
       isComposerDisabled: showLoginBanner,

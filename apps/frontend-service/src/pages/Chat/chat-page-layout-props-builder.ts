@@ -14,6 +14,7 @@ type ChatPageLayoutSections = Pick<
 type ChatPageLayoutState = Pick<
   ChatPageLayoutProps,
   | 'acceptedTypes'
+  | 'currentReasoningLabel'
   | 'focusNonce'
   | 'input'
   | 'isComposerDisabled'

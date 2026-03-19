@@ -10,6 +10,7 @@ import { frontendLogger } from '@/lib/logger';
 import type { AgentEvent, MediaAttachment, Message, RuntimeNotice, RuntimeNoticeCode } from './components/types';
 import type { RoutingDebugData, RoutingMode } from './useChatRoutingState';
 import type { ReasoningMode } from '@/lib/reasoning-mode';
+import type { OptimisticConversationSyncState } from './useChatMessageSyncEffects';
 
 type NotifyFn = (params: {
   title: string;
@@ -78,6 +79,7 @@ export type ChatStreamMutationOptions = {
   showStreamDiagnostics: boolean;
   stopRequestedRef: MutableRefObject<boolean>;
   streamControllerRef: MutableRefObject<AbortController | null>;
+  optimisticConversationSyncRef: MutableRefObject<OptimisticConversationSyncState | null>;
   t: (key: string) => string;
 };
 
@@ -136,6 +138,7 @@ export function createChatStreamMutationConfig(options: ChatStreamMutationOption
       showStreamDiagnostics,
       stopRequestedRef,
       streamControllerRef,
+      optimisticConversationSyncRef,
       t,
     } = options;
     const selectedPayload = buildCanonicalChatSelectionPayload({
@@ -216,6 +219,14 @@ export function createChatStreamMutationConfig(options: ChatStreamMutationOption
       const created = await createConversation(Object.keys(contextPayload).length > 0 ? contextPayload : undefined);
       const nextConversationId = created.conversation.id;
       activeConversationId = nextConversationId;
+      optimisticConversationSyncRef.current = {
+        conversationId: nextConversationId,
+        minimumMessageCount: 2,
+      };
+      queryClient.setQueryData<{ messages: Message[] }>(
+        ['/api/chat/conversations', nextConversationId, 'messages'],
+        { messages: [userMessage, assistantMessage] },
+      );
       navigate(`/chat/${nextConversationId}${routeQuerySuffix}`);
       setRoutingModeByConversation((prev) => {
         const { [currentRoutingKey]: _removed, ...rest } = prev;
@@ -728,6 +739,7 @@ export function createChatStreamMutationConfig(options: ChatStreamMutationOption
     queryClient.invalidateQueries({ queryKey: ['/api/chat/conversations'] });
     if (activeConversationId) {
       queryClient.invalidateQueries({ queryKey: ['/api/chat/conversations', activeConversationId, 'detail'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/chat/conversations', activeConversationId, 'messages'] });
     }
     return fullContent;
   };

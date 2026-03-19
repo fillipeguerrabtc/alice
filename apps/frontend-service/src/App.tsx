@@ -79,7 +79,13 @@ function PageLoader() {
   );
 }
 
-function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
+function AuthenticatedLayout({
+  children,
+  isChatRoute,
+}: {
+  children: React.ReactNode;
+  isChatRoute: boolean;
+}) {
   const sidebarStyle = {
     '--sidebar-width': '16rem',
     '--sidebar-width-icon': '3rem',
@@ -97,7 +103,7 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
               <ThemeToggle />
             </div>
           </header>
-          <main className="flex-1 min-h-0 overflow-auto">
+          <main className={`flex-1 min-h-0 ${isChatRoute ? 'overflow-hidden' : 'overflow-auto'}`}>
             {/* Garante área definida para páginas full-height como Chat sem afetar o shell global. */}
             <div className="h-full min-h-0 w-full">
               {children}
@@ -239,7 +245,7 @@ function AppContent() {
   }
 
   return (
-    <AuthenticatedLayout>
+    <AuthenticatedLayout isChatRoute={location.startsWith('/chat')}>
       <Suspense fallback={<PageLoader />}>
         <Router />
       </Suspense>

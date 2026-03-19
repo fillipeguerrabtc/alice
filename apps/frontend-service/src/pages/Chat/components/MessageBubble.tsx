@@ -377,7 +377,7 @@ export function MessageBubble({
       animate="visible"
       exit="exit"
       className={cn(
-        'flex gap-3 group',
+        'group flex min-w-0 gap-3',
         isUser ? 'justify-end' : 'justify-start'
       )}
     >
@@ -395,7 +395,7 @@ export function MessageBubble({
         </div>
       )}
       {!isUser && (
-        <div className="flex flex-col items-center gap-1">
+        <div className="flex shrink-0 flex-col items-center gap-1">
           <Avatar className="h-12 w-12 shadow-sm">
             <AvatarImage src={assistantAvatarSrc} alt={assistantDisplayName} />
             <AvatarFallback>{assistantDisplayName.slice(0, 2).toUpperCase()}</AvatarFallback>
@@ -405,12 +405,12 @@ export function MessageBubble({
       )}
       
       <div className={cn(
-        'flex flex-col max-w-[80%]',
+        'flex min-w-0 flex-col max-w-[80%]',
         isUser ? 'items-end' : 'items-start'
       )}>
         <Card
           className={cn(
-            'p-3 shadow-sm transition-all',
+            'max-w-full overflow-hidden p-3 shadow-sm transition-all',
             isMediaOnly
               ? 'bg-transparent p-0 shadow-none border-0'
               : isUser
@@ -432,7 +432,7 @@ export function MessageBubble({
           )}
 
           {shouldShowThinkingBox && (
-            <div className="mb-2 rounded-md border border-border/70 bg-background/50 p-2">
+            <div className="mb-2 overflow-hidden rounded-md border border-border/70 bg-background/50 p-2">
               <p className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">
                 {t('chat.streaming.thinking')}
               </p>
@@ -440,7 +440,7 @@ export function MessageBubble({
                 {thinkingDisplayLines.map((line, index) => (
                   <p
                     key={`${message.id}-thinking-${index}`}
-                    className="h-4 overflow-x-auto overflow-y-hidden whitespace-pre pr-2 [scrollbar-width:thin]"
+                    className="h-4 truncate pr-2"
                   >
                     {line || ' '}
                   </p>
@@ -449,7 +449,7 @@ export function MessageBubble({
             </div>
           )}
 
-          <div className="whitespace-pre-wrap text-sm leading-relaxed min-h-[1.25rem]">
+          <div className="min-h-[1.25rem] min-w-0 whitespace-pre-wrap break-words text-sm leading-relaxed">
             {sanitizedDisplayContent}
             {shouldShowStreamingPlaceholder && <span className="sr-only">{t('chat.thinking')}</span>}
             {shouldShowTypingCursor && (

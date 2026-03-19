@@ -10,6 +10,7 @@ type UseChatPageLifecycleOptions = {
   mediaRecorderRef: MutableRefObject<MediaRecorder | null>;
   pendingMedia: MediaAttachment[];
   pendingMediaRef: MutableRefObject<MediaAttachment[]>;
+  optimisticConversationSyncRef: MutableRefObject<{ conversationId: string; minimumMessageCount: number } | null>;
   recordingCancelledRef: MutableRefObject<boolean>;
   recordingStartingRef: MutableRefObject<boolean>;
   recordingStreamRef: MutableRefObject<MediaStream | null>;
@@ -28,6 +29,7 @@ export function useChatPageLifecycle(options: UseChatPageLifecycleOptions) {
     mediaRecorderRef,
     pendingMedia,
     pendingMediaRef,
+    optimisticConversationSyncRef,
     recordingCancelledRef,
     recordingStartingRef,
     recordingStreamRef,
@@ -52,6 +54,20 @@ export function useChatPageLifecycle(options: UseChatPageLifecycleOptions) {
   useEffect(() => {
     lastMessagesSyncRef.current = 0;
   }, [conversationId, lastMessagesSyncRef]);
+
+  useEffect(() => {
+    if (!conversationId) {
+      optimisticConversationSyncRef.current = null;
+      return;
+    }
+
+    if (
+      optimisticConversationSyncRef.current
+      && optimisticConversationSyncRef.current.conversationId !== conversationId
+    ) {
+      optimisticConversationSyncRef.current = null;
+    }
+  }, [conversationId, optimisticConversationSyncRef]);
 
   const setRecordingStartingState = useCallback((value: boolean) => {
     recordingStartingRef.current = value;

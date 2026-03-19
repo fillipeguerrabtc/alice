@@ -17,6 +17,7 @@ type ChatPageLayoutProps = {
   chatDialogsSectionProps: ChatDialogsSectionProps;
   chatIdentityMenuProps: ChatIdentityMenuProps;
   conversationsListProps: ConversationsListProps;
+  currentReasoningLabel: string;
   focusNonce: number;
   input: string;
   isComposerDisabled: boolean;
@@ -66,6 +67,7 @@ export function ChatPageLayout({
   chatDialogsSectionProps,
   chatIdentityMenuProps,
   conversationsListProps,
+  currentReasoningLabel,
   focusNonce,
   input,
   isComposerDisabled,
@@ -155,6 +157,7 @@ export function ChatPageLayout({
 
         <ChatComposerSection
           acceptedTypes={acceptedTypes}
+          currentReasoningLabel={currentReasoningLabel}
           focusNonce={focusNonce}
           isDisabled={isComposerDisabled}
           isMobile={isMobile}

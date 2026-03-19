@@ -8,7 +8,7 @@
 
 import { useRef, useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Send, Loader2, Mic, Square, Camera, Plus, FileText, Image as ImageIcon } from 'lucide-react';
+import { Send, Loader2, Mic, Square, Camera, Plus, FileText, Image as ImageIcon, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -17,6 +17,7 @@ import { MediaAttachment } from './types';
 import { MediaPreview } from './MediaPreview';
 
 interface ChatInputProps {
+  currentReasoningLabel: string;
   value: string;
   onChange: (value: string) => void;
   onSend: () => void;
@@ -37,6 +38,7 @@ interface ChatInputProps {
 }
 
 export function ChatInput({
+  currentReasoningLabel,
   value,
   onChange,
   onSend,
@@ -147,7 +149,7 @@ export function ChatInput({
       <div className="flex gap-2 max-w-3xl mx-auto">
         <div
           ref={containerRef}
-          className="flex flex-1 items-end gap-1.5 rounded-[1.6rem] border border-border/60 bg-background/90 p-1.5 shadow-[0_20px_48px_-32px_rgba(15,23,42,0.55)] backdrop-blur-xl"
+          className="flex flex-1 flex-col gap-2 rounded-[1.6rem] border border-border/60 bg-background/90 p-2 shadow-[0_20px_48px_-32px_rgba(15,23,42,0.55)] backdrop-blur-xl"
         >
           <input
             ref={fileInputRef}
@@ -177,61 +179,6 @@ export function ChatInput({
             data-testid="input-camera-upload"
           />
 
-          <DropdownMenu>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-9 w-9 shrink-0 rounded-full text-muted-foreground touch-manipulation"
-                    disabled={isRecording || isDisabled}
-                    data-testid="button-attach-menu"
-                  >
-                    <Plus className="h-5 w-5" />
-                  </Button>
-                </DropdownMenuTrigger>
-              </TooltipTrigger>
-              <TooltipContent>{t('chat.attachMenu')}</TooltipContent>
-            </Tooltip>
-            <DropdownMenuContent align="start" className="min-w-[220px] rounded-2xl border-border/60 bg-background/95 p-2 shadow-[0_24px_80px_-32px_rgba(15,23,42,0.55)] backdrop-blur-xl">
-              <DropdownMenuItem
-                onSelect={(event) => {
-                  event.preventDefault();
-                  if (isDisabled) return;
-                  cameraInputRef.current?.click();
-                }}
-                disabled={isDisabled}
-              >
-                <Camera className="mr-2 h-4 w-4" />
-                {t('chat.openCamera')}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={(event) => {
-                  event.preventDefault();
-                  if (isDisabled) return;
-                  galleryInputRef.current?.click();
-                }}
-                disabled={isDisabled}
-              >
-                <ImageIcon className="mr-2 h-4 w-4" />
-                {t('chat.attachGallery')}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={(event) => {
-                  event.preventDefault();
-                  if (isDisabled) return;
-                  fileInputRef.current?.click();
-                }}
-                disabled={isDisabled}
-              >
-                <FileText className="mr-2 h-4 w-4" />
-                {t('chat.attachFile')}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
           <textarea
             ref={textareaRef}
             value={value}
@@ -249,7 +196,7 @@ export function ChatInput({
               setUserBlurred(true);
             }}
             placeholder={pendingMedia.length > 0 ? t('chat.placeholderWithMedia') : t('chat.placeholder')}
-            className="flex-1 min-h-[40px] max-h-[120px] resize-none bg-transparent px-1 text-sm leading-relaxed text-foreground focus-visible:outline-none md:max-h-[200px]"
+            className="min-h-[52px] max-h-[120px] w-full resize-none bg-transparent px-2 py-1 text-sm leading-relaxed text-foreground focus-visible:outline-none md:max-h-[200px]"
             disabled={isRecording || isDisabled}
             data-testid="input-chat-message"
             autoComplete="off"
@@ -257,86 +204,153 @@ export function ChatInput({
             autoCapitalize="sentences"
           />
 
-          {isStreaming && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="destructive"
-                  className="h-9 w-9 shrink-0 rounded-full touch-manipulation"
-                  onClick={onStopStreaming}
-                  data-testid="button-stop-streaming"
+          <div className="flex min-w-0 items-center gap-1.5">
+            <DropdownMenu>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9 shrink-0 rounded-full text-muted-foreground touch-manipulation"
+                      disabled={isRecording || isDisabled}
+                      data-testid="button-attach-menu"
+                    >
+                      <Plus className="h-5 w-5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                </TooltipTrigger>
+                <TooltipContent>{t('chat.attachMenu')}</TooltipContent>
+              </Tooltip>
+              <DropdownMenuContent align="start" className="min-w-[220px] rounded-2xl border-border/60 bg-background/95 p-2 shadow-[0_24px_80px_-32px_rgba(15,23,42,0.55)] backdrop-blur-xl">
+                <DropdownMenuItem
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    if (isDisabled) return;
+                    cameraInputRef.current?.click();
+                  }}
+                  disabled={isDisabled}
                 >
-                  <Square className="h-5 w-5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{t('chat.stopGenerating')}</TooltipContent>
-            </Tooltip>
-          )}
-          {!isRecording ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-9 w-9 shrink-0 rounded-full text-muted-foreground touch-manipulation"
-                  disabled={isRecordingDisabled || isDisabled}
-                  onClick={onStartRecording}
-                  data-testid="button-record-audio"
+                  <Camera className="mr-2 h-4 w-4" />
+                  {t('chat.openCamera')}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    if (isDisabled) return;
+                    galleryInputRef.current?.click();
+                  }}
+                  disabled={isDisabled}
                 >
-                  <Mic className="h-5 w-5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{t('chat.recordAudio')}</TooltipContent>
-            </Tooltip>
-          ) : (
-            <>
+                  <ImageIcon className="mr-2 h-4 w-4" />
+                  {t('chat.attachGallery')}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    if (isDisabled) return;
+                    fileInputRef.current?.click();
+                  }}
+                  disabled={isDisabled}
+                >
+                  <FileText className="mr-2 h-4 w-4" />
+                  {t('chat.attachFile')}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <div className="min-w-0 flex-1">
+              <span
+                className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border/60 bg-background/80 px-3 py-1.5 text-xs font-medium text-foreground"
+                data-testid="chat-current-reasoning"
+              >
+                <Sparkles className="h-3.5 w-3.5 shrink-0 text-primary/80" />
+                <span className="truncate">{currentReasoningLabel}</span>
+              </span>
+            </div>
+
+            {isStreaming && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
                     type="button"
-                    variant="destructive"
                     size="icon"
-                    className="h-9 w-9 shrink-0 rounded-full touch-manipulation"
-                    disabled={isStreaming || isDisabled}
-                    onClick={onStopRecording}
-                    data-testid="button-stop-recording"
-                >
+                    variant="default"
+                    className="h-9 w-9 shrink-0 rounded-full bg-destructive text-destructive-foreground hover:bg-destructive/90 touch-manipulation"
+                    onClick={onStopStreaming}
+                    data-testid="button-stop-streaming"
+                  >
                     <Square className="h-5 w-5" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>{t('chat.stopRecordingReview')}</TooltipContent>
+                <TooltipContent>{t('chat.stopGenerating')}</TooltipContent>
               </Tooltip>
+            )}
+            {!isRecording ? (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
                     type="button"
-                    variant="default"
+                    variant="ghost"
                     size="icon"
-                    className="h-9 w-9 shrink-0 rounded-full touch-manipulation"
-                    disabled={isStreaming || isDisabled}
-                    onClick={onSendRecording}
-                    data-testid="button-send-recording"
-                >
-                    <Send className="h-5 w-5" />
+                    className="h-9 w-9 shrink-0 rounded-full text-muted-foreground touch-manipulation"
+                    disabled={isRecordingDisabled || isDisabled}
+                    onClick={onStartRecording}
+                    data-testid="button-record-audio"
+                  >
+                    <Mic className="h-5 w-5" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>{t('chat.sendAudioNow')}</TooltipContent>
+                <TooltipContent>{t('chat.recordAudio')}</TooltipContent>
               </Tooltip>
-            </>
-          )}
-          <Button
-            type="button"
-            size="icon"
-            className="h-9 w-9 shrink-0 rounded-full touch-manipulation"
-            disabled={isDisabled || (!value.trim() && pendingMedia.length === 0) || isRecording}
-            onClick={onSend}
-            data-testid="button-send-message"
-          >
-            <Send className="h-5 w-5" />
-          </Button>
+            ) : (
+              <>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="icon"
+                      className="h-9 w-9 shrink-0 rounded-full touch-manipulation"
+                      disabled={isStreaming || isDisabled}
+                      onClick={onStopRecording}
+                      data-testid="button-stop-recording"
+                    >
+                      <Square className="h-5 w-5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{t('chat.stopRecordingReview')}</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="default"
+                      size="icon"
+                      className="h-9 w-9 shrink-0 rounded-full touch-manipulation"
+                      disabled={isStreaming || isDisabled}
+                      onClick={onSendRecording}
+                      data-testid="button-send-recording"
+                    >
+                      <Send className="h-5 w-5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{t('chat.sendAudioNow')}</TooltipContent>
+                </Tooltip>
+              </>
+            )}
+            <Button
+              type="button"
+              size="icon"
+              className="h-9 w-9 shrink-0 rounded-full touch-manipulation"
+              disabled={isDisabled || (!value.trim() && pendingMedia.length === 0) || isRecording}
+              onClick={onSend}
+              data-testid="button-send-message"
+            >
+              <Send className="h-5 w-5" />
+            </Button>
+          </div>
         </div>
       </div>
 

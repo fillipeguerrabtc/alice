@@ -3,6 +3,10 @@ import type { AgentEvent, MediaAttachment, Message, RuntimeNotice } from './comp
 import { DEFAULT_REASONING_MODE, type ReasoningMode } from '@/lib/reasoning-mode';
 
 type TrainingDialogMode = 'conversation' | 'messages' | null;
+type OptimisticConversationSyncState = {
+  conversationId: string;
+  minimumMessageCount: number;
+};
 
 export function useChatLocalState(isMobile: boolean) {
   const [input, setInput] = useState('');
@@ -42,6 +46,7 @@ export function useChatLocalState(isMobile: boolean) {
   const stopRequestedRef = useRef(false);
   const pendingSendRef = useRef<{ content: string; mediaAttachments?: MediaAttachment[] } | null>(null);
   const lastMessagesSyncRef = useRef(0);
+  const optimisticConversationSyncRef = useRef<OptimisticConversationSyncState | null>(null);
 
   return {
     deleteAllOpen,
@@ -58,6 +63,7 @@ export function useChatLocalState(isMobile: boolean) {
     mediaRecorderRef,
     messages,
     mobileDrawerOpen,
+    optimisticConversationSyncRef,
     pendingMedia,
     pendingMediaRef,
     pendingSendRef,
