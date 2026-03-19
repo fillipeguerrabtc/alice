@@ -144,10 +144,10 @@ export function ChatInput({
         </div>
       )}
 
-      <div className="flex gap-2 max-w-4xl mx-auto">
+      <div className="flex gap-2 max-w-3xl mx-auto">
         <div
           ref={containerRef}
-          className="flex-1 flex items-end gap-1.5 md:gap-2 p-1.5 md:p-2 rounded-xl md:rounded-lg border bg-background shadow-sm"
+          className="flex flex-1 items-end gap-1.5 rounded-[1.6rem] border border-border/60 bg-background/90 p-1.5 shadow-[0_20px_48px_-32px_rgba(15,23,42,0.55)] backdrop-blur-xl"
         >
           <input
             ref={fileInputRef}
@@ -185,17 +185,17 @@ export function ChatInput({
                     type="button"
                     variant="ghost"
                     size="icon"
-                    className="h-9 w-9 md:h-8 md:w-8 shrink-0 touch-manipulation"
+                    className="h-9 w-9 shrink-0 rounded-full text-muted-foreground touch-manipulation"
                     disabled={isRecording || isDisabled}
                     data-testid="button-attach-menu"
                   >
-                    <Plus className="h-5 w-5 md:h-4 md:w-4" />
+                    <Plus className="h-5 w-5" />
                   </Button>
                 </DropdownMenuTrigger>
               </TooltipTrigger>
               <TooltipContent>{t('chat.attachMenu')}</TooltipContent>
             </Tooltip>
-            <DropdownMenuContent align="start" className="min-w-[220px]">
+            <DropdownMenuContent align="start" className="min-w-[220px] rounded-2xl border-border/60 bg-background/95 p-2 shadow-[0_24px_80px_-32px_rgba(15,23,42,0.55)] backdrop-blur-xl">
               <DropdownMenuItem
                 onSelect={(event) => {
                   event.preventDefault();
@@ -249,7 +249,7 @@ export function ChatInput({
               setUserBlurred(true);
             }}
             placeholder={pendingMedia.length > 0 ? t('chat.placeholderWithMedia') : t('chat.placeholder')}
-            className="flex-1 min-h-[40px] md:min-h-[36px] max-h-[120px] md:max-h-[200px] resize-none bg-transparent text-base md:text-sm leading-relaxed focus-visible:outline-none"
+            className="flex-1 min-h-[40px] max-h-[120px] resize-none bg-transparent px-1 text-sm leading-relaxed text-foreground focus-visible:outline-none md:max-h-[200px]"
             disabled={isRecording || isDisabled}
             data-testid="input-chat-message"
             autoComplete="off"
@@ -264,11 +264,11 @@ export function ChatInput({
                   type="button"
                   size="icon"
                   variant="destructive"
-                  className="h-9 w-9 md:h-8 md:w-8 shrink-0 rounded-full md:rounded-md touch-manipulation"
+                  className="h-9 w-9 shrink-0 rounded-full touch-manipulation"
                   onClick={onStopStreaming}
                   data-testid="button-stop-streaming"
                 >
-                  <Square className="h-5 w-5 md:h-4 md:w-4" />
+                  <Square className="h-5 w-5" />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>{t('chat.stopGenerating')}</TooltipContent>
@@ -281,12 +281,12 @@ export function ChatInput({
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="h-9 w-9 md:h-8 md:w-8 shrink-0 touch-manipulation"
+                  className="h-9 w-9 shrink-0 rounded-full text-muted-foreground touch-manipulation"
                   disabled={isRecordingDisabled || isDisabled}
                   onClick={onStartRecording}
                   data-testid="button-record-audio"
                 >
-                  <Mic className="h-5 w-5 md:h-4 md:w-4" />
+                  <Mic className="h-5 w-5" />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>{t('chat.recordAudio')}</TooltipContent>
@@ -298,13 +298,13 @@ export function ChatInput({
                   <Button
                     type="button"
                     variant="destructive"
-                  size="icon"
-                  className="h-9 w-9 md:h-8 md:w-8 shrink-0 touch-manipulation"
-                  disabled={isStreaming || isDisabled}
-                  onClick={onStopRecording}
-                  data-testid="button-stop-recording"
+                    size="icon"
+                    className="h-9 w-9 shrink-0 rounded-full touch-manipulation"
+                    disabled={isStreaming || isDisabled}
+                    onClick={onStopRecording}
+                    data-testid="button-stop-recording"
                 >
-                    <Square className="h-5 w-5 md:h-4 md:w-4" />
+                    <Square className="h-5 w-5" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>{t('chat.stopRecordingReview')}</TooltipContent>
@@ -314,13 +314,13 @@ export function ChatInput({
                   <Button
                     type="button"
                     variant="default"
-                  size="icon"
-                  className="h-9 w-9 md:h-8 md:w-8 shrink-0 touch-manipulation"
-                  disabled={isStreaming || isDisabled}
-                  onClick={onSendRecording}
-                  data-testid="button-send-recording"
+                    size="icon"
+                    className="h-9 w-9 shrink-0 rounded-full touch-manipulation"
+                    disabled={isStreaming || isDisabled}
+                    onClick={onSendRecording}
+                    data-testid="button-send-recording"
                 >
-                    <Send className="h-5 w-5 md:h-4 md:w-4" />
+                    <Send className="h-5 w-5" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>{t('chat.sendAudioNow')}</TooltipContent>
@@ -330,12 +330,12 @@ export function ChatInput({
           <Button
             type="button"
             size="icon"
-            className="h-9 w-9 md:h-8 md:w-8 shrink-0 rounded-full md:rounded-md touch-manipulation"
+            className="h-9 w-9 shrink-0 rounded-full touch-manipulation"
             disabled={isDisabled || (!value.trim() && pendingMedia.length === 0) || isRecording}
             onClick={onSend}
             data-testid="button-send-message"
           >
-            <Send className="h-5 w-5 md:h-4 md:w-4" />
+            <Send className="h-5 w-5" />
           </Button>
         </div>
       </div>
@@ -357,7 +357,7 @@ export function ChatInput({
         </div>
       )}
 
-      <p className="hidden md:block text-xs text-center text-muted-foreground mt-2">
+      <p className="mt-2 hidden text-center text-xs text-muted-foreground md:block">
         Alice pode cometer erros. Verifique informações importantes.
       </p>
     </motion.div>

@@ -447,6 +447,12 @@
       "conversationDescription": "Adjust area, agent, and reasoning without pulling focus away from the conversation.",
       "newConversationDescription": "Choose how Alice should handle this conversation and start when you're ready."
     },
+    "identityMenu": {
+      "title": "Alice",
+      "openMenu": "Open Alice menu",
+      "manualConfigActive": "Manual conversation configuration is active",
+      "manualConfigSummary": "Summary of the manual conversation configuration"
+    },
     "selectionControls": {
       "area": "Area",
       "agent": "Agent",

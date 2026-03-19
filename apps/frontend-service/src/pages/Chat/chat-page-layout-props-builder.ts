@@ -7,14 +7,13 @@ type ChatPageLayoutSections = Pick<
   ChatPageLayoutProps,
   | 'chatActionsMenuProps'
   | 'chatDialogsSectionProps'
-  | 'chatGovernanceControlsProps'
+  | 'chatIdentityMenuProps'
   | 'conversationsListProps'
 >;
 
 type ChatPageLayoutState = Pick<
   ChatPageLayoutProps,
   | 'acceptedTypes'
-  | 'conversationId'
   | 'focusNonce'
   | 'input'
   | 'isComposerDisabled'
@@ -25,7 +24,6 @@ type ChatPageLayoutState = Pick<
   | 'lastResponseUsedFallback'
   | 'messageSelectionMode'
   | 'mobileDrawerOpen'
-  | 'modelBadgeLabel'
   | 'pendingMedia'
   | 'runtimeNotice'
   | 'showDesktopActionMenu'

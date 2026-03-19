@@ -2,17 +2,17 @@ import { useMemo } from 'react';
 import type { ComponentProps } from 'react';
 import { ChatActionsMenu } from './components/ChatActionsMenu';
 import { ChatDialogsSection } from './components/ChatDialogsSection';
-import { ChatGovernanceControls } from './components/ChatGovernanceControls';
+import { ChatIdentityMenu } from './components/ChatIdentityMenu';
 import type { ConversationsListProps } from './components/ConversationsList';
 
 type ChatActionsMenuProps = ComponentProps<typeof ChatActionsMenu>;
-type ChatGovernanceControlsProps = ComponentProps<typeof ChatGovernanceControls>;
+type ChatIdentityMenuProps = ComponentProps<typeof ChatIdentityMenu>;
 type ChatDialogsSectionProps = ComponentProps<typeof ChatDialogsSection>;
 
 type UseChatSectionPropsOptions = {
   activeConversationCount: number;
-  agentOptions: ChatGovernanceControlsProps['agentOptions'];
-  areaOptions: ChatGovernanceControlsProps['areaOptions'];
+  agentOptions: ChatIdentityMenuProps['agentOptions'];
+  areaOptions: ChatIdentityMenuProps['areaOptions'];
   conversationFilterActive: boolean;
   conversationFilterLabel?: string;
   conversationId?: string;
@@ -42,23 +42,24 @@ type UseChatSectionPropsOptions = {
   onLoadMore: ConversationsListProps['onLoadMore'];
   onNamespaceChange: ChatDialogsSectionProps['onTrainingNamespaceChange'];
   onNewChat: ConversationsListProps['onNewChat'];
-  onAreaChange: ChatGovernanceControlsProps['onAreaChange'];
-  onReasoningModeChange: ChatGovernanceControlsProps['onReasoningModeChange'];
-  onAgentChange: ChatGovernanceControlsProps['onAgentChange'];
+  onAreaChange: ChatIdentityMenuProps['onAreaChange'];
+  onReasoningModeChange: ChatIdentityMenuProps['onReasoningModeChange'];
+  onAgentChange: ChatIdentityMenuProps['onAgentChange'];
   onSelectConversation: ConversationsListProps['onSelectConversation'];
   onSubmitTraining: ChatDialogsSectionProps['onSubmitTraining'];
   onToggleSelectConversation: ConversationsListProps['onToggleSelectConversation'];
   onToggleSelectionMode: ConversationsListProps['onToggleSelectionMode'];
   onTrainingDialogOpenChange: ChatDialogsSectionProps['onTrainingDialogOpenChange'];
-  reasoningOptions: ChatGovernanceControlsProps['reasoningOptions'];
-  reasoningMode: ChatGovernanceControlsProps['reasoningMode'];
-  selectedAgentId: ChatGovernanceControlsProps['selectedAgentId'];
-  selectedAreaNamespaceId: ChatGovernanceControlsProps['selectedAreaNamespaceId'];
+  reasoningOptions: ChatIdentityMenuProps['reasoningOptions'];
+  reasoningMode: ChatIdentityMenuProps['reasoningMode'];
+  selectedAgentId: ChatIdentityMenuProps['selectedAgentId'];
+  selectedAreaNamespaceId: ChatIdentityMenuProps['selectedAreaNamespaceId'];
   selectedConversationIds: ConversationsListProps['selectedIds'];
   selectedMessageCount: number;
-  canOverrideReasoningMode: ChatGovernanceControlsProps['canOverrideReasoningMode'];
+  canOverrideReasoningMode: ChatIdentityMenuProps['canOverrideReasoningMode'];
   showConversationActions: ChatActionsMenuProps['showConversationActions'];
   showTrainingDialog: ChatDialogsSectionProps['showTrainingDialog'];
+  modelBadgeLabel: ChatIdentityMenuProps['modelBadgeLabel'];
   t: (key: string) => string;
   trainingDialogMode: ChatDialogsSectionProps['trainingDialogMode'];
   trainingNamespaceId: ChatDialogsSectionProps['trainingNamespaceId'];
@@ -114,6 +115,7 @@ export function useChatSectionProps({
   canOverrideReasoningMode,
   showConversationActions,
   showTrainingDialog,
+  modelBadgeLabel,
   t,
   trainingDialogMode,
   trainingNamespaceId,
@@ -167,7 +169,7 @@ export function useChatSectionProps({
     showConversationActions,
   ]);
 
-  const chatGovernanceControlsProps = useMemo<ChatGovernanceControlsProps>(() => ({
+  const chatIdentityMenuProps = useMemo<ChatIdentityMenuProps>(() => ({
     agentOptions,
     areaOptions,
     onAgentChange,
@@ -178,6 +180,7 @@ export function useChatSectionProps({
     reasoningOptions,
     selectedAgentId,
     selectedAreaNamespaceId,
+    modelBadgeLabel,
     t,
   }), [
     agentOptions,
@@ -190,6 +193,7 @@ export function useChatSectionProps({
     reasoningOptions,
     selectedAgentId,
     selectedAreaNamespaceId,
+    modelBadgeLabel,
     t,
   ]);
 
@@ -242,7 +246,7 @@ export function useChatSectionProps({
   return {
     chatActionsMenuProps,
     chatDialogsSectionProps,
-    chatGovernanceControlsProps,
+    chatIdentityMenuProps,
     conversationsListProps,
   };
 }

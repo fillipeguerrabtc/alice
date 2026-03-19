@@ -7,7 +7,7 @@ import { ChatDialogsSection } from './ChatDialogsSection';
 import type { AgentEvent, MediaAttachment, Message, RuntimeNotice } from './types';
 
 type ChatActionsMenuProps = ComponentProps<typeof ChatHeaderSection>['chatActionsMenuProps'];
-type ChatGovernanceControlsProps = ComponentProps<typeof ChatHeaderSection>['chatGovernanceControlsProps'];
+type ChatIdentityMenuProps = ComponentProps<typeof ChatHeaderSection>['chatIdentityMenuProps'];
 type ConversationsListProps = ComponentProps<typeof ChatConversationsSidebar>['conversationsListProps'];
 type ChatDialogsSectionProps = ComponentProps<typeof ChatDialogsSection>;
 
@@ -15,8 +15,7 @@ type ChatPageLayoutProps = {
   acceptedTypes: string;
   chatActionsMenuProps: ChatActionsMenuProps;
   chatDialogsSectionProps: ChatDialogsSectionProps;
-  chatGovernanceControlsProps: ChatGovernanceControlsProps;
-  conversationId?: string;
+  chatIdentityMenuProps: ChatIdentityMenuProps;
   conversationsListProps: ConversationsListProps;
   focusNonce: number;
   input: string;
@@ -31,7 +30,6 @@ type ChatPageLayoutProps = {
   messagesContainerRef: RefObject<HTMLDivElement | null>;
   messagesEndRef: RefObject<HTMLDivElement | null>;
   mobileDrawerOpen: boolean;
-  modelBadgeLabel: string;
   onComposerChange: (value: string) => void;
   onFilesSelected: (files: File[]) => void;
   onFeedback: (messageId: string, isPositive: boolean) => void;
@@ -66,8 +64,7 @@ export function ChatPageLayout({
   acceptedTypes,
   chatActionsMenuProps,
   chatDialogsSectionProps,
-  chatGovernanceControlsProps,
-  conversationId,
+  chatIdentityMenuProps,
   conversationsListProps,
   focusNonce,
   input,
@@ -82,7 +79,6 @@ export function ChatPageLayout({
   messagesContainerRef,
   messagesEndRef,
   mobileDrawerOpen,
-  modelBadgeLabel,
   onComposerChange,
   onFilesSelected,
   onFeedback,
@@ -125,10 +121,8 @@ export function ChatPageLayout({
       <div className="flex min-w-0 flex-1 flex-col">
         <ChatHeaderSection
           chatActionsMenuProps={chatActionsMenuProps}
-          chatGovernanceControlsProps={chatGovernanceControlsProps}
-          conversationId={conversationId}
+          chatIdentityMenuProps={chatIdentityMenuProps}
           isMobile={isMobile}
-          modelBadgeLabel={modelBadgeLabel}
           onOpenMobileDrawer={onOpenMobileDrawer}
           onToggleSidebar={onToggleSidebar}
           showDesktopActionMenu={showDesktopActionMenu}

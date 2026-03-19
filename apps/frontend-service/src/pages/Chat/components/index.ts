@@ -20,7 +20,7 @@ export { ChatInput } from './ChatInput';
 export { AgentStatusBadge } from './AgentStatusBadge';
 export { MessageActions } from './MessageActions';
 export { ChatActionsMenu } from './ChatActionsMenu';
-export { ChatGovernanceControls } from './ChatGovernanceControls';
+export { ChatIdentityMenu } from './ChatIdentityMenu';
 export { ChatDialogsSection } from './ChatDialogsSection';
 export { ChatMessagesViewport } from './ChatMessagesViewport';
 export { ChatHeaderSection } from './ChatHeaderSection';

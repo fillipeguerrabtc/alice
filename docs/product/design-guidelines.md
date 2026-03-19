@@ -2,7 +2,7 @@
 
 **Author:** Fillipe Guerra
 **Data:** 18 de Marco de 2026
-**Atualizado:** 18 de Marco de 2026
+**Atualizado:** 19 de Marco de 2026
 **Status:** ativo
 **Tipo:** ssot
 
@@ -96,12 +96,15 @@ Usar escala consistente: `2, 4, 8, 12, 16, 24, 32` (px-2, h-8, m-12, etc.)
 
 - **Mensagens do usuário:** Bolha à direita, cor primary
 - **Mensagens da Alice:** Bolha à esquerda, cor neutra
-- Topo do chat principal com apenas tres controles canonicos: `Área`, `Agente` e `Raciocínio`
+- Topo do chat principal em padrao minimalista, com o titulo `Alice` como ponto principal de configuracao da conversa
+- `Raciocínio`, `Área` e `Agente` devem viver no menu contextual do titulo `Alice`, nunca em uma faixa fixa dedicada abaixo do header
 - `Área` representa o namespace ativo da conversa e pode voltar para modo automático sem esconder o contexto da conversa
 - `Agente` representa o especialista dentro da área selecionada; quando estiver em automático, o roteamento continua livre dentro do escopo permitido
 - `Raciocínio` usa apenas os labels `Automático`, `Rápido` e `Mais Profundo`
+- Quando `Área` ou `Agente` estiverem em modo manual, a superficie principal deve exibir apenas um resumo discreto do override ativo
 - Workspace selector nao faz parte da experiencia principal do chat
 - Operações, governança e diagnóstico devem viver em superficies dedicadas de navegação, nunca como trilhas principais dentro do topo do chat
+- O botao `+` do composer deve ficar reservado para anexos e futuras acoes do input; configuracao da conversa nao deve competir com esse menu
 - Preview de mídia inline (imagens/vídeos reproduzíveis)
 - Área de upload: borda tracejada, drag-drop
 - Gravação de voz: animação de forma de onda

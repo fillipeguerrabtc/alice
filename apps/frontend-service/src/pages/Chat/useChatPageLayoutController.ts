@@ -469,7 +469,7 @@ export function useChatPageLayoutController() {
   const {
     chatActionsMenuProps,
     chatDialogsSectionProps,
-    chatGovernanceControlsProps,
+    chatIdentityMenuProps,
     conversationsListProps,
   } = useChatSectionProps({
     activeConversationCount: selectedConversationIds.size,
@@ -526,6 +526,7 @@ export function useChatPageLayoutController() {
     canOverrideReasoningMode,
     showConversationActions: showOperationsControls,
     showTrainingDialog,
+    modelBadgeLabel,
     t,
     trainingDialogMode,
     trainingNamespaceId,
@@ -533,7 +534,6 @@ export function useChatPageLayoutController() {
   const chatPageLayoutProps = buildChatPageLayoutProps({
     state: {
       acceptedTypes: CHAT_ACCEPTED_MEDIA_TYPES,
-      conversationId,
       focusNonce,
       input,
       isComposerDisabled: showLoginBanner,
@@ -544,7 +544,6 @@ export function useChatPageLayoutController() {
       lastResponseUsedFallback,
       messageSelectionMode,
       mobileDrawerOpen,
-      modelBadgeLabel,
       pendingMedia,
       runtimeNotice,
       showDesktopActionMenu,
@@ -558,7 +557,7 @@ export function useChatPageLayoutController() {
     sections: {
       chatActionsMenuProps,
       chatDialogsSectionProps,
-      chatGovernanceControlsProps,
+      chatIdentityMenuProps,
       conversationsListProps,
     },
     viewport: {
