@@ -98,6 +98,7 @@ Esses comandos sao changed-only por padrao.
 - O cache incremental de TypeScript vive em `.cache/typescript/...`.
 - O fluxo normal de `Release` nao deve substituir o papel deste resolvedor; ele so consome um commit ja aprovado pelo `CI`.
 - A resolucao da toolchain do `CI` e deterministica e consome `.nvmrc` + `packageManager`, sem consulta externa para descobrir versoes.
+- O lint do repositorio tem duas camadas: workspaces via `Turbo` e arquivos raiz de tooling via `scripts/run-root-lint.mjs`.
 
 ## Referencias
 

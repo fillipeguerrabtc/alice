@@ -26,6 +26,7 @@ Registrar a rodada de simplificacao da pipeline para reduzir governanca artesana
 - A action `setup-node-pnpm` deixou de trocar para mirror publico e passou a usar apenas o registry oficial do npm com retries.
 - A verificacao de hardening/timeouts dos servicos Node foi movida para `scripts/verify-node-service-hardening.mjs`.
 - `Release` e `Deploy` agora usam ambientes GitHub explicitos (`release` e `production`).
+- O lint passou a cobrir tambem arquivos raiz de tooling com `scripts/run-root-lint.mjs`, fechando o gap de scripts `.mjs` e testes raiz fora do escopo do Turbo.
 
 ## Gaps ainda mapeados
 
@@ -43,13 +44,16 @@ Registrar a rodada de simplificacao da pipeline para reduzir governanca artesana
 ## Validacoes desta rodada
 
 - `pnpm exec vitest run tests/unit/enterprise-focus-governance.test.ts`
+- `pnpm exec eslint --no-ignore eslint.config.mjs scripts/verify-enterprise-focus.mjs scripts/resolve-toolchain.mjs scripts/verify-node-service-hardening.mjs scripts/run-root-lint.mjs tests/unit/enterprise-focus-governance.test.ts`
 - `node --check scripts/verify-enterprise-focus.mjs`
 - `node --check scripts/resolve-toolchain.mjs`
 - `node --check scripts/verify-node-service-hardening.mjs`
+- `node --check scripts/run-root-lint.mjs`
 - `node ./scripts/resolve-toolchain.mjs`
 - `bash ./scripts/verify-enterprise-focus.sh 5`
 - `node ./scripts/verify-node-service-hardening.mjs`
+- `node ./scripts/run-root-lint.mjs`
 
 ## Observacao operacional
 
-- O `ESLint` do repositorio travou mesmo em execucao isolada para os arquivos desta rodada, inclusive com timeout e `stdin`. Como os scripts novos vivem fora do escopo normalmente varrido pela configuracao atual, a validacao estrutural deles foi fechada com `node --check` e testes/execucao funcional direta.
+- O `ESLint` nao estava em deadlock; a investigacao mostrou bootstrap frio de aproximadamente 11 segundos para carregar `eslint.config.mjs` e o stack `typescript-eslint`, enquanto o lint efetivo do arquivo levava menos de 200 ms. O outro gap era estrutural: o lint incremental via `Turbo` nao cobria arquivos raiz de tooling, e o config ignorava `.mjs` por padrao. A rodada atual fechou esse ponto com lint raiz dedicado e uso explicito de `--no-ignore`.

@@ -94,6 +94,7 @@ Efeito:
 - A versao de `pnpm` usada na esteira passa a vir exclusivamente de [`package.json`](../../package.json), via `packageManager`.
 - O setup de dependencias usa apenas o registry oficial do npm, com retries, sem fallback automatico para mirrors publicos.
 - A verificacao de hardening e timeouts dos servicos Node saiu do YAML inline e foi centralizada em script versionado para reduzir duplicacao e fragilidade.
+- O lint passou a cobrir tambem arquivos raiz de tooling fora do escopo do Turbo, como `scripts/*.mjs`, `tests/unit/*.ts` e `eslint.config.mjs`.
 
 ## Fluxo do `Release`
 
