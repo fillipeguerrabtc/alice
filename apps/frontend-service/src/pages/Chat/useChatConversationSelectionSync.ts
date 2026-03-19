@@ -23,6 +23,13 @@ export type ConversationSelectionSyncState = {
   selectedReasoningMode: ReasoningMode;
 };
 
+export function buildConversationSelectionSyncKey(
+  conversationId: string | undefined,
+  canOverrideReasoningMode: boolean,
+): string {
+  return `${conversationId ?? 'new'}:${canOverrideReasoningMode ? 'override' : 'restricted'}`;
+}
+
 type ResolveConversationSelectionSyncStateOptions = Pick<
   UseChatConversationSelectionSyncOptions,
   'activeConversation' | 'canOverrideReasoningMode'
@@ -60,11 +67,15 @@ export function useChatConversationSelectionSync({
   const selectionConversationSyncRef = useRef<string | null>(null);
 
   useEffect(() => {
-    const nextConversationKey = conversationId ?? 'new';
-    if (selectionConversationSyncRef.current === nextConversationKey) {
+    if (conversationId && !activeConversation) {
       return;
     }
-    if (conversationId && !activeConversation) {
+
+    const nextConversationKey = buildConversationSelectionSyncKey(
+      conversationId,
+      canOverrideReasoningMode,
+    );
+    if (selectionConversationSyncRef.current === nextConversationKey) {
       return;
     }
 

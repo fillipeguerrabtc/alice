@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { resolveConversationSelectionSyncState } from '../../apps/frontend-service/src/pages/Chat/useChatConversationSelectionSync';
+import {
+  buildConversationSelectionSyncKey,
+  resolveConversationSelectionSyncState,
+} from '../../apps/frontend-service/src/pages/Chat/useChatConversationSelectionSync';
 
 describe('chat conversation selection sync', () => {
   it('preserva selecao canonica persistida e fixa roteamento manual quando existe agente definido', () => {
@@ -115,5 +118,11 @@ describe('chat conversation selection sync', () => {
       routingMode: 'auto',
       routingAgentIds: [],
     });
+  });
+
+  it('gera chave de sync diferente quando a permissao de override muda na mesma conversa', () => {
+    expect(buildConversationSelectionSyncKey('conv-10', false)).not.toBe(
+      buildConversationSelectionSyncKey('conv-10', true),
+    );
   });
 });

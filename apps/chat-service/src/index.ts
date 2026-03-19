@@ -4738,7 +4738,7 @@ type PersistedChatSelection = {
   fromMetadata: boolean;
 };
 
-function hasOwnProperty(input: unknown, key: string): boolean {
+function hasOwnKey(input: unknown, key: string): boolean {
   return Boolean(input && typeof input === 'object' && Object.prototype.hasOwnProperty.call(input, key));
 }
 
@@ -4868,17 +4868,22 @@ async function resolveCanonicalChatSelection(params: {
 
   if (selectedAgent) {
     if (!selectedAgent.namespaceId) {
-      if (explicitSelectionRequested) {
-        throw new ClientInputError('Agente selecionado não está vinculado a uma área ativa.', {
-          statusCode: 400,
-          code: 'CHAT_AGENT_NAMESPACE_REQUIRED',
-        });
+      if (persistedNamespaceId) {
+        if (explicitSelectionRequested) {
+          throw new ClientInputError('O agente selecionado não pertence à área informada.', {
+            statusCode: 400,
+            code: 'CHAT_AGENT_NAMESPACE_MISMATCH',
+          });
+        }
+        logger.warn(
+          {
+            tenantId: params.tenantId,
+            agentId: selectedAgent.id,
+            namespaceId: persistedNamespaceId,
+          },
+          'Seleção persistida com área divergente para agente global; limpando área fixa do chat'
+        );
       }
-      logger.warn(
-        { tenantId: params.tenantId, agentId: selectedAgent.id },
-        'Agente persistido sem namespace; limpando seleção fixa do chat'
-      );
-      persistedAgentId = null;
       persistedNamespaceId = null;
     } else if (persistedNamespaceId && persistedNamespaceId !== selectedAgent.namespaceId) {
       if (explicitSelectionRequested) {
@@ -5694,7 +5699,7 @@ async function resolveAgentRoutingForMessage(params: {
   const isAutoMode = mode === 'auto' && source !== 'mention';
   if (isAutoMode) {
     const isExplicitNamespaceScope = Boolean(params.requestedNamespaceId);
-    if (!selectedAgent && poolAgents.length > 0 && isExplicitNamespaceScope) {
+    if (isExplicitNamespaceScope && (!selectedAgent || score < routingThreshold) && poolAgents.length > 0) {
       selectedAgent = poolAgents[0] ?? null;
       score = 1;
     } else if (!isExplicitNamespaceScope && (!selectedAgent || score < routingThreshold)) {
@@ -9127,8 +9132,8 @@ app.post('/api/chat/conversations', requireAuth(), requireSameTenant(getTenantId
       requestedAgentId: body.agentId,
       requestedNamespaceId: body.namespaceId,
       requestedReasoningMode: body.reasoningMode,
-      hasRequestedAgentId: hasOwnProperty(rawBody, 'agentId'),
-      hasRequestedNamespaceId: hasOwnProperty(rawBody, 'namespaceId'),
+      hasRequestedAgentId: hasOwnKey(rawBody, 'agentId'),
+      hasRequestedNamespaceId: hasOwnKey(rawBody, 'namespaceId'),
       role: userRole,
     });
 
@@ -9736,12 +9741,12 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
       requestedAgentId: body.agentId,
       requestedNamespaceId: body.namespaceId,
       requestedReasoningMode: body.reasoningMode,
-      hasRequestedAgentId: hasOwnProperty(rawBody, 'agentId'),
-      hasRequestedNamespaceId: hasOwnProperty(rawBody, 'namespaceId'),
+      hasRequestedAgentId: hasOwnKey(rawBody, 'agentId'),
+      hasRequestedNamespaceId: hasOwnKey(rawBody, 'namespaceId'),
       role: userRole,
     });
 
-    const hasCanonicalSelectionInput = hasOwnProperty(rawBody, 'agentId') || hasOwnProperty(rawBody, 'namespaceId');
+    const hasCanonicalSelectionInput = hasOwnKey(rawBody, 'agentId') || hasOwnKey(rawBody, 'namespaceId');
 
     if (hasCanonicalSelectionInput) {
       const nextConversationStateMetadata = mergeConversationStateMetadata(conversationState.metadata, {
@@ -10271,6 +10276,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     let conversationId = _conversationId;
     let conversation: ConversationWithAgent | null = null;
     let conversationCreated = false;
+    let canonicalSelection: Awaited<ReturnType<typeof resolveCanonicalChatSelection>> | null = null;
 
     if (conversationId) {
       const existingConversation = await db.query.conversations.findFirst({
@@ -10287,13 +10293,13 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       }
       conversation = existingConversation;
     } else {
-      const canonicalSelection = await resolveCanonicalChatSelection({
+      canonicalSelection = await resolveCanonicalChatSelection({
         tenantId,
         requestedAgentId: agentId,
         requestedNamespaceId: namespaceId,
         requestedReasoningMode,
-        hasRequestedAgentId: hasOwnProperty(rawBody, 'agentId'),
-        hasRequestedNamespaceId: hasOwnProperty(rawBody, 'namespaceId'),
+        hasRequestedAgentId: hasOwnKey(rawBody, 'agentId'),
+        hasRequestedNamespaceId: hasOwnKey(rawBody, 'namespaceId'),
         role: userRole,
       });
       const [created] = await db.insert(schema.conversations).values({
@@ -10325,14 +10331,14 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     }
 
     const conversationState = await getOrCreateConversationState(conversationId);
-    const canonicalSelection = await resolveCanonicalChatSelection({
+    canonicalSelection ??= await resolveCanonicalChatSelection({
       tenantId,
       conversation,
       requestedAgentId: agentId,
       requestedNamespaceId: namespaceId,
       requestedReasoningMode,
-      hasRequestedAgentId: hasOwnProperty(rawBody, 'agentId'),
-      hasRequestedNamespaceId: hasOwnProperty(rawBody, 'namespaceId'),
+      hasRequestedAgentId: hasOwnKey(rawBody, 'agentId'),
+      hasRequestedNamespaceId: hasOwnKey(rawBody, 'namespaceId'),
       role: userRole,
     });
 
@@ -10342,7 +10348,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       conversationState.approvalPolicy = requestApprovalPolicy;
     }
 
-    const hasCanonicalSelectionInput = hasOwnProperty(rawBody, 'agentId') || hasOwnProperty(rawBody, 'namespaceId');
+    const hasCanonicalSelectionInput = hasOwnKey(rawBody, 'agentId') || hasOwnKey(rawBody, 'namespaceId');
 
     if (hasCanonicalSelectionInput) {
       const nextConversationStateMetadata = mergeConversationStateMetadata(conversationState.metadata, {
@@ -20237,4 +20243,3 @@ registerChatShutdownCallbacks({
   closeRedisCacheClient,
   closeDatabasePool,
 });
-
