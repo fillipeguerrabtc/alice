@@ -88,6 +88,7 @@ Esses comandos sao changed-only por padrao.
 - Em `pull_request`, quando `scope_mode=scoped` e `release_eligible=true`, o `CI` roda os comandos padrao incrementais.
 - Quando `scope_mode=full`, o `CI` roda `typecheck:full`, `test:full`, `lint:full` e `build:full`.
 - Em `push` para `main`, `build-and-check` e `security-and-compliance` sempre rodam para validar o commit efetivamente publicado.
+- Em qualquer evento, `verify:enterprise-focus` so bloqueia quando o commit atual e `release_eligible=true`.
 - `docs-only` e `pipeline-only` continuam sem `release-eligible` e nao seguem automaticamente para `Release` ou `Deploy`.
 
 ## Observacoes operacionais

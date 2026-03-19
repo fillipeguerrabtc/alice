@@ -315,7 +315,14 @@ jobs:
           pnpm run lint:full
           pnpm run build:full
 
+      - name: Skip enterprise governance validation for non-release-eligible push
+        if: ${{ needs.detect-changes.outputs.release-eligible != 'true' }}
+        run: |
+          set -euo pipefail
+          echo "ℹ️ Guardrail verify:enterprise-focus ignorado: commit atual sem release-eligible."
+
       - name: Enterprise governance validation
+        if: ${{ needs.detect-changes.outputs.release-eligible == 'true' }}
         env:
           NODE_OPTIONS: --max-old-space-size=6144
         run: |

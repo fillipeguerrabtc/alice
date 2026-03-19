@@ -75,13 +75,14 @@ Efeito:
 3. Se a base de comparacao nao puder ser resolvida com seguranca, o `CI` cai em `full` fallback.
 4. Em `pull_request`, `build-and-check` e `security-and-compliance` so rodam quando `release_eligible=true`.
 5. Em `push` para `main`, esses jobs sempre rodam para validar o commit efetivamente publicado.
-6. O job `trigger-release` so roda em push para `main` quando existe `release_pending=true`.
-7. `release_pending` considera tambem o backlog elegivel desde a ultima tag, para que um push apenas de pipeline ou documentacao ainda consiga publicar codigo que permaneceu pendente de release.
-8. `trigger-release` usa `always()` porque depende de jobs que podem ficar `skipped` em `pull_request`, mas nao deve herdar `skipped` indevido no fluxo de `push` para `main`.
+6. O guardrail `verify:enterprise-focus` so bloqueia quando o commit atual e `release_eligible=true`; `docs-only` e `pipeline-only` em `main` continuam passando pelos jobs principais sem herdar falha indevida de churn documental.
+7. O job `trigger-release` so roda em push para `main` quando existe `release_pending=true`.
+8. `release_pending` considera tambem o backlog elegivel desde a ultima tag, para que um push apenas de pipeline ou documentacao ainda consiga publicar codigo que permaneceu pendente de release.
+9. `trigger-release` usa `always()` porque depende de jobs que podem ficar `skipped` em `pull_request`, mas nao deve herdar `skipped` indevido no fluxo de `push` para `main`.
 
 ### Governanca de churn documental
 
-- O guardrail `verify:enterprise-focus` bloqueia o `CI` pelo delta do evento atual, nunca por ruído acumulado da branch principal.
+- O guardrail `verify:enterprise-focus` bloqueia o `CI` pelo delta do evento atual apenas quando o commit atual e `release_eligible`, nunca por ruído acumulado da branch principal.
 - Em `pull_request`, a comparacao usa `base.sha...head.sha`.
 - Em `push`, a comparacao usa `before..after`, com fallback para o commit atual quando o push cria a referencia.
 - A janela historica de 50 commits continua existindo apenas como telemetria e pode gerar `WARN`, mas nao deve bloquear merges validos por churn documental preexistente.
