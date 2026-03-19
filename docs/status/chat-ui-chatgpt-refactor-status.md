@@ -76,8 +76,8 @@ Refatorar a UI/UX do chat da Alice para um padrao premium no estilo ChatGPT, rem
   - exclusivo para anexos e futuras acoes do input;
   - sem configuracao de conversa.
 - Resumo discreto:
-  - aparece apenas quando `Area` e/ou `Agente` estiverem em modo manual;
-  - nao deve ter cara de formulario.
+  - o topo deve exibir o estado atual de `Area` e `Agente` em formato compacto;
+  - quando houver override manual, o resumo deve sinalizar esse modo sem voltar a ter cara de formulario.
 - Desktop/mobile:
   - mesma logica de interacao;
   - menu contextual ancorado no titulo;
@@ -168,9 +168,52 @@ Refatorar a UI/UX do chat da Alice para um padrao premium no estilo ChatGPT, rem
 
 ### Investigacao remota de producao
 
-- O host `178.63.41.108` respondeu a `ping` e o dominio HTTPS respondeu normalmente durante a investigacao.
-- A porta `22/tcp` permaneceu com timeout a partir deste ambiente, impedindo coleta de logs por SSH nesta sessao.
+- O acesso SSH ao servidor de producao foi validado em modo somente leitura.
+- O host `alice-prod` e o IP `178.63.41.108` responderam normalmente por SSH nesta sessao.
 - Nenhuma alteracao foi feita no servidor de producao.
+
+## Rodada 2 enterprise em 19 de Marco de 2026
+
+### Causa raiz adicional confirmada em producao
+
+- A primeira mensagem nao se perde no backend; a conversa investigada `502ff751-01ea-437d-9ac5-27f9656bf8be` persistiu a primeira mensagem do usuario e a primeira resposta em menos de 400 ms apos a criacao da conversa.
+- O frontend precisava continuar protegendo o bootstrap otimista, mas a producao revelou um gap novo de modelagem:
+  - `metadata.selection` pode permanecer totalmente automatica;
+  - `metadata.routing` e `conversation.namespaceId` podem registrar uma `Area` efetiva escolhida pelo backend;
+  - portanto, o topo do chat nao pode tratar selecao do usuario e roteamento efetivo como a mesma coisa.
+- Evidencia concreta observada em producao:
+  - `metadata.selection.selectedNamespaceId = null`
+  - `metadata.routing.selectedNamespaceId = ee55f977-8a9a-4689-ace7-79e95fa191b5`
+  - `conversation.namespaceId = ee55f977-8a9a-4689-ace7-79e95fa191b5`
+- Isso exigiu uma segunda rodada para separar:
+  - configuracao escolhida pelo usuario no menu `Alice`
+  - estado efetivo de `Area` e `Agente` exibido no topo
+
+### Implementacao aplicada nesta rodada
+
+- O contrato `Conversation.metadata` do frontend foi expandido para tipar `routing`.
+- A camada `chat-selection.ts` passou a expor leitura separada para:
+  - `selection` canonica persistida;
+  - roteamento efetivo da conversa;
+  - estado de exibicao da superficie principal.
+- `ChatIdentityMenu` passou a:
+  - continuar controlando `Area`, `Agente` e `Raciocinio` via estado de selecao;
+  - exibir no topo `Area atual` e `Agente atual` com base no roteamento efetivo;
+  - marcar overrides manuais com badge compacto.
+- `useChatPageLayoutController.ts` foi atualizado para derivar o resumo do topo a partir de:
+  - `metadata.routing`
+  - `conversation.namespaceId`
+  - `conversation.agentId`
+  - `routedAgent` observado no fluxo local
+- As traducoes do chat foram atualizadas para diferenciar `Area atual`, `Agente atual` e badge `Manual`.
+
+### Validacoes concluídas nesta rodada
+
+- `pnpm exec vitest run tests/unit/chat-selection.test.ts tests/unit/chat-conversation-selection-sync.test.ts apps/frontend-service/src/pages/Chat/useChatMessageSyncEffects.test.ts`
+- `pnpm --filter @alice/frontend-service run typecheck`
+- `pnpm --filter @alice/frontend-service run lint`
+- `pnpm --filter @alice/frontend-service run build`
+- Todas as validacoes desta rodada encerraram sem erros.
 
 ## Arquivos impactados
 
@@ -189,10 +232,12 @@ Refatorar a UI/UX do chat da Alice para um padrao premium no estilo ChatGPT, rem
 - `apps/frontend-service/src/pages/Chat/useChatMessageSyncEffects.test.ts`
 - `apps/frontend-service/src/pages/Chat/useChatLocalState.ts`
 - `apps/frontend-service/src/pages/Chat/useChatPageLifecycle.ts`
+- `apps/frontend-service/src/pages/Chat/chat-selection.ts`
 - `apps/frontend-service/src/pages/Chat/useChatSectionProps.ts`
 - `apps/frontend-service/src/pages/Chat/useChatPageLayoutController.ts`
 - `apps/frontend-service/src/components/ui/dropdown-menu.tsx`
 - `apps/frontend-service/src/App.tsx`
+- `apps/frontend-service/src/pages/Chat/components/types.ts`
 - `apps/frontend-service/src/locales/pt-BR.json`
 - `apps/frontend-service/src/locales/en.json`
 - `docs/product/design-guidelines.md`
@@ -203,15 +248,15 @@ Refatorar a UI/UX do chat da Alice para um padrao premium no estilo ChatGPT, rem
 - `pnpm exec vitest run --passWithNoTests tests/unit/chat-selection.test.ts tests/unit/chat-conversation-selection-sync.test.ts tests/unit/chat-container-bindings.test.ts apps/frontend-service/src/pages/Chat/useChatWorkspacePresentation.test.ts`
 - `pnpm --filter @alice/frontend-service run lint`
 - `pnpm --filter @alice/frontend-service run build`
+- `pnpm exec vitest run tests/unit/chat-selection.test.ts tests/unit/chat-conversation-selection-sync.test.ts apps/frontend-service/src/pages/Chat/useChatMessageSyncEffects.test.ts`
 
 ## Riscos conhecidos
 
-- A investigacao remota de producao permanece parcialmente bloqueada enquanto a porta `22/tcp` nao estiver acessivel a partir deste ambiente.
 - O ajuste de scroll do chat foi feito no shell autenticado somente para a rota `/chat`; qualquer regressao em paginas full-height adjacentes precisa ser observada na validacao final.
+- Em conversas automaticas muito recentes, o topo depende de `metadata.routing`, `conversation.namespaceId` e `routedAgent`; qualquer regressao futura nesse contrato do backend precisa manter esses campos sincronizados.
 
 ## Proximos passos
 
-1. Executar testes, lint e build no escopo alterado do frontend.
-2. Revisar consistencia visual e funcional do chat apos a remediacao.
-3. Criar o commit consolidado em English.
-4. Encerrar sem push, conforme a governanca vigente.
+1. Revisar consistencia visual e funcional do chat apos a rodada 2 enterprise.
+2. Criar o commit consolidado em English.
+3. Encerrar sem push, conforme a governanca vigente.

@@ -6,7 +6,7 @@
  * Data: 10 de Março de 2026
  */
 import { useQueryClient } from '@tanstack/react-query';
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useParams, useLocation } from 'wouter';
 import { useTranslation } from 'react-i18next';
 import { useToast } from '@/hooks/use-toast';
@@ -36,6 +36,11 @@ import { useChatContainerBindings } from './useChatContainerBindings';
 import { useChatConversationSelectionSync } from './useChatConversationSelectionSync';
 import { useChatSendMessageMutation } from './useChatSendMessageMutation';
 import { buildChatPageLayoutProps } from './chat-page-layout-props-builder';
+import {
+  buildChatAgentOptions,
+  CHAT_AUTOMATIC_OPTION_VALUE,
+  resolveChatConversationDisplayState,
+} from './chat-selection';
 import { useAuth } from '@/hooks/use-auth';
 import { isManualReasoningMode } from '@/lib/reasoning-mode';
 
@@ -292,6 +297,40 @@ export function useChatPageLayoutController() {
     setSelectedReasoningMode,
     t,
   });
+  const conversationDisplayState = useMemo(() => resolveChatConversationDisplayState({
+    conversation: activeConversation,
+    routedAgentId: routedAgent?.id ?? null,
+    selectedAgentId: normalizedSelectedAgentId,
+    selectedAreaNamespaceId: normalizedSelectedAreaNamespaceId,
+  }), [
+    activeConversation,
+    normalizedSelectedAgentId,
+    normalizedSelectedAreaNamespaceId,
+    routedAgent,
+  ]);
+  const summaryAgentOptions = useMemo(
+    () => buildChatAgentOptions(agentsData, {
+      automaticLabel: t('chat.selectionControls.automaticAgent'),
+    }),
+    [agentsData, t],
+  );
+  const currentAreaLabel = useMemo(() => {
+    const effectiveAreaValue = conversationDisplayState.effectiveAreaNamespaceId ?? CHAT_AUTOMATIC_OPTION_VALUE;
+    return areaOptions.find((option) => option.value === effectiveAreaValue)?.label
+      ?? t('chat.selectionControls.automaticArea');
+  }, [areaOptions, conversationDisplayState.effectiveAreaNamespaceId, t]);
+  const currentAgentLabel = useMemo(() => {
+    const effectiveAgentValue = conversationDisplayState.effectiveAgentId ?? CHAT_AUTOMATIC_OPTION_VALUE;
+    return summaryAgentOptions.find((option) => option.value === effectiveAgentValue)?.label
+      ?? routedAgent?.preferredName
+      ?? routedAgent?.nome
+      ?? t('chat.selectionControls.automaticAgent');
+  }, [
+    conversationDisplayState.effectiveAgentId,
+    routedAgent,
+    summaryAgentOptions,
+    t,
+  ]);
   useChatConversationSelectionSync({
     activeConversation,
     canOverrideReasoningMode,
@@ -529,6 +568,10 @@ export function useChatPageLayoutController() {
     selectedConversationIds,
     selectedMessageCount: selectedMessageIds.size,
     canOverrideReasoningMode,
+    currentAgentLabel,
+    currentAreaLabel,
+    hasManualAgentSelection: conversationDisplayState.hasManualAgentSelection,
+    hasManualAreaSelection: conversationDisplayState.hasManualAreaSelection,
     showConversationActions: showOperationsControls,
     showTrainingDialog,
     modelBadgeLabel,

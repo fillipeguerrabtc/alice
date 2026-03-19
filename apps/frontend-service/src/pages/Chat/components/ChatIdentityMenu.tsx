@@ -34,6 +34,10 @@ export type ChatIdentityMenuProps = {
   }[];
   canOverrideReasoningMode: boolean;
   agentOptions: readonly ChatAgentOption[];
+  currentAgentLabel: string;
+  currentAreaLabel: string;
+  hasManualAgentSelection: boolean;
+  hasManualAreaSelection: boolean;
   selectedAgentId: string | null;
   selectedAreaNamespaceId: string | null;
   onAreaChange: (value: string | null) => void;
@@ -52,20 +56,24 @@ function getSelectedOptionLabel(
 }
 
 function getTopSummaryItems(options: {
-  areaLabel: string;
-  agentLabel: string;
+  currentAreaLabel: string;
+  currentAgentLabel: string;
+  hasManualAreaSelection: boolean;
+  hasManualAgentSelection: boolean;
   t: (key: string) => string;
 }) {
   return [
     {
       key: 'area',
-      label: options.t('chat.selectionControls.area'),
-      value: options.areaLabel,
+      label: options.t('chat.identityMenu.currentArea'),
+      value: options.currentAreaLabel,
+      isManual: options.hasManualAreaSelection,
     },
     {
       key: 'agent',
-      label: options.t('chat.selectionControls.agent'),
-      value: options.agentLabel,
+      label: options.t('chat.identityMenu.currentAgent'),
+      value: options.currentAgentLabel,
+      isManual: options.hasManualAgentSelection,
     },
   ].filter((item) => item.value.trim().length > 0);
 }
@@ -76,6 +84,10 @@ export function ChatIdentityMenu({
   reasoningOptions,
   canOverrideReasoningMode,
   agentOptions,
+  currentAgentLabel,
+  currentAreaLabel,
+  hasManualAgentSelection,
+  hasManualAreaSelection,
   selectedAgentId,
   selectedAreaNamespaceId,
   onAreaChange,
@@ -84,13 +96,15 @@ export function ChatIdentityMenu({
   modelBadgeLabel,
   t,
 }: ChatIdentityMenuProps) {
-  const currentAreaLabel = getSelectedOptionLabel(areaOptions, selectedAreaNamespaceId);
-  const currentAgentLabel = getSelectedOptionLabel(agentOptions, selectedAgentId);
+  const selectedAreaLabel = getSelectedOptionLabel(areaOptions, selectedAreaNamespaceId);
+  const selectedAgentLabel = getSelectedOptionLabel(agentOptions, selectedAgentId);
   const currentReasoningLabel =
     reasoningOptions.find((option) => option.value === reasoningMode)?.label ?? t('chat.reasoning.auto');
   const topSummaryItems = getTopSummaryItems({
-    areaLabel: currentAreaLabel,
-    agentLabel: currentAgentLabel,
+    currentAreaLabel,
+    currentAgentLabel,
+    hasManualAreaSelection,
+    hasManualAgentSelection,
     t,
   });
   const hasManualConversationConfig = Boolean(selectedAreaNamespaceId || selectedAgentId);
@@ -157,7 +171,7 @@ export function ChatIdentityMenu({
             <DropdownMenuSubTrigger className="rounded-xl px-2 py-2.5" data-testid="chat-identity-area-trigger">
               <span>{t('chat.selectionControls.area')}</span>
               <span className="ml-auto max-w-[8rem] truncate text-xs font-normal text-muted-foreground">
-                {currentAreaLabel}
+                {selectedAreaLabel}
               </span>
             </DropdownMenuSubTrigger>
             <DropdownMenuSubContent className="min-w-[16rem] rounded-2xl border-border/60 bg-background/95 p-2 shadow-[0_24px_80px_-32px_rgba(15,23,42,0.55)] backdrop-blur-xl">
@@ -186,7 +200,7 @@ export function ChatIdentityMenu({
             <DropdownMenuSubTrigger className="rounded-xl px-2 py-2.5" data-testid="chat-identity-agent-trigger">
               <span>{t('chat.selectionControls.agent')}</span>
               <span className="ml-auto max-w-[8rem] truncate text-xs font-normal text-muted-foreground">
-                {currentAgentLabel}
+                {selectedAgentLabel}
               </span>
             </DropdownMenuSubTrigger>
             <DropdownMenuSubContent className="min-w-[18rem] rounded-2xl border-border/60 bg-background/95 p-2 shadow-[0_24px_80px_-32px_rgba(15,23,42,0.55)] backdrop-blur-xl">
@@ -222,17 +236,22 @@ export function ChatIdentityMenu({
 
       {topSummaryItems.length > 0 && (
         <div
-          className="hidden min-w-0 items-center gap-1.5 lg:flex"
+          className="hidden min-w-0 flex-wrap items-center gap-1.5 md:flex"
           data-testid="chat-current-routing-summary"
-          aria-label={t('chat.identityMenu.manualConfigSummary')}
+          aria-label={t('chat.identityMenu.currentStateSummary')}
         >
           {topSummaryItems.map((item) => (
             <span
               key={item.key}
-              className="inline-flex max-w-[13rem] items-center gap-1 truncate rounded-full border border-border/60 bg-background/70 px-2.5 py-1 text-[11px] font-medium text-muted-foreground"
+              className="inline-flex max-w-[16rem] items-center gap-1.5 truncate rounded-full border border-border/60 bg-background/70 px-2.5 py-1 text-[11px] font-medium text-muted-foreground"
             >
               <span className="shrink-0 text-muted-foreground/70">{item.label}:</span>
               <span className="truncate text-foreground">{item.value}</span>
+              {item.isManual && (
+                <span className="shrink-0 rounded-full bg-primary/12 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-primary">
+                  {t('chat.identityMenu.manualBadge')}
+                </span>
+              )}
             </span>
           ))}
         </div>

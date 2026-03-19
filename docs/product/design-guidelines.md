@@ -98,10 +98,12 @@ Usar escala consistente: `2, 4, 8, 12, 16, 24, 32` (px-2, h-8, m-12, etc.)
 - **Mensagens da Alice:** Bolha à esquerda, cor neutra
 - Topo do chat principal em padrao minimalista, com o titulo `Alice` como ponto principal de configuracao da conversa
 - `Raciocínio`, `Área` e `Agente` devem viver no menu contextual do titulo `Alice`, nunca em uma faixa fixa dedicada abaixo do header
+- O menu `Alice` controla a configuracao persistida da conversa; o resumo compacto do topo deve refletir o roteamento efetivo aplicado pela plataforma
 - `Área` representa o namespace ativo da conversa e pode voltar para modo automático sem esconder o contexto da conversa
 - `Agente` representa o especialista dentro da área selecionada; quando estiver em automático, o roteamento continua livre dentro do escopo permitido
 - `Raciocínio` usa apenas os labels `Automático`, `Rápido` e `Mais Profundo`
 - O topo do chat deve exibir o estado atual de `Área` e `Agente` em formato compacto, inclusive quando ambos estiverem em modo automático
+- Quando a conversa estiver em modo automatico, `Área` e `Agente` visiveis no topo devem representar o estado efetivo retornado por `routing`, e nao apenas a selecao persistida do usuario
 - O composer deve exibir o `Raciocínio` atual como estado visível da conversa, em linguagem compacta no estilo ChatGPT
 - Quando `Área` ou `Agente` estiverem em modo manual, a superficie principal deve reforcar esse override sem voltar a usar formulario persistente
 - Workspace selector nao faz parte da experiencia principal do chat

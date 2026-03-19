@@ -452,7 +452,11 @@
       "title": "Alice",
       "openMenu": "Open Alice menu",
       "manualConfigActive": "Manual conversation configuration is active",
-      "manualConfigSummary": "Summary of the manual conversation configuration"
+      "manualConfigSummary": "Summary of the manual conversation configuration",
+      "currentStateSummary": "Summary of the current conversation state",
+      "currentArea": "Current area",
+      "currentAgent": "Current agent",
+      "manualBadge": "Manual"
     },
     "selectionControls": {
       "area": "Area",

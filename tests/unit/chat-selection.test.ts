@@ -6,8 +6,10 @@ import {
   buildCanonicalChatSelectionPayload,
   buildChatAreaOptions,
   buildChatReasoningOptions,
+  readConversationEffectiveRouting,
   readConversationSelection,
   normalizeChatSelection,
+  resolveChatConversationDisplayState,
 } from '../../apps/frontend-service/src/pages/Chat/chat-selection';
 import type { ChatAgentSummary, ChatNamespace } from '../../apps/frontend-service/src/pages/Chat/useChatQueryState';
 
@@ -122,6 +124,84 @@ describe('chat-selection', () => {
       selectedAgentId: null,
       selectedAreaNamespaceId: 'namespace-sales',
       selectedReasoningMode: 'thinking',
+    });
+  });
+
+  it('mantem a selecao automatica quando metadata.selection zera a area, mas le o roteamento efetivo separadamente', () => {
+    const conversation = {
+      id: 'conv-routing-auto',
+      agentId: null,
+      namespaceId: 'namespace-support',
+      titulo: 'Conversa automatica roteada',
+      criadoEm: '2026-03-19T15:07:40.178Z',
+      atualizadoEm: '2026-03-19T15:10:39.378Z',
+      metadata: {
+        selection: {
+          selectedAgentId: null,
+          selectedNamespaceId: null,
+          reasoningMode: 'thinking',
+        },
+        routing: {
+          selectedAgentId: null,
+          selectedNamespaceId: 'namespace-support',
+          updatedAt: '2026-03-19T15:10:20.900Z',
+        },
+      },
+    } as const;
+
+    expect(readConversationSelection(conversation)).toEqual({
+      selectedAgentId: null,
+      selectedAreaNamespaceId: null,
+      selectedReasoningMode: 'thinking',
+    });
+
+    expect(readConversationEffectiveRouting(conversation)).toEqual({
+      effectiveAgentId: null,
+      effectiveAreaNamespaceId: 'namespace-support',
+    });
+  });
+
+  it('resolve o estado visual do chat priorizando o roteamento efetivo e preservando o override manual', () => {
+    expect(resolveChatConversationDisplayState({
+      conversation: {
+        id: 'conv-display-1',
+        agentId: null,
+        namespaceId: 'namespace-support',
+        titulo: 'Conversa roteada',
+        criadoEm: '2026-03-19T15:07:40.178Z',
+        atualizadoEm: '2026-03-19T15:10:39.378Z',
+        metadata: {
+          selection: {
+            selectedAgentId: null,
+            selectedNamespaceId: null,
+            reasoningMode: 'auto',
+          },
+          routing: {
+            selectedAgentId: 'agent-support',
+            selectedNamespaceId: 'namespace-support',
+          },
+        },
+      },
+      routedAgentId: null,
+      selectedAgentId: null,
+      selectedAreaNamespaceId: null,
+    })).toEqual({
+      effectiveAgentId: 'agent-support',
+      effectiveAreaNamespaceId: 'namespace-support',
+      hasManualAgentSelection: false,
+      hasManualAreaSelection: false,
+    });
+
+    expect(resolveChatConversationDisplayState({
+      conversation: null,
+      routedAgentId: null,
+      selectedAgentId: 'agent-sales',
+      selectedAreaNamespaceId: 'namespace-sales',
+    })).toEqual({
+      effectiveAgentId: 'agent-sales',
+      effectiveAreaNamespaceId: 'namespace-sales',
+      hasManualAgentSelection: true,
+      hasManualAreaSelection: true,
     });
   });
 

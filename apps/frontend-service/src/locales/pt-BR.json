@@ -477,7 +477,11 @@
       "title": "Alice",
       "openMenu": "Abrir menu da Alice",
       "manualConfigActive": "Configuração manual ativa na conversa",
-      "manualConfigSummary": "Resumo da configuração manual da conversa"
+      "manualConfigSummary": "Resumo da configuração manual da conversa",
+      "currentStateSummary": "Resumo do estado atual da conversa",
+      "currentArea": "Área atual",
+      "currentAgent": "Agente atual",
+      "manualBadge": "Manual"
     },
     "selectionControls": {
       "area": "Área",

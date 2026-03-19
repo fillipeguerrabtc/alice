@@ -57,6 +57,10 @@ type UseChatSectionPropsOptions = {
   selectedConversationIds: ConversationsListProps['selectedIds'];
   selectedMessageCount: number;
   canOverrideReasoningMode: ChatIdentityMenuProps['canOverrideReasoningMode'];
+  currentAgentLabel: ChatIdentityMenuProps['currentAgentLabel'];
+  currentAreaLabel: ChatIdentityMenuProps['currentAreaLabel'];
+  hasManualAgentSelection: ChatIdentityMenuProps['hasManualAgentSelection'];
+  hasManualAreaSelection: ChatIdentityMenuProps['hasManualAreaSelection'];
   showConversationActions: ChatActionsMenuProps['showConversationActions'];
   showTrainingDialog: ChatDialogsSectionProps['showTrainingDialog'];
   modelBadgeLabel: ChatIdentityMenuProps['modelBadgeLabel'];
@@ -113,6 +117,10 @@ export function useChatSectionProps({
   selectedConversationIds,
   selectedMessageCount,
   canOverrideReasoningMode,
+  currentAgentLabel,
+  currentAreaLabel,
+  hasManualAgentSelection,
+  hasManualAreaSelection,
   showConversationActions,
   showTrainingDialog,
   modelBadgeLabel,
@@ -178,6 +186,10 @@ export function useChatSectionProps({
     reasoningMode,
     canOverrideReasoningMode,
     reasoningOptions,
+    currentAgentLabel,
+    currentAreaLabel,
+    hasManualAgentSelection,
+    hasManualAreaSelection,
     selectedAgentId,
     selectedAreaNamespaceId,
     modelBadgeLabel,
@@ -191,6 +203,10 @@ export function useChatSectionProps({
     reasoningMode,
     canOverrideReasoningMode,
     reasoningOptions,
+    currentAgentLabel,
+    currentAreaLabel,
+    hasManualAgentSelection,
+    hasManualAreaSelection,
     selectedAgentId,
     selectedAreaNamespaceId,
     modelBadgeLabel,

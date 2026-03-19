@@ -10,6 +10,16 @@ export type ChatSelectionState = {
   selectedReasoningMode: ReasoningMode;
 };
 
+export type ChatEffectiveRoutingState = {
+  effectiveAgentId: string | null;
+  effectiveAreaNamespaceId: string | null;
+};
+
+export type ChatConversationDisplayState = ChatEffectiveRoutingState & {
+  hasManualAgentSelection: boolean;
+  hasManualAreaSelection: boolean;
+};
+
 export type ChatAreaOption = {
   label: string;
   namespaceId: string | null;
@@ -211,6 +221,7 @@ type BuildChatSelectionPayloadOptions = {
 };
 
 type ConversationMetadataSelection = NonNullable<NonNullable<Conversation['metadata']>['selection']>;
+type ConversationMetadataRouting = NonNullable<NonNullable<Conversation['metadata']>['routing']>;
 
 function normalizeSelectionString(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value : null;
@@ -227,6 +238,13 @@ function hasSelectionKey(
   key: 'selectedAgentId' | 'selectedNamespaceId' | 'reasoningMode',
 ): boolean {
   return Boolean(selection && typeof selection === 'object' && Object.prototype.hasOwnProperty.call(selection, key));
+}
+
+function hasRoutingKey(
+  routing: ConversationMetadataRouting | null | undefined,
+  key: 'selectedAgentId' | 'selectedNamespaceId',
+): boolean {
+  return Boolean(routing && typeof routing === 'object' && Object.prototype.hasOwnProperty.call(routing, key));
 }
 
 export function readConversationSelection(
@@ -250,6 +268,48 @@ export function readConversationSelection(
         ? metadataSelection?.reasoningMode
         : DEFAULT_REASONING_MODE,
     ),
+  };
+}
+
+export function readConversationEffectiveRouting(
+  conversation?: Pick<Conversation, 'agentId' | 'namespaceId' | 'metadata'> | null,
+): ChatEffectiveRoutingState {
+  const metadataRouting = conversation?.metadata?.routing;
+
+  return {
+    effectiveAgentId: normalizeSelectionString(
+      hasRoutingKey(metadataRouting, 'selectedAgentId')
+        ? metadataRouting?.selectedAgentId
+        : conversation?.agentId ?? null,
+    ),
+    effectiveAreaNamespaceId: normalizeSelectionString(
+      hasRoutingKey(metadataRouting, 'selectedNamespaceId')
+        ? metadataRouting?.selectedNamespaceId
+        : conversation?.namespaceId ?? null,
+    ),
+  };
+}
+
+type ResolveChatConversationDisplayStateOptions = {
+  conversation?: Pick<Conversation, 'agentId' | 'namespaceId' | 'metadata'> | null;
+  routedAgentId?: string | null;
+  selectedAgentId: string | null;
+  selectedAreaNamespaceId: string | null;
+};
+
+export function resolveChatConversationDisplayState({
+  conversation,
+  routedAgentId,
+  selectedAgentId,
+  selectedAreaNamespaceId,
+}: ResolveChatConversationDisplayStateOptions): ChatConversationDisplayState {
+  const effectiveRouting = readConversationEffectiveRouting(conversation);
+
+  return {
+    effectiveAgentId: effectiveRouting.effectiveAgentId ?? routedAgentId ?? selectedAgentId,
+    effectiveAreaNamespaceId: effectiveRouting.effectiveAreaNamespaceId ?? selectedAreaNamespaceId,
+    hasManualAgentSelection: Boolean(selectedAgentId),
+    hasManualAreaSelection: Boolean(selectedAreaNamespaceId),
   };
 }
 

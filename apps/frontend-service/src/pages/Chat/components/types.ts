@@ -120,6 +120,22 @@ export interface Conversation {
       source?: string | null;
       updatedAt?: string | null;
     } | null;
+    routing?: {
+      mode?: 'auto' | 'manual' | null;
+      source?: string | null;
+      score?: number | null;
+      profile?: string | null;
+      autoAcceptThreshold?: number | null;
+      humanReviewThreshold?: number | null;
+      needsHumanReview?: boolean | null;
+      reviewReasons?: string[] | null;
+      matchedExceptionIds?: string[] | null;
+      hybridPolicyVersion?: string | null;
+      selectedAgentId?: string | null;
+      selectedNamespaceId?: string | null;
+      namespaceFallbackReason?: string | null;
+      updatedAt?: string | null;
+    } | null;
     [key: string]: unknown;
   } | null;
   titulo: string | null;
