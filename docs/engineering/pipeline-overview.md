@@ -74,6 +74,13 @@ Efeito:
 4. `build-and-check` e `security-and-compliance` so rodam quando `release_eligible=true`.
 5. O job `trigger-release` so roda em push para `main`, com `release_eligible=true` e sucesso dos jobs obrigatorios.
 
+### Governanca de churn documental
+
+- O guardrail `verify:enterprise-focus` bloqueia o `CI` pelo delta do evento atual, nunca por ruído acumulado da branch principal.
+- Em `pull_request`, a comparacao usa `base.sha...head.sha`.
+- Em `push`, a comparacao usa `before..after`, com fallback para o commit atual quando o push cria a referencia.
+- A janela historica de 50 commits continua existindo apenas como telemetria e pode gerar `WARN`, mas nao deve bloquear merges validos por churn documental preexistente.
+
 ## Fluxo do `Release`
 
 1. `validate-ci-status` confirma um run bem-sucedido do `CI` para o mesmo commit.
