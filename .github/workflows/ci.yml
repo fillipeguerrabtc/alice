@@ -75,16 +75,16 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Setup Node.js bootstrap para detectar toolchain
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af
+        with:
+          node-version-file: '.nvmrc'
+
       - name: Resolver versoes oficiais de Node.js e pnpm
         id: versions
         run: |
           set -euo pipefail
           node ./scripts/resolve-toolchain.mjs
-
-      - name: Setup Node.js para resolver escopo
-        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af
-        with:
-          node-version: ${{ steps.versions.outputs.node-version }}
 
       - name: Fetch pull request base ref
         if: ${{ github.event_name == 'pull_request' }}
