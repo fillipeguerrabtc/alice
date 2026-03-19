@@ -6,7 +6,7 @@
  * Data: 10 de Março de 2026
  */
 import { useQueryClient } from '@tanstack/react-query';
-import { useCallback, useMemo } from 'react';
+import { useCallback } from 'react';
 import { useParams, useLocation } from 'wouter';
 import { useTranslation } from 'react-i18next';
 import { useToast } from '@/hooks/use-toast';
@@ -29,18 +29,13 @@ import { useChatPageLifecycle } from './useChatPageLifecycle';
 import { useChatUiInteractionHandlers } from './useChatUiInteractionHandlers';
 import { useChatMessageSyncEffects } from './useChatMessageSyncEffects';
 import { useChatWorkspacePresentation } from './useChatWorkspacePresentation';
-import { useChatSectionProps } from './useChatSectionProps';
 import { useChatQueryState } from './useChatQueryState';
 import { useChatLocalState } from './useChatLocalState';
 import { useChatContainerBindings } from './useChatContainerBindings';
 import { useChatConversationSelectionSync } from './useChatConversationSelectionSync';
 import { useChatSendMessageMutation } from './useChatSendMessageMutation';
-import { buildChatPageLayoutProps } from './chat-page-layout-props-builder';
-import {
-  buildChatAgentOptions,
-  CHAT_AUTOMATIC_OPTION_VALUE,
-  resolveChatConversationDisplayState,
-} from './chat-selection';
+import { useChatConversationSurfaceState } from './useChatConversationSurfaceState';
+import { useChatPagePresentationModel } from './useChatPagePresentationModel';
 import { useAuth } from '@/hooks/use-auth';
 import { isManualReasoningMode } from '@/lib/reasoning-mode';
 
@@ -297,40 +292,22 @@ export function useChatPageLayoutController() {
     setSelectedReasoningMode,
     t,
   });
-  const conversationDisplayState = useMemo(() => resolveChatConversationDisplayState({
-    conversation: activeConversation,
-    routedAgentId: routedAgent?.id ?? null,
+  const {
+    conversationDisplayState,
+    currentAgentLabel,
+    currentAreaLabel,
+    currentReasoningLabel,
+  } = useChatConversationSurfaceState({
+    activeConversation,
+    agentsData,
+    areaOptions,
+    reasoningOptions,
+    routedAgent,
     selectedAgentId: normalizedSelectedAgentId,
     selectedAreaNamespaceId: normalizedSelectedAreaNamespaceId,
-  }), [
-    activeConversation,
-    normalizedSelectedAgentId,
-    normalizedSelectedAreaNamespaceId,
-    routedAgent,
-  ]);
-  const summaryAgentOptions = useMemo(
-    () => buildChatAgentOptions(agentsData, {
-      automaticLabel: t('chat.selectionControls.automaticAgent'),
-    }),
-    [agentsData, t],
-  );
-  const currentAreaLabel = useMemo(() => {
-    const effectiveAreaValue = conversationDisplayState.effectiveAreaNamespaceId ?? CHAT_AUTOMATIC_OPTION_VALUE;
-    return areaOptions.find((option) => option.value === effectiveAreaValue)?.label
-      ?? t('chat.selectionControls.automaticArea');
-  }, [areaOptions, conversationDisplayState.effectiveAreaNamespaceId, t]);
-  const currentAgentLabel = useMemo(() => {
-    const effectiveAgentValue = conversationDisplayState.effectiveAgentId ?? CHAT_AUTOMATIC_OPTION_VALUE;
-    return summaryAgentOptions.find((option) => option.value === effectiveAgentValue)?.label
-      ?? routedAgent?.preferredName
-      ?? routedAgent?.nome
-      ?? t('chat.selectionControls.automaticAgent');
-  }, [
-    conversationDisplayState.effectiveAgentId,
-    routedAgent,
-    summaryAgentOptions,
+    selectedReasoningMode: normalizedSelectedReasoningMode,
     t,
-  ]);
+  });
   useChatConversationSelectionSync({
     activeConversation,
     canOverrideReasoningMode,
@@ -509,13 +486,20 @@ export function useChatPageLayoutController() {
   const handleOpenDeleteSelectedDialog = useCallback(() => {
     setDeleteSelectedOpen(true);
   }, [setDeleteSelectedOpen]);
+  const handleReasoningModeChange = useCallback((nextMode: typeof normalizedSelectedReasoningMode) => {
+    if (!canOverrideReasoningMode && isManualReasoningMode(nextMode)) {
+      return;
+    }
+
+    handleSelectedReasoningModeChange(nextMode);
+  }, [
+    canOverrideReasoningMode,
+    handleSelectedReasoningModeChange,
+    normalizedSelectedReasoningMode,
+  ]);
   const isRecordingDisabled = isStreaming || isRecording || isRecordingStarting || isTranscribingRecording;
-  const {
-    chatActionsMenuProps,
-    chatDialogsSectionProps,
-    chatIdentityMenuProps,
-    conversationsListProps,
-  } = useChatSectionProps({
+  return useChatPagePresentationModel({
+    acceptedTypes: CHAT_ACCEPTED_MEDIA_TYPES,
     activeConversationCount: selectedConversationIds.size,
     agentOptions,
     areaOptions,
@@ -548,12 +532,7 @@ export function useChatPageLayoutController() {
     onLoadMore: handleLoadMoreConversations,
     onNamespaceChange: setTrainingNamespaceId,
     onNewChat: handleNewChatWithClose,
-    onReasoningModeChange: (nextMode) => {
-      if (!canOverrideReasoningMode && isManualReasoningMode(nextMode)) {
-        return;
-      }
-      handleSelectedReasoningModeChange(nextMode);
-    },
+    onReasoningModeChange: handleReasoningModeChange,
     onAreaChange: handleSelectedAreaNamespaceIdChange,
     onAgentChange: handleSelectedAgentIdChange,
     onSelectConversation: handleSelectConversation,
@@ -578,66 +557,47 @@ export function useChatPageLayoutController() {
     t,
     trainingDialogMode,
     trainingNamespaceId,
+    currentReasoningLabel,
+    focusNonce,
+    input,
+    isComposerDisabled: showLoginBanner,
+    isMobile,
+    isRecording,
+    isRecordingDisabled,
+    isStreaming,
+    lastResponseUsedFallback,
+    messageSelectionMode,
+    mobileDrawerOpen,
+    pendingMedia,
+    runtimeNotice,
+    showDesktopActionMenu,
+    showLoginBanner,
+    showStreamDiagnostics,
+    sidebarOpen,
+    streamEvents,
+    streamStatusLabel,
+    typingSpeedMs,
+    messages,
+    messagesContainerRef,
+    messagesEndRef,
+    scrollAreaRef,
+    selectedMessageIds,
+    onComposerChange: setInput,
+    onFeedback: handleFeedback,
+    onFilesSelected: handleFileSelect,
+    onMobileDrawerOpenChange: setMobileDrawerOpen,
+    onOpenMobileDrawer: handleOpenMobileDrawer,
+    onQuickReply: handleQuickReply,
+    onRateImage: handleRateImage,
+    onRegenerate: handleRegenerate,
+    onRemoveMedia: removePendingMedia,
+    onSend: handleSend,
+    onSendRecording: handleSendRecordingNow,
+    onStartRecording: handleStartRecording,
+    onStopRecording: handleStopRecordingReview,
+    onStopStreaming: handleStopStreaming,
+    onSubmitComposer: handleSubmit,
+    onToggleMessageSelection: toggleMessageSelection,
+    onToggleSidebar: handleToggleSidebar,
   });
-  const currentReasoningLabel = reasoningOptions.find((option) => option.value === normalizedSelectedReasoningMode)?.label
-    ?? t('chat.reasoning.auto');
-  const chatPageLayoutProps = buildChatPageLayoutProps({
-    state: {
-      acceptedTypes: CHAT_ACCEPTED_MEDIA_TYPES,
-      currentReasoningLabel,
-      focusNonce,
-      input,
-      isComposerDisabled: showLoginBanner,
-      isMobile,
-      isRecording,
-      isRecordingDisabled,
-      isStreaming,
-      lastResponseUsedFallback,
-      messageSelectionMode,
-      mobileDrawerOpen,
-      pendingMedia,
-      runtimeNotice,
-      showDesktopActionMenu,
-      showLoginBanner,
-      showStreamDiagnostics,
-      sidebarOpen,
-      streamEvents,
-      streamStatusLabel,
-      typingSpeedMs,
-    },
-    sections: {
-      chatActionsMenuProps,
-      chatDialogsSectionProps,
-      chatIdentityMenuProps,
-      conversationsListProps,
-    },
-    viewport: {
-      messages,
-      messagesContainerRef,
-      messagesEndRef,
-      scrollAreaRef,
-      selectedMessageIds,
-    },
-    handlers: {
-      onComposerChange: setInput,
-      onFeedback: handleFeedback,
-      onFilesSelected: handleFileSelect,
-      onMobileDrawerOpenChange: setMobileDrawerOpen,
-      onOpenMobileDrawer: handleOpenMobileDrawer,
-      onQuickReply: handleQuickReply,
-      onRateImage: handleRateImage,
-      onRegenerate: handleRegenerate,
-      onRemoveMedia: removePendingMedia,
-      onSend: handleSend,
-      onSendRecording: handleSendRecordingNow,
-      onStartRecording: handleStartRecording,
-      onStopRecording: handleStopRecordingReview,
-      onStopStreaming: handleStopStreaming,
-      onSubmitComposer: handleSubmit,
-      onToggleMessageSelection: toggleMessageSelection,
-      onToggleSidebar: handleToggleSidebar,
-    },
-  });
-
-  return chatPageLayoutProps;
 }
