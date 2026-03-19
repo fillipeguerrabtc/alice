@@ -2,7 +2,7 @@
 
 **Author:** Fillipe Guerra
 **Data:** 18 de Marco de 2026
-**Atualizado:** 18 de Marco de 2026
+**Atualizado:** 19 de Marco de 2026
 **Status:** ativo
 **Tipo:** ssot
 
@@ -85,9 +85,10 @@ Esses comandos sao changed-only por padrao.
 
 ## Uso no `CI`
 
-- Quando `scope_mode=scoped`, o `CI` roda os comandos padrao incrementais.
+- Em `pull_request`, quando `scope_mode=scoped` e `release_eligible=true`, o `CI` roda os comandos padrao incrementais.
 - Quando `scope_mode=full`, o `CI` roda `typecheck:full`, `test:full`, `lint:full` e `build:full`.
-- `docs-only` e `pipeline-only` nao executam os gates de codigo da aplicacao.
+- Em `push` para `main`, `build-and-check` e `security-and-compliance` sempre rodam para validar o commit efetivamente publicado.
+- `docs-only` e `pipeline-only` continuam sem `release-eligible` e nao seguem automaticamente para `Release` ou `Deploy`.
 
 ## Observacoes operacionais
 

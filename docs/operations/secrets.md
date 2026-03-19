@@ -2,7 +2,7 @@
 
 **Author:** Fillipe Guerra
 **Data:** 18 de Marco de 2026
-**Atualizado:** 18 de Marco de 2026
+**Atualizado:** 19 de Marco de 2026
 **Status:** ativo
 **Tipo:** ssot
 
@@ -119,7 +119,7 @@ Validacao minima por stack antes do `compose up`:
 
 - `CI` nao usa este documento para inventar secrets novos; ele valida o que ja existe no repositorio e nos scripts.
 - `Release` publica artefatos aprovados, mas a montagem final de `.env.prod` continua sendo responsabilidade do `Deploy`.
-- Mudancas `docs-only` nao disparam validacoes de codigo.
+- Em `pull_request`, mudancas `docs-only` nao disparam validacoes de codigo da aplicacao.
 - O deploy deve falhar em modo fail-fast quando o conjunto obrigatorio estiver incompleto.
 
 ## Referencias

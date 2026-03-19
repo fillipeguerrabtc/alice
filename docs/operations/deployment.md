@@ -2,7 +2,7 @@
 
 **Author:** Fillipe Guerra
 **Data:** 18 de Marco de 2026
-**Atualizado:** 18 de Marco de 2026
+**Atualizado:** 19 de Marco de 2026
 **Status:** ativo
 **Tipo:** ssot
 
@@ -35,15 +35,16 @@ Ser o ponto de entrada da entrega operacional da Alice, separando claramente o q
 
 | Tipo | Definicao operacional | Validacao | `Release` / `Deploy` |
 | --- | --- | --- | --- |
-| `docs-only` | todos os arquivos alterados sao documentacao | validacao documental e de coerencia apenas | nao segue automaticamente |
-| `pipeline-only` | alteracoes restritas a `.github/workflows/`, `.github/actions/` ou `.github/.workflow-test` | revisao da esteira; sem gate de codigo da aplicacao | nao segue automaticamente |
+| `docs-only` | todos os arquivos alterados sao documentacao | em `pull_request`, validacao documental e de coerencia; em `push` para `main`, os jobs principais da `CI` validam o commit publicado | nao segue automaticamente |
+| `pipeline-only` | alteracoes restritas a `.github/workflows/`, `.github/actions/` ou `.github/.workflow-test` | em `pull_request`, revisao da esteira sem gate de codigo da aplicacao; em `push` para `main`, os jobs principais da `CI` validam o commit publicado | nao segue automaticamente |
 | `release-eligible` | existe ao menos um arquivo alterado fora de documentacao e fora de pipeline-only | `CI` incremental ou full fallback, conforme o escopo | pode seguir para `Release` e `Deploy` |
 
 ## Regras vigentes
 
-- Mudancas exclusivamente documentais nao executam `typecheck`, `lint`, `test` ou `build`.
+- Em `pull_request`, mudancas exclusivamente documentais nao executam `typecheck`, `lint`, `test` ou `build`.
 - Mudancas apenas de pipeline nao seguem para `Release` nem `Deploy`.
-- `Release` exige `CI` previo bem-sucedido para o mesmo commit alvo.
+- Em `push` para `main`, os jobs principais da `CI` rodam mesmo quando o commit nao e `release-eligible`.
+- `Release` recebe da `CI` o `target_sha` aprovado e valida esse commit em `origin/main`.
 - `Release` nao duplica o gate de qualidade do `CI`.
 - `Deploy` trabalha com artefatos ja publicados pela `Release`.
 

@@ -14,7 +14,7 @@ Definir o comportamento vigente da esteira da Alice, separando validacao, public
 
 | Etapa | Workflow | Papel |
 | --- | --- | --- |
-| `CI` | [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) | validar codigo, seguranca e governanca do commit elegivel |
+| `CI` | [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) | validar codigo, seguranca e governanca do commit em avaliacao |
 | `Release` | [`.github/workflows/release.yml`](../../.github/workflows/release.yml) | publicar artefatos aprovados |
 | `Deploy` | [`.github/workflows/deploy-stack-modular.yml`](../../.github/workflows/deploy-stack-modular.yml) | implantar artefatos publicados |
 
@@ -35,7 +35,8 @@ O `CI` considera `docs-only=true` quando todos os arquivos alterados sao documen
 
 Efeito:
 
-- nao roda checks de codigo da aplicacao
+- em `pull_request`, nao roda checks de codigo da aplicacao
+- em `push` para `main`, os jobs principais da `CI` rodam para validar o commit publicado
 - nao dispara `Release`
 - a validacao esperada e documental
 
@@ -50,6 +51,7 @@ Arquivos em:
 Efeito:
 
 - nao ha `release-eligible`
+- em `push` para `main`, os jobs principais da `CI` rodam para validar o commit publicado
 - a esteira nao segue para `Release` ou `Deploy`
 - a revisao se concentra no comportamento da propria pipeline
 
@@ -71,9 +73,11 @@ Efeito:
    - `release_eligible`
 2. Se o diff for confiavel, o `CI` usa validacao incremental.
 3. Se a base de comparacao nao puder ser resolvida com seguranca, o `CI` cai em `full` fallback.
-4. `build-and-check` e `security-and-compliance` so rodam quando `release_eligible=true`.
-5. O job `trigger-release` so roda em push para `main` quando existe `release_pending=true`.
-6. `release_pending` considera tambem o backlog elegivel desde a ultima tag, para que um push apenas de pipeline ou documentacao ainda consiga publicar codigo que permaneceu pendente de release.
+4. Em `pull_request`, `build-and-check` e `security-and-compliance` so rodam quando `release_eligible=true`.
+5. Em `push` para `main`, esses jobs sempre rodam para validar o commit efetivamente publicado.
+6. O job `trigger-release` so roda em push para `main` quando existe `release_pending=true`.
+7. `release_pending` considera tambem o backlog elegivel desde a ultima tag, para que um push apenas de pipeline ou documentacao ainda consiga publicar codigo que permaneceu pendente de release.
+8. `trigger-release` usa `always()` porque depende de jobs que podem ficar `skipped` em `pull_request`, mas nao deve herdar `skipped` indevido no fluxo de `push` para `main`.
 
 ### Governanca de churn documental
 

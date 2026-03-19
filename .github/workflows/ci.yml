@@ -28,9 +28,10 @@
 #   - GAP-GHACTIONS-001: Actions pinadas a SHA (supply chain security)
 #   - GAP-GHACTIONS-003: Least privilege permissions
 #
-# ATUALIZAÇÃO (17/03/2026):
-# - PRs e pushes em main usam validação incremental por escopo afetado
-# - Mudanças exclusivamente documentais ou apenas de pipeline pulam checks de código da aplicação
+# ATUALIZAÇÃO (19/03/2026):
+# - PRs usam validação incremental por escopo afetado
+# - Pushes em main sempre executam os jobs principais para validar o commit publicado
+# - docs-only/pipeline-only continuam sem release-eligible, mas não podem pular indevidamente a validação do push em main
 # - CI concentra o gate de qualidade; Release não repete esse papel
 #
 # Author: Fillipe Guerra
@@ -144,6 +145,7 @@ jobs:
           if [ "$SCOPE_MODE" = "full" ]; then
             echo "docs_only=false" >> "$GITHUB_OUTPUT"
             echo "release_eligible=true" >> "$GITHUB_OUTPUT"
+            echo "release_pending=true" >> "$GITHUB_OUTPUT"
             echo "🔒 Fallback full habilitado: base ref indisponível para comparação segura."
             exit 0
           fi
@@ -238,8 +240,8 @@ jobs:
 
   # ===========================================================================
   # Job 2: Build, TypeCheck, Lint e Testes
-  # PR e push em main: escopo incremental por workspace/suite afetada
-  # Mudanças sem impacto de aplicação (docs/pipeline-only) pulam este job
+  # PR: escopo incremental por workspace/suite afetada
+  # Push em main: o job sempre roda para validar o commit efetivamente publicado
   # Fallback full: apenas quando o commit-base não puder ser resolvido com segurança
   # Timeout: 25min
   # ===========================================================================
@@ -250,7 +252,7 @@ jobs:
     permissions:
       contents: read
     needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.release-eligible == 'true' }}
+    if: ${{ github.event_name == 'push' || needs.detect-changes.outputs.release-eligible == 'true' }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -323,6 +325,7 @@ jobs:
   # ===========================================================================
   # Job 3: Security & Compliance (CONSOLIDADO)
   # OTIMIZAÇÃO: Trivy + Compliance em 1 único job (ambos não precisam de Node.js)
+  # Push em main: o job sempre roda para validar o commit efetivamente publicado
   # Timeout: 8min (scan + verificações)
   # ===========================================================================
   security-and-compliance:
@@ -333,7 +336,7 @@ jobs:
       contents: read
       security-events: write
     needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.release-eligible == 'true' }}
+    if: ${{ github.event_name == 'push' || needs.detect-changes.outputs.release-eligible == 'true' }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
@@ -495,7 +498,7 @@ jobs:
       contents: read
       actions: write
     needs: [detect-changes, build-and-check, security-and-compliance]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.detect-changes.outputs.release-pending == 'true' && (needs.build-and-check.result == 'success' || needs.build-and-check.result == 'skipped') && (needs.security-and-compliance.result == 'success' || needs.security-and-compliance.result == 'skipped')
+    if: ${{ always() && github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.detect-changes.outputs.release-pending == 'true' && (needs.build-and-check.result == 'success' || needs.build-and-check.result == 'skipped') && (needs.security-and-compliance.result == 'success' || needs.security-and-compliance.result == 'skipped') }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
