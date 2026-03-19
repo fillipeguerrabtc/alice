@@ -88,7 +88,7 @@ Esses comandos sao changed-only por padrao.
 - Em `pull_request`, quando `scope_mode=scoped` e `release_eligible=true`, o `CI` roda os comandos padrao incrementais.
 - Quando `scope_mode=full`, o `CI` roda `typecheck:full`, `test:full`, `lint:full` e `build:full`.
 - Em `push` para `main`, `build-and-check` e `security-and-compliance` sempre rodam para validar o commit efetivamente publicado.
-- Em qualquer evento, `verify:enterprise-focus` so bloqueia quando o commit atual e `release_eligible=true`.
+- Em qualquer evento, `verify:enterprise-focus` atua como telemetria advisory quando o commit atual e `release_eligible=true`.
 - `docs-only` e `pipeline-only` continuam sem `release-eligible` e nao seguem automaticamente para `Release` ou `Deploy`.
 
 ## Observacoes operacionais
@@ -97,6 +97,7 @@ Esses comandos sao changed-only por padrao.
 - O cache de `Turbo` vive em `.cache/turbo`.
 - O cache incremental de TypeScript vive em `.cache/typescript/...`.
 - O fluxo normal de `Release` nao deve substituir o papel deste resolvedor; ele so consome um commit ja aprovado pelo `CI`.
+- A resolucao da toolchain do `CI` e deterministica e consome `.nvmrc` + `packageManager`, sem consulta externa para descobrir versoes.
 
 ## Referencias
 

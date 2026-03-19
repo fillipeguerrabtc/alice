@@ -2,7 +2,7 @@
 
 **Author:** Fillipe Guerra
 **Data:** 18 de Marco de 2026
-**Atualizado:** 18 de Marco de 2026
+**Atualizado:** 19 de Marco de 2026
 **Status:** ativo
 **Tipo:** ssot
 
@@ -14,6 +14,7 @@ Documentar o fluxo real de `Deploy` em producao, incluindo preflight, smart depl
 
 - Arquivo: [`.github/workflows/deploy-stack-modular.yml`](../../.github/workflows/deploy-stack-modular.yml)
 - Nome do workflow: `Deploy - Production (Modular)`
+- Os jobs do workflow executam sob o ambiente GitHub `production`, permitindo rastreabilidade e protection rules nativas sem alterar os gatilhos do fluxo.
 
 ## Inputs operacionais
 

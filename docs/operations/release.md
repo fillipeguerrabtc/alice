@@ -23,6 +23,7 @@ Documentar o fluxo real de `Release` da Alice: prerequisitos, decisao de build v
 - A versao informada precisa seguir o padrao `vX.Y.Z` ou `vX.Y.Z-sufixo`.
 - O job `create-release` precisa executar com `contents: write` para criar e publicar a tag Git com o `GITHUB_TOKEN`.
 - O registry GHCR precisa estar acessivel com credenciais validas.
+- Os jobs da `Release` operam dentro do ambiente GitHub `release`, enquanto o disparo de deploy usa o ambiente `production` para rastreabilidade e futuras protection rules.
 
 ## O que a Release faz
 

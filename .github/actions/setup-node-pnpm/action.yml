@@ -56,16 +56,6 @@ outputs:
 runs:
   using: 'composite'
   steps:
-    # Enterprise: Fallback automático para mirror se npm registry estiver instável
-    - name: Configure npm registry fallback
-      shell: bash
-      run: |
-        if ! curl -sf --max-time 5 https://registry.npmjs.org/pnpm > /dev/null 2>&1; then
-          echo "⚠️ npm registry instável, usando mirror npmmirror.com"
-          npm config set registry https://registry.npmmirror.com/
-          echo "NPM_CONFIG_REGISTRY=https://registry.npmmirror.com/" >> $GITHUB_ENV
-        fi
-
     # pnpm/action-setup - SHA: pnpm/action-setup@v4 (c5ba7f7862a0f64c1b1a05fbac13e0b8e86ba08c)
     - name: Setup pnpm
       uses: pnpm/action-setup@c5ba7f7862a0f64c1b1a05fbac13e0b8e86ba08c
@@ -77,6 +67,7 @@ runs:
       uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af
       with:
         node-version: ${{ inputs.node-version }}
+        registry-url: 'https://registry.npmjs.org'
 
     # Configurar store path explícito para cache consistente
     - name: Configurar pnpm store path

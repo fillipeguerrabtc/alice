@@ -75,29 +75,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Calcular versões Node.js e pnpm
+      - name: Resolver versoes oficiais de Node.js e pnpm
         id: versions
         run: |
-          # Node.js LTS via API oficial (com fallback para .nvmrc)
-          NODE_LTS=$(curl -s --max-time 10 "https://nodejs.org/dist/index.json" 2>/dev/null | \
-            jq -r '[.[] | select(.lts) | .version] | first // empty' 2>/dev/null | \
-            sed 's/^v//' | sed -E 's/^([0-9]+)(\.[0-9]+)?(\.[0-9]+)?.*$/\1\2/' | sed 's/\.$//')
-          
-          if [ -z "$NODE_LTS" ] || [ "$NODE_LTS" = "null" ]; then
-            NODE_LTS=$(cat .nvmrc 2>/dev/null | tr -d '[:space:]' || echo "22")
-          fi
-          
-          # pnpm via package.json (single source of truth)
-          PNPM_VER=$(jq -r '.packageManager // empty' package.json | sed 's/^pnpm@//')
-          if [ -z "$PNPM_VER" ] || [ "$PNPM_VER" = "null" ]; then
-            echo "::error::Campo packageManager não encontrado em package.json!"
-            exit 1
-          fi
-          
-          echo "✅ Node.js: $NODE_LTS"
-          echo "✅ pnpm: $PNPM_VER"
-          echo "node-version=$NODE_LTS" >> $GITHUB_OUTPUT
-          echo "pnpm-version=$PNPM_VER" >> $GITHUB_OUTPUT
+          set -euo pipefail
+          node ./scripts/resolve-toolchain.mjs
 
       - name: Setup Node.js para resolver escopo
         uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af
@@ -315,13 +297,13 @@ jobs:
           pnpm run lint:full
           pnpm run build:full
 
-      - name: Skip enterprise governance validation for non-release-eligible push
+      - name: Skip enterprise governance telemetry for non-release-eligible push
         if: ${{ needs.detect-changes.outputs.release-eligible != 'true' }}
         run: |
           set -euo pipefail
-          echo "ℹ️ Guardrail verify:enterprise-focus ignorado: commit atual sem release-eligible."
+          echo "ℹ️ Telemetria verify:enterprise-focus ignorada: commit atual sem release-eligible."
 
-      - name: Enterprise governance validation
+      - name: Enterprise governance telemetry
         if: ${{ needs.detect-changes.outputs.release-eligible == 'true' }}
         env:
           NODE_OPTIONS: --max-old-space-size=6144
@@ -457,38 +439,8 @@ jobs:
 
       - name: Verify Express hardening and server timeouts
         run: |
-          set -e
-          # Array unificado de todos os microsserviços Node.js (CLAUDE.md Regra 2)
-          # Inclui: auth, chat, rag, training, integrations, api-gateway, observability, gpu-manager, llm-gateway
-          # biometrics-service é Python (FastAPI) — não usa Express hardening
-          SERVICE_SRC_DIRS=(
-            "apps/auth-service/src"
-            "apps/chat-service/src"
-            "apps/llm-gateway-service/src"
-            "apps/rag-service/src"
-            "apps/training-service/src"
-            "apps/integrations-service/src"
-            "apps/api-gateway/src"
-            "apps/observability-service/src"
-            "apps/gpu-manager-service/src"
-          )
-
-          for service_dir in "${SERVICE_SRC_DIRS[@]}"; do
-            if [ -d "$service_dir" ]; then
-              # Verificar express hardening
-              if ! grep -R -q --include='*.ts' "@alice/shared-utils" "$service_dir" || ! grep -R -E -q --include='*.ts' "createSecurityMiddleware|createRateLimiter" "$service_dir"; then
-                echo "ERRO: $service_dir sem express-hardening!"
-                exit 1
-              fi
-              # Verificar server timeouts
-              if ! grep -R -q --include='*.ts' "server\\.timeout" "$service_dir" || ! grep -R -q --include='*.ts' "keepAliveTimeout" "$service_dir" || ! grep -R -q --include='*.ts' "headersTimeout" "$service_dir"; then
-                echo "ERRO: $service_dir sem timeouts!"
-                exit 1
-              fi
-            fi
-          done
-          echo "✅ Express hardening verificado"
-          echo "✅ Server timeouts verificados"
+          set -euo pipefail
+          node ./scripts/verify-node-service-hardening.mjs
 
       # Compliance summary removido (zero valor diagnóstico - CLAUDE.md Regra 6)
 

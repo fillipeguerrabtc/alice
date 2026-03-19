@@ -80,6 +80,7 @@ jobs:
   create-release:
     name: Create Release
     runs-on: [self-hosted, linux, deploy]
+    environment: release
     timeout-minutes: 5
     permissions:
       # Necessário para criar e dar push da tag semântica com GITHUB_TOKEN.
@@ -171,6 +172,7 @@ jobs:
   build-images:
     name: Build All Docker Images
     runs-on: [self-hosted, linux, deploy]
+    environment: release
     timeout-minutes: 90
     needs: create-release
     if: ${{ !inputs.prerelease }}
@@ -998,6 +1000,7 @@ jobs:
   publish-release:
     name: Publish GitHub Release
     runs-on: [self-hosted, linux, deploy]
+    environment: release
     timeout-minutes: 2
     needs: [create-release, build-images]
     # - prerelease: build-images é skipped por design, mas ainda publicamos a release como prerelease
@@ -1138,6 +1141,7 @@ jobs:
   trigger-deploy:
     name: Trigger Deploy to Production
     runs-on: [self-hosted, linux, deploy]
+    environment: production
     timeout-minutes: 3
     needs: [create-release, build-images, publish-release]
     # Só dispara deploy para releases normais (não prereleases)

@@ -139,6 +139,7 @@ jobs:
   validate:
     name: Validate Deploy
     runs-on: [self-hosted, linux, deploy]
+    environment: production
     timeout-minutes: 5
     outputs:
       stack: ${{ steps.context.outputs.stack }}
@@ -600,6 +601,7 @@ jobs:
   # ===========================================================================
   
   prepare:
+    environment: production
     name: Prepare Deployment
     runs-on: [self-hosted, linux, deploy]
     needs: [validate]
@@ -2722,6 +2724,7 @@ jobs:
   # ===========================================================================
   
   prepare-infrastructure:
+    environment: production
     name: Prepare Infrastructure (Atomic)
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, prepare]
@@ -3323,6 +3326,7 @@ jobs:
   # ===========================================================================
   
   deploy-infra:
+    environment: production
     name: Deploy Stack INFRA
     runs-on: [self-hosted, linux, deploy]
     # =================================================================
@@ -4275,6 +4279,7 @@ jobs:
           retention-days: 30
 
   health-infra:
+    environment: production
     name: Health Check INFRA
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, deploy-infra]
@@ -4463,6 +4468,7 @@ jobs:
             echo "========================================"
 
   rollback-infra:
+    environment: production
     name: Rollback INFRA
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, prepare, deploy-infra, health-infra]
@@ -4740,6 +4746,7 @@ jobs:
   # Roda após infra estar healthy, antes do deploy dos serviços Alice
   # ===========================================================================
   drizzle-push:
+    environment: production
     name: Apply Database Schema (Drizzle)
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, prepare, deploy-infra, health-infra]
@@ -4915,6 +4922,7 @@ jobs:
   # ===========================================================================
   
   deploy-alice:
+    environment: production
     name: Deploy Stack ALICE
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, prepare, deploy-infra, health-infra, drizzle-push]
@@ -5356,6 +5364,7 @@ jobs:
           retention-days: 30
 
   health-alice:
+    environment: production
     name: Health Check ALICE
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, deploy-alice]
@@ -5481,6 +5490,7 @@ jobs:
             echo "✅ Todos os containers do ALICE stack estão healthy"
 
   rollback-alice:
+    environment: production
     name: Rollback ALICE
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, prepare, deploy-alice, health-alice]
@@ -5676,6 +5686,7 @@ jobs:
   # ===========================================================================
   
   deploy-observability:
+    environment: production
     name: Deploy Stack OBSERVABILITY
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, prepare, deploy-infra, health-infra, drizzle-push, deploy-alice, health-alice, rollback-alice]
@@ -6065,6 +6076,7 @@ jobs:
           retention-days: 30
 
   health-observability:
+    environment: production
     name: Health Check OBSERVABILITY
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, deploy-observability]
@@ -6216,6 +6228,7 @@ jobs:
             echo "✅ Todos os containers do OBSERVABILITY stack estão OK"
 
   rollback-observability:
+    environment: production
     name: Rollback OBSERVABILITY
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, prepare, deploy-observability, health-observability]
@@ -6390,6 +6403,7 @@ jobs:
   # ===========================================================================
   
   deploy-backup:
+    environment: production
     name: Deploy Stack BACKUP
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, prepare, deploy-infra, health-infra, drizzle-push, deploy-observability, health-observability, rollback-observability]
@@ -6696,6 +6710,7 @@ jobs:
           retention-days: 30
 
   health-backup:
+    environment: production
     name: Health Check BACKUP
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, deploy-backup]
@@ -6790,6 +6805,7 @@ jobs:
             echo "✅ BACKUP stack está healthy"
 
   rollback-backup:
+    environment: production
     name: Rollback BACKUP
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, prepare, deploy-backup, health-backup]
@@ -6940,6 +6956,7 @@ jobs:
   # ===========================================================================
   
   notify:
+    environment: production
     name: Notify & Report
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, prepare, prepare-infrastructure, deploy-infra, health-infra, rollback-infra, drizzle-push, deploy-alice, health-alice, rollback-alice, deploy-observability, health-observability, rollback-observability, deploy-backup, health-backup, rollback-backup]
