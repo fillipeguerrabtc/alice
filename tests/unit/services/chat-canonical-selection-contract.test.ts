@@ -39,6 +39,21 @@ describe('Chat canonical selection contract', () => {
     expect(source).toContain("source: 'fixed'");
     expect(source).toContain("source = 'namespace';");
   });
+
+  it('permite agente global fixo e reforca threshold no auto-routing com area explicita', () => {
+    const source = loadChatSource();
+
+    expect(source).not.toContain("code: 'CHAT_AGENT_NAMESPACE_REQUIRED'");
+    expect(source).toContain('Seleção persistida com área divergente para agente global; limpando área fixa do chat');
+    expect(source).toContain("if (isExplicitNamespaceScope && (!selectedAgent || score < routingThreshold) && poolAgents.length > 0) {");
+  });
+
+  it('reaproveita a selecao canonica ao criar conversa no stream', () => {
+    const source = loadChatSource();
+
+    expect(source).toContain('let canonicalSelection: Awaited<ReturnType<typeof resolveCanonicalChatSelection>> | null = null;');
+    expect(source).toContain('canonicalSelection ??= await resolveCanonicalChatSelection({');
+  });
 });
 
 describe('Chat canonical selection OpenAPI', () => {

@@ -44,6 +44,53 @@ type UseChatContainerBindingsOptions = {
   t: (key: string) => string;
 };
 
+type ResolveLegacyRoutingSelectionSyncOptions = {
+  agentsData?: ChatAgentSummary[];
+  namespaces?: ChatNamespace[];
+  normalizedSelectedAgentId: string | null;
+  normalizedSelectedAreaNamespaceId: string | null;
+  routingAgentIds: string[];
+  routingMode: RoutingMode;
+};
+
+export function resolveLegacyRoutingSelectionSync({
+  agentsData,
+  namespaces,
+  normalizedSelectedAgentId,
+  normalizedSelectedAreaNamespaceId,
+  routingAgentIds,
+  routingMode,
+}: ResolveLegacyRoutingSelectionSyncOptions): Pick<UseChatContainerBindingsOptions, 'selectedAgentId' | 'selectedAreaNamespaceId'> | null {
+  const legacySelectedAgentId = routingMode === 'manual'
+    ? routingAgentIds[0] ?? null
+    : null;
+
+  if (!legacySelectedAgentId) {
+    return normalizedSelectedAgentId
+      ? {
+          selectedAgentId: null,
+          selectedAreaNamespaceId: normalizedSelectedAreaNamespaceId,
+        }
+      : null;
+  }
+
+  const nextSelection = applyAgentSelectionChange({
+    agentsData,
+    namespaces,
+    nextAgentId: legacySelectedAgentId,
+    selectedAreaNamespaceId: normalizedSelectedAreaNamespaceId,
+  });
+
+  if (
+    nextSelection.selectedAgentId === normalizedSelectedAgentId
+    && nextSelection.selectedAreaNamespaceId === normalizedSelectedAreaNamespaceId
+  ) {
+    return null;
+  }
+
+  return nextSelection;
+}
+
 export function useChatContainerBindings({
   agentsData,
   bumpInputFocus,
@@ -127,29 +174,28 @@ export function useChatContainerBindings({
   }, [onRoutingAgentIdsChange, routingAgentIds]);
 
   useEffect(() => {
-    const legacySelectedAgentId = routingMode === 'manual'
-      ? routingAgentIds[0] ?? null
-      : null;
-    if (legacySelectedAgentId === selectedAgentId) {
-      return;
-    }
-
-    const nextSelection = applyAgentSelectionChange({
+    const nextSelection = resolveLegacyRoutingSelectionSync({
       agentsData,
       namespaces,
-      nextAgentId: legacySelectedAgentId,
-      selectedAreaNamespaceId,
+      normalizedSelectedAgentId: normalizedSelection.selectedAgentId,
+      normalizedSelectedAreaNamespaceId: normalizedSelection.selectedAreaNamespaceId,
+      routingAgentIds,
+      routingMode,
     });
+
+    if (!nextSelection) {
+      return;
+    }
 
     setSelectedAgentId(nextSelection.selectedAgentId);
     setSelectedAreaNamespaceId(nextSelection.selectedAreaNamespaceId);
   }, [
     agentsData,
     namespaces,
+    normalizedSelection.selectedAgentId,
+    normalizedSelection.selectedAreaNamespaceId,
     routingAgentIds,
     routingMode,
-    selectedAgentId,
-    selectedAreaNamespaceId,
     setSelectedAgentId,
     setSelectedAreaNamespaceId,
   ]);

@@ -57,13 +57,6 @@ type ApplyAgentSelectionOptions = {
   selectedAreaNamespaceId: string | null;
 };
 
-export function normalizeAutomaticSelectionValue(value: string | null | undefined): string | null {
-  if (!value || value === CHAT_AUTOMATIC_OPTION_VALUE) {
-    return null;
-  }
-  return value;
-}
-
 export function getFilteredAgentsByArea(
   agentsData: ChatAgentSummary[] | undefined,
   selectedAreaNamespaceId: string | null,

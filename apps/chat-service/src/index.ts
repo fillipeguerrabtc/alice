@@ -4396,370 +4396,6 @@ async function matchNamespaceByDetectors(params: {
   return bestMatch;
 }
 
-type SemanticRouteResolution = {
-  agentId?: string;
-  namespaceId?: string;
-  score: number;
-  source: 'agent' | 'namespace' | 'none';
-  profile: LlmContextProfile;
-  needsHumanReview: boolean;
-  reviewReasons: string[];
-  autoAcceptThreshold: number;
-  humanReviewThreshold: number;
-  matchedExceptionIds: string[];
-};
-
-async function _resolveSemanticRoute(params: {
-  tenantId: string;
-  userMessage: string;
-  agenticDetectors: AgenticDetectors;
-  namespaceId?: string | null;
-  route?: string | null;
-}): Promise<SemanticRouteResolution> {
-  const route = params.route?.trim().length ? params.route.trim() : '/chat';
-  const profile = resolveContextProfile(params.userMessage);
-  const hybridPolicy = await resolveHybridRoutingPolicy(params.tenantId);
-  const exceptionDecision = resolveHybridExceptionDecision({
-    policy: hybridPolicy,
-    message: params.userMessage,
-    route,
-    context: profile,
-  });
-  const isHighRiskRoute = hybridPolicy.humanReview.highRiskRoutes.some((riskRoute) => {
-    const normalizedRiskRoute = riskRoute.startsWith('/') ? riskRoute : `/${riskRoute}`;
-    return route.startsWith(normalizedRiskRoute);
-  });
-  const hasMention = /@[a-z0-9][a-z0-9_-]{1,48}/iu.test(params.userMessage);
-  const defaultNamespaceId = (
-    hybridPolicy.enabled && hybridPolicy.transversalDefault.enabled
-      ? await resolvePolicyDefaultNamespaceId(params.tenantId, hybridPolicy)
-      : null
-  );
-
-  if (exceptionDecision.forcedNamespaceSlug) {
-    const forcedNamespace = await db.query.namespaces.findFirst({
-      where: and(
-        eq(schema.namespaces.tenantId, params.tenantId),
-        eq(schema.namespaces.slug, exceptionDecision.forcedNamespaceSlug),
-        eq(schema.namespaces.ativo, true),
-      ),
-      columns: { id: true },
-    });
-    if (forcedNamespace) {
-      return {
-        namespaceId: forcedNamespace.id,
-        score: 1,
-        source: 'namespace',
-        profile,
-        needsHumanReview: exceptionDecision.requireHumanReview || isHighRiskRoute,
-        reviewReasons: [
-          ...(exceptionDecision.requireHumanReview ? ['exception_require_human_review'] : []),
-          ...(isHighRiskRoute ? ['high_risk_route'] : []),
-        ],
-        autoAcceptThreshold: 1,
-        humanReviewThreshold: 1,
-        matchedExceptionIds: exceptionDecision.matchedExceptionIds,
-      };
-    }
-  }
-
-  if (!hasMention && isGreetingMessage(params.userMessage)) {
-    const bypassTransversal = shouldBypassTransversalDefault({
-      message: params.userMessage,
-      route,
-      context: profile,
-      policy: hybridPolicy,
-      exceptionDecision,
-    });
-    return {
-      score: 0,
-      source: 'none',
-      profile,
-      namespaceId: !bypassTransversal && hybridPolicy.transversalDefault.greetingsToDefault
-        ? defaultNamespaceId ?? undefined
-        : undefined,
-      needsHumanReview: exceptionDecision.requireHumanReview,
-      reviewReasons: exceptionDecision.requireHumanReview ? ['exception_require_human_review'] : [],
-      autoAcceptThreshold: 0,
-      humanReviewThreshold: 0,
-      matchedExceptionIds: exceptionDecision.matchedExceptionIds,
-    };
-  }
-  const runtimeProfile = await resolveNamespaceProfileRuntime(db, {
-    tenantId: params.tenantId,
-    namespaceId: params.namespaceId ?? null,
-  });
-  const thresholds = resolveRoutingThresholds(runtimeProfile.config, hybridPolicy);
-  const threshold = thresholds.autoAccept;
-
-  const agents = await db.query.agents.findMany({
-    where: and(
-      eq(schema.agents.tenantId, params.tenantId),
-      eq(schema.agents.status, 'active')
-    ),
-  });
-  const scopedAgents = params.namespaceId
-    ? agents.filter((agent) => agent.namespaceId === params.namespaceId)
-    : agents;
-
-  if (params.namespaceId) {
-    let bestAgentInNamespace: { id: string; score: number } | null = null;
-    for (const agent of scopedAgents) {
-      const text = buildRoutingText([
-        agent.nome,
-        agent.preferredName,
-        agent.slug,
-        agent.descricao,
-        agent.personalidade,
-        agent.instrucoes,
-        agent.capacidades ? agent.capacidades.join(' ') : null,
-      ]);
-      if (!text) continue;
-      const score = computeRoutingScore(text, params.userMessage);
-      if (!bestAgentInNamespace || score > bestAgentInNamespace.score) {
-        bestAgentInNamespace = { id: agent.id, score };
-      }
-    }
-    return {
-      agentId: bestAgentInNamespace?.id,
-      namespaceId: params.namespaceId,
-      score: bestAgentInNamespace?.score ?? 0,
-      source: 'namespace',
-      profile,
-      needsHumanReview: (
-        hybridPolicy.enabled
-        && hybridPolicy.humanReview.enabled
-        && (
-          exceptionDecision.requireHumanReview
-          || isHighRiskRoute
-          || ((bestAgentInNamespace?.score ?? 0) < thresholds.humanReview)
-        )
-      ),
-      reviewReasons: [
-        ...(exceptionDecision.requireHumanReview ? ['exception_require_human_review'] : []),
-        ...(isHighRiskRoute ? ['high_risk_route'] : []),
-        ...(((bestAgentInNamespace?.score ?? 0) < thresholds.humanReview) ? ['low_confidence_semantic_routing'] : []),
-      ],
-      autoAcceptThreshold: thresholds.autoAccept,
-      humanReviewThreshold: thresholds.humanReview,
-      matchedExceptionIds: exceptionDecision.matchedExceptionIds,
-    };
-  }
-
-  const namespaceDetectorMatch = await matchNamespaceByDetectors({
-    tenantId: params.tenantId,
-    message: params.userMessage,
-    agenticDetectors: params.agenticDetectors,
-  });
-  if (namespaceDetectorMatch) {
-    const namespaceAgents = agents.filter((agent) => agent.namespaceId === namespaceDetectorMatch.namespaceId);
-    let bestAgentInNamespace: { id: string; score: number } | null = null;
-    for (const agent of namespaceAgents) {
-      const text = buildRoutingText([
-        agent.nome,
-        agent.preferredName,
-        agent.slug,
-        agent.descricao,
-        agent.personalidade,
-        agent.instrucoes,
-        agent.capacidades ? agent.capacidades.join(' ') : null,
-      ]);
-      if (!text) continue;
-      const score = computeRoutingScore(text, params.userMessage);
-      if (!bestAgentInNamespace || score > bestAgentInNamespace.score) {
-        bestAgentInNamespace = { id: agent.id, score };
-      }
-    }
-    return {
-      agentId: bestAgentInNamespace?.id,
-      namespaceId: namespaceDetectorMatch.namespaceId,
-      score: namespaceDetectorMatch.score,
-      source: 'namespace',
-      profile,
-      needsHumanReview: (
-        hybridPolicy.enabled
-        && hybridPolicy.humanReview.enabled
-        && (
-          exceptionDecision.requireHumanReview
-          || isHighRiskRoute
-          || namespaceDetectorMatch.score < thresholds.humanReview
-        )
-      ),
-      reviewReasons: [
-        ...(exceptionDecision.requireHumanReview ? ['exception_require_human_review'] : []),
-        ...(isHighRiskRoute ? ['high_risk_route'] : []),
-        ...(namespaceDetectorMatch.score < thresholds.humanReview ? ['low_confidence_semantic_routing'] : []),
-      ],
-      autoAcceptThreshold: thresholds.autoAccept,
-      humanReviewThreshold: thresholds.humanReview,
-      matchedExceptionIds: exceptionDecision.matchedExceptionIds,
-    };
-  }
-
-  let bestAgent: { id: string; namespaceId?: string | null; score: number } | null = null;
-  for (const agent of agents) {
-    const text = buildRoutingText([
-      agent.nome,
-      agent.preferredName,
-      agent.slug,
-      agent.descricao,
-      agent.personalidade,
-      agent.instrucoes,
-      agent.capacidades ? agent.capacidades.join(' ') : null,
-    ]);
-    if (!text) continue;
-    const score = computeRoutingScore(text, params.userMessage);
-    if (!bestAgent || score > bestAgent.score) {
-      bestAgent = { id: agent.id, namespaceId: agent.namespaceId, score };
-    }
-  }
-
-  if (bestAgent && bestAgent.score >= threshold) {
-    let resolvedNamespaceId = bestAgent.namespaceId ?? undefined;
-    if (!resolvedNamespaceId) {
-      const namespaces = await db.query.namespaces.findMany({
-        where: and(
-          eq(schema.namespaces.tenantId, params.tenantId),
-          eq(schema.namespaces.ativo, true)
-        ),
-      });
-      let bestNamespace: { id: string; score: number } | null = null;
-      for (const namespace of namespaces) {
-        const text = buildRoutingText([
-          namespace.nome,
-          namespace.slug,
-          namespace.descricao,
-          namespace.contextoSistema,
-        ]);
-        if (!text) continue;
-        const score = computeRoutingScore(text, params.userMessage);
-        if (!bestNamespace || score > bestNamespace.score) {
-          bestNamespace = { id: namespace.id, score };
-        }
-      }
-      if (bestNamespace && bestNamespace.score >= threshold) {
-        resolvedNamespaceId = bestNamespace.id;
-      }
-    }
-    return {
-      agentId: bestAgent.id,
-      namespaceId: resolvedNamespaceId,
-      score: bestAgent.score,
-      source: 'agent',
-      profile,
-      needsHumanReview: (
-        hybridPolicy.enabled
-        && hybridPolicy.humanReview.enabled
-        && (
-          exceptionDecision.requireHumanReview
-          || isHighRiskRoute
-          || bestAgent.score < thresholds.humanReview
-        )
-      ),
-      reviewReasons: [
-        ...(exceptionDecision.requireHumanReview ? ['exception_require_human_review'] : []),
-        ...(isHighRiskRoute ? ['high_risk_route'] : []),
-        ...(bestAgent.score < thresholds.humanReview ? ['low_confidence_semantic_routing'] : []),
-      ],
-      autoAcceptThreshold: thresholds.autoAccept,
-      humanReviewThreshold: thresholds.humanReview,
-      matchedExceptionIds: exceptionDecision.matchedExceptionIds,
-    };
-  }
-
-  const namespaces = await db.query.namespaces.findMany({
-    where: and(
-      eq(schema.namespaces.tenantId, params.tenantId),
-      eq(schema.namespaces.ativo, true)
-    ),
-  });
-
-  let bestNamespace: { id: string; score: number } | null = null;
-  for (const namespace of namespaces) {
-    const text = buildRoutingText([
-      namespace.nome,
-      namespace.slug,
-      namespace.descricao,
-      namespace.contextoSistema,
-    ]);
-    if (!text) continue;
-    const score = computeRoutingScore(text, params.userMessage);
-    if (!bestNamespace || score > bestNamespace.score) {
-      bestNamespace = { id: namespace.id, score };
-    }
-  }
-
-  if (bestNamespace && bestNamespace.score >= threshold) {
-    const namespaceAgents = agents.filter((agent) => agent.namespaceId === bestNamespace.id);
-    let bestAgentInNamespace: { id: string; score: number } | null = null;
-    for (const agent of namespaceAgents) {
-      const text = buildRoutingText([
-        agent.nome,
-        agent.preferredName,
-        agent.slug,
-        agent.descricao,
-        agent.personalidade,
-        agent.instrucoes,
-        agent.capacidades ? agent.capacidades.join(' ') : null,
-      ]);
-      if (!text) continue;
-      const score = computeRoutingScore(text, params.userMessage);
-      if (!bestAgentInNamespace || score > bestAgentInNamespace.score) {
-        bestAgentInNamespace = { id: agent.id, score };
-      }
-    }
-    return {
-      agentId: bestAgentInNamespace?.id,
-      namespaceId: bestNamespace.id,
-      score: bestNamespace.score,
-      source: 'namespace',
-      profile,
-      needsHumanReview: (
-        hybridPolicy.enabled
-        && hybridPolicy.humanReview.enabled
-        && (
-          exceptionDecision.requireHumanReview
-          || isHighRiskRoute
-          || bestNamespace.score < thresholds.humanReview
-        )
-      ),
-      reviewReasons: [
-        ...(exceptionDecision.requireHumanReview ? ['exception_require_human_review'] : []),
-        ...(isHighRiskRoute ? ['high_risk_route'] : []),
-        ...(bestNamespace.score < thresholds.humanReview ? ['low_confidence_semantic_routing'] : []),
-      ],
-      autoAcceptThreshold: thresholds.autoAccept,
-      humanReviewThreshold: thresholds.humanReview,
-      matchedExceptionIds: exceptionDecision.matchedExceptionIds,
-    };
-  }
-
-  const needsHumanReview = (
-    hybridPolicy.enabled
-    && hybridPolicy.humanReview.enabled
-    && (
-      exceptionDecision.requireHumanReview
-      || isHighRiskRoute
-      || hybridPolicy.humanReview.queueLowConfidenceRouting
-    )
-  );
-  return {
-    score: 0,
-    source: 'none',
-    profile,
-    namespaceId: defaultNamespaceId ?? undefined,
-    needsHumanReview,
-    reviewReasons: [
-      ...(exceptionDecision.requireHumanReview ? ['exception_require_human_review'] : []),
-      ...(isHighRiskRoute ? ['high_risk_route'] : []),
-      ...(hybridPolicy.humanReview.queueLowConfidenceRouting ? ['low_confidence_semantic_routing'] : []),
-    ],
-    autoAcceptThreshold: thresholds.autoAccept,
-    humanReviewThreshold: thresholds.humanReview,
-    matchedExceptionIds: exceptionDecision.matchedExceptionIds,
-  };
-}
-
 type AgentRoutingMode = 'auto' | 'manual';
 
 type AgentRoutingRecord = {
@@ -5102,7 +4738,7 @@ type PersistedChatSelection = {
   fromMetadata: boolean;
 };
 
-function hasOwnProperty(input: unknown, key: string): boolean {
+function hasOwnKey(input: unknown, key: string): boolean {
   return Boolean(input && typeof input === 'object' && Object.prototype.hasOwnProperty.call(input, key));
 }
 
@@ -5232,17 +4868,22 @@ async function resolveCanonicalChatSelection(params: {
 
   if (selectedAgent) {
     if (!selectedAgent.namespaceId) {
-      if (explicitSelectionRequested) {
-        throw new ClientInputError('Agente selecionado não está vinculado a uma área ativa.', {
-          statusCode: 400,
-          code: 'CHAT_AGENT_NAMESPACE_REQUIRED',
-        });
+      if (persistedNamespaceId) {
+        if (explicitSelectionRequested) {
+          throw new ClientInputError('O agente selecionado não pertence à área informada.', {
+            statusCode: 400,
+            code: 'CHAT_AGENT_NAMESPACE_MISMATCH',
+          });
+        }
+        logger.warn(
+          {
+            tenantId: params.tenantId,
+            agentId: selectedAgent.id,
+            namespaceId: persistedNamespaceId,
+          },
+          'Seleção persistida com área divergente para agente global; limpando área fixa do chat'
+        );
       }
-      logger.warn(
-        { tenantId: params.tenantId, agentId: selectedAgent.id },
-        'Agente persistido sem namespace; limpando seleção fixa do chat'
-      );
-      persistedAgentId = null;
       persistedNamespaceId = null;
     } else if (persistedNamespaceId && persistedNamespaceId !== selectedAgent.namespaceId) {
       if (explicitSelectionRequested) {
@@ -6058,7 +5699,7 @@ async function resolveAgentRoutingForMessage(params: {
   const isAutoMode = mode === 'auto' && source !== 'mention';
   if (isAutoMode) {
     const isExplicitNamespaceScope = Boolean(params.requestedNamespaceId);
-    if (!selectedAgent && poolAgents.length > 0 && isExplicitNamespaceScope) {
+    if (isExplicitNamespaceScope && (!selectedAgent || score < routingThreshold) && poolAgents.length > 0) {
       selectedAgent = poolAgents[0] ?? null;
       score = 1;
     } else if (!isExplicitNamespaceScope && (!selectedAgent || score < routingThreshold)) {
@@ -9491,8 +9132,8 @@ app.post('/api/chat/conversations', requireAuth(), requireSameTenant(getTenantId
       requestedAgentId: body.agentId,
       requestedNamespaceId: body.namespaceId,
       requestedReasoningMode: body.reasoningMode,
-      hasRequestedAgentId: hasOwnProperty(rawBody, 'agentId'),
-      hasRequestedNamespaceId: hasOwnProperty(rawBody, 'namespaceId'),
+      hasRequestedAgentId: hasOwnKey(rawBody, 'agentId'),
+      hasRequestedNamespaceId: hasOwnKey(rawBody, 'namespaceId'),
       role: userRole,
     });
 
@@ -10100,12 +9741,12 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
       requestedAgentId: body.agentId,
       requestedNamespaceId: body.namespaceId,
       requestedReasoningMode: body.reasoningMode,
-      hasRequestedAgentId: hasOwnProperty(rawBody, 'agentId'),
-      hasRequestedNamespaceId: hasOwnProperty(rawBody, 'namespaceId'),
+      hasRequestedAgentId: hasOwnKey(rawBody, 'agentId'),
+      hasRequestedNamespaceId: hasOwnKey(rawBody, 'namespaceId'),
       role: userRole,
     });
 
-    const hasCanonicalSelectionInput = hasOwnProperty(rawBody, 'agentId') || hasOwnProperty(rawBody, 'namespaceId');
+    const hasCanonicalSelectionInput = hasOwnKey(rawBody, 'agentId') || hasOwnKey(rawBody, 'namespaceId');
 
     if (hasCanonicalSelectionInput) {
       const nextConversationStateMetadata = mergeConversationStateMetadata(conversationState.metadata, {
@@ -10635,6 +10276,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     let conversationId = _conversationId;
     let conversation: ConversationWithAgent | null = null;
     let conversationCreated = false;
+    let canonicalSelection: Awaited<ReturnType<typeof resolveCanonicalChatSelection>> | null = null;
 
     if (conversationId) {
       const existingConversation = await db.query.conversations.findFirst({
@@ -10651,13 +10293,13 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       }
       conversation = existingConversation;
     } else {
-      const canonicalSelection = await resolveCanonicalChatSelection({
+      canonicalSelection = await resolveCanonicalChatSelection({
         tenantId,
         requestedAgentId: agentId,
         requestedNamespaceId: namespaceId,
         requestedReasoningMode,
-        hasRequestedAgentId: hasOwnProperty(rawBody, 'agentId'),
-        hasRequestedNamespaceId: hasOwnProperty(rawBody, 'namespaceId'),
+        hasRequestedAgentId: hasOwnKey(rawBody, 'agentId'),
+        hasRequestedNamespaceId: hasOwnKey(rawBody, 'namespaceId'),
         role: userRole,
       });
       const [created] = await db.insert(schema.conversations).values({
@@ -10689,14 +10331,14 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     }
 
     const conversationState = await getOrCreateConversationState(conversationId);
-    const canonicalSelection = await resolveCanonicalChatSelection({
+    canonicalSelection ??= await resolveCanonicalChatSelection({
       tenantId,
       conversation,
       requestedAgentId: agentId,
       requestedNamespaceId: namespaceId,
       requestedReasoningMode,
-      hasRequestedAgentId: hasOwnProperty(rawBody, 'agentId'),
-      hasRequestedNamespaceId: hasOwnProperty(rawBody, 'namespaceId'),
+      hasRequestedAgentId: hasOwnKey(rawBody, 'agentId'),
+      hasRequestedNamespaceId: hasOwnKey(rawBody, 'namespaceId'),
       role: userRole,
     });
 
@@ -10706,7 +10348,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       conversationState.approvalPolicy = requestApprovalPolicy;
     }
 
-    const hasCanonicalSelectionInput = hasOwnProperty(rawBody, 'agentId') || hasOwnProperty(rawBody, 'namespaceId');
+    const hasCanonicalSelectionInput = hasOwnKey(rawBody, 'agentId') || hasOwnKey(rawBody, 'namespaceId');
 
     if (hasCanonicalSelectionInput) {
       const nextConversationStateMetadata = mergeConversationStateMetadata(conversationState.metadata, {
@@ -20601,5 +20243,3 @@ registerChatShutdownCallbacks({
   closeRedisCacheClient,
   closeDatabasePool,
 });
-
-

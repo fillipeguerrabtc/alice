@@ -6,7 +6,7 @@
  * Data: 10 de Março de 2026
  */
 import { useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback } from 'react';
 import { useParams, useLocation } from 'wouter';
 import { useTranslation } from 'react-i18next';
 import { useToast } from '@/hooks/use-toast';
@@ -33,9 +33,9 @@ import { useChatSectionProps } from './useChatSectionProps';
 import { useChatQueryState } from './useChatQueryState';
 import { useChatLocalState } from './useChatLocalState';
 import { useChatContainerBindings } from './useChatContainerBindings';
+import { useChatConversationSelectionSync } from './useChatConversationSelectionSync';
 import { useChatSendMessageMutation } from './useChatSendMessageMutation';
 import { buildChatPageLayoutProps } from './chat-page-layout-props-builder';
-import { readConversationSelection } from './chat-selection';
 import { useAuth } from '@/hooks/use-auth';
 import { isManualReasoningMode } from '@/lib/reasoning-mode';
 
@@ -290,38 +290,16 @@ export function useChatPageLayoutController() {
     setSelectedReasoningMode,
     t,
   });
-  const selectionConversationSyncRef = useRef<string | null>(null);
-  useEffect(() => {
-    const nextConversationKey = conversationId ?? 'new';
-    if (selectionConversationSyncRef.current === nextConversationKey) {
-      return;
-    }
-    if (conversationId && !activeConversation) {
-      return;
-    }
-
-    selectionConversationSyncRef.current = nextConversationKey;
-    const nextConversationSelection = readConversationSelection(activeConversation);
-    const nextReasoningMode = !canOverrideReasoningMode
-      && isManualReasoningMode(nextConversationSelection.selectedReasoningMode)
-      ? 'auto'
-      : nextConversationSelection.selectedReasoningMode;
-
-    setSelectedAreaNamespaceId(nextConversationSelection.selectedAreaNamespaceId);
-    setSelectedAgentId(nextConversationSelection.selectedAgentId);
-    setSelectedReasoningMode(nextReasoningMode);
-    setRoutingMode(nextConversationSelection.selectedAgentId ? 'manual' : 'auto');
-    setRoutingAgentIds(nextConversationSelection.selectedAgentId ? [nextConversationSelection.selectedAgentId] : []);
-  }, [
+  useChatConversationSelectionSync({
     activeConversation,
     canOverrideReasoningMode,
     conversationId,
-    setRoutingAgentIds,
     setRoutingMode,
     setSelectedAgentId,
     setSelectedAreaNamespaceId,
     setSelectedReasoningMode,
-  ]);
+    setRoutingAgentIds,
+  });
   const {
     createStatusEvent,
     pushStreamEvent,
