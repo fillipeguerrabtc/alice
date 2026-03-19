@@ -21,6 +21,7 @@ Documentar o fluxo real de `Release` da Alice: prerequisitos, decisao de build v
 - No fluxo automatico, a `CI` entrega o `target_sha` ja aprovado para a `Release`.
 - Em disparo manual, o operador precisa informar explicitamente o `target_sha` que ja foi aprovado pela `CI`.
 - A versao informada precisa seguir o padrao `vX.Y.Z` ou `vX.Y.Z-sufixo`.
+- O job `create-release` precisa executar com `contents: write` para criar e publicar a tag Git com o `GITHUB_TOKEN`.
 - O registry GHCR precisa estar acessivel com credenciais validas.
 
 ## O que a Release faz

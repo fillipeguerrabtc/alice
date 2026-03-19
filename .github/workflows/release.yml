@@ -82,7 +82,8 @@ jobs:
     runs-on: [self-hosted, linux, deploy]
     timeout-minutes: 5
     permissions:
-      contents: read
+      # Necessário para criar e dar push da tag semântica com GITHUB_TOKEN.
+      contents: write
     outputs:
       target_sha: ${{ inputs.target_sha }}
       version: ${{ inputs.version }}
