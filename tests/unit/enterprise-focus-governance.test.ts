@@ -29,21 +29,73 @@ function createGovernanceFixture(): {
   writeFileSync(path.join(repoDir, 'README.md'), '# Alice\n');
   writeFileSync(path.join(repoDir, 'feature.ts'), 'export const feature = 1;\n');
 
-  execFileSync('git', ['init', '-b', 'main'], { cwd: repoDir });
+  execFileSync('git', ['init', '--quiet', '-b', 'main'], { cwd: repoDir });
   execFileSync('git', ['config', 'user.name', 'Codex'], { cwd: repoDir });
   execFileSync('git', ['config', 'user.email', 'codex@example.com'], { cwd: repoDir });
   execFileSync('git', ['add', '.'], { cwd: repoDir });
-  execFileSync('git', ['commit', '-m', 'chore: seed governance fixture'], { cwd: repoDir });
+  execFileSync('git', ['commit', '--quiet', '-m', 'chore: seed governance fixture'], { cwd: repoDir });
 
   writeFileSync(path.join(repoDir, 'feature.ts'), 'export const feature = 2;\n');
   execFileSync('git', ['add', 'feature.ts'], { cwd: repoDir });
-  execFileSync('git', ['commit', '-m', 'Wise: single commit governance coverage'], { cwd: repoDir });
+  execFileSync('git', ['commit', '--quiet', '-m', 'Wise: single commit governance coverage'], { cwd: repoDir });
 
   const headSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoDir, encoding: 'utf-8' }).trim();
 
   return {
     cleanup: () => rmSync(repoDir, { recursive: true, force: true }),
     repoDir,
+    headSha,
+  };
+}
+
+function createPullRequestGovernanceFixture(): {
+  cleanup: () => void;
+  repoDir: string;
+  baseSha: string;
+  headSha: string;
+} {
+  const repoDir = mkdtempSync(path.join(tmpdir(), 'alice-governance-pr-'));
+
+  mkdirSync(path.join(repoDir, 'scripts'), { recursive: true });
+  mkdirSync(path.join(repoDir, 'apps/frontend-service/src/pages/wise-payments'), { recursive: true });
+  mkdirSync(path.join(repoDir, 'apps/frontend-service/src/pages/Chat'), { recursive: true });
+  mkdirSync(path.join(repoDir, 'docs/engineering'), { recursive: true });
+
+  writeFileSync(path.join(repoDir, 'scripts/verify-enterprise-focus.sh'), readFileSync(SCRIPT_PATH, 'utf-8'));
+  writeFileSync(path.join(repoDir, 'apps/frontend-service/src/pages/wise-payments/index.tsx'), 'export const wise = true;\n');
+  writeFileSync(path.join(repoDir, 'apps/frontend-service/src/pages/TradingContent.tsx'), 'export const trading = true;\n');
+  writeFileSync(
+    path.join(repoDir, 'apps/frontend-service/src/pages/Chat/useChatPageLayoutController.ts'),
+    'export const controller = true;\n',
+  );
+  writeFileSync(path.join(repoDir, 'docs/engineering/pipeline-overview.md'), '# Pipeline\n');
+  writeFileSync(path.join(repoDir, 'README.md'), '# Alice\n');
+  writeFileSync(path.join(repoDir, 'feature.ts'), 'export const feature = 1;\n');
+
+  execFileSync('git', ['init', '--quiet', '-b', 'main'], { cwd: repoDir });
+  execFileSync('git', ['config', 'user.name', 'Codex'], { cwd: repoDir });
+  execFileSync('git', ['config', 'user.email', 'codex@example.com'], { cwd: repoDir });
+  execFileSync('git', ['add', '.'], { cwd: repoDir });
+  execFileSync('git', ['commit', '--quiet', '-m', 'chore: seed governance fixture'], { cwd: repoDir });
+
+  execFileSync('git', ['checkout', '--quiet', '-b', 'feature/governance-scope'], { cwd: repoDir });
+  writeFileSync(path.join(repoDir, 'feature.ts'), 'export const feature = 2;\n');
+  execFileSync('git', ['add', 'feature.ts'], { cwd: repoDir });
+  execFileSync('git', ['commit', '--quiet', '-m', 'feat: branch-specific governance coverage'], { cwd: repoDir });
+
+  const headSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoDir, encoding: 'utf-8' }).trim();
+
+  execFileSync('git', ['checkout', '--quiet', 'main'], { cwd: repoDir });
+  writeFileSync(path.join(repoDir, 'README.md'), '# Alice Wise Base\n');
+  execFileSync('git', ['add', 'README.md'], { cwd: repoDir });
+  execFileSync('git', ['commit', '--quiet', '-m', 'Wise: base branch only commit'], { cwd: repoDir });
+
+  const baseSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoDir, encoding: 'utf-8' }).trim();
+
+  return {
+    cleanup: () => rmSync(repoDir, { recursive: true, force: true }),
+    repoDir,
+    baseSha,
     headSha,
   };
 }
@@ -98,6 +150,34 @@ describe('enterprise focus governance script', () => {
       expect(result.stdout).toContain('Commits no range principal: 1');
       expect(result.stdout).toContain('Commits com foco Wise: 1 (100.00%)');
       expect(result.stdout).toContain('FAIL - Foco desbalanceado no domínio Wise: 100.00% > 0%');
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('keeps pull request commit matching restricted to head-side commits only', () => {
+    const fixture = createPullRequestGovernanceFixture();
+
+    try {
+      const result = spawnSync('bash', ['scripts/verify-enterprise-focus.sh', '50'], {
+        cwd: fixture.repoDir,
+        encoding: 'utf-8',
+        env: {
+          ...process.env,
+          ALICE_ENTERPRISE_FOCUS_BASE_SHA: fixture.baseSha,
+          ALICE_ENTERPRISE_FOCUS_HEAD_SHA: fixture.headSha,
+          ALICE_ENTERPRISE_FOCUS_DIFF_MODE: 'triple_dot',
+          DOC_TOUCH_THRESHOLD_PCT: '100',
+          WISE_COMMIT_THRESHOLD_PCT: '0',
+          ENFORCE_FAILURE: 'true',
+        },
+      });
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('Modo de análise: range_explicit');
+      expect(result.stdout).toContain('Commits no range principal: 1');
+      expect(result.stdout).toContain('Commits com foco Wise: 0 (0.00%)');
+      expect(result.stdout).toContain('OK   - Foco desbalanceado no domínio Wise: 0.00% <= 0%');
     } finally {
       fixture.cleanup();
     }

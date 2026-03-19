@@ -129,6 +129,9 @@ count_commits_in_range() {
   local diff_mode="$3"
 
   case "$diff_mode" in
+    triple_dot)
+      git rev-list --right-only --count "${base_ref}...${head_ref}" | tr -d ' '
+      ;;
     single_commit)
       printf '1'
       ;;
@@ -143,18 +146,21 @@ count_commit_subject_matches() {
   local head_ref="$2"
   local diff_mode="$3"
   local pattern="$4"
+  local commit_subjects=''
 
   case "$diff_mode" in
     triple_dot)
-      git log --pretty=format:%s "${base_ref}...${head_ref}" | grep -Ei -- "$pattern" || true
+      commit_subjects="$(git log --right-only --pretty=format:%s "${base_ref}...${head_ref}" || true)"
       ;;
     single_commit)
-      git log --pretty=format:%s -n 1 "${head_ref}" | grep -Ei -- "$pattern" || true
+      commit_subjects="$(git log --pretty=format:%s -n 1 "${head_ref}" || true)"
       ;;
     *)
-      git log --pretty=format:%s "${base_ref}..${head_ref}" | grep -Ei -- "$pattern" || true
+      commit_subjects="$(git log --pretty=format:%s "${base_ref}..${head_ref}" || true)"
       ;;
   esac
+
+  printf '%s\n' "${commit_subjects}" | grep -Ei -- "$pattern" || true
 }
 
 HISTORICAL_RANGE="$(resolve_historical_range)"
