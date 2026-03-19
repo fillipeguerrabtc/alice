@@ -2,7 +2,7 @@
 
 **Author:** Fillipe Guerra
 **Data:** 18 de Marco de 2026
-**Atualizado:** 18 de Marco de 2026
+**Atualizado:** 19 de Marco de 2026
 **Status:** ativo
 **Tipo:** ssot
 
@@ -24,7 +24,7 @@ Definir o comportamento vigente da esteira da Alice, separando validacao, public
 - `Release` publica.
 - `Deploy` implanta.
 - `Release` nao repete o gate de qualidade do `CI`.
-- `Release` exige `CI` bem-sucedido para o mesmo commit alvo.
+- `Release` opera sobre o `target_sha` aprovado e entregue pelo `CI`.
 - `docs-only` e `pipeline-only` nao seguem automaticamente para `Release` ou `Deploy`.
 
 ## Classificacao de mudanca
@@ -72,7 +72,8 @@ Efeito:
 2. Se o diff for confiavel, o `CI` usa validacao incremental.
 3. Se a base de comparacao nao puder ser resolvida com seguranca, o `CI` cai em `full` fallback.
 4. `build-and-check` e `security-and-compliance` so rodam quando `release_eligible=true`.
-5. O job `trigger-release` so roda em push para `main`, com `release_eligible=true` e sucesso dos jobs obrigatorios.
+5. O job `trigger-release` so roda em push para `main` quando existe `release_pending=true`.
+6. `release_pending` considera tambem o backlog elegivel desde a ultima tag, para que um push apenas de pipeline ou documentacao ainda consiga publicar codigo que permaneceu pendente de release.
 
 ### Governanca de churn documental
 
@@ -83,11 +84,10 @@ Efeito:
 
 ## Fluxo do `Release`
 
-1. `validate-ci-status` confirma um run bem-sucedido do `CI` para o mesmo commit.
-2. `create-release` valida a versao e cria a tag.
-3. `build-images` decide `build` versus `retag`.
-4. `publish-release` publica notas e assets.
-5. `trigger-deploy` dispara o workflow de deploy para releases normais.
+1. `create-release` valida o `target_sha` recebido, fixa a tag nesse commit e valida a versao.
+2. `build-images` decide `build` versus `retag`.
+3. `publish-release` publica notas e assets.
+4. `trigger-deploy` dispara o workflow de deploy para releases normais.
 
 ## Fluxo do `Deploy`
 

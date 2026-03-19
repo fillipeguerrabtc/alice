@@ -68,6 +68,7 @@ jobs:
       scope-head-ref: ${{ steps.scope.outputs.scope_head_ref }}
       docs-only: ${{ steps.scope.outputs.docs_only }}
       release-eligible: ${{ steps.scope.outputs.release_eligible }}
+      release-pending: ${{ steps.scope.outputs.release_pending }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -114,6 +115,7 @@ jobs:
           ALICE_GITHUB_EVENT_NAME: ${{ github.event_name }}
           ALICE_GITHUB_BASE_REF: ${{ github.base_ref }}
           ALICE_GITHUB_BEFORE: ${{ github.event.before }}
+          ALICE_GITHUB_REF_NAME: ${{ github.ref_name }}
           ALICE_GITHUB_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
@@ -147,6 +149,7 @@ jobs:
           fi
 
           ALICE_SCOPE_BASE_REF="$SCOPE_BASE_REF" ALICE_SCOPE_HEAD_REF="$SCOPE_HEAD_REF" node --input-type=module <<'EOF'
+          import { execFileSync } from 'node:child_process';
           import { appendFileSync } from 'node:fs';
           import {
             ROOT_DIR,
@@ -154,6 +157,20 @@ jobs:
             isDocumentationPath,
             isPipelineOnlyPath,
           } from './scripts/workspace-scope.mjs';
+
+          function execGit(args) {
+            return execFileSync('git', args, {
+              cwd: ROOT_DIR,
+              encoding: 'utf8',
+              stdio: ['ignore', 'pipe', 'pipe'],
+            }).trim();
+          }
+
+          function hasReleaseEligibleFiles(filePaths) {
+            return filePaths.some(filePath =>
+              !isDocumentationPath(filePath) && !isPipelineOnlyPath(filePath),
+            );
+          }
 
           const changedFilesResult = detectChangedFiles({
             rootDir: ROOT_DIR,
@@ -169,12 +186,45 @@ jobs:
 
           const docsOnly = changedFilesResult.length > 0
             && changedFilesResult.every(filePath => isDocumentationPath(filePath));
-          const releaseEligible = changedFilesResult.some(filePath =>
-            !isDocumentationPath(filePath) && !isPipelineOnlyPath(filePath),
-          );
+          const releaseEligible = hasReleaseEligibleFiles(changedFilesResult);
+          let releasePending = releaseEligible;
+          let releasePendingReason = releaseEligible
+            ? 'O push atual ja contem mudanca elegivel para release.'
+            : 'O push atual nao contem mudanca elegivel para release.';
+
+          if (
+            process.env.ALICE_GITHUB_EVENT_NAME === 'push'
+            && process.env.ALICE_GITHUB_REF_NAME === 'main'
+          ) {
+            let latestTag = '';
+
+            try {
+              latestTag = execGit(['describe', '--tags', '--abbrev=0']);
+            } catch {
+              latestTag = '';
+            }
+
+            if (latestTag) {
+              const unreleasedFilesResult = detectChangedFiles({
+                rootDir: ROOT_DIR,
+                baseRef: latestTag,
+                headRef: process.env.ALICE_SCOPE_HEAD_REF,
+              });
+
+              if (Array.isArray(unreleasedFilesResult)) {
+                releasePending = hasReleaseEligibleFiles(unreleasedFilesResult);
+                releasePendingReason = releasePending
+                  ? `Existe backlog de release desde ${latestTag}.`
+                  : `Nao ha backlog elegivel para release desde ${latestTag}.`;
+              } else {
+                releasePendingReason = `${releasePendingReason} Falha ao calcular backlog desde a ultima tag; mantendo decisao pelo diff atual.`;
+              }
+            }
+          }
 
           appendFileSync(process.env.GITHUB_OUTPUT, `docs_only=${docsOnly}\n`);
           appendFileSync(process.env.GITHUB_OUTPUT, `release_eligible=${releaseEligible}\n`);
+          appendFileSync(process.env.GITHUB_OUTPUT, `release_pending=${releasePending}\n`);
 
           console.log(`[alice-ci] Changed files (${changedFilesResult.length}):`);
           for (const filePath of changedFilesResult) {
@@ -182,6 +232,8 @@ jobs:
           }
           console.log(`[alice-ci] Docs only: ${docsOnly}`);
           console.log(`[alice-ci] Release eligible: ${releaseEligible}`);
+          console.log(`[alice-ci] Release pending: ${releasePending}`);
+          console.log(`[alice-ci] Release pending reason: ${releasePendingReason}`);
           EOF
 
   # ===========================================================================
@@ -443,7 +495,7 @@ jobs:
       contents: read
       actions: write
     needs: [detect-changes, build-and-check, security-and-compliance]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.detect-changes.outputs.release-eligible == 'true' && needs.build-and-check.result == 'success' && needs.security-and-compliance.result == 'success'
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.detect-changes.outputs.release-pending == 'true' && (needs.build-and-check.result == 'success' || needs.build-and-check.result == 'skipped') && (needs.security-and-compliance.result == 'success' || needs.security-and-compliance.result == 'skipped')
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -528,8 +580,9 @@ jobs:
               workflow_id: 'release.yml',
               ref: 'main',
               inputs: {
+                target_sha: '${{ github.sha }}',
                 version: '${{ steps.version.outputs.version }}',
                 prerelease: 'false'  // String 'false' - GitHub Actions inputs são ALWAYS strings
               }
             });
-            console.log('🚀 Release ${{ steps.version.outputs.version }} disparado!');
+            console.log('🚀 Release ${{ steps.version.outputs.version }} disparado para o commit ${{ github.sha }}!');

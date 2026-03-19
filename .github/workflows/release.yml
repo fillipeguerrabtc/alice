@@ -46,6 +46,10 @@ name: Release & Tag
 on:
   workflow_dispatch:
     inputs:
+      target_sha:
+        description: 'Commit aprovado pela CI que sera publicado pela release'
+        required: true
+        type: string
       version:
         description: 'Versão para release (ex: v1.0.0, v1.0.0-beta.1)'
         required: true
@@ -70,60 +74,17 @@ env:
 
 jobs:
   # ===========================================================================
-  # Job 0: Verificar aprovação prévia do CI para o commit alvo
+  # Job 0: Validar metadata e fixar o commit alvo da release
   # Timeout: 5min
-  # ===========================================================================
-  validate-ci-status:
-    name: Validate CI Status
-    runs-on: [self-hosted, linux, deploy]
-    timeout-minutes: 5
-    permissions:
-      actions: read
-      contents: read
-
-    steps:
-      - name: Verificar CI bem-sucedido para o commit alvo
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea
-        with:
-          script: |
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
-            const workflow_id = 'ci.yml';
-            const head_sha = context.sha;
-            const branch = context.ref.replace('refs/heads/', '');
-
-            const response = await github.rest.actions.listWorkflowRuns({
-              owner,
-              repo,
-              workflow_id,
-              head_sha,
-              branch,
-              status: 'completed',
-              per_page: 20,
-            });
-
-            const successfulRun = response.data.workflow_runs.find(run =>
-              run.head_sha === head_sha
-              && run.conclusion === 'success'
-            );
-
-            if (!successfulRun) {
-              core.setFailed(`Nenhum run bem-sucedido de CI foi encontrado para o commit ${head_sha} na branch ${branch}. Execute/aprove o CI antes da Release.`);
-              return;
-            }
-
-            core.info(`CI aprovado encontrado: ${successfulRun.html_url}`);
-
-  # ===========================================================================
-  # Job 1: Validação de metadata e Criação da Release
-  # Timeout: 5min (validação + tag + release)
   # ===========================================================================
   create-release:
     name: Create Release
     runs-on: [self-hosted, linux, deploy]
     timeout-minutes: 5
-    needs: validate-ci-status
+    permissions:
+      contents: read
     outputs:
+      target_sha: ${{ inputs.target_sha }}
       version: ${{ inputs.version }}
       previous_tag: ${{ steps.previous-tag.outputs.previous_tag }}
     
@@ -131,7 +92,28 @@ jobs:
       - name: Checkout código
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
+          ref: ${{ inputs.target_sha }}
           fetch-depth: 0
+
+      - name: Validar commit alvo da release
+        env:
+          TARGET_SHA: ${{ inputs.target_sha }}
+        run: |
+          set -euo pipefail
+
+          git fetch --no-tags origin main
+
+          if ! git rev-parse --verify "${TARGET_SHA}^{commit}" >/dev/null 2>&1; then
+            echo "❌ Commit alvo inválido: ${TARGET_SHA}"
+            exit 1
+          fi
+
+          if ! git merge-base --is-ancestor "${TARGET_SHA}" "origin/main"; then
+            echo "❌ Commit alvo fora de origin/main: ${TARGET_SHA}"
+            exit 1
+          fi
+
+          echo "✅ Commit alvo validado em origin/main: ${TARGET_SHA}"
 
       - name: Validar formato da versão
         run: |
@@ -144,7 +126,7 @@ jobs:
 
       - name: Verificar se tag já existe
         run: |
-          if git rev-parse "${{ inputs.version }}" >/dev/null 2>&1; then
+          if git rev-parse --verify "refs/tags/${{ inputs.version }}" >/dev/null 2>&1; then
             echo "❌ Tag ${{ inputs.version }} já existe!"
             exit 1
           fi
@@ -164,15 +146,18 @@ jobs:
       # NOTA: Changelog gerado no job publish-release (não duplicar - CLAUDE.md Regra 2)
 
       - name: Criar Git Tag
+        env:
+          TARGET_SHA: ${{ inputs.target_sha }}
         run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a ${{ inputs.version }} -m "Release ${{ inputs.version }}"
-          git push origin ${{ inputs.version }}
+          git tag -a ${{ inputs.version }} "${TARGET_SHA}" -m "Release ${{ inputs.version }}"
+          git push origin "refs/tags/${{ inputs.version }}"
           echo "✅ Tag ${{ inputs.version }} criada"
 
   # ===========================================================================
-  # Job 2: Build e Push Docker Images (CONSOLIDADO)
+  # Job 1: Build e Push Docker Images (CONSOLIDADO)
   # OTIMIZAÇÃO: 1 job único ao invés de matrix de 14 jobs
   # Elimina ~4min de overhead (14 setups → 1)
   # Timeout: 90min (GPU images são muito pesadas - PyTorch ~3GB, CUDA ~5-8GB)

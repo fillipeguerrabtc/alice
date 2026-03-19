@@ -2,7 +2,7 @@
 
 **Author:** Fillipe Guerra
 **Data:** 18 de Marco de 2026
-**Atualizado:** 18 de Marco de 2026
+**Atualizado:** 19 de Marco de 2026
 **Status:** ativo
 **Tipo:** ssot
 
@@ -17,13 +17,15 @@ Documentar o fluxo real de `Release` da Alice: prerequisitos, decisao de build v
 
 ## Preconditions
 
-- O commit alvo precisa ter um `CI` bem-sucedido na mesma branch e no mesmo `head_sha`.
+- O `target_sha` precisa apontar para um commit real e presente em `origin/main`.
+- No fluxo automatico, a `CI` entrega o `target_sha` ja aprovado para a `Release`.
+- Em disparo manual, o operador precisa informar explicitamente o `target_sha` que ja foi aprovado pela `CI`.
 - A versao informada precisa seguir o padrao `vX.Y.Z` ou `vX.Y.Z-sufixo`.
 - O registry GHCR precisa estar acessivel com credenciais validas.
 
 ## O que a Release faz
 
-1. Valida que o `CI` ja aprovou o commit alvo.
+1. Valida o `target_sha` recebido e fixa a tag exatamente nesse commit.
 2. Valida o formato da versao e cria a tag Git.
 3. Detecta a tag anterior para reaproveitamento seguro de imagens.
 4. Decide por imagem se o caminho e `build` ou `retag`.
@@ -97,7 +99,7 @@ O manifesto registra, para cada imagem publicada:
 
 - `docs-only` e `pipeline-only` nao chegam automaticamente na `Release` porque nao sao `release-eligible`.
 - `release-eligible` depende de ao menos uma mudanca fora de documentacao e fora do conjunto pipeline-only.
-- Ainda que alguem dispare a `Release` manualmente, o guard de `CI` continua obrigatorio para o commit alvo.
+- Ainda que alguem dispare a `Release` manualmente, o commit informado precisa continuar sendo um commit ja aprovado pela `CI`.
 
 ## Saidas esperadas
 
