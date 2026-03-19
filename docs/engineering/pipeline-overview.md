@@ -92,6 +92,7 @@ Efeito:
 
 - A versao de `Node.js` usada na esteira passa a vir exclusivamente de [`.nvmrc`](../../.nvmrc).
 - O job `detect-changes` faz um bootstrap inicial com `actions/setup-node` lendo [`.nvmrc`](../../.nvmrc) antes de executar qualquer script `node`, evitando dependencia do binario ja existir no runner self-hosted.
+- O job `security-and-compliance` tambem faz bootstrap inicial com `actions/setup-node` lendo [`.nvmrc`](../../.nvmrc) antes de executar `scripts/verify-node-service-hardening.mjs`.
 - A versao de `pnpm` usada na esteira passa a vir exclusivamente de [`package.json`](../../package.json), via `packageManager`.
 - O setup de dependencias usa apenas o registry oficial do npm, com retries, sem fallback automatico para mirrors publicos.
 - A verificacao de hardening e timeouts dos servicos Node saiu do YAML inline e foi centralizada em script versionado para reduzir duplicacao e fragilidade.

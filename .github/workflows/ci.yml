@@ -313,7 +313,8 @@ jobs:
 
   # ===========================================================================
   # Job 3: Security & Compliance (CONSOLIDADO)
-  # OTIMIZAÇÃO: Trivy + Compliance em 1 único job (ambos não precisam de Node.js)
+  # OTIMIZAÇÃO: Trivy + Compliance em 1 único job
+  # Trivy nao depende de Node.js, mas o hardening versionado do repositorio depende
   # Push em main: o job sempre roda para validar o commit efetivamente publicado
   # Timeout: 8min (scan + verificações)
   # ===========================================================================
@@ -328,6 +329,11 @@ jobs:
     if: ${{ github.event_name == 'push' || needs.detect-changes.outputs.release-eligible == 'true' }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Setup Node.js bootstrap para compliance versionado
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af
+        with:
+          node-version-file: '.nvmrc'
 
       # -------------------------------------------------------------------------
       # SECURITY SCAN (Trivy - Código Fonte)
