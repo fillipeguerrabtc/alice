@@ -8,9 +8,9 @@ function read(relativePath: string): string {
 
 describe('backup restore game day guards', () => {
   it('keeps DR runbook with explicit RTO/RPO targets', () => {
-    const runbook = read('docs/DR-RUNBOOK.md');
-    expect(runbook.includes('RTO alvo')).toBe(true);
-    expect(runbook.includes('RPO alvo')).toBe(true);
+    const runbook = read('docs/operations/runbooks/dr-game-day.md');
+    expect(runbook.includes('`RTO` alvo')).toBe(true);
+    expect(runbook.includes('`RPO` alvo')).toBe(true);
     expect(runbook.includes('Game Day')).toBe(true);
   });
 

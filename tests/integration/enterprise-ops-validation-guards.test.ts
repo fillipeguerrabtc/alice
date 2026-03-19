@@ -14,9 +14,9 @@ describe('enterprise ops validation guards', () => {
   });
 
   it('keeps runbooks for DR, training GPU validation and SLO burn-rate', () => {
-    const drRunbook = read('docs/DR-RUNBOOK.md');
-    const gpuRunbook = read('docs/TRAINING-GPU-VALIDATION-RUNBOOK.md');
-    const sloRunbook = read('docs/SLO-BURN-RATE-RUNBOOK.md');
+    const drRunbook = read('docs/operations/runbooks/dr-game-day.md');
+    const gpuRunbook = read('docs/operations/runbooks/training-gpu-validation.md');
+    const sloRunbook = read('docs/operations/runbooks/slo-burn-rate-validation.md');
 
     expect(drRunbook.includes('run-dr-game-day.sh')).toBe(true);
     expect(gpuRunbook.includes('validate-gpu-fine-tuning.sh')).toBe(true);
