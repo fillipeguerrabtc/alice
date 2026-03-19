@@ -138,6 +138,25 @@ count_commits_in_range() {
   esac
 }
 
+count_commit_subject_matches() {
+  local base_ref="$1"
+  local head_ref="$2"
+  local diff_mode="$3"
+  local pattern="$4"
+
+  case "$diff_mode" in
+    triple_dot)
+      git log --pretty=format:%s "${base_ref}...${head_ref}" | grep -Ei -- "$pattern" || true
+      ;;
+    single_commit)
+      git log --pretty=format:%s -n 1 "${head_ref}" | grep -Ei -- "$pattern" || true
+      ;;
+    *)
+      git log --pretty=format:%s "${base_ref}..${head_ref}" | grep -Ei -- "$pattern" || true
+      ;;
+  esac
+}
+
 HISTORICAL_RANGE="$(resolve_historical_range)"
 RANGE="$HISTORICAL_RANGE"
 ANALYSIS_SOURCE='historical_window'
@@ -159,7 +178,7 @@ if (( ${#event_range[@]} == 4 )) && is_valid_commit_ref "${event_range[1]}"; the
     doc_touches="$(count_changed_paths "${event_range[0]}" "${event_range[1]}" "${event_range[2]}" | grep -E '^(docs/|README\.md$)' || true)"
     doc_touches="$(printf '%s\n' "$doc_touches" | sed '/^$/d' | wc -l | tr -d ' ')"
     commits_total="$(count_commits_in_range "${event_range[0]}" "${event_range[1]}" "${event_range[2]}")"
-    wise_commit_mentions="$(git log --pretty=format:%s "${event_range[0]}..${event_range[1]}" | grep -Ei 'wise' || true)"
+    wise_commit_mentions="$(count_commit_subject_matches "${event_range[0]}" "${event_range[1]}" "${event_range[2]}" 'wise')"
     wise_commit_mentions="$(printf '%s\n' "$wise_commit_mentions" | sed '/^$/d' | wc -l | tr -d ' ')"
   fi
 fi
