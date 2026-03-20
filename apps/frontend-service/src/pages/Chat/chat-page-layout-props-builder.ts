@@ -15,6 +15,7 @@ type ChatPageLayoutState = Pick<
   ChatPageLayoutProps,
   | 'acceptedTypes'
   | 'currentReasoningLabel'
+  | 'emptyStateHeadline'
   | 'focusNonce'
   | 'input'
   | 'isComposerDisabled'

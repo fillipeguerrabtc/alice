@@ -29,6 +29,42 @@ export const chatServicePaths = {
       },
     },
   },
+  '/api/chat/empty-state-headline': {
+    get: {
+      summary: 'Buscar headline dinamica da tela vazia do chat',
+      tags: ['Chat'],
+      security: [],
+      responses: {
+        200: {
+          description: 'Headline dinamica pronta para o estado vazio do chat',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  dayPart: {
+                    type: 'string',
+                    enum: ['morning', 'afternoon', 'evening', 'night'],
+                  },
+                  headline: { type: 'string' },
+                  locale: {
+                    type: 'string',
+                    enum: ['pt-BR', 'en-US'],
+                  },
+                  theme: {
+                    type: 'string',
+                    enum: ['create', 'work', 'organize', 'day_check', 'start_task', 'resume'],
+                  },
+                  variantKey: { type: 'string' },
+                },
+                required: ['dayPart', 'headline', 'locale', 'theme', 'variantKey'],
+              },
+            },
+          },
+        },
+      },
+    },
+  },
   '/api/chat/conversations': {
     get: {
       summary: 'Listar conversas',

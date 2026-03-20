@@ -7,6 +7,7 @@ type ChatPageLayoutModel = Parameters<typeof buildChatPageLayoutProps>[0];
 type UseChatPagePresentationModelOptions = UseChatSectionOptions & {
   acceptedTypes: string;
   currentReasoningLabel: string;
+  emptyStateHeadline: string;
   focusNonce: number;
   input: string;
   isComposerDisabled: boolean;
@@ -53,6 +54,7 @@ type UseChatPagePresentationModelOptions = UseChatSectionOptions & {
 export function useChatPagePresentationModel({
   acceptedTypes,
   currentReasoningLabel,
+  emptyStateHeadline,
   focusNonce,
   input,
   isComposerDisabled,
@@ -102,6 +104,7 @@ export function useChatPagePresentationModel({
     state: {
       acceptedTypes,
       currentReasoningLabel,
+      emptyStateHeadline,
       focusNonce,
       input,
       isComposerDisabled,

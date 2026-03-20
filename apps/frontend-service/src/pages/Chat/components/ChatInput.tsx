@@ -18,6 +18,7 @@ import { MediaPreview } from './MediaPreview';
 
 interface ChatInputProps {
   currentReasoningLabel: string;
+  mode: 'conversation' | 'empty';
   value: string;
   onChange: (value: string) => void;
   onSend: () => void;
@@ -39,6 +40,7 @@ interface ChatInputProps {
 
 export function ChatInput({
   currentReasoningLabel,
+  mode,
   value,
   onChange,
   onSend,
@@ -135,7 +137,7 @@ export function ChatInput({
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
       {pendingMedia.length > 0 && (
-        <div className="flex flex-wrap gap-2 mb-2 md:mb-3 max-w-4xl mx-auto">
+        <div className="mx-auto mb-2 flex max-w-4xl flex-wrap gap-2 md:mb-3">
           {pendingMedia.map((media) => (
             <MediaPreview
               key={media.id}
@@ -146,10 +148,14 @@ export function ChatInput({
         </div>
       )}
 
-      <div className="flex gap-2 max-w-3xl mx-auto">
+      <div className="mx-auto flex max-w-3xl gap-2">
         <div
           ref={containerRef}
-          className="flex flex-1 flex-col gap-2 rounded-[1.6rem] border border-border/60 bg-background/90 p-2 shadow-[0_20px_48px_-32px_rgba(15,23,42,0.55)] backdrop-blur-xl"
+          className={
+            mode === 'empty'
+              ? 'flex flex-1 flex-col gap-2 rounded-[1.9rem] border border-border/45 bg-background/92 p-2.5 shadow-[0_28px_90px_-46px_rgba(15,23,42,0.42)] backdrop-blur-xl md:p-3'
+              : 'flex flex-1 flex-col gap-2 rounded-[1.6rem] border border-border/45 bg-background/88 p-2 shadow-[0_18px_50px_-38px_rgba(15,23,42,0.38)] backdrop-blur-xl'
+          }
         >
           <input
             ref={fileInputRef}
@@ -196,7 +202,11 @@ export function ChatInput({
               setUserBlurred(true);
             }}
             placeholder={pendingMedia.length > 0 ? t('chat.placeholderWithMedia') : t('chat.placeholder')}
-            className="min-h-[52px] max-h-[120px] w-full resize-none bg-transparent px-2 py-1 text-sm leading-relaxed text-foreground focus-visible:outline-none md:max-h-[200px]"
+            className={
+              mode === 'empty'
+                ? 'min-h-[64px] max-h-[120px] w-full resize-none bg-transparent px-2 py-2 text-[15px] leading-relaxed text-foreground focus-visible:outline-none md:max-h-[200px] md:text-base'
+                : 'min-h-[52px] max-h-[120px] w-full resize-none bg-transparent px-2 py-1 text-sm leading-relaxed text-foreground focus-visible:outline-none md:max-h-[200px]'
+            }
             disabled={isRecording || isDisabled}
             data-testid="input-chat-message"
             autoComplete="off"
@@ -262,7 +272,7 @@ export function ChatInput({
 
             <div className="min-w-0 flex-1">
               <span
-                className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border/60 bg-background/80 px-3 py-1.5 text-xs font-medium text-foreground"
+                className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border/55 bg-background/80 px-3 py-1.5 text-xs font-medium text-foreground"
                 data-testid="chat-current-reasoning"
               >
                 <Sparkles className="h-3.5 w-3.5 shrink-0 text-primary/80" />

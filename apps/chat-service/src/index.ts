@@ -96,7 +96,12 @@ import {
 } from '@alice/shared';
 import { isTradingCommand } from './trading-command-parser.js';
 import { resolveModelWithAdapter } from './lora-adapter-resolver.js';
-import { resolvePreferredNameSources } from './user-name-utils.js';
+import { resolvePreferredNameSources, resolveUserDisplayName } from './user-name-utils.js';
+import {
+  buildChatEmptyStateHeadline,
+  buildNextHeadlineHistory,
+  normalizeRecentHeadlineVariantKeys,
+} from './chat-empty-state-headline.js';
 import { evaluateCorruptedAssistantResponse, type StreamCorruptionReason } from './stream-corruption-heuristics.js';
 import { sliceConversationIntoWindows } from './training-utils.js';
 import {
@@ -2540,6 +2545,33 @@ const formatLocalDateTime = (date: Date, locale: string, timeZone: string) => {
     return new Intl.DateTimeFormat(locale, { dateStyle: 'full', timeStyle: 'short', timeZone }).format(date);
   } catch {
     return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'full', timeStyle: 'short', timeZone: DEFAULT_TIMEZONE }).format(date);
+  }
+};
+
+const getLocalHourForTimeZone = (date: Date, timeZone: string): number => {
+  try {
+    const formattedHour = new Intl.DateTimeFormat('en-US', {
+      hour: 'numeric',
+      hour12: false,
+      timeZone,
+    }).format(date);
+    const parsedHour = Number.parseInt(formattedHour, 10);
+    return Number.isFinite(parsedHour) ? parsedHour : 9;
+  } catch {
+    return 9;
+  }
+};
+
+const getLocalDateKeyForTimeZone = (date: Date, timeZone: string): string => {
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      day: '2-digit',
+      month: '2-digit',
+      timeZone,
+      year: 'numeric',
+    }).format(date);
+  } catch {
+    return date.toISOString().slice(0, 10);
   }
 };
 
@@ -8538,6 +8570,66 @@ chatOperationalRuntime.registerRoutes({
     allowLegacySessionFallback: WS_AGENT_AUTH_GOVERNANCE.allowLegacySessionFallback,
   },
 });
+
+app.get('/api/chat/empty-state-headline', asyncHandler(async (req: Request, res: Response) => {
+  const userId = req.user?.userId ?? null;
+  const tenantId = req.tenantId ?? req.user?.tenantId ?? null;
+  const now = new Date();
+  const userLocaleContext = await getUserLocaleContext(userId, tenantId);
+  const resolvedLocale = resolveLocale(userLocaleContext?.locale);
+  const responseLanguageTag = resolveResponseLanguageTag({ locale: resolvedLocale });
+  const resolvedTimeZone = resolveTimeZone(userLocaleContext?.timezone);
+  const locationLabel = buildLocationLabel(userLocaleContext?.location);
+  const localHour = getLocalHourForTimeZone(now, resolvedTimeZone);
+  const localDateKey = getLocalDateKeyForTimeZone(now, resolvedTimeZone);
+
+  let displayName: string | null = null;
+  let recentVariantKeys: string[] = [];
+
+  if (userId) {
+    const user = await getUserById(userId, tenantId);
+    if (user) {
+      const preferences = (user.preferencias ?? {}) as UserPreferencesRecord & {
+        chatEmptyStateHeadlineHistory?: unknown;
+      };
+      const preferredNameResolution = resolvePreferredNameSources({
+        preferredNameColumn: user.preferredName,
+        preferences,
+      });
+
+      displayName = resolveUserDisplayName({
+        preferredName: preferredNameResolution.preferredName,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+      });
+      recentVariantKeys = normalizeRecentHeadlineVariantKeys(preferences.chatEmptyStateHeadlineHistory);
+    }
+  }
+
+  const headline = buildChatEmptyStateHeadline({
+    displayName,
+    localHour,
+    locale: responseLanguageTag,
+    locationLabel,
+    recentVariantKeys,
+    seed: `${userId ?? 'anonymous'}:${localDateKey}:${localHour}:${resolvedTimeZone}:${locationLabel ?? 'no-location'}`,
+  });
+
+  if (userId) {
+    await updateUserPreferences(userId, tenantId, {
+      chatEmptyStateHeadlineHistory: buildNextHeadlineHistory(recentVariantKeys, headline.variantKey),
+    });
+  }
+
+  res.json({
+    dayPart: headline.dayPart,
+    headline: headline.headline,
+    locale: headline.locale,
+    theme: headline.theme,
+    variantKey: headline.variantKey,
+  });
+}));
 
 app.get('/api/chat/stats', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:stats:read'), async (req: Request, res: Response) => {
   try {

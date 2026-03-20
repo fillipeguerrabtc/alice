@@ -2,7 +2,7 @@
 
 **Author:** Fillipe Guerra
 **Data:** 19 de Marco de 2026
-**Atualizado:** 19 de Marco de 2026
+**Atualizado:** 20 de Marco de 2026
 **Status:** em andamento
 **Tipo:** status
 
@@ -260,3 +260,61 @@ Refatorar a UI/UX do chat da Alice para um padrao premium no estilo ChatGPT, rem
 1. Revisar consistencia visual e funcional do chat apos a rodada 2 enterprise.
 2. Criar o commit consolidado em English.
 3. Encerrar sem push, conforme a governanca vigente.
+
+## Rodada 3 light empty state em 20 de Marco de 2026
+
+### Diagnostico adicional confirmado
+
+- O `ChatComposerSection` ainda aplicava `border-t`, criando uma linha divisoria explicita entre a viewport e o input.
+- O layout principal nao diferenciava estruturalmente `empty state mode` de `conversation mode`; o estado vazio era apenas um conteúdo alternativo dentro da viewport de mensagens.
+- A `WelcomeScreen` ainda dependia de string fixa de locale e renderizava duas camadas de texto, mantendo a abertura do chat com cara de pagina comum.
+- A headline inicial nao usava contrato real do backend, nem contexto autentico de `preferredName`, `firstName`, `timezone` e `location`.
+
+### Implementacao aplicada nesta rodada
+
+- `ChatPageLayout` passou a separar explicitamente:
+  - `empty state mode`, com headline unica e composer centralizado;
+  - `conversation mode`, com fluxo normal de mensagens e composer no rodape.
+- A linha divisoria superior do composer foi removida e o shell visual do chat ficou mais leve.
+- `WelcomeScreen` foi reescrita para exibir apenas uma frase curta e premium.
+- O `chat-service` ganhou o endpoint real `GET /api/chat/empty-state-headline`, com:
+  - uso de contexto autentico do usuario quando disponivel;
+  - headline curta em uma unica sentenca;
+  - variacao por turno do dia, tema e localizacao;
+  - saudações ocasionais com nome;
+  - historico curto em preferencias do usuario para evitar repeticao imediata.
+- O frontend passou a consumir esse contrato e manteve fallback local apenas para contingencia.
+- O composer continua preservando `Raciocinio`, `Area`, `Agente` e o menu `Alice` no modelo ja aprovado.
+
+### Validacoes concluidas nesta rodada
+
+- `pnpm --filter @alice/frontend-service run typecheck`
+- `pnpm --filter @alice/chat-service run typecheck`
+- `pnpm exec vitest run tests/unit/chat-empty-state-headline.test.ts tests/unit/chat-user-name-utils.test.ts tests/unit/frontend/chat-empty-state-headline-frontend.test.ts tests/unit/services/chat-openapi-sync.test.ts tests/unit/services/chat-openapi-rbac-sync.test.ts`
+- `pnpm --filter @alice/frontend-service run lint`
+- `pnpm --filter @alice/chat-service run lint`
+- `pnpm --filter @alice/frontend-service run build`
+- `pnpm --filter @alice/chat-service run build`
+- Todas as validacoes desta rodada encerraram sem erros e sem warnings reportados pelas ferramentas executadas.
+
+### Arquivos impactados nesta rodada
+
+- `apps/chat-service/src/chat-empty-state-headline.ts`
+- `apps/chat-service/src/index.ts`
+- `apps/chat-service/src/openapi-specs.ts`
+- `apps/chat-service/src/user-name-utils.ts`
+- `apps/frontend-service/src/pages/Chat/chat-empty-state-headline.ts`
+- `apps/frontend-service/src/pages/Chat/chat-page-layout-props-builder.ts`
+- `apps/frontend-service/src/pages/Chat/components/ChatComposerSection.tsx`
+- `apps/frontend-service/src/pages/Chat/components/ChatHeaderSection.tsx`
+- `apps/frontend-service/src/pages/Chat/components/ChatInput.tsx`
+- `apps/frontend-service/src/pages/Chat/components/ChatMessagesViewport.tsx`
+- `apps/frontend-service/src/pages/Chat/components/ChatPageLayout.tsx`
+- `apps/frontend-service/src/pages/Chat/components/WelcomeScreen.tsx`
+- `apps/frontend-service/src/pages/Chat/useChatPageLayoutController.ts`
+- `apps/frontend-service/src/pages/Chat/useChatPagePresentationModel.ts`
+- `docs/product/design-guidelines.md`
+- `docs/status/chat-ui-chatgpt-refactor-status.md`
+- `tests/unit/chat-empty-state-headline.test.ts`
+- `tests/unit/frontend/chat-empty-state-headline-frontend.test.ts`
+- `tests/unit/chat-user-name-utils.test.ts`

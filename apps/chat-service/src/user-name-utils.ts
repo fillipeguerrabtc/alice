@@ -34,3 +34,22 @@ export function resolvePreferredNameSources(params: {
     shouldBackfillPreferredName: !preferredNameFromColumn && Boolean(preferredNameFromPrefs),
   };
 }
+
+export function resolveUserDisplayName(params: {
+  preferredName?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  email?: string | null;
+}): string | null {
+  const preferredName = normalizeUserNameValue(params.preferredName ?? '');
+  if (preferredName) return preferredName;
+
+  const firstName = normalizeUserNameValue(params.firstName ?? '');
+  if (firstName) return firstName;
+
+  const fullName = normalizeUserNameValue(`${params.firstName ?? ''} ${params.lastName ?? ''}`);
+  if (fullName) return fullName;
+
+  const emailLocalPart = params.email?.split('@')[0]?.replace(/[._-]+/g, ' ') ?? '';
+  return normalizeUserNameValue(emailLocalPart);
+}

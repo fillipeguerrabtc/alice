@@ -2,7 +2,7 @@
 
 **Author:** Fillipe Guerra
 **Data:** 19 de Marco de 2026
-**Atualizado:** 19 de Marco de 2026
+**Atualizado:** 20 de Marco de 2026
 **Status:** ativo
 **Tipo:** ssot
 
@@ -110,6 +110,11 @@ Usar escala consistente: `2, 4, 8, 12, 16, 24, 32` (px-2, h-8, m-12, etc.)
 - Operações, governança e diagnóstico devem viver em superficies dedicadas de navegação, nunca como trilhas principais dentro do topo do chat
 - O botao `+` do composer deve ficar reservado para anexos e futuras acoes do input; configuracao da conversa nao deve competir com esse menu
 - A tela inicial vazia do chat deve ser leve, limpa e sem ilustrações pesadas concorrendo com a entrada da conversa
+- A interface principal do chat deve diferenciar explicitamente `empty state mode` e `conversation mode`
+- Em `empty state mode`, o chat deve exibir apenas uma headline curta e dinamica, centralizada verticalmente, com o composer logo abaixo
+- A headline da tela vazia deve vir de um contrato real da plataforma, considerar contexto autentico do usuario quando existir e evitar repeticao imediata
+- Em `conversation mode`, o composer deve voltar para o rodape visual do chat sem linha divisoria superior evidente
+- A transicao entre composer centralizado e composer no rodape deve ser suave e responsiva em desktop e mobile
 - Streaming, thinking e respostas parciais devem respeitar a largura util do chat, sem overflow horizontal, sem scrollbar oscilando e sem exceder o limite visual definido para o painel de thinking
 - Preview de mídia inline (imagens/vídeos reproduzíveis)
 - Área de upload: borda tracejada, drag-drop

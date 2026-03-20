@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { resolvePreferredNameSources } from '../../apps/chat-service/src/user-name-utils';
+import {
+  resolvePreferredNameSources,
+  resolveUserDisplayName,
+} from '../../apps/chat-service/src/user-name-utils';
 
 describe('resolvePreferredNameSources', () => {
   it('prioriza preferredName da coluna quando disponivel', () => {
@@ -53,6 +56,35 @@ describe('resolvePreferredNameSources', () => {
     expect(result.preferredName).toBeNull();
     expect(result.preferredNameFromPrefs).toBeNull();
     expect(result.shouldBackfillPreferredName).toBe(false);
+  });
+});
+
+describe('resolveUserDisplayName', () => {
+  it('prioriza preferredName quando disponivel', () => {
+    expect(resolveUserDisplayName({
+      preferredName: 'Lia',
+      firstName: 'Maria',
+      lastName: 'Silva',
+      email: 'maria@example.com',
+    })).toBe('Lia');
+  });
+
+  it('usa firstName quando preferredName nao existe', () => {
+    expect(resolveUserDisplayName({
+      preferredName: null,
+      firstName: 'Joao',
+      lastName: 'Souza',
+      email: 'joao@example.com',
+    })).toBe('Joao');
+  });
+
+  it('faz fallback para o email quando nenhum nome valido existe', () => {
+    expect(resolveUserDisplayName({
+      preferredName: null,
+      firstName: null,
+      lastName: null,
+      email: 'alice.squad@example.com',
+    })).toBe('alice squad');
   });
 });
 

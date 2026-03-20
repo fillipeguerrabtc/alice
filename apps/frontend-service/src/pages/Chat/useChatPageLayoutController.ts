@@ -5,11 +5,12 @@
  * Author: Fillipe Guerra
  * Data: 10 de Março de 2026
  */
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback } from 'react';
 import { useParams, useLocation } from 'wouter';
 import { useTranslation } from 'react-i18next';
 import { useToast } from '@/hooks/use-toast';
+import { apiRequest } from '@/lib/queryClient';
 import {
   ACCEPTED_TYPES,
 } from './components/types';
@@ -38,6 +39,10 @@ import { useChatConversationSurfaceState } from './useChatConversationSurfaceSta
 import { useChatPagePresentationModel } from './useChatPagePresentationModel';
 import { useAuth } from '@/hooks/use-auth';
 import { isManualReasoningMode } from '@/lib/reasoning-mode';
+import {
+  buildFallbackChatEmptyStateHeadline,
+  type ChatEmptyStateHeadlinePayload,
+} from './chat-empty-state-headline';
 
 const CHAT_ACCEPTED_MEDIA_TYPES = [...ACCEPTED_TYPES.image, ...ACCEPTED_TYPES.audio].join(',');
 
@@ -497,6 +502,17 @@ export function useChatPageLayoutController() {
     handleSelectedReasoningModeChange,
     normalizedSelectedReasoningMode,
   ]);
+  const { data: emptyStateHeadlineData } = useQuery<ChatEmptyStateHeadlinePayload>({
+    queryKey: ['/api/chat/empty-state-headline', currentUser?.id ?? 'anonymous', focusNonce],
+    queryFn: async () => {
+      const response = await apiRequest('GET', '/api/chat/empty-state-headline');
+      return response.json() as Promise<ChatEmptyStateHeadlinePayload>;
+    },
+    enabled: !authLoading && messages.length === 0,
+    staleTime: 0,
+  });
+  const emptyStateHeadline = emptyStateHeadlineData?.headline
+    ?? buildFallbackChatEmptyStateHeadline(currentUser).headline;
   const isRecordingDisabled = isStreaming || isRecording || isRecordingStarting || isTranscribingRecording;
   return useChatPagePresentationModel({
     acceptedTypes: CHAT_ACCEPTED_MEDIA_TYPES,
@@ -558,6 +574,7 @@ export function useChatPageLayoutController() {
     trainingDialogMode,
     trainingNamespaceId,
     currentReasoningLabel,
+    emptyStateHeadline,
     focusNonce,
     input,
     isComposerDisabled: showLoginBanner,
