@@ -66,17 +66,17 @@ export function HealthSummarySection({ health, isLoading, locale, onNavigate }: 
   ];
 
   return (
-    <Card className="rounded-xl">
+    <Card className="min-w-0 overflow-hidden rounded-xl">
       <CardHeader className="space-y-3">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <CardTitle>Saúde da plataforma</CardTitle>
+          <div className="min-w-0">
+            <CardTitle className="break-words">Saúde da plataforma</CardTitle>
             <CardDescription>
               Resumo operacional de serviços, circuit breakers, SLA e tempo de resposta.
             </CardDescription>
           </div>
           {observabilityHref ? (
-            <Button variant="outline" onClick={() => onNavigate(observabilityHref)}>
+            <Button variant="outline" className="shrink-0 self-start" onClick={() => onNavigate(observabilityHref)}>
               Ver observabilidade completa
             </Button>
           ) : null}
@@ -84,12 +84,12 @@ export function HealthSummarySection({ health, isLoading, locale, onNavigate }: 
       </CardHeader>
       <CardContent className="grid gap-3 md:grid-cols-2">
         {metrics.map((metric) => (
-          <div key={metric.id} className="rounded-lg border p-4">
+          <div key={metric.id} className="min-w-0 rounded-lg border p-4">
             <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-              <metric.icon className="h-4 w-4" />
+              <metric.icon className="h-4 w-4 shrink-0" />
               {metric.label}
             </div>
-            <p className="mt-3 text-lg font-semibold text-foreground">{metric.value}</p>
+            <p className="mt-3 break-words text-lg font-semibold text-foreground">{metric.value}</p>
           </div>
         ))}
       </CardContent>

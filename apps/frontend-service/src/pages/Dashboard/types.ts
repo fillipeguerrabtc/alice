@@ -85,12 +85,6 @@ export type DashboardSnapshot = {
   }>;
 };
 
-export type DashboardQuickAction = {
-  id: string;
-  label: string;
-  href: string;
-};
-
 export type DashboardHomeResponse = {
   meta: {
     generatedAt: string;
@@ -120,5 +114,4 @@ export type DashboardHomeResponse = {
     canViewRouting: boolean;
     canViewFinance: boolean;
   };
-  quickActions: DashboardQuickAction[];
 };

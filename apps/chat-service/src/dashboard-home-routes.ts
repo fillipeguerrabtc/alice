@@ -924,12 +924,6 @@ export function registerDashboardHomeRoutes(params: DashboardHomeRouteParams): v
         });
       }
 
-      const quickActions = [
-        canManageConversations ? { id: 'new-conversation', label: 'Nova conversa', href: '/chat' } : null,
-        canUploadDocuments ? { id: 'upload-document', label: 'Upload de documento', href: '/documents' } : null,
-        canOpenObservability ? { id: 'open-observability', label: 'Abrir observabilidade', href: '/observability' } : null,
-      ].filter((item): item is { id: string; label: string; href: string } => item !== null).slice(0, 3);
-
       const domainSnapshots: Array<{
         id: string;
         title: string;
@@ -1073,7 +1067,6 @@ export function registerDashboardHomeRoutes(params: DashboardHomeRouteParams): v
           canViewRouting,
           canViewFinance,
         },
-        quickActions,
       });
     } catch (error) {
       logger.error({ error, tenantId }, 'Falha ao montar home agregada da dashboard');

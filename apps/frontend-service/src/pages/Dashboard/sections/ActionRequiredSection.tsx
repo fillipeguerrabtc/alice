@@ -40,7 +40,7 @@ export function ActionRequiredSection({ alerts, isLoading, onNavigate }: ActionR
   }
 
   return (
-    <Card className="rounded-xl">
+    <Card className="min-w-0 overflow-hidden rounded-xl">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <AlertTriangle className="h-5 w-5" />
@@ -59,9 +59,9 @@ export function ActionRequiredSection({ alerts, isLoading, onNavigate }: ActionR
         ) : (
           <div className="space-y-3">
             {alerts.map((alert) => (
-              <div key={alert.id} className="rounded-lg border p-4">
+              <div key={alert.id} className="min-w-0 overflow-hidden rounded-lg border p-4">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="space-y-2">
+                  <div className="min-w-0 space-y-2">
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge className={getSeverityClass(alert.severity)}>
                         {alert.severity === 'critical' ? 'Crítico' : 'Atenção'}
@@ -70,12 +70,12 @@ export function ActionRequiredSection({ alerts, isLoading, onNavigate }: ActionR
                         {alert.count} ocorrência(s)
                       </span>
                     </div>
-                    <p className="font-medium text-foreground">{alert.title}</p>
-                    <p className="text-sm text-muted-foreground">{alert.description}</p>
+                    <p className="break-words font-medium text-foreground">{alert.title}</p>
+                    <p className="break-words text-sm text-muted-foreground">{alert.description}</p>
                   </div>
                   <Button
                     variant="outline"
-                    className="shrink-0"
+                    className="shrink-0 self-start"
                     onClick={() => onNavigate(alert.href)}
                   >
                     Abrir

@@ -3,7 +3,6 @@ import { useQuery } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
 import { useAuth } from '@/hooks/use-auth';
 import { apiRequest } from '@/lib/queryClient';
-import { HeaderSection } from './sections/HeaderSection';
 import { SummaryKpisSection } from './sections/SummaryKpisSection';
 import { ActionRequiredSection } from './sections/ActionRequiredSection';
 import { HealthSummarySection } from './sections/HealthSummarySection';
@@ -33,12 +32,7 @@ export default function Dashboard() {
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-6 p-6">
-      <HeaderSection
-        data={data}
-        isLoading={isLoading}
-        locale={locale}
-        onNavigate={navigateTo}
-      />
+      <h1 className="sr-only">Dashboard</h1>
 
       <SummaryKpisSection
         cards={data?.summaryCards ?? []}
@@ -47,7 +41,7 @@ export default function Dashboard() {
         onNavigate={navigateTo}
       />
 
-      <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
         <ActionRequiredSection
           alerts={data?.alerts ?? []}
           isLoading={isLoading}
@@ -67,7 +61,7 @@ export default function Dashboard() {
         locale={locale}
       />
 
-      <div className="grid gap-6 xl:grid-cols-[1fr_1fr]">
+      <div className="grid gap-6 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <RecentActivitySection
           items={data?.recentActivity ?? []}
           isLoading={isLoading}

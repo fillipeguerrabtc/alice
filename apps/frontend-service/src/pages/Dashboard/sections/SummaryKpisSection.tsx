@@ -40,19 +40,19 @@ export function SummaryKpisSection({ cards, isLoading, locale, onNavigate }: Sum
         return (
           <Card
             key={card.id}
-            className="rounded-xl transition-colors hover:border-primary/40"
+            className="min-w-0 rounded-xl transition-colors hover:border-primary/40"
           >
             <CardHeader className="space-y-3">
               <div className="flex items-start justify-between gap-3">
-                <div className="space-y-1">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">{card.title}</CardTitle>
+                <div className="min-w-0 space-y-1">
+                  <CardTitle className="break-words text-sm font-medium text-muted-foreground">{card.title}</CardTitle>
                   <div className="text-3xl font-semibold tracking-tight">
                     {formatNumber(card.value, locale)}
                   </div>
                 </div>
                 <button
                   type="button"
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-md border text-muted-foreground transition-colors hover:text-foreground"
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border text-muted-foreground transition-colors hover:text-foreground"
                   aria-label={`Abrir ${card.title}`}
                   onClick={() => onNavigate(card.href)}
                 >
@@ -61,8 +61,8 @@ export function SummaryKpisSection({ cards, isLoading, locale, onNavigate }: Sum
               </div>
               <div className="space-y-1 text-sm">
                 <p className="font-medium text-foreground">{card.periodLabel}</p>
-                <p className="flex items-center gap-2 text-muted-foreground">
-                  <TrendIcon className="h-4 w-4" />
+                <p className="flex items-start gap-2 break-words text-muted-foreground">
+                  <TrendIcon className="mt-0.5 h-4 w-4 shrink-0" />
                   {card.referenceLabel}
                 </p>
               </div>

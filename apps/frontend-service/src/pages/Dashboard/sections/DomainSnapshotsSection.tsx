@@ -47,38 +47,47 @@ export function DomainSnapshotsSection({ snapshots, isLoading, onNavigate }: Dom
   }
 
   return (
-    <Card className="rounded-xl">
+    <Card className="min-w-0 overflow-hidden rounded-xl">
       <CardHeader>
         <CardTitle>Snapshots por domínio</CardTitle>
         <CardDescription>
           Recortes operacionais exibidos apenas quando fazem sentido para o papel ativo.
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="min-w-0">
         {snapshots.length === 0 ? (
           <EmptyState
             title="Nenhum snapshot adicional para este papel."
             description="A home já está mostrando as métricas essenciais da sua rotina."
           />
         ) : (
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid gap-4">
             {snapshots.map((snapshot) => (
-              <div key={snapshot.id} className="rounded-lg border p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="space-y-1">
-                    <p className="font-medium text-foreground">{snapshot.title}</p>
-                    <p className="text-sm text-muted-foreground">{snapshot.description}</p>
+              <div key={snapshot.id} className="min-w-0 overflow-hidden rounded-lg border p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0 space-y-1">
+                    <p className="break-words font-medium text-foreground">{snapshot.title}</p>
+                    <p className="break-words text-sm leading-6 text-muted-foreground">{snapshot.description}</p>
                   </div>
-                  <Button variant="ghost" size="sm" onClick={() => onNavigate(snapshot.href)}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="shrink-0 self-start"
+                    onClick={() => onNavigate(snapshot.href)}
+                  >
                     Abrir
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
                 </div>
-                <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                   {snapshot.items.map((item) => (
-                    <div key={item.label} className="rounded-md border bg-muted/20 p-3">
-                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{item.label}</p>
-                      <p className={`mt-2 text-lg font-semibold ${getToneClass(item.tone)}`}>{item.value}</p>
+                    <div key={item.label} className="min-w-0 overflow-hidden rounded-md border bg-muted/20 p-3">
+                      <p className="break-words text-[11px] font-medium uppercase leading-4 tracking-[0.02em] text-muted-foreground">
+                        {item.label}
+                      </p>
+                      <p className={`mt-2 break-words text-xl font-semibold leading-tight ${getToneClass(item.tone)}`}>
+                        {item.value}
+                      </p>
                     </div>
                   ))}
                 </div>

@@ -34,7 +34,7 @@ export function RecentActivitySection({ items, isLoading, locale, onNavigate }: 
   }
 
   return (
-    <Card className="rounded-xl">
+    <Card className="min-w-0 overflow-hidden rounded-xl">
       <CardHeader>
         <CardTitle>Atividade recente</CardTitle>
         <CardDescription>
@@ -53,17 +53,17 @@ export function RecentActivitySection({ items, isLoading, locale, onNavigate }: 
               const itemHref = item.href;
 
               return (
-                <div key={item.id} className="rounded-lg border p-4">
+                <div key={item.id} className="min-w-0 overflow-hidden rounded-lg border p-4">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="space-y-1">
-                      <p className="font-medium text-foreground">{item.title}</p>
-                      <p className="text-sm text-muted-foreground">{item.description}</p>
-                      <p className="text-xs text-muted-foreground">
+                    <div className="min-w-0 space-y-1">
+                      <p className="break-words font-medium text-foreground">{item.title}</p>
+                      <p className="break-words text-sm text-muted-foreground">{item.description}</p>
+                      <p className="break-words text-xs text-muted-foreground">
                         {item.actor} • {item.timestamp ? formatDateTime(item.timestamp, { locale }) : '-'}
                       </p>
                     </div>
                     {itemHref ? (
-                      <Button variant="ghost" size="sm" onClick={() => onNavigate(itemHref)}>
+                      <Button variant="ghost" size="sm" className="shrink-0 self-start" onClick={() => onNavigate(itemHref)}>
                         Abrir
                         <ArrowRight className="ml-2 h-4 w-4" />
                       </Button>
