@@ -66,10 +66,15 @@ import {
   instrumentCircuitBreaker,
   permissionCache,
   setPermissionResolver,
+  createDatabasePermissionResolver,
+  authorizeAgentAction,
+  issueDelegatedExecutionToken,
+  buildDelegatedExecutionHeaders,
+  auditDelegatedAuthorization,
+  listAuthorizedAgentActions,
   requestGpuStream,
   validateAgentTenantConsistency,
   validateConversationTenantConsistency,
-  PERMISSION_MAP,
   type AgentEvent,
   redactSensitivePayload,
   getRedisClient,
@@ -85,6 +90,7 @@ import {
 } from '@alice/shared-utils';
 import type { AuthContext } from '@alice/shared-utils';
 import type { Role } from '@alice/shared-utils';
+import type { ResourceType } from '@alice/shared-utils';
 import type { ReasoningMode } from '@alice/shared-utils';
 import type { ResolvedReasoningRequest } from '@alice/shared-utils';
 import { eq, desc, inArray, and, or, lt, gte, lte, sql, not, asc, isNull } from '@alice/database';
@@ -502,86 +508,7 @@ async function initializeAllCaches(): Promise<void> {
   // Inicializar cache de permissões RBAC
   // Usa o mesmo cliente Redis já inicializado
   await permissionCache.initialize();
-  setPermissionResolver(async (auth: AuthContext) => {
-    const db = getDatabase();
-    const baseRoleRows = await db.query.userRoles.findMany({
-      where: eq(schema.userRoles.userId, auth.userId),
-      columns: { role: true },
-    });
-    let baseRoles = baseRoleRows.map((row) => row.role as Role).filter(Boolean);
-    if (baseRoles.length === 0) {
-      const fallbackUser = await db.query.users.findFirst({
-        where: eq(schema.users.id, auth.userId),
-        columns: { role: true },
-      });
-      if (fallbackUser?.role) {
-        baseRoles = [fallbackUser.role as Role];
-      }
-    }
-
-    const customRoleRows = await db.query.userCustomRoles.findMany({
-      where: eq(schema.userCustomRoles.userId, auth.userId),
-      with: {
-        customRole: {
-          columns: { id: true, ativo: true, tenantId: true },
-        },
-      },
-    });
-    let customRoleIds = customRoleRows
-      .filter((row) => row.customRole?.ativo)
-      .filter((row) => !auth.tenantId || row.customRole?.tenantId === auth.tenantId)
-      .map((row) => row.customRoleId);
-    if (customRoleIds.length === 0) {
-      const fallbackUser = await db.query.users.findFirst({
-        where: eq(schema.users.id, auth.userId),
-        columns: { customRoleId: true },
-      });
-      const fallbackCustomRoleId = fallbackUser?.customRoleId ?? undefined;
-      if (fallbackCustomRoleId) {
-        const activeRole = await db.query.customRoles.findFirst({
-          where: and(
-            eq(schema.customRoles.id, fallbackCustomRoleId),
-            eq(schema.customRoles.ativo, true),
-            auth.tenantId ? eq(schema.customRoles.tenantId, auth.tenantId) : sql`1=1`
-          ),
-          columns: { id: true },
-        });
-        if (activeRole) {
-          customRoleIds = [fallbackCustomRoleId];
-        }
-      }
-    }
-
-    const isAdminRole = baseRoles.some((role) => role === 'admin' || role === 'super_admin');
-    const rolePermissions = isAdminRole
-      ? await db.query.permissions.findMany({ columns: { codigo: true } })
-      : baseRoles.length > 0
-        ? await db.query.rolePermissions.findMany({
-          where: inArray(schema.rolePermissions.role, baseRoles),
-          with: { permission: true },
-        })
-        : [];
-    const customRolePermissions = customRoleIds.length > 0
-      ? await db.query.customRolePermissions.findMany({
-        where: inArray(schema.customRolePermissions.customRoleId, customRoleIds),
-        with: { permission: true },
-      })
-      : [];
-    const dbPermissions = rolePermissions
-      .map((rp) => ('codigo' in rp ? rp.codigo : (rp as { permission?: { codigo?: string | null } }).permission?.codigo))
-      .filter((code): code is string => Boolean(code));
-    const customPermissions = customRolePermissions
-      .map((rp) => (rp as { permission?: { codigo?: string | null } }).permission?.codigo)
-      .filter((code): code is string => Boolean(code));
-    const basePermissions = Object.entries(PERMISSION_MAP)
-      .filter(([, roles]) => roles.some((role) => baseRoles.includes(role as Role)))
-      .map(([code]) => code);
-    const resolved = new Set<string>([...dbPermissions, ...customPermissions, ...basePermissions]);
-    if (isAdminRole) {
-      resolved.add('admin:alice_core:write');
-    }
-    return Array.from(resolved);
-  });
+  setPermissionResolver(createDatabasePermissionResolver());
   logger.info({ 
     sessionDistributed: sessionCacheAdapter?.isDistributed() ?? false,
     rbacDistributed: permissionCache.getStats().distributed,
@@ -1806,9 +1733,37 @@ function buildGrafanaCommandSummary(command: GrafanaCommand): string {
   return 'Grafana: atualizar dashboard';
 }
 
+function resolveGrafanaActionKey(command: GrafanaCommand): string {
+  if (command.type === 'list_dashboards') {
+    return 'observability.grafana.dashboard.list';
+  }
+  if (command.type === 'get_dashboard') {
+    return 'observability.grafana.dashboard.get';
+  }
+  return 'observability.grafana.dashboard.update';
+}
+
+function resolvePaymentActionKey(command: PaymentCommand): string {
+  if (command.type === 'wise_recipients') {
+    return 'payments.wise.recipients.list';
+  }
+  if (command.type === 'wise_transfer') {
+    return 'payments.wise.transfer.create';
+  }
+  if (command.type === 'wise_exchange') {
+    return 'payments.wise.exchange.create';
+  }
+  return 'payments.stripe.payment_intent.create';
+}
+
+function resolveStackActionKey(command: StackCommand): string {
+  return command.type === 'rollback' ? 'platform.stack.rollback' : 'platform.stack.deploy';
+}
+
 async function executeGrafanaCommand(params: {
   command: GrafanaCommand;
   auth: AuthContext;
+  delegatedToken?: string;
 }): Promise<{ responseContent: string; integrationResult: unknown }> {
   const { command, auth } = params;
   let responseContent = 'Ação Grafana concluída.';
@@ -1820,6 +1775,7 @@ async function executeGrafanaCommand(params: {
       endpoint: `/api/integrations/grafana/dashboards${query}`,
       method: 'GET',
       auth,
+      delegatedToken: params.delegatedToken,
     });
     const dashboards = result.data.slice(0, 10).map((item) => `- ${item.title} (${item.uid})`);
     responseContent = dashboards.length
@@ -1833,6 +1789,7 @@ async function executeGrafanaCommand(params: {
       endpoint: `/api/integrations/grafana/dashboards/${command.payload.uid}`,
       method: 'GET',
       auth,
+      delegatedToken: params.delegatedToken,
     });
     responseContent = `Dashboard obtido: ${command.payload.uid}.`;
     integrationResult = result;
@@ -1849,6 +1806,7 @@ async function executeGrafanaCommand(params: {
         overwrite: command.payload.overwrite ?? true,
       },
       auth,
+      delegatedToken: params.delegatedToken,
     });
     responseContent = 'Dashboard Grafana atualizado com sucesso.';
     integrationResult = result;
@@ -2637,7 +2595,8 @@ function buildSystemPrompt(
   agent?: AgentConfig | null,
   assistantSettings?: AssistantSettings | null,
   userMessage?: string,
-  userContext?: UserLocaleContext
+  userContext?: UserLocaleContext,
+  capabilityPrompt?: string
 ): string {
   let prompt = DEFAULT_SYSTEM_PROMPT;
   const { core: coreSettings, missing } = resolveCoreSettings(assistantSettings);
@@ -2666,7 +2625,7 @@ function buildSystemPrompt(
     && !normalizedPrompt.includes('internet')
     && !normalizedPrompt.includes('deep web')
     && !normalizedPrompt.includes('deepweb')) {
-    prompt += `\n\n${CORE_CAPABILITIES_PROMPT}`;
+    prompt += `\n\n${capabilityPrompt ?? CORE_CAPABILITIES_PROMPT}`;
   }
 
   const resolvedLocale = resolveLocale(userContext?.locale);
@@ -3519,6 +3478,8 @@ export interface LlmGatewayContext {
   route: string;
   tenantId: string;
   userId?: string;
+  role?: Role;
+  customRoleId?: string | null;
   conversationId?: string;
   namespaceId?: string;
   agentId?: string;
@@ -6490,12 +6451,23 @@ async function callGatewayComplete(
   context: LlmGatewayContext
 ): Promise<globalThis.Response> {
   const url = `${LLM_GATEWAY_URL}/api/llm/complete`;
+  const requestHeaders: Record<string, string> = context.userId
+    ? {
+        'Content-Type': 'application/json',
+        ...buildInternalServiceHeaders({
+          userId: context.userId,
+          tenantId: context.tenantId,
+          role: context.role ?? 'operator',
+          customRoleId: context.customRoleId ?? null,
+        }),
+      }
+    : {
+        'Content-Type': 'application/json',
+        'X-Internal-Api-Secret': INTERNAL_API_SECRET ?? '',
+      };
   const res = await fetch(url, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Internal-Api-Secret': INTERNAL_API_SECRET,
-    },
+    headers: requestHeaders,
     body: JSON.stringify({
       messages,
       config: { temperature: config.temperature, maxTokens: config.maxTokens, model: config.model },
@@ -6710,12 +6682,23 @@ async function callGatewayStream(
   context: LlmGatewayContext
 ): Promise<globalThis.Response> {
   const url = `${LLM_GATEWAY_URL}/api/llm/stream`;
+  const requestHeaders: Record<string, string> = context.userId
+    ? {
+        'Content-Type': 'application/json',
+        ...buildInternalServiceHeaders({
+          userId: context.userId,
+          tenantId: context.tenantId,
+          role: context.role ?? 'operator',
+          customRoleId: context.customRoleId ?? null,
+        }),
+      }
+    : {
+        'Content-Type': 'application/json',
+        'X-Internal-Api-Secret': INTERNAL_API_SECRET ?? '',
+      };
   const res = await fetch(url, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Internal-Api-Secret': INTERNAL_API_SECRET,
-    },
+    headers: requestHeaders,
     body: JSON.stringify({
       messages,
       config: { temperature: config.temperature, maxTokens: config.maxTokens, model: config.model },
@@ -8268,19 +8251,28 @@ async function callIntegrationsService<T>(params: {
   method: 'GET' | 'POST' | 'DELETE';
   body?: unknown;
   auth: AuthContext;
+  delegatedToken?: string;
 }): Promise<T> {
-  const internalHeaders = buildInternalServiceHeaders({
-    userId: params.auth.userId,
-    tenantId: params.auth.tenantId ?? '',
-    role: params.auth.role,
-    customRoleId: params.auth.customRoleId,
-  });
+  const requestHeaders = params.delegatedToken
+    ? buildDelegatedExecutionHeaders({
+        auth: {
+          ...params.auth,
+          tenantId: params.auth.tenantId ?? '',
+        },
+        delegatedToken: params.delegatedToken,
+      })
+    : buildInternalServiceHeaders({
+        userId: params.auth.userId,
+        tenantId: params.auth.tenantId ?? '',
+        role: params.auth.role,
+        customRoleId: params.auth.customRoleId,
+      });
 
   const response = await fetch(`${INTEGRATIONS_SERVICE_URL_FINAL}${params.endpoint}`, {
     method: params.method,
     headers: {
       'Content-Type': 'application/json',
-      ...internalHeaders,
+      ...requestHeaders,
     },
     body: params.body ? JSON.stringify(params.body) : undefined,
     signal: AbortSignal.timeout(20000),
@@ -8292,6 +8284,179 @@ async function callIntegrationsService<T>(params: {
   }
 
   return response.json() as Promise<T>;
+}
+
+function resolveAgenticAuthzError(decision: Awaited<ReturnType<typeof authorizeAgentAction>>): string {
+  switch (decision.reason) {
+    case 'permission_denied':
+      return 'Permissão insuficiente para a ação solicitada.';
+    case 'governance_denied':
+      return 'Ação bloqueada pela governança do tenant.';
+    case 'namespace_denied':
+      return 'Ação fora do namespace autorizado.';
+    case 'resource_denied':
+      return 'Recurso alvo não autorizado.';
+    case 'disabled':
+      return 'Ação desativada para este tenant.';
+    case 'catalog_not_found':
+      return 'Ação agentic não cadastrada no catálogo.';
+    default:
+      return 'Ação agentic não autorizada.';
+  }
+}
+
+type SessionStepUpState = {
+  method?: 'password' | 'biometric';
+  actionType?: 'approval';
+  actionRequestId?: string | null;
+  verifiedAt?: string;
+};
+
+const STEP_UP_APPROVAL_MAX_AGE_MS = 5 * 60 * 1000;
+
+function consumeApprovalStepUpContext(
+  req: Request,
+  actionRequestId: string,
+  requiresStepUp: boolean,
+): { ok: true; stepUpContext: Record<string, unknown> | null } | { ok: false; message: string } {
+  if (!requiresStepUp) {
+    return { ok: true, stepUpContext: null };
+  }
+
+  const sessionState = (req.session as { stepUpAuth?: SessionStepUpState } | undefined)?.stepUpAuth;
+  const verifiedAt = sessionState?.verifiedAt ? new Date(sessionState.verifiedAt).getTime() : Number.NaN;
+  const isFresh = Number.isFinite(verifiedAt) && (Date.now() - verifiedAt) <= STEP_UP_APPROVAL_MAX_AGE_MS;
+
+  if (
+    sessionState?.actionType !== 'approval'
+    || sessionState?.actionRequestId !== actionRequestId
+    || !isFresh
+  ) {
+    return {
+      ok: false,
+      message: 'Esta ação exige step-up recente. Refaça a confirmação usando biometria ou senha antes de aprovar.',
+    };
+  }
+
+  if (req.session) {
+    delete (req.session as { stepUpAuth?: SessionStepUpState }).stepUpAuth;
+  }
+
+  return {
+    ok: true,
+    stepUpContext: {
+      method: sessionState.method ?? 'password',
+      actionType: 'approval',
+      actionRequestId,
+      verifiedAt: sessionState.verifiedAt,
+      maxAgeMs: STEP_UP_APPROVAL_MAX_AGE_MS,
+    },
+  };
+}
+
+function buildApprovalRequirementNotice(decision: Awaited<ReturnType<typeof authorizeAgentAction>>): string {
+  if (!decision.action) {
+    return '';
+  }
+
+  const lines: string[] = [];
+  if (decision.action.requiresStepUp) {
+    lines.push('Esta ação exige step-up por biometria ou senha imediatamente antes da confirmação.');
+  }
+  if (decision.action.requiresDualControl) {
+    lines.push('A confirmação final deve ser realizada por outro usuário autorizado.');
+  }
+  return lines.join('\n');
+}
+
+function buildActionRequestAuthzPayload(decision: Awaited<ReturnType<typeof authorizeAgentAction>>): Record<string, unknown> {
+  if (!decision.action) {
+    return {};
+  }
+
+  return {
+    actionKey: decision.action.actionKey,
+    capabilityId: decision.action.capabilityId,
+    requiredPermission: decision.action.requiredPermission,
+    resourceType: decision.action.resourceType,
+    riskLevel: decision.action.riskLevel,
+    requiresApproval: decision.action.requiresApproval,
+    requiresStepUp: decision.action.requiresStepUp,
+    requiresDualControl: decision.action.requiresDualControl,
+    authzDecisionId: decision.authzDecisionId,
+    permissionsVersion: decision.envelope.permissionsVersion,
+    grantsVersion: decision.envelope.grantsVersion,
+    permissionSnapshotHash: decision.envelope.permissionSnapshotHash,
+    payloadHash: decision.payloadHash,
+    toolPolicyKey: decision.governance.toolPolicyKey,
+    toolPolicyVersion: decision.governance.toolPolicyVersion,
+    promptTemplateId: decision.governance.promptTemplateId,
+    promptVersion: decision.governance.promptVersion,
+    governanceHash: decision.governance.governanceHash,
+  };
+}
+
+async function prepareDelegatedAgentAction(params: {
+  auth: AuthContext;
+  actionKey: string;
+  payload: unknown;
+  agenticSettings: AgenticSettings;
+  conversationId?: string | null;
+  namespaceId?: string | null;
+  agentId?: string | null;
+  approvalRequestId?: string | null;
+  sessionId?: string | null;
+  resourceType?: ResourceType | null;
+  resourceId?: string | null;
+  stepUpContext?: Record<string, unknown> | null;
+}): Promise<{
+  decision: Awaited<ReturnType<typeof authorizeAgentAction>>;
+  delegatedToken: string;
+}> {
+  const decision = await authorizeAgentAction({
+    auth: params.auth,
+    actionKey: params.actionKey,
+    payload: params.payload,
+    namespaceId: params.namespaceId ?? undefined,
+    agentId: params.agentId ?? undefined,
+    resourceType: params.resourceType ?? undefined,
+    resourceId: params.resourceId ?? undefined,
+    disabledActionKeys: resolveDisabledAgentActionKeys(params.agenticSettings),
+  });
+
+  if (!decision.allowed) {
+    throw new Error(resolveAgenticAuthzError(decision));
+  }
+
+  await auditDelegatedAuthorization({
+    auth: params.auth,
+    decision,
+    conversationId: params.conversationId ?? null,
+    actionRequestId: params.approvalRequestId ?? null,
+    sourceService: 'chat-service',
+    eventType: 'pre_authorized',
+    payload: {
+      namespaceId: params.namespaceId ?? null,
+      agentId: params.agentId ?? null,
+    },
+  });
+
+  const issued = await issueDelegatedExecutionToken({
+    decision,
+    conversationId: params.conversationId ?? null,
+    namespaceId: params.namespaceId ?? null,
+    agentId: params.agentId ?? null,
+    approvalRequestId: params.approvalRequestId ?? null,
+    sessionId: params.sessionId ?? null,
+    resourceId: params.resourceId ?? null,
+    resourceType: params.resourceType ?? null,
+    stepUpContext: params.stepUpContext ?? null,
+  });
+
+  return {
+    decision,
+    delegatedToken: issued.token,
+  };
 }
 
 // ============================================================================
@@ -9945,7 +10110,18 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
       conversationCreated: false,
     });
 
-    let systemPrompt = buildSystemPrompt(agentConfig, assistantSettings, body.conteudo, userLocaleContext);
+    const capabilityPrompt = await resolveAuthorizedCapabilityPrompt({
+      auth: {
+        userId,
+        tenantId,
+        role: (req.user?.role as Role) || 'guest',
+        customRoleId: req.user?.customRoleId ?? undefined,
+      },
+      namespaceId: agentConfig?.namespaceId ?? conversation.namespaceId ?? null,
+      agentId: activeAgentId ?? null,
+      agenticSettings,
+    });
+    let systemPrompt = buildSystemPrompt(agentConfig, assistantSettings, body.conteudo, userLocaleContext, capabilityPrompt);
     systemPrompt = appendUserNamePolicy(systemPrompt, nameContext, nameUsageContext);
     systemPrompt = appendNameConfirmationInstruction(systemPrompt, nameContext);
     if (nameContext.shouldAskConfirmation) {
@@ -11062,7 +11238,18 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
 
       const agent: AgentConfig | null = agentConfigForPrompt;
       const assistantSettings = await getAssistantSettingsForTenant(tenantId);
-      let systemPrompt = buildSystemPrompt(agent, assistantSettings, userMessageContent, userLocaleContext);
+      const capabilityPrompt = await resolveAuthorizedCapabilityPrompt({
+        auth: {
+          userId,
+          tenantId,
+          role: (req.user?.role as Role) || 'guest',
+          customRoleId: req.user?.customRoleId ?? undefined,
+        },
+        namespaceId: activeNamespaceId ?? canonicalSelection.persistedNamespaceId ?? conversation?.agent?.namespaceId ?? null,
+        agentId: conversation?.agent?.id ?? null,
+        agenticSettings,
+      });
+      let systemPrompt = buildSystemPrompt(agent, assistantSettings, userMessageContent, userLocaleContext, capabilityPrompt);
       systemPrompt = appendUserNamePolicy(systemPrompt, nameContext, nameUsageContext);
       systemPrompt = appendNameConfirmationInstruction(systemPrompt, nameContext);
       let userContent = userMessageContent;
@@ -12315,6 +12502,106 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           };
           try {
             const approvalStart = Date.now();
+            const pendingPayload = (pendingAction.payload ?? {}) as Record<string, unknown>;
+            const pendingAuthz = pendingPayload.authz && typeof pendingPayload.authz === 'object'
+              ? pendingPayload.authz as Record<string, unknown>
+              : {};
+            const requiresDualControl = pendingAuthz.requiresDualControl === true;
+            const requiresStepUp = pendingAuthz.requiresStepUp === true;
+
+            if (requiresDualControl && pendingAction.userId && pendingAction.userId === userId) {
+              const message = 'Esta ação exige dual control. A aprovação final deve ser realizada por outro usuário autorizado.';
+              res.write(`data: ${JSON.stringify({ error: message })}\n\n`);
+              res.write('data: [DONE]\n\n');
+              res.end();
+              return;
+            }
+
+            const stepUpResolution = consumeApprovalStepUpContext(req, pendingAction.id, requiresStepUp);
+            if (!stepUpResolution.ok) {
+              res.write(`data: ${JSON.stringify({ error: stepUpResolution.message })}\n\n`);
+              res.write('data: [DONE]\n\n');
+              res.end();
+              return;
+            }
+
+            const pendingActionKey = pendingIntegration.action === 'payments'
+              ? resolvePaymentActionKey(
+                  pendingIntegration.operation === 'wise_transfer'
+                    ? {
+                        type: 'wise_transfer',
+                        payload: pendingIntegration.params as {
+                          sourceCurrency: string;
+                          targetCurrency: string;
+                          sourceAmount: number;
+                          recipientId: string;
+                          reference?: string;
+                        },
+                      }
+                    : pendingIntegration.operation === 'wise_exchange'
+                      ? {
+                          type: 'wise_exchange',
+                          payload: pendingIntegration.params as {
+                            sourceCurrency: string;
+                            targetCurrency: string;
+                            sourceAmount: number;
+                          },
+                        }
+                      : pendingIntegration.operation === 'stripe_payment_intent'
+                        ? {
+                            type: 'stripe_payment_intent',
+                            payload: pendingIntegration.params as {
+                              amount: number;
+                              currency: string;
+                              description?: string;
+                            },
+                          }
+                        : { type: 'wise_recipients' }
+                )
+              : pendingIntegration.action === 'grafana'
+                ? pendingIntegration.operation === 'list_dashboards'
+                  ? resolveGrafanaActionKey({
+                      type: 'list_dashboards',
+                      payload: (pendingIntegration.params ?? {}) as { query?: string },
+                    })
+                  : pendingIntegration.operation === 'get_dashboard'
+                    ? resolveGrafanaActionKey({
+                        type: 'get_dashboard',
+                        payload: (pendingIntegration.params ?? {}) as { uid: string },
+                      })
+                    : resolveGrafanaActionKey({
+                        type: 'update_dashboard',
+                        payload: (pendingIntegration.params ?? {}) as {
+                          dashboard: Record<string, unknown>;
+                          folderUid?: string;
+                          message?: string;
+                          overwrite?: boolean;
+                        },
+                      })
+                : ((pendingIntegration.params as { rollback?: boolean } | undefined)?.rollback ? 'platform.stack.rollback' : 'platform.stack.deploy');
+            const delegatedExecution = await prepareDelegatedAgentAction({
+              auth: authContext,
+              actionKey: pendingActionKey,
+              payload: pendingIntegration.params ?? {},
+              namespaceId: activeNamespaceId ?? canonicalSelection.persistedNamespaceId ?? conversation?.namespaceId ?? conversation?.agent?.namespaceId ?? null,
+              agentId: conversation?.agent?.id ?? null,
+              conversationId,
+              sessionId: req.sessionID ?? null,
+              approvalRequestId: pendingAction.id,
+              agenticSettings,
+              stepUpContext: stepUpResolution.stepUpContext,
+            });
+
+            await db.update(schema.actionRequests)
+              .set({
+                status: 'approved',
+                resolvedBy: userId,
+                resolutionNote: 'Aprovado pelo usuário e aguardando execução downstream',
+                resolvidoEm: new Date(),
+                atualizadoEm: new Date(),
+              })
+              .where(eq(schema.actionRequests.id, pendingAction.id));
+
             emitAgentEvent({
               phase: 'approval',
               action: actionLabel,
@@ -12338,25 +12625,18 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                   recipientId: string;
                   reference?: string;
                 };
-                const quote = await callIntegrationsService<{ quote: { id: string } }>({
-                  endpoint: '/api/integrations/wise/quotes',
+                const transfer = await callIntegrationsService<{ transfer: unknown }>({
+                  endpoint: '/api/integrations/agentic/payments/wise-transfer',
                   method: 'POST',
                   body: {
                     sourceCurrency: params.sourceCurrency,
                     targetCurrency: params.targetCurrency,
                     sourceAmount: params.sourceAmount,
-                  },
-                  auth: authContext,
-                });
-                const transfer = await callIntegrationsService<{ transfer: unknown }>({
-                  endpoint: '/api/integrations/wise/transfers',
-                  method: 'POST',
-                  body: {
-                    quoteId: quote.quote.id,
-                    targetRecipientId: params.recipientId,
+                    recipientId: params.recipientId,
                     reference: params.reference,
                   },
                   auth: authContext,
+                  delegatedToken: delegatedExecution.delegatedToken,
                 });
                 integrationResult = transfer;
                 responseContent = 'Transferência Wise criada com sucesso.';
@@ -12368,8 +12648,8 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                   targetCurrency: string;
                   sourceAmount: number;
                 };
-                const quote = await callIntegrationsService<{ quote: { id: string } }>({
-                  endpoint: '/api/integrations/wise/balance-quotes',
+                const movement = await callIntegrationsService<{ movement: unknown }>({
+                  endpoint: '/api/integrations/agentic/payments/wise-exchange',
                   method: 'POST',
                   body: {
                     sourceCurrency: params.sourceCurrency,
@@ -12377,14 +12657,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                     sourceAmount: params.sourceAmount,
                   },
                   auth: authContext,
-                });
-                const movement = await callIntegrationsService<{ movement: unknown }>({
-                  endpoint: '/api/integrations/wise/balance-movements',
-                  method: 'POST',
-                  body: {
-                    quoteId: quote.quote.id,
-                  },
-                  auth: authContext,
+                  delegatedToken: delegatedExecution.delegatedToken,
                 });
                 integrationResult = movement;
                 responseContent = 'Câmbio Wise executado com sucesso.';
@@ -12405,6 +12678,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                     description: params.description,
                   },
                   auth: authContext,
+                  delegatedToken: delegatedExecution.delegatedToken,
                 });
                 integrationResult = intentResult;
                 responseContent = 'Payment Intent Stripe criada com sucesso.';
@@ -12418,6 +12692,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                 method: 'POST',
                 body: params,
                 auth: authContext,
+                delegatedToken: delegatedExecution.delegatedToken,
               });
               responseContent = 'Workflow de deploy disparado no GitHub Actions.';
             }
@@ -12433,6 +12708,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                 const grafanaResult = await executeGrafanaCommand({
                   command: { type: 'update_dashboard', payload: params },
                   auth: authContext,
+                  delegatedToken: delegatedExecution.delegatedToken,
                 });
                 responseContent = grafanaResult.responseContent;
                 integrationResult = grafanaResult.integrationResult;
@@ -13148,19 +13424,6 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         return;
       }
 
-      const permissionCheck = await checkPermission(
-        authContext,
-        grafanaCommand.type === 'update_dashboard'
-          ? 'integrations:grafana:write'
-          : 'integrations:grafana:read'
-      );
-      if (!permissionCheck.allowed) {
-        res.write(`data: ${JSON.stringify({ error: 'Você não possui permissão para operar o Grafana.' })}\n\n`);
-        res.write('data: [DONE]\n\n');
-        res.end();
-        return;
-      }
-
       if ('missing' in grafanaCommand && grafanaCommand.missing?.length) {
         const responseContent = `Para executar a ação no Grafana, preciso dos campos: ${grafanaCommand.missing.join(', ')}.`;
         const [assistantMessage] = await db.insert(schema.messages).values({
@@ -13191,6 +13454,20 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       }
 
       const grafanaSummary = buildGrafanaCommandSummary(grafanaCommand);
+      const grafanaDecision = await authorizeAgentAction({
+        auth: authContext,
+        actionKey: resolveGrafanaActionKey(grafanaCommand),
+        payload: grafanaCommand.payload,
+        namespaceId: activeNamespaceId ?? canonicalSelection.persistedNamespaceId ?? conversation?.namespaceId ?? conversation?.agent?.namespaceId ?? undefined,
+        agentId: conversation?.agent?.id ?? undefined,
+        disabledActionKeys: resolveDisabledAgentActionKeys(agenticSettings),
+      });
+      if (!grafanaDecision.allowed) {
+        res.write(`data: ${JSON.stringify({ error: resolveAgenticAuthzError(grafanaDecision) })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      }
 
       if (isGrafanaWriteCommand(grafanaCommand)) {
         const [actionRequest] = await db.insert(schema.actionRequests).values({
@@ -13209,6 +13486,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
               params: grafanaCommand.payload,
             },
             sourceMessageId: userMessage.id,
+            authz: buildActionRequestAuthzPayload(grafanaDecision),
           },
         }).returning();
 
@@ -13217,7 +13495,8 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           status: 'pending',
         });
 
-        const responseContent = `Para executar a operação (${grafanaSummary}), preciso de confirmação explícita.\nResponda "confirmar" para executar ou "cancelar" para abortar.`;
+        const approvalNotice = buildApprovalRequirementNotice(grafanaDecision);
+        const responseContent = `Para executar a operação (${grafanaSummary}), preciso de confirmação explícita.\nResponda "confirmar" para executar ou "cancelar" para abortar.${approvalNotice ? `\n${approvalNotice}` : ''}`;
           const [assistantMessage] = await db.insert(schema.messages).values({
           conversationId,
           agentId: conversation?.agentId ?? undefined,
@@ -13252,7 +13531,21 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         return;
       }
 
-      const { responseContent, integrationResult } = await executeGrafanaCommand({ command: grafanaCommand, auth: authContext });
+      const grafanaExecution = await prepareDelegatedAgentAction({
+        auth: authContext,
+        actionKey: grafanaDecision.action!.actionKey,
+        payload: grafanaCommand.payload,
+        namespaceId: activeNamespaceId ?? canonicalSelection.persistedNamespaceId ?? conversation?.namespaceId ?? conversation?.agent?.namespaceId ?? null,
+        agentId: conversation?.agent?.id ?? null,
+        conversationId,
+        sessionId: req.sessionID ?? null,
+        agenticSettings,
+      });
+      const { responseContent, integrationResult } = await executeGrafanaCommand({
+        command: grafanaCommand,
+        auth: authContext,
+        delegatedToken: grafanaExecution.delegatedToken,
+      });
       const [assistantMessage] = await db.insert(schema.messages).values({
         conversationId,
         agentId: conversation?.agentId ?? undefined,
@@ -13289,27 +13582,25 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         return;
       }
 
-      const permissionCheck = await checkPermission(
-        authContext,
-        paymentCommand.type === 'stripe_payment_intent'
-          ? 'integrations:stripe:write'
-          : paymentCommand.type === 'wise_recipients'
-            ? 'integrations:wise:read'
-            : 'integrations:wise:write'
-      );
-      if (!permissionCheck.allowed) {
-        res.write(`data: ${JSON.stringify({ error: 'Você não possui permissão para executar pagamentos.' })}\n\n`);
-        res.write('data: [DONE]\n\n');
-        res.end();
-        return;
-      }
+      const paymentActionKey = resolvePaymentActionKey(paymentCommand);
 
       if (paymentCommand.type === 'wise_recipients') {
         try {
+          const paymentExecution = await prepareDelegatedAgentAction({
+            auth: authContext,
+            actionKey: paymentActionKey,
+            payload: {},
+            namespaceId: activeNamespaceId ?? canonicalSelection.persistedNamespaceId ?? conversation?.namespaceId ?? conversation?.agent?.namespaceId ?? null,
+            agentId: conversation?.agent?.id ?? null,
+            conversationId,
+            sessionId: req.sessionID ?? null,
+            agenticSettings,
+          });
           const result = await callIntegrationsService<{ recipients: Array<Record<string, unknown>> }>({
             endpoint: '/api/integrations/wise/recipients',
             method: 'GET',
             auth: authContext,
+            delegatedToken: paymentExecution.delegatedToken,
           });
           const recipients = result.recipients.slice(0, 10).map((recipient) => {
             const name = String(recipient.name ?? recipient.fullName ?? recipient.accountHolderName ?? '');
@@ -13331,6 +13622,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
               action: 'payments',
               summary: 'Listagem de destinatários Wise',
               result,
+              authz: buildActionRequestAuthzPayload(paymentExecution.decision),
             },
             resolvedBy: userId,
             resolvidoEm: new Date(),
@@ -13422,51 +13714,58 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         }
         return `Pagamento Stripe (${paymentCommand.payload.amount} ${paymentCommand.payload.currency})`;
       })();
+      const paymentDecision = await authorizeAgentAction({
+        auth: authContext,
+        actionKey: paymentActionKey,
+        payload: paymentCommand.payload,
+        namespaceId: activeNamespaceId ?? canonicalSelection.persistedNamespaceId ?? conversation?.namespaceId ?? conversation?.agent?.namespaceId ?? undefined,
+        agentId: conversation?.agent?.id ?? undefined,
+        disabledActionKeys: resolveDisabledAgentActionKeys(agenticSettings),
+      });
+      if (!paymentDecision.allowed) {
+        res.write(`data: ${JSON.stringify({ error: resolveAgenticAuthzError(paymentDecision) })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      }
 
-      if (!agenticSettings.financialApprovalRequired) {
+      const paymentRequiresApproval = Boolean(
+        paymentDecision.action?.requiresApproval
+        || paymentDecision.action?.requiresStepUp
+        || paymentDecision.action?.requiresDualControl
+        || agenticSettings.financialApprovalRequired,
+      );
+
+      if (!paymentRequiresApproval) {
         try {
+          const paymentExecution = await prepareDelegatedAgentAction({
+            auth: authContext,
+            actionKey: paymentActionKey,
+            payload: paymentCommand.payload,
+            namespaceId: activeNamespaceId ?? canonicalSelection.persistedNamespaceId ?? conversation?.namespaceId ?? conversation?.agent?.namespaceId ?? null,
+            agentId: conversation?.agent?.id ?? null,
+            conversationId,
+            sessionId: req.sessionID ?? null,
+            agenticSettings,
+          });
           let result: unknown = null;
           if (paymentCommand.type === 'wise_transfer') {
-            const quote = await callIntegrationsService<{ quote: { id: string } }>({
-              endpoint: '/api/integrations/wise/quotes',
-              method: 'POST',
-              body: {
-                sourceCurrency: paymentCommand.payload.sourceCurrency,
-                targetCurrency: paymentCommand.payload.targetCurrency,
-                sourceAmount: paymentCommand.payload.sourceAmount,
-              },
-              auth: authContext,
-            });
             result = await callIntegrationsService({
-              endpoint: '/api/integrations/wise/transfers',
+              endpoint: '/api/integrations/agentic/payments/wise-transfer',
               method: 'POST',
-              body: {
-                quoteId: quote.quote.id,
-                targetRecipientId: paymentCommand.payload.recipientId,
-                reference: paymentCommand.payload.reference,
-              },
+              body: paymentCommand.payload,
               auth: authContext,
+              delegatedToken: paymentExecution.delegatedToken,
             });
           }
 
           if (paymentCommand.type === 'wise_exchange') {
-            const quote = await callIntegrationsService<{ quote: { id: string } }>({
-              endpoint: '/api/integrations/wise/balance-quotes',
-              method: 'POST',
-              body: {
-                sourceCurrency: paymentCommand.payload.sourceCurrency,
-                targetCurrency: paymentCommand.payload.targetCurrency,
-                sourceAmount: paymentCommand.payload.sourceAmount,
-              },
-              auth: authContext,
-            });
             result = await callIntegrationsService({
-              endpoint: '/api/integrations/wise/balance-movements',
+              endpoint: '/api/integrations/agentic/payments/wise-exchange',
               method: 'POST',
-              body: {
-                quoteId: quote.quote.id,
-              },
+              body: paymentCommand.payload,
               auth: authContext,
+              delegatedToken: paymentExecution.delegatedToken,
             });
           }
 
@@ -13480,6 +13779,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                 description: paymentCommand.payload.description,
               },
               auth: authContext,
+              delegatedToken: paymentExecution.delegatedToken,
             });
           }
 
@@ -13494,6 +13794,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
               action: 'payments',
               summary,
               result,
+              authz: buildActionRequestAuthzPayload(paymentExecution.decision),
             },
             resolvedBy: userId,
             resolvidoEm: new Date(),
@@ -13563,6 +13864,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             operation: paymentCommand.type,
             params: paymentCommand.payload,
           },
+          authz: buildActionRequestAuthzPayload(paymentDecision),
         },
       }).returning();
 
@@ -13571,7 +13873,8 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         status: 'pending',
       });
 
-      const responseContent = `Para executar o pagamento (${summary}), preciso de confirmação explícita.\nResponda "confirmar" para executar ou "cancelar" para abortar.`;
+      const approvalNotice = buildApprovalRequirementNotice(paymentDecision);
+      const responseContent = `Para executar o pagamento (${summary}), preciso de confirmação explícita.\nResponda "confirmar" para executar ou "cancelar" para abortar.${approvalNotice ? `\n${approvalNotice}` : ''}`;
       const [assistantMessage] = await db.insert(schema.messages).values({
         conversationId,
         agentId: conversation?.agentId ?? undefined,
@@ -13609,13 +13912,6 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     if (stackCommand) {
       if (!agenticSettings.stackOpsEnabled) {
         res.write(`data: ${JSON.stringify({ error: 'Stack ops está desativado nas configurações do tenant.' })}\n\n`);
-        res.write('data: [DONE]\n\n');
-        res.end();
-        return;
-      }
-      const permissionCheck = await checkPermission(authContext, 'admin:alice_core:write');
-      if (!permissionCheck.allowed) {
-        res.write(`data: ${JSON.stringify({ error: 'Você não possui permissão para operar stacks.' })}\n\n`);
         res.write('data: [DONE]\n\n');
         res.end();
         return;
@@ -13699,6 +13995,20 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       const summary = stackCommand.type === 'deploy'
         ? `Deploy ${payload.stack} (${payload.version})`
         : `Rollback ${payload.stack} (${payload.rollbackVersion || payload.version})`;
+      const stackDecision = await authorizeAgentAction({
+        auth: authContext,
+        actionKey: resolveStackActionKey(stackCommand),
+        payload,
+        namespaceId: activeNamespaceId ?? canonicalSelection.persistedNamespaceId ?? conversation?.namespaceId ?? conversation?.agent?.namespaceId ?? undefined,
+        agentId: conversation?.agent?.id ?? undefined,
+        disabledActionKeys: resolveDisabledAgentActionKeys(agenticSettings),
+      });
+      if (!stackDecision.allowed) {
+        res.write(`data: ${JSON.stringify({ error: resolveAgenticAuthzError(stackDecision) })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      }
 
       const [actionRequest] = await db.insert(schema.actionRequests).values({
         tenantId,
@@ -13715,6 +14025,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             operation: 'deploy_stack',
             params: payload,
           },
+          authz: buildActionRequestAuthzPayload(stackDecision),
         },
       }).returning();
 
@@ -13723,7 +14034,8 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         status: 'pending',
       });
 
-      const responseContent = `Para executar a operação (${summary}), preciso de confirmação explícita.\nResponda "confirmar" para executar ou "cancelar" para abortar.`;
+      const approvalNotice = buildApprovalRequirementNotice(stackDecision);
+      const responseContent = `Para executar a operação (${summary}), preciso de confirmação explícita.\nResponda "confirmar" para executar ou "cancelar" para abortar.${approvalNotice ? `\n${approvalNotice}` : ''}`;
       const [assistantMessage] = await db.insert(schema.messages).values({
         conversationId,
         agentId: conversation?.agentId ?? undefined,
@@ -13973,7 +14285,18 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         });
       }
 
-      let systemPrompt = buildSystemPrompt(agent, assistantSettings, userMessageContent, userLocaleContext);
+      const capabilityPrompt = await resolveAuthorizedCapabilityPrompt({
+        auth: {
+          userId,
+          tenantId,
+          role: (req.user?.role as Role) || 'guest',
+          customRoleId: req.user?.customRoleId ?? undefined,
+        },
+        namespaceId: activeNamespaceId ?? canonicalSelection.persistedNamespaceId ?? conversation?.namespaceId ?? conversation?.agent?.namespaceId ?? null,
+        agentId: conversation?.agent?.id ?? null,
+        agenticSettings,
+      });
+      let systemPrompt = buildSystemPrompt(agent, assistantSettings, userMessageContent, userLocaleContext, capabilityPrompt);
       systemPrompt = appendUserNamePolicy(systemPrompt, nameContext, nameUsageContext);
       systemPrompt = appendNameConfirmationInstruction(systemPrompt, nameContext);
       let ragSources: Array<{ documentId: string; titulo: string; similarity: number }> = [];
@@ -16044,7 +16367,18 @@ wss.on('connection', (ws, req) => {
         const agent = agentConfigForPrompt;
         const assistantSettings = await getAssistantSettingsForTenant(safeTenantId);
         const userLocaleContext = await getUserLocaleContext(userId, safeTenantId);
-        let systemPrompt = buildSystemPrompt(agent, assistantSettings, messageContent, userLocaleContext);
+        const capabilityPrompt = await resolveAuthorizedCapabilityPrompt({
+          auth: {
+            userId,
+            tenantId: safeTenantId,
+            role: safeUserRole,
+            customRoleId: extWs.customRoleId ?? undefined,
+          },
+          namespaceId: activeNamespaceId || message.namespaceId || conversation?.agent?.namespaceId || null,
+          agentId: conversation?.agent?.id ?? null,
+          agenticSettings,
+        });
+        let systemPrompt = buildSystemPrompt(agent, assistantSettings, messageContent, userLocaleContext, capabilityPrompt);
         systemPrompt = appendUserNamePolicy(systemPrompt, nameContext);
         systemPrompt = appendNameConfirmationInstruction(systemPrompt, nameContext);
 
@@ -16603,8 +16937,20 @@ wss.on('connection', (ws, req) => {
         // Não processa imagens diretamente - usar RAG + OpenAI Vision
         const agent = conversation.agent as AgentConfig | null;
         const assistantSettings = await getAssistantSettingsForTenant(tenantId);
+        const agenticSettings = await getOrCreateAgenticSettings(tenantId);
         const userLocaleContext = await getUserLocaleContext(userId, tenantId);
-        let systemPrompt = buildSystemPrompt(agent, assistantSettings, mediaMessage.content, userLocaleContext);
+        const capabilityPrompt = await resolveAuthorizedCapabilityPrompt({
+          auth: {
+            userId,
+            tenantId,
+            role: safeUserRole,
+            customRoleId: extWs.customRoleId ?? undefined,
+          },
+          namespaceId: conversation?.agent?.namespaceId ?? null,
+          agentId: conversation?.agent?.id ?? null,
+          agenticSettings,
+        });
+        let systemPrompt = buildSystemPrompt(agent, assistantSettings, mediaMessage.content, userLocaleContext, capabilityPrompt);
         systemPrompt = appendUserNamePolicy(systemPrompt, nameContext);
         systemPrompt = appendNameConfirmationInstruction(systemPrompt, nameContext);
         
@@ -19105,6 +19451,104 @@ const DEFAULT_AGENTIC_SETTINGS = {
   platformLinks: [] as Array<z.infer<typeof agenticLinkSchema>>,
 };
 
+type AgenticSettings = z.infer<typeof agenticSettingsSchema>;
+
+function resolveDisabledAgentActionKeys(settings: AgenticSettings): string[] {
+  const disabled: string[] = [];
+
+  if (!settings.observabilityReadEnabled) {
+    disabled.push(
+      'observability.grafana.dashboard.list',
+      'observability.grafana.dashboard.get',
+    );
+  }
+  if (!settings.observabilityWriteEnabled) {
+    disabled.push('observability.grafana.dashboard.update');
+  }
+  if (!settings.paymentsEnabled) {
+    disabled.push(
+      'payments.wise.recipients.list',
+      'payments.wise.transfer.create',
+      'payments.wise.exchange.create',
+      'payments.stripe.payment_intent.create',
+    );
+  }
+  if (!settings.stackOpsEnabled) {
+    disabled.push('platform.stack.deploy', 'platform.stack.rollback');
+  }
+  if (!settings.tradingEnabled) {
+    disabled.push('trading.command.execute');
+  }
+
+  return disabled;
+}
+
+function humanizeAuthorizedAction(actionKey: string): string {
+  switch (actionKey) {
+    case 'payments.wise.recipients.list':
+      return 'listar destinatários Wise';
+    case 'payments.wise.transfer.create':
+      return 'criar transferências Wise';
+    case 'payments.wise.exchange.create':
+      return 'executar câmbio Wise';
+    case 'payments.stripe.payment_intent.create':
+      return 'criar Payment Intent Stripe';
+    case 'observability.grafana.dashboard.list':
+      return 'listar dashboards do Grafana';
+    case 'observability.grafana.dashboard.get':
+      return 'consultar dashboard do Grafana';
+    case 'observability.grafana.dashboard.update':
+      return 'atualizar dashboard do Grafana';
+    case 'platform.stack.deploy':
+      return 'executar deploy de stack';
+    case 'platform.stack.rollback':
+      return 'executar rollback de stack';
+    case 'trading.command.execute':
+      return 'executar comandos de trading aprovados';
+    case 'agentic.task.document.create':
+      return 'criar documentos agentic';
+    case 'agentic.task.document.update':
+      return 'atualizar documentos agentic';
+    case 'agentic.task.report.create':
+      return 'gerar relatórios agentic';
+    case 'agentic.task.accounting.create':
+      return 'gerar documentos contábeis';
+    case 'agentic.task.planning.create':
+      return 'gerar planejamentos';
+    default:
+      return actionKey;
+  }
+}
+
+async function resolveAuthorizedCapabilityPrompt(params: {
+  auth: AuthContext;
+  namespaceId?: string | null;
+  agentId?: string | null;
+  agenticSettings: AgenticSettings;
+}): Promise<string> {
+  const disabledActionKeys = resolveDisabledAgentActionKeys(params.agenticSettings);
+  const { actions } = await listAuthorizedAgentActions({
+    auth: params.auth,
+    namespaceId: params.namespaceId,
+    agentId: params.agentId,
+    disabledActionKeys,
+  });
+
+  const actionLines = actions
+    .map((entry) => `- ${humanizeAuthorizedAction(entry.actionKey)}${entry.requiresApproval ? ' (requer aprovação quando aplicável)' : ''}`)
+    .filter((value, index, array) => array.indexOf(value) === index);
+
+  const webLine = params.agenticSettings.webEnabled
+    ? '- Você pode solicitar busca na web somente quando o tenant permitir e a ação estiver autorizada.'
+    : '- Busca na web não está autorizada neste tenant.';
+
+  if (actionLines.length === 0) {
+    return `CAPACIDADES:\n${webLine}\n- Não prometa executar ações operacionais. Neste contexto, nenhuma ação agentic sensível está autorizada para execução.`;
+  }
+
+  return `CAPACIDADES:\n${webLine}\n- Você só pode executar ou sugerir execução para as ações abaixo.\n- Se a ação pedida não estiver nesta lista, diga que ela não está autorizada neste contexto.\n- Nunca invente permissões, tools ou acessos fora desta lista.\n${actionLines.join('\n')}`;
+}
+
 type AgenticLink = {
   id: string;
   name: string;
@@ -19314,6 +19758,71 @@ app.patch('/api/assistant-settings', requireAuth(), requireSameTenant(getTenantI
 // ============================================================================
 // AGENTIC SETTINGS (Links + políticas por tenant)
 // ============================================================================
+
+app.get('/api/agentic/capabilities', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:conversations:read'), async (req: Request, res: Response) => {
+  const tenantId = req.tenantId;
+  if (!tenantId) {
+    return res.status(401).json({ error: 'Tenant obrigatório' });
+  }
+
+  const querySchema = z.object({
+    namespaceId: z.string().uuid().optional(),
+    agentId: z.string().uuid().optional(),
+  });
+  const parsed = querySchema.safeParse(req.query);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: parsed.error.format() });
+  }
+
+  try {
+    if (parsed.data.namespaceId) {
+      const namespace = await db.query.namespaces.findFirst({
+        where: eq(schema.namespaces.id, parsed.data.namespaceId),
+        columns: { id: true, tenantId: true },
+      });
+      if (!namespace || namespace.tenantId !== tenantId) {
+        return res.status(404).json({ error: 'Namespace não encontrado' });
+      }
+    }
+
+    if (parsed.data.agentId) {
+      const agent = await db.query.agents.findFirst({
+        where: eq(schema.agents.id, parsed.data.agentId),
+        columns: { id: true, tenantId: true, namespaceId: true },
+      });
+      if (!agent || agent.tenantId !== tenantId) {
+        return res.status(404).json({ error: 'Agente não encontrado' });
+      }
+    }
+
+    const agenticSettings = await getOrCreateAgenticSettings(tenantId);
+    const auth = req.user as AuthContext;
+    const disabledActionKeys = resolveDisabledAgentActionKeys(agenticSettings);
+    const authorized = await listAuthorizedAgentActions({
+      auth,
+      namespaceId: parsed.data.namespaceId,
+      agentId: parsed.data.agentId,
+      disabledActionKeys,
+    });
+
+    res.json({
+      envelope: {
+        permissions: authorized.envelope.permissions,
+        baseRole: authorized.envelope.baseRole,
+        customRoleId: authorized.envelope.customRoleId,
+        permissionsVersion: authorized.envelope.permissionsVersion,
+        grantsVersion: authorized.envelope.grantsVersion,
+        permissionSnapshotHash: authorized.envelope.permissionSnapshotHash,
+      },
+      governance: authorized.governance,
+      actions: authorized.actions,
+      disabledActionKeys,
+    });
+  } catch (error) {
+    logger.error({ error, tenantId }, 'Falha ao resolver capacidades agentic autorizadas');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
 
 app.get('/api/agentic/settings', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('admin:alice_core:write'), async (req: Request, res: Response) => {
   const tenantId = req.tenantId;

@@ -4983,6 +4983,39 @@ export const llmExecutionAudit = pgTable(
   })
 );
 
+export const serviceAccounts = pgTable(
+  "service_accounts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id).notNull(),
+    namespaceId: uuid("namespace_id").references(() => namespaces.id),
+    agentId: uuid("agent_id").references(() => agents.id),
+    name: varchar("name", { length: 120 }).notNull(),
+    slug: varchar("slug", { length: 120 }).notNull(),
+    description: text("description"),
+    scopeType: resourceScopeTypeEnum("scope_type").notNull().default("tenant"),
+    allowedActionKeys: jsonb("allowed_action_keys").$type<string[]>().notNull().default([]),
+    namespaceScope: jsonb("namespace_scope").$type<string[]>().notNull().default([]),
+    agentScope: jsonb("agent_scope").$type<string[]>().notNull().default([]),
+    enabled: boolean("enabled").notNull().default(false),
+    metadata: jsonb("metadata").$type<GenericMetadata>().default({}),
+    createdBy: uuid("created_by").references(() => users.id),
+    updatedBy: uuid("updated_by").references(() => users.id),
+    lastUsedAt: timestamp("last_used_at"),
+    criadoEm: timestamp("criado_em").defaultNow().notNull(),
+    atualizadoEm: timestamp("atualizado_em").defaultNow().notNull(),
+  },
+  (table) => ({
+    idxServiceAccountsTenant: index("idx_service_accounts_tenant").on(table.tenantId),
+    idxServiceAccountsScope: index("idx_service_accounts_scope").on(table.tenantId, table.namespaceId, table.agentId),
+    idxServiceAccountsEnabled: index("idx_service_accounts_enabled").on(table.tenantId, table.enabled),
+    uniqueServiceAccountSlugByTenant: uniqueIndex("uniq_service_accounts_tenant_slug").on(
+      table.tenantId,
+      table.slug,
+    ),
+  })
+);
+
 // ============================================================================
 // AUTO-LEARNING SCHEDULE (FASE 8 - Schedule Agressivo)
 // ============================================================================
@@ -6049,6 +6082,8 @@ export type InsertGpuRuntimeState = typeof gpuRuntimeState.$inferInsert;
 export type GpuRuntimeEvent = typeof gpuRuntimeEvents.$inferSelect;
 export type InsertGpuRuntimeEvent = typeof gpuRuntimeEvents.$inferInsert;
 export type UsageMetric = typeof usageMetrics.$inferSelect;
+export type ServiceAccount = typeof serviceAccounts.$inferSelect;
+export type InsertServiceAccount = typeof serviceAccounts.$inferInsert;
 
 export type TrainingData = typeof trainingData.$inferSelect;
 export type InsertTrainingData = typeof trainingData.$inferInsert;
@@ -6326,4 +6361,3 @@ export const insertExternalUserMappingSchema: z.ZodType<unknown> = createInsertS
   criadoEm: true,
   atualizadoEm: true,
 });
-

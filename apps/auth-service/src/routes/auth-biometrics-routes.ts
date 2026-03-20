@@ -3,6 +3,7 @@ import type { SafeParseReturnType } from 'zod';
 import { requireAuth } from '@alice/shared-utils';
 import type { AuthContext } from '@alice/shared-utils';
 import { createLogger } from '@alice/logger';
+import { writeApprovalStepUpSession } from '../auth-step-up-session.js';
 
 interface BiometricsLoginBody {
   email: string;
@@ -133,6 +134,15 @@ export function registerAuthBiometricsRoutes(
         actionType: parsed.data.actionType,
         actionContext: parsed.data.actionContext,
       });
+      if (parsed.data.actionType === 'approval' && result.match === true) {
+        const actionRequestId = typeof parsed.data.actionContext?.actionRequestId === 'string'
+          ? parsed.data.actionContext.actionRequestId
+          : null;
+        writeApprovalStepUpSession(req, {
+          method: 'biometric',
+          actionRequestId,
+        });
+      }
       return res.json(result);
     } catch (error) {
       const mapped = resolveBiometricsError(error);

@@ -4,6 +4,7 @@ import { createLogger } from '@alice/logger';
 import { requirePermission } from '@alice/shared-utils';
 import { eq } from 'drizzle-orm';
 import type Stripe from 'stripe';
+import { requireDelegatedAgentExecution } from '../delegated-execution.js';
 
 type WebhookSource = 'stripe' | 'wise' | 'twilio';
 
@@ -141,7 +142,19 @@ export function registerStripeRoutes(
     }
   });
 
-  app.post('/api/integrations/stripe/create-payment-intent', requirePermission('integrations:stripe:write'), async (req: Request, res: Response) => {
+  app.post(
+    '/api/integrations/stripe/create-payment-intent',
+    requirePermission('integrations:stripe:write'),
+    requireDelegatedAgentExecution({
+      actionKey: 'payments.stripe.payment_intent.create',
+      logger,
+      payloadResolver: (req) => ({
+        amount: req.body?.amount,
+        currency: req.body?.currency ?? 'eur',
+        description: req.body?.description,
+      }),
+    }),
+    async (req: Request, res: Response) => {
     if (!stripe) {
       return res.status(503).json({ error: 'Stripe not configured' });
     }
@@ -188,7 +201,8 @@ export function registerStripeRoutes(
       logger.error({ error }, 'Failed to create PaymentIntent');
       res.status(500).json({ error: 'Internal server error' });
     }
-  });
+    },
+  );
 
   // Stripe Webhook - express.raw() já aplicado via app.use() ANTES de express.json()
   app.post('/api/integrations/stripe/webhook', async (req: Request, res: Response) => {

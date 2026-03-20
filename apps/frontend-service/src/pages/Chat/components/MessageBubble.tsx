@@ -325,6 +325,9 @@ export function MessageBubble({
       setBiometricPending(true);
       await apiRequest('POST', '/api/auth/verify-password', {
         password: passwordApproval,
+        actionContext: {
+          actionRequestId: message.metadata?.actionRequestId,
+        },
       });
       setBiometricOpen(false);
       setPasswordApproval('');

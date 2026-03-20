@@ -39,21 +39,14 @@ export interface GatewayCompleteResult {
 
 export function buildLlmGatewayAuthHeaders(context: LlmGatewayContext): Record<string, string> {
   if (context.userId) {
-    try {
-      return {
-        ...generateInternalAuthHeaders({
+    return {
+      ...generateInternalAuthHeaders({
         userId: context.userId,
         tenantId: context.tenantId,
         role: context.role ?? 'operator',
         customRoleId: context.customRoleId,
-        }),
-      };
-    } catch (err) {
-      logger.warn(
-        { err, route: context.route },
-        'Falha ao gerar headers HMAC para LLM Gateway; tentando fallback legado por secret'
-      );
-    }
+      }),
+    };
   }
 
   const secret = readInternalApiSecret();

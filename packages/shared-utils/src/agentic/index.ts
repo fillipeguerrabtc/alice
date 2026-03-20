@@ -7,4 +7,6 @@
 
 export * from '../agentic-events.js';
 export * from '../agentic-actions.js';
+export * from '../agentic-capability-catalog.js';
+export * from '../agentic-authz.js';
 export * from '../immutable-audit-ledger.js';

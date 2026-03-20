@@ -1,7 +1,8 @@
 import type { Express, Request } from 'express';
 import { and, eq, getDatabase, schema } from '@alice/database';
 import { createLogger } from '@alice/logger';
-import type { AuthContext } from '@alice/shared-utils';
+import { requirePermission, type AuthContext } from '@alice/shared-utils';
+import { z } from 'zod';
 import { wiseService } from './wiseService.js';
 import {
   getProfileIdSafe,
@@ -75,6 +76,33 @@ import {
   wiseTransactionIdParamSchema,
   wiseWebhookIdParamSchema,
 } from './wise-route-schemas.js';
+import { requireDelegatedAgentExecution } from './delegated-execution.js';
+
+const agenticWiseTransferSchema = z.object({
+  sourceCurrency: z.string()
+    .min(3, 'sourceCurrency deve ter 3 caracteres')
+    .max(3, 'sourceCurrency deve ter 3 caracteres')
+    .regex(/^[A-Z]{3}$/, 'sourceCurrency deve ser código de moeda válido'),
+  targetCurrency: z.string()
+    .min(3, 'targetCurrency deve ter 3 caracteres')
+    .max(3, 'targetCurrency deve ter 3 caracteres')
+    .regex(/^[A-Z]{3}$/, 'targetCurrency deve ser código de moeda válido'),
+  sourceAmount: z.coerce.number().positive('sourceAmount deve ser positivo'),
+  recipientId: z.coerce.number().int().positive('recipientId deve ser positivo'),
+  reference: z.string().trim().min(1).max(140).optional(),
+});
+
+const agenticWiseExchangeSchema = z.object({
+  sourceCurrency: z.string()
+    .min(3, 'sourceCurrency deve ter 3 caracteres')
+    .max(3, 'sourceCurrency deve ter 3 caracteres')
+    .regex(/^[A-Z]{3}$/, 'sourceCurrency deve ser código de moeda válido'),
+  targetCurrency: z.string()
+    .min(3, 'targetCurrency deve ter 3 caracteres')
+    .max(3, 'targetCurrency deve ter 3 caracteres')
+    .regex(/^[A-Z]{3}$/, 'targetCurrency deve ser código de moeda válido'),
+  sourceAmount: z.coerce.number().positive('sourceAmount deve ser positivo'),
+});
 
 export function registerWiseRoutes(
   app: Express,
@@ -172,6 +200,139 @@ export function registerWiseRoutes(
     getBatchGroup: (id) => wiseService.getBatchGroup(id),
     completeBatchGroup: (id, version) => wiseService.completeBatchGroup(id, version as Parameters<typeof wiseService.completeBatchGroup>[1]),
   });
+
+  app.post(
+    '/api/integrations/agentic/payments/wise-transfer',
+    requirePermission('integrations:wise:write'),
+    requireDelegatedAgentExecution({
+      actionKey: 'payments.wise.transfer.create',
+      logger,
+      payloadResolver: (req) => req.body,
+    }),
+    async (req, res) => {
+      if (!isWiseConfigured()) {
+        return res.status(503).json({ error: 'Wise não configurado' });
+      }
+
+      const parsed = agenticWiseTransferSchema.safeParse(req.body);
+      if (!parsed.success) {
+        logger.warn({ errors: parsed.error.flatten() }, 'Input inválido em /api/integrations/agentic/payments/wise-transfer');
+        return res.status(400).json({ error: 'Dados inválidos', details: parsed.error.format() });
+      }
+
+      try {
+        const auth = getWiseAuthContext(req);
+        const quote = await wiseService.createQuote({
+          sourceCurrency: parsed.data.sourceCurrency,
+          targetCurrency: parsed.data.targetCurrency,
+          sourceAmount: parsed.data.sourceAmount,
+          targetAccount: parsed.data.recipientId,
+          preferredPayIn: 'BALANCE',
+        });
+
+        await upsertWiseQuotes(auth.tenantId, quote as Parameters<typeof upsertWiseQuotes>[1]);
+
+        const customerTransactionId = `alice-agentic-${Date.now()}-${parsed.data.recipientId}`;
+        const transfer = await wiseService.createTransfer({
+          targetAccount: parsed.data.recipientId,
+          quoteUuid: quote.id,
+          customerTransactionId,
+          details: {
+            reference: parsed.data.reference?.trim() || 'Pagamento Alice',
+          },
+        });
+
+        await upsertWiseTransfers(auth.tenantId, [transfer] as Parameters<typeof upsertWiseTransfers>[1]);
+
+        const transferId = typeof transfer === 'object' && transfer !== null && 'id' in transfer
+          ? Number((transfer as { id?: unknown }).id)
+          : null;
+        const fundingResult = transferId ? await wiseService.fundTransfer(transferId) : null;
+        const hydratedTransfer = transferId ? await wiseService.getTransfer(transferId) : transfer;
+
+        if (transferId) {
+          await upsertWiseTransfers(auth.tenantId, [hydratedTransfer] as Parameters<typeof upsertWiseTransfers>[1]);
+        }
+
+        logger.info(
+          {
+            recipientId: parsed.data.recipientId,
+            transferId,
+            sourceCurrency: parsed.data.sourceCurrency,
+            targetCurrency: parsed.data.targetCurrency,
+            sourceAmount: parsed.data.sourceAmount,
+          },
+          'Transferência agentic Wise executada com token delegado',
+        );
+
+        res.json({
+          success: true,
+          quote,
+          transfer: hydratedTransfer,
+          funding: fundingResult,
+        });
+      } catch (error) {
+        logger.error({ error }, 'Falha ao executar transferência agentic Wise');
+        res.status(500).json({ error: 'Falha ao executar transferência Wise' });
+      }
+    },
+  );
+
+  app.post(
+    '/api/integrations/agentic/payments/wise-exchange',
+    requirePermission('integrations:wise:write'),
+    requireDelegatedAgentExecution({
+      actionKey: 'payments.wise.exchange.create',
+      logger,
+      payloadResolver: (req) => req.body,
+    }),
+    async (req, res) => {
+      if (!isWiseConfigured()) {
+        return res.status(503).json({ error: 'Wise não configurado' });
+      }
+
+      const parsed = agenticWiseExchangeSchema.safeParse(req.body);
+      if (!parsed.success) {
+        logger.warn({ errors: parsed.error.flatten() }, 'Input inválido em /api/integrations/agentic/payments/wise-exchange');
+        return res.status(400).json({ error: 'Dados inválidos', details: parsed.error.format() });
+      }
+
+      try {
+        const auth = getWiseAuthContext(req);
+        const quote = await wiseService.createQuote({
+          sourceCurrency: parsed.data.sourceCurrency,
+          targetCurrency: parsed.data.targetCurrency,
+          sourceAmount: parsed.data.sourceAmount,
+          preferredPayIn: 'BALANCE',
+          payOut: 'BALANCE',
+        });
+
+        await upsertWiseQuotes(auth.tenantId, quote as Parameters<typeof upsertWiseQuotes>[1]);
+
+        const movement = await wiseService.createBalanceMovement({
+          quoteId: quote.id,
+        });
+
+        logger.info(
+          {
+            sourceCurrency: parsed.data.sourceCurrency,
+            targetCurrency: parsed.data.targetCurrency,
+            sourceAmount: parsed.data.sourceAmount,
+          },
+          'Câmbio agentic Wise executado com token delegado',
+        );
+
+        res.json({
+          success: true,
+          quote,
+          movement,
+        });
+      } catch (error) {
+        logger.error({ error }, 'Falha ao executar câmbio agentic Wise');
+        res.status(500).json({ error: 'Falha ao executar câmbio Wise' });
+      }
+    },
+  );
 
   registerWiseWebhookRoutes(app, {
     logger,

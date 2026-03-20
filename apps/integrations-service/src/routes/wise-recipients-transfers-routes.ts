@@ -2,6 +2,7 @@ import type { Express, Request, Response } from 'express';
 import { createLogger } from '@alice/logger';
 import { requirePermission } from '@alice/shared-utils';
 import type { SafeParseReturnType } from 'zod';
+import { requireDelegatedAgentExecution } from '../delegated-execution.js';
 
 interface WiseAuthContext {
   tenantId: string;
@@ -92,7 +93,15 @@ export function registerWiseRecipientsTransfersRoutes(
     completeBatchGroup,
   } = deps;
 
-  app.get('/api/integrations/wise/recipients', requirePermission('integrations:wise:read'), async (req: Request, res: Response) => {
+  app.get(
+    '/api/integrations/wise/recipients',
+    requirePermission('integrations:wise:read'),
+    requireDelegatedAgentExecution({
+      actionKey: 'payments.wise.recipients.list',
+      logger,
+      payloadResolver: () => ({}),
+    }),
+    async (req: Request, res: Response) => {
     if (!isWiseConfigured()) {
       return res.status(503).json({ error: 'Wise não configurado' });
     }
@@ -113,7 +122,8 @@ export function registerWiseRecipientsTransfersRoutes(
       logger.error({ error }, 'Falha ao listar destinatários Wise');
       res.status(500).json({ error: 'Falha ao listar destinatários' });
     }
-  });
+    },
+  );
 
   app.post('/api/integrations/wise/recipients', requirePermission('integrations:wise:write'), async (req: Request, res: Response) => {
     if (!isWiseConfigured()) {

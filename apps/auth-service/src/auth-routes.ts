@@ -165,6 +165,7 @@ export function registerAuthServiceRoutes(params: RegisterAuthServiceRoutesParam
 
   const verifyPasswordSchema = z.object({
     password: z.string().min(1, 'Senha é obrigatória'),
+    actionContext: z.record(z.string(), z.unknown()).optional(),
   });
 
   const changePasswordSchema = z.object({

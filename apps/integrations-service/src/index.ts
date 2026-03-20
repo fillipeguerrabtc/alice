@@ -22,7 +22,7 @@ import {
   setupSwaggerUI,
   INTEGRATIONS_SERVICE_TAGS,
   setPermissionResolver,
-  PERMISSION_MAP,
+  createDatabasePermissionResolver,
   computeSemHash,
   RATE_LIMIT_CONFIG,
   // CORREÇÃO PR#107 (10/01/2026): Middleware de sessão HTTP para autenticação
@@ -33,7 +33,7 @@ import {
   Role,
   verifyImmutableAuditChain,
 } from '@alice/shared-utils';
-import type { AuthContext, ReasoningMode } from '@alice/shared-utils';
+import type { ReasoningMode } from '@alice/shared-utils';
 import { integrationsServicePaths, integrationsServiceSchemas } from './openapi-specs.js';
 import {
   getServiceUrl,
@@ -44,7 +44,7 @@ import {
   resolveCorsOrigins,
 } from '@alice/config';
 import { getDatabase, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, getPool } from '@alice/database';
-import { eq, sql, and, inArray } from '@alice/database';
+import { eq, and } from '@alice/database';
 import type {
   TradingIndicatorKey,
   TradingProfileConsensus,
@@ -519,86 +519,7 @@ async function createTradingDatasetFromOrder(params: {
 }
 
 const app = express();
-setPermissionResolver(async (auth: AuthContext) => {
-  const db = getDatabase();
-  const baseRoleRows = await db.query.userRoles.findMany({
-    where: eq(schema.userRoles.userId, auth.userId),
-    columns: { role: true },
-  });
-  let baseRoles = baseRoleRows.map((row) => row.role as Role).filter(Boolean);
-  if (baseRoles.length === 0) {
-    const fallbackUser = await db.query.users.findFirst({
-      where: eq(schema.users.id, auth.userId),
-      columns: { role: true },
-    });
-    if (fallbackUser?.role) {
-      baseRoles = [fallbackUser.role as Role];
-    }
-  }
-
-  const customRoleRows = await db.query.userCustomRoles.findMany({
-    where: eq(schema.userCustomRoles.userId, auth.userId),
-    with: {
-      customRole: {
-        columns: { id: true, ativo: true, tenantId: true },
-      },
-    },
-  });
-  let customRoleIds = customRoleRows
-    .filter((row) => row.customRole?.ativo)
-    .filter((row) => !auth.tenantId || row.customRole?.tenantId === auth.tenantId)
-    .map((row) => row.customRoleId);
-  if (customRoleIds.length === 0) {
-    const fallbackUser = await db.query.users.findFirst({
-      where: eq(schema.users.id, auth.userId),
-      columns: { customRoleId: true },
-    });
-    const fallbackCustomRoleId = fallbackUser?.customRoleId ?? undefined;
-    if (fallbackCustomRoleId) {
-      const activeRole = await db.query.customRoles.findFirst({
-        where: and(
-          eq(schema.customRoles.id, fallbackCustomRoleId),
-          eq(schema.customRoles.ativo, true),
-          auth.tenantId ? eq(schema.customRoles.tenantId, auth.tenantId) : sql`1=1`
-        ),
-        columns: { id: true },
-      });
-      if (activeRole) {
-        customRoleIds = [fallbackCustomRoleId];
-      }
-    }
-  }
-
-  const isAdminRole = baseRoles.some((role) => role === 'admin' || role === 'super_admin');
-  const rolePermissions = isAdminRole
-    ? await db.query.permissions.findMany({ columns: { codigo: true } })
-    : baseRoles.length > 0
-      ? await db.query.rolePermissions.findMany({
-        where: inArray(schema.rolePermissions.role, baseRoles),
-        with: { permission: true },
-      })
-      : [];
-  const customRolePermissions = customRoleIds.length > 0
-    ? await db.query.customRolePermissions.findMany({
-      where: inArray(schema.customRolePermissions.customRoleId, customRoleIds),
-      with: { permission: true },
-    })
-    : [];
-  const dbPermissions = rolePermissions
-    .map((rp) => ('codigo' in rp ? rp.codigo : (rp as { permission?: { codigo?: string | null } }).permission?.codigo))
-    .filter((code): code is string => Boolean(code));
-  const customPermissions = customRolePermissions
-    .map((rp) => (rp as { permission?: { codigo?: string | null } }).permission?.codigo)
-    .filter((code): code is string => Boolean(code));
-  const basePermissions = Object.entries(PERMISSION_MAP)
-    .filter(([, roles]) => roles.some((role) => baseRoles.includes(role as Role)))
-    .map(([code]) => code);
-  const resolved = new Set<string>([...dbPermissions, ...customPermissions, ...basePermissions]);
-  if (isAdminRole) {
-    resolved.add('admin:alice_core:write');
-  }
-  return Array.from(resolved);
-});
+setPermissionResolver(createDatabasePermissionResolver());
 
 async function isAdminUser(authContext?: { userId?: string | null }): Promise<boolean> {
   const userId = authContext?.userId ?? null;

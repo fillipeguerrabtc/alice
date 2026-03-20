@@ -2,6 +2,7 @@ import type { Express, Request, Response } from 'express';
 import { createLogger } from '@alice/logger';
 import { requirePermission } from '@alice/shared-utils';
 import { z } from 'zod';
+import { requireDelegatedAgentExecution } from '../delegated-execution.js';
 
 interface GrafanaClientLike {
   request<T>(method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown): Promise<T>;
@@ -52,7 +53,15 @@ export function registerGrafanaAndGithubRoutes(
     }
   });
 
-  app.get('/api/integrations/grafana/dashboards', requirePermission('integrations:grafana:read'), async (req: Request, res: Response) => {
+  app.get(
+    '/api/integrations/grafana/dashboards',
+    requirePermission('integrations:grafana:read'),
+    requireDelegatedAgentExecution({
+      actionKey: 'observability.grafana.dashboard.list',
+      logger,
+      payloadResolver: (req) => req.query,
+    }),
+    async (req: Request, res: Response) => {
     try {
       const querySchema = z.object({
         query: z.string().optional(),
@@ -82,9 +91,18 @@ export function registerGrafanaAndGithubRoutes(
       logger.error({ error: errorMessage }, 'Falha ao listar dashboards do Grafana');
       res.status(500).json({ error: errorMessage });
     }
-  });
+    },
+  );
 
-  app.get('/api/integrations/grafana/dashboards/:uid', requirePermission('integrations:grafana:read'), async (req: Request, res: Response) => {
+  app.get(
+    '/api/integrations/grafana/dashboards/:uid',
+    requirePermission('integrations:grafana:read'),
+    requireDelegatedAgentExecution({
+      actionKey: 'observability.grafana.dashboard.get',
+      logger,
+      payloadResolver: (req) => ({ uid: req.params.uid }),
+    }),
+    async (req: Request, res: Response) => {
     try {
       const uid = req.params.uid;
       if (!uid) {
@@ -98,9 +116,18 @@ export function registerGrafanaAndGithubRoutes(
       logger.error({ error: errorMessage }, 'Falha ao obter dashboard do Grafana');
       res.status(500).json({ error: errorMessage });
     }
-  });
+    },
+  );
 
-  app.post('/api/integrations/grafana/dashboards', requirePermission('integrations:grafana:write'), async (req: Request, res: Response) => {
+  app.post(
+    '/api/integrations/grafana/dashboards',
+    requirePermission('integrations:grafana:write'),
+    requireDelegatedAgentExecution({
+      actionKey: 'observability.grafana.dashboard.update',
+      logger,
+      payloadResolver: (req) => req.body,
+    }),
+    async (req: Request, res: Response) => {
     try {
       const bodySchema = z.object({
         dashboard: z.record(z.unknown()),
@@ -133,9 +160,19 @@ export function registerGrafanaAndGithubRoutes(
       logger.error({ error: errorMessage }, 'Falha ao atualizar dashboard do Grafana');
       res.status(500).json({ error: errorMessage });
     }
-  });
+    },
+  );
 
-  app.post('/api/integrations/github/deploy-stack', requirePermission('admin:alice_core:write'), async (req: Request, res: Response) => {
+  app.post(
+    '/api/integrations/github/deploy-stack',
+    requirePermission('admin:alice_core:write'),
+    requireDelegatedAgentExecution({
+      actionKey: 'platform.stack.deploy',
+      actionKeyResolver: (req) => req.body?.rollback ? 'platform.stack.rollback' : 'platform.stack.deploy',
+      logger,
+      payloadResolver: (req) => req.body,
+    }),
+    async (req: Request, res: Response) => {
     if (!githubActionsClient.isConfigured()) {
       return res.status(503).json({ error: 'GitHub Actions not configured' });
     }
@@ -176,5 +213,6 @@ export function registerGrafanaAndGithubRoutes(
         durationMs: Date.now() - startedAt,
       });
     }
-  });
+    },
+  );
 }

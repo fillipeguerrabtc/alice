@@ -2,7 +2,7 @@
 
 **Author:** Fillipe Guerra
 **Data:** 18 de Marco de 2026
-**Atualizado:** 18 de Marco de 2026
+**Atualizado:** 20 de Marco de 2026
 **Status:** ativo
 **Tipo:** ssot
 
@@ -78,6 +78,29 @@ sudo infra/scripts/prepare-production-server.sh
 - A trilha de aplicacao continua usando RBAC no dominio de autenticacao.
 - `admin:alice_core:write` permanece o boundary de escrita do core da Alice.
 - Admin e super admin continuam com atribuicao automatica das permissoes vigentes.
+
+## Delegacao agentic
+
+- Fluxo iniciado no chat deve herdar exatamente o envelope efetivo da dashboard: permissoes resolvidas, `customRoleId`, `permissionsVersion`, `grantsVersion`, ownership e grants do recurso.
+- Nenhuma acao agentic sensivel pode executar fora do `agent_action_catalog`.
+- `prompt template` e `tool policy` apenas restringem exposicao e execucao; nunca concedem permissao adicional.
+- `deny` de governanca sempre prevalece sobre `allow`.
+
+## Pipeline de autorizacao agentic
+
+1. `RBAC/AuthZ` resolve o envelope efetivo do usuario.
+2. `Capability Layer` resolve `actionKey`, `capabilityId`, permissao requerida, `resourceType` e `riskLevel`.
+3. `tool policy` e governanca de prompt restringem o subconjunto de tools/capabilities expostas ao modelo.
+4. O chat pre-autoriza a acao, calcula `payloadHash` e registra trilha imutavel.
+5. A execucao downstream exige `delegated_execution_token` com TTL curto e uso unico.
+6. O servico alvo revalida ator, tenant, `actionKey`, permissao, recurso, governanca, approval state e `payloadHash`.
+
+## Service accounts
+
+- `service_accounts` sao exclusivas para fluxos autonomos de sistema.
+- Conta de servico nao pode mascarar ator humano.
+- Cada conta deve declarar explicitamente `allowedActionKeys`, `namespaceScope`, `agentScope` e estado `enabled`.
+- Fluxos iniciados por usuario nunca podem degradar para conta de servico privilegiada.
 
 ## Referencias
 

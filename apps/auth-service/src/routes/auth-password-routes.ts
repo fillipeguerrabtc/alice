@@ -4,9 +4,11 @@ import { requireAuth } from '@alice/shared-utils';
 import type { AuthContext } from '@alice/shared-utils';
 import { createLogger } from '@alice/logger';
 import type { PassportStatic } from 'passport';
+import { writeApprovalStepUpSession } from '../auth-step-up-session.js';
 
 interface VerifyPasswordBody {
   password: string;
+  actionContext?: Record<string, unknown>;
 }
 
 interface ChangePasswordBody {
@@ -68,6 +70,13 @@ export function registerAuthPasswordRoutes(
       if (!valid) {
         return res.status(401).json({ error: 'Senha incorreta' });
       }
+      const actionRequestId = typeof parsed.data.actionContext?.actionRequestId === 'string'
+        ? parsed.data.actionContext.actionRequestId
+        : null;
+      writeApprovalStepUpSession(req, {
+        method: 'password',
+        actionRequestId,
+      });
       return res.json({ verified: true });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Erro desconhecido';

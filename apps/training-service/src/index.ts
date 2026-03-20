@@ -48,6 +48,7 @@ import {
   TRAINING_SERVICE_TAGS,
   extractAuthContext,
   setPermissionResolver,
+  createDatabasePermissionResolver,
   // Auth hÃ­brida (WS4): SessÃ£o (cookie) + Bearer JWT (OIDC) com validaÃ§Ã£o local via JWKS
   createSessionAuthMiddleware,
   initializeRedisCache,
@@ -375,37 +376,7 @@ async function findAgentByIdInTenant(tenantId: string, agentId: string) {
     })
   );
 }
-setPermissionResolver(async (auth) => {
-  let customRoleId = auth.customRoleId;
-  if (!customRoleId) {
-    const user = await db.query.users.findFirst({
-      where: eq(schema.users.id, auth.userId),
-      columns: { customRoleId: true },
-    });
-    customRoleId = user?.customRoleId ?? undefined;
-  }
-  const isAdminRole = auth.role === 'admin' || auth.role === 'super_admin';
-  const rolePermissions = isAdminRole
-    ? await db.query.permissions.findMany({ columns: { codigo: true } })
-    : await db.query.rolePermissions.findMany({
-      where: eq(schema.rolePermissions.role, auth.role),
-      with: { permission: true },
-    });
-  const customRolePermissions = customRoleId
-    ? await db.query.customRolePermissions.findMany({
-      where: eq(schema.customRolePermissions.customRoleId, customRoleId),
-      with: { permission: true },
-    })
-    : [];
-  return [
-    ...rolePermissions
-      .map((rp) => ('codigo' in rp ? rp.codigo : (rp as { permission?: { codigo?: string | null } }).permission?.codigo))
-      .filter((code): code is string => Boolean(code)),
-    ...customRolePermissions
-      .map((rp) => (rp as { permission?: { codigo?: string | null } }).permission?.codigo)
-      .filter((code): code is string => Boolean(code)),
-  ];
-});
+setPermissionResolver(createDatabasePermissionResolver());
 
 // Inicializar sistema de feature flags com storage PostgreSQL (Regra 16 - Enterprise)
 const featureFlagStorage = createDrizzleFeatureFlagStorage();

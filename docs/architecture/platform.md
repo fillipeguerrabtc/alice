@@ -25,6 +25,8 @@ Descrever a arquitetura estrutural vigente da plataforma Alice sem misturar proc
 - Deploy por stack com rollback cirurgico e artefatos publicados pela `Release`.
 - Observabilidade e seguranca tratadas como capacidade transversal, nao como detalhe de implementacao local.
 - Conteudo sensivel e segregado por `tenant + ownership/grant + policy`, com `private by default`.
+- Autonomia agentic sempre opera como delegacao do usuario autenticado, nunca como elevacao implicita de privilegio.
+- Fluxos agentic sensiveis usam capability catalog, approval transacional e token delegado single-use revalidado no servico alvo.
 
 ## Topologia macro
 
@@ -101,6 +103,14 @@ Descrever a arquitetura estrutural vigente da plataforma Alice sem misturar proc
 3. `alice-auth` protege sessao, identidade e autorizacao.
 4. `alice-chat` coordena resposta, consulta `alice-rag`, `alice-integrations`, `alice-training` e `alice-llm-gateway` quando necessario.
 5. `alice-gpu-manager` encaminha chamadas para `gpu-llm`, `gpu-embeddings` ou `qwen-trainer` conforme a capacidade ativa.
+
+### Fluxo agentic delegado
+
+1. A dashboard continua sendo a fonte de verdade das permissoes efetivas do usuario.
+2. `alice-chat` resolve o mesmo envelope efetivo, aplica `Capability Layer` e reduz as tools expostas ao modelo para o subconjunto autorizado.
+3. Quando a acao e sensivel, o chat calcula `payloadHash`, exige approval/step-up/dual control quando aplicavel e emite `delegated_execution_token`.
+4. `alice-integrations` e demais servicos alvo atuam como PEP downstream, recusando chamada interna sem token delegado ou com token divergente.
+5. Revogacao de permissao, grants ou governanca invalida o token antes da execucao final.
 
 ### Fluxo de conhecimento
 
