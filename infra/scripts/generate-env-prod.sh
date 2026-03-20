@@ -836,8 +836,11 @@ echo "📄 Gerando arquivo .env.prod..."
   printf '# GPU Services (Hetzner GPU Server)\n'
   printf 'HF_TOKEN=%s\n' "${HF_TOKEN:-}"
   printf 'GPU_MANAGER_URL=http://alice-gpu-manager:3010\n'
+  printf 'TRAINING_SERVICE_URL=%s\n' "${TRAINING_SERVICE_URL:-http://alice-training:3004}"
+  printf 'RAG_SERVICE_URL=%s\n' "${RAG_SERVICE_URL:-http://alice-rag:3003}"
   printf 'DOCKER_SOCKET_GID=%s\n' "${DOCKER_SOCKET_GID:-988}"
   printf 'INTEGRATIONS_SERVICE_URL=%s\n' "${INTEGRATIONS_SERVICE_URL:-http://alice-integrations:3005}"
+  printf 'OBSERVABILITY_SERVICE_URL=%s\n' "${OBSERVABILITY_SERVICE_URL:-http://alice-observability:3007}"
   printf '\n'
   printf '# OpenAI (Vision + geração de imagens)\n'
   printf 'OPENAI_API_KEY=%s\n' "${OPENAI_API_KEY}"
