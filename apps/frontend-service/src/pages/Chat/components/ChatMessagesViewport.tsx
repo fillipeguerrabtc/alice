@@ -110,8 +110,11 @@ export function ChatMessagesViewport({
   const showViewportNotices = Boolean(runtimeNotice) || showLoginBanner;
 
   return (
-    <ScrollArea ref={scrollAreaRef} className="flex-1">
-      <div ref={messagesContainerRef} className="mx-auto min-h-full w-full max-w-3xl px-3 pb-6 pt-4 md:px-6 md:pb-8 md:pt-6">
+    <ScrollArea ref={scrollAreaRef} className="flex-1 min-w-0 overflow-x-hidden">
+      <div
+        ref={messagesContainerRef}
+        className="mx-auto min-h-full w-full max-w-3xl min-w-0 overflow-x-hidden px-3 pb-6 pt-4 md:px-6 md:pb-8 md:pt-6"
+      >
         {showViewportNotices && (
           <div className="mb-4 space-y-4">
             <ChatViewportNotices
@@ -125,7 +128,7 @@ export function ChatMessagesViewport({
             variants={containerVariants}
             initial="hidden"
             animate="visible"
-            className="mx-auto w-full space-y-4"
+            className="mx-auto w-full min-w-0 space-y-4"
           >
             {messages.map((message, index) => (
               <MessageBubble

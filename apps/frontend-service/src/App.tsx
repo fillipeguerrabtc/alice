@@ -1,6 +1,6 @@
 import { Switch, Route, Redirect, useLocation } from 'wouter';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { queryClient } from '@/lib/queryClient';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
@@ -11,6 +11,9 @@ import { ThemeProvider } from '@/components/theme-provider';
 import { Toaster } from '@/components/ui/toaster';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { useAuth } from '@/hooks/use-auth';
+import { useStandaloneDisplayMode } from '@/hooks/use-standalone-display-mode';
+import { resolveAppShellState } from '@/lib/app-shell';
+import { cn } from '@/lib/utils';
 import { Loader2 } from 'lucide-react';
 
 /**
@@ -82,9 +85,11 @@ function PageLoader() {
 function AuthenticatedLayout({
   children,
   isChatRoute,
+  isStandalone,
 }: {
   children: React.ReactNode;
   isChatRoute: boolean;
+  isStandalone: boolean;
 }) {
   const sidebarStyle = {
     '--sidebar-width': '16rem',
@@ -93,17 +98,28 @@ function AuthenticatedLayout({
 
   return (
     <SidebarProvider style={sidebarStyle}>
-      <div className="flex h-screen w-full">
+      <div className="safe-area-inset-left safe-area-inset-right flex h-app w-full min-w-0">
         <AppSidebar />
         <div className="flex flex-col flex-1 min-w-0">
-          <header className="flex items-center justify-between gap-2 p-2 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+          <header
+            className={cn(
+              'flex items-center justify-between gap-2 border-b bg-background/95 p-2 backdrop-blur supports-[backdrop-filter]:bg-background/60',
+              isStandalone && 'safe-area-inset-top'
+            )}
+          >
             <SidebarTrigger data-testid="button-sidebar-toggle" />
             <div className="flex items-center gap-2">
               <LanguageSwitch />
               <ThemeToggle />
             </div>
           </header>
-          <main className={`flex-1 min-h-0 ${isChatRoute ? 'overflow-hidden' : 'overflow-auto'}`}>
+          <main
+            className={cn(
+              'flex-1 min-h-0',
+              !isChatRoute && 'safe-area-inset-bottom',
+              isChatRoute ? 'overflow-hidden' : 'overflow-auto'
+            )}
+          >
             {/* Garante área definida para páginas full-height como Chat sem afetar o shell global. */}
             <div className="h-full min-h-0 w-full">
               {children}
@@ -112,6 +128,30 @@ function AuthenticatedLayout({
         </div>
       </div>
     </SidebarProvider>
+  );
+}
+
+function FeatureLayout({
+  children,
+  lockViewport,
+}: {
+  children: React.ReactNode;
+  lockViewport: boolean;
+}) {
+  return (
+    <div className="safe-area-inset-left safe-area-inset-right flex h-app w-full min-w-0 bg-background">
+      <main
+        className={cn(
+          'flex min-h-0 min-w-0 flex-1 flex-col',
+          !lockViewport && 'safe-area-inset-bottom',
+          lockViewport ? 'overflow-hidden' : 'overflow-auto'
+        )}
+      >
+        <div className="h-full min-h-0 w-full">
+          {children}
+        </div>
+      </main>
+    </div>
   );
 }
 
@@ -209,10 +249,41 @@ function RedirectToLogin() {
 function AppContent() {
   const { isAuthenticated, isLoading } = useAuth();
   const [location] = useLocation();
+  const isStandalone = useStandaloneDisplayMode();
+  const shellState = resolveAppShellState(location, isStandalone);
+
+  useEffect(() => {
+    if (typeof document === 'undefined' || typeof window === 'undefined') return undefined;
+
+    const root = document.documentElement;
+    const body = document.body;
+
+    const syncViewportHeight = () => {
+      const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+      root.style.setProperty('--alice-app-height', `${viewportHeight}px`);
+    };
+
+    syncViewportHeight();
+
+    root.dataset.displayMode = isStandalone ? 'standalone' : 'browser';
+    root.dataset.appShell = shellState.mode;
+    body.dataset.displayMode = isStandalone ? 'standalone' : 'browser';
+    body.dataset.appShell = shellState.mode;
+
+    window.addEventListener('resize', syncViewportHeight);
+    window.addEventListener('orientationchange', syncViewportHeight);
+    window.visualViewport?.addEventListener('resize', syncViewportHeight);
+
+    return () => {
+      window.removeEventListener('resize', syncViewportHeight);
+      window.removeEventListener('orientationchange', syncViewportHeight);
+      window.visualViewport?.removeEventListener('resize', syncViewportHeight);
+    };
+  }, [isStandalone, shellState.mode]);
 
   if (isLoading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-background">
+      <div className="flex h-app items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
           <div className="h-16 w-16 rounded-full overflow-hidden bg-muted/40 animate-pulse">
             <img
@@ -227,6 +298,12 @@ function AppContent() {
       </div>
     );
   }
+
+  const routerContent = (
+    <Suspense fallback={<PageLoader />}>
+      <Router />
+    </Suspense>
+  );
 
   if (!isAuthenticated) {
     // Usuário não autenticado: mostrar Login ou redirecionar para Login
@@ -244,11 +321,20 @@ function AppContent() {
     return <RedirectToLogin />;
   }
 
+  if (shellState.mode === 'feature') {
+    return (
+      <FeatureLayout lockViewport={shellState.lockViewport}>
+        {routerContent}
+      </FeatureLayout>
+    );
+  }
+
   return (
-    <AuthenticatedLayout isChatRoute={location.startsWith('/chat')}>
-      <Suspense fallback={<PageLoader />}>
-        <Router />
-      </Suspense>
+    <AuthenticatedLayout
+      isChatRoute={location.startsWith('/chat')}
+      isStandalone={isStandalone}
+    >
+      {routerContent}
     </AuthenticatedLayout>
   );
 }

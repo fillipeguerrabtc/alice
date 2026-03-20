@@ -3,6 +3,7 @@
 @config "../tailwind.config.ts";
 
 :root {
+  --alice-app-height: 100dvh;
   --background: 0 0% 100%;
   --foreground: 222.2 84% 4.9%;
   --card: 0 0% 100%;
@@ -65,11 +66,32 @@
 
 * {
   border-color: hsl(var(--border));
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
 }
 
 body {
+  min-height: var(--alice-app-height);
   background-color: hsl(var(--background));
   color: hsl(var(--foreground));
+  overscroll-behavior-y: none;
+}
+
+#root {
+  min-height: var(--alice-app-height);
+}
+
+.h-app {
+  height: var(--alice-app-height);
+}
+
+.min-h-app {
+  min-height: var(--alice-app-height);
 }
 
 .hover-elevate {
@@ -132,6 +154,10 @@ body {
 
 .safe-area-inset-right {
   padding-right: env(safe-area-inset-right, 0);
+}
+
+.overflow-wrap-anywhere {
+  overflow-wrap: anywhere;
 }
 
 /* Touch manipulation - melhora responsividade de botões em mobile */

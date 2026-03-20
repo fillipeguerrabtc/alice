@@ -118,7 +118,7 @@ export function ChatPageLayout({
   const showEmptyStateNotices = Boolean(runtimeNotice) || showLoginBanner;
 
   return (
-    <div className="flex h-full bg-[radial-gradient(circle_at_top,hsl(var(--primary)/0.05),transparent_36%),linear-gradient(180deg,hsl(var(--background))_0%,hsl(var(--muted)/0.12)_100%)]">
+    <div className="flex h-full min-w-0 overflow-hidden bg-[radial-gradient(circle_at_top,hsl(var(--primary)/0.05),transparent_36%),linear-gradient(180deg,hsl(var(--background))_0%,hsl(var(--muted)/0.12)_100%)]">
       <ChatConversationsSidebar
         conversationsListProps={conversationsListProps}
         isMobile={isMobile}
@@ -127,7 +127,7 @@ export function ChatPageLayout({
         sidebarOpen={sidebarOpen}
       />
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <ChatHeaderSection
           chatActionsMenuProps={chatActionsMenuProps}
           chatIdentityMenuProps={chatIdentityMenuProps}
@@ -146,7 +146,7 @@ export function ChatPageLayout({
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.24, ease: 'easeOut' }}
-              className="flex min-h-0 flex-1"
+              className="flex min-h-0 min-w-0 flex-1"
             >
               <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-3 pb-6 pt-2 md:px-6 md:pb-8 md:pt-4">
                 {showEmptyStateNotices && (
@@ -194,9 +194,9 @@ export function ChatPageLayout({
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.2, ease: 'easeOut' }}
-              className="flex min-h-0 flex-1 flex-col"
+              className="flex min-h-0 min-w-0 flex-1 flex-col"
             >
-              <div className="flex min-h-0 flex-1">
+              <div className="flex min-h-0 min-w-0 flex-1">
                 <ChatMessagesViewport
                   isStreaming={isStreaming}
                   lastResponseUsedFallback={lastResponseUsedFallback}

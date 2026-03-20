@@ -54,7 +54,7 @@ export class ErrorBoundary extends Component<Props, State> {
       }
 
       return (
-        <div className="flex h-screen items-center justify-center bg-background p-4">
+        <div className="flex h-app items-center justify-center bg-background p-4">
           <Card className="max-w-lg w-full">
             <CardHeader className="text-center">
               <div className="flex justify-center mb-4">

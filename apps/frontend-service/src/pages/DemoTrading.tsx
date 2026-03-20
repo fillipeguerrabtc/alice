@@ -2843,7 +2843,7 @@ export default function DemoTrading() {
   // Aguardar autenticação antes de montar componente com múltiplos hooks
   if (isAuthLoading) {
     return (
-      <div className="flex h-screen items-center justify-center">
+      <div className="flex h-app items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
           <p className="text-sm text-muted-foreground">Carregando autenticação...</p>
@@ -2855,7 +2855,7 @@ export default function DemoTrading() {
   // Usuário não autenticado (redundante com App.tsx — defesa em profundidade)
   if (!user?.id) {
     return (
-      <div className="flex h-screen items-center justify-center">
+      <div className="flex h-app items-center justify-center">
         <Card className="w-full max-w-md">
           <CardHeader>
             <CardTitle>Autenticação Necessária</CardTitle>

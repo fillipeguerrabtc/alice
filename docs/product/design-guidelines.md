@@ -158,6 +158,12 @@ Usar escala consistente: `2, 4, 8, 12, 16, 24, 32` (px-2, h-8, m-12, etc.)
 - Sidebar: histórico de conversas (esquerda, colapsável)
 - Barra de input: fixa no rodapé com upload, voz, emoji
 - Mídia: renderização inline com lightbox no clique
+- Em modo standalone/webapp, a rota de entrada governa a shell da experiencia:
+- `standalone + /` deve abrir a plataforma completa
+- `standalone + rota funcional especifica` deve abrir somente a feature, sem sidebar global nem header global da plataforma
+- Browser normal deve preservar a shell padrao da plataforma
+- Chat em streaming precisa manter largura estavel, sem corte lateral, sem scrollbar horizontal oscilando e sem realinhamento corretivo ao fim da resposta
+- Safe areas superior, laterais e inferior precisam ser aplicadas nas superficies de navegacao, viewport e composer quando o app estiver em iPhone standalone
 
 ### Dashboard Admin
 

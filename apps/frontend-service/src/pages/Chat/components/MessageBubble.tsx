@@ -377,7 +377,7 @@ export function MessageBubble({
       animate="visible"
       exit="exit"
       className={cn(
-        'group flex min-w-0 gap-3',
+        'group flex w-full min-w-0 gap-3 overflow-x-hidden',
         isUser ? 'justify-end' : 'justify-start'
       )}
     >
@@ -405,12 +405,12 @@ export function MessageBubble({
       )}
       
       <div className={cn(
-        'flex min-w-0 flex-col max-w-[80%]',
+        'flex min-w-0 flex-1 flex-col',
         isUser ? 'items-end' : 'items-start'
       )}>
         <Card
           className={cn(
-            'max-w-full overflow-hidden p-3 shadow-sm transition-all',
+            'w-fit max-w-full min-w-0 overflow-hidden p-3 shadow-sm transition-all',
             isMediaOnly
               ? 'bg-transparent p-0 shadow-none border-0'
               : isUser
@@ -449,7 +449,7 @@ export function MessageBubble({
             </div>
           )}
 
-          <div className="min-h-[1.25rem] min-w-0 whitespace-pre-wrap break-words text-sm leading-relaxed">
+          <div className="overflow-wrap-anywhere min-h-[1.25rem] min-w-0 whitespace-pre-wrap break-words text-sm leading-relaxed">
             {sanitizedDisplayContent}
             {shouldShowStreamingPlaceholder && <span className="sr-only">{t('chat.thinking')}</span>}
             {shouldShowTypingCursor && (
