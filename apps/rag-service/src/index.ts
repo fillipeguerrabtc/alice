@@ -40,6 +40,7 @@ import { Counter as PromCounter, Histogram as PromHistogram } from 'prom-client'
 import {
   ResourceAccessError,
   assertAuthorizedResourceAccess,
+  filterAccessibleResources,
   requirePermission,
   requireAuth,
   requireSameTenant,
@@ -131,6 +132,13 @@ function getAuthUser(req: Request): AuthUser {
     role: user.role,
     tenantId: user.tenantId,
     customRoleId: user.customRoleId ?? undefined,
+  };
+}
+
+function getResourceActor(req: Request, tenantId: string) {
+  return {
+    ...req.user,
+    tenantId,
   };
 }
 
@@ -4112,14 +4120,20 @@ app.get('/api/media/:id', requireAuth(), requireSameTenant(getTenantIdFromReques
   }
 
   try {
-    const media = await db.query.mediaUploads.findFirst({
-      where: and(
-        eq(schema.mediaUploads.id, id),
-        eq(schema.mediaUploads.tenantId, tenantId)
-      ),
+    await assertAuthorizedResourceAccess({
+      actor: getResourceActor(req, tenantId),
+      resourceType: 'media_upload',
+      resourceId: id,
+      permission: 'read',
+      tenantId,
+      db,
     });
 
-    if (!media) {
+    const media = await db.query.mediaUploads.findFirst({
+      where: eq(schema.mediaUploads.id, id),
+    });
+
+    if (!media || media.tenantId !== tenantId) {
       return res.status(404).json({ error: 'Upload não encontrado' });
     }
 
@@ -4136,6 +4150,9 @@ app.get('/api/media/:id', requireAuth(), requireSameTenant(getTenantIdFromReques
       criadoEm: media.criadoEm,
     });
   } catch (error) {
+    if (error instanceof ResourceAccessError) {
+      return res.status(error.statusCode).json({ error: error.message, code: error.code });
+    }
     logger.error({ error, id, tenantId }, 'Erro ao buscar status de upload');
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
@@ -4161,6 +4178,17 @@ app.get('/api/media/uploads', requireAuth(), requireSameTenant(getTenantIdFromRe
     const offset = queryResult.data.offset ?? 0;
     const { mediaType, conversationId, namespaceId } = queryResult.data;
 
+    if (conversationId) {
+      await assertAuthorizedResourceAccess({
+        actor: getResourceActor(req, tenantId),
+        resourceType: 'conversation',
+        resourceId: conversationId,
+        permission: 'read',
+        tenantId,
+        db,
+      });
+    }
+
     const whereConditions = [eq(schema.mediaUploads.tenantId, tenantId)];
     
     if (mediaType) {
@@ -4178,23 +4206,31 @@ app.get('/api/media/uploads', requireAuth(), requireSameTenant(getTenantIdFromRe
     const uploads = await db.query.mediaUploads.findMany({
       where: and(...whereConditions),
       orderBy: [desc(schema.mediaUploads.criadoEm)],
-      limit,
-      offset,
     });
 
-    const totalCount = await db.select({ count: sql<number>`count(*)` })
-      .from(schema.mediaUploads)
-      .where(and(...whereConditions));
+    const accessibleUploads = await filterAccessibleResources({
+      actor: getResourceActor(req, tenantId),
+      tenantId,
+      resourceType: 'media_upload',
+      permission: 'read',
+      resources: uploads,
+      db,
+    });
+
+    const paginatedUploads = accessibleUploads.slice(offset, offset + limit);
 
     res.json({ 
-      uploads,
+      uploads: paginatedUploads,
       pagination: {
         limit,
         offset,
-        total: totalCount[0]?.count || 0,
+        total: accessibleUploads.length,
       },
     });
   } catch (error) {
+    if (error instanceof ResourceAccessError) {
+      return res.status(error.statusCode).json({ error: error.message, code: error.code });
+    }
     logger.error({ error, tenantId }, 'Falha ao listar uploads');
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
@@ -4217,19 +4253,28 @@ app.get('/api/media/uploads/:id', requireAuth(), requireSameTenant(getTenantIdFr
   }
 
   try {
-    const upload = await db.query.mediaUploads.findFirst({
-      where: and(
-        eq(schema.mediaUploads.id, id),
-        eq(schema.mediaUploads.tenantId, tenantId)
-      ),
+    await assertAuthorizedResourceAccess({
+      actor: getResourceActor(req, tenantId),
+      resourceType: 'media_upload',
+      resourceId: id,
+      permission: 'read',
+      tenantId,
+      db,
     });
 
-    if (!upload) {
+    const upload = await db.query.mediaUploads.findFirst({
+      where: eq(schema.mediaUploads.id, id),
+    });
+
+    if (!upload || upload.tenantId !== tenantId) {
       return res.status(404).json({ error: 'Upload não encontrado' });
     }
 
     res.json({ upload });
   } catch (error) {
+    if (error instanceof ResourceAccessError) {
+      return res.status(error.statusCode).json({ error: error.message, code: error.code });
+    }
     logger.error({ error, tenantId, uploadId: id }, 'Falha ao buscar upload');
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
@@ -4252,14 +4297,20 @@ app.delete('/api/media/uploads/:id', requireAuth(), requireSameTenant(getTenantI
   }
 
   try {
-    const upload = await db.query.mediaUploads.findFirst({
-      where: and(
-        eq(schema.mediaUploads.id, id),
-        eq(schema.mediaUploads.tenantId, tenantId)
-      ),
+    await assertAuthorizedResourceAccess({
+      actor: getResourceActor(req, tenantId),
+      resourceType: 'media_upload',
+      resourceId: id,
+      permission: 'delete',
+      tenantId,
+      db,
     });
 
-    if (!upload) {
+    const upload = await db.query.mediaUploads.findFirst({
+      where: eq(schema.mediaUploads.id, id),
+    });
+
+    if (!upload || upload.tenantId !== tenantId) {
       return res.status(404).json({ error: 'Upload não encontrado' });
     }
 
@@ -4269,6 +4320,9 @@ app.delete('/api/media/uploads/:id', requireAuth(), requireSameTenant(getTenantI
     logger.info({ uploadId: id, tenantId }, 'Upload de mídia excluído');
     res.json({ success: true });
   } catch (error) {
+    if (error instanceof ResourceAccessError) {
+      return res.status(error.statusCode).json({ error: error.message, code: error.code });
+    }
     logger.error({ error, tenantId, uploadId: id }, 'Falha ao excluir upload');
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
@@ -4294,14 +4348,20 @@ app.post('/api/media/uploads/:id/send-to-training', requireAuth(), requirePermis
   }
 
   try {
-    const upload = await db.query.mediaUploads.findFirst({
-      where: and(
-        eq(schema.mediaUploads.id, id),
-        eq(schema.mediaUploads.tenantId, tenantId)
-      ),
+    await assertAuthorizedResourceAccess({
+      actor: getResourceActor(req, tenantId),
+      resourceType: 'media_upload',
+      resourceId: id,
+      permission: 'train',
+      tenantId,
+      db,
     });
 
-    if (!upload) {
+    const upload = await db.query.mediaUploads.findFirst({
+      where: eq(schema.mediaUploads.id, id),
+    });
+
+    if (!upload || upload.tenantId !== tenantId) {
       return res.status(404).json({ error: 'Upload não encontrado' });
     }
 
@@ -4388,6 +4448,9 @@ app.post('/api/media/uploads/:id/send-to-training', requireAuth(), requirePermis
       message: 'Mídia enviada para dataset de treinamento. Aprove na página Training.',
     });
   } catch (error) {
+    if (error instanceof ResourceAccessError) {
+      return res.status(error.statusCode).json({ error: error.message, code: error.code });
+    }
     logger.error({ error, mediaUploadId: id }, 'Falha ao promover mídia para treinamento');
     return res.status(500).json({ error: 'Erro interno do servidor' });
   }
@@ -4403,15 +4466,18 @@ app.get('/api/media/stats', requireAuth(), requireSameTenant(getTenantIdFromRequ
   }
 
   try {
-    const stats = await db.select({
-      mediaType: schema.mediaUploads.mediaType,
-      processingStatus: schema.mediaUploads.processingStatus,
-      count: sql<number>`count(*)`,
-      totalSize: sql<number>`sum(file_size)`,
-    })
-      .from(schema.mediaUploads)
-      .where(eq(schema.mediaUploads.tenantId, tenantId))
-      .groupBy(schema.mediaUploads.mediaType, schema.mediaUploads.processingStatus);
+    const uploads = await db.query.mediaUploads.findMany({
+      where: eq(schema.mediaUploads.tenantId, tenantId),
+    });
+
+    const accessibleUploads = await filterAccessibleResources({
+      actor: getResourceActor(req, tenantId),
+      tenantId,
+      resourceType: 'media_upload',
+      permission: 'read',
+      resources: uploads,
+      db,
+    });
 
     const summary = {
       byType: {} as Record<string, { count: number; totalSize: number }>,
@@ -4419,11 +4485,11 @@ app.get('/api/media/stats', requireAuth(), requireSameTenant(getTenantIdFromRequ
       total: { count: 0, totalSize: 0 },
     };
 
-    for (const row of stats) {
-      const type = row.mediaType || 'unknown';
-      const status = row.processingStatus || 'unknown';
-      const count = Number(row.count);
-      const size = Number(row.totalSize) || 0;
+    for (const upload of accessibleUploads) {
+      const type = upload.mediaType || 'unknown';
+      const status = upload.processingStatus || 'unknown';
+      const count = 1;
+      const size = Number(upload.fileSize) || 0;
 
       if (!summary.byType[type]) {
         summary.byType[type] = { count: 0, totalSize: 0 };
@@ -4450,16 +4516,29 @@ app.get('/api/media/stats', requireAuth(), requireSameTenant(getTenantIdFromRequ
 // Servir arquivos de mídia (com verificação de tenant e autenticação)
 // SEGURANÇA: Requer autenticação e verifica que o usuário pertence ao tenant solicitado
 app.get('/api/media/files/:tenantId/:mediaType/:filename', requireAuth(), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
+  return serveMediaFile(req, res, 'shared');
+});
+
+app.get('/api/media/files/:tenantId/:scopeSegment/:mediaType/:filename', requireAuth(), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
+  const scopeSegmentCandidate = typeof req.params.scopeSegment === 'string' ? req.params.scopeSegment : '';
+  return serveMediaFile(req, res, scopeSegmentCandidate);
+});
+
+async function serveMediaFile(req: Request, res: Response, fallbackScopeSegment?: string) {
   const mediaPathParamsSchema = z.object({
     tenantId: z.string().uuid(),
+    scopeSegment: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/).optional(),
     mediaType: z.enum(['image', 'audio', 'document']),
     filename: z.string().regex(/^[A-Za-z0-9._-]{1,255}$/),
   });
-  const paramsParsed = mediaPathParamsSchema.safeParse(req.params);
+  const paramsParsed = mediaPathParamsSchema.safeParse({
+    ...req.params,
+    scopeSegment: req.params.scopeSegment ?? fallbackScopeSegment,
+  });
   if (!paramsParsed.success) {
     return res.status(400).json({ error: 'Parametros de caminho invalidos' });
   }
-  const { tenantId, mediaType, filename } = paramsParsed.data;
+  const { tenantId, scopeSegment, mediaType, filename } = paramsParsed.data;
   
   // SEGURANÇA: Validar que o tenantId da URL corresponde ao tenant do usuário autenticado
   if (req.tenantId && req.tenantId !== tenantId) {
@@ -4468,7 +4547,31 @@ app.get('/api/media/files/:tenantId/:mediaType/:filename', requireAuth(), requir
   
   try {
     const storageService = getStorageService();
-    const filePath = `${tenantId}/${mediaType}/${filename}`;
+    const filePath = `${tenantId}/${scopeSegment}/${mediaType}/${filename}`;
+
+    const mediaRecord = await db.query.mediaUploads.findFirst({
+      where: and(
+        eq(schema.mediaUploads.tenantId, tenantId),
+        eq(schema.mediaUploads.filePath, filePath)
+      ),
+      columns: {
+        id: true,
+        mimeType: true,
+      },
+    });
+
+    if (!mediaRecord) {
+      return res.status(404).json({ error: 'Arquivo não encontrado' });
+    }
+
+    await assertAuthorizedResourceAccess({
+      actor: getResourceActor(req, tenantId),
+      resourceType: 'media_upload',
+      resourceId: mediaRecord.id,
+      permission: 'read',
+      tenantId,
+      db,
+    });
     
     // Verificar se arquivo existe
     const exists = await storageService.fileExists(filePath);
@@ -4479,24 +4582,9 @@ app.get('/api/media/files/:tenantId/:mediaType/:filename', requireAuth(), requir
     // BUG FIX 23/12/2025: Buscar MIME type original do banco de dados
     // Arquivos WebM podem ser tanto áudio quanto vídeo - usar MIME type original garante Content-Type correto
     // Isso previne problemas ao servir arquivos legados que são vídeos mas foram mapeados como áudio
-    let contentType: string | null = null;
-    try {
-      const mediaRecord = await db.query.mediaUploads.findFirst({
-        where: and(
-          eq(schema.mediaUploads.tenantId, tenantId),
-          eq(schema.mediaUploads.filePath, filePath)
-        ),
-        columns: {
-          mimeType: true,
-        },
-      });
-      
-      if (mediaRecord?.mimeType) {
-        contentType = mediaRecord.mimeType;
-        logger.debug({ filePath, mimeType: contentType }, 'MIME type obtido do banco de dados');
-      }
-    } catch (dbError) {
-      logger.warn({ error: dbError, filePath }, 'Erro ao buscar MIME type do banco - usando fallback');
+    let contentType: string | null = mediaRecord.mimeType;
+    if (contentType) {
+      logger.debug({ filePath, mimeType: contentType }, 'MIME type obtido do banco de dados');
     }
     
     // Fallback: determinar content type pela extensão se não encontrado no banco
@@ -4535,10 +4623,13 @@ app.get('/api/media/files/:tenantId/:mediaType/:filename', requireAuth(), requir
     
     res.send(buffer);
   } catch (error) {
+    if (error instanceof ResourceAccessError) {
+      return res.status(error.statusCode).json({ error: error.message, code: error.code });
+    }
     logger.error({ error, tenantId, mediaType, filename }, 'Erro ao servir arquivo');
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
-});
+}
 
 // Busca vetorial otimizada com pgvector nativo (enterprise-grade)
 
