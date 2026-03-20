@@ -149,6 +149,8 @@ export function extractAuthContext(req: Request): AuthContext | undefined {
         tenantId: internalTenantId,
         role: internalRole,
         customRoleId: internalCustomRoleId,
+        roleCodes: [internalRole, ...(internalCustomRoleId ? [`custom:${internalCustomRoleId}`] : [])],
+        isSuperAdmin: internalRole === 'super_admin',
       };
     }
 
@@ -234,10 +236,13 @@ export function requireInternalHmacAuth() {
       tenantId: internalTenantId,
       role: internalRole,
       customRoleId: internalCustomRoleId,
+      roleCodes: [internalRole, ...(internalCustomRoleId ? [`custom:${internalCustomRoleId}`] : [])],
+      isSuperAdmin: internalRole === 'super_admin',
     };
 
     req.user = auth;
     req.tenantId = auth.tenantId;
+    req.accessContext = auth;
     next();
   };
 }
@@ -284,6 +289,7 @@ export function requireAuth(options?: AuthorizationOptions) {
 
     req.user = auth;
     req.tenantId = auth.tenantId;
+    req.accessContext = auth;
     next();
   };
 }
@@ -348,6 +354,7 @@ export function requirePermission(
         if (allowed) {
           req.user = auth;
           req.tenantId = auth.tenantId;
+          req.accessContext = auth;
           return next();
         }
       } catch (error) {
@@ -380,6 +387,7 @@ export function requirePermission(
 
     req.user = auth;
     req.tenantId = auth.tenantId;
+    req.accessContext = auth;
     next();
   };
 }
@@ -456,6 +464,7 @@ export function requireRole(
 
     req.user = auth;
     req.tenantId = auth.tenantId;
+    req.accessContext = auth;
     next();
   };
 }
@@ -482,6 +491,7 @@ export function requireSameTenant(
 
     if (auth.role === 'super_admin') {
       req.user = auth;
+      req.accessContext = auth;
       return next();
     }
 
@@ -505,6 +515,7 @@ export function requireSameTenant(
 
     req.user = auth;
     req.tenantId = auth.tenantId;
+    req.accessContext = auth;
     next();
   };
 }

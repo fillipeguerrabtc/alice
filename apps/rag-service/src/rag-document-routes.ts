@@ -1,7 +1,10 @@
 import crypto from 'crypto';
 import type { Express, Request, Response } from 'express';
-import { desc, eq, sql, schema, type Database } from '@alice/database';
+import { and, desc, eq, sql, schema, type Database } from '@alice/database';
 import {
+  ResourceAccessError,
+  assertAuthorizedResourceAccess,
+  filterAccessibleResources,
   requireAuth,
   requirePermission,
   requireSameTenant,
@@ -73,17 +76,31 @@ export function registerRagDocumentRoutes(params: RegisterRagDocumentRoutesParam
     try {
       const documents = await db.query.documents.findMany({
         with: { namespace: true },
-        where: namespaceId ? eq(schema.documents.namespaceId, namespaceId) : undefined,
+        where: and(
+          eq(schema.documents.tenantId, tenantId ?? ''),
+          namespaceId ? eq(schema.documents.namespaceId, namespaceId) : undefined,
+        ),
         orderBy: [desc(schema.documents.criadoEm)],
         limit: 100,
       });
 
-      const tenantDocuments = documents.filter(doc =>
-        doc.namespace?.tenantId === tenantId
-      );
+      const tenantDocuments = await filterAccessibleResources({
+        actor: {
+          ...req.user,
+          tenantId: tenantId ?? '',
+        },
+        tenantId: tenantId ?? '',
+        resourceType: 'document',
+        permission: 'read',
+        resources: documents.filter((doc) => doc.namespace?.tenantId === tenantId),
+        db,
+      });
 
       res.json({ documents: tenantDocuments });
     } catch (error) {
+      if (error instanceof ResourceAccessError) {
+        return res.status(error.statusCode).json({ error: error.message, code: error.code });
+      }
       logger.error({ error, tenantId, namespaceId, correlationId }, 'Falha ao buscar documentos');
       res.status(500).json({ error: 'Erro interno do servidor' });
     }
@@ -101,6 +118,18 @@ export function registerRagDocumentRoutes(params: RegisterRagDocumentRoutesParam
     }
 
     try {
+      await assertAuthorizedResourceAccess({
+        actor: {
+          ...req.user,
+          tenantId,
+        },
+        resourceType: 'document',
+        resourceId: idValidation.data.id,
+        permission: 'read',
+        tenantId,
+        db,
+      });
+
       const document = await db.query.documents.findFirst({
         where: eq(schema.documents.id, idValidation.data.id),
         with: { namespace: true },
@@ -124,6 +153,9 @@ export function registerRagDocumentRoutes(params: RegisterRagDocumentRoutesParam
         sentToTrainingAt: document.sentToTrainingAt,
       });
     } catch (error) {
+      if (error instanceof ResourceAccessError) {
+        return res.status(error.statusCode).json({ error: error.message, code: error.code });
+      }
       logger.error({ error, documentId: req.params.id, tenantId, correlationId: getRequestCorrelationId(req) }, 'Falha ao consultar status do documento');
       return res.status(500).json({ error: 'Erro interno do servidor' });
     }
@@ -141,6 +173,18 @@ export function registerRagDocumentRoutes(params: RegisterRagDocumentRoutesParam
     }
 
     try {
+      await assertAuthorizedResourceAccess({
+        actor: {
+          ...req.user,
+          tenantId,
+        },
+        resourceType: 'document',
+        resourceId: idValidation.data.id,
+        permission: 'write',
+        tenantId,
+        db,
+      });
+
       const document = await db.query.documents.findFirst({
         where: eq(schema.documents.id, idValidation.data.id),
         with: { namespace: true },
@@ -188,6 +232,9 @@ export function registerRagDocumentRoutes(params: RegisterRagDocumentRoutesParam
 
       return res.json({ jobId });
     } catch (error) {
+      if (error instanceof ResourceAccessError) {
+        return res.status(error.statusCode).json({ error: error.message, code: error.code });
+      }
       logger.error({ error, documentId: req.params.id, tenantId, correlationId: getRequestCorrelationId(req) }, 'Falha ao solicitar reprocessamento do documento');
       return res.status(500).json({ error: 'Erro interno do servidor' });
     }
@@ -204,6 +251,18 @@ export function registerRagDocumentRoutes(params: RegisterRagDocumentRoutesParam
     const correlationId = getRequestCorrelationId(req);
 
     try {
+      await assertAuthorizedResourceAccess({
+        actor: {
+          ...req.user,
+          tenantId: tenantId ?? '',
+        },
+        resourceType: 'document',
+        resourceId: id,
+        permission: 'delete',
+        tenantId: tenantId ?? '',
+        db,
+      });
+
       const document = await db.query.documents.findFirst({
         with: { namespace: true },
         where: eq(schema.documents.id, id),
@@ -249,6 +308,9 @@ export function registerRagDocumentRoutes(params: RegisterRagDocumentRoutesParam
       logger.info({ documentId: id, tenantId, correlationId }, 'Documento excluído');
       res.json({ success: true });
     } catch (error) {
+      if (error instanceof ResourceAccessError) {
+        return res.status(error.statusCode).json({ error: error.message, code: error.code });
+      }
       logger.error({ error, documentId: id, tenantId, correlationId }, 'Falha ao excluir documento');
       res.status(500).json({ error: 'Erro interno do servidor' });
     }

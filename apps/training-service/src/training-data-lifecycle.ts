@@ -450,15 +450,28 @@ export function createTrainingDataLifecycleService(params: CreateTrainingDataLif
         ? `Auto-rejeitado: qualidade ${qualityScore.toFixed(2)} abaixo do mínimo (${qualityMinScore}).`
         : 'Rejeitado por política de privacidade';
       const processedAt = new Date();
+      const accessSnapshot = {
+        ownerUserId: createdBy ?? null,
+        ownerGroupId: null,
+        visibility: 'private',
+        scopeType: 'user',
+        evaluatedAt: processedAt.toISOString(),
+      };
       const [trainingData] = await db.insert(schema.trainingData).values({
         tenantId: resolvedTenantId,
         namespaceId: effectiveNamespaceId,
         agentId: effectiveAgentId,
         conversationId: body.conversationId,
+        ownerUserId: createdBy ?? null,
+        ownerGroupId: null,
+        scopeType: 'user',
+        visibility: 'private',
+        sensitivityLabel: 'confidential',
         source: body.source,
         sourceType,
         sourceId: body.sourceId ?? null,
         sourceMetadata: body.sourceMetadata ?? {},
+        accessSnapshot,
         inferredNamespaceId: scope.namespaceId,
         inferredAgentId: scope.agentId,
         inferredDomain: scope.domain,
@@ -579,11 +592,23 @@ export function createTrainingDataLifecycleService(params: CreateTrainingDataLif
 
     let trainingData: typeof schema.trainingData.$inferSelect | null = null;
     try {
+      const accessSnapshot = {
+        ownerUserId: createdBy ?? null,
+        ownerGroupId: null,
+        visibility: 'private',
+        scopeType: 'user',
+        evaluatedAt: new Date().toISOString(),
+      };
       [trainingData] = await db.insert(schema.trainingData).values({
         tenantId: resolvedTenantId,
         namespaceId: effectiveNamespaceId,
         agentId: effectiveAgentId,
         conversationId: body.conversationId,
+        ownerUserId: createdBy ?? null,
+        ownerGroupId: null,
+        scopeType: 'user',
+        visibility: 'private',
+        sensitivityLabel: 'confidential',
         source: body.source,
         sourceType,
         sourceId: body.sourceId ?? null,
@@ -595,6 +620,7 @@ export function createTrainingDataLifecycleService(params: CreateTrainingDataLif
             rejectionReasons: qualityAssessment.rejectionReasons,
           },
         },
+        accessSnapshot,
         inferredNamespaceId: scope.namespaceId,
         inferredAgentId: scope.agentId,
         inferredDomain: scope.domain,

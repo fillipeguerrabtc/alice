@@ -80,6 +80,8 @@ import {
   buildDailyCapKey,
   incrementWithDailyCap,
   type RuntimeAnnouncement,
+  assertAuthorizedResourceAccess,
+  ResourceAccessError,
 } from '@alice/shared-utils';
 import type { AuthContext } from '@alice/shared-utils';
 import type { Role } from '@alice/shared-utils';
@@ -2144,6 +2146,10 @@ async function generateImageFromPrompt(input: ImageGenerationInput) {
   const [created] = await db.insert(schema.generatedImages).values({
     tenantId: input.tenantId,
     createdBy: input.userId,
+    ownerUserId: input.userId,
+    scopeType: 'user',
+    visibility: 'private',
+    sensitivityLabel: 'confidential',
     conversationId: input.conversationId ?? undefined,
     messageId: input.messageId ?? undefined,
     prompt: input.prompt,
@@ -8865,16 +8871,23 @@ app.get('/api/chat/conversations/:id', requireAuth(), requireSameTenant(getTenan
     return res.status(401).json({ error: 'Autenticação necessária' });
   }
 
-  const userId = auth.userId;
-  const userRole = auth.role as Role | undefined;
-  const canViewAllUsers = userRole === 'super_admin' || userRole === 'admin' || userRole === 'manager';
-
   try {
+    await assertAuthorizedResourceAccess({
+      actor: {
+        ...auth,
+        tenantId: tenantId ?? '',
+      },
+      resourceType: 'conversation',
+      resourceId: paramsResult.data.id,
+      permission: 'read',
+      tenantId: tenantId ?? '',
+      db,
+    });
+
     const conversation = await db.query.conversations.findFirst({
       where: and(
         eq(schema.conversations.id, paramsResult.data.id),
         tenantId ? eq(schema.conversations.tenantId, tenantId) : undefined,
-        canViewAllUsers ? undefined : eq(schema.conversations.userId, userId),
         not(eq(schema.conversations.status, 'deleted'))
       ),
       with: {
@@ -8896,6 +8909,9 @@ app.get('/api/chat/conversations/:id', requireAuth(), requireSameTenant(getTenan
 
     res.json({ conversation });
   } catch (error) {
+    if (error instanceof ResourceAccessError) {
+      return res.status(error.statusCode).json({ error: error.message, code: error.code });
+    }
     logger.error({ error, conversationId: paramsResult.data.id }, 'Falha ao buscar conversa');
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
@@ -9148,6 +9164,12 @@ app.post('/api/chat/conversations', requireAuth(), requireSameTenant(getTenantId
     const [conversation] = await db.insert(schema.conversations).values({
       tenantId,
       userId,
+      ownerUserId: userId,
+      scopeType: 'user',
+      visibility: 'private',
+      sensitivityLabel: 'confidential',
+      createdByUserId: userId,
+      updatedByUserId: userId,
       agentId: canonicalSelection.persistedAgentId,
       namespaceId: canonicalSelection.persistedNamespaceId,
       titulo: body.titulo || 'Nova Conversa',
@@ -9187,6 +9209,18 @@ app.get('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenant
   }
 
   try {
+    await assertAuthorizedResourceAccess({
+      actor: {
+        ...auth,
+        tenantId: requestTenantId ?? '',
+      },
+      resourceType: 'conversation',
+      resourceId: id,
+      permission: 'read',
+      tenantId: requestTenantId ?? '',
+      db,
+    });
+
     const conversation = await db.query.conversations.findFirst({
       where: eq(schema.conversations.id, id),
       columns: {
@@ -9278,6 +9312,9 @@ app.get('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenant
 
     res.json({ messages: messagesWithGeneratedImages });
   } catch (error) {
+    if (error instanceof ResourceAccessError) {
+      return res.status(error.statusCode).json({ error: error.message, code: error.code });
+    }
     logger.error({ error }, 'Falha ao buscar mensagens');
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
@@ -9306,6 +9343,18 @@ app.post('/api/chat/conversations/:id/training/collect', requireAuth(), requireS
   const limit = maxMessages ?? limits.maxMessages;
 
   try {
+    await assertAuthorizedResourceAccess({
+      actor: {
+        ...req.user,
+        tenantId: requestTenantId ?? '',
+      },
+      resourceType: 'conversation',
+      resourceId: id,
+      permission: 'train',
+      tenantId: requestTenantId ?? '',
+      db,
+    });
+
     const conversation = await db.query.conversations.findFirst({
       where: eq(schema.conversations.id, id),
       with: { agent: true },
@@ -9432,6 +9481,9 @@ app.post('/api/chat/conversations/:id/training/collect', requireAuth(), requireS
       namespaceId,
     });
   } catch (error) {
+    if (error instanceof ResourceAccessError) {
+      return res.status(error.statusCode).json({ error: error.message, code: error.code });
+    }
     logger.error({ error, conversationId: id }, 'Falha ao coletar treinamento da conversa');
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
@@ -9456,6 +9508,18 @@ app.post('/api/chat/training/collect-batch', requireAuth(), requireSameTenant(ge
 
   for (const item of items) {
     try {
+      await assertAuthorizedResourceAccess({
+        actor: {
+          ...req.user,
+          tenantId: requestTenantId ?? '',
+        },
+        resourceType: 'conversation',
+        resourceId: item.conversationId,
+        permission: 'train',
+        tenantId: requestTenantId ?? '',
+        db,
+      });
+
       const conversation = await db.query.conversations.findFirst({
         where: eq(schema.conversations.id, item.conversationId),
         with: { agent: true },
@@ -9585,6 +9649,10 @@ app.post('/api/chat/training/collect-batch', requireAuth(), requireSameTenant(ge
         namespaceId: resolvedNamespaceId,
       });
     } catch (error) {
+      if (error instanceof ResourceAccessError) {
+        failures.push({ conversationId: item.conversationId, error: error.message });
+        continue;
+      }
       logger.error({ error, conversationId: item.conversationId }, 'Falha ao coletar treinamento em lote');
       failures.push({ conversationId: item.conversationId, error: 'Erro interno ao coletar treinamento' });
     }
@@ -11442,7 +11510,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         correlationId: conversationId ?? undefined,
       });
       const cacheResult = allowGreetingGate
-        ? await checkResponseCache(tenantId, userMessageContent, { enableHybridTransversalDefault: true })
+        ? await checkResponseCache(tenantId, userId, userMessageContent, { enableHybridTransversalDefault: true })
         : {
           cacheHit: false,
           hasResponse: false,
@@ -15876,7 +15944,7 @@ wss.on('connection', (ws, req) => {
         // CORREÇÃO 18/12/2025: messageContent já definido no início do bloco
         // ========================================================================
         const cacheResult = wsAllowGreetingGate
-          ? await checkResponseCache(safeTenantId, messageContent, { enableHybridTransversalDefault: true })
+          ? await checkResponseCache(safeTenantId, userId, messageContent, { enableHybridTransversalDefault: true })
           : {
             cacheHit: false,
             hasResponse: false,
@@ -16782,9 +16850,24 @@ app.get('/api/chat/conversations/:id/state', requireAuth(), requireSameTenant(ge
   const { id } = paramsResult.data;
   
   try {
+    await assertAuthorizedResourceAccess({
+      actor: {
+        ...req.user,
+        tenantId: req.tenantId ?? '',
+      },
+      resourceType: 'conversation',
+      resourceId: id,
+      permission: 'read',
+      tenantId: req.tenantId ?? '',
+      db,
+    });
+
     const state = await getOrCreateConversationState(id);
     res.json({ state });
   } catch (error) {
+    if (error instanceof ResourceAccessError) {
+      return res.status(error.statusCode).json({ error: error.message, code: error.code });
+    }
     logger.error({ error, conversationId: id }, 'Erro ao buscar estado da conversa');
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
@@ -16798,12 +16881,27 @@ app.get('/api/chat/conversations/:id/approval-policy', requireAuth(), requireSam
   const { id } = paramsResult.data;
 
   try {
+    await assertAuthorizedResourceAccess({
+      actor: {
+        ...req.user,
+        tenantId: req.tenantId ?? '',
+      },
+      resourceType: 'conversation',
+      resourceId: id,
+      permission: 'read',
+      tenantId: req.tenantId ?? '',
+      db,
+    });
+
     const state = await getOrCreateConversationState(id);
     res.json({
       approvalPolicy: state.approvalPolicy ?? 'never_confirm',
       allowWebSearchWithoutApproval: true,
     });
   } catch (error) {
+    if (error instanceof ResourceAccessError) {
+      return res.status(error.statusCode).json({ error: error.message, code: error.code });
+    }
     logger.error({ error, conversationId: id }, 'Erro ao buscar política de aprovação da conversa');
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
@@ -16822,6 +16920,18 @@ app.patch('/api/chat/conversations/:id/approval-policy', requireAuth(), requireS
   }
 
   try {
+    await assertAuthorizedResourceAccess({
+      actor: {
+        ...req.user,
+        tenantId: req.tenantId ?? '',
+      },
+      resourceType: 'conversation',
+      resourceId: id,
+      permission: 'manage',
+      tenantId: req.tenantId ?? '',
+      db,
+    });
+
     const updated = await updateConversationState(id, {
       approvalPolicy: bodyResult.data.approvalPolicy,
     });
@@ -16830,6 +16940,9 @@ app.patch('/api/chat/conversations/:id/approval-policy', requireAuth(), requireS
       allowWebSearchWithoutApproval: true,
     });
   } catch (error) {
+    if (error instanceof ResourceAccessError) {
+      return res.status(error.statusCode).json({ error: error.message, code: error.code });
+    }
     logger.error({ error, conversationId: id }, 'Erro ao atualizar política de aprovação da conversa');
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
@@ -16858,6 +16971,18 @@ app.post('/api/chat/conversations/:id/takeover', requireAuth(), requireSameTenan
   }
   
   try {
+    await assertAuthorizedResourceAccess({
+      actor: {
+        ...req.user,
+        tenantId: req.tenantId ?? '',
+      },
+      resourceType: 'conversation',
+      resourceId: id,
+      permission: 'write',
+      tenantId: req.tenantId ?? '',
+      db,
+    });
+
     const result = await inititateTakeover(id, agentId, notes);
     
     if (result.success) {
@@ -16869,6 +16994,9 @@ app.post('/api/chat/conversations/:id/takeover', requireAuth(), requireSameTenan
       res.status(400).json({ error: result.error });
     }
   } catch (error) {
+    if (error instanceof ResourceAccessError) {
+      return res.status(error.statusCode).json({ error: error.message, code: error.code });
+    }
     logger.error({ error, conversationId: id, agentId }, 'Erro ao realizar takeover');
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
@@ -16897,6 +17025,18 @@ app.post('/api/chat/conversations/:id/handback', requireAuth(), requireSameTenan
   }
   
   try {
+    await assertAuthorizedResourceAccess({
+      actor: {
+        ...req.user,
+        tenantId: req.tenantId ?? '',
+      },
+      resourceType: 'conversation',
+      resourceId: id,
+      permission: 'write',
+      tenantId: req.tenantId ?? '',
+      db,
+    });
+
     const result = await handbackToBot(id, agentId, resolutionNotes);
     
     if (result.success) {
@@ -16908,6 +17048,9 @@ app.post('/api/chat/conversations/:id/handback', requireAuth(), requireSameTenan
       res.status(400).json({ error: result.error });
     }
   } catch (error) {
+    if (error instanceof ResourceAccessError) {
+      return res.status(error.statusCode).json({ error: error.message, code: error.code });
+    }
     logger.error({ error, conversationId: id, agentId }, 'Erro ao devolver controle para IA');
     res.status(500).json({ error: 'Erro interno do servidor' });
   }

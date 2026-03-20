@@ -22,6 +22,7 @@ export * from './training/index.js';
 export * from './llm/index.js';
 export * from './trading/index.js';
 export * from './dashboard/recent-activity.js';
+export * from './resource-access.js';
 
 export * as rbac from './rbac/index.js';
 export { 

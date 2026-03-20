@@ -626,6 +626,48 @@ export const userGroupMembers = pgTable(
   })
 );
 
+export const resourceScopeTypeEnum = pgEnum("resource_scope_type", [
+  "user",
+  "group",
+  "tenant",
+  "system",
+]);
+
+export const resourceVisibilityEnum = pgEnum("resource_visibility", [
+  "private",
+  "shared",
+  "tenant",
+  "public",
+]);
+
+export const resourceSensitivityLabelEnum = pgEnum("resource_sensitivity_label", [
+  "standard",
+  "confidential",
+  "restricted",
+]);
+
+export const resourceAccessSubjectTypeEnum = pgEnum("resource_access_subject_type", [
+  "user",
+  "group",
+  "role",
+  "tenant",
+]);
+
+export const resourceAccessResourceTypeEnum = pgEnum("resource_access_resource_type", [
+  "conversation",
+  "message",
+  "document",
+  "document_chunk",
+  "namespace",
+  "agent",
+  "media_upload",
+  "generated_image",
+  "training_data",
+  "tool_policy",
+  "prompt_template",
+  "llm_execution_audit",
+]);
+
 // ============================================================================
 // NAMESPACES (Contextos de Negócio Verticalizados)
 // ============================================================================
@@ -635,6 +677,13 @@ export const namespaces = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     tenantId: uuid("tenant_id").references(() => tenants.id),
+    ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "set null" }),
+    ownerGroupId: uuid("owner_group_id").references(() => userGroups.id, { onDelete: "set null" }),
+    scopeType: resourceScopeTypeEnum("scope_type").notNull().default("tenant"),
+    visibility: resourceVisibilityEnum("visibility").notNull().default("tenant"),
+    sensitivityLabel: resourceSensitivityLabelEnum("sensitivity_label").notNull().default("standard"),
+    createdByUserId: uuid("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    updatedByUserId: uuid("updated_by_user_id").references(() => users.id, { onDelete: "set null" }),
     nome: varchar("nome", { length: 255 }).notNull(),
     slug: varchar("slug", { length: 100 }).notNull(),
     descricao: text("descricao"),
@@ -649,6 +698,9 @@ export const namespaces = pgTable(
   },
   (table) => ({
     idxNamespacesTenant: index("idx_namespaces_tenant").on(table.tenantId),
+    idxNamespacesOwnerUser: index("idx_namespaces_owner_user").on(table.ownerUserId),
+    idxNamespacesOwnerGroup: index("idx_namespaces_owner_group").on(table.ownerGroupId),
+    idxNamespacesVisibility: index("idx_namespaces_visibility").on(table.tenantId, table.visibility),
     idxNamespacesSlug: index("idx_namespaces_slug").on(table.slug),
   })
 );
@@ -673,6 +725,13 @@ export const agents = pgTable(
     // tenantId nullable para compatibilidade com migração de dados existentes
     // Validação obrigatória na camada de aplicação via validateTenantConsistency()
     tenantId: uuid("tenant_id").references(() => tenants.id),
+    ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "set null" }),
+    ownerGroupId: uuid("owner_group_id").references(() => userGroups.id, { onDelete: "set null" }),
+    scopeType: resourceScopeTypeEnum("scope_type").notNull().default("tenant"),
+    visibility: resourceVisibilityEnum("visibility").notNull().default("tenant"),
+    sensitivityLabel: resourceSensitivityLabelEnum("sensitivity_label").notNull().default("standard"),
+    createdByUserId: uuid("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    updatedByUserId: uuid("updated_by_user_id").references(() => users.id, { onDelete: "set null" }),
     namespaceId: uuid("namespace_id").references(() => namespaces.id, {
       onDelete: "cascade",
     }),
@@ -698,6 +757,9 @@ export const agents = pgTable(
   },
   (table) => ({
     idxAgentsTenant: index("idx_agents_tenant").on(table.tenantId),
+    idxAgentsOwnerUser: index("idx_agents_owner_user").on(table.ownerUserId),
+    idxAgentsOwnerGroup: index("idx_agents_owner_group").on(table.ownerGroupId),
+    idxAgentsVisibility: index("idx_agents_visibility").on(table.tenantId, table.visibility),
     idxAgentsNamespace: index("idx_agents_namespace").on(table.namespaceId),
     idxAgentsStatus: index("idx_agents_status").on(table.status),
   })
@@ -869,6 +931,13 @@ export const conversations = pgTable(
     // Validação obrigatória na camada de aplicação via validateTenantConsistency()
     tenantId: uuid("tenant_id").references(() => tenants.id),
     userId: uuid("user_id").references(() => users.id),
+    ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "set null" }),
+    ownerGroupId: uuid("owner_group_id").references(() => userGroups.id, { onDelete: "set null" }),
+    scopeType: resourceScopeTypeEnum("scope_type").notNull().default("user"),
+    visibility: resourceVisibilityEnum("visibility").notNull().default("private"),
+    sensitivityLabel: resourceSensitivityLabelEnum("sensitivity_label").notNull().default("confidential"),
+    createdByUserId: uuid("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    updatedByUserId: uuid("updated_by_user_id").references(() => users.id, { onDelete: "set null" }),
     agentId: uuid("agent_id").references(() => agents.id),
     namespaceId: uuid("namespace_id").references(() => namespaces.id),
     titulo: varchar("titulo", { length: 500 }),
@@ -886,6 +955,9 @@ export const conversations = pgTable(
   (table) => ({
     idxConversationsTenant: index("idx_conversations_tenant").on(table.tenantId),
     idxConversationsUser: index("idx_conversations_user").on(table.userId),
+    idxConversationsOwnerUser: index("idx_conversations_owner_user").on(table.ownerUserId),
+    idxConversationsOwnerGroup: index("idx_conversations_owner_group").on(table.ownerGroupId),
+    idxConversationsVisibility: index("idx_conversations_visibility").on(table.tenantId, table.visibility),
     idxConversationsAgent: index("idx_conversations_agent").on(table.agentId),
     idxConversationsNamespace: index("idx_conversations_namespace").on(table.namespaceId),
     idxConversationsStatus: index("idx_conversations_status").on(table.status),
@@ -900,10 +972,17 @@ export const messages = pgTable(
   "messages",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id),
     conversationId: uuid("conversation_id")
       .references(() => conversations.id, { onDelete: "cascade" })
       .notNull(),
     userId: uuid("user_id").references(() => users.id),
+    ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "set null" }),
+    ownerGroupId: uuid("owner_group_id").references(() => userGroups.id, { onDelete: "set null" }),
+    scopeType: resourceScopeTypeEnum("scope_type").notNull().default("user"),
+    visibility: resourceVisibilityEnum("visibility").notNull().default("private"),
+    sensitivityLabel: resourceSensitivityLabelEnum("sensitivity_label").notNull().default("confidential"),
+    createdByUserId: uuid("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
     agentId: uuid("agent_id").references(() => agents.id),
     tipo: messageTypeEnum("tipo").default("text"),
     conteudo: text("conteudo"),
@@ -915,8 +994,11 @@ export const messages = pgTable(
     criadoEm: timestamp("criado_em").defaultNow(),
   },
   (table) => ({
+    idxMessagesTenant: index("idx_messages_tenant").on(table.tenantId),
     idxMessagesConversation: index("idx_messages_conversation").on(table.conversationId),
     idxMessagesUser: index("idx_messages_user").on(table.userId),
+    idxMessagesOwnerUser: index("idx_messages_owner_user").on(table.ownerUserId),
+    idxMessagesVisibility: index("idx_messages_visibility").on(table.tenantId, table.visibility),
     idxMessagesCreated: index("idx_messages_created").on(table.criadoEm),
   })
 );
@@ -1054,6 +1136,14 @@ export const documents = pgTable(
   "documents",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id),
+    ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "set null" }),
+    ownerGroupId: uuid("owner_group_id").references(() => userGroups.id, { onDelete: "set null" }),
+    scopeType: resourceScopeTypeEnum("scope_type").notNull().default("tenant"),
+    visibility: resourceVisibilityEnum("visibility").notNull().default("private"),
+    sensitivityLabel: resourceSensitivityLabelEnum("sensitivity_label").notNull().default("confidential"),
+    createdByUserId: uuid("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    updatedByUserId: uuid("updated_by_user_id").references(() => users.id, { onDelete: "set null" }),
     namespaceId: uuid("namespace_id").references(() => namespaces.id),
     titulo: varchar("titulo", { length: 500 }).notNull(),
     conteudo: text("conteudo"),
@@ -1072,6 +1162,9 @@ export const documents = pgTable(
     atualizadoEm: timestamp("atualizado_em").defaultNow(),
   },
   (table) => ({
+    idxDocumentsTenant: index("idx_documents_tenant").on(table.tenantId),
+    idxDocumentsOwnerUser: index("idx_documents_owner_user").on(table.ownerUserId),
+    idxDocumentsVisibility: index("idx_documents_visibility").on(table.tenantId, table.visibility),
     idxDocumentsNamespace: index("idx_documents_namespace").on(table.namespaceId),
     idxDocumentsHash: index("idx_documents_hash").on(table.hashConteudo),
     idxDocumentsSemhash: index("idx_documents_semhash").on(table.semhash),
@@ -1088,9 +1181,15 @@ export const documentChunks = pgTable(
   "document_chunks",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id),
     documentId: uuid("document_id")
       .references(() => documents.id, { onDelete: "cascade" })
       .notNull(),
+    ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "set null" }),
+    ownerGroupId: uuid("owner_group_id").references(() => userGroups.id, { onDelete: "set null" }),
+    scopeType: resourceScopeTypeEnum("scope_type").notNull().default("tenant"),
+    visibility: resourceVisibilityEnum("visibility").notNull().default("private"),
+    sensitivityLabel: resourceSensitivityLabelEnum("sensitivity_label").notNull().default("confidential"),
     conteudo: text("conteudo").notNull(),
     posicao: integer("posicao").notNull(),
     embedding: vector("embedding"),
@@ -1098,6 +1197,8 @@ export const documentChunks = pgTable(
     criadoEm: timestamp("criado_em").defaultNow(),
   },
   (table) => ({
+    idxChunksTenant: index("idx_chunks_tenant").on(table.tenantId),
+    idxChunksOwnerUser: index("idx_chunks_owner_user").on(table.ownerUserId),
     idxChunksDocument: index("idx_chunks_document").on(table.documentId),
     idxChunksPosition: index("idx_chunks_position").on(table.posicao),
   })
@@ -1833,11 +1934,17 @@ export const trainingData = pgTable(
     namespaceId: uuid("namespace_id").references(() => namespaces.id),
     agentId: uuid("agent_id").references(() => agents.id),
     conversationId: uuid("conversation_id").references(() => conversations.id),
+    ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "set null" }),
+    ownerGroupId: uuid("owner_group_id").references(() => userGroups.id, { onDelete: "set null" }),
+    scopeType: resourceScopeTypeEnum("scope_type").notNull().default("user"),
+    visibility: resourceVisibilityEnum("visibility").notNull().default("private"),
+    sensitivityLabel: resourceSensitivityLabelEnum("sensitivity_label").notNull().default("confidential"),
     source: varchar("source", { length: 50 }).notNull(),
     sourceType: trainingSourceTypeEnum("source_type").notNull().default("manual"),
     purpose: trainingDataPurposeEnum("purpose").notNull().default("behavior_sft"),
     sourceId: varchar("source_id", { length: 255 }),
     sourceMetadata: jsonb("source_metadata").$type<GenericMetadata>().default({}),
+    accessSnapshot: jsonb("access_snapshot").$type<GenericMetadata>().default({}),
     inferredNamespaceId: uuid("inferred_namespace_id").references(() => namespaces.id),
     inferredAgentId: uuid("inferred_agent_id").references(() => agents.id),
     inferredDomain: varchar("inferred_domain", { length: 120 }),
@@ -1869,6 +1976,8 @@ export const trainingData = pgTable(
   },
   (table) => ({
     idxTrainingTenant: index("idx_training_tenant").on(table.tenantId),
+    idxTrainingOwnerUser: index("idx_training_owner_user").on(table.ownerUserId),
+    idxTrainingVisibility: index("idx_training_visibility").on(table.tenantId, table.visibility),
     idxTrainingNamespace: index("idx_training_namespace").on(table.namespaceId),
     idxTrainingAgent: index("idx_training_agent").on(table.agentId),
     idxTrainingStatus: index("idx_training_status").on(table.status),
@@ -4693,6 +4802,11 @@ export const toolPolicies = pgTable(
     tenantId: uuid("tenant_id").references(() => tenants.id).notNull(),
     namespaceId: uuid("namespace_id").references(() => namespaces.id),
     agentId: uuid("agent_id").references(() => agents.id),
+    ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "set null" }),
+    ownerGroupId: uuid("owner_group_id").references(() => userGroups.id, { onDelete: "set null" }),
+    scopeType: resourceScopeTypeEnum("scope_type").notNull().default("tenant"),
+    visibility: resourceVisibilityEnum("visibility").notNull().default("private"),
+    sensitivityLabel: resourceSensitivityLabelEnum("sensitivity_label").notNull().default("restricted"),
     policyKey: varchar("policy_key", { length: 120 }).notNull(),
     version: integer("version").notNull().default(1),
     status: toolPolicyStatusEnum("status").notNull().default("draft"),
@@ -4709,6 +4823,8 @@ export const toolPolicies = pgTable(
   },
   (table) => ({
     idxToolPoliciesTenant: index("idx_tool_policies_tenant").on(table.tenantId),
+    idxToolPoliciesOwnerUser: index("idx_tool_policies_owner_user").on(table.ownerUserId),
+    idxToolPoliciesVisibility: index("idx_tool_policies_visibility").on(table.tenantId, table.visibility),
     idxToolPoliciesScope: index("idx_tool_policies_scope").on(table.tenantId, table.namespaceId, table.agentId),
     idxToolPoliciesKey: index("idx_tool_policies_key").on(table.policyKey),
     idxToolPoliciesStatus: index("idx_tool_policies_status").on(table.status),
@@ -4759,6 +4875,11 @@ export const promptTemplates = pgTable(
     tenantId: uuid("tenant_id").references(() => tenants.id).notNull(),
     namespaceId: uuid("namespace_id").references(() => namespaces.id),
     agentId: uuid("agent_id").references(() => agents.id),
+    ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "set null" }),
+    ownerGroupId: uuid("owner_group_id").references(() => userGroups.id, { onDelete: "set null" }),
+    scopeType: resourceScopeTypeEnum("scope_type").notNull().default("tenant"),
+    visibility: resourceVisibilityEnum("visibility").notNull().default("private"),
+    sensitivityLabel: resourceSensitivityLabelEnum("sensitivity_label").notNull().default("restricted"),
     promptKey: varchar("prompt_key", { length: 128 }).notNull(),
     version: integer("version").notNull().default(1),
     status: promptTemplateStatusEnum("status").notNull().default("draft"),
@@ -4781,6 +4902,8 @@ export const promptTemplates = pgTable(
   },
   (table) => ({
     idxPromptTemplatesTenant: index("idx_prompt_templates_tenant").on(table.tenantId),
+    idxPromptTemplatesOwnerUser: index("idx_prompt_templates_owner_user").on(table.ownerUserId),
+    idxPromptTemplatesVisibility: index("idx_prompt_templates_visibility").on(table.tenantId, table.visibility),
     idxPromptTemplatesScope: index("idx_prompt_templates_scope").on(table.tenantId, table.namespaceId, table.agentId),
     idxPromptTemplatesKey: index("idx_prompt_templates_key").on(table.promptKey),
     idxPromptTemplatesStatus: index("idx_prompt_templates_status").on(table.status),
@@ -4823,6 +4946,11 @@ export const llmExecutionAudit = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     tenantId: uuid("tenant_id").references(() => tenants.id).notNull(),
     userId: uuid("user_id").references(() => users.id),
+    ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "set null" }),
+    ownerGroupId: uuid("owner_group_id").references(() => userGroups.id, { onDelete: "set null" }),
+    scopeType: resourceScopeTypeEnum("scope_type").notNull().default("user"),
+    visibility: resourceVisibilityEnum("visibility").notNull().default("private"),
+    sensitivityLabel: resourceSensitivityLabelEnum("sensitivity_label").notNull().default("restricted"),
     namespaceId: uuid("namespace_id").references(() => namespaces.id),
     agentId: uuid("agent_id").references(() => agents.id),
     conversationId: uuid("conversation_id").references(() => conversations.id),
@@ -4846,6 +4974,7 @@ export const llmExecutionAudit = pgTable(
   },
   (table) => ({
     idxLlmExecutionAuditTenant: index("idx_llm_execution_audit_tenant").on(table.tenantId),
+    idxLlmExecutionAuditOwnerUser: index("idx_llm_execution_audit_owner_user").on(table.ownerUserId),
     idxLlmExecutionAuditCreated: index("idx_llm_execution_audit_created").on(table.criadoEm),
     idxLlmExecutionAuditService: index("idx_llm_execution_audit_service").on(table.service),
     idxLlmExecutionAuditPrompt: index("idx_llm_execution_audit_prompt").on(table.promptTemplateId),
@@ -4912,6 +5041,11 @@ export const generatedImages = pgTable(
     conversationId: uuid("conversation_id").references(() => conversations.id),
     messageId: uuid("message_id").references(() => messages.id),
     createdBy: uuid("created_by").references(() => users.id),
+    ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "set null" }),
+    ownerGroupId: uuid("owner_group_id").references(() => userGroups.id, { onDelete: "set null" }),
+    scopeType: resourceScopeTypeEnum("scope_type").notNull().default("user"),
+    visibility: resourceVisibilityEnum("visibility").notNull().default("private"),
+    sensitivityLabel: resourceSensitivityLabelEnum("sensitivity_label").notNull().default("confidential"),
     
     // Parâmetros de geração
     prompt: text("prompt").notNull(),
@@ -4946,6 +5080,7 @@ export const generatedImages = pgTable(
   },
   (table) => ({
     idxGenImagesTenant: index("idx_gen_images_tenant").on(table.tenantId),
+    idxGenImagesOwnerUser: index("idx_gen_images_owner_user").on(table.ownerUserId),
     idxGenImagesConversation: index("idx_gen_images_conversation").on(table.conversationId),
     idxGenImagesCreatedBy: index("idx_gen_images_created_by").on(table.createdBy),
     idxGenImagesStatus: index("idx_gen_images_status").on(table.status),
@@ -4978,6 +5113,11 @@ export const mediaUploads = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     tenantId: uuid("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
     userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+    ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "set null" }),
+    ownerGroupId: uuid("owner_group_id").references(() => userGroups.id, { onDelete: "set null" }),
+    scopeType: resourceScopeTypeEnum("scope_type").notNull().default("user"),
+    visibility: resourceVisibilityEnum("visibility").notNull().default("private"),
+    sensitivityLabel: resourceSensitivityLabelEnum("sensitivity_label").notNull().default("confidential"),
     conversationId: uuid("conversation_id").references(() => conversations.id, { onDelete: "cascade" }),
     messageId: uuid("message_id").references(() => messages.id, { onDelete: "cascade" }),
     
@@ -5037,10 +5177,36 @@ export const mediaUploads = pgTable(
     idxMediaUploadsNamespace: index("idx_media_uploads_namespace").on(table.namespaceId),
     idxMediaUploadsTenantMessage: index("idx_media_uploads_tenant_message").on(table.tenantId, table.messageId),
     idxMediaUploadsTenantUser: index("idx_media_uploads_tenant_user").on(table.tenantId, table.userId),
+    idxMediaUploadsOwnerUser: index("idx_media_uploads_owner_user").on(table.ownerUserId),
     idxMediaUploadsTenantType: index("idx_media_uploads_tenant_type").on(table.tenantId, table.mediaType),
     idxMediaUploadsStatus: index("idx_media_uploads_status").on(table.processingStatus),
     idxMediaUploadsCreated: index("idx_media_uploads_created").on(table.criadoEm),
     idxMediaUploadsApproved: index("idx_media_uploads_approved").on(table.approvedForTraining),
+  })
+);
+
+export const resourceAccessGrants = pgTable(
+  "resource_access_grants",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
+    resourceType: resourceAccessResourceTypeEnum("resource_type").notNull(),
+    resourceId: uuid("resource_id").notNull(),
+    subjectType: resourceAccessSubjectTypeEnum("subject_type").notNull(),
+    subjectId: varchar("subject_id", { length: 255 }).notNull(),
+    permissions: text("permissions").array().notNull().default(["read"]),
+    conditions: jsonb("conditions").$type<GenericMetadata>().default({}),
+    grantedBy: uuid("granted_by").references(() => users.id, { onDelete: "set null" }),
+    grantedAt: timestamp("granted_at").defaultNow().notNull(),
+    expiresAt: timestamp("expires_at"),
+    revokedAt: timestamp("revoked_at"),
+    metadata: jsonb("metadata").$type<GenericMetadata>().default({}),
+  },
+  (table) => ({
+    idxResourceAccessGrantsTenant: index("idx_resource_access_grants_tenant").on(table.tenantId),
+    idxResourceAccessGrantsResource: index("idx_resource_access_grants_resource").on(table.resourceType, table.resourceId),
+    idxResourceAccessGrantsSubject: index("idx_resource_access_grants_subject").on(table.subjectType, table.subjectId),
+    idxResourceAccessGrantsActive: index("idx_resource_access_grants_active").on(table.tenantId, table.revokedAt, table.expiresAt),
   })
 );
 

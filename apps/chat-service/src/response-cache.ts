@@ -199,11 +199,11 @@ function hashMessage(message: string): string {
   return createHash('sha256').update(normalized).digest('hex').substring(0, 16);
 }
 
-function getCacheKey(tenantId: string, messageHash: string): string {
-  return `${CACHE_PREFIX}:${tenantId}:${messageHash}`;
+function getCacheKey(tenantId: string, subjectScope: string, messageHash: string): string {
+  return `${CACHE_PREFIX}:${tenantId}:${subjectScope}:${messageHash}`;
 }
 
-async function getFromCache(tenantId: string, messageHash: string): Promise<CacheEntry | null> {
+async function getFromCache(tenantId: string, subjectScope: string, messageHash: string): Promise<CacheEntry | null> {
   const client = getRedisClient();
   if (!client) {
     logger.debug('Redis nao disponivel para response cache');
@@ -211,7 +211,7 @@ async function getFromCache(tenantId: string, messageHash: string): Promise<Cach
   }
 
   try {
-    const key = getCacheKey(tenantId, messageHash);
+    const key = getCacheKey(tenantId, subjectScope, messageHash);
     const data = await client.get(key);
     if (!data) {
       return null;
@@ -235,6 +235,7 @@ async function getFromCache(tenantId: string, messageHash: string): Promise<Cach
 
 async function saveToCache(
   tenantId: string,
+  subjectScope: string,
   messageHash: string,
   response: string,
   language: 'pt' | 'en'
@@ -251,7 +252,7 @@ async function saveToCache(
   }
 
   try {
-    const key = getCacheKey(tenantId, messageHash);
+    const key = getCacheKey(tenantId, subjectScope, messageHash);
     const entry: CacheEntry = {
       response,
       createdAt: new Date().toISOString(),
@@ -268,6 +269,7 @@ async function saveToCache(
 
 export async function checkResponseCache(
   tenantId: string,
+  userId: string | undefined,
   message: string,
   options?: {
     enableHybridTransversalDefault?: boolean;
@@ -311,9 +313,10 @@ export async function checkResponseCache(
   }
 
   const messageHash = hashMessage(message);
-  result.cacheKey = getCacheKey(tenantId, messageHash);
+  const subjectScope = userId && userId.trim().length > 0 ? userId : 'anonymous';
+  result.cacheKey = getCacheKey(tenantId, subjectScope, messageHash);
 
-  const cached = await getFromCache(tenantId, messageHash);
+  const cached = await getFromCache(tenantId, subjectScope, messageHash);
 
   if (cached) {
     metricsState.hits += 1;
@@ -334,7 +337,7 @@ export async function checkResponseCache(
     const language = detectLanguage(message);
     const response = generateGreetingResponse(language);
 
-    await saveToCache(tenantId, messageHash, response, language);
+    await saveToCache(tenantId, subjectScope, messageHash, response, language);
 
     result.response = response;
 

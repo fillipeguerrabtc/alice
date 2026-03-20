@@ -111,6 +111,14 @@ export interface AuthContext {
   role: Role;
   /** Role personalizada (opcional) */
   customRoleId?: string;
+  /** Códigos de role efetivos para grants/visibilidade (opcional) */
+  roleCodes?: string[];
+  /** IDs de grupos efetivos para grants/visibilidade (opcional) */
+  groupIds?: string[];
+  /** Se o usuário está em modo super admin efetivo */
+  isSuperAdmin?: boolean;
+  /** Se houve elevação auditada de break-glass */
+  breakGlassActive?: boolean;
   /** Email do usuário (opcional) */
   email?: string;
   /** Permissões adicionais (opcional) */
@@ -156,6 +164,7 @@ declare global {
     interface User extends AuthContext {}
     interface Request {
       tenantId?: string;
+      accessContext?: AuthContext;
     }
   }
 }

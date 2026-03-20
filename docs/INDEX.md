@@ -2,7 +2,7 @@
 
 **Author:** Fillipe Guerra
 **Data:** 18 de Marco de 2026
-**Atualizado:** 18 de Marco de 2026
+**Atualizado:** 20 de Marco de 2026
 **Status:** ativo
 **Tipo:** indice
 
@@ -25,7 +25,7 @@ Ser o portal principal da documentacao do repositorio, definindo a taxonomia vig
 
 - Raiz obrigatoria: [README.md](../README.md), [AGENTS.md](../AGENTS.md) e [CLAUDE.md](../CLAUDE.md).
 - Portal documental: [docs/INDEX.md](INDEX.md).
-- Arquitetura: [docs/architecture/platform.md](architecture/platform.md) e [docs/architecture/gpu-manager.md](architecture/gpu-manager.md).
+- Arquitetura: [docs/architecture/platform.md](architecture/platform.md), [docs/architecture/content-segregation.md](architecture/content-segregation.md) e [docs/architecture/gpu-manager.md](architecture/gpu-manager.md).
 - Operacoes: [docs/operations/deployment.md](operations/deployment.md), [docs/operations/release.md](operations/release.md), [docs/operations/deploy.md](operations/deploy.md), [docs/operations/servers.md](operations/servers.md), [docs/operations/observability.md](operations/observability.md), [docs/operations/secrets.md](operations/secrets.md), [docs/operations/permissions.md](operations/permissions.md), onboarding em [docs/operations/getting-started.md](operations/getting-started.md), treinamento em [docs/operations/training/overview.md](operations/training/overview.md) e runbooks em [docs/operations/runbooks/INDEX.md](operations/runbooks/INDEX.md).
 - Produto: [docs/product/design-guidelines.md](product/design-guidelines.md) e [docs/product/training-business-guide.md](product/training-business-guide.md).
 - Trading: [docs/trading/INDEX.md](trading/INDEX.md), com separacao explicita entre arquitetura, produto, operacao e runbooks do dominio.
@@ -38,6 +38,7 @@ Ser o portal principal da documentacao do repositorio, definindo a taxonomia vig
 ### Arquitetura
 
 - [docs/architecture/platform.md](architecture/platform.md)
+- [docs/architecture/content-segregation.md](architecture/content-segregation.md)
 - [docs/architecture/gpu-manager.md](architecture/gpu-manager.md)
 
 ### Operacoes

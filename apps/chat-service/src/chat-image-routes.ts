@@ -1,6 +1,11 @@
 import type { Express, Request, RequestHandler, Response } from 'express';
 import { and, desc, eq, getDatabase, schema } from '@alice/database';
-import type { Role } from '@alice/shared-utils';
+import {
+  ResourceAccessError,
+  assertAuthorizedResourceAccess,
+  filterAccessibleResources,
+  type Role,
+} from '@alice/shared-utils';
 import { z } from 'zod';
 
 interface ChatImageRoutesLogger {
@@ -339,19 +344,26 @@ export function registerChatImageRoutes(params: RegisterChatImageRoutesParams): 
       }
 
       try {
-        const image = await db.query.generatedImages.findFirst({
-          where: eq(schema.generatedImages.id, id),
+        await assertAuthorizedResourceAccess({
+          actor: {
+            ...req.user,
+            tenantId,
+          },
+          resourceType: 'generated_image',
+          resourceId: id,
+          permission: 'write',
+          tenantId,
+          db,
         });
-
-        if (!image || image.tenantId !== tenantId) {
-          return res.status(404).json({ error: 'Imagem não encontrada' });
-        }
 
         await db.update(schema.generatedImages).set({ feedbackScore: score }).where(eq(schema.generatedImages.id, id));
 
         logger.info({ imageId: id, score }, 'Feedback de imagem registrado');
         return res.json({ message: 'Feedback registrado com sucesso' });
       } catch (error) {
+        if (error instanceof ResourceAccessError) {
+          return res.status(error.statusCode).json({ error: error.message, code: error.code });
+        }
         logger.error({ error, imageId: id }, 'Erro ao registrar feedback');
         return res.status(500).json({ error: 'Erro ao registrar feedback' });
       }
@@ -383,13 +395,17 @@ export function registerChatImageRoutes(params: RegisterChatImageRoutesParams): 
       }
 
       try {
-        const image = await db.query.generatedImages.findFirst({
-          where: eq(schema.generatedImages.id, id),
+        await assertAuthorizedResourceAccess({
+          actor: {
+            ...req.user,
+            tenantId,
+          },
+          resourceType: 'generated_image',
+          resourceId: id,
+          permission: 'approve',
+          tenantId,
+          db,
         });
-
-        if (!image || image.tenantId !== tenantId) {
-          return res.status(404).json({ error: 'Imagem não encontrada' });
-        }
 
         await db
           .update(schema.generatedImages)
@@ -399,6 +415,9 @@ export function registerChatImageRoutes(params: RegisterChatImageRoutesParams): 
         logger.info({ imageId: id, approved }, 'Status de aprovação para treinamento atualizado');
         return res.json({ message: `Imagem ${approved ? 'aprovada' : 'reprovada'} para treinamento` });
       } catch (error) {
+        if (error instanceof ResourceAccessError) {
+          return res.status(error.statusCode).json({ error: error.message, code: error.code });
+        }
         logger.error({ error, imageId: id }, 'Erro ao aprovar imagem');
         return res.status(500).json({ error: 'Erro ao aprovar imagem' });
       }
@@ -425,7 +444,35 @@ export function registerChatImageRoutes(params: RegisterChatImageRoutesParams): 
           }),
         ]);
 
-        const galleryImages = [...generatedImages.map(normalizeGeneratedImage), ...mediaUploads.map(normalizeUploadImage)];
+        const [allowedGeneratedImages, allowedMediaUploads] = await Promise.all([
+          filterAccessibleResources({
+            actor: {
+              ...req.user,
+              tenantId,
+            },
+            tenantId,
+            resourceType: 'generated_image',
+            permission: 'read',
+            resources: generatedImages,
+            db,
+          }),
+          filterAccessibleResources({
+            actor: {
+              ...req.user,
+              tenantId,
+            },
+            tenantId,
+            resourceType: 'media_upload',
+            permission: 'read',
+            resources: mediaUploads,
+            db,
+          }),
+        ]);
+
+        const galleryImages = [
+          ...allowedGeneratedImages.map(normalizeGeneratedImage),
+          ...allowedMediaUploads.map(normalizeUploadImage),
+        ];
 
         const completed = galleryImages.filter((img) => img.status === 'completed');
         const pending = galleryImages.filter((img) => img.status === 'pending' || img.status === 'generating');
@@ -503,8 +550,33 @@ export function registerChatImageRoutes(params: RegisterChatImageRoutesParams): 
           }),
         ]);
 
-        const normalizedGenerated = generatedImages.map(normalizeGeneratedImage);
-        const normalizedUploads = mediaUploads.map(normalizeUploadImage);
+        const [allowedGeneratedImages, allowedMediaUploads] = await Promise.all([
+          filterAccessibleResources({
+            actor: {
+              ...req.user,
+              tenantId,
+            },
+            tenantId,
+            resourceType: 'generated_image',
+            permission: 'read',
+            resources: generatedImages,
+            db,
+          }),
+          filterAccessibleResources({
+            actor: {
+              ...req.user,
+              tenantId,
+            },
+            tenantId,
+            resourceType: 'media_upload',
+            permission: 'read',
+            resources: mediaUploads,
+            db,
+          }),
+        ]);
+
+        const normalizedGenerated = allowedGeneratedImages.map(normalizeGeneratedImage);
+        const normalizedUploads = allowedMediaUploads.map(normalizeUploadImage);
 
         const filteredImages = applyGalleryFilters([...normalizedGenerated, ...normalizedUploads], queryResult.data);
 
@@ -550,6 +622,18 @@ export function registerChatImageRoutes(params: RegisterChatImageRoutesParams): 
       }
 
       try {
+        await assertAuthorizedResourceAccess({
+          actor: {
+            ...req.user,
+            tenantId,
+          },
+          resourceType: 'generated_image',
+          resourceId: id,
+          permission: 'read',
+          tenantId,
+          db,
+        });
+
         const image = await db.query.generatedImages.findFirst({
           where: eq(schema.generatedImages.id, id),
           with: {
@@ -568,6 +652,9 @@ export function registerChatImageRoutes(params: RegisterChatImageRoutesParams): 
 
         return res.json({ image });
       } catch (error) {
+        if (error instanceof ResourceAccessError) {
+          return res.status(error.statusCode).json({ error: error.message, code: error.code });
+        }
         logger.error({ error, imageId: id }, 'Erro ao buscar imagem');
         return res.status(500).json({ error: 'Erro interno do servidor' });
       }

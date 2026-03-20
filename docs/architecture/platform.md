@@ -2,7 +2,7 @@
 
 **Author:** Fillipe Guerra
 **Data:** 18 de Marco de 2026
-**Atualizado:** 18 de Marco de 2026
+**Atualizado:** 20 de Marco de 2026
 **Status:** ativo
 **Tipo:** ssot
 
@@ -24,6 +24,7 @@ Descrever a arquitetura estrutural vigente da plataforma Alice sem misturar proc
 - Integracoes reais, sem mocks ou persistencia in-memory no fluxo oficial.
 - Deploy por stack com rollback cirurgico e artefatos publicados pela `Release`.
 - Observabilidade e seguranca tratadas como capacidade transversal, nao como detalhe de implementacao local.
+- Conteudo sensivel e segregado por `tenant + ownership/grant + policy`, com `private by default`.
 
 ## Topologia macro
 
@@ -106,6 +107,14 @@ Descrever a arquitetura estrutural vigente da plataforma Alice sem misturar proc
 1. Documentos e eventos entram em `alice-rag` e `alice-training`.
 2. O processamento usa PostgreSQL, Redis, Qdrant e GPU para indexacao e enriquecimento.
 3. O material aprovado pode alimentar treinamento, adapters e recuperacao contextual.
+4. Ownership, grants e visibilidade acompanham o recurso no banco, cache, storage e payload vetorial.
+
+## Boundary de segregacao de conteudo
+
+- O isolamento estrutural de conteudo nao termina no tenant; recursos privados exigem ownership ou grant explicito.
+- `RLS + FORCE RLS`, helper aplicacional de autorizacao e filtros vetoriais na origem formam o enforcement canonico.
+- Cache, storage e training seguem o mesmo boundary para evitar mistura cross-user.
+- O SSOT detalhado desta trilha fica em [docs/architecture/content-segregation.md](content-segregation.md).
 
 ### Fluxo operacional
 
@@ -117,6 +126,7 @@ Descrever a arquitetura estrutural vigente da plataforma Alice sem misturar proc
 
 - Arquitetura geral de plataforma: este documento.
 - Arquitetura especializada de GPU: [docs/architecture/gpu-manager.md](gpu-manager.md).
+- Segregacao de conteudo e grants: [docs/architecture/content-segregation.md](content-segregation.md).
 - Pipeline e classificacao de mudancas: [docs/engineering/pipeline-overview.md](../engineering/pipeline-overview.md).
 - Deployment operacional: [docs/operations/deployment.md](../operations/deployment.md).
 - Observabilidade: [docs/operations/observability.md](../operations/observability.md).
@@ -126,6 +136,7 @@ Descrever a arquitetura estrutural vigente da plataforma Alice sem misturar proc
 ## SSOTs relacionados
 
 - [docs/architecture/gpu-manager.md](gpu-manager.md)
+- [docs/architecture/content-segregation.md](content-segregation.md)
 - [docs/trading/INDEX.md](../trading/INDEX.md)
 - [docs/operations/deployment.md](../operations/deployment.md)
 - [docs/operations/observability.md](../operations/observability.md)

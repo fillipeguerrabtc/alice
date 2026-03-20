@@ -34,10 +34,12 @@ import crypto from 'crypto';
 // CircuitBreaker via createCircuitBreaker de @alice/shared-utils
 import { getDatabase, getPool, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, validateEmbeddingDimension, EMBEDDING_DIMENSIONS, withTenantContext } from '@alice/database';
 import { getSystemConfig } from '@alice/database/system-config';
-import { eq, sql, desc, and, asc } from '@alice/database';
+import { eq, sql, desc, and, asc, or, inArray } from '@alice/database';
 import { z } from 'zod';
 import { Counter as PromCounter, Histogram as PromHistogram } from 'prom-client';
 import {
+  ResourceAccessError,
+  assertAuthorizedResourceAccess,
   requirePermission,
   requireAuth,
   requireSameTenant,
@@ -1426,9 +1428,181 @@ function normalizeRagQuery(query: string): string {
   return query.replace(/\s+/g, ' ').trim();
 }
 
+type RagSearchAccessContext = {
+  userId: string;
+  roleCodes: string[];
+  groupIds: string[];
+  isSuperAdmin: boolean;
+  breakGlassActive: boolean;
+  subjectScopeHash: string;
+};
+
+async function resolveRagSearchAccessContext(req: Request): Promise<RagSearchAccessContext> {
+  const user = req.user;
+  const tenantId = req.tenantId;
+  if (!user?.userId || !tenantId) {
+    throw new ResourceAccessError('Autenticação necessária', 401, 'UNAUTHORIZED');
+  }
+
+  const roleCodes = Array.from(
+    new Set([
+      ...(user.roleCodes ?? []),
+      user.role,
+      ...(user.customRoleId ? [`custom:${user.customRoleId}`] : []),
+    ].filter((value): value is string => typeof value === 'string' && value.trim().length > 0))
+  );
+
+  const groupRows = await db.query.userGroupMembers.findMany({
+    where: and(
+      eq(schema.userGroupMembers.tenantId, tenantId),
+      eq(schema.userGroupMembers.userId, user.userId),
+    ),
+    columns: { groupId: true },
+  });
+  const groupIds = groupRows.map((row) => row.groupId);
+  const subjectScopeHash = crypto
+    .createHash('sha256')
+    .update(
+      JSON.stringify({
+        userId: user.userId,
+        roleCodes,
+        groupIds,
+        breakGlassActive: user.breakGlassActive === true,
+      }),
+      'utf8'
+    )
+    .digest('hex')
+    .slice(0, 16);
+
+  return {
+    userId: user.userId,
+    roleCodes,
+    groupIds,
+    isSuperAdmin: user.isSuperAdmin === true || user.role === 'super_admin',
+    breakGlassActive: user.breakGlassActive === true,
+    subjectScopeHash,
+  };
+}
+
+async function resolveGrantedRetrievalIds(params: {
+  tenantId: string;
+  accessContext: RagSearchAccessContext;
+}): Promise<{
+  documentIds: string[];
+  chunkIds: string[];
+  mediaUploadIds: string[];
+}> {
+  const subjectConditions = [
+    and(eq(schema.resourceAccessGrants.subjectType, 'user'), eq(schema.resourceAccessGrants.subjectId, params.accessContext.userId)),
+    and(eq(schema.resourceAccessGrants.subjectType, 'tenant'), eq(schema.resourceAccessGrants.subjectId, params.tenantId)),
+    ...params.accessContext.roleCodes.map((roleCode) =>
+      and(eq(schema.resourceAccessGrants.subjectType, 'role'), eq(schema.resourceAccessGrants.subjectId, roleCode))
+    ),
+    ...params.accessContext.groupIds.map((groupId) =>
+      and(eq(schema.resourceAccessGrants.subjectType, 'group'), eq(schema.resourceAccessGrants.subjectId, groupId))
+    ),
+  ];
+
+  const activeGrants = await db.query.resourceAccessGrants.findMany({
+    where: and(
+      eq(schema.resourceAccessGrants.tenantId, params.tenantId),
+      inArray(schema.resourceAccessGrants.resourceType, ['document', 'document_chunk', 'media_upload']),
+      or(...subjectConditions),
+    ),
+    columns: {
+      resourceType: true,
+      resourceId: true,
+      permissions: true,
+      revokedAt: true,
+      expiresAt: true,
+    },
+  });
+
+  const now = Date.now();
+  const documentIds = new Set<string>();
+  const chunkIds = new Set<string>();
+  const mediaUploadIds = new Set<string>();
+
+  for (const grant of activeGrants) {
+    if (grant.revokedAt) continue;
+    if (grant.expiresAt && grant.expiresAt.getTime() <= now) continue;
+    const permissions = new Set((grant.permissions ?? []).map((value) => value.toLowerCase()));
+    if (!(permissions.has('*') || permissions.has('manage') || permissions.has('read') || permissions.has('write') || permissions.has('delete'))) {
+      continue;
+    }
+    if (grant.resourceType === 'document') {
+      documentIds.add(grant.resourceId);
+    } else if (grant.resourceType === 'document_chunk') {
+      chunkIds.add(grant.resourceId);
+    } else if (grant.resourceType === 'media_upload') {
+      mediaUploadIds.add(grant.resourceId);
+    }
+  }
+
+  return {
+    documentIds: Array.from(documentIds),
+    chunkIds: Array.from(chunkIds),
+    mediaUploadIds: Array.from(mediaUploadIds),
+  };
+}
+
+async function buildVectorAccessFilter(params: {
+  tenantId: string;
+  namespaceId?: string;
+  accessContext?: RagSearchAccessContext;
+}): Promise<Record<string, unknown>> {
+  const mustConditions: Array<Record<string, unknown>> = [
+    { key: 'tenantId', match: { value: params.tenantId } },
+    { key: 'type', match: { any: ['document_chunk', 'media_image', 'media_audio'] } },
+  ];
+
+  if (params.namespaceId) {
+    mustConditions.push({ key: 'namespaceId', match: { value: params.namespaceId } });
+  }
+
+  if (params.accessContext?.isSuperAdmin && params.accessContext.breakGlassActive) {
+    return { must: mustConditions };
+  }
+
+  const grants = params.accessContext
+    ? await resolveGrantedRetrievalIds({
+        tenantId: params.tenantId,
+        accessContext: params.accessContext,
+      })
+    : { documentIds: [], chunkIds: [], mediaUploadIds: [] };
+
+  const shouldConditions: Array<Record<string, unknown>> = [
+    { key: 'visibility', match: { value: 'tenant' } },
+    { key: 'visibility', match: { value: 'public' } },
+  ];
+  const accessGroupIds = params.accessContext?.groupIds ?? [];
+
+  if (params.accessContext?.userId) {
+    shouldConditions.push({ key: 'ownerUserId', match: { value: params.accessContext.userId } });
+  }
+  if (accessGroupIds.length > 0) {
+    shouldConditions.push({ key: 'ownerGroupId', match: { any: accessGroupIds } });
+  }
+  if (grants.documentIds.length > 0) {
+    shouldConditions.push({ key: 'documentId', match: { any: grants.documentIds } });
+  }
+  if (grants.chunkIds.length > 0) {
+    shouldConditions.push({ key: 'chunkId', match: { any: grants.chunkIds } });
+  }
+  if (grants.mediaUploadIds.length > 0) {
+    shouldConditions.push({ key: 'mediaUploadId', match: { any: grants.mediaUploadIds } });
+  }
+
+  return {
+    must: mustConditions,
+    should: shouldConditions,
+  };
+}
+
 function buildRagCacheKey(params: {
   endpoint: 'search' | 'context';
   tenantId: string;
+  subjectScopeHash: string;
   query: string;
   namespaceId?: string;
   limit: number;
@@ -1440,11 +1614,13 @@ function buildRagCacheKey(params: {
   // Hash para evitar chaves gigantes e garantir determinismo.
   const digest = crypto
     .createHash('sha256')
-    .update(`${params.endpoint}|${params.tenantId}|${ns}|${params.limit}|${params.threshold}|${normalized}`, 'utf8')
+    .update(
+      `${params.endpoint}|${params.tenantId}|${params.subjectScopeHash}|${ns}|${params.limit}|${params.threshold}|${normalized}`,
+      'utf8'
+    )
     .digest('hex');
 
-  // Prefixo por tenant permite invalidação por prefixo (tenant-scoped).
-  return `${params.tenantId}:${params.endpoint}:${ns}:${digest}`;
+  return `${params.tenantId}:${params.subjectScopeHash}:${params.endpoint}:${ns}:${digest}`;
 }
 
 async function invalidateRagCachesForTenant(tenantId: string): Promise<void> {
@@ -1480,9 +1656,10 @@ async function searchDocumentsInQdrant(
     threshold?: number;
     namespaceId?: string;
     queryText?: string;
+    accessContext?: RagSearchAccessContext;
   } = {}
 ): Promise<QdrantDocumentResult[]> {
-  const { limit = 10, threshold = 0.7, namespaceId, queryText } = options;
+  const { limit = 10, threshold = 0.7, namespaceId, queryText, accessContext } = options;
   const effectiveParams = (() => {
     if (!RAG_ADAPTIVE_K_ENABLED || !queryText) {
       return { limit, threshold };
@@ -1505,16 +1682,11 @@ async function searchDocumentsInQdrant(
   // Construir filtro Qdrant (multi-tenancy + namespace opcional + tipos RAG multimodal)
   // Plano RAG Multimodal Enterprise (11/02/2026): incluir document_chunk, media_image e media_audio
   // Ref: https://qdrant.tech/documentation/concepts/filtering/ - Match Any (v1.1.0+)
-  const mustConditions: Array<{ key: string; match: { value?: string; any?: string[] } }> = [
-    { key: 'tenantId', match: { value: tenantId } },
-    { key: 'type', match: { any: ['document_chunk', 'media_image', 'media_audio'] } },
-  ];
-
-  if (namespaceId) {
-    mustConditions.push({ key: 'namespaceId', match: { value: namespaceId } });
-  }
-
-  const filter = { must: mustConditions };
+  const filter = await buildVectorAccessFilter({
+    tenantId,
+    namespaceId,
+    accessContext,
+  });
 
   try {
     const results = await searchPoints(TEXT_COLLECTION_NAME, queryEmbedding, {
@@ -1609,6 +1781,7 @@ async function searchDocumentsForContext(
     limit?: number;
     threshold?: number;
     namespaceId?: string;
+    accessContext?: RagSearchAccessContext;
   } = {}
 ): Promise<Array<{ documentId: string; titulo?: string; conteudo: string; similarity: number }>> {
   const results = await searchDocumentsInQdrant(queryEmbedding, tenantId, options);
@@ -2456,6 +2629,7 @@ app.post('/api/rag/documents', requireAuth(), requirePermission('rag:documents:w
     }
     const body = bodyResult.data;
     await assertNamespaceOwnership(body.namespaceId, tenantId);
+    const actorUserId = req.user?.userId ?? null;
 
     const hashConteudo = hashContent(body.conteudo);
     
@@ -2477,6 +2651,13 @@ app.post('/api/rag/documents', requireAuth(), requirePermission('rag:documents:w
 
     const correlationId = getRequestCorrelationId(req);
     const [document] = await db.insert(schema.documents).values({
+      tenantId,
+      ownerUserId: actorUserId,
+      scopeType: 'user',
+      visibility: 'private',
+      sensitivityLabel: 'confidential',
+      createdByUserId: actorUserId,
+      updatedByUserId: actorUserId,
       namespaceId: body.namespaceId,
       titulo: body.titulo,
       conteudo: body.conteudo,
@@ -2577,6 +2758,7 @@ app.patch('/api/rag/documents/:id', requireAuth(), requirePermission('rag:docume
 
     const user = getAuthUser(req);
     const isSuperAdmin = user.role === 'super_admin';
+    const actorUserId = user.userId ?? null;
 
     if (existing.namespace) {
       if (existing.namespace.tenantId !== tenantId) {
@@ -2618,7 +2800,10 @@ app.patch('/api/rag/documents/:id', requireAuth(), requirePermission('rag:docume
 
     await db.update(schema.documents)
       .set({
+        ownerUserId: existing.ownerUserId ?? actorUserId,
         namespaceId: resolvedNamespaceId,
+        visibility: existing.visibility ?? 'private',
+        sensitivityLabel: existing.sensitivityLabel ?? 'confidential',
         titulo,
         conteudo,
         tipo,
@@ -2633,6 +2818,7 @@ app.patch('/api/rag/documents/:id', requireAuth(), requirePermission('rag:docume
           processingRequestedAt,
           correlationId,
         },
+        updatedByUserId: actorUserId,
         atualizadoEm: new Date(),
       })
       .where(eq(schema.documents.id, id));
@@ -2730,6 +2916,13 @@ app.post('/api/rag/documents/upload', requireAuth(), requirePermission('rag:docu
     // namespaceId deve pertencer ao tenant do usuário (validado pelo backend)
     // Gate 2: Embeddings de TEXTO são SSOT no Qdrant (PostgreSQL mantém apenas conteúdo/metadados).
     const [document] = await db.insert(schema.documents).values({
+      tenantId: req.tenantId,
+      ownerUserId: user.userId ?? null,
+      scopeType: 'user',
+      visibility: 'private',
+      sensitivityLabel: 'confidential',
+      createdByUserId: user.userId ?? null,
+      updatedByUserId: user.userId ?? null,
       namespaceId,
       titulo,
       conteudo: content,
@@ -2828,11 +3021,13 @@ app.post('/api/rag/search', requireAuth(), requirePermission('rag:documents:read
   try {
     const body = searchSchema.parse(req.body);
     const startNs = process.hrtime.bigint();
+    const accessContext = await resolveRagSearchAccessContext(req);
 
     // Cache distribuído (Redis) - evita recalcular embeddings/busca para queries repetidas
     const searchCacheKey = buildRagCacheKey({
       endpoint: 'search',
       tenantId,
+      subjectScopeHash: accessContext.subjectScopeHash,
       query: body.query,
       namespaceId: body.namespaceId,
       limit: body.limit,
@@ -2875,6 +3070,7 @@ app.post('/api/rag/search', requireAuth(), requirePermission('rag:documents:read
       threshold: body.threshold,
       namespaceId: body.namespaceId,
       queryText: body.query,
+      accessContext,
     });
 
     logger.info({ query: body.query, results: results.length, storage: 'qdrant' }, 'Busca concluída via Qdrant');
@@ -2917,11 +3113,13 @@ app.post('/api/rag/context', requireAuth(), requirePermission('rag:documents:rea
   try {
     const body = searchSchema.parse(req.body);
     const startNs = process.hrtime.bigint();
+    const accessContext = await resolveRagSearchAccessContext(req);
 
     // Cache distribuído (Redis) - evita recalcular embeddings/busca para queries repetidas
     const contextCacheKey = buildRagCacheKey({
       endpoint: 'context',
       tenantId,
+      subjectScopeHash: accessContext.subjectScopeHash,
       query: body.query,
       namespaceId: body.namespaceId,
       limit: body.limit,
@@ -2964,6 +3162,7 @@ app.post('/api/rag/context', requireAuth(), requirePermission('rag:documents:rea
       threshold: body.threshold,
       namespaceId: body.namespaceId,
       queryText: body.query,
+      accessContext,
     });
 
     // Construir contexto formatado
@@ -3077,6 +3276,19 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
     if (metadata.namespaceId) {
       await assertNamespaceOwnership(metadata.namespaceId, tenantId);
     }
+    if (metadata.conversationId) {
+      await assertAuthorizedResourceAccess({
+        actor: {
+          ...req.user,
+          tenantId,
+        },
+        resourceType: 'conversation',
+        resourceId: metadata.conversationId,
+        permission: 'write',
+        tenantId,
+        db,
+      });
+    }
 
     const mediaType = detectMediaType(req.file.mimetype);
     if (!mediaType) {
@@ -3132,6 +3344,7 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
     const storageService = getStorageService();
     const storedFile = await storageService.saveFile(req.file.buffer, {
       tenantId,
+      ownerUserId: userId ?? null,
       mediaType,
       originalFilename: req.file.originalname,
       mimeType: req.file.mimetype,
@@ -3141,6 +3354,10 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
     const [mediaUploadRecord] = await db.insert(schema.mediaUploads).values({
       tenantId,
       userId: userId || null,
+      ownerUserId: userId || null,
+      scopeType: 'user',
+      visibility: 'private',
+      sensitivityLabel: 'confidential',
       conversationId: metadata.conversationId || null,
       messageId: metadata.messageId || null,
       namespaceId: metadata.namespaceId || null,
@@ -3187,6 +3404,7 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
             const storageService = getStorageService();
             const thumbStored = await storageService.saveFile(result.thumbnailBuffer, {
               tenantId,
+              ownerUserId: userId ?? null,
               mediaType: 'image', // Usar 'image' para thumbnails (tipo válido do enum)
               originalFilename: `thumb_${req.file!.originalname}`,
               mimeType: result.thumbnailMimeType || 'image/jpeg',
@@ -3212,6 +3430,15 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
                 mediaType: 'image',
                 tenantId: req.tenantId,
                 ...(mediaUploadRecord.namespaceId ? { namespaceId: mediaUploadRecord.namespaceId } : {}),
+                ownerUserId: mediaUploadRecord.ownerUserId ?? mediaUploadRecord.userId ?? null,
+                ownerGroupId: mediaUploadRecord.ownerGroupId ?? null,
+                scopeType: mediaUploadRecord.scopeType ?? 'user',
+                visibility: mediaUploadRecord.visibility ?? 'private',
+                sensitivityLabel: mediaUploadRecord.sensitivityLabel ?? 'confidential',
+                allowedRoleCodes: [],
+                allowedGroupIds: [],
+                sourceType: 'rag_media',
+                scopeKey: `tenant:${tenantId}:user:${mediaUploadRecord.ownerUserId ?? mediaUploadRecord.userId ?? 'shared'}`,
                 visionDescription: visionDescription.slice(0, 10000),
                 embeddingModel: visionModel ?? 'OpenAI-Vision',
                 criadoEm: new Date().toISOString(),
@@ -3269,6 +3496,15 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
                 mediaType: 'audio',
                 tenantId: req.tenantId,
                 ...(mediaUploadRecord.namespaceId ? { namespaceId: mediaUploadRecord.namespaceId } : {}),
+                ownerUserId: mediaUploadRecord.ownerUserId ?? mediaUploadRecord.userId ?? null,
+                ownerGroupId: mediaUploadRecord.ownerGroupId ?? null,
+                scopeType: mediaUploadRecord.scopeType ?? 'user',
+                visibility: mediaUploadRecord.visibility ?? 'private',
+                sensitivityLabel: mediaUploadRecord.sensitivityLabel ?? 'confidential',
+                allowedRoleCodes: [],
+                allowedGroupIds: [],
+                sourceType: 'rag_media',
+                scopeKey: `tenant:${tenantId}:user:${mediaUploadRecord.ownerUserId ?? mediaUploadRecord.userId ?? 'shared'}`,
                 transcription: result.transcription.slice(0, 10000), // Limitar para payload
                 transcriptionLanguage: result.transcriptionLanguage,
                 embeddingModel: result.embeddingModel,
@@ -3490,6 +3726,19 @@ app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdF
     if (body.namespaceId) {
       await assertNamespaceOwnership(body.namespaceId, tenantId);
     }
+    if (body.conversationId) {
+      await assertAuthorizedResourceAccess({
+        actor: {
+          ...req.user,
+          tenantId,
+        },
+        resourceType: 'conversation',
+        resourceId: body.conversationId,
+        permission: 'write',
+        tenantId,
+        db,
+      });
+    }
 
     // Decodificar base64 para Buffer
     const fileBuffer = Buffer.from(body.file, 'base64');
@@ -3545,6 +3794,7 @@ app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdF
     const storageService = getStorageService();
     const storedFile = await storageService.saveFile(fileBuffer, {
       tenantId,
+      ownerUserId: userId ?? null,
       mediaType,
       originalFilename: body.filename,
       mimeType: body.mimeType,
@@ -3554,6 +3804,10 @@ app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdF
     const [mediaUploadRecord] = await db.insert(schema.mediaUploads).values({
       tenantId,
       userId: userId || null,
+      ownerUserId: userId || null,
+      scopeType: 'user',
+      visibility: 'private',
+      sensitivityLabel: 'confidential',
       conversationId: body.conversationId || null,
       messageId: body.messageId || null,
       namespaceId: body.namespaceId || null,
@@ -3598,6 +3852,7 @@ app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdF
           if (result.thumbnailBuffer) {
             const thumbStored = await storageService.saveFile(result.thumbnailBuffer, {
               tenantId,
+              ownerUserId: userId ?? null,
               mediaType: 'image',
               originalFilename: `thumb_${body.filename}`,
               mimeType: result.thumbnailMimeType || 'image/jpeg',
@@ -3623,6 +3878,15 @@ app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdF
                 mediaType: 'image',
                 tenantId: tenantId,
                 ...(mediaUploadRecord.namespaceId ? { namespaceId: mediaUploadRecord.namespaceId } : {}),
+                ownerUserId: mediaUploadRecord.ownerUserId ?? mediaUploadRecord.userId ?? null,
+                ownerGroupId: mediaUploadRecord.ownerGroupId ?? null,
+                scopeType: mediaUploadRecord.scopeType ?? 'user',
+                visibility: mediaUploadRecord.visibility ?? 'private',
+                sensitivityLabel: mediaUploadRecord.sensitivityLabel ?? 'confidential',
+                allowedRoleCodes: [],
+                allowedGroupIds: [],
+                sourceType: 'rag_media',
+                scopeKey: `tenant:${tenantId}:user:${mediaUploadRecord.ownerUserId ?? mediaUploadRecord.userId ?? 'shared'}`,
                 visionDescription: visionDescription.slice(0, 10000),
                 embeddingModel: visionModel ?? 'OpenAI-Vision',
                 criadoEm: new Date().toISOString(),
@@ -3675,6 +3939,15 @@ app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdF
                 mediaType: 'audio',
                 tenantId: tenantId,
                 ...(mediaUploadRecord.namespaceId ? { namespaceId: mediaUploadRecord.namespaceId } : {}),
+                ownerUserId: mediaUploadRecord.ownerUserId ?? mediaUploadRecord.userId ?? null,
+                ownerGroupId: mediaUploadRecord.ownerGroupId ?? null,
+                scopeType: mediaUploadRecord.scopeType ?? 'user',
+                visibility: mediaUploadRecord.visibility ?? 'private',
+                sensitivityLabel: mediaUploadRecord.sensitivityLabel ?? 'confidential',
+                allowedRoleCodes: [],
+                allowedGroupIds: [],
+                sourceType: 'rag_media',
+                scopeKey: `tenant:${tenantId}:user:${mediaUploadRecord.ownerUserId ?? mediaUploadRecord.userId ?? 'shared'}`,
                 transcription: result.transcription.slice(0, 10000), // Limitar para payload
                 transcriptionLanguage: result.transcriptionLanguage,
                 embeddingModel: result.embeddingModel,

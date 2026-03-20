@@ -1,7 +1,12 @@
 import type { Express, Request, Response } from 'express';
 import { createLogger } from '@alice/logger';
 import { and, desc, eq, getDatabase, schema } from '@alice/database';
-import { requirePermission } from '@alice/shared-utils';
+import {
+  ResourceAccessError,
+  assertAuthorizedResourceAccess,
+  filterAccessibleResources,
+  requirePermission,
+} from '@alice/shared-utils';
 import { z } from 'zod';
 
 interface TenantResolutionSuccess {
@@ -175,8 +180,23 @@ export function registerTrainingDataRoutes(
         limit: 100,
       });
 
-      return res.json({ trainingData });
+      const filteredTrainingData = await filterAccessibleResources({
+        actor: {
+          ...req.user,
+          tenantId: tenantResolution.tenantId,
+        },
+        tenantId: tenantResolution.tenantId,
+        resourceType: 'training_data',
+        permission: 'read',
+        resources: trainingData,
+        db,
+      });
+
+      return res.json({ trainingData: filteredTrainingData });
     } catch (error) {
+      if (error instanceof ResourceAccessError) {
+        return res.status(error.statusCode).json({ error: error.message, code: error.code });
+      }
       logger.error({ error }, 'Falha ao buscar dados de treinamento');
       return res.status(500).json({ error: 'Erro interno do servidor' });
     }
@@ -200,6 +220,18 @@ export function registerTrainingDataRoutes(
     const db = getDatabase();
 
     try {
+      await assertAuthorizedResourceAccess({
+        actor: {
+          ...req.user,
+          tenantId: tenantResolution.tenantId,
+        },
+        resourceType: 'training_data',
+        resourceId: paramsResult.data.id,
+        permission: 'manage',
+        tenantId: tenantResolution.tenantId,
+        db,
+      });
+
       const existing = await db.query.trainingData.findFirst({
         where: eq(schema.trainingData.id, paramsResult.data.id),
       });
@@ -346,6 +378,9 @@ export function registerTrainingDataRoutes(
       logger.info({ trainingDataId: paramsResult.data.id, status, overrideApplied }, 'Status de treinamento atualizado');
       return res.json({ trainingData: updated });
     } catch (error) {
+      if (error instanceof ResourceAccessError) {
+        return res.status(error.statusCode).json({ error: error.message, code: error.code });
+      }
       logger.error({ error }, 'Falha ao atualizar status de treinamento');
       return res.status(500).json({ error: 'Erro interno do servidor' });
     }
@@ -372,6 +407,18 @@ export function registerTrainingDataRoutes(
     const db = getDatabase();
 
     try {
+      await assertAuthorizedResourceAccess({
+        actor: {
+          ...req.user,
+          tenantId: tenantResolution.tenantId,
+        },
+        resourceType: 'training_data',
+        resourceId: paramsResult.data.id,
+        permission: 'manage',
+        tenantId: tenantResolution.tenantId,
+        db,
+      });
+
       const existing = await db.query.trainingData.findFirst({
         where: eq(schema.trainingData.id, paramsResult.data.id),
       });
@@ -466,6 +513,9 @@ export function registerTrainingDataRoutes(
 
       return res.json({ trainingData: updated });
     } catch (error) {
+      if (error instanceof ResourceAccessError) {
+        return res.status(error.statusCode).json({ error: error.message, code: error.code });
+      }
       logger.error({ error }, 'Falha ao resolver escopo em quarentena');
       return res.status(500).json({ error: 'Erro interno do servidor' });
     }

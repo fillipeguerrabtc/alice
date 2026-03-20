@@ -210,6 +210,30 @@ function sanitizeTenantId(tenantId: string | null): string {
   return tenantId;
 }
 
+function sanitizeOptionalUuid(value: string | null | undefined, fieldName: string): string {
+  if (!value) return '';
+  if (!isValidUUID(value)) {
+    throw new Error(`[database] ${fieldName} inválido: formato UUID esperado`);
+  }
+  return value;
+}
+
+function sanitizeUuidArray(values: string[] | null | undefined, fieldName: string): string[] {
+  if (!values || values.length === 0) return [];
+  return values.map((value) => sanitizeOptionalUuid(value, fieldName));
+}
+
+export interface DatabaseAuthorizationContext {
+  tenantId: string | null;
+  userId?: string | null;
+  role?: string | null;
+  roleCodes?: string[] | null;
+  groupIds?: string[] | null;
+  customRoleId?: string | null;
+  isSuperAdmin?: boolean;
+  breakGlassActive?: boolean;
+}
+
 export function getDatabase(): NodePgDatabase<typeof schema> {
   if (!dbInstance) {
     const connectionString = process.env.DATABASE_URL;
@@ -297,38 +321,53 @@ export async function withTenantContext<T>(
   isSuperAdmin: boolean,
   fn: (db: NodePgDatabase<typeof schema>) => Promise<T>
 ): Promise<T> {
+  return withAuthorizationContext(
+    {
+      tenantId,
+      isSuperAdmin,
+    },
+    fn
+  );
+}
+
+export async function withAuthorizationContext<T>(
+  context: DatabaseAuthorizationContext,
+  fn: (db: NodePgDatabase<typeof schema>) => Promise<T>
+): Promise<T> {
   const pool = getPool();
   const client = await pool.connect();
   
   try {
-    // Validar e sanitizar tenant ID para prevenir SQL injection
-    const safeTenantId = sanitizeTenantId(tenantId);
-    const safeIsSuperAdmin = isSuperAdmin === true ? 'true' : 'false';
+    const safeTenantId = sanitizeTenantId(context.tenantId);
+    const safeUserId = sanitizeOptionalUuid(context.userId ?? null, 'User ID');
+    const safeRole = typeof context.role === 'string' ? context.role : '';
+    const safeRoleCodes = JSON.stringify(
+      (context.roleCodes ?? []).filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    );
+    const safeGroupIds = JSON.stringify(sanitizeUuidArray(context.groupIds ?? [], 'Group ID'));
+    const safeCustomRoleId = sanitizeOptionalUuid(context.customRoleId ?? null, 'Custom Role ID');
+    const safeIsSuperAdmin = context.isSuperAdmin === true ? 'true' : 'false';
+    const safeBreakGlassActive = context.breakGlassActive === true ? 'true' : 'false';
     
-    // Iniciar transação para usar SET LOCAL (escopo de transação)
     await client.query('BEGIN');
     
-    // Configurar contexto RLS usando SET LOCAL (valores só válidos nesta transação)
-    // Usa format() do PostgreSQL para escapar valores corretamente
     await client.query(`SELECT set_config('app.current_tenant_id', $1, true)`, [safeTenantId]);
+    await client.query(`SELECT set_config('app.current_user_id', $1, true)`, [safeUserId]);
+    await client.query(`SELECT set_config('app.current_role', $1, true)`, [safeRole]);
+    await client.query(`SELECT set_config('app.current_role_codes', $1, true)`, [safeRoleCodes]);
+    await client.query(`SELECT set_config('app.current_group_ids', $1, true)`, [safeGroupIds]);
+    await client.query(`SELECT set_config('app.current_custom_role_id', $1, true)`, [safeCustomRoleId]);
     await client.query(`SELECT set_config('app.is_super_admin', $1, true)`, [safeIsSuperAdmin]);
+    await client.query(`SELECT set_config('app.break_glass_active', $1, true)`, [safeBreakGlassActive]);
     
-    // Criar instância Drizzle dedicada para esta conexão
     const tenantDb = drizzle(client, { schema });
-    
-    // Executar função com DB tenant-scoped
     const result = await fn(tenantDb);
-    
-    // Commit da transação
     await client.query('COMMIT');
-    
     return result;
   } catch (error) {
-    // Rollback em caso de erro
     await client.query('ROLLBACK').catch(() => {});
     throw error;
   } finally {
-    // Liberar conexão de volta para o pool
     client.release();
   }
 }

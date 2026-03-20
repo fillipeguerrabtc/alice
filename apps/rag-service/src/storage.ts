@@ -86,6 +86,7 @@ export interface StorageService {
 // ATUALIZADO 23/12/2025: Removido 'video' (muito pesado para GPU)
 export interface SaveFileOptions {
   tenantId: string;
+  ownerUserId?: string | null;
   mediaType: 'image' | 'audio' | 'document';
   originalFilename: string;
   mimeType: string;
@@ -157,7 +158,7 @@ class LocalStorageService implements StorageService {
    * Salvar arquivo no disco
    */
   async saveFile(buffer: Buffer, options: SaveFileOptions): Promise<StoredFile> {
-    const { tenantId, mediaType, originalFilename, mimeType } = options;
+    const { tenantId, ownerUserId, mediaType, originalFilename, mimeType } = options;
     
     // Gerar nome de arquivo único
     const timestamp = Date.now();
@@ -165,8 +166,9 @@ class LocalStorageService implements StorageService {
     const ext = this.getExtension(originalFilename, mimeType);
     const filename = `${timestamp}-${hash}${ext}`;
     
-    // Estrutura: /uploads/{tenantId}/{mediaType}/{filename}
-    const relativePath = path.join(tenantId, mediaType, filename);
+    // Estrutura segregada: /uploads/{tenantId}/{ownerUserId|shared}/{mediaType}/{filename}
+    const scopeSegment = ownerUserId && ownerUserId.trim().length > 0 ? ownerUserId : 'shared';
+    const relativePath = path.join(tenantId, scopeSegment, mediaType, filename);
     const absolutePath = path.join(this.baseDir, relativePath);
     
     // Garantir que o diretório existe
@@ -177,6 +179,7 @@ class LocalStorageService implements StorageService {
     
     logger.info({ 
       tenantId, 
+      ownerUserId: ownerUserId ?? null,
       mediaType, 
       filename, 
       size: buffer.length,

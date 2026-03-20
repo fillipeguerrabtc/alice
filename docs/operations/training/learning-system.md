@@ -2,7 +2,7 @@
 
 **Author:** Fillipe Guerra
 **Data:** 18 de Marco de 2026
-**Atualizado:** 18 de Marco de 2026
+**Atualizado:** 20 de Marco de 2026
 **Status:** ativo
 **Tipo:** ssot
 
@@ -15,6 +15,7 @@ Explicar como a Alice aprende hoje, separando claramente conhecimento recuperave
 - `RAG` serve para fatos e conteudo mutavel.
 - `Training` serve para comportamento, formato de resposta e especializacao por escopo.
 - `Namespace` e o boundary principal de isolamento para coleta, busca, aprovacao e ativacao de adapter.
+- Coleta so pode promover conteudo que o ator podia acessar no momento da captura, com snapshot de ownership e grants.
 - O fluxo oficial trabalha com integracoes reais, sem mocks, sem bypass direto e sem dataset montado ad hoc fora do pipeline canonico.
 
 ## Quando usar cada mecanismo
@@ -42,6 +43,7 @@ Explicar como a Alice aprende hoje, separando claramente conhecimento recuperave
 
 - O sistema persiste candidatos em `training_data`.
 - As entradas carregam contexto suficiente para auditoria: fonte, escopo, metadados e lineage.
+- Ownership, grants e permissao efetiva da coleta passam a compor o snapshot persistido do item.
 - Conversas, documentos e midias usam o mesmo pipeline de governanca, sem rotas paralelas para bypass.
 
 ### 2. Resolucao de escopo
@@ -55,6 +57,7 @@ Explicar como a Alice aprende hoje, separando claramente conhecimento recuperave
 
 - Consentimento, privacidade, qualidade minima e deduplicacao rodam antes da liberacao para treino.
 - Itens com baixa confianca, profile ausente ou match de regra sensivel ficam em quarentena.
+- Conteudo privado de outro usuario permanece bloqueado sem grant explicito, inclusive para operadores administrativos do tenant.
 - O sistema opera em modo restritivo quando Redis ou configuracao de profile nao sustentam a governanca esperada.
 
 ### 4. Dataset versionado
@@ -89,5 +92,6 @@ Explicar como a Alice aprende hoje, separando claramente conhecimento recuperave
 - [overview.md](overview.md)
 - [reference-limits.md](reference-limits.md)
 - [auto-collect-governance.md](auto-collect-governance.md)
+- [../../architecture/content-segregation.md](../../architecture/content-segregation.md)
 - [../../architecture/gpu-manager.md](../../architecture/gpu-manager.md)
 - [../../product/training-business-guide.md](../../product/training-business-guide.md)
