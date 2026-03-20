@@ -90,6 +90,7 @@ Definir os conjuntos de secrets usados pela entrega operacional da Alice e expli
 | `WEB_CRAWL_ALLOWED_DOMAINS` | dominios permitidos para crawl |
 | `LLM_GATEWAY_URL` | URL interna do LLM Gateway |
 | `TRAINING_SERVICE_URL` | URL interna do training-service |
+| `OBSERVABILITY_SERVICE_URL` | URL interna do observability-service para leituras agregadas da home operacional |
 | `DOCUMENT_MAX_CHUNKS` | limite operacional do RAG |
 | `TRAINING_DOC_MAX_SAMPLES` | limite operacional do training |
 | `TRAINING_CONVERSATION_MAX_MESSAGES` | limite operacional do training |

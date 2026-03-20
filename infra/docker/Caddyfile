@@ -235,6 +235,11 @@ yesyoudeserve.duckdns.org, *.yesyoudeserve.duckdns.org {
 				import proxy_headers
 			}
 		}
+		handle /api/dashboard* {
+			reverse_proxy alice-chat:3002 {
+				import proxy_headers
+			}
+		}
 
 		# =========================================================================
 		# Chat API (rotas fora do prefixo /api/chat)

@@ -10,6 +10,7 @@ import {
   requirePermission,
   Role,
   ROLE_DESCRIPTIONS,
+  humanizeAuditActivity,
 } from '@alice/shared-utils';
 import { and, eq, inArray } from '@alice/database';
 import { getDatabase, schema } from '@alice/database';
@@ -143,9 +144,24 @@ app.get('/api/auth/providers', (_req: Request, res: Response) => {
 app.get('/api/audit/recent', requireAuth(), requirePermission('audit:logs:read'), async (req: Request, res: Response) => {
   try {
     const db = getDatabase();
+    const requestedLimit = Number(req.query.limit ?? 5);
+    const limit = Number.isInteger(requestedLimit) && requestedLimit >= 1 && requestedLimit <= 20
+      ? requestedLimit
+      : 5;
+    const tenantId = typeof req.tenantId === 'string' && req.tenantId.trim().length > 0
+      ? req.tenantId
+      : null;
+    const userRole = (req.user?.role || 'viewer') as Role;
+    const auditWhere = tenantId
+      ? eq(schema.auditLogs.tenantId, tenantId)
+      : userRole === 'super_admin'
+        ? undefined
+        : eq(schema.auditLogs.userId, req.user?.userId ?? '');
+
     const recentAudit = await db.query.auditLogs.findMany({
+      where: auditWhere,
       orderBy: (logs, { desc }) => [desc(logs.criadoEm)],
-      limit: 10,
+      limit,
       with: {
         user: {
           columns: {
@@ -160,13 +176,20 @@ app.get('/api/audit/recent', requireAuth(), requirePermission('audit:logs:read')
 
     const activities = recentAudit.map(log => {
       const logUser = log.user as { id: string; firstName: string | null; lastName: string | null; email: string | null } | undefined;
-      return {
-        id: log.id,
+      const humanized = humanizeAuditActivity({
         action: log.acao,
         resource: log.recurso,
         resourceId: log.recursoId,
-        details: log.detalhes,
-        ipAddress: log.ip,
+        details: (log.detalhes as Record<string, unknown> | null) ?? null,
+      });
+
+      return {
+        id: log.id,
+        label: humanized.title,
+        description: humanized.description,
+        category: humanized.category,
+        severity: humanized.severity,
+        href: humanized.href,
         timestamp: log.criadoEm,
         user: logUser ? {
           id: logUser.id,

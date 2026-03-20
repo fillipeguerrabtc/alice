@@ -83,6 +83,7 @@ export function registerGatewayProxies(params: {
     integrationsService,
     logger,
   } = params;
+  const chatService = services.find((service) => service.name === 'chat-service') ?? null;
 
   if (integrationsService) {
     app.use(
@@ -92,6 +93,13 @@ export function registerGatewayProxies(params: {
     app.use(
       '/api/integrations/trading/analysis',
       createProxyMiddleware(createLongRunningProxy(integrationsService, logger)),
+    );
+  }
+
+  if (chatService) {
+    app.use(
+      '/api/dashboard',
+      createProxyMiddleware(createServiceProxy(chatService, logger)),
     );
   }
 

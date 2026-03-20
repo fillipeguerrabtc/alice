@@ -34,6 +34,7 @@ type ChatRuntimeConfig = {
   WEB_IMAGE_MAX_BYTES: number;
   INTEGRATIONS_SERVICE_URL_FINAL: string;
   TRAINING_SERVICE_URL_FINAL: string;
+  OBSERVABILITY_SERVICE_URL_FINAL: string | null;
   withOpenAiDispatcher: (init: RequestInit) => RequestInit;
 };
 
@@ -188,6 +189,7 @@ export function loadChatRuntimeConfig(params: ChatRuntimeConfigParams): ChatRunt
 
   const INTEGRATIONS_SERVICE_URL_FINAL = getServiceUrl('integrations');
   const TRAINING_SERVICE_URL_FINAL = getServiceUrl('training');
+  const OBSERVABILITY_SERVICE_URL_FINAL = getOptionalServiceUrl('observability');
 
   return {
     PORT,
@@ -201,6 +203,7 @@ export function loadChatRuntimeConfig(params: ChatRuntimeConfigParams): ChatRunt
     WEB_IMAGE_MAX_BYTES,
     INTEGRATIONS_SERVICE_URL_FINAL,
     TRAINING_SERVICE_URL_FINAL,
+    OBSERVABILITY_SERVICE_URL_FINAL,
     withOpenAiDispatcher,
   };
 }

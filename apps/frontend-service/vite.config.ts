@@ -73,6 +73,10 @@ export default defineConfig({
         target: CHAT_SERVICE_URL,
         changeOrigin: true,
       },
+      '/api/dashboard': {
+        target: CHAT_SERVICE_URL,
+        changeOrigin: true,
+      },
       '/api/rag': {
         target: RAG_SERVICE_URL,
         changeOrigin: true,

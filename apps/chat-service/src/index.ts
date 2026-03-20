@@ -163,6 +163,11 @@ import {
 import {
   createChatOperationalRuntime,
 } from './chat-operational-routes.js';
+import {
+  loadDashboardStats,
+  loadUsageSeries,
+  registerDashboardHomeRoutes,
+} from './dashboard-home-routes.js';
 
 // Logger centralizado: JSON em produção, pino-pretty em desenvolvimento
 const logger = createLogger('chat-service');
@@ -190,6 +195,7 @@ const {
   WEB_IMAGE_MAX_BYTES,
   INTEGRATIONS_SERVICE_URL_FINAL,
   TRAINING_SERVICE_URL_FINAL,
+  OBSERVABILITY_SERVICE_URL_FINAL,
   withOpenAiDispatcher,
 } = runtimeConfig;
 
@@ -8549,85 +8555,12 @@ app.get('/api/chat/stats', requireAuth(), requireSameTenant(getTenantIdFromReque
     if (!tenantId && userRole !== 'super_admin') {
       return res.status(403).json({ error: 'Acesso negado: usuário não associado a um tenant' });
     }
-    const now = new Date();
-    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-    const twoWeeksAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+    if (!tenantId) {
+      return res.status(400).json({ error: 'tenantId é obrigatório para estatísticas agregadas' });
+    }
 
-    // RBAC: Filtrar dados apenas do tenant do usuário (multi-tenancy seguro)
-    const allConversations = await db.query.conversations.findMany({
-      with: { agent: { with: { namespace: true } } },
-    });
-    const tenantConversations = tenantId
-      ? allConversations.filter(c =>
-          c.tenantId === tenantId || c.agent?.namespace?.tenantId === tenantId
-        )
-      : allConversations;
-    
-    const allDocuments = await db.query.documents.findMany({
-      with: { namespace: true },
-    });
-    const tenantDocuments = tenantId
-      ? allDocuments.filter(d => d.namespace?.tenantId === tenantId)
-      : allDocuments;
-    
-    // NOTA: trainingData tem tenantId diretamente (não precisa de join com namespace)
-    const allTraining = await db.query.trainingData.findMany();
-    const tenantTraining = tenantId ? allTraining.filter(t => t.tenantId === tenantId) : allTraining;
-    
-    // Obter mensagens das conversas do tenant
-    const conversationIds = tenantConversations.map(c => c.id);
-    const allMessages = conversationIds.length > 0
-      ? await db.query.messages.findMany({
-          where: inArray(schema.messages.conversationId, conversationIds),
-        })
-      : [];
-
-    const currentConversations = tenantConversations.filter(c => 
-      c.criadoEm && new Date(c.criadoEm) >= weekAgo
-    ).length;
-    const previousConversations = tenantConversations.filter(c => 
-      c.criadoEm && new Date(c.criadoEm) >= twoWeeksAgo && new Date(c.criadoEm) < weekAgo
-    ).length;
-
-    const currentDocuments = tenantDocuments.filter(d => 
-      d.criadoEm && new Date(d.criadoEm) >= weekAgo
-    ).length;
-    const previousDocuments = tenantDocuments.filter(d => 
-      d.criadoEm && new Date(d.criadoEm) >= twoWeeksAgo && new Date(d.criadoEm) < weekAgo
-    ).length;
-
-    const currentTraining = tenantTraining.filter(t => 
-      t.criadoEm && new Date(t.criadoEm) >= weekAgo
-    ).length;
-    const previousTraining = tenantTraining.filter(t => 
-      t.criadoEm && new Date(t.criadoEm) >= twoWeeksAgo && new Date(t.criadoEm) < weekAgo
-    ).length;
-
-    const totalTokens = allMessages.reduce((sum, m) => sum + (m.tokensUsados || 0), 0);
-    const currentTokens = allMessages
-      .filter(m => m.criadoEm && new Date(m.criadoEm) >= weekAgo)
-      .reduce((sum, m) => sum + (m.tokensUsados || 0), 0);
-    const previousTokens = allMessages
-      .filter(m => m.criadoEm && new Date(m.criadoEm) >= twoWeeksAgo && new Date(m.criadoEm) < weekAgo)
-      .reduce((sum, m) => sum + (m.tokensUsados || 0), 0);
-
-    const calcTrend = (current: number, previous: number): number => {
-      if (previous === 0) return current > 0 ? 100 : 0;
-      return Math.round(((current - previous) / previous) * 100);
-    };
-
-    res.json({
-      conversations: tenantConversations.length,
-      documents: tenantDocuments.length,
-      trainingData: tenantTraining.length,
-      tokensUsed: totalTokens,
-      trend: {
-        conversations: calcTrend(currentConversations, previousConversations),
-        documents: calcTrend(currentDocuments, previousDocuments),
-        trainingData: calcTrend(currentTraining, previousTraining),
-        tokensUsed: calcTrend(currentTokens, previousTokens),
-      },
-    });
+    const stats = await loadDashboardStats(tenantId);
+    res.json(stats);
   } catch (error) {
     logger.error({ error }, 'Falha ao buscar estatísticas');
     res.status(500).json({ error: 'Erro interno do servidor' });
@@ -8650,51 +8583,21 @@ app.get('/api/chat/usage', requireAuth(), requireSameTenant(getTenantIdFromReque
     if (!tenantId && userRole !== 'super_admin') {
       return res.status(403).json({ error: 'Acesso negado: usuário não associado a um tenant' });
     }
-    const today = new Date();
-    const usageData = [];
-
-    // RBAC: Filtrar conversas apenas do tenant do usuário
-    const allConversationsRaw = await db.query.conversations.findMany({
-      with: { agent: { with: { namespace: true } } },
-    });
-    const tenantConversations = tenantId
-      ? allConversationsRaw.filter(c =>
-          c.tenantId === tenantId || c.agent?.namespace?.tenantId === tenantId
-        )
-      : allConversationsRaw;
-    
-    // Obter mensagens das conversas do tenant
-    const conversationIds = tenantConversations.map(c => c.id);
-    const tenantMessages = conversationIds.length > 0
-      ? await db.query.messages.findMany({
-          where: inArray(schema.messages.conversationId, conversationIds),
-        })
-      : [];
-    
-    for (let i = 6; i >= 0; i--) {
-      const date = new Date(today);
-      date.setDate(date.getDate() - i);
-      const startOfDay = new Date(date.setHours(0, 0, 0, 0));
-      const endOfDay = new Date(date.setHours(23, 59, 59, 999));
-      const dateStr = date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-
-      const dayConversations = tenantConversations.filter(c => 
-        c.criadoEm && new Date(c.criadoEm) >= startOfDay && new Date(c.criadoEm) <= endOfDay
-      ).length;
-
-      const dayMessages = tenantMessages.filter(m =>
-        m.criadoEm && new Date(m.criadoEm) >= startOfDay && new Date(m.criadoEm) <= endOfDay
-      );
-      const dayTokens = dayMessages.reduce((sum, m) => sum + (m.tokensUsados || 0), 0);
-      
-      usageData.push({
-        date: dateStr,
-        conversations: dayConversations,
-        tokens: dayTokens,
-      });
+    if (!tenantId) {
+      return res.status(400).json({ error: 'tenantId é obrigatório para dados de uso' });
     }
-    
-    res.json(usageData);
+
+    const usageData = await loadUsageSeries(tenantId, 7);
+    res.json(
+      usageData.map((point) => {
+        const [, month, day] = point.date.split('-');
+        return {
+          date: `${day}/${month}`,
+          conversations: point.conversations,
+          tokens: point.tokens,
+        };
+      }),
+    );
   } catch (error) {
     logger.error({ error }, 'Falha ao buscar dados de uso');
     res.status(500).json({ error: 'Erro interno do servidor' });
@@ -19959,6 +19862,16 @@ registerChatImageRoutes({
   requirePermission,
   buildInternalServiceHeaders,
   generateImageFromPrompt,
+});
+
+registerDashboardHomeRoutes({
+  app,
+  logger,
+  requireAuth,
+  buildInternalServiceHeaders,
+  observabilityServiceUrl: OBSERVABILITY_SERVICE_URL_FINAL,
+  trainingServiceUrl: TRAINING_SERVICE_URL_FINAL,
+  integrationsServiceUrl: INTEGRATIONS_SERVICE_URL_FINAL,
 });
 
 // ============================================================================
