@@ -53,7 +53,7 @@ export const chatServicePaths = {
                   },
                   theme: {
                     type: 'string',
-                    enum: ['create', 'work', 'organize', 'day_check', 'start_task', 'resume'],
+                    enum: ['playful', 'provocation', 'motivation', 'inspiration', 'philosophy', 'momentum'],
                   },
                   variantKey: { type: 'string' },
                 },

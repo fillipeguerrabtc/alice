@@ -20,7 +20,7 @@ type ChatPageLayoutProps = {
   chatIdentityMenuProps: ChatIdentityMenuProps;
   conversationsListProps: ConversationsListProps;
   currentReasoningLabel: string;
-  emptyStateHeadline: string;
+  emptyStateHeadline: string | null;
   focusNonce: number;
   input: string;
   isComposerDisabled: boolean;

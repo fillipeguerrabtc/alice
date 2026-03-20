@@ -14,7 +14,7 @@ describe('chat-empty-state-headline', () => {
     expect(resolveHeadlineDayPart(2)).toBe('night');
   });
 
-  it('gera headline de uma unica frase com saudacao ocasional e nome', () => {
+  it('gera headline curta, de uma unica frase e com variantKey coerente', () => {
     const result = buildChatEmptyStateHeadline({
       displayName: 'Lia',
       localHour: 9,
@@ -23,7 +23,7 @@ describe('chat-empty-state-headline', () => {
       seed: 'user-1:2026-03-20T09',
     });
 
-    expect(result.headline).toContain('?');
+    expect(result.headline.length).toBeLessThanOrEqual(72);
     expect(result.headline.split(/[.!?]+/).filter(Boolean)).toHaveLength(1);
     expect(result.variantKey.startsWith('pt-BR:morning:')).toBe(true);
   });
@@ -53,5 +53,29 @@ describe('chat-empty-state-headline', () => {
 
     expect(history).toEqual(['c', 'a', 'b']);
     expect(normalizeRecentHeadlineVariantKeys(history)).toEqual(['c', 'a', 'b']);
+  });
+
+  it('usa o nome em frequencia aproximada de 60% quando displayName existe', () => {
+    const total = 200;
+    let nameUsages = 0;
+
+    for (let index = 0; index < total; index += 1) {
+      const result = buildChatEmptyStateHeadline({
+        displayName: 'Lia Maria',
+        localHour: 9,
+        locale: 'pt-BR',
+        recentVariantKeys: [],
+        seed: `user-1:2026-03-20T09:${index}`,
+      });
+
+      if (result.headline.includes('Lia')) {
+        nameUsages += 1;
+      }
+    }
+
+    const usageRatio = nameUsages / total;
+
+    expect(usageRatio).toBeGreaterThanOrEqual(0.5);
+    expect(usageRatio).toBeLessThanOrEqual(0.7);
   });
 });

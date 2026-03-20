@@ -113,6 +113,10 @@ Usar escala consistente: `2, 4, 8, 12, 16, 24, 32` (px-2, h-8, m-12, etc.)
 - A interface principal do chat deve diferenciar explicitamente `empty state mode` e `conversation mode`
 - Em `empty state mode`, o chat deve exibir apenas uma headline curta e dinamica, centralizada verticalmente, com o composer logo abaixo
 - A headline da tela vazia deve vir de um contrato real da plataforma, considerar contexto autentico do usuario quando existir e evitar repeticao imediata
+- A headline da tela vazia deve respeitar limite visual de 2 linhas em desktop e mobile, com texto curto ja controlado na origem
+- A abertura do chat deve exibir apenas uma saudacao por carregamento da pagina; fallback local no frontend so pode aparecer em caso de erro real da query principal
+- Quando houver `displayName` autentico disponivel, a headline deve chamar o usuario pelo nome em frequencia aproximada de 60%
+- O repertorio da headline deve privilegiar tom premium, leve humor, energia, provocacao inteligente, motivacao e referencias filosoficas curtas, sem virar bloco de citacao
 - Em `conversation mode`, o composer deve voltar para o rodape visual do chat sem linha divisoria superior evidente
 - A transicao entre composer centralizado e composer no rodape deve ser suave e responsiva em desktop e mobile
 - Streaming, thinking e respostas parciais devem respeitar a largura util do chat, sem overflow horizontal, sem scrollbar oscilando e sem exceder o limite visual definido para o painel de thinking

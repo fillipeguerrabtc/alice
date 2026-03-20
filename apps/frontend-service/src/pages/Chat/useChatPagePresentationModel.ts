@@ -7,7 +7,7 @@ type ChatPageLayoutModel = Parameters<typeof buildChatPageLayoutProps>[0];
 type UseChatPagePresentationModelOptions = UseChatSectionOptions & {
   acceptedTypes: string;
   currentReasoningLabel: string;
-  emptyStateHeadline: string;
+  emptyStateHeadline: string | null;
   focusNonce: number;
   input: string;
   isComposerDisabled: boolean;

@@ -318,3 +318,55 @@ Refatorar a UI/UX do chat da Alice para um padrao premium no estilo ChatGPT, rem
 - `tests/unit/chat-empty-state-headline.test.ts`
 - `tests/unit/frontend/chat-empty-state-headline-frontend.test.ts`
 - `tests/unit/chat-user-name-utils.test.ts`
+
+## Rodada 4 headline refinement em 20 de Marco de 2026
+
+### Diagnostico adicional confirmado
+
+- A headline do frontend ainda podia aparecer em duas etapas: fallback local imediato e frase final retornada pelo backend.
+- A query da headline estava acoplada ao `focusNonce`, permitindo novas resolucoes na mesma sessao visual do chat.
+- O repertorio atual funcionava, mas ainda estava longo demais e com pouca variacao de humor, energia, provocacao e filosofia.
+- O uso do nome do usuario ficava abaixo do alvo desejado quando existia contexto autenticado.
+
+### Implementacao aplicada nesta rodada
+
+- O gerador em `apps/chat-service/src/chat-empty-state-headline.ts` foi reescrito com frases mais curtas, uma unica sentenca, limite de comprimento na origem e repertorio ampliado em tons:
+  - divertidos;
+  - energicos;
+  - provocativos;
+  - motivacionais;
+  - inspiracionais;
+  - filosoficos.
+- O backend passou a usar o nome curto do usuario em frequencia deterministica aproximada de 60% quando `displayName` existe.
+- Referencias breves a Sêneca, Aristóteles e Descartes foram adicionadas como parte do repertorio premium, sem virar quote card.
+- O frontend deixou de competir com o backend no bootstrap:
+  - a headline principal continua vindo do endpoint real;
+  - o fallback local so entra quando a query falha de verdade;
+  - a query deixou de variar por `focusNonce` e passou a permanecer estavel durante a abertura corrente da pagina.
+- `WelcomeScreen` passou a reservar o espaco da headline durante o carregamento e aplicar clamp visual de no maximo 2 linhas.
+- O contrato OpenAPI e os testes unitarios foram atualizados para refletir os novos temas e a nova regra de resolucao.
+
+### Validacoes concluidas nesta rodada
+
+- `pnpm --filter @alice/frontend-service run typecheck`
+- `pnpm --filter @alice/chat-service run typecheck`
+- `pnpm exec vitest run tests/unit/chat-empty-state-headline.test.ts tests/unit/frontend/chat-empty-state-headline-frontend.test.ts tests/unit/chat-user-name-utils.test.ts`
+- `pnpm --filter @alice/frontend-service run lint`
+- `pnpm --filter @alice/chat-service run lint`
+- `pnpm --filter @alice/frontend-service run build`
+- `pnpm --filter @alice/chat-service run build`
+- Todas as validacoes desta rodada encerraram sem erros e sem warnings reportados pelas ferramentas executadas.
+
+### Arquivos impactados nesta rodada
+
+- `apps/chat-service/src/chat-empty-state-headline.ts`
+- `apps/chat-service/src/openapi-specs.ts`
+- `apps/frontend-service/src/pages/Chat/chat-empty-state-headline.ts`
+- `apps/frontend-service/src/pages/Chat/components/ChatPageLayout.tsx`
+- `apps/frontend-service/src/pages/Chat/components/WelcomeScreen.tsx`
+- `apps/frontend-service/src/pages/Chat/useChatPageLayoutController.ts`
+- `apps/frontend-service/src/pages/Chat/useChatPagePresentationModel.ts`
+- `docs/product/design-guidelines.md`
+- `docs/status/chat-ui-chatgpt-refactor-status.md`
+- `tests/unit/chat-empty-state-headline.test.ts`
+- `tests/unit/frontend/chat-empty-state-headline-frontend.test.ts`

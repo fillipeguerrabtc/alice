@@ -1,4 +1,5 @@
 type HeadlineLocale = 'pt-BR' | 'en-US';
+type HeadlineTheme = 'playful' | 'provocation' | 'motivation' | 'inspiration' | 'philosophy' | 'momentum';
 
 type UserLocation = {
   city?: string | null;
@@ -22,19 +23,19 @@ export type ChatEmptyStateHeadlinePayload = {
   dayPart: 'morning' | 'afternoon' | 'evening' | 'night';
   headline: string;
   locale: HeadlineLocale;
-  theme: 'create' | 'work' | 'organize' | 'day_check' | 'start_task' | 'resume';
+  theme: HeadlineTheme;
   variantKey: string;
 };
 
 function resolveDisplayName(user: EmptyStateUserContext): string | null {
   const preferredName = user?.preferredName?.trim();
-  if (preferredName) return preferredName;
+  if (preferredName) return preferredName.split(/\s+/)[0]?.trim() ?? preferredName;
 
   const firstName = user?.firstName?.trim();
   if (firstName) return firstName;
 
   const emailLocal = user?.email?.split('@')[0]?.replace(/[._-]+/g, ' ').trim();
-  return emailLocal && emailLocal.length >= 2 ? emailLocal : null;
+  return emailLocal && emailLocal.length >= 2 ? emailLocal.split(/\s+/)[0]?.trim() ?? emailLocal : null;
 }
 
 function resolveLocale(user: EmptyStateUserContext): HeadlineLocale {
@@ -71,9 +72,9 @@ function resolveLocationLabel(user: EmptyStateUserContext): string | null {
 
   const parts = [location.city, location.region, location.countryName ?? location.countryCode]
     .map((value) => value?.trim())
-    .filter((value): value is string => Boolean(value));
+    .filter((value): value is string => typeof value === 'string' && value.length > 0 && value.length <= 24);
 
-  return parts.length > 0 ? parts.join(' - ') : null;
+  return parts[0] ?? null;
 }
 
 export function buildFallbackChatEmptyStateHeadline(user: EmptyStateUserContext, now = new Date()): ChatEmptyStateHeadlinePayload {
@@ -86,12 +87,12 @@ export function buildFallbackChatEmptyStateHeadline(user: EmptyStateUserContext,
     return {
       dayPart,
       headline: name
-        ? `Hi, ${name}, what deserves a clearer next step right now?`
+        ? `${name}, which idea deserves momentum now?`
         : locationLabel
-          ? `How is the pace in ${locationLabel}, and what deserves priority now?`
-          : 'What deserves a clearer next step right now?',
+          ? `How is the pace in ${locationLabel} today?`
+          : 'What deserves your clearest next step?',
       locale,
-      theme: 'organize',
+      theme: 'momentum',
       variantKey: `fallback:${dayPart}:${name ? 'named' : locationLabel ? 'location' : 'generic'}`,
     };
   }
@@ -99,12 +100,30 @@ export function buildFallbackChatEmptyStateHeadline(user: EmptyStateUserContext,
   return {
     dayPart,
     headline: name
-      ? `Oi, ${name}, o que merece um próximo passo mais claro agora?`
+      ? `${name}, qual ideia merece tração agora?`
       : locationLabel
-        ? `Como está o ritmo por aí em ${locationLabel} e o que vale priorizar agora?`
-        : 'O que merece um próximo passo mais claro agora?',
+        ? `Como está o ritmo em ${locationLabel} hoje?`
+        : 'O que merece seu próximo passo mais claro?',
     locale,
-    theme: 'organize',
+    theme: 'momentum',
     variantKey: `fallback:${dayPart}:${name ? 'named' : locationLabel ? 'location' : 'generic'}`,
   };
+}
+
+export function resolveChatEmptyStateHeadline(params: {
+  payload?: ChatEmptyStateHeadlinePayload | null;
+  user: EmptyStateUserContext;
+  hasError: boolean;
+  now?: Date;
+}): string | null {
+  const normalizedHeadline = params.payload?.headline?.trim();
+  if (normalizedHeadline) {
+    return normalizedHeadline;
+  }
+
+  if (!params.hasError) {
+    return null;
+  }
+
+  return buildFallbackChatEmptyStateHeadline(params.user, params.now).headline;
 }

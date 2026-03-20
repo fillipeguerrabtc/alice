@@ -40,8 +40,8 @@ import { useChatPagePresentationModel } from './useChatPagePresentationModel';
 import { useAuth } from '@/hooks/use-auth';
 import { isManualReasoningMode } from '@/lib/reasoning-mode';
 import {
-  buildFallbackChatEmptyStateHeadline,
   type ChatEmptyStateHeadlinePayload,
+  resolveChatEmptyStateHeadline,
 } from './chat-empty-state-headline';
 
 const CHAT_ACCEPTED_MEDIA_TYPES = [...ACCEPTED_TYPES.image, ...ACCEPTED_TYPES.audio].join(',');
@@ -502,17 +502,26 @@ export function useChatPageLayoutController() {
     handleSelectedReasoningModeChange,
     normalizedSelectedReasoningMode,
   ]);
-  const { data: emptyStateHeadlineData } = useQuery<ChatEmptyStateHeadlinePayload>({
-    queryKey: ['/api/chat/empty-state-headline', currentUser?.id ?? 'anonymous', focusNonce],
+  const {
+    data: emptyStateHeadlineData,
+    isError: isEmptyStateHeadlineError,
+  } = useQuery<ChatEmptyStateHeadlinePayload>({
+    queryKey: ['/api/chat/empty-state-headline', currentUser?.id ?? 'anonymous'],
     queryFn: async () => {
       const response = await apiRequest('GET', '/api/chat/empty-state-headline');
       return response.json() as Promise<ChatEmptyStateHeadlinePayload>;
     },
     enabled: !authLoading && messages.length === 0,
-    staleTime: 0,
+    staleTime: Number.POSITIVE_INFINITY,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
+    refetchOnWindowFocus: false,
   });
-  const emptyStateHeadline = emptyStateHeadlineData?.headline
-    ?? buildFallbackChatEmptyStateHeadline(currentUser).headline;
+  const emptyStateHeadline = resolveChatEmptyStateHeadline({
+    payload: emptyStateHeadlineData,
+    user: currentUser,
+    hasError: isEmptyStateHeadlineError,
+  });
   const isRecordingDisabled = isStreaming || isRecording || isRecordingStarting || isTranscribingRecording;
   return useChatPagePresentationModel({
     acceptedTypes: CHAT_ACCEPTED_MEDIA_TYPES,
