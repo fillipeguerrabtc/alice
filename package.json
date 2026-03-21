@@ -30,6 +30,7 @@
     "enabled": false
   },
   "scripts": {
+    "postinstall": "tsc -b packages/shared",
     "dev": "pnpm run dev:microservices",
     "dev:microservices": "pnpm -r --parallel --stream --filter \"./apps/*\" run dev",
     "dev:legacy": "cross-env NODE_ENV=development tsx server/index-dev.ts",
