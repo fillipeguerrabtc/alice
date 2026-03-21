@@ -2,8 +2,10 @@ import crypto from 'crypto';
 import { getDatabase, schema, eq, and, desc, isNull, inArray, ne } from '@alice/database';
 import { getNamespaceProfileDefaultConfig } from '@alice/database/system-config';
 import {
+  hasExplicitTrainingConsent,
   type NamespaceProfileConfig,
   NamespaceProfileConfigSchema,
+  type UserPreferencias,
 } from '@alice/shared';
 import {
   applyPrivacyPolicy,
@@ -388,10 +390,8 @@ export function createTrainingDataLifecycleService(params: CreateTrainingDataLif
         ),
         columns: { preferencias: true },
       });
-      const prefs = (userRecord?.preferencias ?? {}) as {
-        training?: { allowTrainingUsage?: boolean; allowAutoCollect?: boolean };
-      };
-      if (prefs.training?.allowTrainingUsage === false || prefs.training?.allowAutoCollect === false) {
+      const prefs = (userRecord?.preferencias ?? {}) as UserPreferencias;
+      if (!hasExplicitTrainingConsent(prefs)) {
         metrics.incrementConsentRejected();
         throw new TrainingHttpError(403, { error: 'user_opt_out' });
       }

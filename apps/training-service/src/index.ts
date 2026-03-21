@@ -419,6 +419,30 @@ const trainingPipelineMetrics = {
     labelNames: ['source_type'] as const,
     registers: [metrics.registry],
   }),
+  dataPersistedTotal: new PromGauge({
+    name: 'alice_training_data_persisted_total',
+    help: 'Total atual de registros persistidos em training_data por origem e status',
+    labelNames: ['source_type', 'source', 'status'] as const,
+    registers: [metrics.registry],
+  }),
+  dataLastPersistedAtSeconds: new PromGauge({
+    name: 'alice_training_data_last_persisted_at_seconds',
+    help: 'Timestamp unix em segundos do último registro persistido em training_data por origem',
+    labelNames: ['source_type', 'source'] as const,
+    registers: [metrics.registry],
+  }),
+  persistedSignalSourceAvailable: new PromGauge({
+    name: 'alice_training_persisted_signal_source_available',
+    help: 'Disponibilidade da atualização do sinal persistido de training_data (1=ok,0=erro)',
+    labelNames: ['source'] as const,
+    registers: [metrics.registry],
+  }),
+  persistedSignalLastRefreshTimestampSeconds: new PromGauge({
+    name: 'alice_training_persisted_signal_last_refresh_timestamp_seconds',
+    help: 'Timestamp unix em segundos da última atualização bem-sucedida do sinal persistido de training_data',
+    labelNames: ['source'] as const,
+    registers: [metrics.registry],
+  }),
   qualityScore: new PromHistogram({
     name: 'alice_training_data_quality_score',
     help: 'DistribuiÃ§Ã£o de score de qualidade dos dados de treinamento',
@@ -820,6 +844,8 @@ let trainingImmutableAuditIntegrityState: ImmutableAuditIntegrityHealthState = {
   reason: null,
 };
 
+const TRAINING_PERSISTED_SIGNAL_SOURCE = 'training_data';
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -835,11 +861,86 @@ async function refreshTrainingMetrics(): Promise<void> {
       .from(schema.fineTuningJobs)
       .where(inArray(schema.fineTuningJobs.status, ['preparing', 'training', 'validating']));
 
+    const [persistedSummary] = await db
+      .select({
+        lastCreatedAt: sql<Date | null>`max(${schema.trainingData.criadoEm})`,
+      })
+      .from(schema.trainingData);
+
+    const persistedBySource = await db
+      .select({
+        sourceType: sql<string>`coalesce(${schema.trainingData.sourceType}, 'unknown')`,
+        source: sql<string>`coalesce(${schema.trainingData.source}, 'unknown')`,
+        status: sql<string>`coalesce(${schema.trainingData.status}, 'unknown')`,
+        count: sql<number>`count(*)`,
+      })
+      .from(schema.trainingData)
+      .groupBy(
+        schema.trainingData.sourceType,
+        schema.trainingData.source,
+        schema.trainingData.status,
+      );
+
+    const lastPersistedBySource = await db
+      .select({
+        sourceType: sql<string>`coalesce(${schema.trainingData.sourceType}, 'unknown')`,
+        source: sql<string>`coalesce(${schema.trainingData.source}, 'unknown')`,
+        lastCreatedAt: sql<Date | null>`max(${schema.trainingData.criadoEm})`,
+      })
+      .from(schema.trainingData)
+      .groupBy(
+        schema.trainingData.sourceType,
+        schema.trainingData.source,
+      );
+
     const datasetsCount = Number(datasetsTotal?.count ?? 0);
     const activeJobsCount = Number(activeJobs?.count ?? 0);
+    const globalLastPersistedAtSeconds = persistedSummary?.lastCreatedAt instanceof Date
+      ? Math.floor(persistedSummary.lastCreatedAt.getTime() / 1000)
+      : 0;
+    const refreshedAtSeconds = Math.floor(Date.now() / 1000);
 
     trainingDatasetsTotal.set(datasetsCount);
     metrics.training.activeJobs.set(activeJobsCount);
+    trainingPipelineMetrics.dataPersistedTotal.reset();
+    trainingPipelineMetrics.dataLastPersistedAtSeconds.reset();
+    trainingPipelineMetrics.dataLastPersistedAtSeconds.set(
+      { source_type: 'all', source: 'all' },
+      globalLastPersistedAtSeconds,
+    );
+
+    for (const row of persistedBySource) {
+      trainingPipelineMetrics.dataPersistedTotal.set(
+        {
+          source_type: row.sourceType,
+          source: row.source,
+          status: row.status,
+        },
+        Number(row.count ?? 0),
+      );
+    }
+
+    for (const row of lastPersistedBySource) {
+      const lastPersistedAtSeconds = row.lastCreatedAt instanceof Date
+        ? Math.floor(row.lastCreatedAt.getTime() / 1000)
+        : 0;
+      trainingPipelineMetrics.dataLastPersistedAtSeconds.set(
+        {
+          source_type: row.sourceType,
+          source: row.source,
+        },
+        lastPersistedAtSeconds,
+      );
+    }
+
+    trainingPipelineMetrics.persistedSignalSourceAvailable.set(
+      { source: TRAINING_PERSISTED_SIGNAL_SOURCE },
+      1,
+    );
+    trainingPipelineMetrics.persistedSignalLastRefreshTimestampSeconds.set(
+      { source: TRAINING_PERSISTED_SIGNAL_SOURCE },
+      refreshedAtSeconds,
+    );
 
     const redis = getRedisClient();
     if (!redis) {
@@ -875,6 +976,10 @@ async function refreshTrainingMetrics(): Promise<void> {
       }
     }
   } catch (error) {
+    trainingPipelineMetrics.persistedSignalSourceAvailable.set(
+      { source: TRAINING_PERSISTED_SIGNAL_SOURCE },
+      0,
+    );
     logger.error({ error }, 'Falha ao atualizar metricas de training');
   }
 }

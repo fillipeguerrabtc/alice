@@ -2,7 +2,7 @@
 
 **Author:** Fillipe Guerra
 **Data:** 18 de Marco de 2026
-**Atualizado:** 18 de Marco de 2026
+**Atualizado:** 21 de Marco de 2026
 **Status:** ativo
 **Tipo:** ssot
 
@@ -41,8 +41,10 @@ Padronizar a coleta automatica de dados de treinamento com isolamento por namesp
 ### 2. Consentimento
 
 - O sistema consulta `users.preferencias.training`.
-- Se `allowTrainingUsage=false` ou `allowAutoCollect=false`, a coleta automatica e rejeitada por politica.
-- Nao existe fallback silencioso para ignorar opt-out do usuario.
+- `requiresUserConsent=true` significa opt-in explicito para os dois campos.
+- A coleta automatica so e permitida quando `allowTrainingUsage=true` e `allowAutoCollect=true`.
+- Preferencia ausente, parcial ou com qualquer campo `false` deve bloquear a coleta automatica por politica.
+- Nao existe fallback silencioso para tratar ausencia de preferencia como consentimento implicito.
 
 ### 3. Privacidade e PII
 
@@ -64,14 +66,18 @@ Padronizar a coleta automatica de dados de treinamento com isolamento por namesp
 ## Observabilidade
 
 - `alice_training_auto_collect_attempt_total{reason}` no `chat-service`.
+- `alice_training_data_last_persisted_at_seconds{source_type="all",source="all"}` no `training-service` e a fonte canonica para saber quando houve persistencia real.
+- `alice_training_data_persisted_total{source_type,source,status}` detalha volume real persistido por origem.
 - Eventos de lineage: `training_data.collected`, `training_data.rejected_policy`, `training_data.quarantined_policy`, `training_data.judged`.
 - As metricas e eventos devem refletir motivo de bloqueio, nao apenas sucesso bruto de ingestao.
+- Counters de decisao no `chat-service` podem sofrer reset de processo e nao substituem o sinal duravel vindo do banco.
 
 ## Postura fail-closed
 
 - `NAMESPACE_PROFILE_DEFAULT_CONFIG_JSON` invalido deve falhar rapido.
 - Redis indisponivel no auto-collect bloqueia a decisao automatica.
 - Ausencia de profile nao pode abrir excecao insegura para ingestao.
+- Ausencia de consentimento explicito deve manter o gate fechado.
 
 ## Relacao com os demais docs
 

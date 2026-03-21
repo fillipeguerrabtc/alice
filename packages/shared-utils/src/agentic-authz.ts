@@ -27,6 +27,7 @@ const logger = createLogger('agentic-authz');
 const DELEGATED_TOKEN_TTL_SECONDS = Number(process.env.DELEGATED_EXECUTION_TOKEN_TTL_SECONDS ?? '180');
 const DELEGATED_TOKEN_CONSUME_PREFIX = 'alice:delegated-execution:consumed';
 const DELEGATED_TOKEN_SECRET = process.env.INTERNAL_API_SECRET ?? '';
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type GovernanceHints = {
   promptTemplateId?: string;
@@ -340,6 +341,10 @@ async function resolveUserRoleAssignments(params: {
   userId: string;
   tenantId?: string | null;
 }): Promise<{ baseRoles: Role[]; customRoleIds: string[] }> {
+  if (!UUID_REGEX.test(params.userId)) {
+    return { baseRoles: [], customRoleIds: [] };
+  }
+
   const db = getDatabase();
 
   const linkedRoles = await db.query.userRoles.findMany({

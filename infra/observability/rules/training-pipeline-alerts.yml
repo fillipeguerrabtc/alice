@@ -1,25 +1,58 @@
 groups:
   - name: training_pipeline_alerts
     rules:
+      - record: alice_training_data_persisted_age_seconds
+        expr: clamp_min(time() - alice_training_data_last_persisted_at_seconds{source_type="all",source="all"}, 0)
+
+      - record: alice_training_persisted_signal_refresh_age_seconds
+        expr: clamp_min(time() - alice_training_persisted_signal_last_refresh_timestamp_seconds{source="training_data"}, 0)
+
       - alert: TrainingDataNoNewSamples
-        expr: sum(increase(alice_training_data_collected_total[6h])) < 1
-        for: 6h
+        expr: alice_training_data_persisted_age_seconds > 21600
+        for: 5m
         labels:
           severity: warning
           service: training-service
         annotations:
-          summary: "Sem novos dados de treinamento coletados"
-          description: "Nenhum dado novo foi coletado nas últimas 6 horas. Verifique pipelines de chat/RAG/trading."
+          summary: "Sem novos dados persistidos de treinamento"
+          description: "Nenhum novo registro foi persistido em training_data nas últimas 6 horas. Verifique os fluxos de chat-auto, coleta manual e integrações."
+
+      - alert: TrainingPersistedSignalMissing
+        expr: |
+          absent_over_time(alice_training_data_last_persisted_at_seconds{source_type="all",source="all"}[10m])
+          and on() (max_over_time(up{job="alice-services",service="training-service"}[10m]) == 1)
+        for: 5m
+        labels:
+          severity: warning
+          service: training-service
+        annotations:
+          summary: "Sinal persistido de training ausente"
+          description: "O training-service permaneceu UP, mas a série alice_training_data_last_persisted_at_seconds sumiu por mais de 10 minutos. Verifique exposição de métricas e refresh do sinal durável."
+
+      - alert: TrainingPersistedSourceUnavailable
+        expr: |
+          (
+            (alice_training_persisted_signal_refresh_age_seconds > bool 600)
+            or on() (max_over_time(alice_training_persisted_signal_source_available{source="training_data"}[10m]) < bool 1)
+          )
+          and on() (max_over_time(up{job="alice-services",service="training-service"}[10m]) == 1)
+        for: 5m
+        labels:
+          severity: critical
+          service: training-service
+        annotations:
+          summary: "Fonte persistida de training indisponível"
+          description: "O refresh do sinal durável de training_data falhou ou ficou parado por mais de 10 minutos. Verifique conexão do training-service com o PostgreSQL e logs do scheduler de métricas."
 
       - alert: TrainingSchedulerErrors
-        expr: sum(increase(alice_training_scheduler_runs_total{result="error"}[30m])) > 0
+        expr: sum(increase(alice_training_scheduler_runs_total{result="error"}[30m])) > 5
         for: 15m
         labels:
           severity: warning
           service: training-service
         annotations:
-          summary: "Erros no scheduler de auto-learning"
-          description: "Falhas foram registradas no scheduler de auto-learning nos últimos 30 minutos."
+          summary: "Falhas no scheduler de auto-learning"
+          description: "O scheduler registrou mais de 5 falhas nos últimos 30 minutos. Verifique conexão com BD e logs do training-service."
 
       - alert: TrainingDataHighAutoRejectRate
         expr: |

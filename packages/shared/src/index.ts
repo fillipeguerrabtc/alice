@@ -11,4 +11,5 @@
  */
 
 export * from './schema.js';
+export * from './training-consent.js';
 export * from './trading-training.js';

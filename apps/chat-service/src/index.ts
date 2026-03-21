@@ -99,8 +99,10 @@ import type { AgenticDetectors } from '@alice/shared';
 import {
   NamespaceProfileConfigSchema,
   HybridRoutingPolicySchema,
+  hasExplicitTrainingConsent,
   type NamespaceProfileConfig,
   type HybridRoutingPolicy,
+  type UserPreferencias,
 } from '@alice/shared';
 import { isTradingCommand } from './trading-command-parser.js';
 import { resolveModelWithAdapter } from './lora-adapter-resolver.js';
@@ -6029,12 +6031,8 @@ async function shouldAutoCollectTrainingWithProfile(params: {
         ),
         columns: { preferencias: true },
       });
-      const preferences = (userRecord?.preferencias ?? {}) as {
-        training?: { allowTrainingUsage?: boolean; allowAutoCollect?: boolean };
-      };
-      const allowTrainingUsage = preferences.training?.allowTrainingUsage;
-      const allowAutoCollect = preferences.training?.allowAutoCollect;
-      if (allowTrainingUsage === false || allowAutoCollect === false) {
+      const preferences = (userRecord?.preferencias ?? {}) as UserPreferencias;
+      if (!hasExplicitTrainingConsent(preferences)) {
         return { allowed: false, reason: 'consent_opt_out' };
       }
     }

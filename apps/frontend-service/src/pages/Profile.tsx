@@ -23,6 +23,7 @@ import { apiRequest } from '@/lib/queryClient';
 import { TIMEZONE } from '@/lib/i18n';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { BiometricCapture } from '@/components/biometrics/BiometricCapture';
+import { normalizeTrainingPreferences } from '@alice/shared';
 
 type UpdateUserPayload = {
   firstName?: string;
@@ -78,9 +79,10 @@ export default function Profile() {
   });
   const maxBiometricCaptures = 3;
   const userTrainingPreferences = (user?.preferencias as { training?: TrainingPreferences } | undefined)?.training;
+  const normalizedTrainingPreferences = normalizeTrainingPreferences({ training: userTrainingPreferences });
   const [trainingConsent, setTrainingConsent] = useState({
-    allowTrainingUsage: userTrainingPreferences?.allowTrainingUsage ?? true,
-    allowAutoCollect: userTrainingPreferences?.allowAutoCollect ?? true,
+    allowTrainingUsage: normalizedTrainingPreferences.allowTrainingUsage,
+    allowAutoCollect: normalizedTrainingPreferences.allowAutoCollect,
   });
 
   useEffect(() => {
@@ -98,8 +100,8 @@ export default function Profile() {
       city: user?.preferencias?.location?.city || '',
     });
     setTrainingConsent({
-      allowTrainingUsage: userTrainingPreferences?.allowTrainingUsage ?? true,
-      allowAutoCollect: userTrainingPreferences?.allowAutoCollect ?? true,
+      allowTrainingUsage: normalizeTrainingPreferences({ training: userTrainingPreferences }).allowTrainingUsage,
+      allowAutoCollect: normalizeTrainingPreferences({ training: userTrainingPreferences }).allowAutoCollect,
     });
   }, [user, i18n.language, userTrainingPreferences?.allowAutoCollect, userTrainingPreferences?.allowTrainingUsage]);
 

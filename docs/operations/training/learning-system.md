@@ -2,7 +2,7 @@
 
 **Author:** Fillipe Guerra
 **Data:** 18 de Marco de 2026
-**Atualizado:** 20 de Marco de 2026
+**Atualizado:** 21 de Marco de 2026
 **Status:** ativo
 **Tipo:** ssot
 
@@ -56,6 +56,7 @@ Explicar como a Alice aprende hoje, separando claramente conhecimento recuperave
 ### 3. Policy gate, qualidade e quarentena
 
 - Consentimento, privacidade, qualidade minima e deduplicacao rodam antes da liberacao para treino.
+- Quando `requiresUserConsent=true`, a trilha de auto-collect exige opt-in explicito em `users.preferencias.training`.
 - Itens com baixa confianca, profile ausente ou match de regra sensivel ficam em quarentena.
 - Conteudo privado de outro usuario permanece bloqueado sem grant explicito, inclusive para operadores administrativos do tenant.
 - O sistema opera em modo restritivo quando Redis ou configuracao de profile nao sustentam a governanca esperada.

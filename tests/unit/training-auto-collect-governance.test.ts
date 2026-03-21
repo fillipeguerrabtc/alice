@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { NamespaceProfileConfigSchema } from '@alice/shared';
+import { NamespaceProfileConfigSchema, hasExplicitTrainingConsent, normalizeTrainingPreferences } from '@alice/shared';
 import { applyPrivacyPolicy, deterministicSample, incrementWithDailyCap } from '@alice/shared-utils';
 
 class InMemoryRedisForTest {
@@ -172,5 +172,27 @@ describe('training auto-collect governance', () => {
     expect(first.allowed).toBe(true);
     expect(second.allowed).toBe(false);
     expect(second.current).toBe(1);
+  });
+
+  it('exige opt-in explícito quando o consentimento está ausente', () => {
+    expect(hasExplicitTrainingConsent({})).toBe(false);
+    expect(hasExplicitTrainingConsent({
+      training: {
+        allowTrainingUsage: true,
+      },
+    })).toBe(false);
+    expect(hasExplicitTrainingConsent({
+      training: {
+        allowTrainingUsage: true,
+        allowAutoCollect: true,
+      },
+    })).toBe(true);
+  });
+
+  it('normaliza preferências ausentes como false no frontend', () => {
+    expect(normalizeTrainingPreferences({})).toEqual({
+      allowTrainingUsage: false,
+      allowAutoCollect: false,
+    });
   });
 });

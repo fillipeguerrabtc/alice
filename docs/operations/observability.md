@@ -2,7 +2,7 @@
 
 **Author:** Fillipe Guerra
 **Data:** 18 de Marco de 2026
-**Atualizado:** 18 de Marco de 2026
+**Atualizado:** 21 de Marco de 2026
 **Status:** ativo
 **Tipo:** ssot
 
@@ -70,6 +70,27 @@ Consolidar a arquitetura operacional de observabilidade da Alice sem misturar ba
 - O runtime oficial de alertas e o Grafana Unified Alerting.
 - Prometheus continua relevante para recording rules e metricas derivadas.
 - Regras e rotas de notificacao ficam provisionadas em `infra/observability/grafana/provisioning/alerting/`.
+
+### Sinal canonico de ingestao de training
+
+- O alerta operacional `Training sem novos dados` deve usar o estado persistido de `training_data`, nunca apenas contadores de processo.
+- A serie canonica e `alice_training_data_last_persisted_at_seconds{source_type="all",source="all"}`, atualizada pelo `training-service` a partir do PostgreSQL.
+- `alice_training_data_persisted_total{source_type,source,status}` serve para explicar volume real por origem e status.
+- `alice_training_data_persisted_age_seconds` e a recording rule oficial para medir idade do ultimo registro persistido.
+
+### Separacao obrigatoria de estados
+
+- `Sem novos dados persistidos`: o sinal existe, a fonte esta saudavel, mas `alice_training_data_persisted_age_seconds > 21600`.
+- `Sinal ausente`: o `training-service` esta `UP`, mas `absent_over_time(alice_training_data_last_persisted_at_seconds{source_type="all",source="all"}[10m])` ficou verdadeiro.
+- `Fonte persistida indisponivel`: o refresh duravel falhou ou ficou estagnado, observado por `alice_training_persisted_signal_source_available{source="training_data"}` e `alice_training_persisted_signal_last_refresh_timestamp_seconds{source="training_data"}`.
+
+### Troubleshooting do alerta de training
+
+- Confirmar se existem linhas recentes em `training_data` antes de investigar contadores HTTP ou counters de processo.
+- Se o alerta principal disparar, validar `alice_training_data_last_persisted_at_seconds`, `alice_training_data_persisted_total` e os logs do `training-service`.
+- Se o alerta de sinal ausente disparar, revisar exposicao de `/metrics`, scraping do Prometheus e provisioning de alertas.
+- Se o alerta de fonte indisponivel disparar, revisar conectividade do `training-service` com PostgreSQL e o scheduler interno de metricas.
+- `alice_training_data_collected_total`, `alice_http_requests_total{route="/api/training/data"}` e `alice_training_auto_collect_attempt_total` continuam uteis para throughput, mas nao sao fonte primaria para afirmar ausencia de ingestao duravel.
 
 ## Jornadas operacionais obrigatorias
 

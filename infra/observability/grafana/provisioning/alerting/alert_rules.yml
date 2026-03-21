@@ -883,11 +883,11 @@ groups:
         data:
           - refId: A
             relativeTimeRange:
-              from: 21600
+              from: 900
               to: 0
             datasourceUid: prometheus
             model:
-              expr: sum(increase(alice_training_data_collected_total[6h]))
+              expr: alice_training_data_persisted_age_seconds
               refId: A
           - refId: B
             datasourceUid: __expr__
@@ -903,17 +903,102 @@ groups:
               expression: B
               conditions:
                 - evaluator:
-                    type: lt
-                    params: [1]
+                    type: gt
+                    params: [21600]
               refId: C
         noDataState: OK
         execErrState: Error
-        for: 6h
+        for: 5m
         annotations:
-          summary: "Sem novos dados de treinamento"
-          description: "Nenhum dado novo foi coletado nas últimas 6 horas. Verifique pipelines de chat/RAG/trading."
+          summary: "Sem novos dados persistidos de treinamento"
+          description: "Nenhum novo registro foi persistido em training_data nas últimas 6 horas. Verifique os fluxos de chat-auto, coleta manual e integrações."
         labels:
           severity: warning
+          service: training-service
+
+      - uid: training-persisted-signal-missing
+        title: Training sinal persistido ausente (Warning)
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: |
+                absent_over_time(alice_training_data_last_persisted_at_seconds{source_type="all",source="all"}[10m])
+                and on() (max_over_time(up{job="alice-services",service="training-service"}[10m]) == 1)
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0.5]
+              refId: C
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: "Sinal persistido de training ausente"
+          description: "O training-service permaneceu UP, mas a série alice_training_data_last_persisted_at_seconds sumiu por mais de 10 minutos. Verifique exposição de métricas e refresh do sinal durável."
+        labels:
+          severity: warning
+          service: training-service
+
+      - uid: training-persisted-source-unavailable
+        title: Training fonte persistida indisponível (Critical)
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: |
+                (
+                  (alice_training_persisted_signal_refresh_age_seconds > bool 600)
+                  or on() (max_over_time(alice_training_persisted_signal_source_available{source="training_data"}[10m]) < bool 1)
+                )
+                and on() (max_over_time(up{job="alice-services",service="training-service"}[10m]) == 1)
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0.5]
+              refId: C
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: "Fonte persistida de training indisponível"
+          description: "O refresh do sinal durável de training_data falhou ou ficou parado por mais de 10 minutos. Verifique conexão do training-service com o PostgreSQL e logs do scheduler de métricas."
+        labels:
+          severity: critical
           service: training-service
 
       - uid: training-scheduler-errors
