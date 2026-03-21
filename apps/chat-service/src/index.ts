@@ -150,6 +150,7 @@ import {
 // - OpenAI API: Vision (gpt-4.1), ASR (gpt-4o-transcribe), Geração de imagens (gpt-image-1)
 import { initTradingOrchestrator } from './trading-orchestrator.js';
 import { checkResponseCache, isGreeting as isGreetingMessage } from './response-cache.js';
+import { computeRelevanceScore, computeRoutingScore } from './routing-relevance.js';
 import {
   loadWsAgentAuthGovernancePolicyFromEnv,
 } from './ws-agent-auth-governance.js';
@@ -4190,50 +4191,8 @@ function normalizeStoredMessages(
   }));
 }
 
-function tokenizeForRelevance(text: string): string[] {
-  return text
-    .toLowerCase()
-    .split(/[^a-z0-9áéíóúãõç]+/i)
-    .filter((t) => t.length >= 3);
-}
-
-function toTokenSet(tokens: string[]): Set<string> {
-  return new Set(tokens);
-}
-
-function buildBigrams(tokens: string[]): Set<string> {
-  return new Set(
-    tokens.slice(0, -1).map((t, idx) => `${t} ${tokens[idx + 1]}`)
-  );
-}
-
-function computeRelevanceScore(message: string, userMessage: string): number {
-  const messageTokens = tokenizeForRelevance(message);
-  const userTokens = tokenizeForRelevance(userMessage);
-  if (messageTokens.length === 0 || userTokens.length === 0) return 0;
-  const messageTokenSet = toTokenSet(messageTokens);
-  const userTokenSet = toTokenSet(userTokens);
-  const messageBigrams = buildBigrams(messageTokens);
-  const userBigrams = buildBigrams(userTokens);
-  let overlap = 0;
-  for (const token of messageTokenSet) {
-    if (userTokenSet.has(token)) overlap += 1;
-  }
-  let bigramOverlap = 0;
-  for (const bigram of messageBigrams) {
-    if (userBigrams.has(bigram)) bigramOverlap += 1;
-  }
-  const unigramScore = overlap / Math.max(1, userTokenSet.size);
-  const bigramScore = bigramOverlap / Math.max(1, userBigrams.size);
-  return (unigramScore * 0.7) + (bigramScore * 0.3);
-}
-
 function buildRoutingText(parts: Array<string | null | undefined>): string {
   return parts.filter(Boolean).join(' ');
-}
-
-function computeRoutingScore(text: string, userMessage: string): number {
-  return computeRelevanceScore(text, userMessage);
 }
 
 function getRoutingThreshold(knobs?: RuntimeChatKnobs): number {
@@ -4983,6 +4942,42 @@ function buildConversationSelectionMetadata(params: {
   };
 }
 
+type AgentRouteEventPayload = {
+  type: 'agent_route';
+  agent: {
+    id: string;
+    nome: string;
+    preferredName?: string | null;
+    avatar?: string | null;
+    slug?: string | null;
+  } | null;
+  selected: {
+    agentId: string | null;
+    namespaceId: string | null;
+  };
+  mode: AgentRoutingMode;
+  source: string;
+};
+
+function buildAgentRouteEventPayload(params: {
+  agent: AgentRouteEventPayload['agent'];
+  selectedAgentId: string | null;
+  selectedNamespaceId: string | null;
+  mode: AgentRoutingMode;
+  source: string;
+}): AgentRouteEventPayload {
+  return {
+    type: 'agent_route',
+    agent: params.agent,
+    selected: {
+      agentId: params.selectedAgentId,
+      namespaceId: params.selectedNamespaceId,
+    },
+    mode: params.mode,
+    source: params.source,
+  };
+}
+
 async function updateAgentRoutingMetadata(params: {
   conversationId: string;
   metadata: unknown;
@@ -4998,6 +4993,7 @@ async function updateAgentRoutingMetadata(params: {
 
 const HYBRID_ROUTING_DEFAULT_POLICY_KEY = 'HYBRID_ROUTING_DEFAULT_POLICY_JSON';
 const HYBRID_ROUTING_POLICY_CACHE_TTL_MS = 60_000;
+const DEFAULT_NAMESPACE_SLUG_CANDIDATES = ['default-chat', 'default'] as const;
 
 const HARDENED_HYBRID_ROUTING_POLICY_FALLBACK: HybridRoutingPolicy = HybridRoutingPolicySchema.parse({
   version: 1,
@@ -5010,7 +5006,7 @@ const HARDENED_HYBRID_ROUTING_POLICY_FALLBACK: HybridRoutingPolicy = HybridRouti
   },
   transversalDefault: {
     enabled: true,
-    defaultNamespaceSlug: 'default',
+    defaultNamespaceSlug: 'default-chat',
     greetingsToDefault: true,
     reuseGateToDefault: true,
     domainExceptionTerms: [
@@ -5049,6 +5045,37 @@ type HybridRoutingPolicyCacheEntry = {
 
 let hybridRoutingDefaultsCache: HybridRoutingPolicyCacheEntry | null = null;
 const hybridRoutingTenantCache = new Map<string, HybridRoutingPolicyCacheEntry>();
+
+function buildDefaultNamespaceSlugCandidates(rawSlug: string | null | undefined): string[] {
+  const normalized = rawSlug?.trim().toLowerCase() ?? '';
+  const candidates = normalized.length >= 2
+    ? [normalized, ...DEFAULT_NAMESPACE_SLUG_CANDIDATES]
+    : [...DEFAULT_NAMESPACE_SLUG_CANDIDATES];
+
+  return [...new Set(candidates)];
+}
+
+async function findNamespaceIdByPreferredSlugs(
+  tenantId: string,
+  candidateSlugs: string[]
+): Promise<string | null> {
+  for (const slug of candidateSlugs) {
+    const namespaceRecord = await db.query.namespaces.findFirst({
+      where: and(
+        eq(schema.namespaces.tenantId, tenantId),
+        eq(schema.namespaces.slug, slug),
+        eq(schema.namespaces.ativo, true),
+      ),
+      columns: { id: true },
+    });
+
+    if (namespaceRecord?.id) {
+      return namespaceRecord.id;
+    }
+  }
+
+  return null;
+}
 
 function clamp01(value: number): number {
   if (!Number.isFinite(value)) return 0;
@@ -5216,18 +5243,14 @@ async function resolvePolicyDefaultNamespaceId(
   tenantId: string,
   policy: HybridRoutingPolicy
 ): Promise<string | null> {
-  const slug = policy.transversalDefault.defaultNamespaceSlug.trim().toLowerCase();
-  if (slug.length >= 2) {
-    const configured = await db.query.namespaces.findFirst({
-      where: and(
-        eq(schema.namespaces.tenantId, tenantId),
-        eq(schema.namespaces.slug, slug),
-        eq(schema.namespaces.ativo, true),
-      ),
-      columns: { id: true },
-    });
-    if (configured?.id) return configured.id;
+  const configuredNamespaceId = await findNamespaceIdByPreferredSlugs(
+    tenantId,
+    buildDefaultNamespaceSlugCandidates(policy.transversalDefault.defaultNamespaceSlug)
+  );
+  if (configuredNamespaceId) {
+    return configuredNamespaceId;
   }
+
   return resolveTenantDefaultNamespaceId(tenantId);
 }
 
@@ -5353,6 +5376,14 @@ async function persistHybridReviewEvent(params: {
 }
 
 async function resolveTenantDefaultNamespaceId(tenantId: string): Promise<string | null> {
+  const preferredDefaultNamespaceId = await findNamespaceIdByPreferredSlugs(
+    tenantId,
+    [...DEFAULT_NAMESPACE_SLUG_CANDIDATES]
+  );
+  if (preferredDefaultNamespaceId) {
+    return preferredDefaultNamespaceId;
+  }
+
   const fallback = await db.query.namespaces.findFirst({
     where: and(
       eq(schema.namespaces.tenantId, tenantId),
@@ -10844,10 +10875,13 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     };
     unregisterRuntimeNoticeWriter = registerRuntimeNoticeSseWriter(writeRuntimeNoticeSseEvent);
 
-    if (agentPayload) {
-      res.write(`data: ${JSON.stringify({ type: 'agent_route', agent: agentPayload, mode: routingDecision.mode, source: routingDecision.source })}\n\n`);
-      flushSSE();
-    }
+    safeWriteSseEvent(buildAgentRouteEventPayload({
+      agent: agentPayload,
+      selectedAgentId: activeAgentId ?? null,
+      selectedNamespaceId: activeNamespaceId ?? null,
+      mode: routingDecision.mode,
+      source: routingDecision.source,
+    }));
     safeWriteSseEvent({
       type: 'routing_debug',
       selected: {
@@ -15801,11 +15835,11 @@ wss.on('connection', (ws, req) => {
         }
 
         const activeAgent = routingDecision.agent;
-        const activeAgentId = activeAgent?.id ?? conversation?.agentId ?? undefined;
+        const activeAgentId = activeAgent?.id ?? null;
         const activeNamespaceId = routingDecision.namespaceId ?? conversation?.namespaceId ?? null;
         const shouldUpdateConversation = Boolean(
-          (activeAgentId && activeAgentId !== conversation?.agentId)
-          || (activeNamespaceId && activeNamespaceId !== conversation?.namespaceId)
+          activeAgentId !== (conversation?.agentId ?? null)
+          || activeNamespaceId !== (conversation?.namespaceId ?? null)
           || routingDecision.source !== 'none'
         );
 
@@ -15823,14 +15857,15 @@ wss.on('connection', (ws, req) => {
               matchedExceptionIds: routingDecision.matchedExceptionIds ?? [],
               hybridPolicyVersion: routingDecision.hybridPolicyVersion ?? null,
               selectedAgentId: activeAgentId ?? null,
+              selectedNamespaceId: activeNamespaceId ?? null,
               namespaceFallbackReason: routingDecision.namespaceFallbackReason ?? null,
               updatedAt: new Date().toISOString(),
             },
           });
           await db.update(schema.conversations)
             .set({
-              agentId: activeAgentId ?? conversation?.agentId ?? null,
-              namespaceId: activeNamespaceId ?? conversation?.namespaceId ?? null,
+              agentId: activeAgentId,
+              namespaceId: activeNamespaceId,
               metadata: updatedMetadata,
               atualizadoEm: new Date(),
             })
@@ -15838,11 +15873,10 @@ wss.on('connection', (ws, req) => {
         }
 
         if (conversation) {
-          if (activeAgentId) {
-            conversation.agentId = activeAgentId;
-          }
-          if (activeNamespaceId) {
-            conversation.namespaceId = activeNamespaceId;
+          conversation.agentId = activeAgentId;
+          conversation.namespaceId = activeNamespaceId;
+          if (!activeAgent) {
+            conversation.agent = null;
           }
         }
 
@@ -15864,9 +15898,13 @@ wss.on('connection', (ws, req) => {
               }
             : null;
 
-        if (agentPayload) {
-          ws.send(JSON.stringify({ type: 'agent_route', agent: agentPayload, mode: routingDecision.mode, source: routingDecision.source }));
-        }
+        ws.send(JSON.stringify(buildAgentRouteEventPayload({
+          agent: agentPayload,
+          selectedAgentId: activeAgentId,
+          selectedNamespaceId: activeNamespaceId ?? null,
+          mode: routingDecision.mode,
+          source: routingDecision.source,
+        })));
 
         const enrichAssistantMessage = <T extends { [key: string]: unknown }>(messageValue: T): T => {
           if (!agentPayload) return messageValue;

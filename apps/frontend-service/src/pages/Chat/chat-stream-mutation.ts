@@ -446,8 +446,8 @@ export function createChatStreamMutationConfig(options: ChatStreamMutationOption
               resetTimeout();
             }
 
-            if (parsed.type === 'agent_route' && parsed.agent) {
-              const normalizedAgent = parsed.agent;
+            if (parsed.type === 'agent_route') {
+              const normalizedAgent = parsed.agent ?? null;
               const eventMode: RoutingMode = parsed.mode === 'manual' ? 'manual' : 'auto';
               const eventSource = typeof parsed.source === 'string' ? parsed.source : 'none';
               setMessages((prev) => {
@@ -463,6 +463,22 @@ export function createChatStreamMutationConfig(options: ChatStreamMutationOption
               setRoutingSourceByConversation((prev) => ({ ...prev, [routingConversationKey]: eventSource }));
               if (eventMode === 'manual' && normalizedAgent?.id) {
                 setRoutingAgentIdsByConversation((prev) => ({ ...prev, [routingConversationKey]: [normalizedAgent.id] }));
+              } else {
+                setRoutingAgentIdsByConversation((prev) => ({ ...prev, [routingConversationKey]: [] }));
+              }
+              if (parsed.selected) {
+                setRoutingDebugByConversation((prev) => ({
+                  ...prev,
+                  [routingConversationKey]: {
+                    selectedAgentId: parsed.selected?.agentId ?? null,
+                    selectedNamespaceId: parsed.selected?.namespaceId ?? null,
+                    score: prev[routingConversationKey]?.score ?? null,
+                    threshold: prev[routingConversationKey]?.threshold ?? null,
+                    profile: prev[routingConversationKey]?.profile ?? null,
+                    source: eventSource,
+                    mode: eventMode,
+                  },
+                }));
               }
               resetTimeout();
             }

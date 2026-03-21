@@ -2,7 +2,7 @@
 
 **Author:** Fillipe Guerra
 **Data:** 19 de Marco de 2026
-**Atualizado:** 20 de Marco de 2026
+**Atualizado:** 21 de Marco de 2026
 **Status:** em andamento
 **Tipo:** status
 
@@ -260,6 +260,43 @@ Refatorar a UI/UX do chat da Alice para um padrao premium no estilo ChatGPT, rem
 1. Revisar consistencia visual e funcional do chat apos a rodada 2 enterprise.
 2. Criar o commit consolidado em English.
 3. Encerrar sem push, conforme a governanca vigente.
+
+## Rodada 4 routing e identidade em 21 de Marco de 2026
+
+### Causa raiz adicional confirmada
+
+- O `greetings gate` cobria apenas saudacoes mais formais e deixava de fora entradas curtas como `Opa`, `Bora` e variacoes de `Tudo bem por ai`.
+- O scoring semantico antigo aceitava overlap lexical fraco sem stopwords robustas, permitindo falso positivo de especialista em mensagens curtas e generalistas.
+- A politica hibrida padrao ainda buscava slug `default`, enquanto o namespace canonico observado no banco e `default-chat`; quando a busca falhava, o fallback podia cair no primeiro namespace ativo.
+- O backend gravava `selectedAgentId = null` corretamente, mas o contrato em tempo real nao limpava o badge do frontend com seguranca quando nao havia agente.
+- A normalizacao de mensagens no frontend reaplicava `fallbackAgent` mesmo quando o payload trazia `agent: null`, reintroduzindo autoria stale.
+
+### Implementacao aplicada nesta rodada
+
+- O `greetings gate` foi ampliado de forma controlada para cobrir saudacoes curtas e variacoes relevantes em Portugues Brasileiro, sem aceitar termos de dominio.
+- A logica de relevancia semantica foi extraida para utilitario dedicado com:
+  - normalizacao forte;
+  - stopwords pt-BR/en;
+  - peso maior para tokens fortes;
+  - penalizacao de mensagens curtas/generalistas sem sinal robusto.
+- O fallback da politica hibrida passou a preferir explicitamente `default-chat`, com alias seguro para `default`, antes de qualquer fallback por ordem de namespace.
+- SSE e WebSocket agora emitem `agent_route` mesmo quando `agent = null`, carregando tambem `selected.agentId` e `selected.namespaceId` para o frontend limpar estado stale imediatamente.
+- O frontend passou a:
+  - respeitar `agent: null` explicito ao normalizar mensagens;
+  - limpar `routedAgent` com base na ultima resposta renderizavel da conversa;
+  - usar o estado de roteamento mais recente para compor `Agente atual` e `Area atual`.
+
+### Validacoes concluidas nesta rodada
+
+- `pnpm --filter @alice/chat-service run typecheck`
+- `pnpm --filter @alice/frontend-service run typecheck`
+- `timeout 120s pnpm exec vitest run tests/unit/response-cache-greeting.test.ts --reporter verbose`
+- `timeout 120s pnpm exec vitest run tests/unit/routing-relevance.test.ts tests/unit/chat-message-normalization.test.ts --reporter verbose`
+- `pnpm --filter @alice/chat-service exec eslint src/index.ts src/response-cache.ts src/routing-relevance.ts --max-warnings=0`
+- `pnpm --filter @alice/frontend-service exec eslint src/pages/Chat/chat-message-normalization.ts src/pages/Chat/chat-stream-mutation.ts src/pages/Chat/useChatConversationSurfaceState.ts src/pages/Chat/useChatPageLayoutController.ts src/pages/Chat/useChatRoutingState.ts --max-warnings=0`
+- `pnpm exec eslint tests/unit/response-cache-greeting.test.ts tests/unit/routing-relevance.test.ts tests/unit/chat-message-normalization.test.ts --max-warnings=0`
+- `pnpm --filter @alice/chat-service run build`
+- `pnpm --filter @alice/frontend-service run build`
 
 ## Rodada 3 light empty state em 20 de Marco de 2026
 

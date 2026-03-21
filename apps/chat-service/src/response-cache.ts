@@ -66,13 +66,15 @@ const CACHE_ENABLED = parseEnvBool(
 );
 
 const GREETING_PATTERNS: RegExp[] = [
-  /^(?:ol[áa]|oi|e ai|fala|salve)(?:,\s*[\p{L}\p{M}'-]{2,40})?(?:\s*[!.,?]+)?$/iu,
-  /^(?:bom dia|boa tarde|boa noite)(?:,?\s*(?:tudo bem|como vai|beleza))?(?:,?\s*[\p{L}\p{M}'-]{2,40})?(?:\s*[!.,?]+)?$/iu,
+  /^(?:ol[áa]|oi|opa|bora|e ai|fala|salve)(?:,\s*(?:alice|[\p{L}\p{M}'-]{2,40}))?(?:\s*[!.,?]+)?$/iu,
+  /^(?:bom dia|boa tarde|boa noite)(?:,?\s*(?:tudo bem|como vai|beleza))?(?:,?\s*(?:alice|[\p{L}\p{M}'-]{2,40}))?(?:\s*[!.,?]+)?$/iu,
+  /^(?:ol[áa]|oi|opa),?\s+(?:bom dia|boa tarde|boa noite)(?:\s*[!.,?]+)?$/iu,
   /^(?:tudo bem|tudo bom|tudo certo|como vai|beleza)(?:\s*[!.,?]+)?$/iu,
-  /^(?:tudo bem|tudo bom|tudo certo)(?:\s+(?:com\s+(?:voce|vc|tu)|contigo))?(?:\s*[!.,?]+)?$/iu,
+  /^(?:tudo bem|tudo bom|tudo certo)(?:\s+(?:com\s+(?:voce|vc|tu)|contigo|por\s+(?:ai|aí)|ai|aí))?(?:\s*[!.,?]+)?$/iu,
+  /^(?:oi|ol[áa]|opa),?\s+(?:tudo bem|tudo bom|tudo certo)(?:\s+(?:com\s+(?:voce|vc|tu)|contigo|por\s+(?:ai|aí)|ai|aí))?(?:\s*[!.,?]+)?$/iu,
   /^(?:como)\s+(?:voce|vc|tu)\s*(?:esta|ta|vai)(?:\s*[!.,?]+)?$/iu,
-  /^(?:e ai|eai)(?:,?\s*)?(?:tudo bem)(?:\s+(?:com\s+(?:voce|vc|tu)|contigo))?(?:\s*[!.,?]+)?$/iu,
-  /^(?:ol[áa]|oi),?\s+alice(?:\s*[!.,?]+)?$/iu,
+  /^(?:e ai|eai)(?:,?\s*)?(?:tudo bem)(?:\s+(?:com\s+(?:voce|vc|tu)|contigo|por\s+(?:ai|aí)|ai|aí))?(?:\s*[!.,?]+)?$/iu,
+  /^(?:ol[áa]|oi|opa),?\s+alice(?:\s*[!.,?]+)?$/iu,
   /^(?:hello|hi|hey)(?:,\s*[\p{L}\p{M}'-]{2,40})?(?:\s*[!.,?]+)?$/iu,
   /^(?:good morning|good afternoon|good evening)(?:,\s*[\p{L}\p{M}'-]{2,40})?(?:\s*(?:how are you|what's up))?(?:\s*[!.,?]+)?$/iu,
   /^(?:how are you|what'?s up)(?:\s*[!.,?]+)?$/iu,

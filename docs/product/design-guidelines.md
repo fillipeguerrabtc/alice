@@ -2,7 +2,7 @@
 
 **Author:** Fillipe Guerra
 **Data:** 19 de Marco de 2026
-**Atualizado:** 20 de Marco de 2026
+**Atualizado:** 21 de Marco de 2026
 **Status:** ativo
 **Tipo:** ssot
 
@@ -104,6 +104,8 @@ Usar escala consistente: `2, 4, 8, 12, 16, 24, 32` (px-2, h-8, m-12, etc.)
 - `Raciocínio` usa apenas os labels `Automático`, `Rápido` e `Mais Profundo`
 - O topo do chat deve exibir o estado atual de `Área` e `Agente` em formato compacto, inclusive quando ambos estiverem em modo automático
 - Quando a conversa estiver em modo automatico, `Área` e `Agente` visiveis no topo devem representar o estado efetivo retornado por `routing`, e nao apenas a selecao persistida do usuario
+- Quando o backend limpar o especialista atual (`selectedAgentId = null`), o badge `Agente atual` deve voltar imediatamente para o estado automatico, sem reter o ultimo agente roteado
+- O badge `Area atual` deve acompanhar o namespace efetivo mais recente retornado pelo backend, inclusive em greetings e fluxos transversais roteados para o namespace default
 - O composer deve exibir o `Raciocínio` atual como estado visível da conversa, em linguagem compacta no estilo ChatGPT
 - Quando `Área` ou `Agente` estiverem em modo manual, a superficie principal deve reforcar esse override sem voltar a usar formulario persistente
 - Workspace selector nao faz parte da experiencia principal do chat
@@ -115,6 +117,7 @@ Usar escala consistente: `2, 4, 8, 12, 16, 24, 32` (px-2, h-8, m-12, etc.)
 - A headline da tela vazia deve vir de um contrato real da plataforma, considerar contexto autentico do usuario quando existir e evitar repeticao imediata
 - A headline da tela vazia deve respeitar limite visual de 2 linhas em desktop e mobile, com texto curto ja controlado na origem
 - A abertura do chat deve exibir apenas uma saudacao por carregamento da pagina; fallback local no frontend so pode aparecer em caso de erro real da query principal
+- Mensagens de saudacao/default sem `agent` explicito devem manter autoria visual da Alice/default; mensagens especialistas devem exibir sempre o `preferredName` atual do agente persistido
 - Quando houver `displayName` autentico disponivel, a headline deve chamar o usuario pelo nome em frequencia aproximada de 60%
 - O repertorio da headline deve privilegiar tom premium, leve humor, energia, provocacao inteligente, motivacao e referencias filosoficas curtas, sem virar bloco de citacao
 - Em `conversation mode`, o composer deve voltar para o rodape visual do chat sem linha divisoria superior evidente

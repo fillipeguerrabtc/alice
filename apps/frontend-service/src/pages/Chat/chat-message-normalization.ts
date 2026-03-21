@@ -59,6 +59,8 @@ export function normalizeServerMessage(
   const role = message.role ?? (message.isFromUser ? 'user' : 'assistant');
   const content = message.content ?? message.conteudo ?? '';
   const createdAt = message.createdAt ?? message.criadoEm ?? new Date().toISOString();
+  const hasExplicitUser = Object.prototype.hasOwnProperty.call(message, 'user');
+  const hasExplicitAgent = Object.prototype.hasOwnProperty.call(message, 'agent');
   const mediaAttachments = message.mediaAttachments && message.mediaAttachments.length > 0
     ? message.mediaAttachments
     : message.anexos && message.anexos.length > 0
@@ -71,7 +73,11 @@ export function normalizeServerMessage(
     content,
     createdAt,
     mediaAttachments,
-    user: role === 'user' ? (message.user ?? fallbackUser) : message.user ?? null,
-    agent: role === 'assistant' ? (message.agent ?? fallbackAgent) : message.agent ?? null,
+    user: role === 'user'
+      ? (hasExplicitUser ? message.user ?? null : fallbackUser)
+      : (hasExplicitUser ? message.user ?? null : null),
+    agent: role === 'assistant'
+      ? (hasExplicitAgent ? message.agent ?? null : fallbackAgent)
+      : (hasExplicitAgent ? message.agent ?? null : null),
   } as Message;
 }

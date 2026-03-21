@@ -245,6 +245,7 @@ export function useChatPageLayoutController() {
   const {
     ensureRoutingSelection,
     routedAgent,
+    routingDebug,
     routingAgentIds,
     routingKey,
     routingMode,
@@ -308,6 +309,7 @@ export function useChatPageLayoutController() {
     areaOptions,
     reasoningOptions,
     routedAgent,
+    routingDebug,
     selectedAgentId: normalizedSelectedAgentId,
     selectedAreaNamespaceId: normalizedSelectedAreaNamespaceId,
     selectedReasoningMode: normalizedSelectedReasoningMode,

@@ -55,6 +55,14 @@ type UseChatRoutingStateResult = {
   setRoutingSourceByConversation: Dispatch<SetStateAction<Record<string, string>>>;
 };
 
+function hasRenderableAssistantPayload(message: Message): boolean {
+  return Boolean(
+    (message.content && message.content.trim().length > 0)
+    || (message.mediaAttachments && message.mediaAttachments.length > 0)
+    || message.generatedImage,
+  );
+}
+
 export function useChatRoutingState(options: UseChatRoutingStateOptions): UseChatRoutingStateResult {
   const {
     activeConversationAgent,
@@ -110,14 +118,17 @@ export function useChatRoutingState(options: UseChatRoutingStateOptions): UseCha
 
   useEffect(() => {
     if (!conversationId) return;
-    const lastAssistantWithAgent = [...messages]
+    const lastRenderableAssistant = [...messages]
       .reverse()
-      .find((message) => message.role === 'assistant' && message.agent?.id);
-    if (!lastAssistantWithAgent?.agent) return;
+      .find((message) => message.role === 'assistant' && hasRenderableAssistantPayload(message));
+    if (!lastRenderableAssistant) return;
 
     setRoutedAgentByConversation((prev) => {
-      if (prev[conversationId]?.id === lastAssistantWithAgent.agent?.id) return prev;
-      return { ...prev, [conversationId]: lastAssistantWithAgent.agent ?? null };
+      const currentAgentId = prev[conversationId]?.id ?? null;
+      const nextAgent = lastRenderableAssistant.agent ?? null;
+      const nextAgentId = nextAgent?.id ?? null;
+      if (currentAgentId === nextAgentId) return prev;
+      return { ...prev, [conversationId]: nextAgent };
     });
   }, [conversationId, messages]);
 

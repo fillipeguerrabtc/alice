@@ -10,6 +10,17 @@ describe('response-cache isGreeting', () => {
     expect(isGreeting('tudo bem com você?')).toBe(true);
   });
 
+  it('detecta saudacoes curtas e variacoes relevantes em portugues brasileiro', () => {
+    expect(isGreeting('Opa')).toBe(true);
+    expect(isGreeting('Bora')).toBe(true);
+    expect(isGreeting('Tudo bem por ai')).toBe(true);
+    expect(isGreeting('Tudo bem por aí?')).toBe(true);
+    expect(isGreeting('Tudo bem aí')).toBe(true);
+    expect(isGreeting('Tudo bem ai')).toBe(true);
+    expect(isGreeting('Olá, bom dia')).toBe(true);
+    expect(isGreeting('Oi, tudo bem por ai?')).toBe(true);
+  });
+
   it('detecta saudacao simples em ingles', () => {
     expect(isGreeting('Hello!')).toBe(true);
   });
@@ -20,6 +31,11 @@ describe('response-cache isGreeting', () => {
 
   it('nao classifica mensagem longa fora de escopo', () => {
     expect(isGreeting('Bom dia, preciso ajustar meu portfolio e revisar ordens de futuros agora.')).toBe(false);
+  });
+
+  it('nao amplia greeting gate para termos de dominio', () => {
+    expect(isGreeting('Bora revisar trading')).toBe(false);
+    expect(isGreeting('Tudo bem por ai com BTC hoje?')).toBe(false);
   });
 });
 
