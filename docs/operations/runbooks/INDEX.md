@@ -2,7 +2,7 @@
 
 **Author:** Fillipe Guerra
 **Data:** 18 de Marco de 2026
-**Atualizado:** 18 de Marco de 2026
+**Atualizado:** 21 de Marco de 2026
 **Status:** ativo
 **Tipo:** indice
 
@@ -15,6 +15,7 @@ Centralizar os runbooks ativos da trilha operacional da Alice e manter esses pro
 | Assunto | Documento |
 | --- | --- |
 | DR e game day de backup/restore | [dr-game-day.md](dr-game-day.md) |
+| Manutencao e reboot do host GPU com CDI | [gpu-cdi-maintenance.md](gpu-cdi-maintenance.md) |
 | Validacao de burn rate e SLO | [slo-burn-rate-validation.md](slo-burn-rate-validation.md) |
 | Validacao operacional de GPU training | [training-gpu-validation.md](training-gpu-validation.md) |
 | Contaminacao de escopo em training/LoRA | [training-scope-contamination.md](training-scope-contamination.md) |

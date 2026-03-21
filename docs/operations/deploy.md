@@ -2,7 +2,7 @@
 
 **Author:** Fillipe Guerra
 **Data:** 18 de Marco de 2026
-**Atualizado:** 19 de Marco de 2026
+**Atualizado:** 21 de Marco de 2026
 **Status:** ativo
 **Tipo:** ssot
 
@@ -96,6 +96,7 @@ Antes do `compose up`, o workflow aplica:
 - `preflight-secrets.sh` por stack
 - `docker compose ... config`
 - validacao do host de producao
+- validacao fail-fast do runtime NVIDIA/CDI contra a versao real do driver, bloqueando drift entre `/etc/cdi` e `/var/run/cdi`
 
 ## Rollback
 
@@ -119,3 +120,4 @@ Antes do `compose up`, o workflow aplica:
 - [docs/operations/secrets.md](secrets.md)
 - [docs/operations/permissions.md](permissions.md)
 - [docs/operations/runbooks/INDEX.md](runbooks/INDEX.md)
+- [docs/operations/runbooks/gpu-cdi-maintenance.md](runbooks/gpu-cdi-maintenance.md)

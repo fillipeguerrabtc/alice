@@ -1565,6 +1565,7 @@ jobs:
           
           # Validar que scripts existem ANTES de empacotar
           REQUIRED_SCRIPTS=(
+            "infra/scripts/check-nvidia-runtime.sh"
             "infra/scripts/prepare-production-server.sh"
             "infra/scripts/fix-production-permissions.sh"
             "infra/scripts/permissions-config.sh"

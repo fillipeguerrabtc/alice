@@ -36,6 +36,9 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+NVIDIA_RUNTIME_CHECK_SCRIPT="${SCRIPT_DIR}/check-nvidia-runtime.sh"
+
 # =============================================================================
 # VALIDAÇÕES PRÉ-REQUISITOS
 # =============================================================================
@@ -98,20 +101,32 @@ DOCKER_VERSION=$(docker --version)
 echo "   ✅ Docker encontrado: $DOCKER_VERSION"
 
 # -----------------------------------------------------------------------------
-# 4. Validar Docker com GPU
+# 4. Validar runtime NVIDIA, Docker e CDI
 # -----------------------------------------------------------------------------
-echo "🧪 Validando Docker com GPU..."
+echo "🧪 Validando runtime NVIDIA, Docker e CDI..."
 
-if ! docker run --rm --gpus all nvidia/cuda:12.0.0-base-ubuntu22.04 nvidia-smi &> /dev/null; then
-  echo "❌ ERRO: Docker não consegue acessar GPU!"
+if [[ ! -x "$NVIDIA_RUNTIME_CHECK_SCRIPT" ]]; then
+  echo "❌ ERRO: Script crítico não encontrado!"
   echo ""
-  echo "Verifique configuração NVIDIA Container Toolkit:"
-  echo "  - /etc/docker/daemon.json deve conter 'nvidia' como runtime padrão"
-  echo "  - sudo systemctl restart docker após mudanças"
+  echo "   Caminho esperado: $NVIDIA_RUNTIME_CHECK_SCRIPT"
+  echo "   A validação de drift CDI é obrigatória antes do deploy."
   exit 1
 fi
 
-echo "   ✅ Docker com GPU funcionando"
+if ! "$NVIDIA_RUNTIME_CHECK_SCRIPT"; then
+  echo ""
+  echo "❌ ERRO: Host GPU inconsistente para deploy!"
+  echo ""
+  echo "   O runtime NVIDIA/CDI falhou na validação fail-fast."
+  echo "   Isso bloqueia o deploy para evitar queda silenciosa de gpu-llm/gpu-embeddings."
+  echo ""
+  echo "💡 AÇÃO RECOMENDADA:"
+  echo "   - Corrija o drift CDI antes de qualquer compose up"
+  echo "   - Consulte o runbook docs/operations/runbooks/gpu-cdi-maintenance.md"
+  exit 1
+fi
+
+echo "   ✅ Runtime NVIDIA, Docker e CDI consistentes"
 echo ""
 
 # =============================================================================
@@ -157,7 +172,6 @@ echo "🔧 DELEGANDO CRIAÇÃO DE DIRETÓRIOS E PERMISSÕES PARA SCRIPT CENTRALI
 echo "============================================="
 echo ""
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FIX_PERMISSIONS_SCRIPT="${SCRIPT_DIR}/fix-production-permissions.sh"
 
 # Verificar se o script SSOT existe

@@ -3,21 +3,24 @@
 # Script de Configuração Inicial do Servidor Hetzner GPU - Alice Enterprise Platform
 # =============================================================================
 # Descrição: Configura servidor Hetzner GPU para deploy da Alice Enterprise Platform
-#            Instala Docker, NVIDIA Driver, NVIDIA Container Toolkit automaticamente
+#            Instala Docker, driver NVIDIA e NVIDIA Container Toolkit com validacao CDI
 #
 # ARQUITETURA ENTERPRISE (02/01/2026):
 # - 35 containers (infra + Alice + observability + backup + GPU)
 # - GPU Services: Mixtral 8x7B, Embeddings (Qwen3), ASR Canary, Trainer
 # - Servidor Único: Todos os containers no mesmo servidor (latência zero)
 #
-# Uso: Executado automaticamente pelo pipeline CI/CD
-#      Ou manualmente: curl -fsSL https://raw.githubusercontent.com/.../setup-hetzner-gpu.sh | bash
+# Uso: Executado a partir do repositorio local com os scripts de infraestrutura
+#      ou transferido pelo pipeline CI/CD para o host de producao
 #
 # Autor: Fillipe Guerra
-# Data: 02 de Janeiro de 2026
+# Data: 21 de Marco de 2026
 # =============================================================================
 
 set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+NVIDIA_RUNTIME_CHECK_SCRIPT="${SCRIPT_DIR}/check-nvidia-runtime.sh"
 
 # Cores
 RED='\033[0;31m'
@@ -82,6 +85,7 @@ PACKAGES=(
     python3
     python3-pip
     apt-transport-https
+    ubuntu-drivers-common
 )
 
 log_info "Instalando: ${PACKAGES[*]}"
@@ -137,11 +141,11 @@ else
         log_info "NVIDIA Driver já está instalado:"
         nvidia-smi --query-gpu=name,driver_version --format=csv,noheader
     else
-        log_info "Instalando NVIDIA Driver 535..."
-        
-        # Adicionar repositório NVIDIA
+        log_info "Instalando driver NVIDIA recomendado pelo Ubuntu..."
+
         apt-get update
-        DEBIAN_FRONTEND=noninteractive apt-get install -y nvidia-driver-535
+        DEBIAN_FRONTEND=noninteractive apt-get install -y ubuntu-drivers-common
+        DEBIAN_FRONTEND=noninteractive ubuntu-drivers install
         
         log_warn "Driver instalado. REINICIE o servidor para carregar o driver:"
         log_warn "  reboot"
@@ -163,36 +167,41 @@ fi
 # =============================================================================
 log_header "5. INSTALANDO NVIDIA CONTAINER TOOLKIT"
 
-# Verificar se já está instalado
-if command -v nvidia-container-cli >/dev/null 2>&1; then
-    log_info "NVIDIA Container Toolkit já está instalado"
+# Verificar se nvidia-smi funciona (driver carregado)
+if ! nvidia-smi >/dev/null 2>&1; then
+    log_warn "nvidia-smi não funciona. Driver pode não estar carregado."
+    log_warn "Execute 'reboot' e rode este script novamente."
 else
-    # Verificar se nvidia-smi funciona (driver carregado)
-    if ! nvidia-smi >/dev/null 2>&1; then
-        log_warn "nvidia-smi não funciona. Driver pode não estar carregado."
-        log_warn "Execute 'reboot' e rode este script novamente."
-    else
-        log_info "Instalando NVIDIA Container Toolkit..."
-        
-        distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
-        curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | apt-key add -
-        curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.list | \
-          tee /etc/apt/sources.list.d/nvidia-docker.list
+    log_info "Configurando repositório oficial do NVIDIA Container Toolkit..."
 
-        apt-get update
-        apt-get install -y nvidia-container-toolkit
+    install -m 0755 -d /usr/share/keyrings
+    curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
+      | gpg --dearmor --yes -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+    chmod a+r /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
 
-        # Reiniciar Docker
-        systemctl restart docker
+    curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
+      | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
+      | tee /etc/apt/sources.list.d/nvidia-container-toolkit.list > /dev/null
 
-        # Testar GPU no Docker
-        log_info "Testando GPU no Docker..."
-        if docker run --rm --gpus all nvidia/cuda:12.0.0-base-ubuntu22.04 nvidia-smi >/dev/null 2>&1; then
-            log_ok "NVIDIA Container Toolkit instalado e funcionando"
-        else
-            log_warn "Teste GPU falhou. Verifique se driver está carregado (nvidia-smi)"
-        fi
+    apt-get update
+    apt-get install -y \
+      nvidia-container-toolkit \
+      nvidia-container-toolkit-base \
+      libnvidia-container-tools \
+      libnvidia-container1
+
+    if [[ ! -x "$NVIDIA_RUNTIME_CHECK_SCRIPT" ]]; then
+        log_error "Script obrigatório não encontrado: $NVIDIA_RUNTIME_CHECK_SCRIPT"
     fi
+
+    log_info "Configurando runtime Docker via nvidia-ctk e reconciliando CDI..."
+    "$NVIDIA_RUNTIME_CHECK_SCRIPT" \
+      --configure-docker-runtime \
+      --refresh-cdi \
+      --reconcile-legacy-cdi
+
+    log_ok "NVIDIA Container Toolkit instalado e validado"
+    log_info "Comportamento esperado: /var/run/cdi/nvidia.yaml é a fonte gerada pelo toolkit; /etc/cdi/nvidia.yaml fica desativado quando encontrado"
 fi
 
 # =============================================================================
@@ -424,11 +433,11 @@ echo "  - /opt/alice/secrets   → Secrets (700)"
 echo ""
 echo "Próximos passos:"
 echo "  1. Configure os GitHub Secrets no repositório"
-echo "  2. Atualize HETZNER_VM_HOST com o IP do novo servidor GPU"
-echo "  3. Faça push para a branch main"
-echo "  4. O deploy será automático via GitHub Actions"
+echo "  2. Atualize HETZNER_VM_HOST com o IP do servidor GPU"
+echo "  3. Execute o fluxo oficial de deploy quando o host estiver pronto"
+echo "  4. Após patch ou reboot, valide o runtime NVIDIA/CDI antes de subir os serviços GPU"
 echo ""
-echo "Documentação: docs/DEPLOYMENT.md"
-echo "Secrets: docs/SECRETS.md"
+echo "Documentação: docs/operations/deploy.md"
+echo "Runbook GPU/CDI: docs/operations/runbooks/gpu-cdi-maintenance.md"
 echo ""
 echo -e "${GREEN}════════════════════════════════════════════════════════════════${NC}"
