@@ -30,7 +30,7 @@
     "enabled": false
   },
   "scripts": {
-    "postinstall": "tsc -b packages/shared",
+    "postinstall": "sh -c 'if [ -f packages/shared/tsconfig.json ] && [ -f packages/tsconfig.base.json ]; then tsc -b packages/shared; else echo \"[postinstall] Arquivos de TypeScript do pacote shared ausentes; pulando build do schema compartilhado.\"; fi'",
     "dev": "pnpm run dev:microservices",
     "dev:microservices": "pnpm -r --parallel --stream --filter \"./apps/*\" run dev",
     "dev:legacy": "cross-env NODE_ENV=development tsx server/index-dev.ts",
