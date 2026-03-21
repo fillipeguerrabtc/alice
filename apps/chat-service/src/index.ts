@@ -20616,6 +20616,7 @@ registerDashboardHomeRoutes({
   observabilityServiceUrl: OBSERVABILITY_SERVICE_URL_FINAL,
   trainingServiceUrl: TRAINING_SERVICE_URL_FINAL,
   integrationsServiceUrl: INTEGRATIONS_SERVICE_URL_FINAL,
+  updateUserPreferences,
 });
 
 // ============================================================================

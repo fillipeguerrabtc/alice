@@ -85,6 +85,286 @@ export const TenantConfiguracoesSchema = z.object({
 }).passthrough();
 export type TenantConfiguracoes = z.infer<typeof TenantConfiguracoesSchema>;
 
+export const DASHBOARD_HOME_PREFERENCES_VERSION = 1 as const;
+
+export const DASHBOARD_HOME_CARD_IDS = [
+  'actionRequired',
+  'supportQueue',
+  'conversationTrend',
+  'platformHealth',
+  'recentActivity',
+  'routingSnapshot',
+  'trainingSnapshot',
+  'financeSnapshot',
+] as const;
+export const DashboardHomeCardIdSchema = z.enum(DASHBOARD_HOME_CARD_IDS);
+export type DashboardHomeCardId = z.infer<typeof DashboardHomeCardIdSchema>;
+
+export const DASHBOARD_HOME_TIME_RANGES = ['24h', '7d', '14d', '30d'] as const;
+export const DashboardHomeTimeRangeSchema = z.enum(DASHBOARD_HOME_TIME_RANGES);
+export type DashboardHomeTimeRange = z.infer<typeof DashboardHomeTimeRangeSchema>;
+
+export const DASHBOARD_HOME_METRIC_SETS = [
+  'all',
+  'platform',
+  'support',
+  'routing',
+  'training',
+  'overview',
+  'urgent',
+  'conversations',
+  'tokens',
+  'operations',
+  'exceptions',
+  'capacity',
+  'cashflow',
+] as const;
+export const DashboardHomeMetricSetSchema = z.enum(DASHBOARD_HOME_METRIC_SETS);
+export type DashboardHomeMetricSet = z.infer<typeof DashboardHomeMetricSetSchema>;
+
+export const DASHBOARD_HOME_PERMISSION_KEYS = [
+  'manageConversations',
+  'openObservability',
+  'viewTraining',
+  'viewRouting',
+  'viewFinance',
+] as const;
+export const DashboardHomePermissionKeySchema = z.enum(DASHBOARD_HOME_PERMISSION_KEYS);
+export type DashboardHomePermissionKey = z.infer<typeof DashboardHomePermissionKeySchema>;
+
+export type DashboardHomePermissionSnapshot = Partial<Record<DashboardHomePermissionKey, boolean>>;
+
+export type DashboardHomeCardContract = {
+  defaultEnabled: boolean;
+  defaultLimit?: number;
+  defaultMetricSet?: DashboardHomeMetricSet;
+  defaultTimeRange?: DashboardHomeTimeRange;
+  permissionGate: DashboardHomePermissionKey | null;
+  priority: number;
+  supportedLimits: readonly number[];
+  supportedMetricSets: readonly DashboardHomeMetricSet[];
+  supportedTimeRanges: readonly DashboardHomeTimeRange[];
+};
+
+export const DASHBOARD_HOME_CARD_CONTRACTS: Record<DashboardHomeCardId, DashboardHomeCardContract> = {
+  actionRequired: {
+    defaultEnabled: true,
+    defaultMetricSet: 'all',
+    permissionGate: null,
+    priority: 10,
+    supportedLimits: [3, 5],
+    supportedMetricSets: ['all', 'platform', 'support', 'routing', 'training'],
+    supportedTimeRanges: [],
+  },
+  supportQueue: {
+    defaultEnabled: true,
+    defaultMetricSet: 'overview',
+    permissionGate: 'manageConversations',
+    priority: 20,
+    supportedLimits: [],
+    supportedMetricSets: ['overview', 'urgent'],
+    supportedTimeRanges: [],
+  },
+  conversationTrend: {
+    defaultEnabled: true,
+    defaultMetricSet: 'conversations',
+    defaultTimeRange: '7d',
+    permissionGate: 'manageConversations',
+    priority: 30,
+    supportedLimits: [],
+    supportedMetricSets: ['conversations', 'tokens'],
+    supportedTimeRanges: ['7d', '30d'],
+  },
+  platformHealth: {
+    defaultEnabled: false,
+    defaultMetricSet: 'overview',
+    permissionGate: 'openObservability',
+    priority: 40,
+    supportedLimits: [],
+    supportedMetricSets: ['overview', 'operations'],
+    supportedTimeRanges: [],
+  },
+  recentActivity: {
+    defaultEnabled: true,
+    defaultLimit: 5,
+    defaultMetricSet: 'operations',
+    defaultTimeRange: '24h',
+    permissionGate: null,
+    priority: 50,
+    supportedLimits: [5, 10],
+    supportedMetricSets: ['all', 'operations'],
+    supportedTimeRanges: ['24h', '7d', '30d'],
+  },
+  routingSnapshot: {
+    defaultEnabled: false,
+    defaultMetricSet: 'overview',
+    defaultTimeRange: '7d',
+    permissionGate: 'viewRouting',
+    priority: 60,
+    supportedLimits: [],
+    supportedMetricSets: ['overview', 'exceptions'],
+    supportedTimeRanges: ['24h', '7d', '14d'],
+  },
+  trainingSnapshot: {
+    defaultEnabled: false,
+    defaultMetricSet: 'overview',
+    permissionGate: 'viewTraining',
+    priority: 70,
+    supportedLimits: [],
+    supportedMetricSets: ['overview', 'capacity'],
+    supportedTimeRanges: [],
+  },
+  financeSnapshot: {
+    defaultEnabled: false,
+    defaultMetricSet: 'overview',
+    permissionGate: 'viewFinance',
+    priority: 80,
+    supportedLimits: [],
+    supportedMetricSets: ['overview', 'cashflow'],
+    supportedTimeRanges: [],
+  },
+};
+
+export const DashboardHomeCardPreferencesSchema = z.object({
+  enabled: z.boolean().optional(),
+  timeRange: DashboardHomeTimeRangeSchema.optional(),
+  metricSet: DashboardHomeMetricSetSchema.optional(),
+  limit: z.number().int().min(1).max(20).optional(),
+}).strict();
+export type DashboardHomeCardPreferences = z.infer<typeof DashboardHomeCardPreferencesSchema>;
+export type DashboardHomeResolvedCardPreferences = {
+  enabled: boolean;
+  timeRange?: DashboardHomeTimeRange;
+  metricSet?: DashboardHomeMetricSet;
+  limit?: number;
+};
+
+export const DashboardHomePreferencesSchema = z.object({
+  version: z.literal(DASHBOARD_HOME_PREFERENCES_VERSION).default(DASHBOARD_HOME_PREFERENCES_VERSION),
+  visibleCardIds: z.array(DashboardHomeCardIdSchema).max(DASHBOARD_HOME_CARD_IDS.length).optional(),
+  cards: z.record(z.string(), DashboardHomeCardPreferencesSchema).optional(),
+}).strict();
+export type DashboardHomePreferences = z.infer<typeof DashboardHomePreferencesSchema>;
+export type DashboardHomeResolvedPreferences = {
+  version: typeof DASHBOARD_HOME_PREFERENCES_VERSION;
+  visibleCardIds: DashboardHomeCardId[];
+  cards: Record<DashboardHomeCardId, DashboardHomeResolvedCardPreferences>;
+};
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isDashboardHomeCardId(value: unknown): value is DashboardHomeCardId {
+  return typeof value === 'string' && DASHBOARD_HOME_CARD_IDS.includes(value as DashboardHomeCardId);
+}
+
+function sanitizeDashboardHomeCardConfig(
+  cardId: DashboardHomeCardId,
+  rawValue: unknown,
+): DashboardHomeResolvedCardPreferences {
+  const contract = DASHBOARD_HOME_CARD_CONTRACTS[cardId];
+  const rawConfig = isPlainObject(rawValue) ? rawValue : {};
+  const sanitized: DashboardHomeResolvedCardPreferences = {
+    enabled: typeof rawConfig.enabled === 'boolean' ? rawConfig.enabled : contract.defaultEnabled,
+  };
+
+  if (contract.defaultTimeRange) {
+    sanitized.timeRange = contract.defaultTimeRange;
+  }
+  if (
+    typeof rawConfig.timeRange === 'string'
+    && contract.supportedTimeRanges.includes(rawConfig.timeRange as DashboardHomeTimeRange)
+  ) {
+    sanitized.timeRange = rawConfig.timeRange as DashboardHomeTimeRange;
+  }
+
+  if (contract.defaultMetricSet) {
+    sanitized.metricSet = contract.defaultMetricSet;
+  }
+  if (
+    typeof rawConfig.metricSet === 'string'
+    && contract.supportedMetricSets.includes(rawConfig.metricSet as DashboardHomeMetricSet)
+  ) {
+    sanitized.metricSet = rawConfig.metricSet as DashboardHomeMetricSet;
+  }
+
+  if (typeof contract.defaultLimit === 'number') {
+    sanitized.limit = contract.defaultLimit;
+  }
+  if (
+    typeof rawConfig.limit === 'number'
+    && Number.isInteger(rawConfig.limit)
+    && contract.supportedLimits.includes(rawConfig.limit)
+  ) {
+    sanitized.limit = rawConfig.limit;
+  }
+
+  return sanitized;
+}
+
+export function isDashboardHomeCardAllowed(
+  cardId: DashboardHomeCardId,
+  permissions: DashboardHomePermissionSnapshot = {},
+): boolean {
+  const contract = DASHBOARD_HOME_CARD_CONTRACTS[cardId];
+  if (!contract.permissionGate) {
+    return true;
+  }
+
+  return permissions[contract.permissionGate] === true;
+}
+
+export function sanitizeDashboardHomePreferences(
+  rawValue: unknown,
+  permissions: DashboardHomePermissionSnapshot = {},
+): DashboardHomeResolvedPreferences {
+  const rawPreferences = isPlainObject(rawValue) ? rawValue : {};
+  const rawCards = isPlainObject(rawPreferences.cards) ? rawPreferences.cards : {};
+  const sanitizedCards = {} as Record<DashboardHomeCardId, DashboardHomeResolvedCardPreferences>;
+
+  const allowedCardIds = DASHBOARD_HOME_CARD_IDS
+    .filter((cardId) => isDashboardHomeCardAllowed(cardId, permissions))
+    .sort((left, right) => DASHBOARD_HOME_CARD_CONTRACTS[left].priority - DASHBOARD_HOME_CARD_CONTRACTS[right].priority);
+
+  for (const cardId of allowedCardIds) {
+    sanitizedCards[cardId] = sanitizeDashboardHomeCardConfig(cardId, rawCards[cardId]);
+  }
+
+  const visibleCardIds: DashboardHomeCardId[] = [];
+  const rawVisibleCardIds = Array.isArray(rawPreferences.visibleCardIds) ? rawPreferences.visibleCardIds : [];
+
+  for (const rawCardId of rawVisibleCardIds) {
+    if (!isDashboardHomeCardId(rawCardId)) {
+      continue;
+    }
+    if (!allowedCardIds.includes(rawCardId)) {
+      continue;
+    }
+    if (sanitizedCards[rawCardId]?.enabled !== true) {
+      continue;
+    }
+    if (!visibleCardIds.includes(rawCardId)) {
+      visibleCardIds.push(rawCardId);
+    }
+  }
+
+  for (const cardId of allowedCardIds) {
+    if (sanitizedCards[cardId]?.enabled !== true) {
+      continue;
+    }
+    if (!visibleCardIds.includes(cardId)) {
+      visibleCardIds.push(cardId);
+    }
+  }
+
+  return {
+    version: DASHBOARD_HOME_PREFERENCES_VERSION,
+    visibleCardIds,
+    cards: sanitizedCards,
+  };
+}
+
 // --- Preferências de Usuário ---
 export const UserPreferenciasSchema = z.object({
   theme: z.enum(["light", "dark", "system"]).optional(),
@@ -98,6 +378,7 @@ export const UserPreferenciasSchema = z.object({
     allowAutoCollect: z.boolean().optional(),
   }).optional(),
   dashboardLayout: z.enum(["compact", "comfortable", "spacious"]).optional(),
+  dashboardHome: DashboardHomePreferencesSchema.optional(),
   sidebarCollapsed: z.boolean().optional(),
   defaultNamespace: z.string().uuid().optional(),
   location: z.object({

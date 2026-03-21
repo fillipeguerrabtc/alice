@@ -46,7 +46,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, 'client/src'),
+      '@': path.resolve(__dirname, 'apps/frontend-service/src'),
       '@shared': path.resolve(__dirname, 'shared'),
       '@alice/shared': path.resolve(__dirname, 'packages/shared/src'),
       '@alice/logger': path.resolve(__dirname, 'packages/logger/src'),

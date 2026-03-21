@@ -1,6 +1,16 @@
 import type { Express, Request, RequestHandler, Response } from 'express';
 import { eq, sql } from '@alice/database';
 import { getDatabase, schema } from '@alice/database';
+import {
+  DASHBOARD_HOME_CARD_IDS,
+  DASHBOARD_HOME_CARD_CONTRACTS,
+  DASHBOARD_HOME_PREFERENCES_VERSION,
+  DashboardHomePreferencesSchema,
+  sanitizeDashboardHomePreferences,
+  type DashboardHomeCardId,
+  type DashboardHomePermissionSnapshot,
+  type DashboardHomeResolvedPreferences,
+} from '@alice/shared';
 import { checkPermission, humanizeAuditActivity, type Role } from '@alice/shared-utils';
 import { z } from 'zod';
 
@@ -16,6 +26,12 @@ type BuildInternalServiceHeaders = (params: {
   customRoleId?: string | null;
 }) => Record<string, string>;
 
+type UpdateUserPreferences = (
+  userId: string,
+  tenantId: string | null | undefined,
+  patch: Record<string, unknown>,
+) => Promise<void>;
+
 type DashboardHomeRouteParams = {
   app: Express;
   logger: LoggerLike;
@@ -24,6 +40,7 @@ type DashboardHomeRouteParams = {
   observabilityServiceUrl: string | null;
   trainingServiceUrl: string;
   integrationsServiceUrl: string;
+  updateUserPreferences: UpdateUserPreferences;
 };
 
 type DashboardStatsResponse = {
@@ -122,9 +139,128 @@ type IntegrationsStatsResponse = {
   };
 };
 
+type DashboardRequestContext = {
+  customRoleId: string | null;
+  role: Role;
+  tenantId: string;
+  userId: string;
+};
+
+type DashboardHomePermissionsResponse = DashboardHomePermissionSnapshot & {
+  canUploadDocuments: boolean;
+  role: Role;
+  tenantId: string;
+};
+
+type DashboardPrioritySource = {
+  alerts: Array<{
+    id: string;
+    severity: 'critical' | 'warning';
+    title: string;
+    description: string;
+    count: number;
+    href: string;
+    domain: string;
+  }>;
+  generatedAt: string;
+  status: {
+    level: 'healthy' | 'warning' | 'critical';
+    label: 'Saudável' | 'Atenção' | 'Crítico';
+  };
+  support: {
+    activeHumanAgents: number;
+    pendingHandoffs: number;
+    urgentHandoffs: number;
+  };
+};
+
+type DashboardHealthSource = {
+  generatedAt: string;
+  href: string | null;
+  metrics: {
+    avgLatencyMs: number;
+    breakers: {
+      closed: number;
+      halfOpen: number;
+      open: number;
+    };
+    services: {
+      degraded: number;
+      offline: number;
+      online: number;
+    };
+    sla: {
+      atRisk: number;
+      breached: number;
+      onTrack: number;
+    };
+  };
+};
+
+type DashboardTrendSource = {
+  generatedAt: string;
+  metrics: Array<{
+    id: 'conversations' | 'tokens';
+    label: string;
+    supportsBreakdown: boolean;
+    seriesByWindow: {
+      '7d': ConversationTrendPoint[] | TokensTrendPoint[];
+      '30d': ConversationTrendPoint[] | TokensTrendPoint[];
+    };
+  }>;
+  windows: Array<{ id: '7d' | '30d'; label: string }>;
+};
+
+type DashboardRecentActivitySource = {
+  generatedAt: string;
+  itemsByWindow: {
+    '24h': RecentActivityItem[];
+    '7d': RecentActivityItem[];
+    '30d': RecentActivityItem[];
+  };
+};
+
+type DashboardRoutingSource = {
+  generatedAt: string;
+  href: string;
+  metricsByWindow: Record<'24h' | '7d' | '14d', {
+    fallbackTotal: number;
+    reviewQueue: number;
+    unmappedContexts: number;
+  }>;
+};
+
+type DashboardTrainingSource = {
+  generatedAt: string;
+  href: string;
+  metrics: {
+    dlq: number;
+    inflight: number;
+    maxInflight: number;
+    pending: number;
+  };
+};
+
+type DashboardFinanceSource = {
+  generatedAt: string;
+  href: string;
+  metrics: {
+    stripeCurrency: string;
+    stripeRevenue: number;
+    stripeTransactions: number;
+    wiseCompletedCount: number;
+    wisePendingAmount: number;
+    wiseTotalTransfers: number;
+  };
+};
+
 const tenantScopeQuerySchema = z.object({
   tenantId: z.string().uuid().optional(),
 });
+
+const dashboardPreferencesUpdateSchema = z.object({
+  dashboardHome: DashboardHomePreferencesSchema,
+}).strict();
 
 function calcTrend(current: number, previous: number): number {
   if (previous === 0) {
@@ -194,6 +330,115 @@ function resolveTenantId(req: Request): string | null {
   }
 
   return null;
+}
+
+function ensureDashboardRequestContext(req: Request, res: Response): DashboardRequestContext | null {
+  const tenantId = resolveTenantId(req);
+  if (!tenantId) {
+    res.status(400).json({ error: 'tenantId é obrigatório para carregar a home da dashboard' });
+    return null;
+  }
+
+  const userId = req.user?.userId;
+  const role = req.user?.role as Role | undefined;
+  if (!userId || !role) {
+    res.status(401).json({ error: 'Autenticação necessária' });
+    return null;
+  }
+
+  return {
+    tenantId,
+    userId,
+    role,
+    customRoleId: req.user?.customRoleId ?? null,
+  };
+}
+
+async function loadDashboardHomePermissions(params: {
+  role: Role;
+  tenantId: string;
+  userId: string;
+}): Promise<DashboardHomePermissionsResponse> {
+  const {
+    role,
+    tenantId,
+    userId,
+  } = params;
+
+  const [
+    manageConversations,
+    canUploadDocuments,
+    openObservability,
+    viewTraining,
+    viewRouting,
+    viewFinance,
+  ] = await Promise.all([
+    checkPermission({ userId, tenantId, role }, 'chat:conversations:write').then((result) => result.allowed),
+    checkPermission({ userId, tenantId, role }, 'rag:documents:upload').then((result) => result.allowed),
+    checkPermission({ userId, tenantId, role }, 'observability:core:read').then((result) => result.allowed),
+    checkPermission({ userId, tenantId, role }, 'training:fine_tuning_jobs:read').then((result) => result.allowed),
+    checkPermission({ userId, tenantId, role }, 'chat:namespaces:read').then((result) => result.allowed),
+    checkPermission({ userId, tenantId, role }, 'integrations:integrations:read').then((result) => result.allowed),
+  ]);
+
+  return {
+    role,
+    tenantId,
+    canUploadDocuments,
+    manageConversations,
+    openObservability,
+    viewTraining,
+    viewRouting,
+    viewFinance,
+  };
+}
+
+function resolveDashboardHomePreferencesForPermissions(
+  rawPreferences: unknown,
+  permissions: DashboardHomePermissionSnapshot,
+): DashboardHomeResolvedPreferences {
+  const preferences = rawPreferences as Record<string, unknown> | null | undefined;
+  return sanitizeDashboardHomePreferences(preferences?.dashboardHome, permissions);
+}
+
+async function loadUserDashboardHomePreferences(params: {
+  tenantId: string;
+  userId: string;
+  permissions: DashboardHomePermissionSnapshot;
+}): Promise<DashboardHomeResolvedPreferences> {
+  const user = await getDatabase().query.users.findFirst({
+    where: eq(schema.users.id, params.userId),
+    columns: {
+      preferencias: true,
+      tenantId: true,
+    },
+  });
+
+  if (!user) {
+    return sanitizeDashboardHomePreferences(undefined, params.permissions);
+  }
+
+  if (user.tenantId && user.tenantId !== params.tenantId) {
+    return sanitizeDashboardHomePreferences(undefined, params.permissions);
+  }
+
+  return resolveDashboardHomePreferencesForPermissions(user.preferencias, params.permissions);
+}
+
+function getDashboardEnabledCardIds(preferences: DashboardHomeResolvedPreferences): DashboardHomeCardId[] {
+  return preferences.visibleCardIds.filter((cardId) => preferences.cards[cardId]?.enabled === true);
+}
+
+function assertDashboardCardAllowed(
+  cardId: DashboardHomeCardId,
+  permissions: DashboardHomePermissionSnapshot,
+): boolean {
+  const contract = DASHBOARD_HOME_CARD_CONTRACTS[cardId];
+  if (!contract.permissionGate) {
+    return true;
+  }
+
+  return permissions[contract.permissionGate] === true;
 }
 
 async function loadDashboardStats(tenantId: string): Promise<DashboardStatsResponse> {
@@ -459,6 +704,29 @@ async function loadRecentActivity(tenantId: string, limit: number): Promise<Rece
   });
 }
 
+async function loadRecentActivityByWindow(tenantId: string): Promise<DashboardRecentActivitySource['itemsByWindow']> {
+  const now = Date.now();
+  const last24Hours = now - (24 * 60 * 60 * 1000);
+  const last7Days = now - (7 * 24 * 60 * 60 * 1000);
+  const last30Days = now - (30 * 24 * 60 * 60 * 1000);
+  const items = await loadRecentActivity(tenantId, 50);
+
+  return {
+    '24h': items.filter((item) => {
+      if (!item.timestamp) return false;
+      return new Date(item.timestamp).getTime() >= last24Hours;
+    }).slice(0, 10),
+    '7d': items.filter((item) => {
+      if (!item.timestamp) return false;
+      return new Date(item.timestamp).getTime() >= last7Days;
+    }).slice(0, 10),
+    '30d': items.filter((item) => {
+      if (!item.timestamp) return false;
+      return new Date(item.timestamp).getTime() >= last30Days;
+    }).slice(0, 10),
+  };
+}
+
 async function loadFallbackSummary(tenantId: string): Promise<{
   total: number;
   last24h: number;
@@ -562,10 +830,559 @@ async function loadTakeoverSummary(tenantId: string): Promise<{
   };
 }
 
+async function loadObservabilityData(params: {
+  buildInternalServiceHeaders: BuildInternalServiceHeaders;
+  customRoleId?: string | null;
+  logger: LoggerLike;
+  observabilityServiceUrl: string | null;
+  role: Role;
+  tenantId: string;
+  userId: string;
+}): Promise<{
+  avgLatencyMs: number;
+  servicesOnline: number;
+  servicesDegraded: number;
+  servicesOffline: number;
+  breakerOpen: number;
+  breakerHalfOpen: number;
+  breakerClosed: number;
+  sla: {
+    atRiskCount: number;
+    breachedCount: number;
+    onTrackCount: number;
+  };
+}> {
+  if (!params.observabilityServiceUrl) {
+    return {
+      avgLatencyMs: 0,
+      servicesOnline: 0,
+      servicesDegraded: 0,
+      servicesOffline: 0,
+      breakerOpen: 0,
+      breakerHalfOpen: 0,
+      breakerClosed: 0,
+      sla: {
+        atRiskCount: 0,
+        breachedCount: 0,
+        onTrackCount: 0,
+      },
+    };
+  }
+
+  const internalHeaders = params.buildInternalServiceHeaders({
+    userId: params.userId,
+    tenantId: params.tenantId,
+    role: params.role,
+    customRoleId: params.customRoleId ?? null,
+  });
+
+  const [servicesData, breakersData, slaData] = await Promise.all([
+    fetchInternalJson<ObservabilityServicesResponse>({
+      url: `${params.observabilityServiceUrl}/api/observability/metrics/services`,
+      headers: internalHeaders,
+      logger: params.logger,
+      label: 'saúde de serviços',
+    }),
+    fetchInternalJson<ObservabilityBreakersResponse>({
+      url: `${params.observabilityServiceUrl}/api/observability/metrics/circuit-breakers`,
+      headers: internalHeaders,
+      logger: params.logger,
+      label: 'circuit breakers',
+    }),
+    fetchInternalJson<ObservabilitySlaResponse>({
+      url: `${params.observabilityServiceUrl}/api/observability/metrics/sla?tenantId=${encodeURIComponent(params.tenantId)}`,
+      headers: internalHeaders,
+      logger: params.logger,
+      label: 'SLA',
+    }),
+  ]);
+
+  const services = (servicesData?.services ?? []).map((service) => ({
+    status: service.status === 'healthy' ? 'healthy' : service.status === 'unhealthy' ? 'down' : 'degraded',
+    avgLatency: Number(service.avgLatency ?? 0),
+  }));
+
+  const breakers = (breakersData?.breakers ?? []).map((breaker) => ({
+    status: breaker.status ?? 'closed',
+  }));
+
+  return {
+    servicesOnline: services.filter((service) => service.status === 'healthy').length,
+    servicesDegraded: services.filter((service) => service.status === 'degraded').length,
+    servicesOffline: services.filter((service) => service.status === 'down').length,
+    breakerOpen: breakers.filter((breaker) => breaker.status === 'open').length,
+    breakerHalfOpen: breakers.filter((breaker) => breaker.status === 'half-open').length,
+    breakerClosed: breakers.filter((breaker) => breaker.status === 'closed').length,
+    avgLatencyMs: services.length > 0
+      ? Math.round(services.reduce((sum, service) => sum + service.avgLatency, 0) / services.length)
+      : 0,
+    sla: {
+      breachedCount: Number(slaData?.breachedCount ?? 0),
+      atRiskCount: Number(slaData?.atRiskCount ?? 0),
+      onTrackCount: Number(slaData?.onTrackCount ?? 0),
+    },
+  };
+}
+
+async function loadTrainingQueueSnapshot(params: {
+  buildInternalServiceHeaders: BuildInternalServiceHeaders;
+  customRoleId?: string | null;
+  logger: LoggerLike;
+  role: Role;
+  tenantId: string;
+  trainingServiceUrl: string;
+  userId: string;
+}): Promise<DashboardTrainingSource['metrics']> {
+  const internalHeaders = params.buildInternalServiceHeaders({
+    userId: params.userId,
+    tenantId: params.tenantId,
+    role: params.role,
+    customRoleId: params.customRoleId ?? null,
+  });
+
+  const trainingQueueData = await fetchInternalJson<TrainingQueueStatusResponse>({
+    url: `${params.trainingServiceUrl}/api/training/queue/status?tenantId=${encodeURIComponent(params.tenantId)}`,
+    headers: internalHeaders,
+    logger: params.logger,
+    label: 'fila de training',
+  });
+
+  return {
+    pending: (trainingQueueData?.queues ?? []).reduce((sum, queue) => sum + Number(queue.pending ?? 0), 0),
+    dlq: (trainingQueueData?.queues ?? []).reduce((sum, queue) => sum + Number(queue.dlq ?? 0), 0),
+    inflight: Number(trainingQueueData?.tenant?.inflightCount ?? 0),
+    maxInflight: Number(trainingQueueData?.governance?.maxInflightRunsPerTenant ?? 0),
+  };
+}
+
+async function loadFinanceSnapshot(params: {
+  buildInternalServiceHeaders: BuildInternalServiceHeaders;
+  customRoleId?: string | null;
+  integrationsServiceUrl: string;
+  logger: LoggerLike;
+  role: Role;
+  tenantId: string;
+  userId: string;
+}): Promise<DashboardFinanceSource['metrics']> {
+  const internalHeaders = params.buildInternalServiceHeaders({
+    userId: params.userId,
+    tenantId: params.tenantId,
+    role: params.role,
+    customRoleId: params.customRoleId ?? null,
+  });
+
+  const integrationsStats = await fetchInternalJson<IntegrationsStatsResponse>({
+    url: `${params.integrationsServiceUrl}/api/integrations/stats`,
+    headers: internalHeaders,
+    logger: params.logger,
+    label: 'estatísticas de integrações',
+  });
+
+  return {
+    stripeCurrency: integrationsStats?.stripe?.currency ?? 'EUR',
+    stripeRevenue: Number(integrationsStats?.stripe?.totalRevenue ?? 0),
+    stripeTransactions: Number(integrationsStats?.stripe?.transactions ?? 0),
+    wiseCompletedCount: Number(integrationsStats?.wise?.completedCount ?? 0),
+    wisePendingAmount: Number(integrationsStats?.wise?.pendingAmount ?? 0),
+    wiseTotalTransfers: Number(integrationsStats?.wise?.totalTransfers ?? 0),
+  };
+}
+
 function buildStatusLabel(status: 'healthy' | 'warning' | 'critical'): 'Saudável' | 'Atenção' | 'Crítico' {
   if (status === 'critical') return 'Crítico';
   if (status === 'warning') return 'Atenção';
   return 'Saudável';
+}
+
+function buildPrioritizedAlerts(params: {
+  fallbackSummary: Awaited<ReturnType<typeof loadFallbackSummary>>;
+  observability: Awaited<ReturnType<typeof loadObservabilityData>>;
+  permissions: DashboardHomePermissionSnapshot;
+  takeoverSummary: Awaited<ReturnType<typeof loadTakeoverSummary>>;
+  trainingMetrics: DashboardTrainingSource['metrics'] | null;
+}): DashboardPrioritySource['alerts'] {
+  const alerts: DashboardPrioritySource['alerts'] = [];
+  const {
+    fallbackSummary,
+    observability,
+    permissions,
+    takeoverSummary,
+    trainingMetrics,
+  } = params;
+
+  if (permissions.manageConversations && takeoverSummary.urgentHandoffs > 0) {
+    alerts.push({
+      id: 'urgent-handoffs',
+      severity: 'critical',
+      title: 'Handoffs urgentes aguardando humano',
+      description: `${takeoverSummary.urgentHandoffs} conversas aguardam atendimento humano com risco de SLA.`,
+      count: takeoverSummary.urgentHandoffs,
+      href: '/takeover',
+      domain: 'support',
+    });
+  }
+
+  if (permissions.openObservability && observability.servicesOffline > 0) {
+    alerts.push({
+      id: 'offline-services',
+      severity: 'critical',
+      title: 'Serviços offline',
+      description: `${observability.servicesOffline} serviço(s) estão offline e impactam a plataforma agora.`,
+      count: observability.servicesOffline,
+      href: '/observability',
+      domain: 'platform',
+    });
+  }
+
+  if (permissions.openObservability && observability.breakerOpen > 0) {
+    alerts.push({
+      id: 'open-breakers',
+      severity: 'critical',
+      title: 'Circuit breakers abertos',
+      description: `${observability.breakerOpen} circuit breaker(s) estão abertos e exigem investigação.`,
+      count: observability.breakerOpen,
+      href: '/observability',
+      domain: 'platform',
+    });
+  }
+
+  if (permissions.manageConversations && observability.sla.breachedCount > 0) {
+    alerts.push({
+      id: 'sla-breached',
+      severity: 'critical',
+      title: 'SLAs violados',
+      description: `${observability.sla.breachedCount} atendimento(s) já ultrapassaram o prazo operacional.`,
+      count: observability.sla.breachedCount,
+      href: '/takeover',
+      domain: 'support',
+    });
+  }
+
+  if (permissions.openObservability && observability.servicesDegraded > 0) {
+    alerts.push({
+      id: 'degraded-services',
+      severity: 'warning',
+      title: 'Serviços degradados',
+      description: `${observability.servicesDegraded} serviço(s) operam com degradação ou telemetria incompleta.`,
+      count: observability.servicesDegraded,
+      href: '/observability',
+      domain: 'platform',
+    });
+  }
+
+  if (permissions.openObservability && observability.breakerHalfOpen > 0) {
+    alerts.push({
+      id: 'half-open-breakers',
+      severity: 'warning',
+      title: 'Circuit breakers em recuperação',
+      description: `${observability.breakerHalfOpen} circuit breaker(s) estão semiabertos e precisam de acompanhamento.`,
+      count: observability.breakerHalfOpen,
+      href: '/observability',
+      domain: 'platform',
+    });
+  }
+
+  if (permissions.manageConversations && observability.sla.atRiskCount > 0) {
+    alerts.push({
+      id: 'sla-at-risk',
+      severity: 'warning',
+      title: 'SLAs em risco',
+      description: `${observability.sla.atRiskCount} atendimento(s) podem violar o prazo se nada mudar agora.`,
+      count: observability.sla.atRiskCount,
+      href: '/takeover',
+      domain: 'support',
+    });
+  }
+
+  if (permissions.viewRouting && fallbackSummary.unmappedContexts > 0) {
+    alerts.push({
+      id: 'unmapped-contexts',
+      severity: 'warning',
+      title: 'Contextos sem namespace mapeado',
+      description: `${fallbackSummary.unmappedContexts} fallback(s) por contexto não mapeado apareceram nos últimos 7 dias.`,
+      count: fallbackSummary.unmappedContexts,
+      href: '/namespaces',
+      domain: 'routing',
+    });
+  }
+
+  if (permissions.viewRouting && fallbackSummary.reviewQueue > 0) {
+    alerts.push({
+      id: 'hybrid-review',
+      severity: 'warning',
+      title: 'Fila de revisão híbrida',
+      description: `${fallbackSummary.reviewQueue} evento(s) aguardam revisão humana nos últimos 14 dias.`,
+      count: fallbackSummary.reviewQueue,
+      href: '/namespaces',
+      domain: 'routing',
+    });
+  }
+
+  if (permissions.viewTraining && trainingMetrics && (trainingMetrics.pending > 0 || trainingMetrics.dlq > 0)) {
+    alerts.push({
+      id: 'training-queue',
+      severity: trainingMetrics.dlq > 0 ? 'critical' : 'warning',
+      title: 'Fila de training requer atenção',
+      description: trainingMetrics.dlq > 0
+        ? `${trainingMetrics.dlq} item(ns) em DLQ e ${trainingMetrics.pending} aguardando processamento.`
+        : `${trainingMetrics.pending} item(ns) aguardam processamento na fila de training.`,
+      count: trainingMetrics.dlq > 0 ? trainingMetrics.dlq : trainingMetrics.pending,
+      href: '/training',
+      domain: 'training',
+    });
+  }
+
+  return alerts
+    .sort((left, right) => {
+      const severityWeight = left.severity === right.severity
+        ? 0
+        : left.severity === 'critical'
+          ? -1
+          : 1;
+
+      if (severityWeight !== 0) {
+        return severityWeight;
+      }
+
+      return right.count - left.count;
+    })
+    .slice(0, 8);
+}
+
+async function loadPrioritySource(params: {
+  buildInternalServiceHeaders: BuildInternalServiceHeaders;
+  customRoleId?: string | null;
+  logger: LoggerLike;
+  observabilityServiceUrl: string | null;
+  permissions: DashboardHomePermissionsResponse;
+  role: Role;
+  tenantId: string;
+  trainingServiceUrl: string;
+  userId: string;
+}): Promise<DashboardPrioritySource> {
+  const [
+    observability,
+    fallbackSummary,
+    takeoverSummary,
+    trainingMetrics,
+  ] = await Promise.all([
+    loadObservabilityData({
+      buildInternalServiceHeaders: params.buildInternalServiceHeaders,
+      customRoleId: params.customRoleId,
+      logger: params.logger,
+      observabilityServiceUrl: params.observabilityServiceUrl,
+      role: params.role,
+      tenantId: params.tenantId,
+      userId: params.userId,
+    }),
+    loadFallbackSummary(params.tenantId),
+    loadTakeoverSummary(params.tenantId),
+    params.permissions.viewTraining
+      ? loadTrainingQueueSnapshot({
+          buildInternalServiceHeaders: params.buildInternalServiceHeaders,
+          customRoleId: params.customRoleId,
+          logger: params.logger,
+          role: params.role,
+          tenantId: params.tenantId,
+          trainingServiceUrl: params.trainingServiceUrl,
+          userId: params.userId,
+        })
+      : Promise.resolve(null),
+  ]);
+
+  const alerts = buildPrioritizedAlerts({
+    fallbackSummary,
+    observability,
+    permissions: params.permissions,
+    takeoverSummary,
+    trainingMetrics,
+  });
+
+  const criticalAlertCount = alerts.filter((alert) => alert.severity === 'critical').length;
+  const overallStatus: 'healthy' | 'warning' | 'critical' =
+    criticalAlertCount > 0
+      ? 'critical'
+      : alerts.length > 0
+        ? 'warning'
+        : 'healthy';
+
+  return {
+    generatedAt: new Date().toISOString(),
+    status: {
+      level: overallStatus,
+      label: buildStatusLabel(overallStatus),
+    },
+    alerts,
+    support: {
+      activeHumanAgents: takeoverSummary.activeHumanAgents,
+      pendingHandoffs: takeoverSummary.pendingHandoffs,
+      urgentHandoffs: takeoverSummary.urgentHandoffs,
+    },
+  };
+}
+
+async function loadHealthSource(params: {
+  buildInternalServiceHeaders: BuildInternalServiceHeaders;
+  customRoleId?: string | null;
+  logger: LoggerLike;
+  observabilityServiceUrl: string | null;
+  permissions: DashboardHomePermissionsResponse;
+  role: Role;
+  tenantId: string;
+  userId: string;
+}): Promise<DashboardHealthSource> {
+  const observability = await loadObservabilityData({
+    buildInternalServiceHeaders: params.buildInternalServiceHeaders,
+    customRoleId: params.customRoleId,
+    logger: params.logger,
+    observabilityServiceUrl: params.observabilityServiceUrl,
+    role: params.role,
+    tenantId: params.tenantId,
+    userId: params.userId,
+  });
+
+  return {
+    generatedAt: new Date().toISOString(),
+    href: params.permissions.openObservability ? '/observability' : null,
+    metrics: {
+      avgLatencyMs: observability.avgLatencyMs,
+      services: {
+        online: observability.servicesOnline,
+        degraded: observability.servicesDegraded,
+        offline: observability.servicesOffline,
+      },
+      breakers: {
+        open: observability.breakerOpen,
+        halfOpen: observability.breakerHalfOpen,
+        closed: observability.breakerClosed,
+      },
+      sla: {
+        onTrack: observability.sla.onTrackCount,
+        atRisk: observability.sla.atRiskCount,
+        breached: observability.sla.breachedCount,
+      },
+    },
+  };
+}
+
+async function loadTrendSource(tenantId: string): Promise<DashboardTrendSource> {
+  const [conversations30d, tokens30d] = await Promise.all([
+    loadConversationTrendSeries(tenantId, 30),
+    loadTokensTrendSeries(tenantId, 30),
+  ]);
+
+  return {
+    generatedAt: new Date().toISOString(),
+    windows: [
+      { id: '7d', label: '7d' },
+      { id: '30d', label: '30d' },
+    ],
+    metrics: [
+      {
+        id: 'conversations',
+        label: 'Conversas',
+        supportsBreakdown: true,
+        seriesByWindow: {
+          '7d': sliceTail(conversations30d, 7),
+          '30d': conversations30d,
+        },
+      },
+      {
+        id: 'tokens',
+        label: 'Tokens',
+        supportsBreakdown: false,
+        seriesByWindow: {
+          '7d': sliceTail(tokens30d, 7),
+          '30d': tokens30d,
+        },
+      },
+    ],
+  };
+}
+
+async function loadRecentActivitySource(tenantId: string): Promise<DashboardRecentActivitySource> {
+  return {
+    generatedAt: new Date().toISOString(),
+    itemsByWindow: await loadRecentActivityByWindow(tenantId),
+  };
+}
+
+async function loadRoutingSource(tenantId: string): Promise<DashboardRoutingSource> {
+  const fallbackSummary = await loadFallbackSummary(tenantId);
+
+  return {
+    generatedAt: new Date().toISOString(),
+    href: '/namespaces',
+    metricsByWindow: {
+      '24h': {
+        fallbackTotal: fallbackSummary.last24h,
+        reviewQueue: fallbackSummary.reviewQueue,
+        unmappedContexts: 0,
+      },
+      '7d': {
+        fallbackTotal: fallbackSummary.last7d,
+        reviewQueue: fallbackSummary.reviewQueue,
+        unmappedContexts: fallbackSummary.unmappedContexts,
+      },
+      '14d': {
+        fallbackTotal: fallbackSummary.total,
+        reviewQueue: fallbackSummary.reviewQueue,
+        unmappedContexts: fallbackSummary.unmappedContexts,
+      },
+    },
+  };
+}
+
+async function loadTrainingSource(params: {
+  buildInternalServiceHeaders: BuildInternalServiceHeaders;
+  customRoleId?: string | null;
+  logger: LoggerLike;
+  role: Role;
+  tenantId: string;
+  trainingServiceUrl: string;
+  userId: string;
+}): Promise<DashboardTrainingSource> {
+  const metrics = await loadTrainingQueueSnapshot({
+    buildInternalServiceHeaders: params.buildInternalServiceHeaders,
+    customRoleId: params.customRoleId,
+    logger: params.logger,
+    role: params.role,
+    tenantId: params.tenantId,
+    trainingServiceUrl: params.trainingServiceUrl,
+    userId: params.userId,
+  });
+
+  return {
+    generatedAt: new Date().toISOString(),
+    href: '/training',
+    metrics,
+  };
+}
+
+async function loadFinanceSource(params: {
+  buildInternalServiceHeaders: BuildInternalServiceHeaders;
+  customRoleId?: string | null;
+  integrationsServiceUrl: string;
+  logger: LoggerLike;
+  role: Role;
+  tenantId: string;
+  userId: string;
+}): Promise<DashboardFinanceSource> {
+  const metrics = await loadFinanceSnapshot({
+    buildInternalServiceHeaders: params.buildInternalServiceHeaders,
+    customRoleId: params.customRoleId,
+    integrationsServiceUrl: params.integrationsServiceUrl,
+    logger: params.logger,
+    role: params.role,
+    tenantId: params.tenantId,
+    userId: params.userId,
+  });
+
+  return {
+    generatedAt: new Date().toISOString(),
+    href: '/integrations',
+    metrics,
+  };
 }
 
 export function registerDashboardHomeRoutes(params: DashboardHomeRouteParams): void {
@@ -577,7 +1394,239 @@ export function registerDashboardHomeRoutes(params: DashboardHomeRouteParams): v
     observabilityServiceUrl,
     trainingServiceUrl,
     integrationsServiceUrl,
+    updateUserPreferences,
   } = params;
+
+  app.get('/api/dashboard/home/config', requireAuth(), async (req: Request, res: Response) => {
+    const context = ensureDashboardRequestContext(req, res);
+    if (!context) {
+      return;
+    }
+
+    try {
+      const permissions = await loadDashboardHomePermissions(context);
+      const preferences = await loadUserDashboardHomePreferences({
+        tenantId: context.tenantId,
+        userId: context.userId,
+        permissions,
+      });
+
+      res.json({
+        meta: {
+          generatedAt: new Date().toISOString(),
+          preferenceVersion: DASHBOARD_HOME_PREFERENCES_VERSION,
+        },
+        permissions,
+        preferences,
+        enabledCardIds: getDashboardEnabledCardIds(preferences),
+        availableCardIds: DASHBOARD_HOME_CARD_IDS.filter((cardId) => assertDashboardCardAllowed(cardId, permissions)),
+      });
+    } catch (error) {
+      logger.error({ error, tenantId: context.tenantId }, 'Falha ao carregar configuração da home da dashboard');
+      res.status(500).json({ error: 'Erro interno ao carregar a configuração da home da dashboard' });
+    }
+  });
+
+  app.put('/api/dashboard/home/preferences', requireAuth(), async (req: Request, res: Response) => {
+    const context = ensureDashboardRequestContext(req, res);
+    if (!context) {
+      return;
+    }
+
+    const parseResult = dashboardPreferencesUpdateSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      return res.status(400).json({
+        error: 'Preferências da home inválidas',
+        details: parseResult.error.format(),
+      });
+    }
+
+    try {
+      const permissions = await loadDashboardHomePermissions(context);
+      const sanitizedPreferences = sanitizeDashboardHomePreferences(parseResult.data.dashboardHome, permissions);
+
+      await updateUserPreferences(context.userId, context.tenantId, {
+        dashboardHome: sanitizedPreferences,
+      });
+
+      res.json({
+        meta: {
+          generatedAt: new Date().toISOString(),
+          preferenceVersion: DASHBOARD_HOME_PREFERENCES_VERSION,
+        },
+        permissions,
+        preferences: sanitizedPreferences,
+        enabledCardIds: getDashboardEnabledCardIds(sanitizedPreferences),
+        availableCardIds: DASHBOARD_HOME_CARD_IDS.filter((cardId) => assertDashboardCardAllowed(cardId, permissions)),
+      });
+    } catch (error) {
+      logger.error({ error, tenantId: context.tenantId, userId: context.userId }, 'Falha ao persistir preferências da home da dashboard');
+      res.status(500).json({ error: 'Erro interno ao salvar as preferências da home da dashboard' });
+    }
+  });
+
+  app.get('/api/dashboard/home/sources/priority', requireAuth(), async (req: Request, res: Response) => {
+    const context = ensureDashboardRequestContext(req, res);
+    if (!context) {
+      return;
+    }
+
+    try {
+      const permissions = await loadDashboardHomePermissions(context);
+      const source = await loadPrioritySource({
+        buildInternalServiceHeaders,
+        customRoleId: context.customRoleId,
+        logger,
+        observabilityServiceUrl,
+        permissions,
+        role: context.role,
+        tenantId: context.tenantId,
+        trainingServiceUrl,
+        userId: context.userId,
+      });
+
+      res.json(source);
+    } catch (error) {
+      logger.error({ error, tenantId: context.tenantId }, 'Falha ao carregar a fonte priority da dashboard');
+      res.status(500).json({ error: 'Erro interno ao carregar os sinais prioritários da dashboard' });
+    }
+  });
+
+  app.get('/api/dashboard/home/sources/platform-health', requireAuth(), async (req: Request, res: Response) => {
+    const context = ensureDashboardRequestContext(req, res);
+    if (!context) {
+      return;
+    }
+
+    try {
+      const permissions = await loadDashboardHomePermissions(context);
+      if (!permissions.openObservability) {
+        return res.status(403).json({ error: 'Sem permissão para visualizar observabilidade' });
+      }
+
+      const source = await loadHealthSource({
+        buildInternalServiceHeaders,
+        customRoleId: context.customRoleId,
+        logger,
+        observabilityServiceUrl,
+        permissions,
+        role: context.role,
+        tenantId: context.tenantId,
+        userId: context.userId,
+      });
+
+      res.json(source);
+    } catch (error) {
+      logger.error({ error, tenantId: context.tenantId }, 'Falha ao carregar a fonte platform-health da dashboard');
+      res.status(500).json({ error: 'Erro interno ao carregar a saúde da plataforma' });
+    }
+  });
+
+  app.get('/api/dashboard/home/sources/conversation-trend', requireAuth(), async (req: Request, res: Response) => {
+    const context = ensureDashboardRequestContext(req, res);
+    if (!context) {
+      return;
+    }
+
+    try {
+      const permissions = await loadDashboardHomePermissions(context);
+      if (!permissions.manageConversations) {
+        return res.status(403).json({ error: 'Sem permissão para visualizar a fila de conversas' });
+      }
+
+      res.json(await loadTrendSource(context.tenantId));
+    } catch (error) {
+      logger.error({ error, tenantId: context.tenantId }, 'Falha ao carregar a fonte conversation-trend da dashboard');
+      res.status(500).json({ error: 'Erro interno ao carregar a tendência de conversas' });
+    }
+  });
+
+  app.get('/api/dashboard/home/sources/recent-activity', requireAuth(), async (req: Request, res: Response) => {
+    const context = ensureDashboardRequestContext(req, res);
+    if (!context) {
+      return;
+    }
+
+    try {
+      res.json(await loadRecentActivitySource(context.tenantId));
+    } catch (error) {
+      logger.error({ error, tenantId: context.tenantId }, 'Falha ao carregar a fonte recent-activity da dashboard');
+      res.status(500).json({ error: 'Erro interno ao carregar a atividade recente' });
+    }
+  });
+
+  app.get('/api/dashboard/home/sources/routing-snapshot', requireAuth(), async (req: Request, res: Response) => {
+    const context = ensureDashboardRequestContext(req, res);
+    if (!context) {
+      return;
+    }
+
+    try {
+      const permissions = await loadDashboardHomePermissions(context);
+      if (!permissions.viewRouting) {
+        return res.status(403).json({ error: 'Sem permissão para visualizar routing' });
+      }
+
+      res.json(await loadRoutingSource(context.tenantId));
+    } catch (error) {
+      logger.error({ error, tenantId: context.tenantId }, 'Falha ao carregar a fonte routing-snapshot da dashboard');
+      res.status(500).json({ error: 'Erro interno ao carregar o snapshot de routing' });
+    }
+  });
+
+  app.get('/api/dashboard/home/sources/training-snapshot', requireAuth(), async (req: Request, res: Response) => {
+    const context = ensureDashboardRequestContext(req, res);
+    if (!context) {
+      return;
+    }
+
+    try {
+      const permissions = await loadDashboardHomePermissions(context);
+      if (!permissions.viewTraining) {
+        return res.status(403).json({ error: 'Sem permissão para visualizar training' });
+      }
+
+      res.json(await loadTrainingSource({
+        buildInternalServiceHeaders,
+        customRoleId: context.customRoleId,
+        logger,
+        role: context.role,
+        tenantId: context.tenantId,
+        trainingServiceUrl,
+        userId: context.userId,
+      }));
+    } catch (error) {
+      logger.error({ error, tenantId: context.tenantId }, 'Falha ao carregar a fonte training-snapshot da dashboard');
+      res.status(500).json({ error: 'Erro interno ao carregar o snapshot de training' });
+    }
+  });
+
+  app.get('/api/dashboard/home/sources/finance-snapshot', requireAuth(), async (req: Request, res: Response) => {
+    const context = ensureDashboardRequestContext(req, res);
+    if (!context) {
+      return;
+    }
+
+    try {
+      const permissions = await loadDashboardHomePermissions(context);
+      if (!permissions.viewFinance) {
+        return res.status(403).json({ error: 'Sem permissão para visualizar integrações financeiras' });
+      }
+
+      res.json(await loadFinanceSource({
+        buildInternalServiceHeaders,
+        customRoleId: context.customRoleId,
+        integrationsServiceUrl,
+        logger,
+        role: context.role,
+        tenantId: context.tenantId,
+        userId: context.userId,
+      }));
+    } catch (error) {
+      logger.error({ error, tenantId: context.tenantId }, 'Falha ao carregar a fonte finance-snapshot da dashboard');
+      res.status(500).json({ error: 'Erro interno ao carregar o snapshot financeiro' });
+    }
+  });
 
   app.get('/api/dashboard/home', requireAuth(), async (req: Request, res: Response) => {
     const tenantId = resolveTenantId(req);
@@ -1075,4 +2124,4 @@ export function registerDashboardHomeRoutes(params: DashboardHomeRouteParams): v
   });
 }
 
-export { loadDashboardStats, loadUsageSeries };
+export { buildPrioritizedAlerts, loadDashboardStats, loadUsageSeries };
