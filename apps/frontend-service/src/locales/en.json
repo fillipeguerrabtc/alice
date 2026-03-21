@@ -364,7 +364,7 @@
       }
     },
     "streaming": {
-      "thinking": "Alice is thinking",
+      "thinking": "{{agentName}} is thinking",
       "steps": "Steps:",
       "error": "Failed to receive Alice's response. Please try again.",
       "timeout": "Response timed out. Please try again.",

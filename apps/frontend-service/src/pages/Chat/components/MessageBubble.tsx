@@ -437,7 +437,7 @@ export function MessageBubble({
           {shouldShowThinkingBox && (
             <div className="mb-2 overflow-hidden rounded-md border border-border/70 bg-background/50 p-2">
               <p className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">
-                {t('chat.streaming.thinking')}
+                {t('chat.streaming.thinking', { agentName: assistantDisplayName })}
               </p>
               <div className="space-y-1 font-mono text-[11px] leading-4 text-muted-foreground">
                 {thinkingDisplayLines.map((line, index) => (

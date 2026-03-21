@@ -389,7 +389,7 @@
       }
     },
     "streaming": {
-      "thinking": "Alice está pensando",
+      "thinking": "{{agentName}} está pensando",
       "steps": "Etapas:",
       "error": "Erro ao receber resposta da Alice. Tente novamente.",
       "timeout": "Tempo de resposta excedido. Tente novamente.",
