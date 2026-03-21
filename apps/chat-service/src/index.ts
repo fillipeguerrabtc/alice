@@ -6251,6 +6251,12 @@ const GREETING_HINTS_PT = [
   'Me diga em que posso ajudar agora.',
 ] as const;
 
+const GREETING_HINTS_EN = [
+  'If you want, I can help with something specific.',
+  'If you prefer, I can continue from where we left off.',
+  'Tell me what you would like to do next.',
+] as const;
+
 function pickDeterministicIntro(seed: string, options: readonly string[]): string {
   const hash = crypto.createHash('sha256').update(seed).digest('hex');
   const index = parseInt(hash.slice(0, 8), 16) % options.length;
@@ -6271,7 +6277,10 @@ function buildGreetingResponse(baseResponse: string, seed: string, shouldAugment
   if (!shouldAugment) {
     return baseResponse;
   }
-  const hint = pickDeterministicIntro(seed, GREETING_HINTS_PT);
+  const greetingHints = /^(?:\s*)(?:hello|hi|hey|good morning|good afternoon|good evening)\b/i.test(baseResponse)
+    ? GREETING_HINTS_EN
+    : GREETING_HINTS_PT;
+  const hint = pickDeterministicIntro(seed, greetingHints);
   if (baseResponse.includes(hint)) {
     return baseResponse;
   }

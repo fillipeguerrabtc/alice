@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { isGreeting } from '../../apps/chat-service/src/response-cache';
+import {
+  detectGreetingLanguage,
+  isGreeting,
+} from '../../apps/chat-service/src/response-cache';
 
 describe('response-cache isGreeting', () => {
   it('detecta saudacao composta em portugues', () => {
@@ -23,6 +26,16 @@ describe('response-cache isGreeting', () => {
 
   it('detecta saudacao simples em ingles', () => {
     expect(isGreeting('Hello!')).toBe(true);
+  });
+
+  it('resolve portugues para saudacoes curtas que causaram erro em producao', () => {
+    expect(detectGreetingLanguage('Bora?')).toBe('pt');
+    expect(detectGreetingLanguage('Como voce esta?')).toBe('pt');
+  });
+
+  it('resolve ingles quando a saudacao esta claramente em ingles', () => {
+    expect(detectGreetingLanguage('Hello!')).toBe('en');
+    expect(detectGreetingLanguage('How are you?')).toBe('en');
   });
 
   it('nao classifica mensagem de trading como saudacao', () => {

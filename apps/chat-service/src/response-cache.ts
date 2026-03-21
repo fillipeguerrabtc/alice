@@ -61,7 +61,7 @@ const CACHE_TTL_MS = parseEnvInt(
 const CACHE_PREFIX = 'alice:response-cache:v2';
 const CACHE_ENABLED = parseEnvBool(
   readOptionalStringEnv('RESPONSE_CACHE_ENABLED') ?? undefined,
-  true,
+  false,
   'RESPONSE_CACHE_ENABLED'
 );
 
@@ -156,10 +156,48 @@ function hasDomainTerm(text: string): boolean {
   return NON_GREETING_DOMAIN_TERMS.some((term) => text.includes(term));
 }
 
-function detectLanguage(text: string): 'pt' | 'en' {
+export function detectGreetingLanguage(text: string): 'pt' | 'en' {
   const normalized = normalizeGreetingText(text);
-  const ptIndicators = ['ola', 'oi', 'bom dia', 'boa tarde', 'boa noite', 'tudo bem', 'como vai', 'beleza'];
-  return ptIndicators.some((indicator) => normalized.includes(indicator)) ? 'pt' : 'en';
+  const ptIndicators = [
+    'ola',
+    'oi',
+    'opa',
+    'bora',
+    'e ai',
+    'fala',
+    'salve',
+    'bom dia',
+    'boa tarde',
+    'boa noite',
+    'tudo bem',
+    'tudo bom',
+    'tudo certo',
+    'como vai',
+    'como voce esta',
+    'como voce ta',
+    'beleza',
+    'por ai',
+  ];
+  const enIndicators = [
+    'hello',
+    'hi',
+    'hey',
+    'good morning',
+    'good afternoon',
+    'good evening',
+    'how are you',
+    "what's up",
+    'what is up',
+  ];
+
+  if (ptIndicators.some((indicator) => normalized.includes(indicator))) {
+    return 'pt';
+  }
+  if (enIndicators.some((indicator) => normalized.includes(indicator))) {
+    return 'en';
+  }
+
+  return 'pt';
 }
 
 function isSafeGreetingResponse(response: string): boolean {
@@ -286,26 +324,29 @@ export async function checkResponseCache(
     latencyMs: 0,
   };
 
+  const greetingDetected = isGreeting(message);
+  result.isGreeting = greetingDetected;
+
+  if (greetingDetected) {
+    metricsState.greetingsDetected += 1;
+  }
+
   if (!CACHE_ENABLED) {
     result.latencyMs = Date.now() - startTime;
+    updateLatencyMetrics(result.latencyMs);
     return result;
   }
   if (options?.enableHybridTransversalDefault === false) {
     result.latencyMs = Date.now() - startTime;
+    updateLatencyMetrics(result.latencyMs);
     return result;
   }
 
   if (!isRedisAvailable()) {
     logger.debug('Response cache: Redis nao disponivel');
     result.latencyMs = Date.now() - startTime;
+    updateLatencyMetrics(result.latencyMs);
     return result;
-  }
-
-  const greetingDetected = isGreeting(message);
-  result.isGreeting = greetingDetected;
-
-  if (greetingDetected) {
-    metricsState.greetingsDetected += 1;
   }
 
   if (!greetingDetected) {
@@ -336,7 +377,7 @@ export async function checkResponseCache(
     result.cacheHit = false;
     result.hasResponse = true;
 
-    const language = detectLanguage(message);
+    const language = detectGreetingLanguage(message);
     const response = generateGreetingResponse(language);
 
     await saveToCache(tenantId, subjectScope, messageHash, response, language);

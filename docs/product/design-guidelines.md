@@ -117,6 +117,7 @@ Usar escala consistente: `2, 4, 8, 12, 16, 24, 32` (px-2, h-8, m-12, etc.)
 - A headline da tela vazia deve vir de um contrato real da plataforma, considerar contexto autentico do usuario quando existir e evitar repeticao imediata
 - A headline da tela vazia deve respeitar limite visual de 2 linhas em desktop e mobile, com texto curto ja controlado na origem
 - A abertura do chat deve exibir apenas uma saudacao por carregamento da pagina; fallback local no frontend so pode aparecer em caso de erro real da query principal
+- Saudacoes do chat devem respeitar o fluxo canonico de prompt, persona, tenant e idioma do usuario; atalhos hardcoded que bypassam o backend canonico/LLM sao proibidos na experiencia principal
 - Mensagens de saudacao/default sem `agent` explicito devem manter autoria visual da Alice/default; mensagens especialistas devem exibir sempre o `preferredName` atual do agente persistido
 - Quando houver `displayName` autentico disponivel, a headline deve chamar o usuario pelo nome em frequencia aproximada de 60%
 - O repertorio da headline deve privilegiar tom premium, leve humor, energia, provocacao inteligente, motivacao e referencias filosoficas curtas, sem virar bloco de citacao
