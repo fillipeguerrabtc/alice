@@ -286,12 +286,12 @@ main() {
     fi
 
     driver_version="$(extract_driver_version)"
-    validate_cdi_specs "$driver_version"
 
     if [[ "$RECONCILE_LEGACY_ETC_CDI" == true ]]; then
         reconcile_legacy_etc_cdi
-        validate_cdi_specs "$driver_version"
     fi
+
+    validate_cdi_specs "$driver_version"
 
     validate_docker_gpu_access
 }

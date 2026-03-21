@@ -101,9 +101,9 @@ DOCKER_VERSION=$(docker --version)
 echo "   ✅ Docker encontrado: $DOCKER_VERSION"
 
 # -----------------------------------------------------------------------------
-# 4. Validar runtime NVIDIA, Docker e CDI
+# 4. Reconciliar e validar runtime NVIDIA, Docker e CDI
 # -----------------------------------------------------------------------------
-echo "🧪 Validando runtime NVIDIA, Docker e CDI..."
+echo "🧪 Reconciliando e validando runtime NVIDIA, Docker e CDI..."
 
 if [[ ! -f "$NVIDIA_RUNTIME_CHECK_SCRIPT" ]]; then
   echo "❌ ERRO: Script crítico não encontrado!"
@@ -113,15 +113,15 @@ if [[ ! -f "$NVIDIA_RUNTIME_CHECK_SCRIPT" ]]; then
   exit 1
 fi
 
-if ! bash "$NVIDIA_RUNTIME_CHECK_SCRIPT"; then
+if ! bash "$NVIDIA_RUNTIME_CHECK_SCRIPT" --refresh-cdi --reconcile-legacy-cdi; then
   echo ""
   echo "❌ ERRO: Host GPU inconsistente para deploy!"
   echo ""
-  echo "   O runtime NVIDIA/CDI falhou na validação fail-fast."
+  echo "   O runtime NVIDIA/CDI falhou na reconciliacao/validacao fail-fast."
   echo "   Isso bloqueia o deploy para evitar queda silenciosa de gpu-llm/gpu-embeddings."
   echo ""
   echo "💡 AÇÃO RECOMENDADA:"
-  echo "   - Corrija o drift CDI antes de qualquer compose up"
+  echo "   - Corrija o drift CDI ou a configuracao do runtime antes de qualquer compose up"
   echo "   - Consulte o runbook docs/operations/runbooks/gpu-cdi-maintenance.md"
   exit 1
 fi

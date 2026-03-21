@@ -96,7 +96,8 @@ Antes do `compose up`, o workflow aplica:
 - `preflight-secrets.sh` por stack
 - `docker compose ... config`
 - validacao do host de producao
-- validacao fail-fast do runtime NVIDIA/CDI contra a versao real do driver, bloqueando drift entre `/etc/cdi` e `/var/run/cdi`
+- refresh/reconcile preventivo do CDI NVIDIA no host de producao
+- validacao fail-fast do runtime NVIDIA/CDI contra a versao real do driver, bloqueando drift remanescente entre `/etc/cdi` e `/var/run/cdi`
 
 ## Rollback
 

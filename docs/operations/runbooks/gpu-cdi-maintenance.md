@@ -29,6 +29,7 @@ Definir o procedimento operacional para patch, reboot e diagnostico do host GPU 
 - `nvidia-smi` deve responder no host e expor a versao real do driver.
 - `/var/run/cdi/nvidia.yaml` deve ser o spec gerado e esperado pelo toolkit.
 - `/etc/cdi/nvidia.yaml` nao deve permanecer ativo como fonte persistente para NVIDIA.
+- `prepare-production-server.sh` deve tentar refresh/reconcile automatico do CDI antes do fail-fast final do deploy.
 - `bash infra/scripts/check-nvidia-runtime.sh` deve passar sem drift.
 - `bash infra/scripts/validate-deploy.sh` deve confirmar `alice-gpu-manager`, `gpu-llm` e `gpu-embeddings` saudaveis.
 
@@ -120,6 +121,8 @@ sudo bash infra/scripts/check-nvidia-runtime.sh \
   --refresh-cdi \
   --reconcile-legacy-cdi
 ```
+
+Observacao: quando `--reconcile-legacy-cdi` e usado, o script primeiro desativa o spec legado em `/etc/cdi/nvidia.yaml` e so depois executa a validacao estrita. Isso evita falso bloqueio quando o proprio objetivo da execucao e remover o drift persistente.
 
 3. Rodar novamente a validacao completa:
 
