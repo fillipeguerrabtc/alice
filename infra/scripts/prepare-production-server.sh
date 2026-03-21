@@ -105,7 +105,7 @@ echo "   ✅ Docker encontrado: $DOCKER_VERSION"
 # -----------------------------------------------------------------------------
 echo "🧪 Validando runtime NVIDIA, Docker e CDI..."
 
-if [[ ! -x "$NVIDIA_RUNTIME_CHECK_SCRIPT" ]]; then
+if [[ ! -f "$NVIDIA_RUNTIME_CHECK_SCRIPT" ]]; then
   echo "❌ ERRO: Script crítico não encontrado!"
   echo ""
   echo "   Caminho esperado: $NVIDIA_RUNTIME_CHECK_SCRIPT"
@@ -113,7 +113,7 @@ if [[ ! -x "$NVIDIA_RUNTIME_CHECK_SCRIPT" ]]; then
   exit 1
 fi
 
-if ! "$NVIDIA_RUNTIME_CHECK_SCRIPT"; then
+if ! bash "$NVIDIA_RUNTIME_CHECK_SCRIPT"; then
   echo ""
   echo "❌ ERRO: Host GPU inconsistente para deploy!"
   echo ""

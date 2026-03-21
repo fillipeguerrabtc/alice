@@ -190,12 +190,12 @@ else
       libnvidia-container-tools \
       libnvidia-container1
 
-    if [[ ! -x "$NVIDIA_RUNTIME_CHECK_SCRIPT" ]]; then
+    if [[ ! -f "$NVIDIA_RUNTIME_CHECK_SCRIPT" ]]; then
         log_error "Script obrigatório não encontrado: $NVIDIA_RUNTIME_CHECK_SCRIPT"
     fi
 
     log_info "Configurando runtime Docker via nvidia-ctk e reconciliando CDI..."
-    "$NVIDIA_RUNTIME_CHECK_SCRIPT" \
+    bash "$NVIDIA_RUNTIME_CHECK_SCRIPT" \
       --configure-docker-runtime \
       --refresh-cdi \
       --reconcile-legacy-cdi

@@ -165,8 +165,8 @@ echo ""
 # =============================================================================
 echo -e "\n${YELLOW}═══ 1. RUNTIME NVIDIA E CDI ═══${NC}\n"
 
-if [[ -x "$NVIDIA_RUNTIME_CHECK_SCRIPT" ]]; then
-    if "$NVIDIA_RUNTIME_CHECK_SCRIPT" --skip-docker-gpu-test; then
+if [[ -f "$NVIDIA_RUNTIME_CHECK_SCRIPT" ]]; then
+    if bash "$NVIDIA_RUNTIME_CHECK_SCRIPT" --skip-docker-gpu-test; then
         log_success "Runtime NVIDIA/CDI alinhado ao driver do host"
     else
         log_fail "Runtime NVIDIA/CDI inconsistente; investigar antes de confiar nos logs dos containers GPU"
