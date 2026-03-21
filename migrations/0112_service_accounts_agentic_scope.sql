@@ -1,4 +1,4 @@
-CREATE TABLE "service_accounts" (
+CREATE TABLE IF NOT EXISTS "service_accounts" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
   "tenant_id" uuid NOT NULL REFERENCES "tenants"("id"),
   "namespace_id" uuid REFERENCES "namespaces"("id"),
@@ -19,7 +19,7 @@ CREATE TABLE "service_accounts" (
   "atualizado_em" timestamp DEFAULT now() NOT NULL
 );
 
-CREATE INDEX "idx_service_accounts_tenant" ON "service_accounts" ("tenant_id");
-CREATE INDEX "idx_service_accounts_scope" ON "service_accounts" ("tenant_id", "namespace_id", "agent_id");
-CREATE INDEX "idx_service_accounts_enabled" ON "service_accounts" ("tenant_id", "enabled");
-CREATE UNIQUE INDEX "uniq_service_accounts_tenant_slug" ON "service_accounts" ("tenant_id", "slug");
+CREATE INDEX IF NOT EXISTS "idx_service_accounts_tenant" ON "service_accounts" ("tenant_id");
+CREATE INDEX IF NOT EXISTS "idx_service_accounts_scope" ON "service_accounts" ("tenant_id", "namespace_id", "agent_id");
+CREATE INDEX IF NOT EXISTS "idx_service_accounts_enabled" ON "service_accounts" ("tenant_id", "enabled");
+CREATE UNIQUE INDEX IF NOT EXISTS "uniq_service_accounts_tenant_slug" ON "service_accounts" ("tenant_id", "slug");

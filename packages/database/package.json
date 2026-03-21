@@ -22,7 +22,7 @@
     "build": "tsc -b",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
-    "db:push": "drizzle-kit push",
+    "db:push": "pnpm --filter @alice/shared build && drizzle-kit push",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {

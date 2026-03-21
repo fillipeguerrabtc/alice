@@ -6,7 +6,8 @@ if (!process.env.DATABASE_URL) {
 
 export default defineConfig({
   out: "./migrations",
-  schema: "./packages/shared/src/schema.ts",
+  // O deploy executa o Drizzle em Node puro, então o schema precisa vir do artefato compilado.
+  schema: "./packages/shared/dist/schema.js",
   dialect: "postgresql",
   dbCredentials: {
     url: process.env.DATABASE_URL,

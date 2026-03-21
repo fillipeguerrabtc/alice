@@ -56,7 +56,7 @@
     "typecheck:changed": "node ./scripts/run-scoped-task.mjs typecheck",
     "typecheck:full": "pnpm exec turbo run typecheck --cache-dir .cache/turbo",
     "typecheck:frontend": "cd apps/frontend-service && pnpm run typecheck",
-    "db:push": "drizzle-kit push",
+    "db:push": "pnpm --filter @alice/shared build && drizzle-kit push",
     "test": "node ./scripts/run-scoped-test.mjs",
     "test:changed": "node ./scripts/run-scoped-test.mjs",
     "test:full": "pnpm exec vitest run",
